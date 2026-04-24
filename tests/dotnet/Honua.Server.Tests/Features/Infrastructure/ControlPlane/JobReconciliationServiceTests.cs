@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// heartbeat or timeout transitions, preventing overwrites of jobs that completed
 /// between the sweep snapshot and the handler invocation.
 /// </summary>
-[Collection("Unit")]
+[Collection("ControlPlaneTransitionTelemetry")]
 public sealed class JobReconciliationServiceTests
 {
     private static ExecutionJobRecord CreateRunningJob(

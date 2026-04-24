@@ -319,27 +319,33 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
         StopLeaseRenewal();
 
-        // Release leadership if we have it
+        // Release leadership if we have it, without making synchronous disposal depend
+        // on Redis/network responsiveness.
         if (_isLeader && _useRedis)
         {
-            try
-            {
-                ReleaseLeadershipAsync().WaitAsync(DisposeReleaseTimeout).GetAwaiter().GetResult();
-            }
-            catch (TimeoutException)
-            {
-                _isLeader = false;
-                Log.DisposeReleaseTimedOut(_logger, _leaderKey, _instanceId, DisposeReleaseTimeout);
-            }
-            catch (Exception ex)
-            {
-                _isLeader = false;
-                Log.LeaderElectionError(_logger, "DisposeReleaseLeadership", _leaderKey, ex);
-            }
+            _ = ReleaseLeadershipOnDisposeAsync();
         }
 
         _disposed = true;
         _renewalTimer.Dispose();
+    }
+
+    private async Task ReleaseLeadershipOnDisposeAsync()
+    {
+        try
+        {
+            await ReleaseLeadershipAsync().WaitAsync(DisposeReleaseTimeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            _isLeader = false;
+            Log.DisposeReleaseTimedOut(_logger, _leaderKey, _instanceId, DisposeReleaseTimeout);
+        }
+        catch (Exception ex)
+        {
+            _isLeader = false;
+            Log.LeaderElectionError(_logger, "DisposeReleaseLeadership", _leaderKey, ex);
+        }
     }
 
     private static partial class Log

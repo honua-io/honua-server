@@ -138,7 +138,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task AddAttachment_WithValidFile_ReturnsSuccess()
     {
         // Arrange
@@ -155,7 +155,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         // Act
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addAttachment", form);
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
 
         // Assert
         response.BeSuccessful();
@@ -198,7 +198,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task AddAttachment_WithoutFile_Returns400()
     {
         // Arrange
@@ -209,7 +209,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         // Act
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addAttachment", form);
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
@@ -217,7 +217,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task AddAttachment_WithInvalidMimeType_Returns400()
     {
         // Arrange
@@ -233,7 +233,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         // Act
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addAttachment", form);
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
@@ -241,11 +241,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task AddAttachment_WithUnsupportedContentType_Returns415()
     {
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addAttachment",
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
             new StringContent("objectId=1", Encoding.UTF8, "text/plain"));
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
@@ -255,7 +255,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.UpdateAttachment)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment")]
     public async Task UpdateAttachment_WithValidData_ReturnsSuccess()
     {
         // Arrange
@@ -269,7 +269,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         // Act
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateAttachment", form);
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment", form);
 
         // Assert
         response.BeSuccessful();
@@ -280,6 +280,39 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result.Should().NotBeNull();
         result!.UpdateAttachmentResult.Success.Should().BeTrue();
         result.UpdateAttachmentResult.ObjectId.Should().Be(attachmentId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.UpdateAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment")]
+    public async Task UpdateAttachment_WithReplacementFile_ReplacesStoredContent()
+    {
+        const long attachmentId = 1;
+        var updatedBytes = "Updated attachment content"u8.ToArray();
+        var fileContent = new ByteArrayContent(updatedBytes);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+
+        var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { new StringContent(attachmentId.ToString(CultureInfo.InvariantCulture)), "attachmentId" },
+            { new StringContent("updated,file"), "keywords" },
+            { fileContent, "attachment", "updated.pdf" }
+        };
+
+        var updateResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment", form);
+
+        updateResponse.BeSuccessful();
+
+        var downloadResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachmentId}");
+
+        downloadResponse.BeSuccessful();
+        downloadResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/pdf");
+
+        var downloadedBytes = await downloadResponse.Content.ReadAsByteArrayAsync();
+        downloadedBytes.Should().Equal(updatedBytes);
     }
 
     [IntegrationTest]
@@ -309,7 +342,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.UpdateAttachment)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment")]
     public async Task UpdateAttachment_WithNonExistentAttachment_Returns404()
     {
         // Arrange
@@ -323,7 +356,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         // Act
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateAttachment", form);
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment", form);
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
@@ -331,11 +364,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.UpdateAttachment)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment")]
     public async Task UpdateAttachment_WithUnsupportedContentType_Returns415()
     {
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateAttachment",
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment",
             new StringContent("objectId=1&attachmentId=1", Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
@@ -345,7 +378,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.DeleteAttachments)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task DeleteAttachments_WithValidIds_ReturnsSuccess()
     {
         // Arrange
@@ -357,7 +390,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         // Act
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments", form);
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
 
         // Assert
         response.BeSuccessful();
@@ -398,7 +431,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.DeleteAttachments)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task DeleteAttachments_WithoutAttachmentIds_Returns400()
     {
         // Arrange
@@ -409,7 +442,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         // Act
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments", form);
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
@@ -417,7 +450,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.DeleteAttachments)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task DeleteAttachments_WithMalformedAttachmentIdsDelimiter_Returns400()
     {
         var form = new MultipartFormDataContent
@@ -427,14 +460,14 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         };
 
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments", form);
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
     [Operation(Operations.DeleteAttachments)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task DeleteAttachments_WithInvalidAttachmentIdsToken_Returns400()
     {
         var form = new MultipartFormDataContent
@@ -444,23 +477,43 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         };
 
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments", form);
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
     [Operation(Operations.DeleteAttachments)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task DeleteAttachments_WithUnsupportedContentType_Returns415()
     {
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments",
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments",
             new StringContent("objectId=1&attachmentIds=1", Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DownloadAttachment)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
+    public async Task AttachmentInfos_WithValidFeature_ReturnsAttachmentInfos()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments?f=json");
+
+        response.BeSuccessful();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentInfosResponse);
+
+        result.Should().NotBeNull();
+        result!.AttachmentInfos.Should().HaveCount(2);
+        result.AttachmentInfos.Should().Contain(a => a.Name == "test1.txt");
+        result.AttachmentInfos.Should().Contain(a => a.Name == "test2.jpg");
     }
 
     [IntegrationTest]
@@ -501,7 +554,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task AddAttachment_FileTooLarge_Returns413()
     {
         // Arrange - Create a 15MB file (larger than default 10MB limit)
@@ -514,7 +567,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         // Act
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addAttachment", form);
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.RequestEntityTooLarge);

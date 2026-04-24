@@ -441,7 +441,11 @@
       "endpointContains": [
         "/MapServer/WMS"
       ],
-      "operationKeys": [],
+      "operationKeys": [
+        "WMS-1.3.0::GetCapabilities",
+        "WMS-1.3.0::GetMap",
+        "WMS-1.3.0::GetFeatureInfo"
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
@@ -603,7 +607,13 @@
       ],
       "endpointExactMatches": [],
       "endpointContains": [],
-      "operationKeys": [],
+      "operationKeys": [
+        "OData-v4::Metadata",
+        "OData-v4::Batch",
+        "OData-v4::Apply",
+        "OData-v4::Search",
+        "OData-v4::DeltaTracking"
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
@@ -866,9 +876,10 @@
       "displayName": "GeoServices REST Geometry Service",
       "surfaceKind": "http-route-family",
       "protocol": "GeoServices REST Geometry Service",
-      "canonicalIdentifier": "/rest/services/geometry",
+      "canonicalIdentifier": "/rest/services/Utilities/Geometry/GeometryServer + /rest/services/geometry",
       "parentSurfaceId": null,
       "endpointPrefixes": [
+        "/rest/services/Utilities/Geometry/GeometryServer",
         "/rest/services/geometry"
       ],
       "endpointExactMatches": [],

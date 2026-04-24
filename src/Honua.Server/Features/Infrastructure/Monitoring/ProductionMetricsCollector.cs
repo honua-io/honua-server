@@ -138,7 +138,7 @@ internal sealed class ProductionMetricsCollector : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to get upload queue depth from IUploadQueueMetricsProvider");
+            MonitoringLog.UploadQueueDepthRetrievalFailed(_logger, ex);
         }
 
         return 0;

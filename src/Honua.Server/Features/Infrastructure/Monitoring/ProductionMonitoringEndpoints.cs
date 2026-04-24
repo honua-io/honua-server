@@ -316,7 +316,7 @@ internal static class ProductionMonitoringEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Comprehensive health endpoint failed.");
+            MonitoringLog.ComprehensiveHealthEndpointFailed(logger, ex);
             return Results.Problem(
                 title: "Health check failed",
                 detail: "The comprehensive health report could not be generated. See server logs for details.",
@@ -376,7 +376,7 @@ internal static class ProductionMonitoringEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Database resilience metrics endpoint failed.");
+            MonitoringLog.DatabaseResilienceMetricsEndpointFailed(logger, ex);
             return Results.Problem(
                 title: "Database resilience metrics failed",
                 detail: "The database resilience metrics could not be generated. See server logs for details.",

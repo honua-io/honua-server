@@ -56,14 +56,14 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         // Assert
         context.Response.StatusCode.Should().Be(400);
         context.Response.Headers.Should().ContainKey("OData-Version");
-        context.Response.Headers["OData-Version"].ToString().Should().Be("4.0");
+        context.Response.Headers["OData-Version"].ToString().Should().Be("4.01");
 
         var responseBody = GetResponseBody(context);
         var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, _jsonOptions);
 
         odataError.Should().NotBeNull();
         odataError!.Error.Code.Should().Be("BadRequest");
-        odataError.Error.Message.Should().Be("Bad Request");
+        odataError.Error.Message.Should().Be("Invalid filter syntax");
         odataError.Error.Details.Should().NotBeNull();
         odataError.Error.Details!.Should().HaveCountGreaterOrEqualTo(4);
         odataError.Error.Details!.Select(detail => detail.Message)
@@ -174,6 +174,29 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         responseBody.Should().NotContain("\"type\"");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task FormatError_RestWmsAliasPath_ReturnsXmlExceptionReport()
+    {
+        var context = CreateContext("/rest/services/test-service/MapServer/WMS");
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status413PayloadTooLarge,
+            "Payload Too Large",
+            "Request body is too large.");
+
+        var result = StandardErrorResponseFormatter.FormatError(context, errorResponse);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(413);
+        context.Response.ContentType.Should().Be("application/xml; charset=utf-8");
+
+        var responseBody = GetResponseBody(context);
+        responseBody.Should().Contain("<ows:ExceptionReport");
+        responseBody.Should().Contain("Request body is too large.");
+        responseBody.Should().NotContain("\"error\"");
+    }
+
     #endregion
 
     #region GeoServices Error Formatting
@@ -268,7 +291,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         responseBody.Should().NotContain("Internal system error");
 
         var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, _jsonOptions);
-        odataError!.Error.Message.Should().Be("Internal Server Error"); // Sanitized message
+        odataError!.Error.Message.Should().Be("An unexpected error occurred while processing the request.");
     }
 
     [IntegrationTest]
@@ -389,7 +412,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, _jsonOptions);
 
         odataError!.Error.Code.Should().Be("ResourceNotFound");
-        odataError.Error.Message.Should().Be("Not Found");
+        odataError.Error.Message.Should().Be("The requested resource was not found.");
         odataError.Error.Details![0].Message.Should().Be("The requested resource was not found.");
     }
 

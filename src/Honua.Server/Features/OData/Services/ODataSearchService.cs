@@ -13,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 
 namespace Honua.Server.Features.OData.Services;
@@ -71,6 +72,37 @@ internal sealed partial class ODataSearchService
         string? select = null,
         string? expand = null,
         CancellationToken cancellationToken = default)
+        => await HandleSearchAsync(
+            layerId,
+            searchExpression,
+            baseUrl,
+            top,
+            skip,
+            count,
+            filter,
+            orderby,
+            select,
+            expand,
+            context: null,
+            cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// Handles OData $search full-text search operations with PostgreSQL text search.
+    /// </summary>
+    public async Task<ODataSearchResult> HandleSearchAsync(
+        int layerId,
+        string searchExpression,
+        string baseUrl,
+        int? top = null,
+        int? skip = null,
+        bool? count = null,
+        string? filter = null,
+        string? orderby = null,
+        string? select = null,
+        string? expand = null,
+        HttpContext? context = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(searchExpression))
         {
@@ -102,13 +134,16 @@ internal sealed partial class ODataSearchService
 
         var textSearchFilter = BuildTextSearchCondition(searchTerms, layer);
 
-        var query = _queryService.BuildFeatureQuery(
+        var (query, queryError) = await _queryService.BuildFeatureQueryAsync(
             filter,
             orderby,
             top ?? 1000,
             skip,
             layer,
-            out var queryError);
+            select,
+            expand,
+            count,
+            cancellationToken: cancellationToken);
         if (queryError != null)
         {
             throw new ArgumentException(queryError);
@@ -153,7 +188,7 @@ internal sealed partial class ODataSearchService
         if (!string.IsNullOrWhiteSpace(expand))
         {
             var objectIds = result.Items.Select(feature => feature.Id).ToArray();
-            var expanded = await ProcessExpandAsync(expand, layer, objectIds, cancellationToken);
+            var expanded = await ProcessExpandAsync(expand, layer, objectIds, context, cancellationToken);
 
             foreach (var featureData in featuresData)
             {
@@ -485,6 +520,24 @@ internal sealed partial class ODataSearchService
         LayerDefinition layer,
         long[] objectIds,
         CancellationToken cancellationToken)
+        => await ProcessExpandAsync(
+            expand,
+            layer,
+            objectIds,
+            context: null,
+            cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// Processes $expand to fetch related entities for features.
+    /// Handles relationships and foreign key mappings.
+    /// </summary>
+    public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
+        string expand,
+        LayerDefinition layer,
+        long[] objectIds,
+        HttpContext? context,
+        CancellationToken cancellationToken = default)
     {
         var result = new Dictionary<long, Dictionary<string, object?[]>>();
         var requestedIds = objectIds.ToHashSet();
@@ -494,8 +547,8 @@ internal sealed partial class ODataSearchService
             return result;
         }
 
-        // Parse $expand expression and accept expand options, e.g. Rel($select=Name).
-        var relationshipNames = ParseExpandRelationshipNames(expand);
+        // Parse $expand expression and honor supported expand options, e.g. Rel($select=Name).
+        var relationshipOptions = ParseExpandRelationshipOptions(expand);
 
         // Find matching relationships
         foreach (var relationship in layer.LayerRelationships)
@@ -504,17 +557,17 @@ internal sealed partial class ODataSearchService
             var metadataName = ODataUtilityService.BuildRelationshipMetadataName(
                 relationship.Name,
                 relationship.RelationshipId);
-            var outputName = relationshipNames.Contains(relationship.Name)
-                ? relationship.Name
-                : relationshipNames.Contains(sanitizedName)
-                    ? sanitizedName
-                    : relationshipNames.Contains(metadataName)
-                        ? metadataName
-                        : null;
-            if (outputName == null)
+            if (!TryGetExpandRelationshipOptions(
+                    relationshipOptions,
+                    relationship.Name,
+                    sanitizedName,
+                    metadataName,
+                    out var expandOptions))
             {
                 continue;
             }
+
+            var outputName = expandOptions.Name;
 
             // Ensure expanded navigation properties are emitted even when no related rows exist.
             foreach (var objectId in objectIds)
@@ -528,15 +581,39 @@ internal sealed partial class ODataSearchService
                 relationsDict.TryAdd(outputName, Array.Empty<object?>());
             }
 
-            var relatedLayerResult = await _resourceValidator.ValidateLayerAsync(
-                relationship.RelatedLayerId,
-                cancellationToken);
-            if (!relatedLayerResult.IsValid || relatedLayerResult.Resource == null)
+            LayerDefinition? relatedLayer;
+            if (context is not null)
+            {
+                var relatedLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                    context,
+                    relationship.RelatedLayerId,
+                    LayerValidationHelpers.ValidationProtocol.OData,
+                    cancellationToken: cancellationToken);
+                if (!relatedLayerValidation.IsValid)
+                {
+                    continue;
+                }
+
+                relatedLayer = relatedLayerValidation.Layer;
+            }
+            else
+            {
+                var relatedLayerResult = await _resourceValidator.ValidateLayerAsync(
+                    relationship.RelatedLayerId,
+                    cancellationToken);
+                if (!relatedLayerResult.IsValid)
+                {
+                    continue;
+                }
+
+                relatedLayer = relatedLayerResult.Resource;
+            }
+
+            if (relatedLayer == null)
             {
                 continue;
             }
 
-            var relatedLayer = relatedLayerResult.Resource;
             var relatedAxisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
                 relatedLayer.SpatialReference.ToSrid(),
@@ -593,6 +670,12 @@ internal sealed partial class ODataSearchService
                     feature,
                     relatedGeometry,
                     relatedAttributes);
+                if (expandOptions.SelectFields is { Count: > 0 } selectedFields)
+                {
+                    relatedFeatureDict = ODataUtilityService.ApplySelect(
+                        relatedFeatureDict,
+                        string.Join(",", selectedFields));
+                }
 
                 if (relationsDict.TryGetValue(outputName, out var existingRelations))
                 {
@@ -611,12 +694,14 @@ internal sealed partial class ODataSearchService
         return result;
     }
 
-    private static HashSet<string> ParseExpandRelationshipNames(string expand)
+    private sealed record ExpandRelationshipOptions(string Name, HashSet<string>? SelectFields);
+
+    private static Dictionary<string, ExpandRelationshipOptions> ParseExpandRelationshipOptions(string expand)
     {
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var optionsByName = new Dictionary<string, ExpandRelationshipOptions>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(expand))
         {
-            return names;
+            return optionsByName;
         }
 
         var segments = SplitTopLevel(expand);
@@ -633,20 +718,86 @@ internal sealed partial class ODataSearchService
                 throw new ArgumentException("Nested $expand paths are not supported.");
             }
 
+            HashSet<string>? selectFields = null;
             var optionIndex = trimmed.IndexOf('(');
             if (optionIndex >= 0)
             {
+                if (!trimmed.EndsWith(')'))
+                {
+                    throw new ArgumentException("Invalid $expand option syntax.");
+                }
+
+                var optionText = trimmed[(optionIndex + 1)..^1];
+                selectFields = ParseExpandSelectFields(optionText);
                 trimmed = trimmed[..optionIndex];
             }
 
             trimmed = trimmed.Trim();
             if (!string.IsNullOrWhiteSpace(trimmed))
             {
-                names.Add(trimmed);
+                optionsByName[trimmed] = new ExpandRelationshipOptions(trimmed, selectFields);
             }
         }
 
-        return names;
+        return optionsByName;
+    }
+
+    private static HashSet<string>? ParseExpandSelectFields(string optionText)
+    {
+        HashSet<string>? selectFields = null;
+        foreach (var option in optionText.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = option.IndexOf('=', StringComparison.Ordinal);
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var key = option[..separator].Trim();
+            if (!key.Equals("$select", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = option[(separator + 1)..];
+            selectFields = value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(field => !string.IsNullOrWhiteSpace(field))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return selectFields is { Count: > 0 } && !selectFields.Contains("*")
+            ? selectFields
+            : null;
+    }
+
+    private static bool TryGetExpandRelationshipOptions(
+        IReadOnlyDictionary<string, ExpandRelationshipOptions> optionsByName,
+        string relationshipName,
+        string sanitizedName,
+        string metadataName,
+        out ExpandRelationshipOptions options)
+    {
+        if (optionsByName.TryGetValue(relationshipName, out var relationshipOptions))
+        {
+            options = relationshipOptions;
+            return true;
+        }
+
+        if (optionsByName.TryGetValue(sanitizedName, out var sanitizedOptions))
+        {
+            options = sanitizedOptions;
+            return true;
+        }
+
+        if (optionsByName.TryGetValue(metadataName, out var metadataOptions))
+        {
+            options = metadataOptions;
+            return true;
+        }
+
+        options = null!;
+        return false;
     }
 
     private static List<string> SplitTopLevel(string expression)

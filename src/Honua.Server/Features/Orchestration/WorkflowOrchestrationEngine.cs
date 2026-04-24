@@ -728,7 +728,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                     // will fail the dependent with a confusing "could not resolve selector"
                     // error and the run status derivation marks the parent Succeeded-with-null
                     // artifacts. Surface the failure at this step instead so operators see the
-                    // real cause (e.g. "result package not yet available"), and the run fails
+                    // real cause (e.g. terminal result synthesis or artifact publication failure), and the run fails
                     // fast rather than silently skipping artifact chaining.
                     if (artifactsFailure is not null &&
                         (artifacts is null || artifacts.Count == 0) &&
@@ -828,7 +828,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
     }
 
-    private (WorkflowStepStatus Status, DateTimeOffset? NextAttemptAt) ComputeFailureDisposition(
+    private static (WorkflowStepStatus Status, DateTimeOffset? NextAttemptAt) ComputeFailureDisposition(
         WorkflowStepDefinition stepDefinition,
         WorkflowStepState state,
         int completedAttempts,

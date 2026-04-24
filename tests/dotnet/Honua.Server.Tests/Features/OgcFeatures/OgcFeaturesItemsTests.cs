@@ -381,12 +381,16 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_WithInvalidIds_ReturnsBadRequest()
+    public async Task GetItems_WithStringIdsOnNumericIdLayer_ReturnsEmptyCollection()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/features/collections/{TestLayerId}/items?ids=abc");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("features").EnumerateArray().Should().BeEmpty();
     }
 
     [IntegrationTest]

@@ -48,6 +48,7 @@ internal static partial class ODataEndpoints
                     context,
                     query.Filter,
                     query.Select,
+                    query.Orderby,
                     query.Top,
                     query.Skip,
                     query.Skiptoken,
@@ -232,8 +233,8 @@ internal static partial class ODataEndpoints
 
         // POST - Create a new feature (collection)
         var createFeature = endpoints.MapPost("/odata/Features",
-            (HttpContext context, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
-                handler.HandleCreateFeatureAsync(context, null, request, cancellationToken))
+            (HttpContext context, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
+                handler.HandleCreateFeatureAsync(context, null, cancellationToken))
             .WithDisplayName("OData Create Feature")
             .WithName("ODataCreateFeature")
             .WithSummary("Create a new feature")
@@ -245,8 +246,8 @@ internal static partial class ODataEndpoints
 
         // POST - Create a new feature for a layer
         var createLayerFeature = endpoints.MapPost("/odata/Layers({layerId:int})/Features",
-            (HttpContext context, int layerId, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
-                handler.HandleCreateFeatureAsync(context, layerId, request, cancellationToken))
+            (HttpContext context, int layerId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
+                handler.HandleCreateFeatureAsync(context, layerId, cancellationToken))
             .WithDisplayName("OData Create Feature")
             .WithName("ODataCreateLayerFeature")
             .WithSummary("Create a new feature in the specified layer")
@@ -334,8 +335,8 @@ internal static partial class ODataEndpoints
 
         // PATCH - Update an existing feature
         var updateFeature = endpoints.MapPatch("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})",
-            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
-                handler.HandleUpdateFeatureAsync(context, layerId, objectId, request, cancellationToken))
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
+                handler.HandleUpdateFeatureAsync(context, layerId, objectId, cancellationToken))
             .WithDisplayName("OData Update Feature")
             .WithName("ODataUpdateFeature")
             .WithSummary("Update an existing feature")
@@ -346,8 +347,8 @@ internal static partial class ODataEndpoints
         updateFeature.AllowAnonymous();
 
         var updateLayerFeature = endpoints.MapPatch("/odata/Layers({layerId:int})/Features({objectId:long})",
-            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
-                handler.HandleUpdateFeatureAsync(context, layerId, objectId, request, cancellationToken))
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
+                handler.HandleUpdateFeatureAsync(context, layerId, objectId, cancellationToken))
             .WithDisplayName("OData Update Feature (Layer)")
             .WithName("ODataUpdateLayerFeature")
             .WithSummary("Update an existing feature in a layer")
@@ -358,8 +359,8 @@ internal static partial class ODataEndpoints
         updateLayerFeature.AllowAnonymous();
 
         var legacyUpdateFeature = endpoints.MapPatch("/odata/Features({layerId:int},{objectId:long})",
-            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
-                handler.HandleUpdateFeatureAsync(context, layerId, objectId, request, cancellationToken))
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
+                handler.HandleUpdateFeatureAsync(context, layerId, objectId, cancellationToken))
             .WithDisplayName("OData Update Feature (Legacy)")
             .WithName("ODataUpdateFeatureLegacy")
             .WithSummary("Legacy feature key format")
@@ -368,6 +369,43 @@ internal static partial class ODataEndpoints
             .Produces(400)
             .Produces(404);
         legacyUpdateFeature.AllowAnonymous();
+
+        // PUT - Replace an existing feature
+        var replaceFeature = endpoints.MapPut("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})",
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
+                handler.HandleReplaceFeatureAsync(context, layerId, objectId, cancellationToken))
+            .WithDisplayName("OData Replace Feature")
+            .WithName("ODataReplaceFeature")
+            .WithSummary("Replace an existing feature")
+            .WithTags("OData")
+            .Produces<Dictionary<string, object?>>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+        replaceFeature.AllowAnonymous();
+
+        var replaceLayerFeature = endpoints.MapPut("/odata/Layers({layerId:int})/Features({objectId:long})",
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
+                handler.HandleReplaceFeatureAsync(context, layerId, objectId, cancellationToken))
+            .WithDisplayName("OData Replace Feature (Layer)")
+            .WithName("ODataReplaceLayerFeature")
+            .WithSummary("Replace an existing feature in a layer")
+            .WithTags("OData")
+            .Produces<Dictionary<string, object?>>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+        replaceLayerFeature.AllowAnonymous();
+
+        var legacyReplaceFeature = endpoints.MapPut("/odata/Features({layerId:int},{objectId:long})",
+            (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
+                handler.HandleReplaceFeatureAsync(context, layerId, objectId, cancellationToken))
+            .WithDisplayName("OData Replace Feature (Legacy)")
+            .WithName("ODataReplaceFeatureLegacy")
+            .WithSummary("Legacy feature key format")
+            .WithTags("OData")
+            .Produces<Dictionary<string, object?>>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+        legacyReplaceFeature.AllowAnonymous();
 
         // DELETE - Delete a feature
         var deleteFeature = endpoints.MapDelete("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})",

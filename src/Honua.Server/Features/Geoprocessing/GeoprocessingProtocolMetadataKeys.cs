@@ -1,0 +1,35 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+namespace Honua.Server.Features.Geoprocessing;
+
+/// <summary>
+/// Shared protocol metadata keys projected onto geoprocessing jobs and artifacts.
+/// </summary>
+internal static class GeoprocessingProtocolMetadataKeys
+{
+    /// <summary>
+    /// Job spec parameter key storing the GPServer service identifier.
+    /// </summary>
+    public const string GPServerServiceId = "gpserver.serviceId";
+
+    /// <summary>
+    /// Job spec parameter key storing the GPServer task name.
+    /// </summary>
+    public const string GPServerTaskName = "gpserver.taskName";
+
+    /// <summary>
+    /// Job spec parameter key storing the raw GPServer context payload.
+    /// </summary>
+    public const string GPServerContext = "gpserver.context";
+
+    /// <summary>
+    /// Prefix for stable GPServer output parameter names stored on the job spec.
+    /// </summary>
+    public const string GPServerOutputNamePrefix = "gpserver.output.";
+
+    /// <summary>
+    /// Artifact metadata key storing the published GeoServices output parameter name.
+    /// </summary>
+    public const string GeoServicesOutputParameterMetadataKey = "geoservices.output_parameter";
+}

@@ -121,6 +121,72 @@ public class SkiaMapRendererTests
     }
 
     [UnitTest]
+    public void RenderMap_WithHiddenStyleLayer_ReturnsTransparentImage()
+    {
+        using var renderer = new SkiaMapRenderer();
+        var extent = new SkiaMapRenderer.RenderExtent(-1, -1, 1, 1);
+        var feature = new Feature
+        {
+            Id = 1,
+            Geometry = CreateWkbPoint(0, 0),
+            Attributes = ImmutableDictionary<string, object?>.Empty
+        };
+        var styleLayers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"hidden","type":"circle","layout":{"visibility":"none"},"paint":{"circle-radius":20,"circle-color":"#ff0000"}}]""");
+
+        var result = renderer.RenderMap(
+            [feature],
+            styleLayers,
+            extent,
+            64,
+            64,
+            transparent: true,
+            backgroundColor: null,
+            GeometryType.Point);
+
+        HasNonTransparentPixel(result).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void RenderMap_WithZoomContext_AppliesLayerMinMaxZoom()
+    {
+        using var renderer = new SkiaMapRenderer();
+        var extent = new SkiaMapRenderer.RenderExtent(-1, -1, 1, 1);
+        var feature = new Feature
+        {
+            Id = 1,
+            Geometry = CreateWkbPoint(0, 0),
+            Attributes = ImmutableDictionary<string, object?>.Empty
+        };
+        var styleLayers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"gated","type":"circle","minzoom":5,"maxzoom":8,"paint":{"circle-radius":20,"circle-color":"#ff0000"}}]""");
+
+        var hidden = renderer.RenderMap(
+            [feature],
+            styleLayers,
+            extent,
+            64,
+            64,
+            transparent: true,
+            backgroundColor: null,
+            GeometryType.Point,
+            zoom: 4);
+        var visible = renderer.RenderMap(
+            [feature],
+            styleLayers,
+            extent,
+            64,
+            64,
+            transparent: true,
+            backgroundColor: null,
+            GeometryType.Point,
+            zoom: 6);
+
+        HasNonTransparentPixel(hidden).Should().BeFalse();
+        HasNonTransparentPixel(visible).Should().BeTrue();
+    }
+
+    [UnitTest]
     public void RenderLegendSwatch_FillLayer_ReturnsValidPng()
     {
         var layer = new MapLibreStyleLayer { Type = "fill" };
@@ -336,5 +402,22 @@ public class SkiaMapRendererTests
         BitConverter.TryWriteBytes(wkb.AsSpan(5), x);
         BitConverter.TryWriteBytes(wkb.AsSpan(13), y);
         return wkb;
+    }
+
+    private static bool HasNonTransparentPixel(byte[] png)
+    {
+        using var bitmap = SKBitmap.Decode(png);
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                if (bitmap.GetPixel(x, y).Alpha > 0)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

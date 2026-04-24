@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -82,6 +83,38 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
 
         response.Be200Ok();
         response.Content.Headers.ContentType?.MediaType.Should().StartWith("application/vnd.oai.openapi+json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/openapi.json")]
+    public async Task GetOpenApi_DocumentsSecuritySchemesAndProtectedResponses()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/openapi.json");
+
+        response.Be200Ok();
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var securitySchemes = json.RootElement
+            .GetProperty("components")
+            .GetProperty("securitySchemes");
+        securitySchemes.TryGetProperty("ApiKeyAuth", out _).Should().BeTrue();
+        securitySchemes.TryGetProperty("BearerAuth", out _).Should().BeTrue();
+
+        var collections = json.RootElement.GetProperty("paths")
+            .GetProperty("/collections")
+            .GetProperty("get")
+            .GetProperty("responses");
+        collections.TryGetProperty("401", out _).Should().BeTrue();
+        collections.TryGetProperty("403", out _).Should().BeTrue();
+
+        var datasetTile = json.RootElement.GetProperty("paths")
+            .GetProperty("/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")
+            .GetProperty("get");
+        datasetTile.TryGetProperty("security", out var security).Should().BeTrue();
+        security.ValueKind.Should().Be(JsonValueKind.Array);
+        datasetTile.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
+        datasetTile.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -437,6 +470,8 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
             new CatalogMetadata
             {
                 EnabledProtocols = ServiceProtocols.All
+                    .Where(protocol => !string.Equals(protocol, ServiceProtocols.OgcApiTiles, StringComparison.Ordinal))
+                    .ToArray()
             });
     }
 }

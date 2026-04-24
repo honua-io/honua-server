@@ -60,6 +60,10 @@ internal static class GeoprocessingServiceCollectionExtensions
                 new RedisExecutionJobStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
                     sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
+            services.TryAddSingleton<IGeoprocessingResultPackageStore>(sp =>
+                new RedisGeoprocessingResultPackageStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
         }
 
         // Execution admission controls (ticket #739) — rate, concurrency, cost, backpressure

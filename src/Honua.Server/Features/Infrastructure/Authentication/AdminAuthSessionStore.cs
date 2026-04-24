@@ -136,7 +136,7 @@ internal sealed class AdminAuthSessionStore(
         catch (Exception ex)
         {
             _memoryCache.Remove(key);
-            _logger.LogWarning(ex, "Admin auth session store could not persist distributed cache key {CacheKey}.", key);
+            AdminAuthSessionLog.DistributedCachePersistFailed(_logger, key, ex);
             // Surface the failure to the caller so the client retries instead of
             // continuing with a single-instance-only session that breaks the moment
             // another replica serves the next request.
@@ -173,7 +173,7 @@ internal sealed class AdminAuthSessionStore(
             catch (Exception ex)
             {
                 _memoryCache.Remove(key);
-                _logger.LogWarning(ex, "Admin auth session store could not read distributed cache key {CacheKey}.", key);
+                AdminAuthSessionLog.DistributedCacheReadFailed(_logger, key, ex);
                 return null;
             }
         }
@@ -221,7 +221,7 @@ internal sealed class AdminAuthSessionStore(
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Admin auth session store could not remove distributed cache key {CacheKey}.", key);
+            AdminAuthSessionLog.DistributedCacheRemoveFailed(_logger, key, ex);
         }
     }
 

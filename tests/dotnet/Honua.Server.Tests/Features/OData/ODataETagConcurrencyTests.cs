@@ -234,5 +234,8 @@ public sealed class ODataETagConcurrencyTests : IAsyncLifetime
         response.Headers.Location.Should().NotBeNull("POST 201 should include Location header");
         response.Headers.TryGetValues("OData-EntityId", out var entityIdValues).Should().BeTrue(
             "POST 201 should include OData-EntityId header");
+        response.Headers.TryGetValues("EntityId", out var odata401EntityIdValues).Should().BeTrue(
+            "OData 4.01 POST 201 should include EntityId header");
+        odata401EntityIdValues.Should().Contain(entityIdValues!.Single());
     }
 }

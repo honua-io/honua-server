@@ -183,6 +183,31 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_PostFormBody_ReturnsSuccess()
+    {
+        var calcExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "name", sqlExpression = "'Updated From Post'" }
+        });
+        using var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("calcExpression", calcExpression),
+            new KeyValuePair<string, string>("f", "json")
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseContent);
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_MissingCalcExpression_ReturnsBadRequest()
     {

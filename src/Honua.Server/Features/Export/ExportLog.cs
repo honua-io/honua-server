@@ -41,6 +41,14 @@ internal static partial class ExportLog
     [LoggerMessage(7756, LogLevel.Error,
         "Async export failed: jobId={JobId}")]
     public static partial void AsyncExportFailed(ILogger logger, string jobId, Exception exception);
+
+    [LoggerMessage(7757, LogLevel.Warning,
+        "Export background worker faulted and will restart.")]
+    public static partial void BackgroundWorkerRestarting(ILogger logger, Exception exception);
+
+    [LoggerMessage(7758, LogLevel.Warning,
+        "Failed to clean up export scratch directory: {Path}")]
+    public static partial void ScratchDirectoryCleanupFailed(ILogger logger, string path, Exception exception);
 }
 
 /// <summary>

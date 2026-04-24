@@ -16,6 +16,7 @@ internal sealed class BufferParameters
     public int? BufferSR { get; init; }
     public required double[] Distances { get; init; }
     public string? Unit { get; init; }
+    public double DistanceUnitToMetersFactor { get; init; } = 1.0;
     public bool UnionResults { get; init; }
     public bool Geodesic { get; init; }
 }
@@ -66,9 +67,21 @@ internal sealed class UnionParameters
 /// <summary>
 /// Parsed parameters for area and length operations.
 /// </summary>
+internal enum MeasurementCalculationType
+{
+    Planar,
+    Geodesic,
+    PreserveShape
+}
+
+/// <summary>
+/// Parsed parameters for area and length operations.
+/// </summary>
 internal sealed class MeasurementParameters
 {
     public required string[] GeometryJsonStrings { get; init; }
     public int SR { get; init; }
-    public string? Unit { get; init; }
+    public string? AreaUnit { get; init; }
+    public string? LengthUnit { get; init; }
+    public MeasurementCalculationType CalculationType { get; init; }
 }

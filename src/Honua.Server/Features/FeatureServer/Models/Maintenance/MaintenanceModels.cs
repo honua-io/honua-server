@@ -221,6 +221,12 @@ public sealed class DomainInfo
     public string? FieldName { get; set; }
 
     /// <summary>
+    /// GeoServices field type this domain applies to.
+    /// </summary>
+    [JsonPropertyName("fieldType")]
+    public string? FieldType { get; set; }
+
+    /// <summary>
     /// Layer identifier this domain belongs to.
     /// </summary>
     [JsonPropertyName("layerId")]
@@ -231,6 +237,24 @@ public sealed class DomainInfo
     /// </summary>
     [JsonPropertyName("codedValues")]
     public DomainCodedValueInfo[]? CodedValues { get; set; }
+
+    /// <summary>
+    /// Min/max range values when the domain type is range.
+    /// </summary>
+    [JsonPropertyName("range")]
+    public object[]? Range { get; set; }
+
+    /// <summary>
+    /// Merge policy for the domain, when defined.
+    /// </summary>
+    [JsonPropertyName("mergePolicy")]
+    public string? MergePolicy { get; set; }
+
+    /// <summary>
+    /// Split policy for the domain, when defined.
+    /// </summary>
+    [JsonPropertyName("splitPolicy")]
+    public string? SplitPolicy { get; set; }
 }
 
 /// <summary>
@@ -245,10 +269,10 @@ public sealed class DomainCodedValueInfo
     public required string Name { get; set; }
 
     /// <summary>
-    /// Raw coded value serialized as a string.
+    /// Raw coded value serialized using the schema-defined data type.
     /// </summary>
     [JsonPropertyName("code")]
-    public required string Code { get; set; }
+    public required object? Code { get; set; }
 }
 
 /// <summary>

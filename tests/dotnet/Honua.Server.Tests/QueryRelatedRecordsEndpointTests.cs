@@ -664,7 +664,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
         errorElement.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString() ?? string.Empty)
-            .Should().Contain(detail => detail.Contains("Invalid query parameters"));
+            .Should().Contain(detail => detail.Contains("SQL injection attempt detected"));
     }
 
     [IntegrationTest]

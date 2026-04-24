@@ -16,15 +16,14 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
-    private const int DomainSamplingLimit = 256;
-    private const int DomainMaxCodedValues = 16;
-
     private static async Task<IResult> HandleServiceAppend(
         string serviceId,
         HttpContext context)
@@ -33,6 +32,12 @@ internal static partial class FeatureServerEndpoints
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var authorizationError = await RequireServiceWriteAccessBeforeBodyAsync(serviceId, context, cancellationToken);
+        if (authorizationError != null)
+        {
+            return authorizationError;
+        }
+
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
@@ -105,6 +110,12 @@ internal static partial class FeatureServerEndpoints
         activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
+        if (authorizationError != null)
+        {
+            return authorizationError;
+        }
+
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
@@ -234,7 +245,29 @@ internal static partial class FeatureServerEndpoints
             return rbacError;
         }
 
-        var values = ToCaseInsensitiveDictionary(context.Request.Query);
+        IReadOnlyDictionary<string, StringValues> values = ToCaseInsensitiveDictionary(context.Request.Query);
+        if (HttpMethods.IsPost(context.Request.Method))
+        {
+            var (bodyValues, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
+            if (bodyValues == null)
+            {
+                if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+                {
+                    return CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                }
+
+                return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
+            }
+
+            var mergedValues = ToCaseInsensitiveDictionary(context.Request.Query);
+            foreach (var pair in bodyValues)
+            {
+                mergedValues[pair.Key] = pair.Value;
+            }
+
+            values = mergedValues;
+        }
+
         var calcExpression = GetValueString(values, "calcExpression");
         if (string.IsNullOrWhiteSpace(calcExpression))
         {
@@ -386,10 +419,32 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<IResult> HandleQueryDomains(
         string serviceId,
-        HttpContext context)
+        HttpContext context,
+        [FromServices] ICommonQueryValidator queryValidator)
     {
-        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.queryDomains");
-        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.QueryDomains, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
+        var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
+            ? formatValue.ToString()
+            : null;
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
+        }
+
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "queryDomains",
+            HonuaTelemetry.Protocols.FeatureServer,
+            "service",
+            context.TraceIdentifier);
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -405,29 +460,65 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        var values = ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!TryResolveRequestedServiceLayers(service, values, out var selectedLayers, out _, out var selectionError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [selectionError ?? "Invalid layer selection."]);
+        }
+
+        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, selectedLayers, service);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var domains = await BuildDomainsAsync(service, featureReader, cancellationToken);
+        var domains = FilterAccessibleLayers(context, service, selectedLayers)
+            .SelectMany(static layer => layer.Fields
+                .Where(static field => !field.IsGeometry)
+                .Select(field => MapQueryDomainInfo(layer, field))
+                .Where(static domain => domain != null)!
+                .Cast<DomainInfo>())
+            .ToArray();
 
         var response = new QueryDomainsResponse
         {
             Domains = domains
         };
 
+        scope.SetSuccess(domains.Length);
         return Results.Json(response, FeatureServerJsonContext.Default.QueryDomainsResponse, contentType: "application/json");
     }
 
     private static async Task<IResult> HandleQueryRelationships(
         string serviceId,
-        HttpContext context)
+        HttpContext context,
+        [FromServices] ICommonQueryValidator queryValidator)
     {
-        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.queryRelationships");
-        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.Relationships, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
+        var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
+            ? formatValue.ToString()
+            : null;
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
+        }
+
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "relationships",
+            HonuaTelemetry.Protocols.FeatureServer,
+            "service",
+            context.TraceIdentifier);
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -443,18 +534,25 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
         if (accessError != null)
         {
             return accessError;
         }
 
+        var accessibleLayers = FilterAccessibleLayers(context, service, service.Layers);
+        var accessibleLayerIds = accessibleLayers
+            .Select(static layer => layer.Id)
+            .ToHashSet();
+
         var response = new QueryRelationshipsResponse
         {
             Relationships =
             [
-                ..service.Layers.SelectMany(layer =>
-                    layer.LayerRelationships.Select(relationship => new ServiceRelationshipInfo
+                ..accessibleLayers.SelectMany(layer =>
+                    layer.LayerRelationships
+                        .Where(relationship => accessibleLayerIds.Contains(relationship.RelatedLayerId))
+                        .Select(relationship => new ServiceRelationshipInfo
                     {
                         Id = relationship.RelationshipId,
                         Name = relationship.Name,
@@ -469,152 +567,8 @@ internal static partial class FeatureServerEndpoints
             ]
         };
 
+        scope.SetSuccess(response.Relationships?.Length ?? 0);
         return Results.Json(response, FeatureServerJsonContext.Default.QueryRelationshipsResponse, contentType: "application/json");
-    }
-
-    private static async Task<DomainInfo[]> BuildDomainsAsync(
-        ServiceDefinition service,
-        IFeatureReader featureReader,
-        CancellationToken cancellationToken)
-    {
-        var domains = new List<DomainInfo>();
-
-        foreach (var layer in service.Layers)
-        {
-            foreach (var field in layer.Fields.Where(static candidate => !candidate.IsGeometry))
-            {
-                var domain = await TryBuildDomainForFieldAsync(layer, field, featureReader, cancellationToken);
-                if (domain != null)
-                {
-                    domains.Add(domain);
-                }
-            }
-        }
-
-        return domains.ToArray();
-    }
-
-    private static async Task<DomainInfo?> TryBuildDomainForFieldAsync(
-        LayerDefinition layer,
-        FieldDefinition field,
-        IFeatureReader featureReader,
-        CancellationToken cancellationToken)
-    {
-        if (field.Type == FieldType.Boolean)
-        {
-            return new DomainInfo
-            {
-                Type = "codedValue",
-                Name = $"{layer.Name}_{field.Name}_bool",
-                FieldName = field.Name,
-                LayerId = layer.Id,
-                CodedValues =
-                [
-                    new DomainCodedValueInfo { Name = "false", Code = "0" },
-                    new DomainCodedValueInfo { Name = "true", Code = "1" }
-                ]
-            };
-        }
-
-        if (field.Type != FieldType.String)
-        {
-            return null;
-        }
-
-        var codedValues = await TrySampleCodedValuesAsync(
-            featureReader,
-            layer.Id,
-            field.Name,
-            cancellationToken);
-
-        if (codedValues.Length < 2)
-        {
-            return null;
-        }
-
-        return new DomainInfo
-        {
-            Type = "codedValue",
-            Name = $"{layer.Name}_{field.Name}_domain",
-            FieldName = field.Name,
-            LayerId = layer.Id,
-            CodedValues = codedValues
-        };
-    }
-
-    private static async Task<DomainCodedValueInfo[]> TrySampleCodedValuesAsync(
-        IFeatureReader featureReader,
-        int layerId,
-        string fieldName,
-        CancellationToken cancellationToken)
-    {
-        var query = new FeatureQuery
-        {
-            OutFields = [fieldName],
-            Limit = DomainSamplingLimit
-        };
-
-        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
-        if (result.Items.IsDefaultOrEmpty)
-        {
-            return [];
-        }
-
-        var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var feature in result.Items)
-        {
-            if (!feature.Attributes.TryGetValue(fieldName, out var raw) || raw == null)
-            {
-                continue;
-            }
-
-            var normalized = NormalizeDomainValue(raw);
-            if (string.IsNullOrWhiteSpace(normalized))
-            {
-                continue;
-            }
-
-            unique.Add(normalized);
-            if (unique.Count > DomainMaxCodedValues)
-            {
-                return [];
-            }
-        }
-
-        return unique
-            .OrderBy(static value => value, StringComparer.OrdinalIgnoreCase)
-            .Select(static value => new DomainCodedValueInfo
-            {
-                Name = value,
-                Code = value
-            })
-            .ToArray();
-    }
-
-    private static string? NormalizeDomainValue(object raw)
-    {
-        return raw switch
-        {
-            null => null,
-            bool boolValue => boolValue ? "true" : "false",
-            string textValue => string.IsNullOrWhiteSpace(textValue) ? null : textValue.Trim(),
-            JsonElement jsonElement => NormalizeJsonElementValue(jsonElement),
-            IFormattable formatted => formatted.ToString(null, CultureInfo.InvariantCulture),
-            _ => raw.ToString()
-        };
-    }
-
-    private static string? NormalizeJsonElementValue(JsonElement value)
-    {
-        return value.ValueKind switch
-        {
-            JsonValueKind.Null => null,
-            JsonValueKind.String => value.GetString(),
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            JsonValueKind.Number => value.ToString(),
-            _ => value.GetRawText()
-        };
     }
 
     /// <summary>

@@ -521,14 +521,12 @@ an unwired composition cannot accidentally advertise an empty promotion
 surface.
 
 `honua://jobs/{jobId}/results` is the reserved output channel for the
-map-package artifact. The wire shape is stable so clients can bind today;
-`mapPackageId`, `artifacts`, `workspaceRefs`, and `provenance` will flow
-through from `AnalysisResultPackage` when the execution engine exposes a
-stored package. Until result storage lands, the canonical
-`IGeoprocessingJobService.GetJobResultsAsync` implementation still returns
-`not_found` after validating that the job exists and has reached a terminal
-state, and the MCP resource mirrors that behavior rather than fabricating a
-second lifecycle model.
+map-package artifact. The wire shape is stable so clients can bind today.
+When a persisted `AnalysisResultPackage` exists, the resource returns it
+directly; otherwise the canonical `IGeoprocessingJobService.GetJobResultsAsync`
+implementation synthesizes a terminal package from the durable execution-job
+record and published artifact references. MCP therefore stays aligned with the
+canonical job lifecycle instead of inventing a second result model.
 
 #### Resource payload notes
 

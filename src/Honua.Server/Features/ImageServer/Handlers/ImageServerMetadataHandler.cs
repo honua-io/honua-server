@@ -30,13 +30,10 @@ internal sealed class ImageServerMetadataHandler
     private const double MaxPixelSize = 1000.0;
 
     /// <summary>Maximum image height in pixels for export requests.</summary>
-    private const int MaxImageHeight = 4100;
+    private const int MaxImageHeight = 4096;
 
     /// <summary>Maximum image width in pixels for export requests.</summary>
-    private const int MaxImageWidth = 15000;
-    private const int MaxTileZoom = 23;
-    private const int TileSize = 256;
-    private const int TileDpi = 96;
+    private const int MaxImageWidth = 4096;
 
     /// <summary>Maximum number of records returned in catalog queries.</summary>
     private const int MaxRecordCount = 1000;
@@ -135,13 +132,13 @@ internal sealed class ImageServerMetadataHandler
                 // NOTE: Mensuration is intentionally omitted until the /measure endpoint
                 // is implemented. Re-add it alongside the handler so capability advertising
                 // stays in lockstep with routed operations.
-                Capabilities = "Catalog,Image,Metadata,Pixels,Statistics,Tilemap",
+                Capabilities = "Catalog,Image,Metadata,Pixels,Statistics",
                 MaxImageHeight = MaxImageHeight,
                 MaxImageWidth = MaxImageWidth,
                 MaxRecordCount = MaxRecordCount,
-                SingleFusedMapCache = true,
-                CacheType = "Map",
-                TileInfo = BuildTileInfo(),
+                SingleFusedMapCache = false,
+                CacheType = null,
+                TileInfo = null,
                 HasHistograms = true,
                 TimeInfo = BuildTimeInfo(layer.Metadata?.TimeInfo)
             };
@@ -239,42 +236,4 @@ internal sealed class ImageServerMetadataHandler
         };
     }
 
-    private static TileInfo BuildTileInfo()
-    {
-        const double webMercatorOrigin = global::Honua.Core.Features.Shared.Models.SpatialConstants.WebMercatorExtent;
-        const double pixelSize = 0.00028;
-
-        var lods = new LevelOfDetail[MaxTileZoom + 1];
-        for (var z = 0; z <= MaxTileZoom; z++)
-        {
-            var matrixSize = 1L << z;
-            var resolution = 2.0 * webMercatorOrigin / (TileSize * (double)matrixSize);
-            var scale = resolution / pixelSize;
-            lods[z] = new LevelOfDetail
-            {
-                Level = z,
-                Resolution = resolution,
-                Scale = scale
-            };
-        }
-
-        return new TileInfo
-        {
-            Rows = TileSize,
-            Cols = TileSize,
-            Dpi = TileDpi,
-            Format = "PNG",
-            Origin = new Point
-            {
-                X = -webMercatorOrigin,
-                Y = webMercatorOrigin
-            },
-            SpatialReference = new SpatialReference
-            {
-                Wkid = 3857,
-                LatestWkid = 3857
-            },
-            Lods = lods
-        };
-    }
 }

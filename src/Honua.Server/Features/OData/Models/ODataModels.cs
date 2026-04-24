@@ -203,11 +203,27 @@ public sealed class ErrorDetail
 /// </summary>
 public sealed class ODataFeatureRequest
 {
+    private ODataSpatialGeometry? _geometry;
+
     /// <summary>
     /// Feature geometry in OData spatial (GeoJSON) format
     /// </summary>
     [JsonPropertyName("Geometry")]
-    public ODataSpatialGeometry? Geometry { get; set; }
+    public ODataSpatialGeometry? Geometry
+    {
+        get => _geometry;
+        set
+        {
+            _geometry = value;
+            GeometrySpecified = true;
+        }
+    }
+
+    /// <summary>
+    /// Whether the request explicitly included the Geometry property, including a null value.
+    /// </summary>
+    [JsonIgnore]
+    public bool GeometrySpecified { get; private set; }
 
     /// <summary>
     /// Backward-compatible attributes payload

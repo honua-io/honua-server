@@ -71,11 +71,25 @@ internal static class KmlFormatReader
                 {
                     case "name":
                         var name = await reader.ReadElementContentAsStringAsync();
-                        attributes.Add("name", name);
+                        AddOrReplaceAttribute(attributes, "name", name);
                         break;
                     case "description":
                         var desc = await reader.ReadElementContentAsStringAsync();
-                        attributes.Add("description", desc);
+                        AddOrReplaceAttribute(attributes, "description", desc);
+                        break;
+                    case "ExtendedData":
+                        await ParseExtendedDataAsync(reader, attributes, cancellationToken);
+                        break;
+                    case "Data":
+                        await ParseDataElementAsync(reader, attributes, cancellationToken);
+                        break;
+                    case "SimpleData":
+                        var simpleDataName = reader.GetAttribute("name");
+                        var simpleDataValue = await reader.ReadElementContentAsStringAsync();
+                        if (!string.IsNullOrWhiteSpace(simpleDataName))
+                        {
+                            AddOrReplaceAttribute(attributes, simpleDataName, simpleDataValue);
+                        }
                         break;
                     case "Point":
                         geometry = await ParsePointAsync(reader, geometryFactory, cancellationToken);
@@ -86,11 +100,90 @@ internal static class KmlFormatReader
                     case "Polygon":
                         geometry = await ParsePolygonAsync(reader, geometryFactory, cancellationToken);
                         break;
+                    case "MultiGeometry":
+                        geometry = await ParseMultiGeometryAsync(reader, geometryFactory, cancellationToken);
+                        break;
                 }
             }
         }
 
         return new Feature(geometry, attributes);
+    }
+
+    private static async Task ParseExtendedDataAsync(
+        XmlReader reader,
+        AttributesTable attributes,
+        CancellationToken cancellationToken)
+    {
+        while (await reader.ReadAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "ExtendedData")
+                break;
+
+            if (reader.NodeType != XmlNodeType.Element)
+                continue;
+
+            if (reader.LocalName == "Data")
+            {
+                await ParseDataElementAsync(reader, attributes, cancellationToken);
+            }
+            else if (reader.LocalName == "SimpleData")
+            {
+                var name = reader.GetAttribute("name");
+                var value = await reader.ReadElementContentAsStringAsync();
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    AddOrReplaceAttribute(attributes, name, value);
+                }
+            }
+        }
+    }
+
+    private static async Task ParseDataElementAsync(
+        XmlReader reader,
+        AttributesTable attributes,
+        CancellationToken cancellationToken)
+    {
+        var name = reader.GetAttribute("name");
+        string? value = null;
+        var dataDepth = reader.Depth;
+
+        if (!reader.IsEmptyElement)
+        {
+            while (await reader.ReadAsync())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (reader.NodeType == XmlNodeType.EndElement &&
+                    reader.Depth == dataDepth &&
+                    reader.LocalName == "Data")
+                {
+                    break;
+                }
+
+                if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "value")
+                {
+                    value = await reader.ReadElementContentAsStringAsync();
+                    if (reader.NodeType == XmlNodeType.EndElement &&
+                        reader.Depth == dataDepth &&
+                        reader.LocalName == "Data")
+                    {
+                        break;
+                    }
+                }
+                else if (reader.NodeType is XmlNodeType.Text or XmlNodeType.CDATA && value == null)
+                {
+                    value = reader.Value;
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(name) && value != null)
+        {
+            AddOrReplaceAttribute(attributes, name, value);
+        }
     }
 
     private static async Task<NtsGeometry?> ParsePointAsync(
@@ -108,12 +201,10 @@ internal static class KmlFormatReader
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "coordinates")
             {
                 var coords = await reader.ReadElementContentAsStringAsync();
-                var parts = coords.Trim().Split(',');
-                if (parts.Length >= 2 &&
-                    double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon) &&
-                    double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
+                var coordinates = ParseCoordinates(coords);
+                if (coordinates.Length > 0)
                 {
-                    return factory.CreatePoint(new Coordinate(lon, lat));
+                    return factory.CreatePoint(coordinates[0]);
                 }
             }
         }
@@ -141,6 +232,41 @@ internal static class KmlFormatReader
             }
         }
         return null;
+    }
+
+    private static async Task<NtsGeometry?> ParseMultiGeometryAsync(
+        XmlReader reader,
+        GeometryFactory factory,
+        CancellationToken cancellationToken)
+    {
+        var geometries = new List<NtsGeometry>();
+
+        while (await reader.ReadAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "MultiGeometry")
+                break;
+
+            if (reader.NodeType != XmlNodeType.Element)
+                continue;
+
+            NtsGeometry? geometry = reader.LocalName switch
+            {
+                "Point" => await ParsePointAsync(reader, factory, cancellationToken),
+                "LineString" => await ParseLineStringAsync(reader, factory, cancellationToken),
+                "Polygon" => await ParsePolygonAsync(reader, factory, cancellationToken),
+                "MultiGeometry" => await ParseMultiGeometryAsync(reader, factory, cancellationToken),
+                _ => null
+            };
+
+            if (geometry != null)
+            {
+                geometries.Add(geometry);
+            }
+        }
+
+        return geometries.Count == 0 ? null : factory.BuildGeometry(geometries);
     }
 
     private static async Task<NtsGeometry?> ParsePolygonAsync(
@@ -215,10 +341,28 @@ internal static class KmlFormatReader
                 double.TryParse(components[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon) &&
                 double.TryParse(components[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
             {
-                coords.Add(new Coordinate(lon, lat));
+                if (components.Length >= 3 &&
+                    double.TryParse(components[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var altitude))
+                {
+                    coords.Add(new CoordinateZ(lon, lat, altitude));
+                }
+                else
+                {
+                    coords.Add(new Coordinate(lon, lat));
+                }
             }
         }
 
         return coords.ToArray();
+    }
+
+    private static void AddOrReplaceAttribute(AttributesTable attributes, string name, object? value)
+    {
+        if (attributes.Exists(name))
+        {
+            attributes.DeleteAttribute(name);
+        }
+
+        attributes.Add(name, value);
     }
 }

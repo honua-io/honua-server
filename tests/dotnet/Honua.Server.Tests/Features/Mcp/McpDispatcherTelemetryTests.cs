@@ -29,6 +29,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// <c>tools/call</c> and <c>resources/read</c> auth short-circuits.
 /// </summary>
 [Protocol(Protocols.Mcp)]
+[Collection("McpTelemetry")]
 public sealed class McpDispatcherTelemetryTests
 {
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();

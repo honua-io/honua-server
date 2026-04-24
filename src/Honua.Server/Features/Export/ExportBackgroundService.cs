@@ -50,7 +50,7 @@ internal sealed class ExportBackgroundService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Export background worker faulted and will restart.");
+                ExportLog.BackgroundWorkerRestarting(_logger, ex);
                 await Task.Delay(WorkerRestartDelay, stoppingToken).ConfigureAwait(false);
             }
         }

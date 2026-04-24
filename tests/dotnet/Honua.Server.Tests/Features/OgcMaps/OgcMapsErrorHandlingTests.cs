@@ -30,14 +30,12 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_NonIntegerCollectionId_ReturnsBadRequest()
+    public async Task GetCollectionMap_NonIntegerCollectionId_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             "/ogc/maps/collections/not-a-number/map?f=png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Collection ID must be a valid integer");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -55,25 +53,23 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_FloatCollectionId_ReturnsBadRequest()
+    public async Task GetCollectionMap_FloatCollectionId_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             "/ogc/maps/collections/1.5/map?f=png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Collection ID must be a valid integer");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_NegativeCollectionId_ReturnsBadRequest()
+    public async Task GetCollectionMap_NegativeCollectionId_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             "/ogc/maps/collections/-1/map?f=png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -110,27 +106,51 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.GetTileMetadata)]
-    [Endpoint("GET /ogc/maps/collections/{collectionId}/map/tiles")]
-    public async Task GetMapTileSets_NonIntegerCollectionId_ReturnsBadRequest()
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    public async Task GetCollectionMap_DatetimeParameter_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(
-            "/ogc/maps/collections/abc/map/tiles");
+            $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90&datetime=2024-01-01T00:00:00Z&f=png");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Collection ID must be a valid integer");
+        content.Should().Contain("datetime parameter is not currently supported");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    public async Task GetCollectionMap_TransparentParameter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90&transparent=true&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("transparent parameter is not currently supported");
     }
 
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map/tiles")]
-    public async Task GetMapTileSets_NegativeCollectionId_ReturnsBadRequest()
+    public async Task GetMapTileSets_NonIntegerCollectionId_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/maps/collections/abc/map/tiles");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map/tiles")]
+    public async Task GetMapTileSets_NegativeCollectionId_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             "/ogc/maps/collections/-1/map/tiles");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -188,38 +208,34 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/map")]
-    public async Task GetDatasetMap_AllInvalidCollectionIds_ReturnsBadRequest()
+    public async Task GetDatasetMap_AllUnknownCollectionIds_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             "/ogc/maps/map?collections=abc,def,ghi&bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Invalid collection IDs");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/map")]
-    public async Task GetDatasetMap_MixedValidInvalidIds_ReturnsBadRequest()
+    public async Task GetDatasetMap_MixedValidUnknownIds_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/map?collections=abc,{TestLayerId}&bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Invalid collection IDs");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/map")]
-    public async Task GetDatasetMap_NegativeCollectionId_ReturnsBadRequest()
+    public async Task GetDatasetMap_NegativeCollectionId_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             "/ogc/maps/map?collections=-1&bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

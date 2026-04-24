@@ -152,6 +152,8 @@ public class ImageServerCatalogQueryHandlerTests
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
             ["returnIdsOnly"] = "true",
+            ["resultOffset"] = "1",
+            ["resultRecordCount"] = "1",
         };
 
         var context = CreateImageServerContext();
@@ -209,6 +211,7 @@ public class ImageServerCatalogQueryHandlerTests
         jsonResult.Value.Extent.YMin.Should().Be(-5);
         jsonResult.Value.Extent.XMax.Should().Be(10);
         jsonResult.Value.Extent.YMax.Should().Be(5);
+        jsonResult.Value.Extent.SpatialReference.Wkid.Should().Be(4326);
     }
 
     [UnitTest]
@@ -407,6 +410,29 @@ public class ImageServerCatalogQueryHandlerTests
         feature.Geometry.Should().NotBeNull();
         feature.Geometry!.SpatialReference.Wkid.Should().Be(3857);
         feature.Geometry.SpatialReference.LatestWkid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnExtentOnly_IgnoresOutSrWhenNoReprojectionOccurs()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "first", xMin: -10, yMin: -5, xMax: 10, yMax: 5, srid: 3857),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["returnExtentOnly"] = "true",
+            ["outSR"] = "4326",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogExtentResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Extent.SpatialReference.Wkid.Should().Be(3857);
+        jsonResult.Value.Extent.SpatialReference.LatestWkid.Should().Be(3857);
     }
 
     [UnitTest]

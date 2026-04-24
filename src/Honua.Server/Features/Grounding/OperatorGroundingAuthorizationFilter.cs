@@ -47,7 +47,7 @@ internal sealed class OperatorGroundingAuthorizationFilter : IGroundingAuthoriza
                 ResourceId = candidate.Id
             };
 
-            var decision = _evaluator.Evaluate(principal, request);
+            var decision = _evaluator.EvaluateAsync(principal, request).ConfigureAwait(false).GetAwaiter().GetResult();
             if (decision.IsAllowed)
             {
                 allowed.Add(candidate);

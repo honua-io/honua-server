@@ -130,7 +130,7 @@ internal static class HealthEndpoints
         }
         catch (Exception ex)
         {
-            loggerFactory.CreateLogger("Honua.HealthCheck").LogError(ex, "Failed to retrieve performance metrics");
+            HealthEndpointsLog.PerformanceMetricsFailed(loggerFactory.CreateLogger("Honua.HealthCheck"), ex);
 
             var response = new HealthPerformanceErrorResponse
             {

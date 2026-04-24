@@ -74,7 +74,7 @@ internal sealed class RedisHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Redis health check failed");
+            RedisHealthCheckLog.HealthCheckFailed(_logger, ex);
             return HealthCheckResult.Unhealthy("Redis health check failed", ex);
         }
     }

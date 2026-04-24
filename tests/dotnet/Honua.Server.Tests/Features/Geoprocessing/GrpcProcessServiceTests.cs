@@ -9,9 +9,11 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Geoprocessing;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
@@ -32,14 +34,15 @@ public sealed class GrpcProcessServiceTests
     private readonly IJobCancellationNotifier _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
     private readonly IOperatorAuthorizationEvaluator _authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
     private readonly IOperatorApprovalEvaluator _approvalEvaluator = Substitute.For<IOperatorApprovalEvaluator>();
+    private readonly IGeoprocessingResultPackageStore _resultPackageStore = Substitute.For<IGeoprocessingResultPackageStore>();
     private readonly IProcessCatalog _processCatalog = new BuiltInProcessCatalog();
     private readonly HonuaProcessService _sut;
 
     public GrpcProcessServiceTests()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.Allowed());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Allowed()));
 
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
@@ -50,7 +53,8 @@ public sealed class GrpcProcessServiceTests
             _authEvaluator, _approvalEvaluator,
             _processCatalog,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
-            _jobStore);
+            _jobStore,
+            resultPackageStore: _resultPackageStore);
 
         _sut = new HonuaProcessService(
             jobService,
@@ -240,8 +244,8 @@ public sealed class GrpcProcessServiceTests
         // so that unauthorized callers get 403 rather than an implementation-detail
         // 501 (consistent with the contract: auth on all mutating RPCs).
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.Forbidden());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden()));
 
         var request = new Proto.ExecutePlanRequest { Plan = CreateValidPlan() };
 
@@ -373,17 +377,38 @@ public sealed class GrpcProcessServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
-    public async Task GetJobResults_WithTerminalJob_ThrowsNotFound()
+    public async Task GetJobResults_WithTerminalJob_ReturnsResultPackage()
     {
-        var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Succeeded);
+        var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Succeeded) with
+        {
+            Version = 5,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ArtifactReferences = ["https://example.test/artifacts/output.geojson"],
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test-workload",
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.GeoprocessingPlanId] = "plan-1",
+                    [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "geometry.buffer",
+                    [ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds] = "FeatureLayer"
+                }
+            }
+        };
         _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
+        _resultPackageStore.GetAsync("job-123", Arg.Any<CancellationToken>())
+            .Returns((AnalysisResultPackage?)null);
 
         var request = new Proto.GetJobResultsRequest { JobId = "job-123" };
 
-        var act = async () => await _sut.GetJobResults(request, CreateCallContext());
+        var response = await _sut.GetJobResults(request, CreateCallContext());
 
-        var ex = await act.Should().ThrowAsync<RpcException>();
-        ex.Which.StatusCode.Should().Be(StatusCode.NotFound);
+        response.ResultPackageId.Should().Be("job-123:v5");
+        response.Status.Should().Be(Proto.WorkflowStatus.Completed);
+        response.Artifacts.Should().ContainSingle();
     }
 
     // -----------------------------------------------------------------------
@@ -760,8 +785,8 @@ public sealed class GrpcProcessServiceTests
     public async Task ValidatePlan_Unauthenticated_ThrowsUnauthenticated()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.RequiresAuth());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.RequiresAuth()));
 
         var request = new Proto.ValidatePlanRequest { Plan = CreateValidPlan() };
 
@@ -799,8 +824,8 @@ public sealed class GrpcProcessServiceTests
     public async Task SubmitPlanJob_Unauthorized_ThrowsPermissionDenied()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.Forbidden());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden()));
 
         var request = new Proto.SubmitPlanJobRequest { Plan = CreateValidPlan() };
 
@@ -820,8 +845,8 @@ public sealed class GrpcProcessServiceTests
     public async Task ValidatePlan_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.RequiresAuth());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.RequiresAuth()));
 
         var request = new Proto.ValidatePlanRequest
         {
@@ -850,8 +875,8 @@ public sealed class GrpcProcessServiceTests
     public async Task SubmitPlanJob_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.RequiresAuth());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.RequiresAuth()));
 
         var request = new Proto.SubmitPlanJobRequest
         {

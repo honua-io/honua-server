@@ -345,7 +345,7 @@ internal sealed class DuckDBFeatureStore :
             return QueryResult<EncodedGeoJsonFeature>.Empty();
         }
 
-        var totalCount = ExtractTotalCount(features[0].Attributes, features.Length);
+        var totalCount = ExtractTotalCount(features.Length > 0 ? features[0].Attributes : ImmutableDictionary<string, object?>.Empty, features.Length);
         var cleaned = features.Select(RemoveInternalAttributes).ToImmutableArray();
         var offset = query.Offset ?? 0;
         var hasMoreResults = totalCount > offset + cleaned.Length;

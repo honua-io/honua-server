@@ -84,18 +84,18 @@ namespace Honua.Server.Tests.Comprehensive;
 /// </list>
 /// <para>Endpoint-to-Scenario Matrix (Geometry Service):</para>
 /// <list type="table">
-/// <item><term>POST /rest/services/geometry/intersect</term><description>happy, no-overlap, missing-sr, malformed</description></item>
-/// <item><term>GET  /rest/services/geometry/intersect</term><description>happy, missing-params</description></item>
-/// <item><term>POST /rest/services/geometry/union</term><description>happy, single-geom, missing-sr, malformed</description></item>
-/// <item><term>GET  /rest/services/geometry/union</term><description>happy, missing-params</description></item>
-/// <item><term>POST /rest/services/geometry/difference</term><description>happy, no-overlap, missing-sr, malformed</description></item>
-/// <item><term>GET  /rest/services/geometry/difference</term><description>happy, missing-params</description></item>
-/// <item><term>POST /rest/services/geometry/clip</term><description>happy, envelope-semantics</description></item>
-/// <item><term>GET  /rest/services/geometry/clip</term><description>missing-params</description></item>
-/// <item><term>POST /rest/services/geometry/area</term><description>happy (projected, geographic), missing-sr</description></item>
-/// <item><term>GET  /rest/services/geometry/area</term><description>missing-params</description></item>
-/// <item><term>POST /rest/services/geometry/length</term><description>happy (projected, geographic), missing-sr</description></item>
-/// <item><term>GET  /rest/services/geometry/length</term><description>missing-params</description></item>
+/// <item><term>POST /rest/services/Utilities/Geometry/GeometryServer/intersect</term><description>happy, no-overlap, missing-sr, malformed</description></item>
+/// <item><term>GET  /rest/services/Utilities/Geometry/GeometryServer/intersect</term><description>happy, missing-params</description></item>
+/// <item><term>POST /rest/services/Utilities/Geometry/GeometryServer/union</term><description>happy, single-geom, missing-sr, malformed</description></item>
+/// <item><term>GET  /rest/services/Utilities/Geometry/GeometryServer/union</term><description>happy, missing-params</description></item>
+/// <item><term>POST /rest/services/Utilities/Geometry/GeometryServer/difference</term><description>happy, no-overlap, missing-sr, malformed</description></item>
+/// <item><term>GET  /rest/services/Utilities/Geometry/GeometryServer/difference</term><description>happy, missing-params</description></item>
+/// <item><term>POST /rest/services/Utilities/Geometry/GeometryServer/clip</term><description>happy, envelope-semantics</description></item>
+/// <item><term>GET  /rest/services/Utilities/Geometry/GeometryServer/clip</term><description>missing-params</description></item>
+/// <item><term>POST /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths</term><description>happy (projected, geographic), missing-sr</description></item>
+/// <item><term>GET  /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths</term><description>missing-params</description></item>
+/// <item><term>POST /rest/services/Utilities/Geometry/GeometryServer/lengths</term><description>happy (projected, geographic), missing-sr</description></item>
+/// <item><term>GET  /rest/services/Utilities/Geometry/GeometryServer/lengths</term><description>missing-params</description></item>
 /// </list>
 /// </remarks>
 [Protocol(Protocols.Comprehensive)]

@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -58,6 +59,7 @@ public sealed class FileGdbPreviewTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("FileGdb");
         responseContent.Should().Contain("totalFeatureCount");
+        responseContent.Should().Contain("availableLayers");
     }
 
     [IntegrationTest]
@@ -91,7 +93,7 @@ public sealed class FileGdbPreviewTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/import/formats")]
-    public async Task GetFormats_IncludesFileGdbFormat()
+    public async Task GetFormats_IncludesOnlyZippedFileGdbFormat()
     {
         // Act
         var response = await _client.GetAsync("/api/v1/admin/import/formats");
@@ -101,8 +103,18 @@ public sealed class FileGdbPreviewTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain(".gdb");
-        responseContent.Should().Contain(".gdb.zip");
-        responseContent.Should().Contain("File Geodatabase");
+        using var document = JsonDocument.Parse(responseContent);
+        var extensions = document.RootElement
+            .GetProperty("supportedExtensions")
+            .EnumerateArray()
+            .Select(element => element.GetString())
+            .ToArray();
+
+        extensions.Should().Contain(".gdb.zip");
+        extensions.Should().NotContain(".gdb");
+
+        var descriptions = document.RootElement.GetProperty("formatDescriptions");
+        descriptions.TryGetProperty(".gdb", out _).Should().BeFalse();
+        descriptions.GetProperty(".gdb.zip").GetString().Should().Contain("Zipped File Geodatabase");
     }
 }

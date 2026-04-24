@@ -131,8 +131,11 @@ public sealed class OperatorApprovalGateTests
 
     private sealed class StubAuthEvaluator(AccessDecision decision) : IOperatorAuthorizationEvaluator
     {
-        public AccessDecision Evaluate(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
-            => decision;
+        public Task<AccessDecision> EvaluateAsync(
+            ClaimsPrincipal principal,
+            OperatorAuthorizationRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(decision);
     }
 
     private sealed class StubApprovalEvaluator(ApprovalRequirement approval) : IOperatorApprovalEvaluator

@@ -162,6 +162,9 @@ internal static class Wfs20Utilities
         public const string ValueReference = "VALUEREFERENCE";
         public const string Srs = "SRS";
         public const string SrsName = "SRSNAME";
+        public const string Resolve = "RESOLVE";
+        public const string ResolveDepth = "RESOLVEDEPTH";
+        public const string ResolveTimeout = "RESOLVETIMEOUT";
 
         // Transaction parameters
         public const string LockId = "LOCKID";
@@ -215,7 +218,8 @@ internal static class Wfs20Utilities
             ParameterNames.Id,
             ParameterNames.PropertyName,
             ParameterNames.Srs,
-            ParameterNames.SrsName);
+            ParameterNames.SrsName,
+            ParameterNames.Resolve);
 
         public static readonly ImmutableHashSet<string> GetPropertyValue = ImmutableHashSet.Create(
             StringComparer.OrdinalIgnoreCase,
@@ -236,7 +240,8 @@ internal static class Wfs20Utilities
             ParameterNames.PropertyName,
             ParameterNames.ValueReference,
             ParameterNames.Srs,
-            ParameterNames.SrsName);
+            ParameterNames.SrsName,
+            ParameterNames.Resolve);
     }
 
     /// <summary>
@@ -544,3 +549,10 @@ internal static class Wfs20Utilities
             || string.Equals(mediaType, "*/*", StringComparison.OrdinalIgnoreCase);
     }
 }
+
+internal sealed record Wfs20XmlQueryParameters(
+    string? TypeNames,
+    string? PropertyName,
+    string? SrsName,
+    string? Filter,
+    string? SortBy);

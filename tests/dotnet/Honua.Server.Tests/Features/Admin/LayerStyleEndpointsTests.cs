@@ -114,6 +114,40 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    public async Task UpdateLayerStyle_WithInvalidMapLibreStyle_ReturnsBadRequest()
+    {
+        var client = _fixture.CreateAdminClient();
+        var invalidStyle = JsonSerializer.Deserialize<JsonElement>("""
+        {
+            "version": 8,
+            "layers": [
+                {
+                    "id": "bad-points",
+                    "type": "circle",
+                    "source": "layer-0",
+                    "source-layer": "wrong-layer",
+                    "paint": {
+                        "circle-color": ["not-an-operator", ["get", "kind"], "#ff0000", "#000000"]
+                    }
+                }
+            ]
+        }
+        """);
+        var request = new LayerStyleUpdateRequest
+        {
+            MapLibreStyle = invalidStyle
+        };
+
+        var response = await client.PutAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
+            JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest));
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task UpdateLayerStyle_InvalidatesCachedLegendResponses()
     {

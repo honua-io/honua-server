@@ -1,0 +1,162 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure;
+using Honua.Core.Features.Infrastructure.ServiceRegistration;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.SpatialAnalytics.Abstractions;
+using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Postgres.Features.Raster;
+using Honua.Postgres.Features.SpatialAnalytics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.ObjectPool;
+using Microsoft.Extensions.Options;
+
+namespace Honua.Postgres.Features;
+
+/// <summary>
+/// Consolidated feature store service registration eliminating duplication between
+/// FeatureStore and Raster ServiceCollectionExtensions files.
+/// </summary>
+public static class FeatureStoresConsolidated
+{
+    /// <summary>
+    /// Register all feature store services using consolidated patterns.
+    /// Replaces AddRefactoredFeatureStore and AddPostgresRasterStore.
+    /// </summary>
+    public static IServiceCollection AddAllFeatureStores(this IServiceCollection services, string? schemaName = null)
+    {
+        services
+            .AddRefactoredFeatureStoreConsolidated(schemaName)
+            .AddPostgresRasterStoreConsolidated(schemaName);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Register refactored feature store services using consolidated patterns.
+    /// </summary>
+    public static IServiceCollection AddRefactoredFeatureStoreConsolidated(
+        this IServiceCollection services,
+        string? schemaName = null)
+    {
+        // Register performance optimizations using consolidated pattern
+        services.AddPerformanceOptimizedObjectPools();
+
+        // Register core services using schema-based pattern
+        services
+            .AddSingletonService<IGeometryProcessor, GeometryProcessor>()
+            .AddSchemaBasedService<IFeatureCacheManager, FeatureCacheManager>(schemaName)
+            .AddSchemaBasedService<IFeatureQueryBuilder, FeatureQueryBuilder>(schemaName)
+            .AddSchemaBasedService<IFeatureDataAccess, FeatureDataAccess>(schemaName)
+            .AddSchemaBasedService<ISpatialAnalyticsReader, PostgresSpatialAnalyticsReader>(schemaName);
+
+        // Register feature store with segregated interfaces using consolidated pattern
+        services.AddFeatureStoreServices<PostgresFeatureStoreRefactored>(schemaName,
+            typeof(IFeatureReader),
+            typeof(IFeatureWriter),
+            typeof(ITileProvider),
+            typeof(IRelationshipStore),
+            typeof(IGeoJsonFeatureStore),
+            typeof(IGeobufFeatureStore),
+            typeof(IGmlFeatureStore),
+            typeof(IKmlFeatureStore),
+            typeof(IStreamingFeatureStore));
+
+        return services;
+    }
+
+    /// <summary>
+    /// Register PostgreSQL raster store services using consolidated patterns.
+    /// </summary>
+    public static IServiceCollection AddPostgresRasterStoreConsolidated(
+        this IServiceCollection services,
+        string? schemaName = null)
+    {
+        // Register all raster services using consolidated schema-based pattern
+        services.AddPostgresFeatureServices(schemaName,
+            (typeof(IRasterStore), typeof(PostgresRasterStore), ServiceLifetime.Scoped),
+            (typeof(IRasterMapRenderer), typeof(PostgresRasterMapRenderer), ServiceLifetime.Scoped),
+            (typeof(IRasterImportService), typeof(PostgresRasterImportService), ServiceLifetime.Scoped),
+            (typeof(ICloudCogStore), typeof(PostgresCloudCogStore), ServiceLifetime.Scoped));
+
+        return services;
+    }
+
+    /// <summary>
+    /// Register DuckDB feature store services with read-only implementations.
+    /// Demonstrates consolidation of DuckDB provider registration.
+    /// </summary>
+    public static IServiceCollection AddDuckDBFeatureStoreConsolidated(
+        this IServiceCollection services,
+        DuckDBOptions options,
+        string connectionString)
+    {
+        // Register DuckDB infrastructure using consolidated patterns
+        services
+            .AddSingletonService<DuckDBSpatialBootstrap>()
+            .AddSingletonService<DuckDBLayerRegistry>()
+            .AddScopedService<IDatabaseConnectionProvider, DuckDBConnectionProvider>()
+            .AddScopedService<IFeatureQueryBuilder, DuckDBFeatureQueryBuilder>()
+            .AddScopedService<IFeatureDataAccess, DuckDBFeatureDataAccess>()
+            .AddScopedService<IFeatureCacheManager, DuckDBFeatureCacheManager>();
+
+        // Register main feature store
+        services.AddScopedService<DuckDBFeatureStore, DuckDBFeatureStore>();
+
+        // Register segregated interfaces with read-only fallbacks using consolidated pattern
+        services.AddSegregatedInterfaces<DuckDBFeatureStore>(
+            typeof(IFeatureReader),
+            typeof(IGeoJsonFeatureStore),
+            typeof(IStreamingFeatureStore));
+
+        // Register read-only implementations for unsupported operations
+        services.AddReadOnlyImplementations(
+            (typeof(IFeatureWriter), typeof(ReadOnlyFeatureWriter)),
+            (typeof(IReplicaRepository), typeof(ReadOnlyReplicaRepository)),
+            (typeof(IChangeTracker), typeof(ReadOnlyChangeTracker)),
+            (typeof(ITileProvider), typeof(ReadOnlyTileProvider)),
+            (typeof(IGmlFeatureStore), typeof(ReadOnlyGmlFeatureStore)));
+
+        // Register catalog using consolidated pattern
+        services.AddScopedService<ILayerCatalog, DuckDBLayerCatalog>();
+
+        return services;
+    }
+}
+
+/// <summary>
+/// Consolidated extensions specific to feature data access dependency injection.
+/// </summary>
+internal static class FeatureDataAccessExtensions
+{
+    /// <summary>
+    /// Register feature data access with consolidated dependency pattern.
+    /// </summary>
+    public static IServiceCollection AddSchemaBasedFeatureDataAccess<TImplementation>(
+        this IServiceCollection services,
+        string? schemaName)
+        where TImplementation : class, IFeatureDataAccess
+    {
+        services.AddScopedService<IFeatureDataAccess>(provider =>
+        {
+            var dependencies = new FeatureDataAccessDependencies(
+                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IGeometryProcessor>(),
+                provider.GetRequiredService<IFeatureCacheManager>(),
+                provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>(),
+                provider.GetService<PreparedStatementCache>(),
+                provider.GetRequiredService<ILogger<TImplementation>>(),
+                provider.GetService<IOptions<PerformanceMonitoringOptions>>(),
+                provider.GetService<IOptions<LimitsOptions>>(),
+                provider.GetService<IPerformanceMonitor>(),
+                schemaName);
+
+            return (IFeatureDataAccess)Activator.CreateInstance(typeof(TImplementation), dependencies)!;
+        });
+
+        return services;
+    }
+}

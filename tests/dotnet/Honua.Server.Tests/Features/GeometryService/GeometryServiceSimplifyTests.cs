@@ -24,7 +24,7 @@ public sealed class GeometryServiceSimplifyTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Simplify)]
-    [Endpoint("POST /rest/services/geometry/simplify")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/simplify")]
     public async Task Simplify_ValidPolygon_ReturnsTopologicallyCorrectedGeometry()
     {
         var body = """
@@ -49,7 +49,7 @@ public sealed class GeometryServiceSimplifyTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/simplify", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/simplify", content);
 
         response.Be200Ok();
 
@@ -64,7 +64,7 @@ public sealed class GeometryServiceSimplifyTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Simplify)]
-    [Endpoint("POST /rest/services/geometry/simplify")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/simplify")]
     public async Task Simplify_MaintainsTopologicalValidity()
     {
         var body = """
@@ -88,7 +88,7 @@ public sealed class GeometryServiceSimplifyTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/simplify", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/simplify", content);
 
         response.Be200Ok();
 
@@ -104,12 +104,12 @@ public sealed class GeometryServiceSimplifyTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Simplify)]
-    [Endpoint("GET /rest/services/geometry/simplify")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/simplify")]
     public async Task Simplify_GetWithQueryString_ReturnsGeometry()
     {
         var geometries = Uri.EscapeDataString(
             """{"geometryType":"esriGeometryPolygon","geometries":[{"rings":[[[-122.42,37.78],[-122.41,37.78],[-122.41,37.79],[-122.42,37.79],[-122.42,37.78]]],"spatialReference":{"wkid":4326}}]}""");
-        var url = $"/rest/services/geometry/simplify?geometries={geometries}&sr=4326";
+        var url = $"/rest/services/Utilities/Geometry/GeometryServer/simplify?geometries={geometries}&sr=4326";
 
         var response = await _fixture.Client.GetAsync(url);
 
@@ -126,17 +126,17 @@ public sealed class GeometryServiceSimplifyTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Simplify)]
-    [Endpoint("GET /rest/services/geometry/simplify")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/simplify")]
     public async Task Simplify_GetMissingParameters_Returns400()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/geometry/simplify?sr=4326");
+        var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/simplify?sr=4326");
 
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Simplify)]
-    [Endpoint("POST /rest/services/geometry/simplify")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/simplify")]
     public async Task Simplify_MissingSR_Returns400()
     {
         var body = """
@@ -149,7 +149,7 @@ public sealed class GeometryServiceSimplifyTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/simplify", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/simplify", content);
 
         response.Be400BadRequest();
     }

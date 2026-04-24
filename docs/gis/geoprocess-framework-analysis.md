@@ -336,7 +336,7 @@ REST contract. Key mappings:
 | --- | --- |
 | Service root / task list | `CatalogService` process definitions |
 | Task parameters | Process definition inputs → Esri GP type descriptors |
-| `/{task}/execute` | `ProcessService.ExecutePlan` (sync) |
+| `/{task}/execute` | Reserved for synchronous GP tasks; not published on the current generic built-in GPServer surface |
 | `/{task}/submitJob` | `ProcessService.SubmitPlanJob` (async) |
 | `/{task}/jobs/{jobId}` | `ProcessService.GetJob` → `ExecutionJobRecord` |
 | `/{task}/jobs/{jobId}/results/{paramName}` | `ProcessService.GetJobResults` → individual `ArtifactRef` from `AnalysisResultPackage.Artifacts` |

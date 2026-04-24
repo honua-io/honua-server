@@ -135,7 +135,7 @@ internal sealed class NominatimGeocodeProvider(
 
         if (!Capabilities.SupportsSuggest)
         {
-            _logger.LogDebug("Nominatim suggest requested while EnableSuggestFromSearch is disabled.");
+            NominatimGeocodeProviderLog.SuggestDisabled(_logger);
             return [];
         }
 

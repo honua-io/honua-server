@@ -157,7 +157,7 @@ test('OGC vector tile layer renders non-blank output on ol/Map', async ({
     expect(tilesetMetadata).toBeTruthy();
 
     // Navigate to test page with Honua endpoint params
-    const url = `${TEST_PAGE_URL}/test-page.html?baseUrl=${encodeURIComponent(BASE_URL)}&collectionId=${encodeURIComponent(collectionId)}`;
+    const url = `${TEST_PAGE_URL}/test-page.html?baseUrl=${encodeURIComponent(TEST_PAGE_URL)}&collectionId=${encodeURIComponent(collectionId)}`;
     await page.goto(url);
 
     // Wait for OpenLayers render complete (up to 30s for tile loading)

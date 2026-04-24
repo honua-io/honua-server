@@ -96,15 +96,15 @@ internal sealed class FeatureMutationEventService(
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(
-                ex,
-                "Feature-change publish failed after write committed for event {EventId}, service {ServiceId}, layer {LayerId}, object {ObjectId}, operation {Operation}, protocol {Protocol}.",
+            FeatureMutationEventLog.PublishAfterCommitFailed(
+                _logger,
                 requestPayload.EventId,
                 requestPayload.ServiceId,
                 requestPayload.LayerId,
                 requestPayload.ObjectId,
                 requestPayload.Operation,
-                requestPayload.Protocol);
+                requestPayload.Protocol,
+                ex);
         }
     }
 }

@@ -5,17 +5,15 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Core.Queries.Filters;
-using Honua.Core.Queries.Filters.Cql2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -39,10 +37,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly IFeatureReader _featureReader = dependencies?.FeatureReader
         ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IStreamingFeatureStore _streamingFeatureStore = dependencies.StreamingFeatureStore;
-    private readonly ICommonQueryValidator _queryValidator = dependencies.QueryValidator;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
-    private readonly OgcFilterProcessor _filterProcessor = dependencies.FilterProcessor;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
+    private readonly IQueryParameterAdapter<OgcFeaturesQueryParameters> _queryParameterAdapter = dependencies.QueryParameterAdapter;
+    private readonly IQueryProcessor _queryProcessor = dependencies.QueryProcessor;
     private readonly IResponseCache _responseCache = dependencies.ResponseCache;
     private readonly IETagService _etagService = dependencies.ETagService;
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
@@ -50,14 +48,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 200;
     private const int StreamingFlushInterval = 128;
-    private static readonly ImmutableHashSet<string> _sortByCoreFields = ImmutableHashSet.Create(
-        StringComparer.OrdinalIgnoreCase,
-        FieldNames.ObjectId,
-        "object_id",
-        "id",
-        "created_at",
-        "updated_at");
-
     /// <summary>
     /// Handles GetItems request with comprehensive filtering and pagination.
     /// </summary>
@@ -129,56 +119,51 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
-            // Use filter processor for comprehensive filter handling
-            var filterResult = await _filterProcessor.ProcessFiltersAsync(
-                request, layer, filter, bbox, datetime, crs, cancellationToken);
-            if (!filterResult.IsSuccess)
+            var queryAdapterResult = await _queryParameterAdapter.ConvertAsync(
+                new OgcFeaturesQueryParameters
+                {
+                    Request = request,
+                    Filter = filter,
+                    Limit = limit,
+                    Offset = offset,
+                    Bbox = bbox,
+                    Datetime = datetime,
+                    Ids = ids,
+                    Properties = properties,
+                    Sortby = sortby,
+                    Crs = crs,
+                    F = f
+                },
+                layer,
+                cancellationToken);
+            if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, filterResult.ErrorMessage!);
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    queryAdapterResult.ErrorMessage ?? "Invalid query parameters.");
             }
 
-            // Use centralized pagination validation
-            var paginationResult = _queryValidator.ValidateAndNormalizePagination(offset, limit);
-            if (!paginationResult.IsValid)
+            var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
+            var unifiedQueryValidation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
+            if (!unifiedQueryValidation.IsValid)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, paginationResult.ErrorMessage ?? "Invalid paging parameters.");
-            }
-            var effectiveLimit = paginationResult.Value!.Limit;
-            var effectiveOffset = paginationResult.Value.Offset;
-
-            if (!TryParseIds(ids, out var objectIds, out var idsError))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, idsError ?? "Invalid ids parameter.");
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    unifiedQueryValidation.ErrorMessage ?? "Invalid query parameters.");
             }
 
-            if (!TryParseProperties(properties, layer, out var selectedProperties, out var propertiesError))
+            var query = _queryProcessor.ToFeatureQuery(unifiedQuery, layer);
+            if (unifiedQuery.Extensions?.TryGetValue("includeNullGeometry", out var includeNullGeometryValue) == true &&
+                includeNullGeometryValue is bool includeNullGeometry)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, propertiesError ?? "Invalid properties parameter.");
+                query = query with { IncludeNullGeometry = includeNullGeometry };
             }
 
-            if (!TryParseSortBy(sortby, layer, out var orderBy, out var sortByError))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, sortByError ?? "Invalid sortby parameter.");
-            }
-
-            var projectedProperties = selectedProperties?.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
-
-            var query = new FeatureQuery
-            {
-                Where = filterResult.CombinedFilter,
-                SqlFilter = filterResult.SqlFilter,
-                ObjectIds = objectIds,
-                OutFields = selectedProperties,
-                Offset = effectiveOffset,
-                Limit = effectiveLimit,
-                OrderBy = orderBy,
-                SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-                OutputSrid = filterResult.CrsDefinition.Srid,
-                OutputAxisOrder = filterResult.CrsDefinition.AxisOrder,
-                SpatialFilter = filterResult.SpatialFilter,
-                TemporalFilter = filterResult.TemporalFilter,
-                IncludeNullGeometry = filterResult.IncludeNullGeometry
-            };
+            var effectiveLimit = query.Limit ?? 0;
+            var effectiveOffset = query.Offset ?? 0;
+            var projectedProperties = query.OutFields?.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+            var outputAxisOrder = unifiedQuery.OutputCrs?.AxisOrder ?? AxisOrder.EastNorth;
+            var outputCrsUri = unifiedQuery.OutputCrs?.Uri ?? "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
             var allowStreaming = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
                                  string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase);
@@ -207,7 +192,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, cancellationToken);
                 if (cached != null)
                 {
-                    context.Response.Headers["Content-Crs"] = FormatContentCrs(filterResult.CrsDefinition.Uri);
+                    context.Response.Headers["Content-Crs"] = FormatContentCrs(outputCrsUri);
                     return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cached, _etagService);
                 }
             }
@@ -229,7 +214,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     HonuaTelemetry.SetSuccess(featureActivity, estimatedReturned);
 
                     var streamBaseUrl = BaseUrlResolver.GetBaseUrl(context);
-                    var streamBasePath = $"{streamBaseUrl}/ogc/features/collections/{collectionId}/items";
+                    var streamCollectionSegment = Uri.EscapeDataString(collectionId);
+                    var streamBasePath = $"{streamBaseUrl}/ogc/features/collections/{streamCollectionSegment}/items";
                     var streamLinks = BuildItemsLinks(
                         request,
                         collectionId,
@@ -247,7 +233,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             query,
                             totalCount,
                             estimatedReturned,
-                            filterResult.CrsDefinition.Uri,
+                            outputCrsUri,
                             streamLinks,
                             cancellationToken);
                     }
@@ -257,14 +243,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         layer,
                         query,
                         collectionId,
-                        filterResult.CrsDefinition.AxisOrder,
+                        outputAxisOrder,
                         _geometryServices,
                         projectedProperties,
                         outputFormat,
                         streamLinks,
                         _ogcFeaturesOptions.IncludeFeatureLinks,
                         totalCount,
-                        filterResult.CrsDefinition.Uri,
+                        outputCrsUri,
                         cancellationToken);
                 }
             }
@@ -272,13 +258,19 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var useNativeGeoJson = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
                                    string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase);
             var includeFeatureLinks = _ogcFeaturesOptions.IncludeFeatureLinks;
+            QueryResult<GmlFeature>? gmlResult = null;
             QueryResult<Feature>? featureResult = null;
             QueryResult<EncodedGeoJsonFeature>? encodedResult = null;
             PagedQueryResult<Feature>? pagedFeatureResult = null;
             PagedQueryResult<EncodedGeoJsonFeature>? pagedEncodedResult = null;
-            GeoJsonFeature[] features;
+            GeoJsonFeature[] features = [];
 
-            if (omitExactNumberMatched && useNativeGeoJson && _featureReader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
+            if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
+                _featureReader is IGmlFeatureStore gmlFeatureStore)
+            {
+                gmlResult = await gmlFeatureStore.QueryGmlAsync(layerId, query, cancellationToken);
+            }
+            else if (omitExactNumberMatched && useNativeGeoJson && _featureReader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
             {
                 pagedEncodedResult = await pagedGeoJsonFeatureStore.QueryGeoJsonPageAsync(layerId, query, cancellationToken);
                 features = pagedEncodedResult.Value.Items
@@ -288,13 +280,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             ? OgcFeaturesUtilities.BuildFeatureLinks(
                                 request,
                                 collectionId,
-                                FormattableString.Invariant($"{feature.Id}"),
+                                OgcFeatureIdentifierResolver.FormatPublicId(feature, layer),
                                 outputFormat)
                             : null;
                         return ToOgcFeature(
                             feature,
                             layer,
-                            filterResult.CrsDefinition.AxisOrder,
+                            outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
                             links);
@@ -311,13 +303,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             ? OgcFeaturesUtilities.BuildFeatureLinks(
                                 request,
                                 collectionId,
-                                FormattableString.Invariant($"{feature.Id}"),
+                                OgcFeatureIdentifierResolver.FormatPublicId(feature, layer),
                                 outputFormat)
                             : null;
                         return ToOgcFeature(
                             feature,
                             layer,
-                            filterResult.CrsDefinition.AxisOrder,
+                            outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
                             links);
@@ -334,13 +326,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             ? OgcFeaturesUtilities.BuildFeatureLinks(
                                 request,
                                 collectionId,
-                                FormattableString.Invariant($"{feature.Id}"),
+                                OgcFeatureIdentifierResolver.FormatPublicId(feature, layer),
                                 outputFormat)
                             : null;
                         return ToOgcFeature(
                             feature,
                             layer,
-                            filterResult.CrsDefinition.AxisOrder,
+                            outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
                             links);
@@ -357,13 +349,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             ? OgcFeaturesUtilities.BuildFeatureLinks(
                                 request,
                                 collectionId,
-                                FormattableString.Invariant($"{feature.Id}"),
+                                OgcFeatureIdentifierResolver.FormatPublicId(feature, layer),
                                 outputFormat)
                             : null;
                         return ToOgcFeature(
                             feature,
                             layer,
-                            filterResult.CrsDefinition.AxisOrder,
+                            outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
                             links);
@@ -380,11 +372,19 @@ internal sealed partial class OgcFeaturesQueryHandler(
                                       ?? encodedResult?.HasMoreResults
                                       ?? featureResult?.HasMoreResults
                                       ?? false;
-            OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, features.Length, queryTotalCount, stopwatch.Elapsed.TotalMilliseconds);
-            HonuaTelemetry.SetSuccess(featureActivity, features.Length);
+            var numberReturned = gmlResult?.Items.Length ?? features.Length;
+            if (gmlResult.HasValue)
+            {
+                queryTotalCount = gmlResult.Value.TotalCount;
+                queryHasMoreResults = gmlResult.Value.HasMoreResults;
+            }
+
+            OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, numberReturned, queryTotalCount, stopwatch.Elapsed.TotalMilliseconds);
+            HonuaTelemetry.SetSuccess(featureActivity, numberReturned);
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items";
+            var collectionSegment = Uri.EscapeDataString(collectionId);
+            var basePath = $"{baseUrl}/ogc/features/collections/{collectionSegment}/items";
 
             var links = BuildItemsLinks(
                 request,
@@ -397,18 +397,20 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             var response = OgcGeoJsonFeatureBuilder.CreateCollection(features, queryTotalCount, links);
 
-            context.Response.Headers["Content-Crs"] = FormatContentCrs(filterResult.CrsDefinition.Uri);
+            context.Response.Headers["Content-Crs"] = FormatContentCrs(outputCrsUri);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
-                var gml = BuildGmlFeatureCollection(features, queryTotalCount, features.Length, DateTimeOffset.UtcNow);
+                var gml = gmlResult.HasValue
+                    ? OgcResponseFormatter.BuildGmlFeatureCollection(gmlResult.Value.Items, queryTotalCount, gmlResult.Value.Items.Length, DateTimeOffset.UtcNow)
+                    : OgcResponseFormatter.BuildGmlFeatureCollection(features, queryTotalCount, features.Length, DateTimeOffset.UtcNow);
                 return Results.Text(gml, MediaTypes.Gml);
             }
 
             if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
                 var fieldNames = ResolveCsvFieldNames(layer, projectedProperties);
-                var csv = BuildCsvResponse(features, fieldNames);
+                var csv = OgcResponseFormatter.BuildCsvResponse(features, fieldNames);
                 return Results.Text(csv, MediaTypes.Csv);
             }
 
@@ -423,7 +425,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
-            return FormatFeatureResponse(response, OgcJsonContext.Default.FeatureCollection, outputFormat, "Features");
+            return OgcResponseFormatter.FormatFeatureResponse(response, OgcJsonContext.Default.FeatureCollection, outputFormat, "Features");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -503,10 +505,18 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             OgcFeaturesLog.ItemRequested(_logger, collectionId, featureId);
 
-            if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+            var resolvedFeature = await OgcFeatureIdentifierResolver.ResolveAsync(
+                _featureReader,
+                _queryProcessor,
+                layer,
+                featureId,
+                cancellationToken).ConfigureAwait(false);
+            if (!resolvedFeature.HasValue)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
+
+            var objectId = resolvedFeature.Value.ObjectId;
 
             if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: true, out var outputFormat, out var formatError))
             {
@@ -554,6 +564,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             OgcFeaturesLog.ItemQueryStarted(_logger, collectionId, featureId);
             var stopwatch = Stopwatch.StartNew();
+            var storedFeature = resolvedFeature.Value.Feature;
+
             var query = new FeatureQuery
             {
                 ObjectIds = ImmutableArray.Create(objectId),
@@ -562,75 +574,78 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 OutputSrid = crsDefinition.Srid,
                 OutputAxisOrder = crsDefinition.AxisOrder
             };
-            GeoJsonFeature? ogcFeature;
-            if (_featureReader is IGeoJsonFeatureStore geoJsonFeatureStore &&
-                (string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase)))
-            {
-                var queryResult = await geoJsonFeatureStore.QueryGeoJsonAsync(layerId, query, cancellationToken);
-                stopwatch.Stop();
-                OgcFeaturesLog.ItemQueryCompleted(_logger, collectionId, featureId, stopwatch.Elapsed.TotalMilliseconds);
-                if (queryResult.Items.IsDefaultOrEmpty)
-                {
-                    return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
-                }
 
-                var feature = queryResult.Items[0];
-                ImmutableArray<Link>? featureLinks = _ogcFeaturesOptions.IncludeFeatureLinks
-                    ? OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, featureId, outputFormat)
-                    : null;
-                ogcFeature = ToOgcFeature(feature, layer, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
-            }
-            else
-            {
-                var queryResult = await _featureReader.QueryAsync(layerId, query, cancellationToken);
-                stopwatch.Stop();
-                OgcFeaturesLog.ItemQueryCompleted(_logger, collectionId, featureId, stopwatch.Elapsed.TotalMilliseconds);
-                if (queryResult.Items.IsDefaultOrEmpty)
-                {
-                    return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
-                }
-
-                var feature = queryResult.Items[0];
-                ImmutableArray<Link>? featureLinks = _ogcFeaturesOptions.IncludeFeatureLinks
-                    ? OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, featureId, outputFormat)
-                    : null;
-                ogcFeature = ToOgcFeature(feature, layer, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
-            }
-
+            var entityETag = OgcFeatureEntityTag.Compute(storedFeature, _etagService);
             context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
 
-            // Compute ETag for the feature so clients can use If-Match on subsequent PUT/PATCH
-            var featureETag = _etagService.ComputeETag(ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
-            context.Response.Headers.ETag = featureETag;
+            if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
+                _featureReader is IGmlFeatureStore gmlFeatureStore)
+            {
+                var gmlResult = await gmlFeatureStore.QueryGmlAsync(layerId, query, cancellationToken);
+                stopwatch.Stop();
+                OgcFeaturesLog.ItemQueryCompleted(_logger, collectionId, featureId, stopwatch.Elapsed.TotalMilliseconds);
+                if (gmlResult.Items.IsDefaultOrEmpty)
+                {
+                    return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                }
+
+                HonuaTelemetry.SetSuccess(featureActivity, 1);
+                var gml = OgcResponseFormatter.BuildGmlSingleFeature(gmlResult.Items[0]);
+                return Results.Text(gml, MediaTypes.Gml);
+            }
+
+            var responseFeature = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
+                _featureReader,
+                layerId,
+                layer,
+                objectId,
+                crsDefinition,
+                cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+            OgcFeaturesLog.ItemQueryCompleted(_logger, collectionId, featureId, stopwatch.Elapsed.TotalMilliseconds);
+            if (!responseFeature.HasValue)
+            {
+                return StandardErrorHelpers.CreateInternalServerError(context, "Feature response could not be projected.");
+            }
+
+            var responseFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, layer);
+            ImmutableArray<Link>? featureLinks = _ogcFeaturesOptions.IncludeFeatureLinks
+                ? OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, responseFeatureId, outputFormat)
+                : null;
+            var ogcFeature = ToOgcFeature(responseFeature.Value, layer, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
-                var gml = BuildGmlSingleFeature(ogcFeature);
+                var gml = OgcResponseFormatter.BuildGmlSingleFeature(ogcFeature);
                 return Results.Text(gml, MediaTypes.Gml);
             }
 
             if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
                 var fieldNames = ResolveCsvFieldNames(layer, null);
-                var csv = BuildCsvResponse([ogcFeature], fieldNames);
+                var csv = OgcResponseFormatter.BuildCsvResponse([ogcFeature], fieldNames);
                 return Results.Text(csv, MediaTypes.Csv);
             }
 
-            if (canCache && cacheKey != null)
+            if (cacheableFormat)
             {
                 var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
                     ? MediaTypes.GeoJson
                     : MediaTypes.Json;
                 var payload = JsonSerializer.SerializeToUtf8Bytes(ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
-                var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
-                await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
+                var representationETag = OgcFeatureEntityTag.ComputeRepresentation(payload, entityETag, _etagService);
+                var cachedResponse = new CachedResponse(payload, contentType, representationETag);
+                if (canCache && cacheKey != null)
+                {
+                    await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
+                }
+
                 HonuaTelemetry.SetSuccess(featureActivity, 1);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
             HonuaTelemetry.SetSuccess(featureActivity, 1);
-            return FormatFeatureResponse(ogcFeature, OgcJsonContext.Default.GeoJsonFeature, outputFormat, "Feature");
+            return OgcResponseFormatter.FormatFeatureResponse(ogcFeature, OgcJsonContext.Default.GeoJsonFeature, outputFormat, "Feature");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -729,7 +744,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         links.Add(Link.Create(
-            href: $"{baseUrl}/ogc/features/collections/{collectionId}/queryables",
+            href: $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/queryables",
             rel: RelationTypes.Queryables,
             type: MediaTypes.SchemaJson,
             title: "Queryables schema"));
@@ -784,279 +799,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             : basePath;
     }
 
-    private static bool TryParseIds(
-        string? rawIds,
-        out ImmutableArray<long>? objectIds,
-        out string? error)
-    {
-        objectIds = null;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(rawIds))
-        {
-            return true;
-        }
-
-        if (HasEmptyCommaSeparatedToken(rawIds))
-        {
-            error = "Parameter 'ids' contains an empty ID value.";
-            return false;
-        }
-
-        var tokens = rawIds.Split(',', StringSplitOptions.TrimEntries);
-        if (tokens.Length == 0)
-        {
-            error = "Parameter 'ids' must contain at least one ID value.";
-            return false;
-        }
-
-        var ids = ImmutableArray.CreateBuilder<long>(tokens.Length);
-        var seen = new HashSet<long>();
-        foreach (var token in tokens)
-        {
-            if (!long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) || id <= 0)
-            {
-                error = $"Invalid ids value '{token}'.";
-                return false;
-            }
-
-            if (seen.Add(id))
-            {
-                ids.Add(id);
-            }
-        }
-
-        objectIds = ids.ToImmutable();
-        return true;
-    }
-
-    private static bool TryParseProperties(
-        string? rawProperties,
-        LayerDefinition layer,
-        out ImmutableArray<string>? properties,
-        out string? error)
-    {
-        properties = null;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(rawProperties))
-        {
-            return true;
-        }
-
-        if (string.Equals(rawProperties.Trim(), "*", StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        if (HasEmptyCommaSeparatedToken(rawProperties))
-        {
-            error = "Parameter 'properties' contains an empty field name.";
-            return false;
-        }
-
-        var tokens = rawProperties.Split(',', StringSplitOptions.TrimEntries);
-        if (tokens.Length == 0)
-        {
-            error = "Parameter 'properties' must contain at least one field name.";
-            return false;
-        }
-
-        var fieldsByName = layer.AttributeFields
-            .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
-
-        var selected = ImmutableArray.CreateBuilder<string>(tokens.Length);
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var token in tokens)
-        {
-            if (!IsSimpleFieldName(token))
-            {
-                error = $"Invalid properties field '{token}'.";
-                return false;
-            }
-
-            if (!fieldsByName.TryGetValue(token, out var field))
-            {
-                error = $"Unknown properties field '{token}'.";
-                return false;
-            }
-
-            if (seen.Add(field.Name))
-            {
-                selected.Add(field.Name);
-            }
-        }
-
-        properties = selected.ToImmutable();
-        return true;
-    }
-
-    private static bool TryParseSortBy(
-        string? rawSortBy,
-        LayerDefinition layer,
-        out ImmutableArray<OrderByClause>? orderBy,
-        out string? error)
-    {
-        orderBy = null;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(rawSortBy))
-        {
-            return true;
-        }
-
-        if (HasEmptyCommaSeparatedToken(rawSortBy))
-        {
-            error = "Parameter 'sortby' contains an empty field expression.";
-            return false;
-        }
-
-        var tokens = rawSortBy.Split(',', StringSplitOptions.TrimEntries);
-        if (tokens.Length == 0)
-        {
-            error = "Parameter 'sortby' must contain at least one field expression.";
-            return false;
-        }
-
-        var normalized = new List<string>(tokens.Length);
-        foreach (var rawToken in tokens)
-        {
-            var token = rawToken.Trim();
-            if (token.Length == 0)
-            {
-                error = "Invalid sortby expression.";
-                return false;
-            }
-
-            var ascending = true;
-            if (token[0] is '+' or '-')
-            {
-                ascending = token[0] != '-';
-                token = token[1..].Trim();
-            }
-
-            if (token.Length == 0)
-            {
-                error = "Invalid sortby expression.";
-                return false;
-            }
-
-            var parts = token.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length > 2)
-            {
-                error = $"Invalid sortby expression '{rawToken}'.";
-                return false;
-            }
-
-            var field = parts[0];
-            if (!IsSimpleFieldName(field))
-            {
-                error = $"Invalid sortby field '{field}'.";
-                return false;
-            }
-
-            if (parts.Length == 2)
-            {
-                if (parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase))
-                {
-                    ascending = false;
-                }
-                else if (parts[1].Equals("ASC", StringComparison.OrdinalIgnoreCase))
-                {
-                    ascending = true;
-                }
-                else
-                {
-                    error = $"Invalid sort direction '{parts[1]}' in sortby.";
-                    return false;
-                }
-            }
-
-            normalized.Add($"{field} {(ascending ? "ASC" : "DESC")}");
-        }
-
-        if (normalized.Count == 0)
-        {
-            error = "Parameter 'sortby' must contain at least one field expression.";
-            return false;
-        }
-
-        try
-        {
-            orderBy = OrderByParsing.ParseFeatureServerOrderBy(
-                string.Join(",", normalized),
-                layer,
-                _sortByCoreFields);
-            return true;
-        }
-        catch (InvalidOperationException ex)
-        {
-            error = ex.Message.Replace("orderByFields", "sortby", StringComparison.OrdinalIgnoreCase);
-            return false;
-        }
-    }
-
-    private static bool IsSimpleFieldName(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        foreach (var ch in value)
-        {
-            if (!(char.IsLetterOrDigit(ch) || ch == '_'))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static bool HasEmptyCommaSeparatedToken(string value)
-    {
-        foreach (var token in value.Split(',', StringSplitOptions.None))
-        {
-            if (token.Trim().Length == 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static IResult FormatFeatureResponse<T>(
-        T payload,
-        JsonTypeInfo<T> typeInfo,
-        string outputFormat,
-        string title)
-    {
-        return OgcResponseFormatter.FormatFeatureResponse(payload, typeInfo, outputFormat, title);
-    }
-
     private static string FormatContentCrs(string crsUri) => $"<{crsUri}>";
-
-    private static string BuildGmlFeatureCollection(
-        IEnumerable<GeoJsonFeature> features,
-        long? numberMatched = null,
-        int? numberReturned = null,
-        DateTimeOffset? timeStamp = null)
-    {
-        return OgcResponseFormatter.BuildGmlFeatureCollection(features, numberMatched, numberReturned, timeStamp);
-    }
-
-    private static string BuildGmlSingleFeature(GeoJsonFeature feature)
-    {
-        return OgcResponseFormatter.BuildGmlSingleFeature(feature);
-    }
-
-    private static string BuildCsvResponse(IEnumerable<GeoJsonFeature> features, string[] fieldNames)
-    {
-        return OgcResponseFormatter.BuildCsvResponse(features, fieldNames);
-    }
 
     private static async Task StreamFeatureCollectionAsync(
         HttpContext context,
@@ -1090,7 +833,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 ? OgcFeaturesUtilities.BuildFeatureLinks(
                     context.Request,
                     collectionId,
-                    FormattableString.Invariant($"{feature.Id}"),
+                    OgcFeatureIdentifierResolver.FormatPublicId(feature, layer),
                     outputFormat)
                 : null;
             var ogcFeature = ToOgcFeature(feature, layer, axisOrder, geometryServices, projectedProperties, featureLinks);

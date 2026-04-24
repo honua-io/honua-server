@@ -198,10 +198,9 @@ internal static partial class ImportEndpoints
             [".csv"] = "CSV - Comma-separated values with lon/lat or WKT geometry columns",
             [".twkb"] = "TinyWKB - Compact binary format",
             [".fgb"] = "FlatGeobuf - Compact binary geospatial format",
-            [".gdb"] = "Esri File Geodatabase - native Esri vector format",
             [".gdb.zip"] = "Zipped File Geodatabase - compressed .gdb archive",
-            [".parquet"] = "GeoParquet - Apache Parquet with geospatial metadata",
-            [".geoparquet"] = "GeoParquet - Apache Parquet with geospatial metadata"
+            [".parquet"] = "GeoParquet - Apache Parquet with WKB geometry encoding",
+            [".geoparquet"] = "GeoParquet - Apache Parquet with WKB geometry encoding"
         };
 
         var response = new FileFormatsResponse

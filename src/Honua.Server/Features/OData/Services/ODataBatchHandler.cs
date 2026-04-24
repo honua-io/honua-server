@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -35,6 +36,8 @@ internal sealed partial class ODataBatchHandler
     private readonly FeatureMutationValidator _mutationValidator;
     private readonly EditLimits _editLimits;
     private readonly IETagService _etagService;
+    private readonly IEditParameterAdapter<ODataEditRequest> _editParameterAdapter;
+    private readonly IEditProcessor _editProcessor;
     private readonly ILogger _logger;
     private readonly Dictionary<int, AxisOrder> _axisOrderCache = new();
 
@@ -55,6 +58,8 @@ internal sealed partial class ODataBatchHandler
         _mutationValidator = dependencies.MutationValidator;
         _editLimits = dependencies.EditLimits;
         _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
+        _editParameterAdapter = dependencies.EditParameterAdapter;
+        _editProcessor = dependencies.EditProcessor;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -150,9 +155,21 @@ internal sealed partial class ODataBatchHandler
                     }
                 }
 
+                if (!TryResolveContentIdReferences(request, responsesById, out var resolvedRequest, out var resolutionError))
+                {
+                    var failedResolution = CreateErrorResponse(
+                        request.Id,
+                        400,
+                        "InvalidRequest",
+                        resolutionError ?? "Invalid Content-ID reference.");
+                    responses.Add(failedResolution);
+                    responsesById[request.Id] = failedResolution;
+                    continue;
+                }
+
                 var response = await ProcessSingleRequestAsync(
                     context,
-                    request,
+                    resolvedRequest,
                     baseUrl,
                     cancellationToken);
                 responses.Add(response);
@@ -169,6 +186,7 @@ internal sealed partial class ODataBatchHandler
     private const string NonAtomicGroupKey = "__non-atomic__";
     private const string AtomicGroupPrefix = "atomic:";
     private const int DefaultBatchCollectionTop = 1000;
+    private const string AbsoluteBatchRequestUrlMessage = "Absolute batch request URLs are not supported.";
 
     private static bool HasDependencies(ImmutableArray<ODataBatchRequestItem> requests)
         => requests.Any(r => r.DependsOn is { Length: > 0 });
@@ -370,7 +388,29 @@ internal sealed partial class ODataBatchHandler
         {
             try
             {
-                var parsed = ParseUrl(request.Url);
+                if (request.Url.TrimStart().StartsWith('$'))
+                {
+                    responses.Add(CreateErrorResponse(
+                        request.Id,
+                        400,
+                        "InvalidRequest",
+                        "Content-ID references are not supported inside atomicity groups."));
+                    rollback = true;
+                    continue;
+                }
+
+                if (!TryNormalizeClientBatchTargetUrl(request.Url, out var normalizedUrl, out var urlError))
+                {
+                    responses.Add(CreateErrorResponse(
+                        request.Id,
+                        400,
+                        "InvalidRequest",
+                        urlError ?? "Invalid batch request URL."));
+                    rollback = true;
+                    continue;
+                }
+
+                var parsed = ParseUrl(normalizedUrl);
                 if (parsed.Kind is not ODataResourceKind.Feature && parsed.Kind is not ODataResourceKind.Features)
                 {
                     responses.Add(CreateErrorResponse(
@@ -488,7 +528,37 @@ internal sealed partial class ODataBatchHandler
                                 break;
                             }
 
-                            var feature = await CreateFeatureFromBodyAsync(request.Body, layer, cancellationToken: cancellationToken);
+                            Feature parsedFeature;
+                            try
+                            {
+                                parsedFeature = await CreateFeatureFromBodyAsync(request.Body, layer, cancellationToken: cancellationToken);
+                            }
+                            catch (ArgumentException)
+                            {
+                                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", "Invalid request data."));
+                                rollback = true;
+                                break;
+                            }
+
+                            var createValidation = await BuildValidatedEditBatchAsync(
+                                layer,
+                                CreateEditRequestFromFeature(ODataOperation.Create, parsedFeature),
+                                rollbackOnFailure: true,
+                                cancellationToken);
+                            if (createValidation.ErrorMessage != null ||
+                                createValidation.Batch == null ||
+                                createValidation.Batch.Value.Creates.IsDefaultOrEmpty)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    400,
+                                    "InvalidRequest",
+                                    createValidation.ErrorMessage ?? "Invalid request data."));
+                                rollback = true;
+                                break;
+                            }
+
+                            var feature = createValidation.Batch.Value.Creates[0];
                             if (!createRequests.TryGetValue(layerId.Value, out var createList))
                             {
                                 createList = new List<(string requestId, Feature feature)>();
@@ -501,7 +571,9 @@ internal sealed partial class ODataBatchHandler
                         }
 
                     case "PATCH":
+                    case "PUT":
                         {
+                            var isPatch = request.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase);
                             if (!objectId.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
@@ -548,16 +620,49 @@ internal sealed partial class ODataBatchHandler
                                 break;
                             }
 
-                            Feature? mergeExisting = request.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase)
-                                ? existing.Value
-                                : null;
+                            Feature? mergeExisting = isPatch ? existing.Value : null;
 
-                            var feature = await CreateFeatureFromBodyAsync(
-                                request.Body,
+                            Feature parsedFeature;
+                            try
+                            {
+                                parsedFeature = await CreateFeatureFromBodyAsync(
+                                    request.Body,
+                                    layer,
+                                    objectId.Value,
+                                    mergeExisting,
+                                    cancellationToken: cancellationToken);
+                            }
+                            catch (ArgumentException)
+                            {
+                                responses.Add(CreateErrorResponse(request.Id, 400, "InvalidRequest", "Invalid request data."));
+                                rollback = true;
+                                break;
+                            }
+
+                            var updateValidation = await BuildValidatedEditBatchAsync(
                                 layer,
-                                objectId.Value,
-                                mergeExisting,
-                                cancellationToken: cancellationToken);
+                                CreateEditRequestFromFeature(
+                                    isPatch ? ODataOperation.Patch : ODataOperation.Update,
+                                    parsedFeature,
+                                    objectId.Value,
+                                    request.Headers?.GetValueOrDefault("If-Match"),
+                                    request.Headers?.GetValueOrDefault("If-None-Match")),
+                                rollbackOnFailure: true,
+                                cancellationToken);
+                            if (updateValidation.ErrorMessage != null ||
+                                updateValidation.Batch == null ||
+                                updateValidation.Batch.Value.Updates.IsDefaultOrEmpty)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    400,
+                                    "InvalidRequest",
+                                    updateValidation.ErrorMessage ?? "Invalid request data."));
+                                rollback = true;
+                                break;
+                            }
+
+                            var feature = updateValidation.Batch.Value.Updates[0];
                             if (!updateRequests.TryGetValue(layerId.Value, out var updateList))
                             {
                                 updateList = new List<(string requestId, long objectId, Feature feature)>();
@@ -606,13 +711,38 @@ internal sealed partial class ODataBatchHandler
                                 break;
                             }
 
+                            var deleteValidation = await BuildValidatedEditBatchAsync(
+                                layer,
+                                new ODataEditRequest
+                                {
+                                    Operation = ODataOperation.Delete,
+                                    ObjectId = objectId.Value,
+                                    IfMatch = request.Headers?.GetValueOrDefault("If-Match"),
+                                    IfNoneMatch = request.Headers?.GetValueOrDefault("If-None-Match"),
+                                    Payload = new ParsedFeaturePayload()
+                                },
+                                rollbackOnFailure: true,
+                                cancellationToken);
+                            if (deleteValidation.ErrorMessage != null ||
+                                deleteValidation.Batch == null ||
+                                deleteValidation.Batch.Value.Deletes.IsDefaultOrEmpty)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    400,
+                                    "InvalidRequest",
+                                    deleteValidation.ErrorMessage ?? "Invalid request data."));
+                                rollback = true;
+                                break;
+                            }
+
                             if (!deleteRequests.TryGetValue(layerId.Value, out var deleteList))
                             {
                                 deleteList = new List<(string requestId, long objectId, Feature existingFeature)>();
                                 deleteRequests[layerId.Value] = deleteList;
                             }
 
-                            deleteList.Add((request.Id, objectId.Value, existing.Value));
+                            deleteList.Add((request.Id, deleteValidation.Batch.Value.Deletes[0], existing.Value));
                             writeLayerIds.Add(layerId.Value);
                             break;
                         }
@@ -817,6 +947,7 @@ internal sealed partial class ODataBatchHandler
                             {
                                 ["Location"] = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createResult.ObjectId})",
                                 ["OData-EntityId"] = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createResult.ObjectId})",
+                                ["EntityId"] = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createResult.ObjectId})",
                                 ["ETag"] = etag
                             };
 
@@ -934,130 +1065,108 @@ internal sealed partial class ODataBatchHandler
     {
         try
         {
-            var parsed = ParseUrl(request.Url);
-            var layerId = parsed.LayerId;
-            var objectId = parsed.ObjectId;
+            var parsed = ParseUrl(NormalizeRequestUrlForParsing(request.Url));
+            var batchContext = CreateBatchRequestContext(context, request, cancellationToken);
+            var query = batchContext.Request.Query;
+            var queryHandler = batchContext.RequestServices.GetRequiredService<ODataQueryHandler>();
+            var streamingHandler = batchContext.RequestServices.GetRequiredService<ODataStreamingQueryHandler>();
+            var crudHandler = batchContext.RequestServices.GetRequiredService<ODataCrudHandler>();
 
-            if (parsed.Kind == ODataResourceKind.Layer)
+            IResult result = parsed.Kind switch
             {
-                var layerDefinition = layerId.HasValue
-                    ? await _layerCatalog.GetLayerAsync(layerId.Value, cancellationToken)
-                    : null;
-                if (layerDefinition == null)
-                {
-                    return CreateErrorResponse(request.Id, 404, "ResourceNotFound", $"Layer {layerId} not found.");
-                }
+                ODataResourceKind.Layers when request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) =>
+                    await queryHandler.HandleGetLayersAsync(
+                        batchContext,
+                        GetQueryValue(query, "$filter"),
+                        GetQueryValue(query, "$select"),
+                        GetQueryValue(query, "$orderby"),
+                        GetQueryValue(query, "$top"),
+                        GetQueryValue(query, "$skip"),
+                        GetQueryValue(query, "$skiptoken"),
+                        GetQueryValue(query, "$count"),
+                        GetQueryValue(query, "$format"),
+                        cancellationToken),
 
-                if (!request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
-                {
-                    return CreateErrorResponse(request.Id, 405, "MethodNotAllowed", "Only GET is supported for layers in batch.");
-                }
+                ODataResourceKind.Layer when request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) && parsed.LayerId.HasValue =>
+                    await queryHandler.HandleGetLayerAsync(
+                        batchContext,
+                        parsed.LayerId.Value,
+                        GetQueryValue(query, "$select"),
+                        GetQueryValue(query, "$format"),
+                        cancellationToken),
 
-                var layerService = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
-                    context,
-                    layerDefinition.Id,
-                    ServiceProtocols.OData,
-                    cancellationToken);
-                if (!IsODataEnabled(layerDefinition, layerService))
-                {
-                    return CreateErrorResponse(
-                        request.Id,
-                        404,
-                        "ResourceNotFound",
-                        "OData is not enabled for this service.");
-                }
+                ODataResourceKind.Features when request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) =>
+                    await streamingHandler.HandleGetFeaturesAsync(
+                        batchContext,
+                        parsed.LayerId,
+                        GetQueryValue(query, "$filter"),
+                        GetQueryValue(query, "$select"),
+                        GetQueryValue(query, "$orderby"),
+                        GetQueryValue(query, "$top"),
+                        GetQueryValue(query, "$skip"),
+                        GetQueryValue(query, "$skiptoken"),
+                        GetQueryValue(query, "$count"),
+                        GetQueryValue(query, "$expand"),
+                        GetQueryValue(query, "$compute"),
+                        GetQueryValue(query, "$search"),
+                        GetQueryValue(query, "$apply"),
+                        GetQueryValue(query, "$deltatoken"),
+                        GetQueryValue(query, "$format"),
+                        cancellationToken),
 
-                var layerAccessError = await ValidateBatchRequestAccessAsync(
-                    context,
-                    request.Id,
-                    layerDefinition,
-                    layerService,
-                    request.Method,
-                    cancellationToken);
-                if (layerAccessError != null)
-                {
-                    return layerAccessError;
-                }
+                ODataResourceKind.Features when request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) =>
+                    await crudHandler.HandleCreateFeatureAsync(
+                        batchContext,
+                        parsed.LayerId,
+                        CreateFeatureRequest(request.Body),
+                        cancellationToken),
 
-                var layerPayload = ODataUtilityService.BuildLayerPayload(layerDefinition);
-                layerPayload["@odata.context"] = ODataUtilityService.BuildContextUrl(baseUrl, "Layers", isSingle: true);
-                return CreateSuccessResponse(request.Id, 200, layerPayload);
-            }
+                ODataResourceKind.Feature when request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) &&
+                    parsed.LayerId.HasValue &&
+                    parsed.ObjectId.HasValue =>
+                    await ExecuteFeatureGetAsync(
+                        crudHandler,
+                        batchContext,
+                        parsed,
+                        query,
+                        cancellationToken),
 
-            if (parsed.Kind is not ODataResourceKind.Feature && parsed.Kind is not ODataResourceKind.Features)
-            {
-                return CreateErrorResponse(request.Id, 400, "InvalidRequest", $"Unsupported OData resource '{request.Url}'.");
-            }
+                ODataResourceKind.Feature when request.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase) &&
+                    parsed.LayerId.HasValue &&
+                    parsed.ObjectId.HasValue &&
+                    parsed.Tail == ODataPathTailKind.None =>
+                    await crudHandler.HandleUpdateFeatureAsync(
+                        batchContext,
+                        parsed.LayerId.Value,
+                        parsed.ObjectId.Value,
+                        CreateFeatureRequest(request.Body),
+                        cancellationToken),
 
-            if (parsed.Tail != ODataPathTailKind.None &&
-                !request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
-            {
-                return CreateErrorResponse(request.Id, 405, "MethodNotAllowed", "Only GET is supported for $ref and $value requests.");
-            }
+                ODataResourceKind.Feature when request.Method.Equals("PUT", StringComparison.OrdinalIgnoreCase) &&
+                    parsed.LayerId.HasValue &&
+                    parsed.ObjectId.HasValue &&
+                    parsed.Tail == ODataPathTailKind.None =>
+                    await crudHandler.HandleReplaceFeatureAsync(
+                        batchContext,
+                        parsed.LayerId.Value,
+                        parsed.ObjectId.Value,
+                        CreateFeatureRequest(request.Body),
+                        cancellationToken),
 
-            // Verify layer exists
-            if (!layerId.HasValue && request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) && request.Body != null)
-            {
-                if (ODataFeaturePayloadParser.TryParse(request.Body, out var payload, out _))
-                {
-                    layerId = payload.LayerId;
-                }
-            }
+                ODataResourceKind.Feature when request.Method.Equals("DELETE", StringComparison.OrdinalIgnoreCase) &&
+                    parsed.LayerId.HasValue &&
+                    parsed.ObjectId.HasValue &&
+                    parsed.Tail == ODataPathTailKind.None =>
+                    await crudHandler.HandleDeleteFeatureAsync(
+                        batchContext,
+                        parsed.LayerId.Value,
+                        parsed.ObjectId.Value,
+                        cancellationToken),
 
-            if (!layerId.HasValue)
-            {
-                return CreateErrorResponse(request.Id, 400, "InvalidRequest", "LayerId is required for feature requests.");
-            }
+                _ => CreateUnsupportedBatchRequestResult(batchContext, request, parsed)
+            };
 
-            var layer = await _layerCatalog.GetLayerAsync(layerId.Value, cancellationToken);
-            if (layer == null)
-            {
-                return CreateErrorResponse(request.Id, 404, "ResourceNotFound", $"Layer {layerId} not found.");
-            }
-
-            var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
-                context,
-                layer.Id,
-                ServiceProtocols.OData,
-                cancellationToken);
-            if (!IsODataEnabled(layer, service))
-            {
-                return CreateErrorResponse(
-                    request.Id,
-                    404,
-                    "ResourceNotFound",
-                    "OData is not enabled for this service.");
-            }
-
-            var accessError = await ValidateBatchRequestAccessAsync(
-                context,
-                request.Id,
-                layer,
-                service,
-                request.Method,
-                cancellationToken);
-            if (accessError != null)
-            {
-                return accessError;
-            }
-
-            switch (request.Method.ToUpperInvariant())
-            {
-                case "GET":
-                    return await HandleGetAsync(request.Id, layer, objectId, request.Url, parsed.Tail, baseUrl, cancellationToken);
-
-                case "POST":
-                    return await HandlePostAsync(request.Id, layer, request.Body, baseUrl, cancellationToken);
-
-                case "PATCH":
-                    return await HandlePatchAsync(request.Id, layer, objectId, request.Body, request.Headers, baseUrl, cancellationToken);
-
-                case "DELETE":
-                    return await HandleDeleteAsync(request.Id, layerId.Value, objectId, request.Headers, cancellationToken);
-
-                default:
-                    return CreateErrorResponse(request.Id, 405, "MethodNotAllowed", $"Method {request.Method} is not supported.");
-            }
+            return await CreateBatchResponseItemAsync(request.Id, batchContext, result);
         }
         catch (ArgumentException ex)
         {
@@ -1070,6 +1179,427 @@ internal sealed partial class ODataBatchHandler
             // Use safe error message to avoid leaking internal details
             return CreateErrorResponse(request.Id, 500, "InternalError", "An error occurred while processing the request.");
         }
+    }
+
+    private static string NormalizeRequestUrlForParsing(string url)
+        => NormalizeBatchTargetUrl(url);
+
+    private static string NormalizeBatchTargetUrl(string url)
+    {
+        var trimmed = url.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri.PathAndQuery.TrimStart('/');
+        }
+
+        return trimmed.TrimStart('/');
+    }
+
+    private static bool TryNormalizeClientBatchTargetUrl(
+        string url,
+        out string normalizedUrl,
+        out string? errorMessage)
+    {
+        var trimmed = url.Trim();
+        normalizedUrl = trimmed.TrimStart('/');
+        errorMessage = null;
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+        {
+            normalizedUrl = string.Empty;
+            errorMessage = AbsoluteBatchRequestUrlMessage;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static IResult CreateUnsupportedBatchRequestResult(
+        HttpContext context,
+        ODataBatchRequestItem request,
+        ODataParsedPath parsed)
+    {
+        if (parsed.Tail != ODataPathTailKind.None &&
+            !request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "MethodNotAllowed",
+                "Only GET is supported for $ref and $value requests.",
+                StatusCodes.Status405MethodNotAllowed);
+        }
+
+        return ODataUtilityService.CreateODataError(
+            context,
+            "MethodNotAllowed",
+            $"Method {request.Method} is not supported for '{request.Url}'.",
+            StatusCodes.Status405MethodNotAllowed);
+    }
+
+    private static async Task<IResult> ExecuteFeatureGetAsync(
+        ODataCrudHandler crudHandler,
+        HttpContext context,
+        ODataParsedPath parsed,
+        IQueryCollection query,
+        CancellationToken cancellationToken)
+    {
+        return parsed.Tail switch
+        {
+            ODataPathTailKind.None => await crudHandler.HandleGetSingleFeatureAsync(
+                context,
+                parsed.LayerId!.Value,
+                parsed.ObjectId!.Value,
+                GetQueryValue(query, "$select"),
+                GetQueryValue(query, "$format"),
+                cancellationToken),
+            ODataPathTailKind.Ref => await crudHandler.HandleGetFeatureReferenceAsync(
+                context,
+                parsed.LayerId!.Value,
+                parsed.ObjectId!.Value,
+                cancellationToken),
+            ODataPathTailKind.Value => await crudHandler.HandleGetFeatureValueAsync(
+                context,
+                parsed.LayerId!.Value,
+                parsed.ObjectId!.Value,
+                GetQueryValue(query, "$format"),
+                cancellationToken),
+            _ => ODataUtilityService.CreateODataError(
+                context,
+                "InvalidRequest",
+                $"Unsupported path segment '{parsed.Tail}'.")
+        };
+    }
+
+    private static DefaultHttpContext CreateBatchRequestContext(
+        HttpContext parent,
+        ODataBatchRequestItem request,
+        CancellationToken cancellationToken)
+    {
+        var context = new DefaultHttpContext
+        {
+            RequestServices = parent.RequestServices,
+            User = parent.User,
+            TraceIdentifier = $"{parent.TraceIdentifier}:{request.Id}"
+        };
+
+        foreach (var item in parent.Items)
+        {
+            context.Items[item.Key] = item.Value;
+        }
+
+        context.Request.Method = request.Method.ToUpperInvariant();
+        context.Request.Scheme = parent.Request.Scheme;
+        context.Request.Host = parent.Request.Host;
+        context.Request.PathBase = parent.Request.PathBase;
+        context.Request.Protocol = parent.Request.Protocol;
+        context.RequestAborted = cancellationToken;
+        context.Response.Body = new MemoryStream();
+
+        var normalizedUrl = NormalizeBatchTargetUrl(request.Url);
+        var prefixedPath = normalizedUrl.StartsWith("odata/", StringComparison.OrdinalIgnoreCase)
+            ? $"/{normalizedUrl}"
+            : $"/odata/{normalizedUrl}";
+        var separator = prefixedPath.IndexOf('?', StringComparison.Ordinal);
+        var path = separator >= 0 ? prefixedPath[..separator] : prefixedPath;
+        var queryString = separator >= 0 ? prefixedPath[separator..] : string.Empty;
+
+        context.Request.Path = path;
+        context.Request.QueryString = string.IsNullOrEmpty(queryString)
+            ? QueryString.Empty
+            : new QueryString(queryString);
+
+        if (request.Headers != null)
+        {
+            foreach (var header in request.Headers)
+            {
+                context.Request.Headers[header.Key] = header.Value;
+            }
+        }
+
+        return context;
+    }
+
+    private static async Task<ODataBatchResponseItem> CreateBatchResponseItemAsync(
+        string requestId,
+        HttpContext context,
+        IResult result)
+    {
+        await result.ExecuteAsync(context);
+
+        var headers = context.Response.Headers
+            .Where(static header =>
+                !header.Key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase) &&
+                !header.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase) &&
+                !header.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase) &&
+                !header.Key.Equals("OData-Version", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(static header => header.Key, static header => header.Value.ToString(), StringComparer.OrdinalIgnoreCase);
+
+        object? body = null;
+        if (context.Response.Body is MemoryStream memoryStream && memoryStream.Length > 0)
+        {
+            memoryStream.Position = 0;
+            using var reader = new StreamReader(memoryStream, leaveOpen: true);
+            var payload = await reader.ReadToEndAsync();
+            if (!string.IsNullOrWhiteSpace(payload))
+            {
+                body = context.Response.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true
+                    ? ReadJsonPayload(payload)
+                    : payload;
+            }
+        }
+
+        return new ODataBatchResponseItem
+        {
+            Id = requestId,
+            Status = context.Response.StatusCode,
+            Headers = headers.Count == 0 ? null : headers,
+            Body = body
+        };
+    }
+
+    private static object? ReadJsonPayload(string payload)
+    {
+        using var document = JsonDocument.Parse(payload);
+        return JsonElementConverter.ConvertToObject(document.RootElement.Clone());
+    }
+
+    private static string? GetQueryValue(IQueryCollection query, string key)
+        => ODataRequestValidation.GetQueryValue(query, key);
+
+    private static ODataFeatureRequest CreateFeatureRequest(Dictionary<string, object?>? body)
+    {
+        if (body == null)
+        {
+            return new ODataFeatureRequest();
+        }
+
+        var element = JsonSerializer.SerializeToElement(body, ODataJsonContext.Default.DictionaryStringObject);
+        return JsonSerializer.Deserialize(element, ODataJsonContext.Default.ODataFeatureRequest) ?? new ODataFeatureRequest();
+    }
+
+    private static bool TryResolveContentIdReferences(
+        ODataBatchRequestItem request,
+        IReadOnlyDictionary<string, ODataBatchResponseItem> responsesById,
+        out ODataBatchRequestItem resolvedRequest,
+        out string? errorMessage)
+    {
+        errorMessage = null;
+        if (!TryResolveRequestUrl(request.Url, responsesById, out var resolvedUrl, out errorMessage))
+        {
+            resolvedRequest = request;
+            return false;
+        }
+
+        if (!TryResolveBodyReferences(request.Body, responsesById, out var resolvedBody, out errorMessage))
+        {
+            resolvedRequest = request;
+            return false;
+        }
+
+        resolvedRequest = new ODataBatchRequestItem
+        {
+            Id = request.Id,
+            Method = request.Method,
+            Url = resolvedUrl,
+            Headers = request.Headers,
+            Body = resolvedBody,
+            AtomicityGroup = request.AtomicityGroup,
+            DependsOn = request.DependsOn
+        };
+
+        return true;
+    }
+
+    private static bool TryResolveRequestUrl(
+        string url,
+        IReadOnlyDictionary<string, ODataBatchResponseItem> responsesById,
+        out string resolvedUrl,
+        out string? errorMessage)
+    {
+        resolvedUrl = url;
+        errorMessage = null;
+
+        var trimmed = url.Trim();
+        if (!trimmed.StartsWith('$'))
+        {
+            return TryNormalizeClientBatchTargetUrl(trimmed, out resolvedUrl, out errorMessage);
+        }
+
+        var delimiterIndex = trimmed.IndexOfAny(['/', '?']);
+        var referenceId = delimiterIndex >= 0 ? trimmed[1..delimiterIndex] : trimmed[1..];
+        var suffix = delimiterIndex >= 0 ? trimmed[delimiterIndex..] : string.Empty;
+
+        if (!TryResolveContentIdTarget(referenceId, responsesById, out var targetUrl, out errorMessage))
+        {
+            return false;
+        }
+
+        resolvedUrl = $"{NormalizeBatchTargetUrl(targetUrl)}{suffix}";
+        return true;
+    }
+
+    private static bool TryResolveBodyReferences(
+        Dictionary<string, object?>? body,
+        IReadOnlyDictionary<string, ODataBatchResponseItem> responsesById,
+        out Dictionary<string, object?>? resolvedBody,
+        out string? errorMessage)
+    {
+        errorMessage = null;
+        if (body == null)
+        {
+            resolvedBody = null;
+            return true;
+        }
+
+        resolvedBody = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in body)
+        {
+            if (!TryResolveBodyValue(value, responsesById, out var resolvedValue, out errorMessage))
+            {
+                return false;
+            }
+
+            resolvedBody[key] = resolvedValue;
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveBodyValue(
+        object? value,
+        IReadOnlyDictionary<string, ODataBatchResponseItem> responsesById,
+        out object? resolvedValue,
+        out string? errorMessage)
+    {
+        errorMessage = null;
+        resolvedValue = value;
+
+        if (value is string stringValue &&
+            stringValue.StartsWith('$') &&
+            !stringValue.Contains('/', StringComparison.Ordinal) &&
+            !stringValue.Contains('?', StringComparison.Ordinal))
+        {
+            var referenceId = stringValue[1..];
+            if (!TryResolveContentIdTarget(referenceId, responsesById, out var targetUrl, out errorMessage))
+            {
+                resolvedValue = null;
+                return false;
+            }
+
+            resolvedValue = targetUrl;
+            return true;
+        }
+
+        if (value is IDictionary<string, object?> dictionary)
+        {
+            var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, nestedValue) in dictionary)
+            {
+                if (!TryResolveBodyValue(nestedValue, responsesById, out var resolvedNestedValue, out errorMessage))
+                {
+                    resolvedValue = null;
+                    return false;
+                }
+
+                result[key] = resolvedNestedValue;
+            }
+
+            resolvedValue = result;
+            return true;
+        }
+
+        if (value is IEnumerable<object?> listValue)
+        {
+            var resolvedItems = new List<object?>();
+            foreach (var item in listValue)
+            {
+                if (!TryResolveBodyValue(item, responsesById, out var resolvedItem, out errorMessage))
+                {
+                    resolvedValue = null;
+                    return false;
+                }
+
+                resolvedItems.Add(resolvedItem);
+            }
+
+            resolvedValue = resolvedItems.ToArray();
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveContentIdTarget(
+        string referenceId,
+        IReadOnlyDictionary<string, ODataBatchResponseItem> responsesById,
+        out string targetUrl,
+        out string? errorMessage)
+    {
+        targetUrl = string.Empty;
+        errorMessage = null;
+
+        if (!responsesById.TryGetValue(referenceId, out var referencedResponse))
+        {
+            errorMessage = $"Unknown Content-ID reference '${referenceId}'.";
+            return false;
+        }
+
+        if (referencedResponse.Status >= 400)
+        {
+            errorMessage = $"Content-ID reference '${referenceId}' points to a failed request.";
+            return false;
+        }
+
+        if (referencedResponse.Headers != null &&
+            (referencedResponse.Headers.TryGetValue("EntityId", out var entityId) ||
+             referencedResponse.Headers.TryGetValue("OData-EntityId", out entityId)) &&
+            !string.IsNullOrWhiteSpace(entityId))
+        {
+            targetUrl = NormalizeBatchTargetUrl(entityId);
+            return true;
+        }
+
+        if (referencedResponse.Headers != null &&
+            referencedResponse.Headers.TryGetValue("Location", out var location) &&
+            !string.IsNullOrWhiteSpace(location))
+        {
+            targetUrl = NormalizeBatchTargetUrl(location);
+            return true;
+        }
+
+        if (referencedResponse.Body is Dictionary<string, object?> dictionary &&
+            TryGetInt(dictionary, "LayerId", out var layerId) &&
+            TryGetLong(dictionary, "ObjectId", out var objectId))
+        {
+            targetUrl = $"/odata/Features(LayerId={layerId},ObjectId={objectId})";
+            return true;
+        }
+
+        errorMessage = $"Content-ID reference '${referenceId}' does not identify an entity resource.";
+        return false;
+    }
+
+    private static bool TryGetInt(Dictionary<string, object?> values, string key, out int result)
+    {
+        result = 0;
+        return values.TryGetValue(key, out var value) && value switch
+        {
+            int i => (result = i) >= 0,
+            long l when l is >= int.MinValue and <= int.MaxValue => (result = (int)l) >= 0,
+            string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => (result = parsed) >= 0,
+            _ => false
+        };
+    }
+
+    private static bool TryGetLong(Dictionary<string, object?> values, string key, out long result)
+    {
+        result = 0;
+        return values.TryGetValue(key, out var value) && value switch
+        {
+            long l => (result = l) >= 0,
+            int i => (result = i) >= 0,
+            string s when long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => (result = parsed) >= 0,
+            _ => false
+        };
     }
 
     private async Task<ODataBatchResponseItem> HandleGetAsync(
@@ -1187,9 +1717,45 @@ internal sealed partial class ODataBatchHandler
             return CreateErrorResponse(requestId, 400, "InvalidRequest", "Invalid request data.");
         }
 
-        var created = await _featureWriter.CreateAsync(layer.Id, feature, cancellationToken);
+        var createValidation = await BuildValidatedEditBatchAsync(
+            layer,
+            CreateEditRequestFromFeature(ODataOperation.Create, feature),
+            rollbackOnFailure: false,
+            cancellationToken);
+        if (createValidation.ErrorMessage != null ||
+            createValidation.Batch == null ||
+            createValidation.Batch.Value.Creates.IsDefaultOrEmpty)
+        {
+            return CreateErrorResponse(
+                requestId,
+                400,
+                "InvalidRequest",
+                createValidation.ErrorMessage ?? "Invalid request data.");
+        }
+
+        var editResult = await _featureWriter.ApplyEditsAsync(layer.Id, createValidation.Batch.Value, cancellationToken);
+        var createResult = editResult.CreateResults.FirstOrDefault();
+        if (editResult.CreateResults.IsDefaultOrEmpty || !createResult.IsSuccess || !createResult.ObjectId.HasValue)
+        {
+            return CreateErrorResponse(
+                requestId,
+                400,
+                "CreateFailed",
+                createResult.ErrorMessage ?? "Create operation failed.");
+        }
+
+        var created = await _featureReader.GetAsync(layer.Id, createResult.ObjectId.Value, cancellationToken);
+        if (!created.HasValue)
+        {
+            return CreateErrorResponse(
+                requestId,
+                500,
+                "CreateReadbackFailed",
+                $"Created feature {createResult.ObjectId.Value} could not be reloaded.");
+        }
+
         var axisOrder = await ResolveAxisOrderAsync(layer, cancellationToken);
-        var payload = FeatureToBody(created, layer, axisOrder, baseUrl, out var etag);
+        var payload = FeatureToBody(created.Value, layer, axisOrder, baseUrl, out var etag);
 
         return CreateSuccessResponse(
             requestId,
@@ -1197,11 +1763,12 @@ internal sealed partial class ODataBatchHandler
             payload,
             new Dictionary<string, string>
             {
-                ["Location"] = $"{baseUrl}/odata/Features(LayerId={layer.Id},ObjectId={created.Id})",
-                ["OData-EntityId"] = $"{baseUrl}/odata/Features(LayerId={layer.Id},ObjectId={created.Id})",
+                ["Location"] = $"{baseUrl}/odata/Features(LayerId={layer.Id},ObjectId={created.Value.Id})",
+                ["OData-EntityId"] = $"{baseUrl}/odata/Features(LayerId={layer.Id},ObjectId={created.Value.Id})",
+                ["EntityId"] = $"{baseUrl}/odata/Features(LayerId={layer.Id},ObjectId={created.Value.Id})",
                 ["ETag"] = etag
             },
-            created);
+            created.Value);
     }
 
     private async Task<ODataBatchResponseItem> HandlePatchAsync(
@@ -1247,16 +1814,57 @@ internal sealed partial class ODataBatchHandler
             return CreateErrorResponse(requestId, 400, "InvalidRequest", "Invalid request data.");
         }
 
-        var result = await _featureWriter.UpdateAsync(layer.Id, updatedFeature, cancellationToken);
+        var updateValidation = await BuildValidatedEditBatchAsync(
+            layer,
+            CreateEditRequestFromFeature(
+                ODataOperation.Patch,
+                updatedFeature,
+                objectId.Value,
+                headers?.GetValueOrDefault("If-Match"),
+                headers?.GetValueOrDefault("If-None-Match")),
+            rollbackOnFailure: false,
+            cancellationToken);
+        if (updateValidation.ErrorMessage != null ||
+            updateValidation.Batch == null ||
+            updateValidation.Batch.Value.Updates.IsDefaultOrEmpty)
+        {
+            return CreateErrorResponse(
+                requestId,
+                400,
+                "InvalidRequest",
+                updateValidation.ErrorMessage ?? "Invalid request data.");
+        }
+
+        var editResult = await _featureWriter.ApplyEditsAsync(layer.Id, updateValidation.Batch.Value, cancellationToken);
+        var updateResult = editResult.UpdateResults.FirstOrDefault();
+        if (editResult.UpdateResults.IsDefaultOrEmpty || !updateResult.IsSuccess)
+        {
+            return CreateErrorResponse(
+                requestId,
+                400,
+                "UpdateFailed",
+                updateResult.ErrorMessage ?? "Update operation failed.");
+        }
+
+        var persistedObjectId = updateResult.ObjectId ?? objectId.Value;
+        var persistedFeature = await _featureReader.GetAsync(layer.Id, persistedObjectId, cancellationToken);
+        if (!persistedFeature.HasValue)
+        {
+            return CreateErrorResponse(
+                requestId,
+                500,
+                "UpdateReadbackFailed",
+                $"Updated feature {persistedObjectId} could not be reloaded.");
+        }
 
         var axisOrder = await ResolveAxisOrderAsync(layer, cancellationToken);
-        var updatedPayload = FeatureToBody(result, layer, axisOrder, baseUrl, out var etag);
+        var updatedPayload = FeatureToBody(persistedFeature.Value, layer, axisOrder, baseUrl, out var etag);
         return CreateSuccessResponse(
             requestId,
             200,
             updatedPayload,
             new Dictionary<string, string> { ["ETag"] = etag },
-            result);
+            persistedFeature.Value);
     }
 
     private async Task<ODataBatchResponseItem> HandleDeleteAsync(
@@ -1289,16 +1897,44 @@ internal sealed partial class ODataBatchHandler
             return CreateErrorResponse(requestId, 412, "PreconditionFailed", precondition.ErrorMessage ?? "Precondition failed.");
         }
 
-        var deleted = await _featureWriter.DeleteAsync(layerId, objectId.Value, cancellationToken);
-        if (!deleted)
+        var deleteValidation = await BuildValidatedEditBatchAsync(
+            layer,
+            new ODataEditRequest
+            {
+                Operation = ODataOperation.Delete,
+                ObjectId = objectId.Value,
+                IfMatch = headers?.GetValueOrDefault("If-Match"),
+                IfNoneMatch = headers?.GetValueOrDefault("If-None-Match"),
+                Payload = new ParsedFeaturePayload()
+            },
+            rollbackOnFailure: false,
+            cancellationToken);
+        if (deleteValidation.ErrorMessage != null ||
+            deleteValidation.Batch == null ||
+            deleteValidation.Batch.Value.Deletes.IsDefaultOrEmpty)
         {
-            return CreateErrorResponse(requestId, 404, "ResourceNotFound", $"Feature {objectId} not found in layer {layerId}.");
+            return CreateErrorResponse(
+                requestId,
+                400,
+                "InvalidRequest",
+                deleteValidation.ErrorMessage ?? "Invalid request data.");
+        }
+
+        var editResult = await _featureWriter.ApplyEditsAsync(layerId, deleteValidation.Batch.Value, cancellationToken);
+        var deleteResult = editResult.DeleteResults.FirstOrDefault();
+        if (editResult.DeleteResults.IsDefaultOrEmpty || !deleteResult.IsSuccess)
+        {
+            return CreateErrorResponse(
+                requestId,
+                404,
+                "ResourceNotFound",
+                deleteResult.ErrorMessage ?? $"Feature {objectId} not found in layer {layerId}.");
         }
 
         return CreateSuccessResponse(requestId, 204, null);
     }
 
-    private async Task<ODataBatchResponseItem?> ValidateBatchRequestAccessAsync(
+    private static async Task<ODataBatchResponseItem?> ValidateBatchRequestAccessAsync(
         HttpContext context,
         string requestId,
         LayerDefinition layer,
@@ -1411,6 +2047,7 @@ internal sealed partial class ODataBatchHandler
             switch (key.ToLowerInvariant())
             {
                 case "$top":
+                case "top":
                     if (!ODataParsingUtilities.TryParseOptionalInt(value, "$top", out var topValue, out var topError))
                     {
                         errorMessage = topError;
@@ -1421,6 +2058,7 @@ internal sealed partial class ODataBatchHandler
                     break;
 
                 case "$skip":
+                case "skip":
                     if (!ODataParsingUtilities.TryParseOptionalInt(value, "$skip", out var skipValue, out var skipError))
                     {
                         errorMessage = skipError;
@@ -1431,6 +2069,7 @@ internal sealed partial class ODataBatchHandler
                     break;
 
                 case "$skiptoken":
+                case "skiptoken":
                     if (!ODataParsingUtilities.TryParseOptionalInt(value, "$skiptoken", out var skipTokenValue, out var skipTokenError))
                     {
                         errorMessage = skipTokenError;
@@ -1451,6 +2090,7 @@ internal sealed partial class ODataBatchHandler
                     break;
 
                 case "$count":
+                case "count":
                     if (!ODataParsingUtilities.TryParseOptionalBool(value, "$count", out var countValue, out var countError))
                     {
                         errorMessage = countError;
@@ -1461,6 +2101,7 @@ internal sealed partial class ODataBatchHandler
                     break;
 
                 case "$select":
+                case "select":
                     select = value;
                     break;
 
@@ -1503,6 +2144,58 @@ internal sealed partial class ODataBatchHandler
             : null;
     }
 
+    private async Task<(FeatureEditBatch? Batch, string? ErrorMessage)> BuildValidatedEditBatchAsync(
+        LayerDefinition layer,
+        ODataEditRequest request,
+        bool rollbackOnFailure,
+        CancellationToken cancellationToken)
+    {
+        var conversion = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
+        if (!conversion.IsSuccess || conversion.EditRequest == null || conversion.Transaction == null)
+        {
+            return (null, conversion.ErrorMessage ?? "Invalid OData edit request.");
+        }
+
+        var validation = _editProcessor.ValidateEdit(conversion.EditRequest.Value, layer);
+        if (!validation.IsValid)
+        {
+            return (null, validation.ErrorMessage ?? "Invalid OData edit request.");
+        }
+
+        var transactionValidation = _editProcessor.ValidateTransaction(conversion.Transaction.Value, layer);
+        if (!transactionValidation.IsValid)
+        {
+            return (null, transactionValidation.ErrorMessage ?? "Invalid OData edit request.");
+        }
+
+        var optimizedRequest = _editProcessor.OptimizeEdit(conversion.EditRequest.Value, layer);
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedRequest, layer) with
+        {
+            RollbackOnFailure = rollbackOnFailure
+        };
+
+        return (editBatch, null);
+    }
+
+    private static ODataEditRequest CreateEditRequestFromFeature(
+        ODataOperation operation,
+        Feature feature,
+        long? objectId = null,
+        string? ifMatch = null,
+        string? ifNoneMatch = null)
+        => new()
+        {
+            Operation = operation,
+            ObjectId = objectId,
+            IfMatch = ifMatch,
+            IfNoneMatch = ifNoneMatch,
+            GeometryWkb = feature.Geometry,
+            Payload = new ParsedFeaturePayload
+            {
+                Attributes = new Dictionary<string, object?>(feature.Attributes, StringComparer.OrdinalIgnoreCase)
+            }
+        };
+
     private async Task<Feature> CreateFeatureFromBodyAsync(
         Dictionary<string, object?> body,
         LayerDefinition layer,
@@ -1521,7 +2214,7 @@ internal sealed partial class ODataBatchHandler
         }
 
         byte[]? geometry = existing.HasValue ? existing.Value.Geometry : null;
-        if (payload.Geometry != null)
+        if (payload.GeometrySpecified && payload.Geometry != null)
         {
             var crsResolution = await ODataCrsUtilities.TryResolveGeometryCrsAsync(
                 _crsRegistry,
@@ -1553,6 +2246,10 @@ internal sealed partial class ODataBatchHandler
             }
 
             geometry = geometryValidation.Geometry;
+        }
+        else if (payload.GeometrySpecified)
+        {
+            geometry = null;
         }
 
         var attributes = existing.HasValue

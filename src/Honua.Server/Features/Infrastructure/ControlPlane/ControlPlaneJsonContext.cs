@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Server.Features.Infrastructure.ControlPlane;
 
@@ -14,6 +15,7 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
 [JsonSerializable(typeof(DeployTargetDefinition))]
 [JsonSerializable(typeof(ExecutionJobDefinition))]
 [JsonSerializable(typeof(ExecutionLogEntry))]
+[JsonSerializable(typeof(AnalysisResultPackage))]
 internal sealed partial class ControlPlaneJsonContext : JsonSerializerContext
 {
 }

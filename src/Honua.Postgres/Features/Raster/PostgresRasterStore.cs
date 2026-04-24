@@ -3,6 +3,7 @@
 
 using System.Collections.Frozen;
 using System.Data.Common;
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -153,6 +154,10 @@ internal sealed class PostgresRasterStore : IRasterStore
                 connection, blockSize: exportBlockSize, layerId, rasterId,
                 includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
         }
+        else
+        {
+            creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
+        }
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -228,6 +233,59 @@ internal sealed class PostgresRasterStore : IRasterStore
             BandCount = bandCount,
             Extent = extent
         };
+    }
+
+    internal static string[] BuildExportCreationOptions(RasterQuery query, string formatName)
+    {
+        var options = new List<string>();
+
+        if (string.Equals(formatName, "JPEG", StringComparison.Ordinal))
+        {
+            if (query.Quality.HasValue)
+            {
+                options.Add(string.Create(CultureInfo.InvariantCulture, $"QUALITY={query.Quality.Value}"));
+            }
+
+            return [.. options];
+        }
+
+        if (!string.Equals(formatName, "GTiff", StringComparison.Ordinal) || !query.TiffCompression.HasValue)
+        {
+            return [.. options];
+        }
+
+        switch (query.TiffCompression.Value)
+        {
+            case TiffCompression.None:
+                options.Add("COMPRESS=NONE");
+                break;
+            case TiffCompression.LZW:
+                options.Add("COMPRESS=LZW");
+                break;
+            case TiffCompression.Deflate:
+                options.Add("COMPRESS=DEFLATE");
+                break;
+            case TiffCompression.JPEG:
+                options.Add("COMPRESS=JPEG");
+                if (query.Quality.HasValue)
+                {
+                    options.Add(string.Create(CultureInfo.InvariantCulture, $"JPEG_QUALITY={query.Quality.Value}"));
+                }
+                break;
+        }
+
+        return [.. options];
+    }
+
+    private static string BuildCreationOptionsClause(string[] creationOptions)
+    {
+        if (creationOptions.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var quotedOptions = creationOptions.Select(static option => $"'{option}'");
+        return $", ARRAY[{string.Join(", ", quotedOptions)}]";
     }
 
     /// <inheritdoc />
@@ -575,7 +633,12 @@ internal sealed class PostgresRasterStore : IRasterStore
                 return Array.Empty<RasterHistogram>();
             }
 
-            var totalBands = Convert.ToInt32(bandCountResult, System.Globalization.CultureInfo.InvariantCulture);
+            var totalBands = bandCountResult switch
+            {
+                int intValue => intValue,
+                long longValue => checked((int)longValue),
+                _ => Convert.ToInt32(bandCountResult, System.Globalization.CultureInfo.InvariantCulture)
+            };
             effectiveBands = new int[totalBands];
             for (var i = 0; i < totalBands; i++)
             {
@@ -626,7 +689,13 @@ internal sealed class PostgresRasterStore : IRasterStore
                 {
                     var binMin = histogramReader.IsDBNull(0) ? double.NaN : histogramReader.GetDouble(0);
                     var binMax = histogramReader.IsDBNull(1) ? double.NaN : histogramReader.GetDouble(1);
-                    var count = histogramReader.IsDBNull(2) ? 0L : Convert.ToInt64(histogramReader.GetValue(2), System.Globalization.CultureInfo.InvariantCulture);
+                    var count = histogramReader.IsDBNull(2) ? 0L :
+                        histogramReader.GetValue(2) switch
+                        {
+                            long longValue => longValue,
+                            int intValue => (long)intValue,
+                            _ => Convert.ToInt64(histogramReader.GetValue(2), System.Globalization.CultureInfo.InvariantCulture)
+                        };
 
                     if (index < counts.Length)
                     {
@@ -727,7 +796,13 @@ internal sealed class PostgresRasterStore : IRasterStore
                 var band = batchReader.GetInt32(0);
                 var binMin = batchReader.IsDBNull(1) ? double.NaN : batchReader.GetDouble(1);
                 var binMax = batchReader.IsDBNull(2) ? double.NaN : batchReader.GetDouble(2);
-                var count = batchReader.IsDBNull(3) ? 0L : Convert.ToInt64(batchReader.GetValue(3), System.Globalization.CultureInfo.InvariantCulture);
+                var count = batchReader.IsDBNull(3) ? 0L :
+                    batchReader.GetValue(3) switch
+                    {
+                        long longValue => longValue,
+                        int intValue => (long)intValue,
+                        _ => Convert.ToInt64(batchReader.GetValue(3), System.Globalization.CultureInfo.InvariantCulture)
+                    };
 
                 if (!bandBuckets.TryGetValue(band, out var bucket))
                 {

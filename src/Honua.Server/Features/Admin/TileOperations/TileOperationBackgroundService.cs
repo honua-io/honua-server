@@ -32,7 +32,7 @@ internal sealed class TileOperationBackgroundService(
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Unexpected exception while processing tile job {JobId}.", jobId);
+                        TileOperationLog.BackgroundJobProcessingFailed(_logger, jobId, ex);
                     }
                 }
 
@@ -44,7 +44,7 @@ internal sealed class TileOperationBackgroundService(
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Tile background worker faulted and will restart.");
+                TileOperationLog.BackgroundWorkerRestarting(_logger, ex);
                 await Task.Delay(WorkerRestartDelay, stoppingToken).ConfigureAwait(false);
             }
         }

@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OData;
@@ -33,8 +35,16 @@ internal sealed partial class ODataAdvancedQueryHandler(
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
+        Activity? activity = null;
         try
         {
+            activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureQuery,
+                ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "apply");
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
             ODataLog.ApplyRequested(_logger, layerId);
 
             var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
@@ -80,6 +90,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
             }
 
             ODataUtilityService.SetODataHeaders(context);
+            HonuaTelemetry.SetSuccess(activity, result.Value.Length);
             return Results.Json(result, ODataJsonContext.Default.ODataAggregationResult,
                 contentType: ODataUtilityService.GetODataContentType(context.Request, format));
         }
@@ -90,21 +101,28 @@ internal sealed partial class ODataAdvancedQueryHandler(
         }
         catch (Honua.Core.Exceptions.ResourceNotFoundException ex)
         {
+            HonuaTelemetry.RecordException(activity, ex);
             Log.InvalidApplyExpression(_logger, layerId, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "ResourceNotFound", safeDetail, 404);
         }
         catch (ArgumentException ex)
         {
+            HonuaTelemetry.RecordException(activity, ex);
             Log.InvalidApplyExpression(_logger, layerId, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", safeDetail);
         }
         catch (Exception ex)
         {
+            HonuaTelemetry.RecordException(activity, ex);
             Log.ApplyFailed(_logger, layerId, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
                 "An error occurred processing the aggregation request", 500);
+        }
+        finally
+        {
+            activity?.Dispose();
         }
     }
 
@@ -125,8 +143,16 @@ internal sealed partial class ODataAdvancedQueryHandler(
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
+        Activity? activity = null;
         try
         {
+            activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureQuery,
+                ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "search");
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
             ODataLog.SearchRequested(_logger, layerId);
 
             var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
@@ -205,6 +231,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
                 orderby,
                 select,
                 expand,
+                context,
                 cancellationToken: effectiveToken);
             if (!ODataUtilityService.ShouldIncludeContext(context.Request, format))
             {
@@ -217,6 +244,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
             }
 
             ODataUtilityService.SetODataHeaders(context);
+            HonuaTelemetry.SetSuccess(activity, result.Value.Length);
             return Results.Json(result, ODataJsonContext.Default.ODataSearchResult,
                 contentType: ODataUtilityService.GetODataContentType(context.Request, format));
         }
@@ -227,21 +255,28 @@ internal sealed partial class ODataAdvancedQueryHandler(
         }
         catch (Honua.Core.Exceptions.ResourceNotFoundException ex)
         {
+            HonuaTelemetry.RecordException(activity, ex);
             Log.SearchFailed(_logger, layerId, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "ResourceNotFound", safeDetail, 404);
         }
         catch (ArgumentException ex)
         {
+            HonuaTelemetry.RecordException(activity, ex);
             Log.SearchFailed(_logger, layerId, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", safeDetail);
         }
         catch (Exception ex)
         {
+            HonuaTelemetry.RecordException(activity, ex);
             Log.SearchFailed(_logger, layerId, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
                 "An error occurred processing the search request", 500);
+        }
+        finally
+        {
+            activity?.Dispose();
         }
     }
 

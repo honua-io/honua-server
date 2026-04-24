@@ -129,13 +129,14 @@ internal static partial class SecureConnectionEndpoints
             if (!Validator.TryValidateObject(request, validationContext, validationResults, true))
             {
                 var errors = validationResults.Select(r => r.ErrorMessage).ToList();
-                logger.LogWarning("Invalid test connection request: {Errors}", string.Join(", ", errors));
-                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {string.Join(", ", errors)}"));
+                var errorMessage = string.Join(", ", errors);
+                SecureConnectionLog.InvalidTestConnectionRequest(logger, errorMessage);
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errorMessage}"));
             }
 
             if (!request.IsValid(out var validationError))
             {
-                logger.LogWarning("Invalid test connection request: {Error}", validationError);
+                SecureConnectionLog.InvalidTestConnectionRequestError(logger, validationError);
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {validationError}"));
             }
 
@@ -188,7 +189,7 @@ internal static partial class SecureConnectionEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to test draft connection");
+            SecureConnectionLog.TestDraftConnectionFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Draft connection test failed",
                 detail: "An internal error occurred while testing the draft connection.",
@@ -234,7 +235,7 @@ internal static partial class SecureConnectionEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to retrieve secure connections");
+            SecureConnectionLog.RetrieveSecureConnectionsFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Secure connection listing failed",
                 detail: "An internal error occurred while retrieving secure connections.",
@@ -257,7 +258,7 @@ internal static partial class SecureConnectionEndpoints
             var connection = await registry.GetConnectionAsync(id, context.RequestAborted);
             if (connection == null)
             {
-                logger.LogWarning("Connection with ID {ConnectionId} not found", id);
+                SecureConnectionLog.ConnectionNotFound(logger, id);
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
             }
 
@@ -287,7 +288,7 @@ internal static partial class SecureConnectionEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to retrieve connection {ConnectionId}", id);
+            SecureConnectionLog.RetrieveConnectionFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Secure connection retrieval failed",
                 detail: "An internal error occurred while retrieving the secure connection.",
@@ -316,13 +317,14 @@ internal static partial class SecureConnectionEndpoints
             if (!Validator.TryValidateObject(request, validationContext, validationResults, true))
             {
                 var errors = validationResults.Select(r => r.ErrorMessage).ToList();
-                logger.LogWarning("Invalid create connection request: {Errors}", string.Join(", ", errors));
-                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {string.Join(", ", errors)}"));
+                var errorMessage = string.Join(", ", errors);
+                SecureConnectionLog.InvalidCreateConnectionRequest(logger, errorMessage);
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errorMessage}"));
             }
 
             if (!request.IsValid(out var validationError))
             {
-                logger.LogWarning("Invalid create connection request: {Error}", validationError);
+                SecureConnectionLog.InvalidCreateConnectionRequestError(logger, validationError);
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {validationError}"));
             }
 
@@ -418,12 +420,12 @@ internal static partial class SecureConnectionEndpoints
         catch (InvalidOperationException ex)
             when (IsClientSafeCreateConnectionInvalidOperation(ex))
         {
-            logger.LogWarning(ex, "Failed to create secure connection due to invalid request state");
+            SecureConnectionLog.CreateSecureConnectionInvalidRequestState(logger, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure(InvalidSecureConnectionRequestMessage));
         }
         catch (InvalidOperationException ex)
         {
-            logger.LogError(ex, "Failed to create secure connection due to internal invalid operation");
+            SecureConnectionLog.CreateSecureConnectionInvalidOperation(logger, ex);
             return TypedResults.Problem(
                 title: "Secure connection creation failed",
                 detail: "An internal error occurred while creating the secure connection.",
@@ -431,7 +433,7 @@ internal static partial class SecureConnectionEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to create secure connection");
+            SecureConnectionLog.CreateSecureConnectionFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Secure connection creation failed",
                 detail: "An internal error occurred while creating the secure connection.",
@@ -484,7 +486,7 @@ internal static partial class SecureConnectionEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to test connection {ConnectionId}", id);
+            SecureConnectionLog.TestConnectionFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Secure connection test failed",
                 detail: "An internal error occurred while testing the secure connection.",
@@ -520,7 +522,7 @@ internal static partial class SecureConnectionEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to validate encryption service");
+            SecureConnectionLog.ValidateEncryptionServiceFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Encryption validation failed",
                 detail: "An internal error occurred while validating encryption.",
@@ -545,14 +547,15 @@ internal static partial class SecureConnectionEndpoints
             if (!Validator.TryValidateObject(request, validationContext, validationResults, true))
             {
                 var errors = validationResults.Select(r => r.ErrorMessage).ToList();
-                logger.LogWarning("Invalid update connection request: {Errors}", string.Join(", ", errors));
-                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {string.Join(", ", errors)}"));
+                var errorMessage = string.Join(", ", errors);
+                SecureConnectionLog.InvalidUpdateConnectionRequest(logger, errorMessage);
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errorMessage}"));
             }
 
             var existing = await registry.GetConnectionAsync(id, context.RequestAborted);
             if (existing == null)
             {
-                logger.LogWarning("Connection with ID {ConnectionId} not found for update", id);
+                SecureConnectionLog.ConnectionNotFoundForUpdate(logger, id);
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
             }
 
@@ -648,7 +651,7 @@ internal static partial class SecureConnectionEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to update secure connection {ConnectionId}", id);
+            SecureConnectionLog.UpdateSecureConnectionFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Secure connection update failed",
                 detail: "An internal error occurred while updating the secure connection.",
@@ -676,12 +679,12 @@ internal static partial class SecureConnectionEndpoints
         }
         catch (Npgsql.PostgresException ex) when (ex.SqlState == "23503")
         {
-            logger.LogWarning(ex, "Secure connection {ConnectionId} is in use", id);
+            SecureConnectionLog.SecureConnectionInUse(logger, id, ex);
             return TypedResults.Conflict(ApiResponse<object>.Failure("Connection is in use by services"));
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to delete secure connection {ConnectionId}", id);
+            SecureConnectionLog.DeleteSecureConnectionFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Secure connection deletion failed",
                 detail: "An internal error occurred while deleting the secure connection.",
@@ -708,18 +711,18 @@ internal static partial class SecureConnectionEndpoints
                 Message = "Encryption key rotated successfully"
             };
 
-            logger.LogWarning("Encryption key rotated from {Previous} to {New}", previousVersion, newVersion);
+            SecureConnectionLog.EncryptionKeyRotated(logger, previousVersion, newVersion);
 
             return TypedResults.Ok(ApiResponse<KeyRotationResult>.CreateSuccess(result));
         }
         catch (NotSupportedException ex)
         {
-            logger.LogWarning(ex, "Encryption key rotation is not supported");
+            SecureConnectionLog.EncryptionKeyRotationNotSupported(logger, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure(EncryptionRotationNotSupportedMessage));
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to rotate encryption key");
+            SecureConnectionLog.RotateEncryptionKeyFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Encryption key rotation failed",
                 detail: "An internal error occurred while rotating the encryption key.",

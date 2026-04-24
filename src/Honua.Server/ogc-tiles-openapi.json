@@ -105,6 +105,11 @@
       "get": {
         "summary": "Collections list",
         "operationId": "collections.getCollections",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "f",
@@ -128,6 +133,22 @@
                 "schema": { "type": "string" }
               }
             }
+          },
+          "401": {
+            "description": "Authentication required to access the available collections",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "403": {
+            "description": "Available collections are not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
           }
         }
       }
@@ -136,6 +157,11 @@
       "get": {
         "summary": "Collection metadata",
         "operationId": "collections.getCollection",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "collectionId",
@@ -185,6 +211,22 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collection is not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
           "404": { "description": "Not found" }
         }
       }
@@ -193,6 +235,11 @@
       "get": {
         "summary": "Dataset tilesets list",
         "operationId": "tilesets.getTilesets",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "f",
@@ -232,6 +279,22 @@
                 "schema": { "$ref": "#/components/schemas/ProblemDetails" }
               }
             }
+          },
+          "401": {
+            "description": "Authentication required to access the available dataset tilesets",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "403": {
+            "description": "Available dataset tilesets are not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
           }
         }
       }
@@ -240,6 +303,11 @@
       "get": {
         "summary": "Dataset tileset metadata",
         "operationId": "tilesets.getTileset",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "tileMatrixSetId",
@@ -298,6 +366,22 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication required to access the requested dataset tileset",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested dataset tileset is not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
           "404": { "description": "Not found" }
         }
       }
@@ -306,6 +390,11 @@
       "get": {
         "summary": "Dataset tile",
         "operationId": "tilesets.getTile",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "tileMatrixSetId",
@@ -407,6 +496,22 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication required for at least one requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collections are not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
           "406": {
             "description": "Requested tile format is not acceptable",
             "content": {
@@ -422,6 +527,11 @@
       "get": {
         "summary": "Collection tilesets list",
         "operationId": "collections.getTilesets",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "collectionId",
@@ -471,6 +581,22 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collection is not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
           "404": { "description": "Not found" }
         }
       }
@@ -479,6 +605,11 @@
       "get": {
         "summary": "Collection tileset metadata",
         "operationId": "collections.getTileset",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "collectionId",
@@ -534,6 +665,22 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collection is not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
           "404": { "description": "Not found" }
         }
       }
@@ -542,6 +689,11 @@
       "get": {
         "summary": "Collection tile",
         "operationId": "collections.getTile",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "collectionId",
@@ -634,6 +786,22 @@
           },
           "404": {
             "description": "Collection or tile matrix set not found",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collection is not accessible",
             "content": {
               "application/problem+json": {
                 "schema": { "$ref": "#/components/schemas/ProblemDetails" }
@@ -754,6 +922,18 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
     "schemas": {
       "Link": {
         "type": "object",

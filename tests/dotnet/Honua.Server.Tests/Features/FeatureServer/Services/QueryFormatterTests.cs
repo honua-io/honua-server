@@ -133,6 +133,49 @@ public sealed class QueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatQueryResultAsync_WithGeoJsonAndMeasuredGeometry_DropsMOrdinate()
+    {
+        var limitsOptions = Options.Create(new LimitsOptions());
+        var formatter = new QueryFormatter(
+            limitsOptions,
+            new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+
+        var result = QueryResult<Feature>.Create(
+            1,
+            [
+                Feature.Create(
+                    1,
+                    CreateMeasuredPointGeometry(1, 2, 3, 4),
+                    ImmutableDictionary<string, object?>.Empty.Add("name", "alpha"))
+            ]);
+
+        var (response, contentType) = await formatter.FormatQueryResultAsync(
+            result,
+            CreatePointLayer(),
+            format: "geojson",
+            returnGeometry: true,
+            outputSrid: null,
+            returnZ: true,
+            returnM: true,
+            geometryPrecision: null,
+            maxAllowableOffset: null);
+
+        contentType.Should().Be("application/geo+json");
+
+        var json = JsonSerializer.Serialize(
+            response,
+            FeatureServerJsonContext.Default.GeoJsonFeatureSet);
+        using var document = JsonDocument.Parse(json);
+        var coordinates = document.RootElement.GetProperty("features")[0].GetProperty("geometry").GetProperty("coordinates");
+
+        coordinates.GetArrayLength().Should().Be(3);
+        coordinates[0].GetDouble().Should().Be(1);
+        coordinates[1].GetDouble().Should().Be(2);
+        coordinates[2].GetDouble().Should().Be(3);
+    }
+
+    [Fact]
     public async Task FormatQueryResultAsync_WithJson_OmitsNullExtentAndFalseDimensionFlags()
     {
         var limitsOptions = Options.Create(new LimitsOptions());
@@ -316,6 +359,13 @@ public sealed class QueryFormatterTests
     {
         var writer = new WKBWriter();
         var point = new Point(x, y) { SRID = srid };
+        return writer.Write(point);
+    }
+
+    private static byte[] CreateMeasuredPointGeometry(double x, double y, double z, double m)
+    {
+        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true);
+        var point = new Point(new CoordinateZM(x, y, z, m)) { SRID = 4326 };
         return writer.Write(point);
     }
 }

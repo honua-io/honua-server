@@ -12,6 +12,7 @@ internal sealed record ParsedFeaturePayload
     public int? LayerId { get; init; }
     public long? ObjectId { get; init; }
     public ODataSpatialGeometry? Geometry { get; init; }
+    public bool GeometrySpecified { get; init; }
     public Dictionary<string, object?> Attributes { get; init; } =
         new(StringComparer.OrdinalIgnoreCase);
 }
@@ -37,7 +38,7 @@ internal static class ODataFeaturePayloadParser
             properties["Attributes"] = request.Attributes;
         }
 
-        if (request.Geometry != null)
+        if (request.GeometrySpecified)
         {
             properties["Geometry"] = request.Geometry;
         }
@@ -89,7 +90,7 @@ internal static class ODataFeaturePayloadParser
                 return false;
             }
 
-            payload = payload with { Geometry = geometry };
+            payload = payload with { Geometry = geometry, GeometrySpecified = true };
         }
 
         if (TryGetProperty(properties, "Attributes", out var attributesValue))

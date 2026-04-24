@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -16,6 +17,8 @@ namespace Honua.Server.Features.Geoprocessing;
 /// </summary>
 internal sealed partial class GeoprocessingJobTerminalCallback(
     IUniversalProgressStore progressStore,
+    IProcessCatalog processCatalog,
+    IGeoprocessingResultPackageStore? resultPackageStore,
     ILogger<GeoprocessingJobTerminalCallback> logger) : IJobTerminalCallback
 {
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
@@ -25,6 +28,23 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
         {
             return;
+        }
+
+        try
+        {
+            if (resultPackageStore != null)
+            {
+                var package = GeoprocessingResultPackageFactory.Create(job, processCatalog);
+                await resultPackageStore.SetAsync(
+                    job.OperationId,
+                    package,
+                    ProgressRetention,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.ResultPackageSyncFailed(logger, job.OperationId, ex);
         }
 
         try
@@ -79,6 +99,9 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
 
     private static partial class Log
     {
+        [LoggerMessage(8019, LogLevel.Warning, "Failed to persist result package for terminal job {OperationId}; job results will be synthesized on demand")]
+        public static partial void ResultPackageSyncFailed(ILogger logger, string operationId, Exception exception);
+
         [LoggerMessage(8020, LogLevel.Warning, "Failed to synchronize admin progress for terminal job {OperationId}; admin view may be stale until TTL expiry")]
         public static partial void ProgressSyncFailed(ILogger logger, string operationId, Exception exception);
     }

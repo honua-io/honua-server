@@ -82,6 +82,41 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
         };
     }
 
+    public async Task<IReadOnlyList<ReplicaRecord>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT replica_id, replica_name, service_id, sync_model, layer_ids,
+                   created_at, last_sync_time, last_sync_generation
+            FROM honua.replicas
+            WHERE service_id = $1
+            ORDER BY created_at DESC, replica_id ASC
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(NpgsqlDbType.Text, serviceId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var results = new List<ReplicaRecord>();
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            results.Add(new ReplicaRecord
+            {
+                ReplicaId = reader.GetString(0),
+                ReplicaName = reader.GetString(1),
+                ServiceId = reader.GetString(2),
+                SyncModel = reader.GetString(3),
+                LayerIds = (int[])reader.GetValue(4),
+                CreatedAt = reader.GetFieldValue<DateTimeOffset>(5),
+                LastSyncTime = reader.GetFieldValue<DateTimeOffset>(6),
+                LastSyncGeneration = reader.GetInt64(7)
+            });
+        }
+
+        return results;
+    }
+
     public async Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
     {
         const string sql = "DELETE FROM honua.replicas WHERE replica_id = $1";

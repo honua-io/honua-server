@@ -6,10 +6,13 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -27,9 +30,14 @@ internal sealed partial class OgcFeaturesCrudHandler(
     OgcFeaturesCrudDependencies dependencies,
     ILogger<OgcFeaturesCrudHandler> logger)
 {
-    private readonly IFeatureWriter _featureWriter = dependencies?.FeatureWriter ?? throw new ArgumentNullException(nameof(dependencies));
+    private readonly IFeatureReader _featureReader = dependencies?.FeatureReader ?? throw new ArgumentNullException(nameof(dependencies));
+    private readonly IFeatureWriter _featureWriter = dependencies.FeatureWriter;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
+    private readonly IEditParameterAdapter<OgcFeaturesEditRequest> _editParameterAdapter = dependencies.EditParameterAdapter;
+    private readonly IEditProcessor _editProcessor = dependencies.EditProcessor;
+    private readonly IQueryProcessor _queryProcessor = dependencies.QueryProcessor;
+    private readonly IETagService _etagService = dependencies.ETagService;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<OgcFeaturesCrudHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -85,24 +93,58 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var feature = buildResult.Feature
                 ?? throw new InvalidOperationException("Feature build result was missing the feature payload.");
 
-            var created = await _featureWriter.CreateAsync(layerId, feature, cancellationToken);
+            var editResult = await ExecuteEditAsync(
+                layerId,
+                layer,
+                new OgcFeaturesEditRequest
+                {
+                    Operation = OgcFeaturesEditOperation.Create,
+                    Feature = feature
+                },
+                cancellationToken);
+            var createResult = editResult.CreateResults.FirstOrDefault();
+            if (!createResult.IsSuccess || !createResult.ObjectId.HasValue)
+            {
+                return StandardErrorHelpers.CreateInternalServerError(context, createResult.ErrorMessage ?? "An error occurred while creating the feature.");
+            }
+
+            var created = await _featureReader.GetAsync(layerId, createResult.ObjectId.Value, cancellationToken);
+            if (!created.HasValue)
+            {
+                return StandardErrorHelpers.CreateInternalServerError(context, "Created feature could not be reloaded.");
+            }
+
+            var responseFeature = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
+                _featureReader,
+                layerId,
+                layer,
+                createResult.ObjectId.Value,
+                inputCrs,
+                cancellationToken).ConfigureAwait(false);
+            if (!responseFeature.HasValue)
+            {
+                return StandardErrorHelpers.CreateInternalServerError(context, "Created feature response could not be projected.");
+            }
+
             await _mutationEventService.InvalidateLayerAsync(null, layerId, cancellationToken);
             await TryPublishFeatureChangeAsync(
                 context,
                 layerId,
-                created.Id,
+                created.Value.Id,
                 "create",
-                created).ConfigureAwait(false);
+                created.Value).ConfigureAwait(false);
+            var featureIdString = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, layer);
             var createLinks = OgcFeaturesUtilities.BuildFeatureLinks(
                 context.Request,
                 collectionId,
-                FormattableString.Invariant($"{created.Id}"),
-                MediaTypes.GeoJson);
+                featureIdString,
+                MediaTypes.GeoJson,
+                inputCrs.Uri);
             context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
-            var featureIdString = FormattableString.Invariant($"{created.Id}");
+            context.Response.Headers.ETag = OgcFeatureEntityTag.Compute(created.Value, _etagService);
             var locationUrl = OgcFeaturesUtilities.BuildFeatureSelfUrl(context.Request, collectionId, featureIdString);
             context.Response.Headers.Location = locationUrl;
-            var response = ToOgcFeature(created, inputCrs.AxisOrder, createLinks);
+            var response = ToOgcFeature(responseFeature.Value, layer, inputCrs.AxisOrder, createLinks);
 
             HonuaTelemetry.SetSuccess(activity);
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson, statusCode: StatusCodes.Status201Created);
@@ -113,11 +155,13 @@ internal sealed partial class OgcFeaturesCrudHandler(
         }
         catch (ResourceConflictException ex)
         {
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateFromException(context, ex);
         }
         catch (Exception ex)
         {
             Log.CreateFeatureFailed(_logger, collectionId, ex);
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while creating the feature.");
         }
     }
@@ -148,15 +192,34 @@ internal sealed partial class OgcFeaturesCrudHandler(
             activity?.SetTag(HonuaTelemetry.Tags.Operation, "delete");
             activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
-            if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+            var resolvedFeature = await OgcFeatureIdentifierResolver.ResolveAsync(
+                _featureReader,
+                _queryProcessor,
+                layer,
+                featureId,
+                cancellationToken).ConfigureAwait(false);
+            if (!resolvedFeature.HasValue)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
-            var deleted = await _featureWriter.DeleteAsync(layerId, objectId, cancellationToken);
-            if (!deleted)
+            var objectId = resolvedFeature.Value.ObjectId;
+
+            var editResult = await ExecuteEditAsync(
+                layerId,
+                layer,
+                new OgcFeaturesEditRequest
+                {
+                    Operation = OgcFeaturesEditOperation.Delete,
+                    ObjectId = objectId
+                },
+                cancellationToken);
+            var deleteResult = editResult.DeleteResults.FirstOrDefault();
+            if (!deleteResult.IsSuccess)
             {
-                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                return IsNotFound(deleteResult)
+                    ? StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.")
+                    : StandardErrorHelpers.CreateInternalServerError(context, deleteResult.ErrorMessage ?? "An error occurred while deleting the feature.");
             }
 
             await _mutationEventService.InvalidateLayerAsync(null, layerId, cancellationToken);
@@ -176,18 +239,22 @@ internal sealed partial class OgcFeaturesCrudHandler(
         catch (Exception ex)
         {
             Log.DeleteFeatureFailed(_logger, collectionId, ex);
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while deleting the feature.");
         }
     }
 
     private GeoJsonFeature ToOgcFeature(
         Feature feature,
+        LayerDefinition layer,
         AxisOrder axisOrder,
         ImmutableArray<Link>? links = null)
-    {
-        var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
-        return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry, links);
-    }
+        => OgcGeoJsonFeatureBuilder.Create(
+            feature,
+            layer,
+            axisOrder,
+            _geometryServices,
+            links: links);
 
     private async Task TryPublishFeatureChangeAsync(
         HttpContext context,
@@ -213,6 +280,33 @@ internal sealed partial class OgcFeaturesCrudHandler(
             Log.FeatureChangePublishFailed(_logger, layerId, objectId, ex);
         }
     }
+
+    private async Task<FeatureEditResult> ExecuteEditAsync(
+        int layerId,
+        LayerDefinition layer,
+        OgcFeaturesEditRequest request,
+        CancellationToken cancellationToken)
+    {
+        var editAdapterResult = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
+        if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
+        {
+            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
+        }
+
+        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, layer);
+        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, layer);
+        if (!editValidation.IsValid)
+        {
+            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
+        }
+
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+    }
+
+    private static bool IsNotFound(EditOperationResult result)
+        => !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
+           result.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase);
 
     private static partial class Log
     {

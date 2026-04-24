@@ -18,4 +18,13 @@ internal interface IFeatureQueryDispatcher
         HttpContext context,
         ICommonQueryValidator queryValidator,
         CancellationToken cancellationToken = default);
+
+    Task<IResult> HandleQueryFeaturesAsync(
+        string serviceId,
+        int layerId,
+        IReadOnlyDictionary<string, StringValues> values,
+        HttpContext context,
+        ICommonQueryValidator queryValidator,
+        string? requiredProtocol,
+        CancellationToken cancellationToken = default);
 }

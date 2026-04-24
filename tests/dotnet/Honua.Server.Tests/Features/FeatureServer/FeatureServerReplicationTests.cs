@@ -90,6 +90,87 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ListReplicas)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas")]
+    public async Task Replicas_WhenReplicaExists_ReturnsReplicaList()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "ReplicaListTest",
+            layers = "0",
+            syncModel = "perReplica",
+            f = "json"
+        });
+
+        var createResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/replicas?f=json&returnLastSyncDate=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var replicas = document.RootElement;
+
+        replicas.ValueKind.Should().Be(JsonValueKind.Array);
+        replicas.EnumerateArray().Any(replica =>
+        {
+            if (!replica.TryGetProperty("lastSyncDate", out var lastSyncDate))
+            {
+                return false;
+            }
+
+            return replica.GetProperty("replicaName").GetString() == "ReplicaListTest"
+                && !string.IsNullOrWhiteSpace(replica.GetProperty("replicaID").GetString())
+                && lastSyncDate.GetInt64() > 0;
+        }).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ReplicaInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas/{replicaId}")]
+    public async Task ReplicaInfo_WhenReplicaExists_ReturnsReplicaMetadata()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "ReplicaInfoTest",
+            layers = "0",
+            syncModel = "perReplica",
+            f = "json"
+        });
+
+        var createResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var createContent = await createResponse.Content.ReadAsStringAsync();
+        using var createDoc = JsonDocument.Parse(createContent);
+        var replicaId = createDoc.RootElement.GetProperty("replicaID").GetString();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/replicas/{replicaId}?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.GetProperty("replicaName").GetString().Should().Be("ReplicaInfoTest");
+        root.GetProperty("replicaID").GetString().Should().Be(replicaId);
+        root.GetProperty("syncModel").GetString().Should().Be("perReplica");
+        root.GetProperty("replicaServerGen").GetInt64().Should().BeGreaterThanOrEqualTo(0);
+        root.GetProperty("creationDate").GetInt64().Should().BeGreaterThan(0);
+        root.GetProperty("lastSyncDate").GetInt64().Should().BeGreaterThan(0);
+        root.GetProperty("layers").EnumerateArray().Should().Contain(layer => layer.GetProperty("id").GetInt32() == 0);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_MissingReplicaName_ReturnsBadRequest()

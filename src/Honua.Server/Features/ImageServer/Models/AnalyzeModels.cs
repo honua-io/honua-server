@@ -6,8 +6,7 @@ using System.Text.Json.Serialization;
 namespace Honua.Server.Features.ImageServer.Models;
 
 /// <summary>
-/// Esri-conformant raster function chain document accepted by the
-/// <c>computeClass</c> / <c>analyze</c> endpoint.
+/// Raster function chain document accepted by the internal raster-function analysis helper.
 /// </summary>
 public sealed class RasterFunctionDocument
 {
@@ -32,7 +31,7 @@ public sealed class RasterFunctionDocument
 }
 
 /// <summary>
-/// JSON descriptor returned by the analyze endpoint when <c>f=json</c> is requested.
+/// JSON descriptor returned by the internal raster-function analysis helper when <c>f=json</c> is requested.
 /// </summary>
 public sealed class AnalyzeResponse
 {

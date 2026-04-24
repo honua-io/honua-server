@@ -158,7 +158,7 @@ internal sealed partial class RedisWorkflowOperationStore(
         return true;
     }
 
-    private void QueueActiveIndexUpdates(ITransaction transaction, WorkflowOperationRecord operation)
+    private static void QueueActiveIndexUpdates(ITransaction transaction, WorkflowOperationRecord operation)
     {
         var operationId = (RedisValue)operation.OperationId;
         if (IsTerminal(operation.Status))

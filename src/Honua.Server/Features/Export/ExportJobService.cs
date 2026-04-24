@@ -80,10 +80,7 @@ internal sealed class ExportJobService(
             }
             catch (Exception cleanupEx)
             {
-                _logger.LogWarning(
-                    cleanupEx,
-                    "Failed to roll back persisted export request metadata for job {JobId} after the progress record could not be created.",
-                    job.JobId);
+                ExportJobServiceLog.ProgressRollbackFailed(_logger, job.JobId, cleanupEx);
             }
 
             throw;
@@ -277,9 +274,7 @@ internal sealed class ExportJobService(
                 }
                 catch (Exception progressEx)
                 {
-                    _logger.LogWarning(progressEx,
-                        "Failed to persist error status for export job {JobId} after a processing failure.",
-                        job.JobId);
+                    ExportJobServiceLog.FailedStatusPersistenceFailed(_logger, job.JobId, progressEx);
                 }
 
                 _jobRequests.TryRemove(job.JobId, out _);
@@ -428,9 +423,7 @@ internal sealed class ExportJobService(
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex,
-                    "Failed to persist missing-request status for export job {JobId}.",
-                    jobId);
+                ExportJobServiceLog.MissingRequestStatusPersistenceFailed(_logger, jobId, ex);
             }
         }
 
@@ -538,10 +531,7 @@ internal sealed class ExportJobService(
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(
-                ex,
-                "Skipping export recovery for job {JobId} because the Redis claim key could not be inspected.",
-                jobId);
+            ExportJobServiceLog.RecoveryClaimInspectionFailed(_logger, jobId, ex);
             return false;
         }
     }
@@ -565,7 +555,7 @@ internal sealed class ExportJobService(
                 await Task.Delay(TimeSpan.FromMilliseconds(ClaimTtl.TotalMilliseconds / 3d), cancellationToken).ConfigureAwait(false);
                 if (!await leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
                 {
-                    _logger.LogWarning("Export job lease renewal was lost while processing a background export.");
+                    ExportJobServiceLog.LeaseRenewalLost(_logger);
                     break;
                 }
             }

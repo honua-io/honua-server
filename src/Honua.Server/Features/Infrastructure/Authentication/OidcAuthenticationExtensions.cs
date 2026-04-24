@@ -510,11 +510,11 @@ public static class OidcAuthenticationExtensions
                         : TokenReplayRegistrationResult.ReplayDetected;
                 }
 
-                logger.LogWarning("OIDC token replay protection could not use Redis because the multiplexer is disconnected. Falling back to in-memory protection.");
+                OidcAuthenticationLog.TokenReplayRedisDisconnected(logger);
             }
             catch (RedisException ex)
             {
-                logger.LogWarning(ex, "OIDC token replay protection failed while accessing Redis. Falling back to in-memory protection.");
+                OidcAuthenticationLog.TokenReplayRedisAccessFailed(logger, ex);
             }
         }
 
@@ -527,7 +527,7 @@ public static class OidcAuthenticationExtensions
                 cancellationToken).ConfigureAwait(false);
         }
 
-        logger.LogWarning("OIDC token replay protection is enabled but no replay cache is available. Allowing token to avoid permanent lockout.");
+        OidcAuthenticationLog.TokenReplayCacheUnavailable(logger);
         return TokenReplayRegistrationResult.Skipped;
     }
 

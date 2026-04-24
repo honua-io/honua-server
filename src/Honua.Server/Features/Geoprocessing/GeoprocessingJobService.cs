@@ -41,6 +41,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IExecutionJobDefinitionRegistry? _workloadRegistry;
     private readonly IReadOnlyList<IBatchComputeBackend> _backends;
     private readonly IExecutionAdmissionEvaluator? _admissionEvaluator;
+    private readonly IGeoprocessingResultPackageStore? _resultPackageStore;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     public GeoprocessingJobService(
@@ -55,7 +56,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOptions<LimitsOptions>? limitsOptions = null,
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
-        IExecutionAdmissionEvaluator? admissionEvaluator = null)
+        IExecutionAdmissionEvaluator? admissionEvaluator = null,
+        IGeoprocessingResultPackageStore? resultPackageStore = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -69,6 +71,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _workloadRegistry = workloadRegistry;
         _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
         _admissionEvaluator = admissionEvaluator;
+        _resultPackageStore = resultPackageStore;
     }
 
     public void EnsureCallerAuthorized(
@@ -287,6 +290,24 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ExecutionJobDefinition? workload)
     {
         specParams[ExecutionJobParameterKeys.GeoprocessingPlanId] = plan.PlanId;
+        var processDefinitions = plan.Steps
+            .Where(step => !string.IsNullOrWhiteSpace(step.ProcessId))
+            .Select(step => step.ProcessId!)
+            .ToArray();
+        if (processDefinitions.Length > 0)
+        {
+            specParams[ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = string.Join(
+                ExecutionJobParameterKeys.MetadataListSeparator,
+                processDefinitions);
+        }
+
+        var outputKinds = plan.Outputs.Select(output => output.ToString()).ToArray();
+        if (outputKinds.Length > 0)
+        {
+            specParams[ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds] = string.Join(
+                ExecutionJobParameterKeys.MetadataListSeparator,
+                outputKinds);
+        }
 
         if (workload == null)
         {
@@ -390,11 +411,48 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' has not reached a terminal state (current: {job.Status}).");
         }
 
-        GeoprocessingServiceLog.JobResultsUnavailable(_logger, jobId);
+        var expectedResultPackageId = GeoprocessingResultPackageFactory.CreateResultPackageId(job);
+        if (_resultPackageStore != null)
+        {
+            try
+            {
+                var storedPackage = await _resultPackageStore
+                    .GetAsync(jobId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (storedPackage != null &&
+                    string.Equals(
+                        storedPackage.ResultPackageId,
+                        expectedResultPackageId,
+                        StringComparison.Ordinal))
+                {
+                    GeoprocessingServiceLog.JobResultsRetrieved(_logger, jobId);
+                    return storedPackage;
+                }
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                GeoprocessingServiceLog.JobResultsStoreReadFailed(_logger, jobId, ex);
+            }
+        }
 
-        throw new GeoprocessingNotFoundException(
-            $"Result package for job '{jobId}' is not yet available. " +
-            "Result storage will be implemented with the execution engine.");
+        var synthesizedPackage = GeoprocessingResultPackageFactory.Create(job, _processCatalog);
+
+        if (_resultPackageStore != null)
+        {
+            try
+            {
+                await _resultPackageStore
+                    .SetAsync(jobId, synthesizedPackage, ProgressRetention, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                GeoprocessingServiceLog.JobResultsStoreWriteFailed(_logger, jobId, ex);
+            }
+        }
+
+        GeoprocessingServiceLog.JobResultsRetrieved(_logger, jobId);
+        return synthesizedPackage;
     }
 
     public async Task CancelJobAsync(
@@ -622,11 +680,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         OperatorResourceType resourceType,
         OperatorOperation operation)
     {
-        var decision = _authEvaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        var decision = _authEvaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
         {
             ResourceType = resourceType,
             Operation = operation
-        });
+        }).ConfigureAwait(false).GetAwaiter().GetResult();
 
         if (decision.IsAllowed)
         {

@@ -11,12 +11,12 @@ using System.Xml.Serialization;
 namespace Honua.Server.Tests.Features.Wfs20;
 
 /// <summary>
-/// Tests for enhanced WFS 2.0 filter capabilities for 95% OGC compliance
+/// Tests for WFS 2.0 filter capabilities advertised by the runtime.
 /// </summary>
 public class Wfs20EnhancedFilterCapabilitiesTests
 {
     [Fact]
-    public void BuildFilterCapabilities_ShouldIncludeComprehensiveTemporalOperators()
+    public void BuildFilterCapabilities_ShouldAdvertiseSupportedTemporalOperatorsOnly()
     {
         // Act
         var filterCapabilities = InvokeBuildFilterCapabilities();
@@ -29,36 +29,28 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         var temporalOperators = filterCapabilities.TemporalCapabilities.TemporalOperators!.Operators;
         temporalOperators.Should().NotBeEmpty();
 
-        // Verify all OGC Filter Encoding 2.0 temporal operators are present
         var operatorNames = temporalOperators.Select(op => op.Name).ToList();
 
-        // Basic temporal operators
-        operatorNames.Should().Contain("After");
-        operatorNames.Should().Contain("Before");
-        operatorNames.Should().Contain("During");
-        operatorNames.Should().Contain("Equals");
-
-        // Allen's interval relations
-        operatorNames.Should().Contain("Contains");
-        operatorNames.Should().Contain("Overlaps");
-        operatorNames.Should().Contain("Meets");
-        operatorNames.Should().Contain("OverlappedBy");
-        operatorNames.Should().Contain("MetBy");
-        operatorNames.Should().Contain("Starts");
-        operatorNames.Should().Contain("StartedBy");
-        operatorNames.Should().Contain("Finishes");
-        operatorNames.Should().Contain("FinishedBy");
-
-        // Additional temporal predicates
-        operatorNames.Should().Contain("Intersects");
-        operatorNames.Should().Contain("Disjoint");
-
-        // Should have significantly more operators than the original 3
-        temporalOperators.Length.Should().BeGreaterThan(10);
+        operatorNames.Should().BeEquivalentTo(
+            "After",
+            "Before",
+            "During",
+            "Contains",
+            "Equals",
+            "Disjoint",
+            "Intersects",
+            "Meets",
+            "MetBy",
+            "Overlaps",
+            "OverlappedBy",
+            "Starts",
+            "StartedBy",
+            "Finishes",
+            "FinishedBy");
     }
 
     [Fact]
-    public void BuildFilterCapabilities_ShouldIncludeEnhancedComparisonOperators()
+    public void BuildFilterCapabilities_ShouldAdvertiseSupportedComparisonOperatorsOnly()
     {
         // Act
         var filterCapabilities = InvokeBuildFilterCapabilities();
@@ -88,17 +80,16 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         operatorNames.Should().Contain("PropertyIsNil");
         operatorNames.Should().Contain("PropertyIsNull");
 
-        // Range and set operators
+        // Range operators
         operatorNames.Should().Contain("PropertyIsBetween");
-        operatorNames.Should().Contain("PropertyIsIn");
-        operatorNames.Should().Contain("PropertyIsNotIn");
+        operatorNames.Should().NotContain("PropertyIsIn");
+        operatorNames.Should().NotContain("PropertyIsNotIn");
 
-        // Should have more operators than the original basic set
-        comparisonOperators.Length.Should().BeGreaterThan(10);
+        comparisonOperators.Length.Should().Be(10);
     }
 
     [Fact]
-    public void BuildFilterCapabilities_ShouldIncludeEnhancedSpatialOperators()
+    public void BuildFilterCapabilities_ShouldAdvertiseSupportedSpatialOperatorsOnly()
     {
         // Act
         var filterCapabilities = InvokeBuildFilterCapabilities();
@@ -115,7 +106,6 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         spatialOperators.Should().NotBeEmpty();
         geometryOperands.Should().NotBeEmpty();
 
-        // Verify comprehensive spatial operators
         var spatialOperatorNames = spatialOperators.Select(op => op.Name).ToList();
         spatialOperatorNames.Should().Contain("BBOX");
         spatialOperatorNames.Should().Contain("Intersects");
@@ -126,23 +116,17 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         spatialOperatorNames.Should().Contain("Overlaps");
         spatialOperatorNames.Should().Contain("Disjoint");
         spatialOperatorNames.Should().Contain("Equals");
+        spatialOperatorNames.Should().Contain("EnvelopeIntersects");
         spatialOperatorNames.Should().Contain("DWithin");
         spatialOperatorNames.Should().Contain("Beyond");
-        spatialOperatorNames.Should().Contain("Relate");
+        spatialOperatorNames.Should().NotContain("Relate");
 
-        // Verify comprehensive geometry operands including multi-geometries
         var geometryNames = geometryOperands.Select(op => op.Name.Name).ToList();
-        geometryNames.Should().Contain("Point");
-        geometryNames.Should().Contain("LineString");
-        geometryNames.Should().Contain("Polygon");
-        geometryNames.Should().Contain("MultiPoint");
-        geometryNames.Should().Contain("MultiLineString");
-        geometryNames.Should().Contain("MultiPolygon");
-        geometryNames.Should().Contain("GeometryCollection");
+        geometryNames.Should().BeEquivalentTo("Envelope", "Point", "LineString", "Curve", "Polygon", "Surface");
     }
 
     [Fact]
-    public void BuildFilterCapabilities_ShouldIncludeComprehensiveFunctionsList()
+    public void BuildFilterCapabilities_ShouldAdvertiseRuntimeSupportedFunctions()
     {
         // Act
         var filterCapabilities = InvokeBuildFilterCapabilities();
@@ -151,52 +135,13 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         filterCapabilities.Should().NotBeNull();
         filterCapabilities.Functions.Should().NotBeNull();
 
-        var functions = filterCapabilities.Functions!.Functions;
-        functions.Should().NotBeEmpty();
-
-        var functionNames = functions.Select(f => f.Name).ToList();
-
-        // String functions
+        var functionNames = filterCapabilities.Functions!.Functions.Select(function => function.Name).ToArray();
+        functionNames.Should().Contain("ST_NumGeometries");
         functionNames.Should().Contain("UPPER");
-        functionNames.Should().Contain("LOWER");
-        functionNames.Should().Contain("CONCAT");
-        functionNames.Should().Contain("SUBSTRING");
-        functionNames.Should().Contain("LENGTH");
-
-        // Math functions
-        functionNames.Should().Contain("ABS");
-        functionNames.Should().Contain("CEIL");
-        functionNames.Should().Contain("FLOOR");
-        functionNames.Should().Contain("ROUND");
         functionNames.Should().Contain("SQRT");
-        functionNames.Should().Contain("SIN");
-        functionNames.Should().Contain("COS");
-        functionNames.Should().Contain("POWER");
-        functionNames.Should().Contain("MOD");
-
-        // Spatial functions
-        functionNames.Should().Contain("ST_Area");
-        functionNames.Should().Contain("ST_Length");
-        functionNames.Should().Contain("ST_Distance");
-        functionNames.Should().Contain("ST_Buffer");
-        functionNames.Should().Contain("ST_Centroid");
-        functionNames.Should().Contain("ST_IsValid");
-
-        // Date/time functions
-        functionNames.Should().Contain("YEAR");
-        functionNames.Should().Contain("MONTH");
-        functionNames.Should().Contain("DAY");
         functionNames.Should().Contain("NOW");
-
-        // Aggregate functions
         functionNames.Should().Contain("COUNT");
-        functionNames.Should().Contain("SUM");
-        functionNames.Should().Contain("AVG");
-        functionNames.Should().Contain("MIN");
-        functionNames.Should().Contain("MAX");
-
-        // Should include substantial number of functions for comprehensive compliance
-        functions.Length.Should().BeGreaterThan(30);
+        functionNames.Should().HaveCountGreaterOrEqualTo(35);
     }
 
     [Fact]
@@ -232,17 +177,16 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         constraintNames.Should().Contain("ImplementsLogicalOperators");
         constraintNames.Should().Contain("ImplementsComparisonOperators");
 
-        // CQL2 support
-        constraintNames.Should().Contain("ImplementsCQL2Text");
-        constraintNames.Should().Contain("ImplementsCQL2JSON");
-        constraintNames.Should().Contain("ImplementsCQL2BasicCQL");
-        constraintNames.Should().Contain("ImplementsCQL2SpatialOperators");
-        constraintNames.Should().Contain("ImplementsCQL2TemporalOperators");
-        constraintNames.Should().Contain("ImplementsCQL2ArrayOperators");
-        constraintNames.Should().Contain("ImplementsCQL2Functions");
-
-        // Should have significantly more conformance declarations than the original ~13
-        constraints.Length.Should().BeGreaterThan(20);
+        constraints.Should().Contain(c => c.Name == "ImplementsFunctions" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsArithmeticOperators" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsExtendedOperators" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2Text" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2JSON" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2BasicCQL" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2SpatialOperators" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2TemporalOperators" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2ArrayOperators" && c.DefaultValue == "FALSE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2Functions" && c.DefaultValue == "TRUE");
     }
 
     [Fact]
@@ -266,7 +210,8 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         xml.Should().Contain("TemporalOperators");
         xml.Should().Contain("SpatialOperators");
         xml.Should().Contain("ComparisonOperators");
-        xml.Should().Contain("Functions");
+        xml.Should().Contain("<Functions");
+        xml.Should().Contain("ST_NumGeometries");
     }
 
     /// <summary>

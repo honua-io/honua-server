@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Edit;
+using Honua.Core.Features.Query;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -23,6 +25,10 @@ internal static class FeatureServerServiceCollectionExtensions
         services.TryAddScoped<SpatialReferenceResolver>();
         services.AddScoped<IFeatureServerQueryServices, FeatureServerQueryServices>();
         services.AddScoped<IFeatureServerGeometryServices, FeatureServerGeometryServices>();
+        services.TryAddScoped<IQueryProcessor, QueryProcessor>();
+        services.TryAddScoped<IEditProcessor, EditProcessor>();
+        services.TryAddScoped<IQueryParameterAdapter<GeoServicesQueryRequest>, GeoServicesQueryParameterAdapter>();
+        services.TryAddScoped<IEditParameterAdapter<GeoServicesEditRequest>, GeoServicesEditParameterAdapter>();
         services.AddScoped<StreamingQueryFormatter>();
         services.AddScoped<IRelatedRecordsService, RelatedRecordsService>();
         services.AddScoped<FeatureServerQueryExecutor>();

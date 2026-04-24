@@ -201,11 +201,11 @@ The [visual / style certification slice](../gis/visual-style-certification-slice
 
 The `pyqgis-client-compat-nightly.yml` workflow runs this lane daily at 7:30 AM UTC against `ubuntu-24.04` with PostGIS, QGIS/PyQGIS, and `xvfb`. Evidence artifacts are uploaded automatically.
 
-## Using Docker Compose Test Profile
+## Using Reusable Docker Compose Test Database
 
 ```bash
 # Start the opt-in PostGIS test database
-docker compose --profile test up -d postgis-test
+docker compose -f docker/docker-compose.test-db.yml up -d
 
 # Reuse the database for tests
 export HONUA_TEST_DB_URL="postgres://test:test@localhost:5433/honua_test"

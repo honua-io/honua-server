@@ -20,6 +20,7 @@ namespace Honua.Server.Tests.Features.Integration;
 /// Integration tests for distributed coordination features across multiple simulated instances.
 /// </summary>
 [Protocol(Protocols.TestQuality)]
+[Collection("Performance")]
 public sealed class DistributedCoordinationIntegrationTests
 {
     [UnitTest]

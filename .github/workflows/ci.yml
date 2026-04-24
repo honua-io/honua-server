@@ -147,16 +147,12 @@ jobs:
       - name: Format Check
         run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
 
-  test-all:
-    name: Test Suite (.NET + Python + JS)
+  dotnet-foundation-tests:
+    name: .NET Foundation Tests
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     needs: build
-    timeout-minutes: 90
-    env:
-      TESTCONTAINERS_RYUK_DISABLED: false
-      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
-      HONUA_TEST_CONFIGURATION: Release
+    timeout-minutes: 35
     services:
       postgres:
         image: postgis/postgis:16-3.4-alpine
@@ -174,56 +170,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Reclaim disk space for test suite
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "Disk space before cleanup:"
-          df -h
-          docker system df || true
-
-          if command -v sudo >/dev/null 2>&1; then
-            SUDO="sudo"
-          else
-            SUDO=""
-          fi
-
-          $SUDO rm -rf /usr/local/lib/android || true
-          $SUDO rm -rf /opt/ghc || true
-          $SUDO rm -rf /usr/share/swift || true
-          $SUDO rm -rf /opt/hostedtoolcache/CodeQL || true
-
-          docker system prune -af --volumes || true
-          docker builder prune -af || true
-
-          echo "Disk space after cleanup:"
-          df -h
-          docker system df || true
-
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: tests/python/requirements.txt
-
-      - name: Install Localstack CLI (awslocal)
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --user awscli-local
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: tests/js/package-lock.json
 
       - name: Restore
         run: dotnet restore Honua.sln
@@ -231,31 +181,9 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
-      - name: Pre-pull Docker images for faster tests
-        run: |
-          docker pull --quiet postgis/postgis:16-3.4-alpine || true
-          docker pull --quiet postgis/postgis:18-3.6 || true
-
-      - name: Start emulator containers (Azurite + Localstack)
-        run: |
-          docker compose -f docker/docker-compose.emulators.yml up -d --quiet-pull
-          for i in {1..30}; do
-            if (echo > /dev/tcp/localhost/4566) >/dev/null 2>&1 \
-              && (echo > /dev/tcp/localhost/10000) >/dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Emulators failed to start."
-          docker compose -f docker/docker-compose.emulators.yml ps
-          exit 1
-
-      - name: Build .NET test binaries
+      - name: Build foundation test binaries
         timeout-minutes: 20
         run: |
-          # Use MSBuild default parallelism (-m with no value = runner CPU count).
-          # The prior `-m:1` serialized project compiles for no documented reason
-          # and cost ~2 min of PR wall-clock on the 2-core runner.
           dotnet build Honua.sln \
             --no-restore \
             --configuration Release
@@ -287,155 +215,6 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
-      - name: Run .NET Tests (Server - Core)
-        timeout-minutes: 20
-        shell: bash
-        run: |
-          set +e
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --filter "FullyQualifiedName!~Honua.Server.Tests.Features." \
-            --logger "trx;LogFileName=server-tests-core.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            > ./tests/TestResults/server-tests-core.log 2>&1 &
-          test_pid=$!
-
-          while kill -0 "$test_pid" 2>/dev/null; do
-            echo "[server-tests-core-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
-            sleep 30
-          done
-
-          wait "$test_pid"
-          test_exit_code=$?
-          set -e
-
-          cat ./tests/TestResults/server-tests-core.log
-          exit "$test_exit_code"
-
-      - name: Run .NET Tests (Server - Feature APIs)
-        timeout-minutes: 20
-        shell: bash
-        run: |
-          set +e
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --filter "FullyQualifiedName~Honua.Server.Tests.Features.FeatureServer|FullyQualifiedName~Honua.Server.Tests.Features.OData|FullyQualifiedName~Honua.Server.Tests.Features.OgcFeatures|FullyQualifiedName~Honua.Server.Tests.Features.API" \
-            --logger "trx;LogFileName=server-tests-feature-apis.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            > ./tests/TestResults/server-tests-feature-apis.log 2>&1 &
-          test_pid=$!
-
-          while kill -0 "$test_pid" 2>/dev/null; do
-            echo "[server-tests-feature-apis-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
-            sleep 30
-          done
-
-          wait "$test_pid"
-          test_exit_code=$?
-          set -e
-
-          cat ./tests/TestResults/server-tests-feature-apis.log
-          exit "$test_exit_code"
-
-      - name: Run .NET Tests (Server - Map and Imagery)
-        timeout-minutes: 20
-        shell: bash
-        run: |
-          set +e
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --filter "FullyQualifiedName~Honua.Server.Tests.Features.OgcMaps|FullyQualifiedName~Honua.Server.Tests.Features.OgcTiles|FullyQualifiedName~Honua.Server.Tests.Features.MapServer|FullyQualifiedName~Honua.Server.Tests.Features.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.GeometryService" \
-            --logger "trx;LogFileName=server-tests-map-imagery.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            > ./tests/TestResults/server-tests-map-imagery.log 2>&1 &
-          test_pid=$!
-
-          while kill -0 "$test_pid" 2>/dev/null; do
-            echo "[server-tests-map-imagery-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
-            sleep 30
-          done
-
-          wait "$test_pid"
-          test_exit_code=$?
-          set -e
-
-          cat ./tests/TestResults/server-tests-map-imagery.log
-          exit "$test_exit_code"
-
-      - name: Run .NET Tests (Server - Infra and Security)
-        timeout-minutes: 20
-        shell: bash
-        run: |
-          set +e
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --filter "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.GeoservicesCatalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling" \
-            --logger "trx;LogFileName=server-tests-infra-security.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            > ./tests/TestResults/server-tests-infra-security.log 2>&1 &
-          test_pid=$!
-
-          while kill -0 "$test_pid" 2>/dev/null; do
-            echo "[server-tests-infra-security-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
-            sleep 30
-          done
-
-          wait "$test_pid"
-          test_exit_code=$?
-          set -e
-
-          cat ./tests/TestResults/server-tests-infra-security.log
-          exit "$test_exit_code"
-
-      - name: Run .NET Tests (Server - Operator Eval Harness)
-        timeout-minutes: 20
-        shell: bash
-        run: |
-          set +e
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --filter "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.OgcProcesses|FullyQualifiedName~Honua.Server.Tests.Features.Grpc" \
-            --logger "trx;LogFileName=server-tests-operator-eval.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1 \
-            > ./tests/TestResults/server-tests-operator-eval.log 2>&1 &
-          test_pid=$!
-
-          while kill -0 "$test_pid" 2>/dev/null; do
-            echo "[server-tests-operator-eval-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
-            sleep 30
-          done
-
-          wait "$test_pid"
-          test_exit_code=$?
-          set -e
-
-          cat ./tests/TestResults/server-tests-operator-eval.log
-          exit "$test_exit_code"
-
-      - name: Upload Operator Eval Report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: operator-eval-report
-          path: tests/TestResults/eval-report.json
-          if-no-files-found: error
-
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
         run: |
@@ -446,6 +225,272 @@ jobs:
             --logger "trx;LogFileName=architecture-tests.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
+
+      - name: Upload foundation test results
+        uses: actions/upload-artifact@v7
+        if: always()
+        timeout-minutes: 3
+        with:
+          name: foundation-test-results
+          path: tests/TestResults/
+          retention-days: 7
+
+  server-tests:
+    name: Server Tests (${{ matrix.shard_name }})
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard_name: Core
+            artifact_suffix: core
+            log_name: server-tests-core
+            timeout_minutes: 30
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.CloudCog.&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests"
+          - shard_name: Admin & Infrastructure
+            artifact_suffix: admin-infra
+            log_name: server-tests-admin-infra
+            timeout_minutes: 30
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName~Honua.Server.Tests.Admin.|FullyQualifiedName~Honua.Server.Tests.Infrastructure.|FullyQualifiedName~Honua.Server.Tests.AdminEndpointTests"
+          - shard_name: Cloud & Contract
+            artifact_suffix: cloud-contract
+            log_name: server-tests-cloud-contract
+            timeout_minutes: 30
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.CloudCog.|FullyQualifiedName~Honua.Server.Tests.Contract."
+          - shard_name: Import
+            artifact_suffix: import
+            log_name: server-tests-import
+            timeout_minutes: 30
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName~Honua.Server.Tests.Import."
+          - shard_name: Performance
+            artifact_suffix: performance
+            log_name: server-tests-performance
+            timeout_minutes: 20
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName~Honua.Server.Tests.Performance."
+          - shard_name: Comprehensive
+            artifact_suffix: comprehensive
+            log_name: server-tests-comprehensive
+            timeout_minutes: 30
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName~Honua.Server.Tests.Comprehensive."
+          - shard_name: Feature APIs
+            artifact_suffix: feature-apis
+            log_name: server-tests-feature-apis
+            timeout_minutes: 35
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName~Honua.Server.Tests.Features.FeatureServer|FullyQualifiedName~Honua.Server.Tests.Features.OgcFeatures|FullyQualifiedName~Honua.Server.Tests.Features.API"
+          - shard_name: OData
+            artifact_suffix: odata
+            log_name: server-tests-odata
+            timeout_minutes: 35
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: true
+            filter: "FullyQualifiedName~Honua.Server.Tests.Features.OData"
+          - shard_name: Map and Imagery
+            artifact_suffix: map-imagery
+            log_name: server-tests-map-imagery
+            timeout_minutes: 45
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName~Honua.Server.Tests.Features.OgcMaps|FullyQualifiedName~Honua.Server.Tests.Features.OgcTiles|FullyQualifiedName~Honua.Server.Tests.Features.MapServer|FullyQualifiedName~Honua.Server.Tests.Features.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.GeometryService"
+          - shard_name: Infra and Security
+            artifact_suffix: infra-security
+            log_name: server-tests-infra-security
+            timeout_minutes: 20
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.GeoservicesCatalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling"
+          - shard_name: Operator Eval Harness
+            artifact_suffix: operator-eval
+            log_name: server-tests-operator-eval
+            timeout_minutes: 20
+            max_cpu_count: "1"
+            upload_operator_eval_report: true
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.OgcProcesses|FullyQualifiedName~Honua.Server.Tests.Features.Grpc"
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: false
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
+      HONUA_TEST_CONFIGURATION: Release
+      HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+
+      - name: Create Test Results Directory
+        run: mkdir -p ./tests/TestResults
+
+      - name: Pre-pull Docker images for faster tests
+        run: |
+          docker pull --quiet postgis/postgis:16-3.4-alpine || true
+          docker pull --quiet postgis/postgis:18-3.6 || true
+
+      - name: Start emulator containers (Azurite + Localstack)
+        run: |
+          docker compose -f docker/docker-compose.emulators.yml up -d --quiet-pull
+          for i in {1..30}; do
+            if (echo > /dev/tcp/localhost/4566) >/dev/null 2>&1 \
+              && (echo > /dev/tcp/localhost/10000) >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Emulators failed to start."
+          docker compose -f docker/docker-compose.emulators.yml ps
+          exit 1
+
+      - name: Build server test binaries
+        timeout-minutes: 20
+        run: |
+          dotnet build tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-restore \
+            --configuration Release
+
+      - name: Run server test shard
+        shell: bash
+        run: |
+          set +e
+          filter='${{ matrix.filter }}'
+          log_file="./tests/TestResults/${{ matrix.log_name }}.log"
+          trx_file="${{ matrix.log_name }}.trx"
+          extra_args=()
+          if [ -n "${{ matrix.max_cpu_count }}" ]; then
+            extra_args+=(-- "RunConfiguration.MaxCpuCount=${{ matrix.max_cpu_count }}")
+          fi
+
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "$filter" \
+            --logger "trx;LogFileName=$trx_file" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            "${extra_args[@]}" \
+            > "$log_file" 2>&1 &
+          test_pid=$!
+
+          while kill -0 "$test_pid" 2>/dev/null; do
+            echo "[${{ matrix.log_name }}-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
+            sleep 30
+          done
+
+          wait "$test_pid"
+          test_exit_code=$?
+          set -e
+
+          cat "$log_file"
+          exit "$test_exit_code"
+
+      - name: Upload Operator Eval Report
+        if: ${{ always() && matrix.upload_operator_eval_report }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: operator-eval-report
+          path: tests/TestResults/eval-report.json
+          if-no-files-found: error
+
+      - name: Upload OData CLI certification evidence
+        if: ${{ always() && matrix.upload_odata_evidence }}
+        uses: ./.github/actions/upload-ci-evidence
+        with:
+          kind: evidence
+          suffix: cli-odata
+          path: tests/TestResults/*-cli-odata.cert.json
+          tier: pr
+
+      - name: Upload shard test results
+        uses: actions/upload-artifact@v7
+        if: always()
+        timeout-minutes: 3
+        with:
+          name: server-test-results-${{ matrix.artifact_suffix }}
+          path: tests/TestResults/
+          retention-days: 7
+
+      - name: Stop emulator containers
+        if: always()
+        run: docker compose -f docker/docker-compose.emulators.yml down -v || true
+
+  python-integration-tests:
+    name: Python Integration Tests
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 25
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: false
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
+      HONUA_TEST_CONFIGURATION: Release
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: tests/python/requirements.txt
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Build server binaries for Python fixtures
+        run: |
+          dotnet build src/Honua.Server/Honua.Server.csproj \
+            --no-restore \
+            --configuration Release
 
       - name: Install GDAL tools
         run: |
@@ -462,6 +507,35 @@ jobs:
         run: pytest --tb=short
         working-directory: tests/python
 
+      - name: Upload Python test results
+        uses: actions/upload-artifact@v7
+        if: always()
+        timeout-minutes: 3
+        with:
+          name: python-test-results
+          path: |
+            tests/TestResults/
+            tests/python/gdal-ogr-results*.json
+            tests/python/stac-client-compat-results*.json
+            tests/python/stac-client-compat-results*.md
+          retention-days: 7
+
+  js-typecheck:
+    name: JavaScript Type Check
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: tests/js/package-lock.json
+
       - name: Install JavaScript test dependencies
         run: npm ci
         working-directory: tests/js
@@ -470,27 +544,23 @@ jobs:
         run: npm run typecheck
         working-directory: tests/js
 
-      - name: Upload Test Results
-        uses: actions/upload-artifact@v7
-        if: always()
-        timeout-minutes: 3
-        with:
-          name: all-test-results
-          path: |
-            tests/TestResults/
-            tests/python/gdal-ogr-results*.json
-            tests/python/stac-client-compat-results*.json
-            tests/python/stac-client-compat-results*.md
-          retention-days: 7
-
-      - name: Upload OData CLI certification evidence
-        if: always()
-        uses: ./.github/actions/upload-ci-evidence
-        with:
-          kind: evidence
-          suffix: cli-odata
-          path: tests/TestResults/*-cli-odata.cert.json
-          tier: pr
+  test-all:
+    name: Test Suite (.NET + Python + JS)
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
+    runs-on: ubuntu-latest
+    needs: [dotnet-foundation-tests, server-tests, python-integration-tests, js-typecheck]
+    steps:
+      - name: Check required test job results
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "::error::One or more required test jobs failed."
+            exit 1
+          fi
+          if [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "::error::One or more required test jobs were cancelled."
+            exit 1
+          fi
+          echo "All test suite jobs passed."
 
   js-integration-tests:
     name: JavaScript Integration Tests
@@ -892,7 +962,7 @@ jobs:
     name: Postgres Compatibility (${{ matrix.pg_image }})
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
-    needs: [build, test-all]
+    needs: build
     timeout-minutes: 30
     strategy:
       # Report every PG version's status independently so a PG 16 regression does
@@ -946,7 +1016,7 @@ jobs:
     name: Honua.Core Package Compatibility
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
-    needs: [build, test-all]
+    needs: build
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
@@ -1032,7 +1102,7 @@ jobs:
     name: Docker Build & Integration Test
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, changes, test-all, js-integration-tests]
+    needs: [build, changes]
     timeout-minutes: 15
     services:
       postgres:
@@ -1051,6 +1121,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Pre-pull BuildKit image with retries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if docker pull moby/buildkit:buildx-stable-1; then
+              exit 0
+            fi
+            sleep $((attempt * 15))
+          done
+          echo "::error::Failed to pre-pull moby/buildkit:buildx-stable-1 after retries."
+          exit 1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -1108,7 +1191,7 @@ jobs:
 
       - name: Container logs
         if: always()
-        run: docker logs honua-test
+        run: docker logs honua-test || true
 
       - name: Cleanup
         if: always()

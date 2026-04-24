@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Linq;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -63,7 +62,6 @@ public static class OgcExtensions
         {
             long longId => longId,
             int intId => (long)intId,
-            string strId when long.TryParse(strId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedId) => parsedId,
             string strId => strId,
             _ => null
         };

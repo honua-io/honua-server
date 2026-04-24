@@ -92,8 +92,8 @@ public sealed class ODataCrudExceptionMappingTests
     private static WebAppFixture CreateFixtureWithCreateException(Func<Exception> exceptionFactory)
     {
         var writer = Substitute.For<IFeatureWriter>();
-        writer.CreateAsync(Arg.Any<int>(), Arg.Any<Feature>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<Feature>(exceptionFactory()));
+        writer.ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(_ => Task.FromException<FeatureEditResult>(exceptionFactory()));
 
         return new WebAppFixture()
             .ReplaceService<IFeatureWriter>(writer);
@@ -102,8 +102,8 @@ public sealed class ODataCrudExceptionMappingTests
     private static WebAppFixture CreateFixtureWithUpdateException(Func<Exception> exceptionFactory)
     {
         var writer = Substitute.For<IFeatureWriter>();
-        writer.UpdateAsync(Arg.Any<int>(), Arg.Any<Feature>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<Feature>(exceptionFactory()));
+        writer.ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(_ => Task.FromException<FeatureEditResult>(exceptionFactory()));
 
         return new WebAppFixture()
             .ReplaceService<IFeatureWriter>(writer);

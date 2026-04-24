@@ -3,11 +3,14 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Import;
 
@@ -32,6 +35,25 @@ public sealed class ImportDistributedStateFailureTests
             .Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*Distributed import progress state is unavailable*");
+    }
+
+    [UnitTest]
+    public async Task UniversalProgressStore_WithMemoryDistributedCache_TracksActiveOperationIdsWithoutRedisBackplane()
+    {
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var store = new UniversalProgressStore(cache, NullLogger<UniversalProgressStore>.Instance);
+        var progress = ExportProgress.CreateInitial("export-1", "csv", "svc", 1, 10);
+
+        await store.SetProgressAsync("export-1", progress, TimeSpan.FromMinutes(5));
+
+        var activeIds = await store.GetActiveOperationIdsAsync(OperationType.Export);
+        activeIds.Should().Contain("export-1");
+
+        var loaded = await store.GetProgressAsync<ExportProgress>("export-1");
+        loaded.Should().NotBeNull();
+
+        await store.DeleteProgressAsync("export-1");
+        (await store.GetActiveOperationIdsAsync(OperationType.Export)).Should().NotContain("export-1");
     }
 
     [UnitTest]

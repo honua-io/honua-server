@@ -53,6 +53,18 @@ public sealed class ODataAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /odata/Layers({layerId})/Features")]
+    public async Task CreateFeature_WithMalformedJsonWithoutApiKey_ReturnsUnauthorizedBeforeBodyValidation()
+    {
+        var response = await _fixture.Client.PostAsync(
+            "/odata/Layers(0)/Features",
+            new StringContent("{", Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
     public async Task UpdateFeature_WithoutApiKey_ReturnsUnauthorized()
@@ -69,6 +81,21 @@ public sealed class ODataAuthorizationTests : IAsyncLifetime
         var message = new HttpRequestMessage(new HttpMethod("PATCH"), "/odata/Features(LayerId=0,ObjectId=1)")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+
+        var response = await _fixture.Client.SendAsync(message);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    public async Task UpdateFeature_WithMalformedJsonWithoutApiKey_ReturnsUnauthorizedBeforeBodyValidation()
+    {
+        var message = new HttpRequestMessage(new HttpMethod("PATCH"), "/odata/Features(LayerId=0,ObjectId=1)")
+        {
+            Content = new StringContent("{", Encoding.UTF8, "application/json")
         };
 
         var response = await _fixture.Client.SendAsync(message);

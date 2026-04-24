@@ -58,6 +58,14 @@ services.AddRedisJobQueue("background-tasks", RedisFallbackMode.InMemoryFallback
 #### 3. AllowLocalInDev
 - **Use case**: Services that require distributed coordination in production but can operate locally in dev/test
 - **Behavior**: Allows fallback in development/test environments, fails fast in production
+<<<<<<< HEAD
+- **Example**: Import job coordination, workflow orchestration
+
+```csharp
+services.AddRedisLeaderElection("workflow-coordination", fallbackStrategy: RedisFallbackMode.AllowLocalInDev);
+```
+
+=======
 - **Example**: Import job coordination
 
 ```csharp
@@ -75,6 +83,7 @@ producing a clear operational signal (e.g. `503` on affected admin endpoints).
 - **Behavior**: Services are not registered; dependent features are unavailable
 - **Example**: Workflow orchestration (`AddOrchestration` / `AddOrchestrationBackgroundServices`)
 
+>>>>>>> origin/trunk
 ### RedisServiceBase
 
 Base class for all Redis-dependent services providing:

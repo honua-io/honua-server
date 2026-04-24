@@ -4,6 +4,7 @@
 using System.Linq;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -64,6 +65,28 @@ public sealed class OgcFeaturesGeometryServicesTests
     private static OgcFeaturesGeometryServices CreateSut()
         => new(
             new Honua.Server.Features.Infrastructure.Services.GeometryService(Options.Create(new LimitsOptions())),
+            new IdentityCoordinateTransformService(),
             Options.Create(new LimitsOptions()),
             NullLogger<OgcFeaturesGeometryServices>.Instance);
+
+    private sealed class IdentityCoordinateTransformService : ICoordinateTransformService
+    {
+        public ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(
+            double minX,
+            double minY,
+            double maxX,
+            double maxY,
+            int fromSrid,
+            int toSrid,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<(double MinX, double MinY, double MaxX, double MaxY)?>((minX, minY, maxX, maxY));
+
+        public ValueTask<(double X, double Y)?> TransformPointAsync(
+            double x,
+            double y,
+            int fromSrid,
+            int toSrid,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<(double X, double Y)?>((x, y));
+    }
 }

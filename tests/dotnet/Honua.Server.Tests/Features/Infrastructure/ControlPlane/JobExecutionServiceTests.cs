@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// a claimed job to Running, preventing resurrection of jobs that were
 /// cancelled between claim and worker startup.
 /// </summary>
-[Collection("Unit")]
+[Collection("ControlPlaneTransitionTelemetry")]
 public sealed class JobExecutionServiceTests
 {
     private static ExecutionJobRecord CreateProvisioningJob(

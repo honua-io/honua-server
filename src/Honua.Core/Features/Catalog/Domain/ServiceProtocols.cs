@@ -14,8 +14,20 @@ public static class ServiceProtocols
     /// <summary>GeoServices MapServer protocol.</summary>
     public const string MapServer = "MapServer";
 
+    /// <summary>GeoServices ImageServer protocol.</summary>
+    public const string ImageServer = "ImageServer";
+
+    /// <summary>GeoServices GPServer protocol.</summary>
+    public const string GPServer = "GPServer";
+
     /// <summary>OGC API Features protocol.</summary>
     public const string OgcFeatures = "OgcFeatures";
+
+    /// <summary>OGC API Maps protocol.</summary>
+    public const string OgcApiMaps = "OGC-API-Maps";
+
+    /// <summary>OGC API Tiles protocol.</summary>
+    public const string OgcApiTiles = "OGC-API-Tiles";
 
     /// <summary>OGC Web Feature Service 2.0 protocol.</summary>
     public const string Wfs20 = "Wfs20";
@@ -32,7 +44,20 @@ public static class ServiceProtocols
     /// <summary>
     /// All supported protocol identifiers.
     /// </summary>
-    public static readonly string[] All = [FeatureServer, MapServer, OgcFeatures, Wfs20, OData, Grpc, Stac];
+    public static readonly string[] All =
+    [
+        FeatureServer,
+        MapServer,
+        ImageServer,
+        GPServer,
+        OgcFeatures,
+        OgcApiMaps,
+        OgcApiTiles,
+        Wfs20,
+        OData,
+        Grpc,
+        Stac
+    ];
 
     /// <summary>
     /// Checks whether a protocol is enabled for a service based on its metadata.

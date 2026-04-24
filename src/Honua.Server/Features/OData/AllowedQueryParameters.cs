@@ -14,90 +14,70 @@ internal static class AllowedQueryParameters
     public static readonly FrozenSet<string> None =
         Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    public static readonly FrozenSet<string> Layer = new[]
-        {
-            "$select",
-            "$format"
-        }
-        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    public static readonly FrozenSet<string> Layer = ODataSystemOptions(
+        "$select",
+        "$format");
 
-    public static readonly FrozenSet<string> Feature = new[]
-        {
-            "$select",
-            "$format"
-        }
-        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    public static readonly FrozenSet<string> Feature = ODataSystemOptions(
+        "$select",
+        "$format");
 
-    public static readonly FrozenSet<string> FeatureValue = new[]
-        {
-            "$format"
-        }
-        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    public static readonly FrozenSet<string> FeatureValue = ODataSystemOptions("$format");
 
-    public static readonly FrozenSet<string> LayersCount = new[]
-        {
-            "$filter",
-            "$format"
-        }
-        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    public static readonly FrozenSet<string> LayersCount = ODataSystemOptions(
+        "$filter",
+        "$format");
 
-    public static readonly FrozenSet<string> FeaturesCount = new[]
-        {
-            "$filter",
-            "$format"
-        }
-        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    public static readonly FrozenSet<string> FeaturesCount = ODataSystemOptions(
+        "$filter",
+        "$format");
 
-    public static readonly FrozenSet<string> Layers = new[]
-        {
-            "$filter",
-            "$select",
-            "$orderby",
-            "$top",
-            "$skip",
-            "$skiptoken",
-            "$count",
-            "$format"
-        }
-        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    public static readonly FrozenSet<string> Layers = ODataSystemOptions(
+        "$filter",
+        "$select",
+        "$orderby",
+        "$top",
+        "$skip",
+        "$skiptoken",
+        "$count",
+        "$format");
 
-    public static readonly FrozenSet<string> Features = new[]
-        {
-            "$filter",
-            "$select",
-            "$orderby",
-            "$top",
-            "$skip",
-            "$skiptoken",
-            "$count",
-            "$expand",
-            "$compute",
-            "$apply",
-            "$search",
-            "$deltatoken",
-            "$format"
-        }
-        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    public static readonly FrozenSet<string> Features = ODataSystemOptions(
+        "$filter",
+        "$select",
+        "$orderby",
+        "$top",
+        "$skip",
+        "$skiptoken",
+        "$count",
+        "$expand",
+        "$compute",
+        "$apply",
+        "$search",
+        "$deltatoken",
+        "$format",
+        "honua_track_changes");
 
-    public static readonly FrozenSet<string> Apply = new[]
-        {
-            "$apply",
-            "$filter",
-            "$format"
-        }
-        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    public static readonly FrozenSet<string> Apply = ODataSystemOptions(
+        "$apply",
+        "$filter",
+        "$format");
 
-    public static readonly FrozenSet<string> Search = new[]
-        {
-            "$search",
-            "$filter",
-            "$orderby",
-            "$select",
-            "$expand",
-            "$top",
-            "$skip",
-            "$count",
-            "$format"
-        }
-        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    public static readonly FrozenSet<string> Search = ODataSystemOptions(
+        "$search",
+        "$filter",
+        "$orderby",
+        "$select",
+        "$expand",
+        "$top",
+        "$skip",
+        "$count",
+        "$format");
+
+    private static FrozenSet<string> ODataSystemOptions(params string[] names)
+        => names
+            .SelectMany(static name => name.StartsWith('$')
+                ? new[] { name, name[1..] }
+                : new[] { name })
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 }

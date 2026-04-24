@@ -57,13 +57,15 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
 
         if (_options.LogSecretAccess)
         {
-            _logger.LogDebug("Attempting to retrieve secret with reference: {SecretRef}", MaskSecretReference(secretRef));
+            var maskedSecretRef = MaskSecretReference(secretRef);
+            SecretProviderLog.AttemptingSecretRetrieval(_logger, maskedSecretRef);
         }
 
         // Check cache first
         if (_options.EnableCaching && TryGetFromCache(secretRef, out var cachedValue))
         {
-            _logger.LogDebug("Secret retrieved from cache: {SecretRef}", MaskSecretReference(secretRef));
+            var maskedSecretRef = MaskSecretReference(secretRef);
+            SecretProviderLog.SecretRetrievedFromCache(_logger, maskedSecretRef);
             return cachedValue;
         }
 
@@ -80,12 +82,14 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
                 await CacheSecretAsync(secretRef, value).ConfigureAwait(false);
             }
 
-            _logger.LogDebug("Secret successfully retrieved: {SecretRef}", MaskSecretReference(secretRef));
+            var maskedSecretRef = MaskSecretReference(secretRef);
+            SecretProviderLog.SecretRetrieved(_logger, maskedSecretRef);
             return value;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Failed to retrieve secret: {SecretRef}", MaskSecretReference(secretRef));
+            var maskedSecretRef = MaskSecretReference(secretRef);
+            SecretProviderLog.SecretRetrievalFailed(_logger, maskedSecretRef, ex);
             throw new SecretNotFoundException(secretRef, $"Failed to retrieve secret: {ex.Message}", ex);
         }
     }
@@ -101,7 +105,8 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         }
         catch (SecretNotFoundException)
         {
-            _logger.LogDebug("Secret not found, using default value: {SecretRef}", MaskSecretReference(secretRef));
+            var maskedSecretRef = MaskSecretReference(secretRef);
+            SecretProviderLog.SecretNotFoundUsingDefault(_logger, maskedSecretRef);
             return defaultValue;
         }
     }
@@ -126,7 +131,8 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogDebug(ex, "Failed to test secret resolution: {SecretRef}", MaskSecretReference(secretRef));
+            var maskedSecretRef = MaskSecretReference(secretRef);
+            SecretProviderLog.SecretResolutionTestFailed(_logger, maskedSecretRef, ex);
             return false;
         }
     }
@@ -238,7 +244,7 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
 
         if (expiredKeys.Count > 0)
         {
-            _logger.LogDebug("Cleaned up {Count} expired secret cache entries", expiredKeys.Count);
+            SecretProviderLog.ExpiredSecretCacheEntriesCleanedUp(_logger, expiredKeys.Count);
         }
     }
 

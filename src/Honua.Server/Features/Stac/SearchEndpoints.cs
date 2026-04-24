@@ -1,20 +1,21 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Server.Features.Infrastructure.Filtering;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
-using Honua.Server.Features.OgcFeatures.Services;
 using Honua.Server.Features.Stac.Models;
 using Honua.Server.Features.Stac.Services;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -27,6 +28,7 @@ namespace Honua.Server.Features.Stac;
 /// </summary>
 internal static class SearchEndpoints
 {
+    private const int Wgs84Srid = 4326;
     private delegate bool TryParseDelegate<TValue>(string input, out TValue value);
 
     /// <summary>
@@ -106,9 +108,8 @@ internal static class SearchEndpoints
             context,
             deps.LayerCatalog,
             deps.FeatureReader,
-            deps.FilterExpressionService,
             deps.GeometryService,
-            deps.CrsRegistry,
+            deps.FilterProcessor,
             defaultFilterLangIsText: true,
             deps.Logger);
     }
@@ -124,9 +125,8 @@ internal static class SearchEndpoints
             context,
             deps.LayerCatalog,
             deps.FeatureReader,
-            deps.FilterExpressionService,
             deps.GeometryService,
-            deps.CrsRegistry,
+            deps.FilterProcessor,
             defaultFilterLangIsText: false,
             deps.Logger);
     }
@@ -137,9 +137,8 @@ internal static class SearchEndpoints
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureReader featureReader,
-        IFilterExpressionService filterExpressionService,
         IGeometryService geometryService,
-        ICrsRegistry crsRegistry,
+        Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         ILogger logger)
     {
@@ -174,7 +173,7 @@ internal static class SearchEndpoints
 
             if (request.Ids is { IsDefault: false } requestedIds && requestedIds.Length > 0)
             {
-                if (!TryParseLongTokenSet(requestedIds, out var parsedObjectIds, out var idsError))
+                if (!TryNormalizeIdTokenSet(requestedIds, out var normalizedIds, out var idsError))
                 {
                     return StandardErrorHelpers.CreateBadRequest(context, idsError ?? "Invalid ids parameter.");
                 }
@@ -186,13 +185,12 @@ internal static class SearchEndpoints
                     context,
                     baseUrl,
                     featureReader,
-                    filterExpressionService,
                     geometryService,
-                    crsRegistry,
+                    filterProcessor,
                     defaultFilterLangIsText,
                     logger,
                     layerList,
-                    parsedObjectIds,
+                    normalizedIds,
                     effectiveLimit);
             }
 
@@ -202,9 +200,8 @@ internal static class SearchEndpoints
                 context,
                 baseUrl,
                 featureReader,
-                filterExpressionService,
                 geometryService,
-                crsRegistry,
+                filterProcessor,
                 defaultFilterLangIsText,
                 logger,
                 targetLayers.ToArray(),
@@ -230,20 +227,19 @@ internal static class SearchEndpoints
         HttpContext context,
         string baseUrl,
         IFeatureReader featureReader,
-        IFilterExpressionService filterExpressionService,
         IGeometryService geometryService,
-        ICrsRegistry crsRegistry,
+        Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         ILogger logger,
         Core.Features.Catalog.Domain.LayerDefinition[] layerList,
-        ImmutableArray<long>? parsedObjectIds,
+        ImmutableArray<string>? requestedItemIds,
         int effectiveLimit)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var allItems = ImmutableArray.CreateBuilder<StacItem>();
         long totalMatched = 0;
         var remainingSkip = offset;
-        var hasEmptyIdFilter = parsedObjectIds is { Length: 0 };
+        var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
         var layerSelections = new Dictionary<int, IReadOnlySet<string>?>();
 
         foreach (var layer in layerList)
@@ -256,10 +252,9 @@ internal static class SearchEndpoints
             var layerQueryResult = await TryBuildLayerQuery(
                 request,
                 layer,
-                parsedObjectIds,
-                filterExpressionService,
+                requestedItemIds,
                 geometryService,
-                crsRegistry,
+                filterProcessor,
                 defaultFilterLangIsText,
                 cancellationToken);
             if (!layerQueryResult.IsSuccess)
@@ -288,7 +283,12 @@ internal static class SearchEndpoints
 
                 var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
                 allItems.AddRange(result.Features
-                    .Select(f => StacMappingService.MapFeatureToItem(f, layer, baseUrl, selectedProperties)));
+                    .Select(f => StacMappingService.MapFeatureToItem(
+                        f,
+                        layer,
+                        baseUrl,
+                        selectedProperties,
+                        geometrySrid: Wgs84Srid)));
             }
             else if (allItems.Count < effectiveLimit)
             {
@@ -299,7 +299,12 @@ internal static class SearchEndpoints
                 totalMatched += result.TotalCount;
 
                 allItems.AddRange(result.Features
-                    .Select(f => StacMappingService.MapFeatureToItem(f, layer, baseUrl, selectedProperties)));
+                    .Select(f => StacMappingService.MapFeatureToItem(
+                        f,
+                        layer,
+                        baseUrl,
+                        selectedProperties,
+                        geometrySrid: Wgs84Srid)));
             }
             else
             {
@@ -351,14 +356,17 @@ internal static class SearchEndpoints
     private static async Task<(bool IsSuccess, FeatureQuery Query, IReadOnlySet<string>? SelectedProperties, string? Error)> TryBuildLayerQuery(
         StacSearchRequest request,
         Core.Features.Catalog.Domain.LayerDefinition layer,
-        ImmutableArray<long>? parsedObjectIds,
-        IFilterExpressionService filterExpressionService,
+        ImmutableArray<string>? requestedItemIds,
         IGeometryService geometryService,
-        ICrsRegistry crsRegistry,
+        Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         CancellationToken cancellationToken)
     {
-        var query = new FeatureQuery();
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = layer.SpatialReference.Wkid,
+            OutputSrid = Wgs84Srid
+        };
         IReadOnlySet<string>? selectedProperties = null;
         string? error = null;
 
@@ -420,16 +428,10 @@ internal static class SearchEndpoints
             query = query with { TemporalFilter = temporalFilter };
         }
 
-        if (parsedObjectIds is { Length: > 0 } objectIds)
-        {
-            query = query with { ObjectIds = objectIds };
-        }
-
         var filterQueryResult = await TryResolveFilterQuery(
             request,
             layer,
-            filterExpressionService,
-            crsRegistry,
+            filterProcessor,
             defaultFilterLangIsText,
             cancellationToken);
         if (!filterQueryResult.IsSuccess)
@@ -441,6 +443,11 @@ internal static class SearchEndpoints
         if (filterQueryResult.SqlFilter is not null)
         {
             query = query with { SqlFilter = filterQueryResult.SqlFilter };
+        }
+
+        if (requestedItemIds is { Length: > 0 } itemIds)
+        {
+            query = query with { SqlFilter = CombineSqlFilters(query.SqlFilter, BuildItemIdsSqlFilter(itemIds)) };
         }
 
         if (request.Sortby is { IsDefault: false } sortby && sortby.Length > 0)
@@ -471,112 +478,21 @@ internal static class SearchEndpoints
     private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, string? Error)> TryResolveFilterQuery(
         StacSearchRequest request,
         Core.Features.Catalog.Domain.LayerDefinition layer,
-        IFilterExpressionService filterExpressionService,
-        ICrsRegistry crsRegistry,
+        Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         CancellationToken cancellationToken)
     {
-        var hasFilter = request.Filter.HasValue;
-        var hasFilterLang = !string.IsNullOrWhiteSpace(request.FilterLang);
-        var hasFilterCrs = !string.IsNullOrWhiteSpace(request.FilterCrs);
-        if (!hasFilter && !hasFilterLang && !hasFilterCrs)
-        {
-            return (true, null, null);
-        }
+        var result = await filterProcessor.ProcessFilterAsync(
+            layer,
+            request.Filter,
+            request.FilterLang,
+            request.FilterCrs,
+            defaultFilterLangIsText,
+            cancellationToken).ConfigureAwait(false);
 
-        if (!hasFilter)
-        {
-            return (false, null, "filter requires a filter expression.");
-        }
-
-        var filterLanguage = ResolveFilterLanguage(request.FilterLang, request.Filter, defaultFilterLangIsText);
-        if (filterLanguage is null)
-        {
-            return (false, null, "Invalid filter-lang parameter.");
-        }
-
-        var filterElement = request.Filter!.Value;
-        var filterText = filterLanguage.Value == FilterLanguage.Cql2Json
-            ? filterElement.GetRawText()
-            : filterElement.ValueKind == JsonValueKind.String
-                ? filterElement.GetString()
-                : null;
-
-        if (filterLanguage.Value == FilterLanguage.Cql2Text && filterElement.ValueKind != JsonValueKind.String)
-        {
-            return (false, null, "filter must be a string when filter-lang is cql2-text.");
-        }
-
-        if (filterLanguage.Value == FilterLanguage.Cql2Json &&
-            filterElement.ValueKind is not JsonValueKind.Object and not JsonValueKind.Array)
-        {
-            return (false, null, "filter must be a JSON object when filter-lang is cql2-json.");
-        }
-
-        var parseResult = filterExpressionService.Parse(filterLanguage.Value, filterText);
-        if (!parseResult.IsSuccess)
-        {
-            return (false, null, parseResult.ErrorMessage ?? "Invalid filter expression.");
-        }
-
-        var parsedExpression = parseResult.Expression;
-        if (parsedExpression is null)
-        {
-            return (false, null, "Invalid filter expression.");
-        }
-
-        if (hasFilterCrs)
-        {
-            var filterCrsDefinition = await crsRegistry.ResolveAsync(request.FilterCrs, cancellationToken).ConfigureAwait(false);
-            if (!filterCrsDefinition.HasValue)
-            {
-                return (false, null, $"Unsupported filter-crs '{request.FilterCrs}'.");
-            }
-
-            parsedExpression = OgcFilterProcessor.ApplyFilterCrs(parsedExpression, filterCrsDefinition.Value);
-            parsedExpression = OgcFilterProcessor.NormalizeFilterAxisOrder(parsedExpression, filterCrsDefinition.Value.AxisOrder);
-        }
-
-        foreach (var explicitGeometrySrid in FilterGeometryCrsValidator.GetExplicitGeometrySrids(parsedExpression))
-        {
-            if (!await crsRegistry.IsSridSupportedAsync(explicitGeometrySrid, cancellationToken).ConfigureAwait(false))
-            {
-                return (false, null, $"Unsupported explicit geometry CRS 'EPSG:{explicitGeometrySrid}'.");
-            }
-        }
-
-        var translationResult = filterExpressionService.Translate(parsedExpression, layer);
-        if (!translationResult.IsSuccess)
-        {
-            return (false, null, translationResult.ErrorMessage ?? "Invalid filter expression.");
-        }
-
-        return (true, translationResult.SqlFilter, null);
-    }
-
-    private static FilterLanguage? ResolveFilterLanguage(
-        string? filterLang,
-        JsonElement? filter,
-        bool defaultFilterLangIsText)
-    {
-        if (!string.IsNullOrWhiteSpace(filterLang))
-        {
-            return filterLang.Trim().ToLowerInvariant() switch
-            {
-                "cql2-text" => FilterLanguage.Cql2Text,
-                "cql2-json" => FilterLanguage.Cql2Json,
-                _ => null
-            };
-        }
-
-        if (!filter.HasValue)
-        {
-            return null;
-        }
-
-        return defaultFilterLangIsText || filter.Value.ValueKind == JsonValueKind.String
-            ? FilterLanguage.Cql2Text
-            : FilterLanguage.Cql2Json;
+        return result.IsSuccess
+            ? (true, result.SqlFilter, null)
+            : (false, null, result.ErrorMessage);
     }
 
     private static bool TryBuildSortOrder(
@@ -757,6 +673,16 @@ internal static class SearchEndpoints
             }
         }
 
+        ReadOnlySpan<string> itemIdCandidates = ["stac_id", "item_id", "id"];
+        foreach (var candidate in itemIdCandidates)
+        {
+            if (availableFields.ContainsKey(candidate) &&
+                !queryFields.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+            {
+                queryFields = queryFields.Add(candidate);
+            }
+        }
+
         outFields = queryFields;
         selectedProperties = selected.Length == 0
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -813,7 +739,7 @@ internal static class SearchEndpoints
 
         if (!string.IsNullOrWhiteSpace(ids))
         {
-            if (!TryParseLongTokens(ids, out var idValues, out error))
+            if (!TryParseStringTokens(ids, out var idValues, out error))
             {
                 return false;
             }
@@ -853,7 +779,10 @@ internal static class SearchEndpoints
 
         if (!string.IsNullOrWhiteSpace(filter))
         {
-            var resolvedFilterLang = ResolveFilterLanguage(filterLang, CreateJsonStringElement(filter), defaultFilterLangIsText);
+            var resolvedFilterLang = Cql2FilterProcessor.ResolveFilterLanguage(
+                filterLang,
+                CreateJsonStringElement(filter),
+                defaultFilterLangIsText);
             if (resolvedFilterLang is null)
             {
                 error = $"Invalid filter-lang '{filterLang}'.";
@@ -978,7 +907,13 @@ internal static class SearchEndpoints
 
     private static JsonElement CreateJsonStringElement(string value)
     {
-        using var document = JsonDocument.Parse(JsonSerializer.Serialize(value));
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStringValue(value);
+        }
+
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
         return document.RootElement.Clone();
     }
 
@@ -1108,15 +1043,29 @@ internal static class SearchEndpoints
             out parsedValues,
             out error);
 
-    private static bool TryParseLongTokens(
+    private static bool TryParseStringTokens(
         string value,
         out ImmutableArray<string> parsedValues,
         out string? error)
-        => TryParseCsvValues(
-            value,
-            static (string input, out long parsed) => long.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed),
-            out parsedValues,
-            out error);
+    {
+        var builder = ImmutableArray.CreateBuilder<string>();
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            var trimmed = token.Trim();
+            if (trimmed.Length == 0)
+            {
+                parsedValues = default;
+                error = "ids contains an empty value.";
+                return false;
+            }
+
+            builder.Add(trimmed);
+        }
+
+        parsedValues = builder.ToImmutable();
+        error = null;
+        return true;
+    }
 
     private static bool TryParseIntegerTokenSet(
         ImmutableArray<string> values,
@@ -1140,28 +1089,86 @@ internal static class SearchEndpoints
         return true;
     }
 
-    private static bool TryParseLongTokenSet(
+    private static bool TryNormalizeIdTokenSet(
         ImmutableArray<string> values,
-        out ImmutableArray<long> parsedValues,
+        out ImmutableArray<string> normalizedValues,
         out string? error)
     {
-        var builder = ImmutableArray.CreateBuilder<long>();
+        var builder = ImmutableArray.CreateBuilder<string>();
         foreach (var value in values)
         {
-            if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            if (string.IsNullOrWhiteSpace(value))
             {
-                error = $"Invalid integer value '{value}'.";
-                parsedValues = default;
+                error = "ids contains an empty value.";
+                normalizedValues = default;
                 return false;
             }
 
-            builder.Add(parsed);
+            builder.Add(value.Trim());
         }
 
-        parsedValues = builder.ToImmutable();
+        normalizedValues = builder.ToImmutable();
         error = null;
         return true;
     }
+
+    private static SqlFragment BuildItemIdsSqlFilter(ImmutableArray<string> itemIds)
+    {
+        var distinctIds = itemIds
+            .Where(static itemId => !string.IsNullOrWhiteSpace(itemId))
+            .Select(static itemId => itemId.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var numericObjectIds = distinctIds
+            .Select(static itemId => long.TryParse(
+                itemId,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var objectId)
+                    ? objectId
+                    : (long?)null)
+            .Where(static objectId => objectId.HasValue)
+            .Select(static objectId => objectId!.Value)
+            .Distinct()
+            .ToArray();
+
+        var clauses = new List<string>
+        {
+            "attributes->>'stac_id' = ANY(@p0)",
+            "attributes->>'item_id' = ANY(@p0)",
+            "attributes->>'id' = ANY(@p0)"
+        };
+        var parameters = new List<object?> { distinctIds };
+
+        if (numericObjectIds.Length > 0)
+        {
+            clauses.Add("objectid = ANY(@p1)");
+            parameters.Add(numericObjectIds);
+        }
+
+        return new SqlFragment($"({string.Join(" OR ", clauses)})", parameters);
+    }
+
+    private static SqlFragment CombineSqlFilters(SqlFragment? left, SqlFragment right)
+    {
+        if (left is null)
+        {
+            return right;
+        }
+
+        var rightSql = RenumberSqlFragmentParameters(right.Sql, left.Parameters.Count);
+        return new SqlFragment(
+            $"({left.Sql}) AND ({rightSql})",
+            left.Parameters.Concat(right.Parameters).ToArray());
+    }
+
+    private static string RenumberSqlFragmentParameters(string sql, int offset)
+        => Regex.Replace(
+            sql,
+            @"@p(\d+)",
+            match => "@p" + (int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) + offset).ToString(CultureInfo.InvariantCulture),
+            RegexOptions.CultureInvariant);
 
     private static bool TryNormalizePropertyName(string name, out string normalized)
     {

@@ -12,8 +12,7 @@ namespace Honua.Server.Tests.Features.OData;
 
 /// <summary>
 /// Integration tests for OData $deltatoken change tracking support.
-/// Verifies that delta links are emitted on final pages and that
-/// subsequent requests with $deltatoken are accepted and return results.
+/// Verifies that change tracking is opt-in and delta links round-trip cleanly.
 /// </summary>
 [Collection("Database")]
 [Protocol(Protocols.ODataV4)]
@@ -33,25 +32,39 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})")]
-    public async Task Query_WithoutDeltaToken_ReturnsDeltaLink()
+    public async Task Query_WithoutTrackChangesPreference_DoesNotReturnDeltaLink()
     {
-        // Request all features (single page, no nextLink)
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=100");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
-        // When all results fit in one page, a deltaLink should be present
         document.RootElement.TryGetProperty("@odata.nextLink", out _).Should().BeFalse(
             "all results should fit in one page");
+        document.RootElement.TryGetProperty("@odata.deltaLink", out _).Should().BeFalse();
+    }
 
-        document.RootElement.TryGetProperty("@odata.deltaLink", out var deltaLinkElement).Should().BeTrue(
-            "a delta link should be emitted when there are no more pages");
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(Protocols.ODataV4, "DeltaTracking")]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task Query_WithTrackChangesPreference_ReturnsDeltaLinkAndPreferenceApplied()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=100");
+        request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
 
-        var deltaLink = deltaLinkElement.GetString();
-        deltaLink.Should().NotBeNullOrEmpty();
-        deltaLink.Should().Contain("$deltatoken=");
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Preference-Applied", out var preferenceValues).Should().BeTrue();
+        preferenceValues.Should().Contain("odata.track-changes");
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.TryGetProperty("@odata.deltaLink", out var deltaLinkElement).Should().BeTrue();
+        deltaLinkElement.GetString().Should().Contain("$deltatoken=");
     }
 
     [IntegrationTest]
@@ -59,8 +72,10 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Query_WithDeltaToken_ReturnsResults()
     {
-        // First, get a deltaLink
-        var firstResponse = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=100");
+        var firstRequest = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=100");
+        firstRequest.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
+
+        var firstResponse = await _fixture.Client.SendAsync(firstRequest);
         firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var firstContent = await firstResponse.Content.ReadAsStringAsync();
@@ -76,10 +91,10 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         var secondContent = await secondResponse.Content.ReadAsStringAsync();
         using var secondDocument = JsonDocument.Parse(secondContent);
 
-        // Since no changes were made between requests, the delta response
-        // should still be a valid OData response with a value array
         secondDocument.RootElement.TryGetProperty("value", out var valueElement).Should().BeTrue();
         valueElement.ValueKind.Should().Be(JsonValueKind.Array);
+        valueElement.GetArrayLength().Should().Be(0);
+        secondDocument.RootElement.TryGetProperty("@odata.deltaLink", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -126,17 +141,16 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Query_DeltaLinkNotPresentOnIntermediatePages()
     {
-        // Request with pagination that produces multiple pages
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=5");
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=5");
+        request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
+
+        var response = await _fixture.Client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
-        // nextLink should be present (there are more pages)
         document.RootElement.TryGetProperty("@odata.nextLink", out _).Should().BeTrue();
-
-        // deltaLink should NOT be present on intermediate pages
         document.RootElement.TryGetProperty("@odata.deltaLink", out _).Should().BeFalse(
             "delta links should only appear on the final page");
     }
@@ -144,18 +158,11 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})")]
-    public async Task Query_DeltaTokenIsAllowedParameter()
+    public async Task Query_WithDeltaTokenAndAdditionalQueryOption_ReturnsBadRequest()
     {
-        // $deltatoken should be accepted as a valid query parameter (not rejected by parameter validation)
         var response = await _fixture.Client.GetAsync(
-            $"/odata/Features({TestLayerId})?$deltatoken=dGVzdHwx&$top=5");
+            $"/odata/Features({TestLayerId})?$deltatoken=dGVzdHwx&$filter=ObjectId gt 1");
 
-        // May return BadRequest for invalid token format, but not for unknown parameter
-        var content = await response.Content.ReadAsStringAsync();
-        if (response.StatusCode == HttpStatusCode.BadRequest)
-        {
-            // If bad request, it should be about the token itself, not about the parameter name
-            content.Should().NotContain("not allowed");
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

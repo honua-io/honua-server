@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -171,6 +172,8 @@ public sealed class ODataBatchHandlerTests
             new EditLimits(),
             new ODataValidationService(Substitute.For<ICommonQueryValidator>()),
             new ETagService(),
+            new ODataEditParameterAdapter(Substitute.For<ILogger<ODataEditParameterAdapter>>()),
+            new EditProcessor(Substitute.For<ILogger<EditProcessor>>()),
             new NoOpFeatureChangeEventPublisher());
 
         return new ODataBatchHandler(

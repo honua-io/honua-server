@@ -62,7 +62,7 @@ internal sealed class MapServerResponse
     /// Indicates whether dynamic layer rendering is supported.
     /// </summary>
     [JsonPropertyName("supportsDynamicLayers")]
-    public bool SupportsDynamicLayers { get; init; } = true;
+    public bool SupportsDynamicLayers { get; init; }
 
     /// <summary>
     /// Indicates whether cached map tiles are used.
@@ -807,4 +807,28 @@ internal sealed class LevelOfDetail
     /// </summary>
     [JsonPropertyName("scale")]
     public double Scale { get; init; }
+}
+
+/// <summary>
+/// WMS GetFeatureInfo JSON response.
+/// </summary>
+internal sealed class WmsFeatureInfoResponse
+{
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "FeatureInfoResponse";
+
+    [JsonPropertyName("features")]
+    public required WmsFeatureInfoFeature[] Features { get; init; }
+}
+
+/// <summary>
+/// Single WMS GetFeatureInfo JSON result.
+/// </summary>
+internal sealed class WmsFeatureInfoFeature
+{
+    [JsonPropertyName("layer")]
+    public required string Layer { get; init; }
+
+    [JsonPropertyName("attributes")]
+    public required Dictionary<string, object?> Attributes { get; init; }
 }

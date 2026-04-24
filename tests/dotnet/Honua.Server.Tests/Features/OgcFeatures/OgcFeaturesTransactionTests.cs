@@ -108,6 +108,54 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
 
     [IntegrationTest]
     [Operation(Operations.Update)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task UpdateFeature_WithGetItemEtagIfMatch_RoundTripsSuccessfully()
+    {
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Original");
+
+        var getResponse = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        getResponse.Headers.ETag.Should().NotBeNull();
+
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = existingId,
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.4194, 37.7749]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Updated With ETag"
+            }
+        };
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature),
+                Encoding.UTF8,
+                MediaTypes.GeoJson)
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", getResponse.Headers.ETag!.ToString());
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var updated = JsonSerializer.Deserialize(body, OgcJsonContext.Default.GeoJsonFeature);
+        updated.Should().NotBeNull();
+        updated!.Properties["name"]!.ToString().Should().Be("Updated With ETag");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
     [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task PatchFeature_WithPropertiesOnly_ReturnsUpdatedFeatureAndPreservesGeometry()
     {
@@ -161,6 +209,39 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
         patched!.Id.Should().Be(created.Id);
         patched.Properties["name"]!.ToString().Should().Be("Patch Updated");
         patched.Geometry.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task PatchFeature_WithGetItemEtagIfMatch_RoundTripsSuccessfully()
+    {
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Patch Original");
+
+        var getResponse = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        getResponse.Headers.ETag.Should().NotBeNull();
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}")
+        {
+            Content = new StringContent(
+                """{"properties":{"name":"Patch With ETag"}}""",
+                Encoding.UTF8,
+                "application/merge-patch+json")
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", getResponse.Headers.ETag!.ToString());
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var patched = JsonSerializer.Deserialize(body, OgcJsonContext.Default.GeoJsonFeature);
+        patched.Should().NotBeNull();
+        patched!.Properties["name"]!.ToString().Should().Be("Patch With ETag");
     }
 
     [IntegrationTest]

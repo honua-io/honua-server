@@ -8,7 +8,6 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.ImageServer.Handlers;
 using Honua.Server.Features.ImageServer.Models;
-using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -95,7 +94,7 @@ public class ImageServerExportHandlerTests
         SetupLayerAndRasters();
 
         var context = CreateImageServerContext();
-        var request = CreateRequest(size: 0);
+        var request = CreateRequest(rawSize: "512");
         var result = await _handler.ExportImageAsync(context, 1, request);
         await result.ExecuteAsync(context);
 
@@ -150,19 +149,37 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_WithSize_UsesProvidedSize()
     {
-        SetupSuccessfulExport();
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
 
         var context = CreateImageServerContext();
-        var request = CreateRequest(size: 512);
+        var request = CreateRequest(rawSize: "512,256");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        var jsonResult = result as JsonHttpResult<ExportImageResponse>;
-        jsonResult.Should().NotBeNull();
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.OutputWidth.Should().Be(512);
+        capturedQuery.Value.OutputHeight.Should().Be(256);
     }
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_WithBbox_UsesRequestedExtentAspectRatio()
+    public async Task ExportImageAsync_WithoutSize_UsesArcGisDefaultDimensions()
     {
         SetupLayerAndRasters();
         RasterQuery? capturedQuery = null;
@@ -183,98 +200,74 @@ public class ImageServerExportHandlerTests
             .Returns(new RasterExtent { XMin = -10, YMin = -10, XMax = 10, YMax = 30, Srid = 4326 });
 
         var context = CreateImageServerContext();
-        var request = CreateRequest(bbox: "-10,-10,10,30", size: 256);
+        var request = CreateRequest();
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
         capturedQuery.Should().NotBeNull();
-        capturedQuery!.Value.OutputWidth.Should().Be(256);
-        capturedQuery.Value.OutputHeight.Should().Be(512);
+        capturedQuery!.Value.OutputWidth.Should().Be(400);
+        capturedQuery.Value.OutputHeight.Should().Be(400);
     }
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_WithMixedCrsBbox_UsesAspectRatioInOutputCrs()
+    public async Task ExportImageAsync_WithRenderingRule_ReturnsNotImplemented()
     {
         SetupLayerAndRasters();
-        RasterQuery? capturedQuery = null;
-        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo =>
-            {
-                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
-                return CreateTestRasterResult();
-            });
-        _temporaryFileService.StoreTemporaryFileAsync(
-            Arg.Any<byte[]>(),
-            Arg.Any<string>(),
-            Arg.Any<TimeSpan?>(),
-            Arg.Any<ClaimsPrincipal?>(),
-            Arg.Any<CancellationToken>())
-            .Returns("/temp/test.png");
-        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
-            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
 
         var context = CreateImageServerContext();
-        var request = CreateRequest(
-            bbox: "-20037508.342789244,-20037508.342789244,20037508.342789244,20037508.342789244",
-            size: 256,
-            bboxSr: "3857",
-            imageSr: "4326");
-
+        var request = CreateRequest(renderingRule: "{\"rasterFunction\":\"Identity\"}");
         var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
 
-        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
-        capturedQuery.Should().NotBeNull();
-
-        var transformedExtent = CoordinateTransformer.TransformExtent(
-            new SkiaMapRenderer.RenderExtent(
-                -20037508.342789244,
-                -20037508.342789244,
-                20037508.342789244,
-                20037508.342789244),
-            fromSrid: 3857,
-            toSrid: 4326);
-        var expectedAspectRatio = (transformedExtent.MaxY - transformedExtent.MinY) / (transformedExtent.MaxX - transformedExtent.MinX);
-        var expectedHeight = (int)Math.Round(256 * expectedAspectRatio, MidpointRounding.AwayFromZero);
-
-        capturedQuery!.Value.OutputWidth.Should().Be(256);
-        capturedQuery.Value.OutputHeight.Should().Be(expectedHeight);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_WithExtremeAspectRatio_ClampsOutputDimensions()
+    public async Task ExportImageAsync_WithMosaicRule_ReturnsNotImplemented()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo() with { Width = 100, Height = 20000 });
-
-        RasterQuery? capturedQuery = null;
-        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo =>
-            {
-                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
-                return CreateTestRasterResult();
-            });
-        _temporaryFileService.StoreTemporaryFileAsync(
-            Arg.Any<byte[]>(),
-            Arg.Any<string>(),
-            Arg.Any<TimeSpan?>(),
-            Arg.Any<System.Security.Claims.ClaimsPrincipal?>(),
-            Arg.Any<CancellationToken>())
-            .Returns("/temp/test.png");
-        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
-            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+        SetupLayerAndRasters();
 
         var context = CreateImageServerContext();
-        var request = CreateRequest(size: 4096);
+        var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[8]}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithExplicitPixelType_ReturnsNotImplemented()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(pixelType: "U8");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithUnknownPixelType_AllowsExport()
+    {
+        SetupSuccessfulExport();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(pixelType: "UNKNOWN");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
-        capturedQuery.Should().NotBeNull();
-        capturedQuery!.Value.OutputWidth.Should().BeGreaterThan(0).And.BeLessOrEqualTo(4096);
-        capturedQuery.Value.OutputHeight.Should().BeGreaterThan(0).And.BeLessOrEqualTo(4096);
     }
 
     [UnitTest]
@@ -316,6 +309,39 @@ public class ImageServerExportHandlerTests
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithTiffCompression_MapsCompressionIntoRasterQuery()
+    {
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult() with { ContentType = "image/tiff" };
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.tiff");
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(format: "tiff", compression: "LZ77", compressionQuality: 80);
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.OutputFormat.Should().Be(RasterFormat.TIFF);
+        capturedQuery.Value.TiffCompression.Should().Be(TiffCompression.Deflate);
+        capturedQuery.Value.Quality.Should().Be(80);
     }
 
     [UnitTest]
@@ -568,19 +594,32 @@ public class ImageServerExportHandlerTests
     private static ExportImageRequest CreateRequest(
         string? bbox = null,
         int? size = null,
+        string? rawSize = null,
         string? format = null,
+        string? compression = null,
+        int? compressionQuality = null,
         string? interpolation = null,
         string? imageSr = null,
         string? bboxSr = null,
-        string? responseFormat = null) => new()
+        string? responseFormat = null,
+        string? pixelType = null,
+        string? renderingRule = null,
+        string? mosaicRule = null) => new()
         {
             Bbox = bbox,
-            Size = size?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Size = rawSize ?? (size.HasValue
+                ? $"{size.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)},{size.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+                : null),
             Format = format ?? "png",
+            Compression = compression,
+            CompressionQuality = compressionQuality ?? 75,
             Interpolation = interpolation,
             ImageSr = imageSr,
             BboxSr = bboxSr,
-            F = responseFormat ?? "json"
+            F = responseFormat ?? "json",
+            PixelType = pixelType,
+            RenderingRule = renderingRule,
+            MosaicRule = mosaicRule,
         };
 
     private static LayerDefinition CreateTestLayer()

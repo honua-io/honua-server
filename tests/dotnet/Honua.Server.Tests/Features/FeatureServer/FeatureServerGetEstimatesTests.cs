@@ -54,7 +54,7 @@ public sealed class FeatureServerGetEstimatesTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetEstimates)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/getEstimates")]
-    public async Task ServiceGetEstimates_ValidService_ReturnsAggregatedEstimates()
+    public async Task ServiceGetEstimates_ValidService_ReturnsLayerEstimates()
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/getEstimates?f=json");
@@ -65,7 +65,13 @@ public sealed class FeatureServerGetEstimatesTests : IAsyncLifetime
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
 
-        root.TryGetProperty("count", out var count).Should().BeTrue();
+        root.TryGetProperty("layers", out var layers).Should().BeTrue();
+        layers.ValueKind.Should().Be(JsonValueKind.Array);
+        layers.GetArrayLength().Should().BeGreaterThan(0);
+
+        var firstLayer = layers[0];
+        firstLayer.TryGetProperty("id", out _).Should().BeTrue();
+        firstLayer.TryGetProperty("count", out var count).Should().BeTrue();
         count.GetInt64().Should().BeGreaterOrEqualTo(0);
     }
 

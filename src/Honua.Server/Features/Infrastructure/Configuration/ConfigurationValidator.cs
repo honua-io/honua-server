@@ -88,18 +88,15 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
 
         if (summary.IsValid)
         {
-            _logger.LogInformation("Configuration validation completed successfully. Validated {Count} sections",
-                results.Count);
+            ConfigurationValidatorLog.ValidationCompleted(_logger, results.Count);
         }
         else
         {
-            _logger.LogError(
-                "Configuration validation failed with {ErrorCount} errors and {WarningCount} warnings across {SectionCount} sections",
-                summary.TotalErrors, summary.TotalWarnings, results.Count);
+            ConfigurationValidatorLog.ValidationFailed(_logger, summary.TotalErrors, summary.TotalWarnings, results.Count);
 
             foreach (var error in summary.AllErrors)
             {
-                _logger.LogError("Configuration error: {Error}", error);
+                ConfigurationValidatorLog.ConfigurationError(_logger, error);
             }
         }
 
@@ -107,7 +104,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         {
             foreach (var warning in summary.AllWarnings)
             {
-                _logger.LogWarning("Configuration warning: {Warning}", warning);
+                ConfigurationValidatorLog.ConfigurationWarning(_logger, warning);
             }
         }
 
@@ -126,8 +123,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         var registration = new ManualConfigurationOptionsRegistration<TOptions>(_configuration, sectionName, isRequired);
         _registeredOptions[typeof(TOptions)] = registration;
 
-        _logger.LogDebug("Registered configuration options type {OptionsType} for section {SectionName}",
-            typeof(TOptions).Name, sectionName);
+        ConfigurationValidatorLog.OptionsTypeRegistered(_logger, typeof(TOptions).Name, sectionName);
     }
 
     /// <summary>
@@ -182,8 +178,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to validate configuration section {SectionName} of type {OptionsType}",
-                metadata.SectionName, optionsType.Name);
+            ConfigurationValidatorLog.ValidateConfigurationSectionFailed(_logger, metadata.SectionName, optionsType.Name, ex);
 
             var error = new ValidationResult($"Validation failed for {metadata.SectionName}: {ex.Message}");
             var result = new ConfigurationValidationResult(new[] { error }, isDevelopment);
@@ -199,7 +194,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Failed to resolve configuration instance for {OptionsType}", registration.Metadata.OptionsType.Name);
+            ConfigurationValidatorLog.ResolveConfigurationInstanceFailed(_logger, registration.Metadata.OptionsType.Name, ex);
             return null;
         }
     }

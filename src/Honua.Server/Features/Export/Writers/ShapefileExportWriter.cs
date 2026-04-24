@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IO.Compression;
+using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Infrastructure.Services;
 using NetTopologySuite.Features;
@@ -46,7 +47,7 @@ internal static class ShapefileExportWriter
             var warnings = new List<string>();
             var skippedNullGeometry = 0;
 
-            // Build DBF field name mappings (truncate >10 chars)
+            // Build DBF field name mappings (unique and <=10 chars)
             var dbfFieldMap = BuildDbfFieldMap(fields, warnings);
 
             // Collect features to NTS feature list
@@ -117,7 +118,7 @@ internal static class ShapefileExportWriter
             try { Directory.Delete(scratchDir, recursive: true); }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to clean up export scratch directory: {Path}", scratchDir);
+                ExportLog.ScratchDirectoryCleanupFailed(logger, scratchDir, ex);
             }
         }
     }
@@ -129,37 +130,47 @@ internal static class ShapefileExportWriter
 
         foreach (var field in fields)
         {
-            var dbfName = field.Name.Length <= MaxDbfFieldNameLength
-                ? field.Name
-                : TruncateWithCollisionSuffix(field.Name, usedNames);
+            var dbfName = CreateUniqueDbfFieldName(field.Name, usedNames);
 
             if (dbfName != field.Name)
             {
-                warnings.Add($"Field '{field.Name}' truncated to '{dbfName}' (Shapefile 10-char limit).");
+                warnings.Add($"Field '{field.Name}' exported as DBF field '{dbfName}' (Shapefile 10-char unique-name limit).");
             }
 
-            usedNames.Add(dbfName);
             map[field.Name] = dbfName;
         }
 
         return map;
     }
 
-    private static string TruncateWithCollisionSuffix(string name, HashSet<string> usedNames)
+    private static string CreateUniqueDbfFieldName(string name, HashSet<string> usedNames)
     {
-        var baseName = name[..MaxDbfFieldNameLength];
-        if (!usedNames.Contains(baseName))
-            return baseName;
+        var baseName = name.Length <= MaxDbfFieldNameLength
+            ? name
+            : name[..MaxDbfFieldNameLength];
 
-        for (var i = 1; i < 100; i++)
+        if (usedNames.Add(baseName))
         {
-            var suffix = $"_{i}";
-            var candidate = string.Concat(name.AsSpan(0, MaxDbfFieldNameLength - suffix.Length), suffix);
-            if (!usedNames.Contains(candidate))
-                return candidate;
+            return baseName;
         }
 
-        return baseName; // Fallback — collision extremely unlikely
+        for (var i = 1; i < 10_000; i++)
+        {
+            var suffix = "_" + i.ToString(CultureInfo.InvariantCulture);
+            var prefixLength = Math.Min(baseName.Length, MaxDbfFieldNameLength - suffix.Length);
+            if (prefixLength <= 0)
+            {
+                throw new InvalidOperationException("Unable to generate a unique DBF field name within the 10-character limit.");
+            }
+
+            var candidate = string.Concat(baseName.AsSpan(0, prefixLength), suffix);
+            if (usedNames.Add(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException("Unable to generate a unique DBF field name within the 10-character limit.");
     }
 
     private static Geometry NormalizeGeometry(Geometry geometry, GeometryType targetType)
@@ -170,10 +181,10 @@ internal static class ShapefileExportWriter
             GeometryType.MultiPoint when geometry is Point p => new MultiPoint([p]),
             GeometryType.MultiLineString when geometry is LineString ls => new MultiLineString([ls]),
             GeometryType.MultiPolygon when geometry is Polygon pg => new MultiPolygon([pg]),
-            // Demote multi → single when layer declares single-part type (take first part)
-            GeometryType.Point when geometry is MultiPoint mp => mp[0],
-            GeometryType.LineString when geometry is MultiLineString mls => mls[0],
-            GeometryType.Polygon when geometry is MultiPolygon mpg => mpg[0],
+            // Preserve multipart line and polygon geometries. Shapefile polyline/polygon
+            // records support multiple parts, so taking only the first part corrupts data.
+            GeometryType.Point when geometry is MultiPoint =>
+                throw new InvalidOperationException("Shapefile export cannot write MultiPoint geometry from a layer declared as Point without corrupting geometry type."),
             _ => geometry
         };
     }

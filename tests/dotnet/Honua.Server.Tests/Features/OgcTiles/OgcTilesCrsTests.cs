@@ -62,6 +62,22 @@ public sealed class OgcTilesCrsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetTile_WorldCRS84Quad_UsesGeographicTileEnvelopeForMvt()
+    {
+        await InsertPointAsync(lon: -45.0, lat: 45.0, "CRS84-only MVT point");
+
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/tiles/collections/0/tiles/WorldCRS84Quad/1/0/1?f=mvt");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "the feature is inside CRS84 z=1 row=0 col=1 but outside the WebMercator tile with the same x/y/z");
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Mvt);
+        content.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/tiles/tileMatrixSets")]
     public async Task GetTileMatrixSets_IncludesBothSets()
@@ -205,6 +221,23 @@ public sealed class OgcTilesCrsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
+    public async Task GetCollection_WithStringCollectionId_ReturnsCollection()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections/Test%20Layer");
+
+        response.Be200Ok();
+
+        var collection = await response.Content.ReadFromJsonAsync<CollectionInfo>();
+        collection.Should().NotBeNull();
+        collection!.Title.Should().Be("Test Layer");
+        var selfHref = collection.Links.Single(link => link.Rel == "self").Href;
+        selfHref.Should().Contain("/ogc/tiles/collections/Test%20Layer");
+        selfHref.Should().NotContain("/ogc/tiles/collections/Test Layer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles")]
     public async Task GetCollectionTilesets_IncludesBothTileMatrixSets()
     {
@@ -218,5 +251,52 @@ public sealed class OgcTilesCrsTests : IAsyncLifetime
         var tmsIds = tilesets!.Tilesets.Select(t => t.TileMatrixSetId).Distinct().ToArray();
         tmsIds.Should().Contain("WebMercatorQuad");
         tmsIds.Should().Contain("WorldCRS84Quad");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles")]
+    public async Task GetCollectionTilesets_WithStringCollectionId_IncludesBothTileMatrixSets()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections/Test%20Layer/tiles");
+
+        response.Be200Ok();
+
+        var tilesets = await response.Content.ReadFromJsonAsync<TileSetsList>();
+        tilesets.Should().NotBeNull();
+
+        var tmsIds = tilesets!.Tilesets.Select(t => t.TileMatrixSetId).Distinct().ToArray();
+        tmsIds.Should().Contain("WebMercatorQuad");
+        tmsIds.Should().Contain("WorldCRS84Quad");
+        tilesets.Links.Should().NotBeNull();
+        var links = tilesets.Links!.Value;
+        links.Should().OnlyContain(link => !link.Href.Contains("/ogc/tiles/collections/Test Layer", StringComparison.Ordinal));
+        links.Should().Contain(link => link.Href.Contains("/ogc/tiles/collections/Test%20Layer", StringComparison.Ordinal));
+        tilesets.Tilesets.SelectMany(tileset => tileset.Links)
+            .Should()
+            .OnlyContain(link => !link.Href.Contains("/ogc/tiles/collections/Test Layer", StringComparison.Ordinal));
+    }
+
+    private async Task<long> InsertPointAsync(double lon, double lat, string name)
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            VALUES (
+                @layerId,
+                ST_SetSRID(ST_MakePoint(@lon, @lat), 4326),
+                jsonb_build_object('name', @name)
+            )
+            RETURNING objectid;
+            """;
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("lon", lon);
+        command.Parameters.AddWithValue("lat", lat);
+        command.Parameters.AddWithValue("name", name);
+
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
     }
 }

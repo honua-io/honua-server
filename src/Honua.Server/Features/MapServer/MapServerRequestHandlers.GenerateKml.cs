@@ -45,9 +45,16 @@ internal static partial class MapServerEndpoints
 
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.MapServerEndpoints");
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
         try
         {
+            var earlyServiceError = await TryValidateMapServerServiceAsync(serviceId, context);
+            if (earlyServiceError is not null)
+            {
+                return earlyServiceError;
+            }
+
             var (values, readError) = await TryReadMapServerRequestValuesAsync(context);
             if (values == null)
             {
@@ -71,7 +78,7 @@ internal static partial class MapServerEndpoints
             }
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
+            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
             if (!serviceResult.IsValid)
             {
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -176,7 +183,7 @@ internal static partial class MapServerEndpoints
 
                 foreach (var renderLayer in renderLayers)
                 {
-                    context.RequestAborted.ThrowIfCancellationRequested();
+                    cancellationToken.ThrowIfCancellationRequested();
 
                     var layer = renderLayer.Layer;
                     layerDefs.TryGetValue(layer.Id, out var layerDef);
@@ -185,7 +192,7 @@ internal static partial class MapServerEndpoints
                     if (!TryGetEffectiveTimeParameters(
                             timeValue,
                             timeRelationValue,
-                            layer,
+                            renderLayer,
                             layerTimeOptions,
                             out var effectiveTime,
                             out var effectiveTimeRelation,
@@ -208,7 +215,7 @@ internal static partial class MapServerEndpoints
 
                     var featureQuery = new FeatureQuery
                     {
-                        SpatialReferenceSrid = service.SpatialReference.Srid,
+                        SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
                         OutputSrid = 4326,
                         Limit = maxFeaturesPerLayer,
                         SqlFilter = sqlFilter
@@ -222,7 +229,7 @@ internal static partial class MapServerEndpoints
 
                     if (kmlFeatureStore is not null)
                     {
-                        var queryResult = await kmlFeatureStore.QueryKmlAsync(layer.Id, featureQuery, context.RequestAborted);
+                        var queryResult = await kmlFeatureStore.QueryKmlAsync(layer.Id, featureQuery, cancellationToken);
                         totalFeatureCount += queryResult.Items.Length;
 
                         foreach (var feature in queryResult.Items)
@@ -236,7 +243,7 @@ internal static partial class MapServerEndpoints
                     }
                     else
                     {
-                        var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
+                        var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
                         totalFeatureCount += queryResult.Items.Length;
 
                         foreach (var feature in queryResult.Items)
@@ -285,7 +292,7 @@ internal static partial class MapServerEndpoints
             MapServerLog.GenerateKmlFailed(logger, serviceId, ex.Message, ex);
             return StandardErrorHelpers.CreateBadRequest(context, InvalidGenerateKmlRequestMessage);
         }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }

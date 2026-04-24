@@ -25,6 +25,7 @@ RUN groupadd --gid 1001 --system builduser && \
 # Copy solution and project files first for better layer caching
 COPY Honua.sln Directory.Build.props .editorconfig ./
 COPY src/Honua.Core/*.csproj src/Honua.Core/
+COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
 COPY src/Honua.Server/*.csproj src/Honua.Server/

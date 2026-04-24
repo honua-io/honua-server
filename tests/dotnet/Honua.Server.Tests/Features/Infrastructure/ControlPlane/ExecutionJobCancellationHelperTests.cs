@@ -10,6 +10,7 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
+[Collection("ControlPlaneTransitionTelemetry")]
 public sealed class ExecutionJobCancellationHelperTests
 {
     private const string TransitionTestBackendNoOp = "execution-cancel-noop-test";

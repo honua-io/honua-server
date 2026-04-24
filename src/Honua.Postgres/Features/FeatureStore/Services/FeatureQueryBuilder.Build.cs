@@ -409,15 +409,21 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             var geometryForTile = geometryOperand;
             var filterGeometryOperand = geometryOperand;
 
-            var tileBounds = TileMath.GetTileBounds(x, y, z);
+            var targetTileSrid = query.HasValue && query.Value.OutputSrid == 4326 ? 4326 : 3857;
+            var isGeographicTile = targetTileSrid == 4326;
+            var tileBounds = isGeographicTile
+                ? TileMath.GetTileBoundsGeographic(x, y, z)
+                : TileMath.GetTileBounds(x, y, z);
             var tileWidth = tileBounds.XMax - tileBounds.XMin;
             var tileExtent = tileOptions.TileExtent > 0 ? tileOptions.TileExtent : 4096;
             var bufferMapUnits = tileOptions.TileBuffer > 0
                 ? (tileOptions.TileBuffer / (double)tileExtent) * tileWidth
                 : 0d;
 
-            var tileEnvelope = "ST_TileEnvelope($2, $3, $4)";
-            var tileEnvelopeWithBuffer = "ST_Expand(ST_TileEnvelope($2, $3, $4), $5)";
+            var tileEnvelope = isGeographicTile
+                ? BuildGeographicTileEnvelope(tileBounds)
+                : "ST_TileEnvelope($2, $3, $4)";
+            var tileEnvelopeWithBuffer = $"ST_Expand({tileEnvelope}, $5)";
 
             parameters.Add(layerId);
             parameters.Add(z);
@@ -432,19 +438,19 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             if (query.HasValue && query.Value.SpatialReferenceSrid.HasValue)
             {
                 var layerSrid = query.Value.SpatialReferenceSrid.Value;
-                if (layerSrid != 3857)
+                if (layerSrid != targetTileSrid)
                 {
-                    geometryForTile = $"ST_Transform({geometryOperand}, 3857)";
+                    geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
                     tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})";
                 }
             }
             else
             {
-                geometryForTile = $"ST_Transform({geometryOperand}, 3857)";
+                geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
                 filterGeometryOperand = geometryForTile;
             }
 
-            if (z <= tileOptions.SimplifyZoom)
+            if (!isGeographicTile && z <= tileOptions.SimplifyZoom)
             {
                 var simplifyTolerance = TileMath.GetSimplificationTolerance(z);
                 if (simplifyTolerance > 0)
@@ -498,4 +504,11 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             _stringBuilderPool.Return(sql);
         }
     }
+
+    private static string BuildGeographicTileEnvelope(TileBounds tileBounds)
+        => FormattableString.Invariant(
+            $"ST_MakeEnvelope({SqlDouble(tileBounds.XMin)}, {SqlDouble(tileBounds.YMin)}, {SqlDouble(tileBounds.XMax)}, {SqlDouble(tileBounds.YMax)}, 4326)");
+
+    private static string SqlDouble(double value)
+        => value.ToString("R", CultureInfo.InvariantCulture);
 }

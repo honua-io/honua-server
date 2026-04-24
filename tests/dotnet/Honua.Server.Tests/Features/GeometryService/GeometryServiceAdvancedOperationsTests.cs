@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.GeometryService.Models;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -24,7 +25,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Intersect)]
-    [Endpoint("POST /rest/services/geometry/intersect")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/intersect")]
     public async Task Intersect_PostValidRequest_ReturnsGeometry()
     {
         var body = """
@@ -45,7 +46,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/intersect",
+            "/rest/services/Utilities/Geometry/GeometryServer/intersect",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be200Ok();
@@ -57,16 +58,16 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Intersect)]
-    [Endpoint("GET /rest/services/geometry/intersect")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/intersect")]
     public async Task Intersect_GetMissingParameters_Returns400()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/geometry/intersect?sr=4326");
+        var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/intersect?sr=4326");
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Union)]
-    [Endpoint("POST /rest/services/geometry/union")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/union")]
     public async Task Union_PostValidRequest_ReturnsSingleGeometry()
     {
         var body = """
@@ -83,7 +84,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/union",
+            "/rest/services/Utilities/Geometry/GeometryServer/union",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be200Ok();
@@ -95,16 +96,16 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Union)]
-    [Endpoint("GET /rest/services/geometry/union")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/union")]
     public async Task Union_GetMissingParameters_Returns400()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/geometry/union");
+        var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/union");
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Clip)]
-    [Endpoint("POST /rest/services/geometry/clip")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
     public async Task Clip_PostValidRequest_ReturnsGeometry()
     {
         var body = """
@@ -123,7 +124,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/clip",
+            "/rest/services/Utilities/Geometry/GeometryServer/clip",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be200Ok();
@@ -135,7 +136,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Clip)]
-    [Endpoint("POST /rest/services/geometry/clip")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
     public async Task Clip_NonRectangularClipGeometry_UsesEnvelopeForClipping()
     {
         // The clip geometry is a triangle with vertices at (1,1), (3,1), (2,3).
@@ -159,7 +160,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var clipResponse = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/clip",
+            "/rest/services/Utilities/Geometry/GeometryServer/clip",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         clipResponse.Be200Ok();
@@ -170,7 +171,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
         // Also run the same inputs through intersect to verify the results differ
         var intersectResponse = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/intersect",
+            "/rest/services/Utilities/Geometry/GeometryServer/intersect",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         intersectResponse.Be200Ok();
@@ -189,16 +190,16 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Clip)]
-    [Endpoint("GET /rest/services/geometry/clip")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/clip")]
     public async Task Clip_GetMissingParameters_Returns400()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/geometry/clip?sr=4326");
+        var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/clip?sr=4326");
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Difference)]
-    [Endpoint("POST /rest/services/geometry/difference")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/difference")]
     public async Task Difference_PostValidRequest_ReturnsGeometry()
     {
         var body = """
@@ -217,7 +218,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/difference",
+            "/rest/services/Utilities/Geometry/GeometryServer/difference",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be200Ok();
@@ -229,103 +230,133 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Difference)]
-    [Endpoint("GET /rest/services/geometry/difference")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/difference")]
     public async Task Difference_GetMissingParameters_Returns400()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/geometry/difference?sr=4326");
+        var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/difference?sr=4326");
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Area)]
-    [Endpoint("POST /rest/services/geometry/area")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths")]
     public async Task Area_PostValidRequest_ReturnsAreaValues()
     {
         var body = """
         {
-            "geometries": {
-                "geometryType": "esriGeometryPolygon",
-                "geometries": [
-                    {"rings": [[[0,0],[10,0],[10,10],[0,10],[0,0]]]}
-                ]
-            },
+            "polygons": [
+                {"rings": [[[0,0],[0,10],[10,10],[10,0],[0,0]]]}
+            ],
             "sr": "3857",
+            "lengthUnit": "esriMeters",
             "areaUnit": "esriSquareMeters"
         }
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/area",
+            "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceAreaResponse);
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceAreasAndLengthsResponse);
         result.Should().NotBeNull();
         result!.Areas.Should().HaveCount(1);
+        result.Lengths.Should().HaveCount(1);
         result.Areas![0].Should().BeGreaterThan(0);
+        result.Lengths![0].Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
     [Operation(Operations.Area)]
-    [Endpoint("POST /rest/services/geometry/area")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths")]
     public async Task Area_GeographicInput_ReturnsSquareMeters()
     {
         var body = """
         {
-            "geometries": {
-                "geometryType": "esriGeometryPolygon",
-                "geometries": [
-                    {"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}
-                ]
-            },
+            "polygons": [
+                {"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}
+            ],
             "sr": "4326",
+            "lengthUnit": "esriMeters",
             "areaUnit": "esriSquareMeters"
         }
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/area",
+            "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceAreaResponse);
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceAreasAndLengthsResponse);
 
         result.Should().NotBeNull();
         result!.Areas.Should().HaveCount(1);
-        result.Areas![0].Should().BeGreaterThan(1_000_000_000d);
+        result.Lengths.Should().HaveCount(1);
+        result.Areas![0].Should().BeLessThan(0);
+        result.Areas[0].Should().BeLessThan(-1_000_000_000d);
+        result.Lengths![0].Should().BeGreaterThan(400_000d);
     }
 
     [IntegrationTest]
     [Operation(Operations.Area)]
-    [Endpoint("GET /rest/services/geometry/area")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths")]
+    public async Task Area_PreserveShapeCalculationType_ReturnsGeodeticMeasurements()
+    {
+        var body = """
+        {
+            "polygons": [
+                {"rings": [[[0,0],[0,1],[1,1],[1,0],[0,0]]]}
+            ],
+            "sr": "4326",
+            "lengthUnit": "9036",
+            "areaUnit": {"areaUnit": "esriSquareKilometers"},
+            "calculationType": "preserveShape"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceAreasAndLengthsResponse);
+
+        result.Should().NotBeNull();
+        result!.Areas.Should().HaveCount(1);
+        result.Lengths.Should().HaveCount(1);
+        result.Areas![0].Should().BeGreaterThan(12_000d);
+        result.Lengths![0].Should().BeGreaterThan(440d);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Area)]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths")]
     public async Task Area_GetMissingParameters_Returns400()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/geometry/area?sr=4326");
+        var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths?sr=4326");
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Length)]
-    [Endpoint("POST /rest/services/geometry/length")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/lengths")]
     public async Task Length_PostValidRequest_ReturnsLengthValues()
     {
         var body = """
         {
-            "geometries": {
-                "geometryType": "esriGeometryPolyline",
-                "geometries": [
-                    {"paths": [[[0,0],[3,4]]]}
-                ]
-            },
+            "polylines": [
+                {"paths": [[[0,0],[3,4]]]}
+            ],
             "sr": "3857",
             "lengthUnit": "esriMeters"
         }
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/length",
+            "/rest/services/Utilities/Geometry/GeometryServer/lengths",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be200Ok();
@@ -338,24 +369,21 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Length)]
-    [Endpoint("POST /rest/services/geometry/length")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/lengths")]
     public async Task Length_GeographicInput_ReturnsMeters()
     {
         var body = """
         {
-            "geometries": {
-                "geometryType": "esriGeometryPolyline",
-                "geometries": [
-                    {"paths": [[[0,0],[1,0]]]}
-                ]
-            },
+            "polylines": [
+                {"paths": [[[0,0],[1,0]]]}
+            ],
             "sr": "4326",
             "lengthUnit": "esriMeters"
         }
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/length",
+            "/rest/services/Utilities/Geometry/GeometryServer/lengths",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be200Ok();
@@ -370,10 +398,39 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Length)]
-    [Endpoint("GET /rest/services/geometry/length")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/lengths")]
+    public async Task Length_GeodesicCalculationType_UsesGeodeticMeasurement()
+    {
+        var body = """
+        {
+            "polylines": [
+                {"paths": [[[0,0],[1,0]]]}
+            ],
+            "sr": "4326",
+            "lengthUnit": "esriMeters",
+            "calculationType": "geodesic"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/lengths",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceLengthResponse);
+
+        result.Should().NotBeNull();
+        result!.Lengths.Should().HaveCount(1);
+        result.Lengths![0].Should().BeGreaterThan(111_250d);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Length)]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/lengths")]
     public async Task Length_GetMissingParameters_Returns400()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/geometry/length?sr=4326");
+        var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/lengths?sr=4326");
         response.Be400BadRequest();
     }
 
@@ -381,14 +438,14 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Intersect)]
-    [Endpoint("GET /rest/services/geometry/intersect")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/intersect")]
     public async Task Intersect_GetWithValidParameters_ReturnsGeometry()
     {
         var geometries = Uri.EscapeDataString("""{"geometryType":"esriGeometryPolygon","geometries":[{"rings":[[[0,0],[2,0],[2,2],[0,2],[0,0]]]}]}""");
         var geometry = Uri.EscapeDataString("""{"rings":[[[1,1],[3,1],[3,3],[1,3],[1,1]]]}""");
 
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/geometry/intersect?geometries={geometries}&geometry={geometry}&sr=4326");
+            $"/rest/services/Utilities/Geometry/GeometryServer/intersect?geometries={geometries}&geometry={geometry}&sr=4326");
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -399,7 +456,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Intersect)]
-    [Endpoint("POST /rest/services/geometry/intersect")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/intersect")]
     public async Task Intersect_GeometryTypeMismatch_PointVsPolygon_Returns400()
     {
         var body = """
@@ -418,7 +475,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/intersect",
+            "/rest/services/Utilities/Geometry/GeometryServer/intersect",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
@@ -426,7 +483,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Intersect)]
-    [Endpoint("POST /rest/services/geometry/intersect")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/intersect")]
     public async Task Intersect_MissingSpatialReference_Returns400()
     {
         var body = """
@@ -444,7 +501,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/intersect",
+            "/rest/services/Utilities/Geometry/GeometryServer/intersect",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
@@ -452,7 +509,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Intersect)]
-    [Endpoint("POST /rest/services/geometry/intersect")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/intersect")]
     public async Task Intersect_MalformedGeometry_Returns400()
     {
         var body = """
@@ -471,7 +528,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/intersect",
+            "/rest/services/Utilities/Geometry/GeometryServer/intersect",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
@@ -481,13 +538,13 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Union)]
-    [Endpoint("GET /rest/services/geometry/union")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/union")]
     public async Task Union_GetWithValidParameters_ReturnsGeometry()
     {
         var geometries = Uri.EscapeDataString("""{"geometryType":"esriGeometryPolygon","geometries":[{"rings":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]},{"rings":[[[1,0],[2,0],[2,1],[1,1],[1,0]]]}]}""");
 
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/geometry/union?geometries={geometries}&sr=4326");
+            $"/rest/services/Utilities/Geometry/GeometryServer/union?geometries={geometries}&sr=4326");
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -497,7 +554,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Union)]
-    [Endpoint("POST /rest/services/geometry/union")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/union")]
     public async Task Union_SingleGeometry_ReturnsSameGeometry()
     {
         var body = """
@@ -513,7 +570,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/union",
+            "/rest/services/Utilities/Geometry/GeometryServer/union",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be200Ok();
@@ -525,7 +582,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Union)]
-    [Endpoint("POST /rest/services/geometry/union")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/union")]
     public async Task Union_MissingSpatialReference_Returns400()
     {
         var body = """
@@ -540,7 +597,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/union",
+            "/rest/services/Utilities/Geometry/GeometryServer/union",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
@@ -548,7 +605,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Union)]
-    [Endpoint("POST /rest/services/geometry/union")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/union")]
     public async Task Union_MalformedGeometry_Returns400()
     {
         var body = """
@@ -564,7 +621,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/union",
+            "/rest/services/Utilities/Geometry/GeometryServer/union",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
@@ -574,14 +631,14 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Difference)]
-    [Endpoint("GET /rest/services/geometry/difference")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/difference")]
     public async Task Difference_GetWithValidParameters_ReturnsGeometry()
     {
         var geometries = Uri.EscapeDataString("""{"geometryType":"esriGeometryPolygon","geometries":[{"rings":[[[0,0],[3,0],[3,3],[0,3],[0,0]]]}]}""");
         var geometry = Uri.EscapeDataString("""{"rings":[[[1,1],[2,1],[2,2],[1,2],[1,1]]]}""");
 
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/geometry/difference?geometries={geometries}&geometry={geometry}&sr=4326");
+            $"/rest/services/Utilities/Geometry/GeometryServer/difference?geometries={geometries}&geometry={geometry}&sr=4326");
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -592,7 +649,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Difference)]
-    [Endpoint("POST /rest/services/geometry/difference")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/difference")]
     public async Task Difference_NoOverlap_ReturnsOriginal()
     {
         var body = """
@@ -611,7 +668,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/difference",
+            "/rest/services/Utilities/Geometry/GeometryServer/difference",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be200Ok();
@@ -623,7 +680,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Difference)]
-    [Endpoint("POST /rest/services/geometry/difference")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/difference")]
     public async Task Difference_MissingSpatialReference_Returns400()
     {
         var body = """
@@ -641,7 +698,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/difference",
+            "/rest/services/Utilities/Geometry/GeometryServer/difference",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
@@ -649,7 +706,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Difference)]
-    [Endpoint("POST /rest/services/geometry/difference")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/difference")]
     public async Task Difference_MalformedGeometry_Returns400()
     {
         var body = """
@@ -668,7 +725,7 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/difference",
+            "/rest/services/Utilities/Geometry/GeometryServer/difference",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
@@ -678,23 +735,20 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Area)]
-    [Endpoint("POST /rest/services/geometry/area")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths")]
     public async Task Area_MissingSpatialReference_Returns400()
     {
         var body = """
         {
-            "geometries": {
-                "geometryType": "esriGeometryPolygon",
-                "geometries": [
-                    {"rings": [[[0,0],[10,0],[10,10],[0,10],[0,0]]]}
-                ]
-            },
+            "polygons": [
+                {"rings": [[[0,0],[10,0],[10,10],[0,10],[0,0]]]}
+            ],
             "areaUnit": "esriSquareMeters"
         }
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/area",
+            "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
@@ -702,25 +756,51 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Length)]
-    [Endpoint("POST /rest/services/geometry/length")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/lengths")]
     public async Task Length_MissingSpatialReference_Returns400()
     {
         var body = """
         {
-            "geometries": {
-                "geometryType": "esriGeometryPolyline",
-                "geometries": [
-                    {"paths": [[[0,0],[3,4]]]}
-                ]
-            },
+            "polylines": [
+                {"paths": [[[0,0],[3,4]]]}
+            ],
             "lengthUnit": "esriMeters"
         }
         """;
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/length",
+            "/rest/services/Utilities/Geometry/GeometryServer/lengths",
             new StringContent(body, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Length)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/lengths")]
+    public async Task Length_InvalidCalculationType_ReturnsStandardGeoServicesError()
+    {
+        var body = """
+        {
+            "polylines": [
+                {"paths": [[[0,0],[3,4]]]}
+            ],
+            "sr": "4326",
+            "calculationType": "unsupported"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/lengths",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        result.Should().NotBeNull();
+        result!.Error.Message.Should().Be("Bad Request");
+        result.Error.Details.Should().NotBeNull();
+        result.Error.Details!.Should().Contain(detail => detail.Contains("calculationType", StringComparison.Ordinal));
     }
 }

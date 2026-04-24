@@ -8,16 +8,20 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcFeatures.Services;
+using BatchOperationModel = Honua.Server.Features.OgcFeatures.Models.BatchOperation;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.OgcFeatures;
@@ -33,6 +37,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private readonly IFeatureWriter _featureWriter = dependencies.FeatureWriter;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
+    private readonly IEditParameterAdapter<OgcFeaturesEditRequest> _editParameterAdapter = dependencies.EditParameterAdapter;
+    private readonly IEditProcessor _editProcessor = dependencies.EditProcessor;
+    private readonly IQueryProcessor _queryProcessor = dependencies.QueryProcessor;
+    private readonly IETagService _etagService = dependencies.ETagService;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<OgcFeaturesTransactionHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -108,9 +116,28 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
             else
             {
-                var editResult = await _featureWriter.ApplyEditsAsync(
+                var editResult = await ExecuteEditAsync(
                     layerId,
-                    preparedBatch.EditBatch,
+                    layer,
+                    new OgcFeaturesEditRequest
+                    {
+                        Operation = OgcFeaturesEditOperation.Batch,
+                        RollbackOnFailure = true,
+                        BatchOperations = preparedBatch.PreparedOperations
+                            .Select(static operation => new OgcFeaturesBatchEditOperation
+                            {
+                                Operation = operation.OperationKind switch
+                                {
+                                    BatchOperationKind.Create => OgcFeaturesEditOperation.Create,
+                                    BatchOperationKind.Update => OgcFeaturesEditOperation.Replace,
+                                    BatchOperationKind.Delete => OgcFeaturesEditOperation.Delete,
+                                    _ => throw new InvalidOperationException($"Unsupported batch operation kind {operation.OperationKind}.")
+                                },
+                                Feature = operation.Feature,
+                                ObjectId = operation.ObjectId
+                            })
+                            .ToImmutableArray()
+                    },
                     cancellationToken).ConfigureAwait(false);
 
                 results = MapBatchEditResults(batchRequest.Operations.Count, preparedBatch.PreparedOperations, editResult);
@@ -133,12 +160,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     var operation = batchRequest.Operations[index];
                     var result = results[index];
-                    if (!TryGetBatchEventOperation(operation, result, out var eventOperation, out var objectId))
+                    var preparedOperation = preparedOperationsByIndex?[index];
+                    if (!TryGetBatchEventOperation(operation, result, preparedOperation, out var eventOperation, out var objectId))
                     {
                         continue;
                     }
 
-                    var (geometryEnvelope, propertiesJson) = GetBatchEventEnrichment(preparedOperationsByIndex?[index]);
+                    var (geometryEnvelope, propertiesJson) = GetBatchEventEnrichment(preparedOperation);
                     await _mutationEventService.PublishAsync(
                         context,
                         layerId,
@@ -179,6 +207,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         catch (Exception ex)
         {
             Log.BatchTransactionFailed(_logger, collectionId, ex);
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while processing the batch operation.");
         }
     }
@@ -210,10 +239,18 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             activity?.SetTag(HonuaTelemetry.Tags.Operation, "replace");
             activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
-            if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+            var resolvedFeature = await OgcFeatureIdentifierResolver.ResolveAsync(
+                _featureReader,
+                _queryProcessor,
+                layer,
+                featureId,
+                cancellationToken).ConfigureAwait(false);
+            if (!resolvedFeature.HasValue)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
+
+            var objectId = resolvedFeature.Value.ObjectId;
 
             var (requestFeature, requestError) = await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
             if (requestFeature == null)
@@ -222,16 +259,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
 
             // Check if feature exists and validate ETag if provided
-            var existing = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
-            if (existing == null)
-            {
-                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
-            }
+            var existing = resolvedFeature.Value.Feature;
 
             if (!string.IsNullOrWhiteSpace(ifMatch))
             {
-                var etag = GenerateETag(existing.Value);
-                if (!string.Equals(ifMatch.Trim('"'), etag, StringComparison.Ordinal))
+                var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
+                if (!OgcFeatureEntityTag.MatchesEntityOrRepresentation(ifMatch, etag, _etagService))
                 {
                     return Results.Problem(
                         statusCode: 412,
@@ -262,28 +295,69 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             try
             {
-                var updated = await _featureWriter.UpdateAsync(layerId, feature, cancellationToken);
-                var newETag = GenerateETag(updated);
+                var editResult = await ExecuteEditAsync(
+                    layerId,
+                    layer,
+                    new OgcFeaturesEditRequest
+                    {
+                        Operation = OgcFeaturesEditOperation.Replace,
+                        Feature = feature,
+                        ObjectId = objectId,
+                        IfMatch = ifMatch
+                    },
+                    cancellationToken);
+                var updateResult = editResult.UpdateResults.FirstOrDefault();
+                if (!updateResult.IsSuccess)
+                {
+                    if (IsNotFound(updateResult))
+                    {
+                        Log.ReplaceFeatureNotFound(_logger, collectionId, featureId);
+                        return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                    }
 
-                context.Response.Headers.ETag = $"\"{newETag}\"";
+                    return StandardErrorHelpers.CreateInternalServerError(context, updateResult.ErrorMessage ?? "An error occurred while replacing the feature.");
+                }
+
+                var updated = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+                if (!updated.HasValue)
+                {
+                    return StandardErrorHelpers.CreateInternalServerError(context, "Updated feature could not be reloaded.");
+                }
+
+                var responseFeature = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
+                    _featureReader,
+                    layerId,
+                    layer,
+                    objectId,
+                    inputCrs,
+                    cancellationToken).ConfigureAwait(false);
+                if (!responseFeature.HasValue)
+                {
+                    return StandardErrorHelpers.CreateInternalServerError(context, "Updated feature response could not be projected.");
+                }
+
+                var newETag = OgcFeatureEntityTag.Compute(updated.Value, _etagService);
+
+                context.Response.Headers.ETag = newETag;
 
                 var updateLinks = OgcFeaturesUtilities.BuildFeatureLinks(
                     context.Request,
                     collectionId,
-                    FormattableString.Invariant($"{updated.Id}"),
-                    MediaTypes.GeoJson);
+                    OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, layer),
+                    MediaTypes.GeoJson,
+                    inputCrs.Uri);
                 context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
-                var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
+                var response = ToOgcFeature(responseFeature.Value, layer, inputCrs.AxisOrder, updateLinks);
 
                 await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
                 await _mutationEventService.PublishAsync(
                     context,
                     layerId,
-                    updated.Id,
+                    updated.Value.Id,
                     "update",
                     HonuaTelemetry.Protocols.OgcFeatures,
                     CancellationToken.None,
-                    mutationFeature: updated,
+                    mutationFeature: updated.Value,
                     serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
@@ -291,25 +365,30 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             catch (ResourceConflictException ex)
             {
                 Log.ReplaceFeatureConflict(_logger, collectionId, featureId);
+                HonuaTelemetry.RecordException(Activity.Current, ex);
                 return StandardErrorHelpers.CreateFromException(context, ex);
             }
             catch (ResourceNotFoundException)
             {
                 Log.ReplaceFeatureNotFound(_logger, collectionId, featureId);
+                HonuaTelemetry.RecordException(Activity.Current, new ResourceNotFoundException($"Feature '{featureId}' not found."));
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
             catch (InvalidOperationException ex)
             {
                 Log.ReplaceFeatureFailed(_logger, collectionId, ex);
+                HonuaTelemetry.RecordException(Activity.Current, ex);
                 return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while replacing the feature.");
             }
             catch (ArgumentException ex)
             {
                 Log.ReplaceFeatureInvalidPayload(_logger, collectionId, featureId, ex.Message);
+                HonuaTelemetry.RecordException(Activity.Current, ex);
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid feature payload.");
             }
             catch (NotSupportedException ex)
             {
+                HonuaTelemetry.RecordException(Activity.Current, ex);
                 return StandardErrorHelpers.CreateFromException(context, ex);
             }
         }
@@ -320,6 +399,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         catch (Exception ex)
         {
             Log.ReplaceFeatureFailed(_logger, collectionId, ex);
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while replacing the feature.");
         }
     }
@@ -351,21 +431,25 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             activity?.SetTag(HonuaTelemetry.Tags.Operation, "patch");
             activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
-            if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+            var resolvedFeature = await OgcFeatureIdentifierResolver.ResolveAsync(
+                _featureReader,
+                _queryProcessor,
+                layer,
+                featureId,
+                cancellationToken).ConfigureAwait(false);
+            if (!resolvedFeature.HasValue)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
-            var existing = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
-            if (existing == null)
-            {
-                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
-            }
+            var objectId = resolvedFeature.Value.ObjectId;
+
+            var existing = resolvedFeature.Value.Feature;
 
             if (!string.IsNullOrWhiteSpace(ifMatch))
             {
-                var etag = GenerateETag(existing.Value);
-                if (!string.Equals(ifMatch.Trim('"'), etag, StringComparison.Ordinal))
+                var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
+                if (!OgcFeatureEntityTag.MatchesEntityOrRepresentation(ifMatch, etag, _etagService))
                 {
                     return Results.Problem(
                         statusCode: 412,
@@ -380,11 +464,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, patchError ?? "Invalid patch payload.");
             }
 
-            if (patchRequest.FeatureId.HasValue && patchRequest.FeatureId.Value != objectId)
+            if (patchRequest.FeatureId is not null &&
+                !string.Equals(patchRequest.FeatureId, featureId, StringComparison.Ordinal) &&
+                !(long.TryParse(patchRequest.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var payloadObjectId) &&
+                  payloadObjectId == objectId))
             {
                 return StandardErrorHelpers.CreateBadRequest(
                     context,
-                    $"Payload feature ID '{patchRequest.FeatureId.Value}' does not match route feature ID '{featureId}'.");
+                    $"Payload feature ID '{patchRequest.FeatureId}' does not match route feature ID '{featureId}'.");
             }
 
             var crsResult = await OgcRequestCrsResolver.TryResolveInputCrsAsync(
@@ -399,7 +486,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             var inputCrs = crsResult.Definition;
 
-            byte[]? geometryWkb = existing.Value.Geometry;
+            byte[]? geometryWkb = existing.Geometry;
             if (patchRequest.HasGeometry)
             {
                 if (patchRequest.Geometry == null)
@@ -408,10 +495,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
                 else
                 {
-                    var wkbResult = _geometryServices.TryCreateWkbFromGeoJson(
+                    var wkbResult = await _geometryServices.TryCreateWkbFromGeoJsonAsync(
                         patchRequest.Geometry,
                         inputCrs.Srid,
-                        inputCrs.AxisOrder);
+                        layer.SpatialReference.ToSrid(),
+                        inputCrs.AxisOrder,
+                        cancellationToken);
                     if (!wkbResult.IsSuccess)
                     {
                         return StandardErrorHelpers.CreateBadRequest(
@@ -431,7 +520,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     $"Invalid geometry: {geometryValidation.ErrorMessage}");
             }
 
-            var attributesBuilder = existing.Value.Attributes.ToBuilder();
+            var attributesBuilder = existing.Attributes.ToBuilder();
             if (patchRequest.HasProperties)
             {
                 if (patchRequest.Properties == null)
@@ -472,27 +561,68 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             try
             {
-                var updated = await _featureWriter.UpdateAsync(layerId, feature, cancellationToken);
-                var newETag = GenerateETag(updated);
-                context.Response.Headers.ETag = $"\"{newETag}\"";
+                var editResult = await ExecuteEditAsync(
+                    layerId,
+                    layer,
+                    new OgcFeaturesEditRequest
+                    {
+                        Operation = OgcFeaturesEditOperation.Patch,
+                        Feature = feature,
+                        ObjectId = objectId,
+                        IfMatch = ifMatch
+                    },
+                    cancellationToken);
+                var updateResult = editResult.UpdateResults.FirstOrDefault();
+                if (!updateResult.IsSuccess)
+                {
+                    if (IsNotFound(updateResult))
+                    {
+                        Log.PatchFeatureNotFound(_logger, collectionId, featureId);
+                        return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                    }
+
+                    return StandardErrorHelpers.CreateInternalServerError(context, updateResult.ErrorMessage ?? "An error occurred while patching the feature.");
+                }
+
+                var updated = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+                if (!updated.HasValue)
+                {
+                    return StandardErrorHelpers.CreateInternalServerError(context, "Updated feature could not be reloaded.");
+                }
+
+                var responseFeature = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
+                    _featureReader,
+                    layerId,
+                    layer,
+                    objectId,
+                    inputCrs,
+                    cancellationToken).ConfigureAwait(false);
+                if (!responseFeature.HasValue)
+                {
+                    return StandardErrorHelpers.CreateInternalServerError(context, "Updated feature response could not be projected.");
+                }
+
+                var newETag = OgcFeatureEntityTag.Compute(updated.Value, _etagService);
+                context.Response.Headers.ETag = newETag;
 
                 var updateLinks = OgcFeaturesUtilities.BuildFeatureLinks(
                     context.Request,
                     collectionId,
-                    FormattableString.Invariant($"{updated.Id}"),
-                    MediaTypes.GeoJson);
+                    OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, layer),
+                    MediaTypes.GeoJson,
+                    inputCrs.Uri);
                 context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
-                var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
+                var response = ToOgcFeature(responseFeature.Value, layer, inputCrs.AxisOrder, updateLinks);
 
                 await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
                 await _mutationEventService.PublishAsync(
                     context,
                     layerId,
-                    updated.Id,
+                    updated.Value.Id,
                     "update",
                     HonuaTelemetry.Protocols.OgcFeatures,
                     CancellationToken.None,
-                    mutationFeature: updated,
+                    mutationFeature: updated.Value,
                     serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
@@ -500,25 +630,30 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             catch (ResourceConflictException ex)
             {
                 Log.PatchFeatureConflict(_logger, collectionId, featureId);
+                HonuaTelemetry.RecordException(Activity.Current, ex);
                 return StandardErrorHelpers.CreateFromException(context, ex);
             }
             catch (ResourceNotFoundException)
             {
                 Log.PatchFeatureNotFound(_logger, collectionId, featureId);
+                HonuaTelemetry.RecordException(Activity.Current, new ResourceNotFoundException($"Feature '{featureId}' not found."));
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
             catch (InvalidOperationException ex)
             {
                 Log.PatchFeatureFailed(_logger, collectionId, ex);
+                HonuaTelemetry.RecordException(Activity.Current, ex);
                 return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while patching the feature.");
             }
             catch (ArgumentException ex)
             {
                 Log.PatchFeatureInvalidPayload(_logger, collectionId, featureId, ex.Message);
+                HonuaTelemetry.RecordException(Activity.Current, ex);
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid feature payload.");
             }
             catch (NotSupportedException ex)
             {
+                HonuaTelemetry.RecordException(Activity.Current, ex);
                 return StandardErrorHelpers.CreateFromException(context, ex);
             }
         }
@@ -529,14 +664,42 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         catch (Exception ex)
         {
             Log.PatchFeatureFailed(_logger, collectionId, ex);
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while patching the feature.");
         }
     }
 
+    private async Task<FeatureEditResult> ExecuteEditAsync(
+        int layerId,
+        LayerDefinition layer,
+        OgcFeaturesEditRequest request,
+        CancellationToken cancellationToken)
+    {
+        var editAdapterResult = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
+        if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
+        {
+            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
+        }
+
+        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, layer);
+        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, layer);
+        if (!editValidation.IsValid)
+        {
+            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
+        }
+
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool IsNotFound(EditOperationResult result)
+        => !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
+           result.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase);
+
     private async Task<PreparedBatchValidationResult> PrepareBatchOperationAsync(
         int layerId,
         LayerDefinition layer,
-        BatchOperation operation,
+        BatchOperationModel operation,
         BatchPreparationState state,
         CrsDefinition inputCrs,
         CancellationToken cancellationToken)
@@ -548,9 +711,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 case "CREATE":
                     return await PrepareCreateOperationAsync(layerId, layer, operation, inputCrs, cancellationToken);
                 case "UPDATE":
-                    return await PrepareUpdateOperationAsync(layerId, layer, operation, state, inputCrs, cancellationToken);
+                    return await PrepareUpdateOperationAsync(layer, operation, state, inputCrs, cancellationToken);
                 case "DELETE":
-                    return await PrepareDeleteOperationAsync(layerId, operation, state, cancellationToken);
+                    return await PrepareDeleteOperationAsync(layer, operation, state, cancellationToken);
                 default:
                     return PreparedBatchValidationResult.Failure(CreateBatchFailure(
                         operation.Id,
@@ -571,7 +734,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private async Task<PreparedBatchValidationResult> PrepareCreateOperationAsync(
         int layerId,
         LayerDefinition layer,
-        BatchOperation operation,
+        BatchOperationModel operation,
         CrsDefinition inputCrs,
         CancellationToken cancellationToken)
     {
@@ -610,9 +773,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private async Task<PreparedBatchValidationResult> PrepareUpdateOperationAsync(
-        int layerId,
         LayerDefinition layer,
-        BatchOperation operation,
+        BatchOperationModel operation,
         BatchPreparationState state,
         CrsDefinition inputCrs,
         CancellationToken cancellationToken)
@@ -625,15 +787,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 400));
         }
 
-        if (!long.TryParse(operation.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
-        {
-            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
-                operation.Id,
-                $"Invalid feature ID: {operation.FeatureId}",
-                400));
-        }
-
-        if (state.DeletedObjectIds.Contains(objectId))
+        var resolvedFeature = await OgcFeatureIdentifierResolver.ResolveAsync(
+            _featureReader,
+            _queryProcessor,
+            layer,
+            operation.FeatureId,
+            cancellationToken).ConfigureAwait(false);
+        if (!resolvedFeature.HasValue)
         {
             return PreparedBatchValidationResult.Failure(CreateBatchFailure(
                 operation.Id,
@@ -641,8 +801,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 404));
         }
 
-        var existing = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
-        if (!existing.HasValue)
+        var objectId = resolvedFeature.Value.ObjectId;
+
+        if (state.DeletedObjectIds.Contains(objectId))
         {
             return PreparedBatchValidationResult.Failure(CreateBatchFailure(
                 operation.Id,
@@ -676,8 +837,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private async Task<PreparedBatchValidationResult> PrepareDeleteOperationAsync(
-        int layerId,
-        BatchOperation operation,
+        LayerDefinition layer,
+        BatchOperationModel operation,
         BatchPreparationState state,
         CancellationToken cancellationToken)
     {
@@ -689,15 +850,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 400));
         }
 
-        if (!long.TryParse(operation.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
-        {
-            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
-                operation.Id,
-                $"Invalid feature ID: {operation.FeatureId}",
-                400));
-        }
-
-        if (state.DeletedObjectIds.Contains(objectId))
+        var resolvedFeature = await OgcFeatureIdentifierResolver.ResolveAsync(
+            _featureReader,
+            _queryProcessor,
+            layer,
+            operation.FeatureId,
+            cancellationToken).ConfigureAwait(false);
+        if (!resolvedFeature.HasValue)
         {
             return PreparedBatchValidationResult.Failure(CreateBatchFailure(
                 operation.Id,
@@ -705,8 +864,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 404));
         }
 
-        var existing = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
-        if (!existing.HasValue)
+        var objectId = resolvedFeature.Value.ObjectId;
+
+        if (state.DeletedObjectIds.Contains(objectId))
         {
             return PreparedBatchValidationResult.Failure(CreateBatchFailure(
                 operation.Id,
@@ -853,7 +1013,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             ? results[index]
             : EditOperationResult.Failure("Operation result was missing.", errorCode: 500);
 
-    private static BatchOperationResult MapCreateEditResult(BatchOperation operation, EditOperationResult editResult)
+    private static BatchOperationResult MapCreateEditResult(BatchOperationModel operation, EditOperationResult editResult)
     {
         if (editResult.IsSuccess && editResult.ObjectId.HasValue)
         {
@@ -870,7 +1030,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private static BatchOperationResult MapUpdateEditResult(
-        BatchOperation operation,
+        BatchOperationModel operation,
         long? objectId,
         EditOperationResult editResult)
     {
@@ -880,7 +1040,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             {
                 OperationId = operation.Id,
                 IsSuccess = true,
-                FeatureId = (editResult.ObjectId ?? objectId ?? 0).ToString(CultureInfo.InvariantCulture),
+                FeatureId = !string.IsNullOrWhiteSpace(operation.FeatureId)
+                    ? operation.FeatureId
+                    : (editResult.ObjectId ?? objectId ?? 0).ToString(CultureInfo.InvariantCulture),
                 StatusCode = 200
             };
         }
@@ -889,7 +1051,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private static BatchOperationResult MapDeleteEditResult(
-        BatchOperation operation,
+        BatchOperationModel operation,
         long? objectId,
         EditOperationResult editResult)
     {
@@ -899,7 +1061,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             {
                 OperationId = operation.Id,
                 IsSuccess = true,
-                FeatureId = (objectId ?? editResult.ObjectId ?? 0).ToString(CultureInfo.InvariantCulture),
+                FeatureId = !string.IsNullOrWhiteSpace(operation.FeatureId)
+                    ? operation.FeatureId
+                    : (objectId ?? editResult.ObjectId ?? 0).ToString(CultureInfo.InvariantCulture),
                 StatusCode = 204
             };
         }
@@ -1005,15 +1169,21 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
             }
 
-            long? payloadId = null;
+            string? payloadId = null;
             if (root.TryGetProperty("id", out var idProperty))
             {
-                if (!TryReadLong(idProperty, out var parsedId))
+                payloadId = idProperty.ValueKind switch
                 {
-                    return (null, "GeoJSON 'id' must be an integer when provided.");
-                }
+                    JsonValueKind.Number when idProperty.TryGetInt64(out var parsedId) =>
+                        parsedId.ToString(CultureInfo.InvariantCulture),
+                    JsonValueKind.String => idProperty.GetString(),
+                    _ => null
+                };
 
-                payloadId = parsedId;
+                if (string.IsNullOrWhiteSpace(payloadId))
+                {
+                    return (null, "GeoJSON 'id' must be a string or integer when provided.");
+                }
             }
 
             Dictionary<string, object?>? properties = null;
@@ -1096,8 +1266,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private static bool TryGetBatchEventOperation(
-        BatchOperation operation,
+        BatchOperationModel operation,
         BatchOperationResult result,
+        PreparedBatchOperation? preparedOperation,
         out string eventOperation,
         out long objectId)
     {
@@ -1121,19 +1292,21 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 eventOperation = "create";
                 return true;
             case "UPDATE":
-                if (!long.TryParse(result.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out objectId))
+                if (preparedOperation?.ObjectId is not long updateObjectId)
                 {
                     return false;
                 }
 
+                objectId = updateObjectId;
                 eventOperation = "update";
                 return true;
             case "DELETE":
-                if (!long.TryParse(operation.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out objectId))
+                if (preparedOperation?.ObjectId is not long deleteObjectId)
                 {
                     return false;
                 }
 
+                objectId = deleteObjectId;
                 eventOperation = "delete";
                 return true;
             default:
@@ -1150,7 +1323,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private sealed record PreparedBatchOperation(
         BatchOperationKind OperationKind,
-        BatchOperation Operation,
+        BatchOperationModel Operation,
         Feature? Feature,
         long? ObjectId)
     {
@@ -1181,7 +1354,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private sealed record PatchRequest(
-        long? FeatureId,
+        string? FeatureId,
         bool HasGeometry,
         SimpleGeoJsonGeometry? Geometry,
         bool HasProperties,
@@ -1189,85 +1362,15 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private GeoJsonFeature ToOgcFeature(
         Feature feature,
+        LayerDefinition layer,
         AxisOrder axisOrder,
         ImmutableArray<Link>? links = null)
-    {
-        var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
-        return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry, links);
-    }
-
-    private static string GenerateETag(Feature feature)
-    {
-        // Generate an ETag based on a hash of the full feature content
-        using var stream = new MemoryStream();
-        using var writer = new Utf8JsonWriter(stream);
-        writer.WriteStartObject();
-        writer.WriteNumber("id", feature.Id);
-        if (feature.Geometry != null)
-        {
-            writer.WriteBase64String("g", feature.Geometry);
-        }
-
-        if (feature.Attributes != null)
-        {
-            writer.WriteStartObject("a");
-            foreach (var kvp in feature.Attributes.OrderBy(x => x.Key, StringComparer.Ordinal))
-            {
-                writer.WritePropertyName(kvp.Key);
-                WriteAttributeValue(writer, kvp.Value);
-            }
-
-            writer.WriteEndObject();
-        }
-
-        writer.WriteEndObject();
-        writer.Flush();
-
-        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream.ToArray()))[..16];
-    }
-
-    private static void WriteAttributeValue(Utf8JsonWriter writer, object? value)
-    {
-        switch (value)
-        {
-            case null:
-                writer.WriteNullValue();
-                break;
-            case string s:
-                writer.WriteStringValue(s);
-                break;
-            case bool b:
-                writer.WriteBooleanValue(b);
-                break;
-            case int i:
-                writer.WriteNumberValue(i);
-                break;
-            case long l:
-                writer.WriteNumberValue(l);
-                break;
-            case double d:
-                writer.WriteNumberValue(d);
-                break;
-            case float f:
-                writer.WriteNumberValue(f);
-                break;
-            case decimal dec:
-                writer.WriteNumberValue(dec);
-                break;
-            case DateTime dt:
-                writer.WriteStringValue(dt.ToString("O"));
-                break;
-            case DateTimeOffset dto:
-                writer.WriteStringValue(dto.ToString("O"));
-                break;
-            case JsonElement je:
-                je.WriteTo(writer);
-                break;
-            default:
-                writer.WriteStringValue(value.ToString());
-                break;
-        }
-    }
+        => OgcGeoJsonFeatureBuilder.Create(
+            feature,
+            layer,
+            axisOrder,
+            _geometryServices,
+            links: links);
 
     private static partial class Log
     {

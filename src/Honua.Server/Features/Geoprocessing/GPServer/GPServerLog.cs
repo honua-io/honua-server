@@ -41,4 +41,7 @@ internal static partial class GPServerLog
 
     [LoggerMessage(8110, LogLevel.Information, "GPServer task resolution unavailable (no process catalog): ServiceId={ServiceId}, TaskName={TaskName}")]
     public static partial void TaskResolutionUnavailable(ILogger logger, string serviceId, string taskName);
+
+    [LoggerMessage(8111, LogLevel.Information, "GPServer service not found: ServiceId={ServiceId}")]
+    public static partial void ServiceNotFound(ILogger logger, string serviceId);
 }

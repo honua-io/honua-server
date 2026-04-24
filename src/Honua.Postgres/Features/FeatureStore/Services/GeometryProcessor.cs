@@ -116,17 +116,8 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         return geometryExpression;
     }
 
-    public double ConvertDistanceToMeters(double distance, DistanceUnit unit)
-    {
-        return unit switch
-        {
-            DistanceUnit.Meters => distance,
-            DistanceUnit.Feet => distance * 0.3048,
-            DistanceUnit.Kilometers => distance * 1000,
-            DistanceUnit.Miles => distance * 1609.344,
-            _ => distance
-        };
-    }
+    public double ConvertDistanceToMeters(double distance, DistanceUnit unit) =>
+        DistanceConversions.ToMeters(distance, unit);
 
     /// <summary>
     /// Gets the geometry operand for geography operations (WGS84)

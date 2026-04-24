@@ -26,7 +26,7 @@ internal sealed class ImageServerCatalogQueryHandler
     private const int MaxRecordCount = 1000;
 
     /// <summary>Default page size when the caller does not specify <c>resultRecordCount</c>.</summary>
-    private const int DefaultRecordCount = 100;
+    private const int DefaultRecordCount = MaxRecordCount;
 
     private readonly ILayerCatalog _layerCatalog;
     private readonly IImageServerCatalogReader _catalogReader;
@@ -52,7 +52,7 @@ internal sealed class ImageServerCatalogQueryHandler
         CancellationToken cancellationToken)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
-            "catalog-query",
+            "query-catalog",
             HonuaTelemetry.Protocols.ImageServer,
             layerId.ToString(CultureInfo.InvariantCulture));
         scope.WithTag(HonuaTelemetry.Tags.Operation, "query-catalog");
@@ -207,10 +207,11 @@ internal sealed class ImageServerCatalogQueryHandler
 
         if (query.ReturnExtentOnly)
         {
+            var extentSrid = page.AggregateExtent?.Srid ?? page.NativeSrid ?? 4326;
             var spatialReference = new SpatialReference
             {
-                Wkid = page.AggregateExtent?.Srid ?? query.OutputSrid ?? 4326,
-                LatestWkid = page.AggregateExtent?.Srid ?? query.OutputSrid ?? 4326,
+                Wkid = extentSrid,
+                LatestWkid = extentSrid,
             };
 
             var extentResponse = new CatalogExtentResponse
@@ -232,7 +233,7 @@ internal sealed class ImageServerCatalogQueryHandler
         // leaving geometries in the native SRID would mislead clients that project
         // by the envelope's declared spatial reference.
         var responseSrid = page.AggregateExtent?.Srid
-            ?? page.Items.FirstOrDefault(i => i.FootprintSrid.HasValue)?.FootprintSrid
+            ?? page.NativeSrid
             ?? 4326;
 
         var response = new CatalogQueryResponse
@@ -277,7 +278,7 @@ internal sealed class ImageServerCatalogQueryHandler
             // Stamp the geometry with the actual coordinate SRID. The MVP does not
             // reproject footprints, so the rings are still in the raster's native SRID
             // even when the caller passes outSR.
-            var geometrySrid = item.FootprintSrid ?? query.OutputSrid ?? 4326;
+            var geometrySrid = item.FootprintSrid ?? 4326;
             geometry = new CatalogQueryGeometry
             {
                 Rings = item.FootprintRings,

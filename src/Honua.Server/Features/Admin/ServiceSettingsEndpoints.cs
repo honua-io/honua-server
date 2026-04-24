@@ -80,7 +80,7 @@ internal static class ServiceSettingsEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to list services");
+            ServiceSettingsLog.ListServicesFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Service listing failed",
                 detail: "An internal error occurred while listing services.",
@@ -108,7 +108,7 @@ internal static class ServiceSettingsEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to get service settings for {ServiceName}", serviceName);
+            ServiceSettingsLog.GetServiceSettingsFailed(logger, serviceName, ex);
             return TypedResults.Problem(
                 title: "Service settings retrieval failed",
                 detail: "An internal error occurred while retrieving service settings.",
@@ -171,7 +171,7 @@ internal static class ServiceSettingsEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to update protocols for {ServiceName}", serviceName);
+            ServiceSettingsLog.UpdateProtocolsFailed(logger, serviceName, ex);
             return TypedResults.Problem(
                 title: "Protocol update failed",
                 detail: "An internal error occurred while updating service protocols.",
@@ -224,7 +224,7 @@ internal static class ServiceSettingsEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to update MapServer settings for {ServiceName}", serviceName);
+            ServiceSettingsLog.UpdateMapServerSettingsFailed(logger, serviceName, ex);
             return TypedResults.Problem(
                 title: "MapServer settings update failed",
                 detail: "An internal error occurred while updating MapServer settings.",
@@ -272,7 +272,7 @@ internal static class ServiceSettingsEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to update access policy for {ServiceName}", serviceName);
+            ServiceSettingsLog.UpdateAccessPolicyFailed(logger, serviceName, ex);
             return TypedResults.Problem(
                 title: "Access policy update failed",
                 detail: "An internal error occurred while updating access policy.",
@@ -339,7 +339,7 @@ internal static class ServiceSettingsEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to update time info for {ServiceName}", serviceName);
+            ServiceSettingsLog.UpdateTimeInfoFailed(logger, serviceName, ex);
             return TypedResults.Problem(
                 title: "Time info update failed",
                 detail: "An internal error occurred while updating time info.",
@@ -414,7 +414,7 @@ internal static class ServiceSettingsEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to update layer metadata for {ServiceName}/{LayerId}", serviceName, layerId);
+            ServiceSettingsLog.UpdateLayerMetadataFailed(logger, serviceName, layerId, ex);
             return TypedResults.Problem(
                 title: "Layer metadata update failed",
                 detail: "An internal error occurred while updating layer metadata.",
@@ -510,7 +510,7 @@ internal static class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "Failed to invalidate service catalog cache for {ServiceName}", serviceName);
+            ServiceSettingsLog.InvalidateServiceCatalogCacheFailed(logger, serviceName, ex);
         }
     }
 }

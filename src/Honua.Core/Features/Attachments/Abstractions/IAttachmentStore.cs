@@ -45,7 +45,7 @@ public interface IAttachmentStore
     Task<Attachment> CreateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates an existing attachment's metadata
+    /// Updates an existing attachment record
     /// </summary>
     /// <param name="layerId">Layer identifier containing the feature</param>
     /// <param name="featureId">Feature identifier that owns the attachment</param>
@@ -54,6 +54,29 @@ public interface IAttachmentStore
     /// <returns>Updated attachment</returns>
     /// <exception cref="ResourceNotFoundException">Thrown if attachment with the specified ID does not exist</exception>
     Task<Attachment> UpdateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Replaces the stored file content for an existing attachment while preserving its identifier.
+    /// </summary>
+    /// <param name="layerId">Layer identifier containing the feature</param>
+    /// <param name="featureId">Feature identifier that owns the attachment</param>
+    /// <param name="attachmentId">Unique attachment identifier to replace</param>
+    /// <param name="filename">Updated filename for the attachment</param>
+    /// <param name="contentType">Updated MIME content type</param>
+    /// <param name="content">Replacement file content stream</param>
+    /// <param name="keywords">Optional updated keywords</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Updated attachment with the new stored file reference</returns>
+    /// <exception cref="ResourceNotFoundException">Thrown if attachment with the specified ID does not exist</exception>
+    Task<Attachment> ReplaceAsync(
+        int layerId,
+        long featureId,
+        long attachmentId,
+        string filename,
+        string contentType,
+        Stream content,
+        string? keywords = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes an attachment by its unique identifier

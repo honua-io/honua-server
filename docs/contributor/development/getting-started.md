@@ -54,8 +54,8 @@ HONUA_STORAGE_PROVIDER=AwsS3 HONUA_S3_BUCKET=honua-dev \
   HONUA_S3_ACCESS_KEY_ID=minioadmin HONUA_S3_SECRET_ACCESS_KEY=minioadmin \
   docker compose --profile minio up -d
 
-# Test database (separate PostGIS instance on port 5433)
-docker compose --profile test up -d
+# Reusable external test database (separate PostGIS instance on port 5433)
+docker compose -f docker/docker-compose.test-db.yml up -d
 ```
 
 Port overrides: `POSTGRES_PORT`, `REDIS_PORT`, `HONUA_HTTP_PORT`.

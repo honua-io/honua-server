@@ -2886,8 +2886,8 @@ public sealed class ProcessCatalogTests
     private HonuaProcessService CreateServiceWithCatalog()
     {
         var authEval = Substitute.For<IOperatorAuthorizationEvaluator>();
-        authEval.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.Allowed());
+        authEval.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Allowed()));
 
         var approvalEval = Substitute.For<IOperatorApprovalEvaluator>();
         approvalEval.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())

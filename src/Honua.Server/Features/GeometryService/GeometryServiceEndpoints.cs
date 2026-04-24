@@ -7,115 +7,115 @@ using Honua.Server.Features.Infrastructure.Helpers;
 namespace Honua.Server.Features.GeometryService;
 
 /// <summary>
-/// Maps geometry service REST endpoints for buffer, simplify, and project operations.
+/// Maps geometry service REST endpoints under the canonical GeometryServer route.
 /// Supports both GET and POST for each operation per ArcGIS specification.
 /// </summary>
 internal static class GeometryServiceEndpoints
 {
+    private const string GeometryRoutePrefix = "/rest/services/Utilities/Geometry/GeometryServer";
+
     /// <summary>
-    /// Maps geometry service endpoints under /rest/services/geometry.
+    /// Maps geometry service endpoints under the canonical GeometryServer route.
     /// </summary>
     public static IEndpointRouteBuilder MapGeometryServiceEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
         // Esri REST clients probe the GeometryServer root for currentVersion and
-        // service description before invoking operations. Routing is case-insensitive,
-        // so a single lowercase route covers both `/rest/services/Geometry/...` and
-        // `/rest/services/geometry/...` forms.
-        endpoints.MapGet("/rest/services/geometry/GeometryServer", HandleServiceInfo)
+        // service description before invoking operations.
+        endpoints.MapGet(GeometryRoutePrefix, HandleServiceInfo)
             .WithDisplayName("Geometry Service Info")
             .WithName("GeometryServiceInfo")
             .WithTags("GeometryService");
 
-        endpoints.MapGet("/rest/services/geometry/buffer", (Delegate)HandleBuffer)
+        endpoints.MapGet($"{GeometryRoutePrefix}/buffer", (Delegate)HandleBuffer)
             .WithDisplayName("Geometry Service Buffer (GET)")
             .WithName("GeometryServiceBufferGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost("/rest/services/geometry/buffer", (Delegate)HandleBuffer)
+        endpoints.MapPost($"{GeometryRoutePrefix}/buffer", (Delegate)HandleBuffer)
             .WithDisplayName("Geometry Service Buffer (POST)")
             .WithName("GeometryServiceBufferPost")
             .WithTags("GeometryService");
 
-        endpoints.MapGet("/rest/services/geometry/simplify", (Delegate)HandleSimplify)
+        endpoints.MapGet($"{GeometryRoutePrefix}/simplify", (Delegate)HandleSimplify)
             .WithDisplayName("Geometry Service Simplify (GET)")
             .WithName("GeometryServiceSimplifyGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost("/rest/services/geometry/simplify", (Delegate)HandleSimplify)
+        endpoints.MapPost($"{GeometryRoutePrefix}/simplify", (Delegate)HandleSimplify)
             .WithDisplayName("Geometry Service Simplify (POST)")
             .WithName("GeometryServiceSimplifyPost")
             .WithTags("GeometryService");
 
-        endpoints.MapGet("/rest/services/geometry/project", (Delegate)HandleProject)
+        endpoints.MapGet($"{GeometryRoutePrefix}/project", (Delegate)HandleProject)
             .WithDisplayName("Geometry Service Project (GET)")
             .WithName("GeometryServiceProjectGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost("/rest/services/geometry/project", (Delegate)HandleProject)
+        endpoints.MapPost($"{GeometryRoutePrefix}/project", (Delegate)HandleProject)
             .WithDisplayName("Geometry Service Project (POST)")
             .WithName("GeometryServiceProjectPost")
             .WithTags("GeometryService");
 
-        endpoints.MapGet("/rest/services/geometry/intersect", (Delegate)HandleIntersect)
+        endpoints.MapGet($"{GeometryRoutePrefix}/intersect", (Delegate)HandleIntersect)
             .WithDisplayName("Geometry Service Intersect (GET)")
             .WithName("GeometryServiceIntersectGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost("/rest/services/geometry/intersect", (Delegate)HandleIntersect)
+        endpoints.MapPost($"{GeometryRoutePrefix}/intersect", (Delegate)HandleIntersect)
             .WithDisplayName("Geometry Service Intersect (POST)")
             .WithName("GeometryServiceIntersectPost")
             .WithTags("GeometryService");
 
-        endpoints.MapGet("/rest/services/geometry/union", (Delegate)HandleUnion)
+        endpoints.MapGet($"{GeometryRoutePrefix}/union", (Delegate)HandleUnion)
             .WithDisplayName("Geometry Service Union (GET)")
             .WithName("GeometryServiceUnionGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost("/rest/services/geometry/union", (Delegate)HandleUnion)
+        endpoints.MapPost($"{GeometryRoutePrefix}/union", (Delegate)HandleUnion)
             .WithDisplayName("Geometry Service Union (POST)")
             .WithName("GeometryServiceUnionPost")
             .WithTags("GeometryService");
 
-        endpoints.MapGet("/rest/services/geometry/clip", (Delegate)HandleClip)
+        endpoints.MapGet($"{GeometryRoutePrefix}/clip", (Delegate)HandleClip)
             .WithDisplayName("Geometry Service Clip (GET)")
             .WithName("GeometryServiceClipGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost("/rest/services/geometry/clip", (Delegate)HandleClip)
+        endpoints.MapPost($"{GeometryRoutePrefix}/clip", (Delegate)HandleClip)
             .WithDisplayName("Geometry Service Clip (POST)")
             .WithName("GeometryServiceClipPost")
             .WithTags("GeometryService");
 
-        endpoints.MapGet("/rest/services/geometry/difference", (Delegate)HandleDifference)
+        endpoints.MapGet($"{GeometryRoutePrefix}/difference", (Delegate)HandleDifference)
             .WithDisplayName("Geometry Service Difference (GET)")
             .WithName("GeometryServiceDifferenceGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost("/rest/services/geometry/difference", (Delegate)HandleDifference)
+        endpoints.MapPost($"{GeometryRoutePrefix}/difference", (Delegate)HandleDifference)
             .WithDisplayName("Geometry Service Difference (POST)")
             .WithName("GeometryServiceDifferencePost")
             .WithTags("GeometryService");
 
-        endpoints.MapGet("/rest/services/geometry/area", (Delegate)HandleArea)
-            .WithDisplayName("Geometry Service Area (GET)")
-            .WithName("GeometryServiceAreaGet")
+        endpoints.MapGet($"{GeometryRoutePrefix}/areasAndLengths", (Delegate)HandleArea)
+            .WithDisplayName("Geometry Service Areas And Lengths (GET)")
+            .WithName("GeometryServiceAreasAndLengthsGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost("/rest/services/geometry/area", (Delegate)HandleArea)
-            .WithDisplayName("Geometry Service Area (POST)")
-            .WithName("GeometryServiceAreaPost")
+        endpoints.MapPost($"{GeometryRoutePrefix}/areasAndLengths", (Delegate)HandleArea)
+            .WithDisplayName("Geometry Service Areas And Lengths (POST)")
+            .WithName("GeometryServiceAreasAndLengthsPost")
             .WithTags("GeometryService");
 
-        endpoints.MapGet("/rest/services/geometry/length", (Delegate)HandleLength)
-            .WithDisplayName("Geometry Service Length (GET)")
-            .WithName("GeometryServiceLengthGet")
+        endpoints.MapGet($"{GeometryRoutePrefix}/lengths", (Delegate)HandleLength)
+            .WithDisplayName("Geometry Service Lengths (GET)")
+            .WithName("GeometryServiceLengthsGet")
             .WithTags("GeometryService");
 
-        endpoints.MapPost("/rest/services/geometry/length", (Delegate)HandleLength)
-            .WithDisplayName("Geometry Service Length (POST)")
-            .WithName("GeometryServiceLengthPost")
+        endpoints.MapPost($"{GeometryRoutePrefix}/lengths", (Delegate)HandleLength)
+            .WithDisplayName("Geometry Service Lengths (POST)")
+            .WithName("GeometryServiceLengthsPost")
             .WithTags("GeometryService");
 
         return endpoints;
@@ -126,7 +126,7 @@ internal static class GeometryServiceEndpoints
     // their discovery handshake before invoking buffer/simplify/etc.
     private const string GeometryServerInfoJson =
         "{\"currentVersion\":11.1,"
-        + "\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, area, length.\","
+        + "\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths.\","
         + "\"maxBufferCount\":1000,"
         + "\"maxSimplifyCount\":1000,"
         + "\"resampled\":true}";

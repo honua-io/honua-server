@@ -2,6 +2,7 @@
 // CERT mapping: CERT-CONN-01 (HTTP connection), CERT-RNDR-01 (style load + idle).
 
 import { test, expect } from '@playwright/test';
+import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { createMap } from './support/map-harness.js';
 import { BASE_URL, POINT_LAYER_ID, POINT_CENTER } from './support/constants.js';
 
@@ -16,6 +17,9 @@ test.describe('Style Loading', () => {
     expect(style.layers).toBeDefined();
     expect(Array.isArray(style.layers)).toBe(true);
     expect(style.layers.length).toBeGreaterThan(0);
+
+    const validationErrors = validateStyleMin(style);
+    expect(validationErrors.map((error) => error.message)).toEqual([]);
   });
 
   test('[CERT-CONN-01] fetch TileJSON returns valid metadata with style URL', async ({ request }) => {

@@ -24,6 +24,7 @@ public sealed class MapServerWmsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Wms)]
+    [InterfaceOperation(Protocols.Wms13, "GetCapabilities")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetCapabilities_ReturnsXml()
     {
@@ -40,6 +41,21 @@ public sealed class MapServerWmsTests : IAsyncLifetime
         content.Should().Contain("<GetMap>");
         content.Should().Contain("<GetFeatureInfo>");
         content.Should().Contain("schemaLocation");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetCapabilities_UnsupportedVersion_ReturnsServiceException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidParameterValue");
     }
 
     [IntegrationTest]
@@ -133,6 +149,7 @@ public sealed class MapServerWmsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Wms)]
+    [InterfaceOperation(Protocols.Wms13, "GetMap")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_ReturnsImage()
     {
@@ -304,6 +321,7 @@ public sealed class MapServerWmsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Wms)]
+    [InterfaceOperation(Protocols.Wms13, "GetFeatureInfo")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetFeatureInfo_ReturnsPlainText()
     {
@@ -314,6 +332,49 @@ public sealed class MapServerWmsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
         content.Should().Contain("Layer=");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(Protocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_FiltersInternalAttributes()
+    {
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE features
+                SET attributes = COALESCE(attributes, '{}'::jsonb) || jsonb_build_object('__tenant_id', 'hidden')
+                WHERE layer_id = @layerId;
+                """;
+            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=application/json&I=41&J=74");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("attributes");
+        content.Should().NotContain("__tenant_id");
+        content.Should().NotContain("hidden");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(Protocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_WithFilter_AppliesLayerFilter()
+    {
+        const string noMatchFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>does-not-exist</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=41&J=74&FILTER={Uri.EscapeDataString(noMatchFilter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Be("No features found.");
     }
 
     [IntegrationTest]

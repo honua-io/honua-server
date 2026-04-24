@@ -12,6 +12,7 @@ namespace Honua.TestKit.Infrastructure;
 public sealed class TestAttachmentStore : IAttachmentStore
 {
     private readonly Dictionary<(int layerId, long featureId), List<Attachment>> _attachments = new();
+    private readonly Dictionary<(int layerId, long featureId, long attachmentId), byte[]> _attachmentContents = new();
     private long _nextId = 1;
 
     public Task<Attachment?> GetAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
@@ -66,6 +67,40 @@ public sealed class TestAttachmentStore : IAttachmentStore
         return Task.FromResult(attachment);
     }
 
+    public async Task<Attachment> ReplaceAsync(
+        int layerId,
+        long featureId,
+        long attachmentId,
+        string filename,
+        string contentType,
+        Stream content,
+        string? keywords = null,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await GetAsync(layerId, featureId, attachmentId, cancellationToken);
+        if (!existing.HasValue)
+            throw new InvalidOperationException($"Attachment {attachmentId} not found for update");
+
+        using var buffer = new MemoryStream();
+        await content.CopyToAsync(buffer, cancellationToken);
+        var bytes = buffer.ToArray();
+
+        var updated = Attachment.Create(
+            existing.Value.Id,
+            existing.Value.FeatureId,
+            existing.Value.LayerId,
+            filename,
+            contentType,
+            bytes.LongLength,
+            existing.Value.CreatedAt,
+            $"test/{layerId}/{featureId}/{Guid.NewGuid()}{Path.GetExtension(filename)}",
+            keywords);
+
+        await UpdateAsync(layerId, featureId, updated, cancellationToken);
+        _attachmentContents[(layerId, featureId, attachmentId)] = bytes;
+        return updated;
+    }
+
     public Task<bool> DeleteAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
     {
         if (!_attachments.TryGetValue((layerId, featureId), out var attachments))
@@ -106,7 +141,16 @@ public sealed class TestAttachmentStore : IAttachmentStore
             storagePath: $"test/{layerId}/{featureId}/{Guid.NewGuid()}{Path.GetExtension(filename)}",
             keywords: keywords);
 
-        return await CreateAsync(layerId, featureId, attachment, cancellationToken);
+        using var buffer = new MemoryStream();
+        if (content.CanSeek)
+        {
+            content.Position = 0;
+        }
+
+        await content.CopyToAsync(buffer, cancellationToken);
+        var created = await CreateAsync(layerId, featureId, attachment, cancellationToken);
+        _attachmentContents[(layerId, featureId, created.Id)] = buffer.ToArray();
+        return created;
     }
 
     public Task<AttachmentContent?> DownloadAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
@@ -118,8 +162,10 @@ public sealed class TestAttachmentStore : IAttachmentStore
         if (attachment.Id == 0) // Default value for struct means not found
             return Task.FromResult<AttachmentContent?>(null);
 
-        // Return test content
-        var content = new MemoryStream("Test file content for download"u8.ToArray());
+        var bytes = _attachmentContents.TryGetValue((layerId, featureId, attachmentId), out var stored)
+            ? stored
+            : "Test file content for download"u8.ToArray();
+        var content = new MemoryStream(bytes, writable: false);
         var attachmentContent = AttachmentContent.Create(attachment, content);
         return Task.FromResult<AttachmentContent?>(attachmentContent);
     }

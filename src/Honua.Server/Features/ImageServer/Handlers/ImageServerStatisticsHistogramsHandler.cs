@@ -15,10 +15,8 @@ using Microsoft.Extensions.Primitives;
 namespace Honua.Server.Features.ImageServer.Handlers;
 
 /// <summary>
-/// Handler for the Esri Image Server <c>computeStatisticsHistograms</c> endpoint.
-/// Returns per-band statistics and histograms for the layer's primary raster.
-/// AOI clipping is honoured by passing the supplied geometry through to the raster store
-/// in a future ticket; the MVP analyses the entire raster.
+/// Internal whole-raster statistics/histogram helper retained for non-public use until
+/// geometry-scoped <c>computeStatisticsHistograms</c> support is implemented.
 /// </summary>
 internal sealed class ImageServerStatisticsHistogramsHandler
 {
@@ -80,7 +78,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 return StandardErrorHelpers.CreateBadRequest(context, binError ?? "Invalid histogramParameters.");
             }
 
-            // Per Esri spec, rasterIds selects raster catalog object IDs (long).
+            // Per ArcGIS ImageServer spec, rasterIds selects raster catalog object IDs (long).
             // Band selection (1-based) is done via the optional bandIds extension parameter.
             if (!TryParseRasterIds(GetString(values, "rasterIds"), out var rasterIds, out var rasterIdsError))
             {

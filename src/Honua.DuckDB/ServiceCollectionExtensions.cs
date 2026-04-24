@@ -130,9 +130,13 @@ internal static class ServiceCollectionExtensions
                 ? (layerOpt.Attributes.ToList(), new Dictionary<string, string>())
                 : DiscoverAttributeColumns(connectionString, layerOpt, logger);
 
-            logger.LogInformation(
-                "Registered DuckDB layer {LayerId}: table={Table}, geom={GeomCol}, oid={OidCol}, attrs={AttrCount}",
-                layerOpt.Id, layerOpt.Table, layerOpt.GeometryColumn, layerOpt.ObjectIdColumn, attributeColumns.Count);
+            DuckDbLog.LayerRegistered(
+                logger,
+                layerOpt.Id,
+                layerOpt.Table,
+                layerOpt.GeometryColumn,
+                layerOpt.ObjectIdColumn,
+                attributeColumns.Count);
 
             mappings.Add(new DuckDBLayerMapping
             {
@@ -178,10 +182,7 @@ internal static class ServiceCollectionExtensions
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex,
-                "Could not discover attribute columns for DuckDB layer {LayerId} table {Table}; " +
-                "set DuckDB:Layers:N:Attributes in configuration to specify columns explicitly",
-                layerOpt.Id, layerOpt.Table);
+            DuckDbLog.AttributeDiscoveryFailed(logger, layerOpt.Id, layerOpt.Table, ex);
             return ([], new Dictionary<string, string>());
         }
     }

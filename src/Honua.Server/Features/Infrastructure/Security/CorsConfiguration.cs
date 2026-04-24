@@ -11,6 +11,13 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// </summary>
 public static class CorsConfiguration
 {
+    private static readonly string[] DefaultDevelopmentOrigins =
+    [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8080"
+    ];
+
     public const string DevelopmentPolicy = "DevelopmentCors";
     public const string ProductionPolicy = "ProductionCors";
     public const string RestrictedPolicy = "RestrictedCors";
@@ -38,14 +45,28 @@ public static class CorsConfiguration
 
         services.AddCors(options =>
         {
-            // Development policy - more permissive for local development
+            // Development policy - controlled development origins only
             options.AddPolicy(DevelopmentPolicy, policy =>
             {
                 if (environment.IsDevelopment() && !permissiveCorsDisabled)
                 {
-                    policy.AllowAnyOrigin()
-                          .AllowAnyMethod()
-                          .AllowAnyHeader();
+                    // Get development-specific allowed origins from configuration
+                    var devOrigins = configuration.GetSection("Cors:DevelopmentOrigins").Get<string[]>()
+                        ?? DefaultDevelopmentOrigins;
+
+                    if (devOrigins.Length > 0)
+                    {
+                        policy.WithOrigins(devOrigins)
+                              .AllowAnyMethod()
+                              .AllowAnyHeader()
+                              .AllowCredentials()
+                              .SetPreflightMaxAge(TimeSpan.FromMinutes(5));
+                    }
+                    else
+                    {
+                        // No dev origins configured - use production policy
+                        ConfigureProductionPolicy(policy, configuration, environment, logger);
+                    }
                 }
                 else
                 {
@@ -332,6 +353,12 @@ public sealed class CorsOptions
     /// Supports exact URLs and wildcard subdomains (*.example.com).
     /// </summary>
     public string[] AllowedOrigins { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// List of allowed origins for development CORS policy.
+    /// Used only in development environment for local testing.
+    /// </summary>
+    public string[] DevelopmentOrigins { get; set; } = Array.Empty<string>();
 
     /// <summary>
     /// List of allowed origins for restricted CORS policy.

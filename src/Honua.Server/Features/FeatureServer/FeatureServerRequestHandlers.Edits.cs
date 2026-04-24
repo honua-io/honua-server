@@ -11,6 +11,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
@@ -31,6 +32,12 @@ internal static partial class FeatureServerEndpoints
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
+        if (authorizationError != null)
+        {
+            return authorizationError;
+        }
+
         var (request, readError, errorResult) = await TryReadApplyEditsRequestAsync(context.Request, cancellationToken);
         if (request == null)
         {
@@ -62,6 +69,12 @@ internal static partial class FeatureServerEndpoints
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
+        if (authorizationError != null)
+        {
+            return authorizationError;
+        }
+
         var (request, readError, errorResult) = await TryReadFeatureArrayRequestAsync(
             context.Request,
             primaryKey: "features",
@@ -108,6 +121,12 @@ internal static partial class FeatureServerEndpoints
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
+        if (authorizationError != null)
+        {
+            return authorizationError;
+        }
+
         var (request, readError, errorResult) = await TryReadFeatureArrayRequestAsync(
             context.Request,
             primaryKey: "features",
@@ -153,7 +172,21 @@ internal static partial class FeatureServerEndpoints
         [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.DeleteFeatures, out var parameterError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [parameterError ?? "Invalid query parameter."]);
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
+        if (authorizationError != null)
+        {
+            return authorizationError;
+        }
+
         var (request, readError, errorResult) = await TryReadDeleteFeaturesRequestAsync(context.Request, cancellationToken);
         if (request == null)
         {
@@ -165,6 +198,20 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid deleteFeatures request",
                 [readError ?? "Invalid request body."]);
+        }
+
+        if (!TryApplyEditOptionsFromQuery(request, context.Request.Query, out var queryError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid deleteFeatures request",
+                [queryError ?? "Invalid query parameters."]);
+        }
+
+        if (!TryApplyDeleteIdsFromQuery(request, context.Request.Query, out queryError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid deleteFeatures request",
+                [queryError ?? "Invalid query parameters."]);
         }
 
         // When no objectIds are provided, check for where/geometry filter parameters
@@ -236,7 +283,24 @@ internal static partial class FeatureServerEndpoints
             return (null, validationResult.ErrorResult!);
         }
 
+        var service = validationResult.Service!;
         var layer = validationResult.Layer!;
+        var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(context, layer, service);
+        if (accessError != null)
+        {
+            return (null, accessError);
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            service,
+            layer,
+            cancellationToken);
+        if (rbacError != null)
+        {
+            return (null, rbacError);
+        }
+
         var query = new FeatureQuery
         {
             Where = whereClause,
@@ -304,6 +368,14 @@ internal static partial class FeatureServerEndpoints
         }
 
         var queryResult = await featureReader.QueryAsync(layerId, query, cancellationToken);
+        if (queryResult.HasMoreResults)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(
+                context,
+                "deleteFeatures filter matched more features than the configured query limit.",
+                ["Narrow the where or geometry filter, or delete by explicit objectIds."]));
+        }
+
         var ids = queryResult.Items.Select(f => (object)f.Id).ToArray();
         return (ids, null);
     }
@@ -316,21 +388,6 @@ internal static partial class FeatureServerEndpoints
         Honua.Core.Configuration.EditLimits editLimits,
         ApplyEditsRequest request)
     {
-        var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.DeleteFeatures, out var parameterError))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid query parameters",
-                [parameterError ?? "Invalid query parameter."]);
-        }
-
-        if (!TryApplyEditOptionsFromQuery(request, context.Request.Query, out var queryError))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid deleteFeatures request",
-                [queryError ?? "Invalid query parameters."]);
-        }
-
         if (!TryValidateOutputFormat(request.F, JsonOnlyFormats, out var normalizedFormat, out var formatError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -382,6 +439,12 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [parameterError ?? "Invalid query parameter."]);
+        }
+
+        var authorizationError = await RequireServiceWriteAccessBeforeBodyAsync(serviceId, context, cancellationToken);
+        if (authorizationError != null)
+        {
+            return authorizationError;
         }
 
         ServiceLayerEdits[]? layerEdits;
@@ -545,6 +608,70 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
+    private static async Task<IResult?> RequireLayerWriteAccessBeforeBodyAsync(
+        string serviceId,
+        int layerId,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            resourceValidator,
+            serviceId,
+            layerId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return validationResult.ErrorResult!;
+        }
+
+        var service = validationResult.Service!;
+        var layer = validationResult.Layer!;
+        var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(context, layer, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        return await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            service,
+            layer,
+            cancellationToken);
+    }
+
+    private static async Task<IResult?> RequireServiceWriteAccessBeforeBodyAsync(
+        string serviceId,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return validationResult.ErrorResult!;
+        }
+
+        var service = validationResult.Service!;
+        var accessError = AccessPolicyHelpers.RequireServiceWriteAccess(context, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        return await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            service,
+            cancellationToken);
+    }
+
     private static async Task<IResult> ExecuteEditsRequestAsync(
         string serviceId,
         int layerId,
@@ -659,6 +786,36 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(gdbVersion))
         {
             request.GdbVersion = gdbVersion;
+        }
+
+        return true;
+    }
+
+    private static bool TryApplyDeleteIdsFromQuery(
+        ApplyEditsRequest request,
+        IQueryCollection query,
+        out string? error)
+    {
+        error = null;
+        if (request.Deletes is { Length: > 0 } || query.Count == 0)
+        {
+            return true;
+        }
+
+        var values = ToCaseInsensitiveDictionary(query);
+        if (!TryParseDeletes(values, "objectIds", out var deletes, out error))
+        {
+            return false;
+        }
+
+        if (deletes == null && !TryParseDeletes(values, "deletes", out deletes, out error))
+        {
+            return false;
+        }
+
+        if (deletes != null)
+        {
+            request.Deletes = deletes;
         }
 
         return true;

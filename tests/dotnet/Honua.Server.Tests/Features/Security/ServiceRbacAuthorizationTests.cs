@@ -236,6 +236,54 @@ public sealed class FeatureServerServiceRbacTests
 
     [IntegrationTest]
     [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithAnonymousClient_AndMalformedBody_ReturnsUnauthorizedBeforeBodyValidation()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            new StringContent("{", Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_WithReadOnlyRole_AndMalformedBody_ReturnsForbiddenBeforeBodyValidation()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
+            new StringContent("{", Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.UnRegisterReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica")]
+    public async Task UnRegisterReplica_WithReadOnlyRole_AndMalformedBody_ReturnsForbiddenBeforeBodyValidation()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/unRegisterReplica",
+            new StringContent("{", Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
     [Operation(Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
@@ -309,6 +357,67 @@ public sealed class FeatureServerServiceRbacTests
             new StringContent(unregisterPayload, Encoding.UTF8, "application/json"));
 
         await ServiceRbacTestFixture.AssertStatusAsync(unregisterResponse, HttpStatusCode.Forbidden);
+    }
+}
+
+public sealed class GeoServicesRouteValidationTests
+{
+    private const string NumericLeadingService = "123service";
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task FeatureServer_Metadata_AllowsNumericLeadingServiceId()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaServiceName: NumericLeadingService,
+                alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymous: true)));
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync($"/rest/services/{NumericLeadingService}/FeatureServer?f=json");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.MapServer)]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    public async Task MapServer_Metadata_AllowsNumericLeadingServiceId()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaServiceName: NumericLeadingService,
+                alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymous: true)));
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync($"/rest/services/{NumericLeadingService}/MapServer?f=json");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+}
+
+public sealed class WmsServiceRbacTests
+{
+    [IntegrationTest]
+    [Protocol(Protocols.Wms13)]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task GetCapabilities_WithAnonymousClient_ReturnsWmsAccessDeniedException()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0");
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, body);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        body.Should().Contain("ServiceExceptionReport");
+        body.Should().Contain("code=\"AccessDenied\"");
     }
 }
 
@@ -1265,7 +1374,9 @@ internal static class ServiceRbacTestFixture
     public const int AlphaLayerId = 0;
     public const int BetaLayerId = 1;
 
-    public static WebApplicationFactory<Program> CreateFactory(Func<ILayerCatalog>? layerCatalogFactory = null)
+    public static WebApplicationFactory<Program> CreateFactory(
+        Func<ILayerCatalog>? layerCatalogFactory = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         layerCatalogFactory ??= static () => new RbacTestLayerCatalog();
 
@@ -1294,6 +1405,7 @@ internal static class ServiceRbacTestFixture
                     services.AddSingleton<ICrsRegistry, TestCrsRegistry>();
                     services.AddSingleton<ICoordinateTransformService, TestCoordinateTransformService>();
                     services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
+                    configureServices?.Invoke(services);
 
                     services.AddAuthentication()
                         .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
@@ -1480,8 +1592,13 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
         CatalogMetadata? alphaLayerMetadata = null,
         CatalogMetadata? betaLayerMetadata = null,
         bool betaAlsoIncludesAlphaLayer = false,
-        bool reverseServiceOrder = false)
+        bool reverseServiceOrder = false,
+        string? alphaServiceName = null,
+        string? betaServiceName = null)
     {
+        alphaServiceName ??= ServiceRbacTestFixture.AlphaService;
+        betaServiceName ??= ServiceRbacTestFixture.BetaService;
+
         var spatialRef = SpatialReference.Create(4326);
         var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
 
@@ -1493,7 +1610,7 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
             : new[] { _betaLayer };
 
         _alphaService = new ServiceDefinition(
-            Name: ServiceRbacTestFixture.AlphaService,
+            Name: alphaServiceName,
             Description: "Alpha service for RBAC tests",
             Layers: alphaLayers,
             SpatialReference: spatialRef,
@@ -1503,7 +1620,7 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
             Metadata: alphaServiceMetadata);
 
         _betaService = new ServiceDefinition(
-            Name: ServiceRbacTestFixture.BetaService,
+            Name: betaServiceName,
             Description: "Beta service for RBAC tests",
             Layers: betaLayers,
             SpatialReference: spatialRef,
@@ -1532,12 +1649,12 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
 
     public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
     {
-        if (string.Equals(serviceName, ServiceRbacTestFixture.AlphaService, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(serviceName, _alphaService.Name, StringComparison.OrdinalIgnoreCase))
         {
             return Task.FromResult<ServiceDefinition?>(_alphaService);
         }
 
-        if (string.Equals(serviceName, ServiceRbacTestFixture.BetaService, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(serviceName, _betaService.Name, StringComparison.OrdinalIgnoreCase))
         {
             return Task.FromResult<ServiceDefinition?>(_betaService);
         }
@@ -1553,8 +1670,8 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
 
     public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
         => Task.FromResult(
-            string.Equals(serviceName, ServiceRbacTestFixture.AlphaService, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(serviceName, ServiceRbacTestFixture.BetaService, StringComparison.OrdinalIgnoreCase));
+            string.Equals(serviceName, _alphaService.Name, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(serviceName, _betaService.Name, StringComparison.OrdinalIgnoreCase));
 
     public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
         => Task.FromResult<Relationship?>(null);

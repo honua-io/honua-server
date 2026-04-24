@@ -79,8 +79,7 @@ internal sealed partial class Wfs20Handler
                 FeatureTypeList = ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")
                     ? new FeatureTypeList
                     {
-                        FeatureTypes = await Task.WhenAll(
-                            featureTypes.Select(featureType => BuildFeatureTypeAsync(featureType, cancellationToken)))
+                        FeatureTypes = await BuildFeatureTypesAsync(featureTypes, cancellationToken).ConfigureAwait(false)
                     }
                     : null,
                 FilterCapabilities = ShouldIncludeCapabilitiesSection(requestedSections, "Filter_Capabilities")
@@ -271,6 +270,29 @@ internal sealed partial class Wfs20Handler
         };
     }
 
+    private async Task<FeatureType[]> BuildFeatureTypesAsync(
+        IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes,
+        CancellationToken cancellationToken)
+    {
+        const int MaxConcurrentExtentTransforms = 8;
+
+        using var throttler = new SemaphoreSlim(MaxConcurrentExtentTransforms);
+        var tasks = featureTypes.Select(async featureType =>
+        {
+            await throttler.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await BuildFeatureTypeAsync(featureType, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                throttler.Release();
+            }
+        });
+
+        return await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
 
     private static string[] BuildKeywords(LayerDefinition layer)
     {
@@ -365,7 +387,7 @@ internal sealed partial class Wfs20Handler
                     CreateParameter("resourceId", allowAnyValue: true),
                     CreateParameter("propertyName", allowAnyValue: true),
                     CreateParameter("srsName", allowAnyValue: true),
-                    CreateParameter("resolve", "none", "local", "remote", "all")
+                    CreateParameter("resolve", "none")
                 ]),
                 CreateOperation(Wfs20Utilities.Operations.GetPropertyValue, wfsUrl,
                 [
@@ -382,7 +404,7 @@ internal sealed partial class Wfs20Handler
                     CreateParameter("bbox", allowAnyValue: true),
                     CreateParameter("resourceId", allowAnyValue: true),
                     CreateParameter("srsName", allowAnyValue: true),
-                    CreateParameter("resolve", "none", "local", "remote", "all")
+                    CreateParameter("resolve", "none")
                 ]),
                 CreateOperation(Wfs20Utilities.Operations.Transaction, wfsUrl,
                 [
@@ -525,7 +547,7 @@ internal sealed partial class Wfs20Handler
                     CreateBooleanFesConstraint("ImplementsCQL2BasicSpatial", true),
                     CreateBooleanFesConstraint("ImplementsCQL2SpatialOperators", true),
                     CreateBooleanFesConstraint("ImplementsCQL2TemporalOperators", true),
-                    CreateBooleanFesConstraint("ImplementsCQL2ArrayOperators", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2ArrayOperators", false),
                     CreateBooleanFesConstraint("ImplementsCQL2Functions", true)
                 ]
             },
@@ -564,9 +586,7 @@ internal sealed partial class Wfs20Handler
                         // Range operators
                         new ComparisonOperator { Name = "PropertyIsBetween" },
 
-                        // Set membership operators
-                        new ComparisonOperator { Name = "PropertyIsIn" },
-                        new ComparisonOperator { Name = "PropertyIsNotIn" }
+                        // Runtime supports the FES XML operators listed above.
                     ]
                 }
             },
@@ -580,19 +600,9 @@ internal sealed partial class Wfs20Handler
                         new GeometryOperand { Name = new XmlQualifiedName("Envelope", Wfs20Utilities.GmlNamespace) },
                         new GeometryOperand { Name = new XmlQualifiedName("Point", Wfs20Utilities.GmlNamespace) },
                         new GeometryOperand { Name = new XmlQualifiedName("LineString", Wfs20Utilities.GmlNamespace) },
-                        new GeometryOperand { Name = new XmlQualifiedName("LinearRing", Wfs20Utilities.GmlNamespace) },
                         new GeometryOperand { Name = new XmlQualifiedName("Curve", Wfs20Utilities.GmlNamespace) },
                         new GeometryOperand { Name = new XmlQualifiedName("Polygon", Wfs20Utilities.GmlNamespace) },
-                        new GeometryOperand { Name = new XmlQualifiedName("Surface", Wfs20Utilities.GmlNamespace) },
-
-                        // Multi-geometry types
-                        new GeometryOperand { Name = new XmlQualifiedName("MultiPoint", Wfs20Utilities.GmlNamespace) },
-                        new GeometryOperand { Name = new XmlQualifiedName("MultiLineString", Wfs20Utilities.GmlNamespace) },
-                        new GeometryOperand { Name = new XmlQualifiedName("MultiCurve", Wfs20Utilities.GmlNamespace) },
-                        new GeometryOperand { Name = new XmlQualifiedName("MultiPolygon", Wfs20Utilities.GmlNamespace) },
-                        new GeometryOperand { Name = new XmlQualifiedName("MultiSurface", Wfs20Utilities.GmlNamespace) },
-                        new GeometryOperand { Name = new XmlQualifiedName("MultiGeometry", Wfs20Utilities.GmlNamespace) },
-                        new GeometryOperand { Name = new XmlQualifiedName("GeometryCollection", Wfs20Utilities.GmlNamespace) }
+                        new GeometryOperand { Name = new XmlQualifiedName("Surface", Wfs20Utilities.GmlNamespace) }
                     ]
                 },
                 SpatialOperators = new SpatialOperators
@@ -609,13 +619,11 @@ internal sealed partial class Wfs20Handler
                         new Models.SpatialOperator { Name = "Overlaps" },
                         new Models.SpatialOperator { Name = "Disjoint" },
                         new Models.SpatialOperator { Name = "Equals" },
+                        new Models.SpatialOperator { Name = "EnvelopeIntersects" },
 
                         // Distance operators
                         new Models.SpatialOperator { Name = "DWithin" },
-                        new Models.SpatialOperator { Name = "Beyond" },
-
-                        // Additional spatial predicates
-                        new Models.SpatialOperator { Name = "Relate" }
+                        new Models.SpatialOperator { Name = "Beyond" }
                     ]
                 }
             },
@@ -630,34 +638,29 @@ internal sealed partial class Wfs20Handler
                         new TemporalOperand { Name = new XmlQualifiedName("TimePosition", Wfs20Utilities.GmlNamespace) },
 
                         // Time period types
-                        new TemporalOperand { Name = new XmlQualifiedName("TimePeriod", Wfs20Utilities.GmlNamespace) },
-                        new TemporalOperand { Name = new XmlQualifiedName("TimeInterval", Wfs20Utilities.GmlNamespace) },
-
-                        // Additional temporal types
-                        new TemporalOperand { Name = new XmlQualifiedName("TimeNode", Wfs20Utilities.GmlNamespace) },
-                        new TemporalOperand { Name = new XmlQualifiedName("TimeEdge", Wfs20Utilities.GmlNamespace) }
+                        new TemporalOperand { Name = new XmlQualifiedName("TimePeriod", Wfs20Utilities.GmlNamespace) }
                     ]
                 },
                 TemporalOperators = new TemporalOperators
                 {
                     Operators =
                     [
-                        // All supported temporal operators per OGC Filter Encoding 2.0
+                        // All supported temporal operators per OGC Filter Encoding 2.0 / CQL2.
                         new Models.TemporalOperator { Name = "After" },
                         new Models.TemporalOperator { Name = "Before" },
-                        new Models.TemporalOperator { Name = "Contains" },
-                        new Models.TemporalOperator { Name = "Disjoint" },
                         new Models.TemporalOperator { Name = "During" },
+                        new Models.TemporalOperator { Name = "Contains" },
                         new Models.TemporalOperator { Name = "Equals" },
-                        new Models.TemporalOperator { Name = "FinishedBy" },
-                        new Models.TemporalOperator { Name = "Finishes" },
+                        new Models.TemporalOperator { Name = "Disjoint" },
                         new Models.TemporalOperator { Name = "Intersects" },
                         new Models.TemporalOperator { Name = "Meets" },
                         new Models.TemporalOperator { Name = "MetBy" },
-                        new Models.TemporalOperator { Name = "OverlappedBy" },
                         new Models.TemporalOperator { Name = "Overlaps" },
+                        new Models.TemporalOperator { Name = "OverlappedBy" },
+                        new Models.TemporalOperator { Name = "Starts" },
                         new Models.TemporalOperator { Name = "StartedBy" },
-                        new Models.TemporalOperator { Name = "Starts" }
+                        new Models.TemporalOperator { Name = "Finishes" },
+                        new Models.TemporalOperator { Name = "FinishedBy" }
                     ]
                 }
             },
@@ -665,66 +668,58 @@ internal sealed partial class Wfs20Handler
             {
                 Functions =
                 [
-                    // String functions
-                    CreateFunctionDefinition("UPPER", "string", [("value", "string")]),
-                    CreateFunctionDefinition("LOWER", "string", [("value", "string")]),
-                    CreateFunctionDefinition("CONCAT", "string", [("string1", "string"), ("string2", "string")]),
-                    CreateFunctionDefinition("SUBSTRING", "string", [("value", "string"), ("start", "integer"), ("length", "integer")]),
-                    CreateFunctionDefinition("LENGTH", "integer", [("value", "string")]),
-                    CreateFunctionDefinition("TRIM", "string", [("value", "string")]),
-                    CreateFunctionDefinition("REPLACE", "string", [("value", "string"), ("search", "string"), ("replace", "string")]),
-
-                    // Math functions
-                    CreateFunctionDefinition("ABS", "number", [("value", "number")]),
-                    CreateFunctionDefinition("CEIL", "integer", [("value", "number")]),
-                    CreateFunctionDefinition("FLOOR", "integer", [("value", "number")]),
-                    CreateFunctionDefinition("ROUND", "number", [("value", "number"), ("precision", "integer")]),
-                    CreateFunctionDefinition("SQRT", "number", [("value", "number")]),
-                    CreateFunctionDefinition("SIN", "number", [("value", "number")]),
-                    CreateFunctionDefinition("COS", "number", [("value", "number")]),
-                    CreateFunctionDefinition("TAN", "number", [("value", "number")]),
-                    CreateFunctionDefinition("LOG", "number", [("value", "number")]),
-                    CreateFunctionDefinition("EXP", "number", [("value", "number")]),
-                    CreateFunctionDefinition("POWER", "number", [("base", "number"), ("exponent", "number")]),
-                    CreateFunctionDefinition("MOD", "number", [("dividend", "number"), ("divisor", "number")]),
-
-                    // Date/time functions
-                    CreateFunctionDefinition("YEAR", "integer", [("date", "date")]),
-                    CreateFunctionDefinition("MONTH", "integer", [("date", "date")]),
-                    CreateFunctionDefinition("DAY", "integer", [("date", "date")]),
-                    CreateFunctionDefinition("HOUR", "integer", [("date", "date")]),
-                    CreateFunctionDefinition("MINUTE", "integer", [("date", "date")]),
-                    CreateFunctionDefinition("SECOND", "integer", [("date", "date")]),
-                    CreateFunctionDefinition("NOW", "date", []),
-
-                    // Spatial functions
-                    CreateFunctionDefinition("ST_Area", "number", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_Length", "number", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_Perimeter", "number", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_Distance", "number", [("geometry1", "geometry"), ("geometry2", "geometry")]),
-                    CreateFunctionDefinition("ST_Centroid", "geometry", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_Buffer", "geometry", [("geometry", "geometry"), ("distance", "number")]),
-                    CreateFunctionDefinition("ST_Envelope", "geometry", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_ConvexHull", "geometry", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_Boundary", "geometry", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_NumGeometries", "integer", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_GeometryType", "string", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_SRID", "integer", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_IsValid", "boolean", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_IsSimple", "boolean", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_IsClosed", "boolean", [("geometry", "geometry")]),
-                    CreateFunctionDefinition("ST_IsEmpty", "boolean", [("geometry", "geometry")]),
-
-                    // Aggregate functions
-                    CreateFunctionDefinition("COUNT", "integer", [("value", "any")]),
-                    CreateFunctionDefinition("SUM", "number", [("value", "number")]),
-                    CreateFunctionDefinition("AVG", "number", [("value", "number")]),
-                    CreateFunctionDefinition("MIN", "any", [("value", "any")]),
-                    CreateFunctionDefinition("MAX", "any", [("value", "any")]),
-
-                    // Type conversion functions
-                    CreateFunctionDefinition("CAST", "any", [("value", "any"), ("type", "string")]),
-                    CreateFunctionDefinition("COALESCE", "any", [("value1", "any"), ("value2", "any")])
+                    CreateFunction("ST_Area", "xsd:double"),
+                    CreateFunction("ST_Length", "xsd:double"),
+                    CreateFunction("ST_Perimeter", "xsd:double"),
+                    CreateFunction("ST_Distance", "xsd:double"),
+                    CreateFunction("ST_Buffer", "gml:AbstractGeometryType"),
+                    CreateFunction("ST_Centroid", "gml:PointPropertyType"),
+                    CreateFunction("ST_Envelope", "gml:EnvelopeType"),
+                    CreateFunction("ST_ConvexHull", "gml:AbstractGeometryType"),
+                    CreateFunction("ST_Boundary", "gml:AbstractGeometryType"),
+                    CreateFunction("ST_IsValid", "xsd:boolean"),
+                    CreateFunction("ST_IsSimple", "xsd:boolean"),
+                    CreateFunction("ST_IsClosed", "xsd:boolean"),
+                    CreateFunction("ST_IsEmpty", "xsd:boolean"),
+                    CreateFunction("ST_GeometryType", "xsd:string"),
+                    CreateFunction("ST_NumGeometries", "xsd:integer"),
+                    CreateFunction("ST_SRID", "xsd:integer"),
+                    CreateFunction("UPPER", "xsd:string"),
+                    CreateFunction("LOWER", "xsd:string"),
+                    CreateFunction("CONCAT", "xsd:string"),
+                    CreateFunction("LENGTH", "xsd:integer"),
+                    CreateFunction("CHAR_LENGTH", "xsd:integer"),
+                    CreateFunction("SUBSTRING", "xsd:string"),
+                    CreateFunction("TRIM", "xsd:string"),
+                    CreateFunction("REPLACE", "xsd:string"),
+                    CreateFunction("POSITION", "xsd:integer"),
+                    CreateFunction("ABS", "xsd:double"),
+                    CreateFunction("CEIL", "xsd:double"),
+                    CreateFunction("CEILING", "xsd:double"),
+                    CreateFunction("FLOOR", "xsd:double"),
+                    CreateFunction("ROUND", "xsd:double"),
+                    CreateFunction("SQRT", "xsd:double"),
+                    CreateFunction("POWER", "xsd:double"),
+                    CreateFunction("MOD", "xsd:double"),
+                    CreateFunction("SIN", "xsd:double"),
+                    CreateFunction("COS", "xsd:double"),
+                    CreateFunction("TAN", "xsd:double"),
+                    CreateFunction("LOG", "xsd:double"),
+                    CreateFunction("EXP", "xsd:double"),
+                    CreateFunction("YEAR", "xsd:integer"),
+                    CreateFunction("MONTH", "xsd:integer"),
+                    CreateFunction("DAY", "xsd:integer"),
+                    CreateFunction("HOUR", "xsd:integer"),
+                    CreateFunction("MINUTE", "xsd:integer"),
+                    CreateFunction("SECOND", "xsd:integer"),
+                    CreateFunction("NOW", "xsd:dateTime"),
+                    CreateFunction("CURRENT_DATE", "xsd:date"),
+                    CreateFunction("CURRENT_TIMESTAMP", "xsd:dateTime"),
+                    CreateFunction("COUNT", "xsd:integer"),
+                    CreateFunction("SUM", "xsd:double"),
+                    CreateFunction("AVG", "xsd:double"),
+                    CreateFunction("MIN", "xsd:anyType"),
+                    CreateFunction("MAX", "xsd:anyType")
                 ]
             }
         };
@@ -742,22 +737,12 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static FunctionDefinition CreateFunctionDefinition(string name, string returnType, (string Name, string Type)[] arguments)
+    private static FunctionDefinition CreateFunction(string name, string returnType)
     {
         return new FunctionDefinition
         {
             Name = name,
-            Returns = new FunctionReturn { Type = returnType },
-            Arguments = arguments.Length > 0
-                ? new FunctionArguments
-                {
-                    Arguments = arguments.Select(arg => new FunctionArgument
-                    {
-                        Name = arg.Name,
-                        Type = arg.Type
-                    }).ToArray()
-                }
-                : null
+            Returns = new FunctionReturn { Type = returnType }
         };
     }
 

@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -24,6 +26,10 @@ internal sealed class Wfs20QueryServices(
     IFeatureWriter featureWriter,
     IGmlFeatureStore gmlFeatureStore,
     IFilterExpressionService filterExpressionService,
+    IQueryParameterAdapter<Wfs20QueryRequest> queryParameterAdapter,
+    IQueryProcessor queryProcessor,
+    IEditParameterAdapter<Wfs20EditRequest> editParameterAdapter,
+    IEditProcessor editProcessor,
     OgcFeaturesGeometryServices geometryServices,
     FeatureMutationValidator mutationValidator,
     FeatureMutationEventService mutationEventService,
@@ -41,6 +47,14 @@ internal sealed class Wfs20QueryServices(
     internal IGmlFeatureStore GmlFeatureStore { get; } = gmlFeatureStore;
 
     internal IFilterExpressionService FilterExpressionService { get; } = filterExpressionService;
+
+    internal IQueryParameterAdapter<Wfs20QueryRequest> QueryParameterAdapter { get; } = queryParameterAdapter;
+
+    internal IQueryProcessor QueryProcessor { get; } = queryProcessor;
+
+    internal IEditParameterAdapter<Wfs20EditRequest> EditParameterAdapter { get; } = editParameterAdapter;
+
+    internal IEditProcessor EditProcessor { get; } = editProcessor;
 
     internal OgcFeaturesGeometryServices GeometryServices { get; } = geometryServices;
 

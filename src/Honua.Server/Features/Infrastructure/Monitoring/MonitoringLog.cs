@@ -70,4 +70,22 @@ internal static partial class MonitoringLog
         Level = LogLevel.Error,
         Message = "Failed to retrieve streaming metrics")]
     public static partial void StreamingMetricsFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4307,
+        Level = LogLevel.Warning,
+        Message = "Failed to get upload queue depth from IUploadQueueMetricsProvider")]
+    public static partial void UploadQueueDepthRetrievalFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4308,
+        Level = LogLevel.Error,
+        Message = "Comprehensive health endpoint failed.")]
+    public static partial void ComprehensiveHealthEndpointFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4309,
+        Level = LogLevel.Error,
+        Message = "Database resilience metrics endpoint failed.")]
+    public static partial void DatabaseResilienceMetricsEndpointFailed(ILogger logger, Exception exception);
 }

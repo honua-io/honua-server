@@ -97,7 +97,7 @@ internal static partial class LicenseEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to retrieve license status");
+            LicenseLog.RetrieveLicenseStatusFailed(logger, ex);
             return TypedResults.Problem(
                 title: "License status retrieval failed",
                 detail: "An internal error occurred while retrieving license status.",
@@ -151,7 +151,7 @@ internal static partial class LicenseEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to upload license");
+            LicenseLog.UploadLicenseFailed(logger, ex);
             return TypedResults.Problem(
                 title: "License upload failed",
                 detail: "An internal error occurred while uploading the license.",
@@ -182,7 +182,7 @@ internal static partial class LicenseEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to retrieve entitlements");
+            LicenseLog.RetrieveEntitlementsFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Entitlement retrieval failed",
                 detail: "An internal error occurred while retrieving entitlements.",

@@ -112,7 +112,7 @@ public sealed class EmulatorAwsS3CloudStorageImportTests : IAsyncLifetime
 
     [EmulatorTest(BucketEnv, RegionEnv, AccessKeyEnv, SecretKeyEnv, ServiceUrlEnv, ForcePathStyleEnv)]
     [Endpoint("POST /api/v1/admin/import/upload")]
-    public async Task Upload_FileGdbViaS3CloudStaging_ImportsSuccessfully()
+    public async Task Upload_MultiLayerFileGdbViaS3CloudStaging_FailsWithoutMergingLayers()
     {
         var fileGdbPath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "testopenfilegdb.gdb.zip");
         if (!File.Exists(fileGdbPath))
@@ -154,9 +154,10 @@ public sealed class EmulatorAwsS3CloudStorageImportTests : IAsyncLifetime
             };
 
             var result = await importService.ImportFileAsync(importRequest);
-            result.Success.Should().BeTrue();
+            result.Success.Should().BeFalse();
             result.TableName.Should().Be(tableName);
             result.Format.Should().Be(SupportedFileFormat.FileGdb);
+            result.ErrorMessage.Should().Contain("multiple feature classes");
         }
         finally
         {

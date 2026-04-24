@@ -57,7 +57,7 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to acquire alert evaluator advisory lock.");
+            PostgresAdvisoryLockLeaderElectionLog.AdvisoryLockAcquireFailed(_logger, ex);
             return false;
         }
         finally

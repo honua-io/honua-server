@@ -128,7 +128,7 @@ public class ImageServerMetadataHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
-    public async Task GetServiceInfoAsync_ResponseAdvertisesCachedTileContract()
+    public async Task GetServiceInfoAsync_ResponseDoesNotAdvertiseUnroutedTilemapContract()
     {
         SetupSuccessfulMetadata();
 
@@ -137,14 +137,12 @@ public class ImageServerMetadataHandlerTests
 
         var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
         jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Capabilities.Should().Contain("Tilemap");
-        jsonResult.Value.SingleFusedMapCache.Should().BeTrue();
-        jsonResult.Value.CacheType.Should().Be("Map");
-        jsonResult.Value.TileInfo.Should().NotBeNull();
-        jsonResult.Value.TileInfo!.Rows.Should().Be(256);
-        jsonResult.Value.TileInfo.Cols.Should().Be(256);
-        jsonResult.Value.TileInfo.Format.Should().Be("PNG");
-        jsonResult.Value.TileInfo.SpatialReference.Wkid.Should().Be(3857);
+        jsonResult!.Value!.Capabilities.Should().NotContain("Tilemap");
+        jsonResult.Value.SingleFusedMapCache.Should().BeFalse();
+        jsonResult.Value.CacheType.Should().BeNull();
+        jsonResult.Value.TileInfo.Should().BeNull();
+        jsonResult.Value.MaxImageWidth.Should().Be(4096);
+        jsonResult.Value.MaxImageHeight.Should().Be(4096);
     }
 
     [UnitTest]

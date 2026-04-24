@@ -71,7 +71,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Alerts:Enabled"] = "false",
-                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test",
+                ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString,
+                ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString,
                 // Avoid live DNS dependency during startup validation in tests.
                 ["Geocoding:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
                 ["Geocoding:Providers:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,

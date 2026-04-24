@@ -65,9 +65,19 @@ public sealed class OutputCacheTtlOptions
     public TimeSpan OgcTilesConformance { get; set; } = TimeSpan.FromHours(1);
 
     /// <summary>
+    /// OGC Maps landing page cache duration. Default: 30 minutes.
+    /// </summary>
+    public TimeSpan OgcMapsLandingPage { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>
     /// OGC Maps conformance endpoint cache duration. Default: 1 hour.
     /// </summary>
     public TimeSpan OgcMapsConformance { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// OGC Maps OpenAPI spec cache duration. Default: 1 hour.
+    /// </summary>
+    public TimeSpan OgcMapsOpenApi { get; set; } = TimeSpan.FromHours(1);
 
     /// <summary>
     /// OGC Tiles OpenAPI spec cache duration. Default: 1 hour.

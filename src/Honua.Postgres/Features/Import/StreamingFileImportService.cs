@@ -13,6 +13,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -64,7 +65,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             [".gpkg"] = SupportedFileFormat.GeoPackage,
             [".gpx"] = SupportedFileFormat.Gpx,
             [".csv"] = SupportedFileFormat.Csv,
-            [".gdb"] = SupportedFileFormat.FileGdb,
             [".parquet"] = SupportedFileFormat.GeoParquet,
             [".geoparquet"] = SupportedFileFormat.GeoParquet,
             [".fgb"] = SupportedFileFormat.FlatGeobuf
@@ -236,9 +236,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             {
                 geoPackageScratch = await PrepareGeoPackageScratchAsync(fileStream, cancellationToken);
                 var layers = await GetGeoPackageLayersAsync(geoPackageScratch.FilePath, cancellationToken);
-                if (layers.Count == 0)
+                GeoPackageLayerInfo layer;
+                try
                 {
-                    errorMessage = "GeoPackage does not contain any feature layers.";
+                    layer = ResolveSingleGeoPackageImportLayer(layers);
+                }
+                catch (InvalidDataException ex)
+                {
+                    errorMessage = ex.Message;
                     result = ImportResult.CreateFailure(
                         request.TableName,
                         format.Value,
@@ -248,7 +253,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     return result;
                 }
 
-                var layer = layers[0];
                 detectedSrid = layer.Srid;
 
                 if (shouldDisposeStream)
@@ -310,7 +314,22 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             else if (format.Value == SupportedFileFormat.FileGdb)
             {
                 fileGdbScratch = await PrepareFileGdbScratchAsync(fileStream, cancellationToken);
-                detectedSrid = FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
+                var layers = FileGdb.FileGdbReader.DiscoverLayers(fileGdbScratch.GdbPath);
+                if (layers.Length > 1)
+                {
+                    errorMessage = FileGdb.FileGdbReader.BuildMultiLayerImportMessage(layers);
+                    result = ImportResult.CreateFailure(
+                        request.TableName,
+                        format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed,
+                        warnings);
+                    return result;
+                }
+
+                detectedSrid = layers.Length == 1 && layers[0].Srid > 0
+                    ? layers[0].Srid
+                    : FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
             else if (format.Value == SupportedFileFormat.GeoParquet)
@@ -589,7 +608,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         Stream fileStream,
         SupportedFileFormat format,
         int sourceSrid,
-        IReadOnlyList<string> warnings,
+        string[] warnings,
         IProgress<ImportProgress>? progress,
         string jobId,
         CancellationToken cancellationToken,
@@ -707,7 +726,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
         // Surface skipped null-geometry rows in the completion progress report
         // so background/queued imports expose the same warning as synchronous results.
-        var completionWarningsBuilder = new List<string>(warnings.Count + 2);
+        var completionWarningsBuilder = new List<string>(warnings.Length + 2);
         completionWarningsBuilder.AddRange(warnings);
         if (format == SupportedFileFormat.GeoParquet && nullGeometrySkipped > 0)
         {
@@ -999,7 +1018,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             }
         }
 
-        var wkb = wkbWriter.Write(feature.Geometry);
+        var writer = HasZ(feature.Geometry)
+            ? new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false)
+            : wkbWriter;
+        var wkb = writer.Write(feature.Geometry);
 
         if (_limits.ValidateGeometry && wkb.Length > _limits.MaxWkbSize)
         {
@@ -1014,6 +1036,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
         return wkb;
     }
+
+    private static bool HasZ(NtsGeometry geometry)
+        => geometry.Coordinates.Any(coordinate => !double.IsNaN(coordinate.Z));
 
     /// <summary>
     /// Validates a geometry against configured limits.
@@ -1261,6 +1286,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         GeoPackageScratch? geoPackageScratch = null;
         KmzScratch? kmzScratch = null;
         FileGdbScratch? fileGdbScratch = null;
+        GeoPackageLayerInfo? previewGeoPackageLayer = null;
+        FileGdb.FileGdbReader.FileGdbLayerInfo? previewFileGdbLayer = null;
         GeoParquetScratch? geoParquetScratch = null;
         long? geoParquetTotalRows = null;
         FileStream? fgbTempStream = null;
@@ -1281,6 +1308,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 }
 
                 availableLayers = layers.Select(layer => layer.TableName).ToArray();
+                previewGeoPackageLayer = layers[0];
                 detectedSrid = layers[0].Srid;
             }
             else if (format.Value == SupportedFileFormat.Shapefile)
@@ -1305,13 +1333,27 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     Options = FileOptions.Asynchronous | FileOptions.SequentialScan
                 });
                 fileStream = kmzStream;
-                detectedSrid = 4326;
+                detectedSrid = SpatialConstants.DefaultSrid;
             }
             else if (format.Value == SupportedFileFormat.FileGdb)
             {
                 fileGdbScratch = await PrepareFileGdbScratchAsync(fileStream, cancellationToken);
-                detectedSrid = FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
+                var layers = FileGdb.FileGdbReader.DiscoverLayers(fileGdbScratch.GdbPath);
+                availableLayers = layers.Select(layer => layer.Name).ToArray();
+                previewFileGdbLayer = layers.Length > 0 ? layers[0] : null;
+                detectedSrid = layers.FirstOrDefault(layer => layer.Srid > 0).Srid;
+                if (detectedSrid <= 0)
+                {
+                    detectedSrid = FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
+                }
+
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
+                if (layers.Length > 1)
+                {
+                    warnings = warnings
+                        .Append(FileGdb.FileGdbReader.BuildMultiLayerImportMessage(layers))
+                        .ToArray();
+                }
             }
             else if (format.Value == SupportedFileFormat.GeoParquet)
             {
@@ -1395,8 +1437,13 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.FlatGeobuf => FlatGeobufFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
-                SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(geoPackageScratch!.FilePath, cancellationToken),
-                SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(fileGdbScratch!.GdbPath, cancellationToken),
+                SupportedFileFormat.GeoPackage => ReadGeoPackageLayerAsync(
+                    geoPackageScratch!.FilePath,
+                    previewGeoPackageLayer ?? throw new InvalidOperationException("GeoPackage preview layer was not prepared."),
+                    cancellationToken),
+                SupportedFileFormat.FileGdb => previewFileGdbLayer.HasValue
+                    ? FileGdb.FileGdbReader.ReadLayerStreamingAsync(fileGdbScratch!.GdbPath, previewFileGdbLayer.Value, cancellationToken)
+                    : EmptyFeatureStream(cancellationToken),
                 SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(fileStream, cancellationToken),
                 _ => throw new NotSupportedException($"Preview not supported for format: {format}")
             };
@@ -1644,6 +1691,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     }
 
     private sealed record GeoPackageLayerInfo(string TableName, string GeometryColumn, int? Srid);
+
+    private static async IAsyncEnumerable<IFeature> EmptyFeatureStream(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await Task.CompletedTask;
+        yield break;
+    }
 
     /// <summary>
     /// Copies a non-seekable stream into a seekable temporary file (DeleteOnClose).
@@ -2124,8 +2179,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     continue; // directory entry
                 }
 
-                // Security: prevent path traversal. The trailing separator ensures
-                // a sibling directory that shares a prefix cannot pass the check.
+                // Security: prevent path traversal with multiple layers of protection
+                if (string.IsNullOrEmpty(entry.FullName) || entry.FullName.Contains("..") ||
+                    entry.FullName.StartsWith('/') || entry.FullName.StartsWith('\\'))
+                {
+                    throw new InvalidDataException("Archive contains invalid entry name.");
+                }
+
+                // The trailing separator ensures a sibling directory that shares a prefix cannot pass the check.
                 var normalizedRoot = scratchDir.EndsWith(Path.DirectorySeparatorChar)
                     ? scratchDir
                     : scratchDir + Path.DirectorySeparatorChar;
@@ -2211,10 +2272,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 continue;
             }
 
-            if (!groups.TryGetValue(baseName, out var group))
+            var groupKey = GetShapefileComponentGroupKey(entry, baseName);
+            if (!groups.TryGetValue(groupKey, out var group))
             {
                 group = new ShapefileEntryGroup(baseName);
-                groups.Add(baseName, group);
+                groups.Add(groupKey, group);
             }
 
             switch (extension.ToLowerInvariant())
@@ -2246,6 +2308,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
 
         return null;
+    }
+
+    private static string GetShapefileComponentGroupKey(ZipArchiveEntry entry, string baseName)
+    {
+        var normalizedName = entry.FullName.Replace('\\', '/');
+        var slashIndex = normalizedName.LastIndexOf('/');
+        var directory = slashIndex >= 0 ? normalizedName[..slashIndex] : string.Empty;
+        return string.Concat(directory, "/", baseName);
     }
 
     private static ZipArchiveEntry? SelectKmzKmlEntry(ZipArchive archive)
@@ -2592,16 +2662,32 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var layers = await GetGeoPackageLayersAsync(filePath, cancellationToken);
+        var layer = ResolveSingleGeoPackageImportLayer(layers);
+        await foreach (var feature in ReadGeoPackageLayerAsync(filePath, layer, cancellationToken))
+        {
+            yield return feature;
+        }
+    }
+
+    private static GeoPackageLayerInfo ResolveSingleGeoPackageImportLayer(IReadOnlyList<GeoPackageLayerInfo> layers)
+    {
         if (layers.Count == 0)
         {
             throw new InvalidDataException("GeoPackage does not contain any feature layers.");
         }
 
-        var layer = layers[0];
-        await foreach (var feature in ReadGeoPackageLayerAsync(filePath, layer, cancellationToken))
+        if (layers.Count > 1)
         {
-            yield return feature;
+            throw new InvalidDataException(BuildMultiLayerGeoPackageImportMessage(layers));
         }
+
+        return layers[0];
+    }
+
+    private static string BuildMultiLayerGeoPackageImportMessage(IReadOnlyList<GeoPackageLayerInfo> layers)
+    {
+        var layerNames = string.Join(", ", layers.Select(layer => layer.TableName));
+        return $"GeoPackage contains multiple feature layers ({layerNames}). Import requires a single-layer GeoPackage; preview AvailableLayers lists the source layers to export or split before import.";
     }
 
     private static async IAsyncEnumerable<IFeature> ReadGeoPackageLayerAsync(

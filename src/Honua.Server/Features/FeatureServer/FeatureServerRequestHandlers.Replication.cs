@@ -24,6 +24,154 @@ namespace Honua.Server.Features.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    private static async Task<IResult> HandleReplicas(
+        string serviceId,
+        HttpContext context)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.replicas");
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
+        {
+            return serviceValidationResult.ErrorResult!;
+        }
+
+        if (!TryValidateOutputFormat(
+                context.Request.Query["f"],
+                JsonOnlyFormats,
+                out _,
+                out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, formatError!);
+        }
+
+        if (!TryParseReplicaBooleanQuery(context, "returnLastSyncDate", out var returnLastSyncDate, out var boolError))
+        {
+            return boolError!;
+        }
+
+        var service = serviceValidationResult.Service!;
+        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var accessibleLayerIds = service.Layers
+            .Where(layer => AccessPolicyHelpers.EvaluateAccess(
+                context,
+                layer.Metadata?.AccessPolicy,
+                service.Metadata?.AccessPolicy,
+                AccessScope.Read).IsAllowed)
+            .Select(layer => layer.Id)
+            .ToHashSet();
+
+        var replicaRepository = context.RequestServices.GetRequiredService<IReplicaRepository>();
+        var replicas = await replicaRepository.ListByServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
+
+        var response = replicas
+            .Where(record => record.LayerIds.Length > 0 && record.LayerIds.All(accessibleLayerIds.Contains))
+            .Select(record => new ReplicaSummary
+            {
+                ReplicaName = record.ReplicaName,
+                ReplicaId = record.ReplicaId,
+                LastSyncDate = returnLastSyncDate ? record.LastSyncTime.ToUnixTimeMilliseconds() : null
+            })
+            .ToArray();
+
+        return Results.Json(response, FeatureServerJsonContext.Default.ReplicaSummaryArray, contentType: "application/json");
+    }
+
+    private static async Task<IResult> HandleReplicaInfo(
+        string serviceId,
+        string replicaId,
+        HttpContext context)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.replicaInfo");
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+        activity?.SetTag("honua.replicaId", replicaId);
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
+        {
+            return serviceValidationResult.ErrorResult!;
+        }
+
+        if (!TryValidateOutputFormat(
+                context.Request.Query["f"],
+                JsonOnlyFormats,
+                out _,
+                out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, formatError!);
+        }
+
+        var service = serviceValidationResult.Service!;
+        var replicaRepository = context.RequestServices.GetRequiredService<IReplicaRepository>();
+        var record = await replicaRepository.GetAsync(replicaId, cancellationToken).ConfigureAwait(false);
+        if (record == null || !string.Equals(record.Value.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        var replica = ToReplicaState(record.Value);
+        if (!TryResolveReplicaLayers(context, service, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
+        {
+            return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        var layerServerGens = record.Value.SyncModel.Equals("perLayer", StringComparison.OrdinalIgnoreCase)
+            ? System.Text.Json.JsonSerializer.Serialize(
+                record.Value.LayerIds
+                    .Distinct()
+                    .Select(id => new ReplicaInfoLayerServerGeneration
+                    {
+                        Id = id,
+                        ServerGen = record.Value.LastSyncGeneration,
+                        ServerSibGen = record.Value.LastSyncGeneration
+                    })
+                    .ToArray(),
+                FeatureServerJsonContext.Default.ReplicaInfoLayerServerGenerationArray)
+            : null;
+
+        var response = new ReplicaInfoResponse
+        {
+            ReplicaName = record.Value.ReplicaName,
+            ReplicaId = record.Value.ReplicaId,
+            SyncModel = record.Value.SyncModel,
+            ReplicaServerGen = record.Value.SyncModel.Equals("perReplica", StringComparison.OrdinalIgnoreCase)
+                ? record.Value.LastSyncGeneration
+                : null,
+            LayerServerGens = layerServerGens,
+            CreationDate = record.Value.CreatedAt.ToUnixTimeMilliseconds(),
+            LastSyncDate = record.Value.LastSyncTime.ToUnixTimeMilliseconds(),
+            Layers = replicaLayers.Select(layer => new ReplicaInfoLayer
+            {
+                Id = layer.Id
+            }).ToArray()
+        };
+
+        return Results.Json(response, FeatureServerJsonContext.Default.ReplicaInfoResponse, contentType: "application/json");
+    }
+
     private static async Task<IResult> HandleCreateReplica(
         string serviceId,
         HttpContext context)
@@ -45,6 +193,15 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
+
+        var writeAccessError = await RequireAnyServiceLayerWriteAccessBeforeBodyAsync(
+            context,
+            service,
+            cancellationToken);
+        if (writeAccessError != null)
+        {
+            return writeAccessError;
+        }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
@@ -363,6 +520,15 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
 
+        var writeAccessError = await RequireAnyServiceLayerWriteAccessBeforeBodyAsync(
+            context,
+            service,
+            cancellationToken);
+        if (writeAccessError != null)
+        {
+            return writeAccessError;
+        }
+
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
@@ -515,6 +681,15 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
+
+        var writeAccessError = await RequireAnyServiceLayerWriteAccessBeforeBodyAsync(
+            context,
+            service,
+            cancellationToken);
+        if (writeAccessError != null)
+        {
+            return writeAccessError;
+        }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
@@ -707,6 +882,43 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
+    private static bool TryParseReplicaBooleanQuery(
+        HttpContext context,
+        string parameterName,
+        out bool value,
+        out IResult? error)
+    {
+        value = false;
+        error = null;
+
+        if (!context.Request.Query.TryGetValue(parameterName, out var values) || values.Count == 0)
+        {
+            return true;
+        }
+
+        if (bool.TryParse(values[0], out value))
+        {
+            return true;
+        }
+
+        error = StandardErrorHelpers.CreateBadRequest(
+            context,
+            $"{parameterName} must be a boolean value.");
+        return false;
+    }
+
+    private static ReplicaState ToReplicaState(ReplicaRecord record) => new(
+        record.ReplicaId,
+        record.ReplicaName,
+        record.ServiceId,
+        record.SyncModel,
+        record.LayerIds,
+        record.CreatedAt)
+    {
+        LastSyncTime = record.LastSyncTime,
+        LastSyncGeneration = record.LastSyncGeneration
+    };
+
     private static async Task<IResult?> RequireReplicaWriteAccessAsync(
         HttpContext context,
         ServiceDefinition service,
@@ -727,6 +939,33 @@ internal static partial class FeatureServerEndpoints
         }
 
         return null;
+    }
+
+    private static async Task<IResult?> RequireAnyServiceLayerWriteAccessBeforeBodyAsync(
+        HttpContext context,
+        ServiceDefinition service,
+        CancellationToken cancellationToken)
+    {
+        IResult? firstError = null;
+        foreach (var layer in service.Layers.DistinctBy(static layer => layer.Id))
+        {
+            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+                context,
+                layer,
+                service,
+                cancellationToken);
+            if (rbacError == null)
+            {
+                return null;
+            }
+
+            firstError ??= rbacError;
+        }
+
+        return firstError ?? await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            service,
+            cancellationToken);
     }
 
     /// <summary>

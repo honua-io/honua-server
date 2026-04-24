@@ -51,7 +51,6 @@ docs/
 # CI/CD
 .github/
 scripts/
-!scripts/init-db.sql
 
 # Local artifacts not needed for app image builds
 tests/

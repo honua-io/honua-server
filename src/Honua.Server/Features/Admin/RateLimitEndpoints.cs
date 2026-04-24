@@ -102,7 +102,7 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to list rate limit policies");
+            RateLimitLog.ListPoliciesFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Rate limit policy listing failed",
                 detail: "An internal error occurred while listing rate limit policies.",
@@ -145,7 +145,7 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to create rate limit policy");
+            RateLimitLog.CreatePolicyFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Rate limit policy creation failed",
                 detail: "An internal error occurred while creating the rate limit policy.",
@@ -172,7 +172,7 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to get rate limit policy {PolicyId}", id);
+            RateLimitLog.GetPolicyFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Rate limit policy retrieval failed",
                 detail: "An internal error occurred while retrieving the rate limit policy.",
@@ -216,7 +216,7 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to update rate limit policy {PolicyId}", id);
+            RateLimitLog.UpdatePolicyFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Rate limit policy update failed",
                 detail: "An internal error occurred while updating the rate limit policy.",
@@ -244,7 +244,7 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to delete rate limit policy {PolicyId}", id);
+            RateLimitLog.DeletePolicyFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Rate limit policy deletion failed",
                 detail: "An internal error occurred while deleting the rate limit policy.",
@@ -285,7 +285,7 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to get rate limit status for key '{Key}'", key);
+            RateLimitLog.GetStatusFailed(logger, key, ex);
             return TypedResults.Problem(
                 title: "Rate limit status retrieval failed",
                 detail: "An internal error occurred while retrieving rate limit status.",

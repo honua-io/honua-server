@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Globalization;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
@@ -38,7 +38,8 @@ public static partial class OgcMapsEndpoints
             .WithSummary("Get OGC API - Maps landing page")
             .WithDescription("The landing page provides links to the OGC API - Maps definition and related resources")
             .Produces<LandingPage>(StatusCodes.Status200OK, MediaTypes.Json)
-            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html);
+            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html)
+            .CacheOutput("OgcMapsLandingPage");
 
         // Core conformance endpoint
         group.MapGet("/conformance", GetConformance)
@@ -55,7 +56,8 @@ public static partial class OgcMapsEndpoints
             .WithSummary("Get OpenAPI 3.0 specification for OGC API - Maps")
             .WithDescription("The OpenAPI specification describes all available OGC API - Maps endpoints")
             .Produces<object>(StatusCodes.Status200OK, MediaTypes.OpenApi)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .CacheOutput("OgcMapsOpenApi");
 
         // Collection maps - single collection rendering
         group.MapGet("/collections/{collectionId}/map", GetCollectionMap)
@@ -68,6 +70,18 @@ public static partial class OgcMapsEndpoints
             .Produces(StatusCodes.Status200OK, contentType: "image/tiff")
             .Produces(400)
             .Produces(404);
+
+        group.MapGet("/collections/{collectionId}/styles/{styleId}/map", GetStyledCollectionMap)
+            .WithDisplayName("Get Styled Collection Map")
+            .WithName("GetStyledCollectionMap")
+            .WithSummary("Render a styled map from a single collection")
+            .WithDescription("Returns a rendered map image from the specified collection with the requested style applied")
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+            .Produces(StatusCodes.Status200OK, contentType: "image/tiff")
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
 
         // Map TileSets - integration with OGC API - Tiles
         group.MapGet("/collections/{collectionId}/map/tiles", GetCollectionMapTileSets)
@@ -199,12 +213,13 @@ public static partial class OgcMapsEndpoints
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
+        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
+        if (!layerId.HasValue)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
+            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
 
-        return await handler.RenderCollectionMapAsync(layerId, request, context: context, cancellationToken);
+        return await handler.RenderCollectionMapAsync(layerId.Value, request, context: context, cancellationToken);
     }
 
     /// <summary>
@@ -241,9 +256,10 @@ public static partial class OgcMapsEndpoints
             var invalidCollections = new List<string>();
             foreach (var token in collectionTokens)
             {
-                if (TryParseNonNegativeCollectionId(token, out var layerId))
+                var layerId = await ResolveCollectionLayerIdAsync(context, token, cancellationToken);
+                if (layerId.HasValue)
                 {
-                    collectionIds.Add(layerId);
+                    collectionIds.Add(layerId.Value);
                 }
                 else
                 {
@@ -253,7 +269,7 @@ public static partial class OgcMapsEndpoints
 
             if (invalidCollections.Count > 0)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, $"Invalid collection IDs: {string.Join(", ", invalidCollections)}");
+                return StandardErrorHelpers.CreateNotFound(context, $"Collections not found: {string.Join(", ", invalidCollections)}");
             }
 
             if (collectionIds.Count == 0)
@@ -274,6 +290,26 @@ public static partial class OgcMapsEndpoints
     }
 
     /// <summary>
+    /// Get rendered map from a single collection with a named style.
+    /// </summary>
+    private static async Task<IResult> GetStyledCollectionMap(
+        string collectionId,
+        string styleId,
+        [AsParameters] OgcMapRequest request,
+        HttpContext context,
+        OgcMapsRenderingHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
+        if (!layerId.HasValue)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+        }
+
+        return await handler.RenderStyledMapAsync(layerId.Value, styleId, request, context: context, cancellationToken);
+    }
+
+    /// <summary>
     /// Get map tile sets for a collection.
     /// </summary>
     private static async Task<IResult> GetCollectionMapTileSets(
@@ -282,12 +318,13 @@ public static partial class OgcMapsEndpoints
         OgcMapsTileSetHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
+        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
+        if (!layerId.HasValue)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
+            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
 
-        return await handler.GetMapTileSetsAsync(layerId, context: context, cancellationToken);
+        return await handler.GetMapTileSetsAsync(layerId.Value, context: context, cancellationToken);
     }
 
     private static async Task<IResult> GetCollectionMapTileSet(
@@ -297,18 +334,28 @@ public static partial class OgcMapsEndpoints
         OgcMapsTileSetHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
+        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
+        if (!layerId.HasValue)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
+            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
 
-        return await handler.GetMapTileSetAsync(layerId, tileMatrixSetId, context: context, cancellationToken);
+        return await handler.GetMapTileSetAsync(layerId.Value, tileMatrixSetId, context: context, cancellationToken);
     }
 
-    private static bool TryParseNonNegativeCollectionId(string value, out int layerId)
+    private static async Task<int?> ResolveCollectionLayerIdAsync(
+        HttpContext context,
+        string value,
+        CancellationToken cancellationToken)
     {
-        var parsed = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId);
-        return parsed && layerId >= 0;
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var validationResult = await resourceValidator.ValidateCollectionAsync(value, cancellationToken);
+        if (!validationResult.IsValid || validationResult.Resource is null)
+        {
+            return null;
+        }
+
+        return validationResult.Resource.Id;
     }
 
     private static bool HasEmptyCommaSeparatedToken(string value)

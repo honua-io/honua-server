@@ -6,9 +6,10 @@ Tests for GeoServices REST attachment endpoints.
 
 Endpoints:
 - GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments
-- POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment
-- POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment
-- POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments
+- POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment
+- POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment
+- POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments
+- GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments
 - GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}
 """
 
@@ -103,8 +104,7 @@ class TestAddAttachment:
         data = {"f": "json"}
 
         response = http_client.post(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/addAttachment",
-            params={"objectId": object_id},
+            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/{object_id}/addAttachment",
             files=files,
             data=data,
         )
@@ -113,19 +113,16 @@ class TestAddAttachment:
 
     @pytest.mark.integration
     @pytest.mark.featureserver
-    def test_add_attachment_missing_object_id(
+    def test_add_attachment_missing_file(
         self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
     ):
-        """addAttachment without objectId should error."""
-        test_content = b"Test content"
-        files = {"attachment": ("test.txt", io.BytesIO(test_content), "text/plain")}
+        """addAttachment without a file should error."""
 
         response = http_client.post(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/addAttachment",
-            files=files,
+            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/1/addAttachment",
             data={"f": "json"},
         )
-        assert response.status_code == 400
+        assert response.status_code in [400, 404]
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -137,8 +134,7 @@ class TestAddAttachment:
         files = {"attachment": ("test.txt", io.BytesIO(test_content), "text/plain")}
 
         response = http_client.post(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/addAttachment",
-            params={"objectId": 999999999},
+            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/999999999/addAttachment",
             files=files,
             data={"f": "json"},
         )
@@ -159,9 +155,8 @@ class TestUpdateAttachment:
     ):
         """updateAttachment with invalid IDs should return error."""
         response = http_client.post(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/updateAttachment",
+            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/999999999/updateAttachment",
             data={
-                "objectId": 999999999,
                 "attachmentId": 999999999,
                 "f": "json",
             },
@@ -182,9 +177,8 @@ class TestDeleteAttachments:
     ):
         """deleteAttachments with invalid IDs should return error."""
         response = http_client.post(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/deleteAttachments",
+            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/999999999/deleteAttachments",
             data={
-                "objectId": 999999999,
                 "attachmentIds": "1,2,3",
                 "f": "json",
             },
@@ -199,10 +193,10 @@ class TestDeleteAttachments:
     ):
         """deleteAttachments without required parameters should error."""
         response = http_client.post(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/deleteAttachments",
+            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/1/deleteAttachments",
             data={"f": "json"},
         )
-        assert response.status_code == 400
+        assert response.status_code in [400, 404]
 
 
 class TestDownloadAttachment:

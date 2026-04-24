@@ -20,6 +20,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Server.Features.MapServer.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using SkiaSharp;
@@ -106,6 +107,7 @@ internal static partial class MapServerEndpoints
             var query = context.Request.Query;
             var service = GetQueryValue(query, "SERVICE");
             var requestType = GetQueryValue(query, "REQUEST");
+            var version = GetQueryValue(query, "VERSION");
 
             if (!string.Equals(service, "WMS", StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(service))
@@ -133,9 +135,23 @@ internal static partial class MapServerEndpoints
                 return CreateWmsServiceException(context, "OperationNotSupported", "MapServer protocol is not enabled for this service.");
             }
 
-            var accessibleLayerCount = svcDef.Layers.Count(layer =>
-                layer.HasGeometry && AccessPolicyHelpers.IsLayerAccessible(context, layer, svcDef));
-            if (accessibleLayerCount == 0)
+            var wmsLayers = svcDef.Layers.Where(static layer => layer.HasGeometry).ToArray();
+            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, wmsLayers, svcDef);
+            if (accessError != null)
+            {
+                var isAuthenticated = context.User?.Identity?.IsAuthenticated == true;
+                return CreateWmsServiceException(
+                    context,
+                    "AccessDenied",
+                    isAuthenticated
+                        ? AccessPolicyHelpers.AccessForbiddenMessage
+                        : AccessPolicyHelpers.AuthRequiredMessage,
+                    isAuthenticated
+                        ? StatusCodes.Status403Forbidden
+                        : StatusCodes.Status401Unauthorized);
+            }
+
+            if (wmsLayers.Length == 0)
             {
                 return CreateWmsServiceException(context, "LayerNotDefined", "No accessible WMS layers are available for this service.");
             }
@@ -143,6 +159,14 @@ internal static partial class MapServerEndpoints
             if (string.IsNullOrWhiteSpace(requestType) ||
                 string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
             {
+                if (!string.IsNullOrWhiteSpace(version) && !IsSupportedWmsVersion(version))
+                {
+                    return CreateWmsServiceException(
+                        context,
+                        "InvalidParameterValue",
+                        $"Unsupported WMS VERSION '{version}'. Supported version is 1.3.0.");
+                }
+
                 if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
                 {
                     return Results.StatusCode(StatusCodes.Status406NotAcceptable);
@@ -188,7 +212,7 @@ internal static partial class MapServerEndpoints
         var stopwatch = Stopwatch.StartNew();
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.MapServerExport, ActivityKind.Internal);
-        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.MapServer);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcMaps);
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "wms-getmap");
 
@@ -295,59 +319,13 @@ internal static partial class MapServerEndpoints
             return CreateWmsServiceException(context, "StyleNotDefined", styleError);
         }
 
-        // OGC WMS 1.3.0 clause 7.3.3.4: optional FILTER parameter (semicolon-delimited FES XML per layer)
-        var filterParam = GetQueryValue(query, "FILTER");
-        SqlFragment?[]? layerFilters = null;
-        if (!string.IsNullOrWhiteSpace(filterParam))
+        var filterResult = TryParseWmsLayerFilters(context, query, renderLayers);
+        if (filterResult.Error != null)
         {
-            var filterTokens = SplitWmsFilterTokens(filterParam);
-            if (filterTokens.Length != 1 && filterTokens.Length != renderLayers.Length)
-            {
-                return CreateWmsServiceException(context, "InvalidParameterValue",
-                    $"FILTER must contain exactly 1 or {renderLayers.Length.ToString(CultureInfo.InvariantCulture)} filter(s), separated by semicolons, matching the number of LAYERS.");
-            }
-
-            var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            layerFilters = new SqlFragment?[renderLayers.Length];
-
-            for (var f = 0; f < renderLayers.Length; f++)
-            {
-                var token = filterTokens.Length == 1 ? filterTokens[0] : filterTokens[f];
-                if (string.IsNullOrWhiteSpace(token))
-                {
-                    continue;
-                }
-
-                FilterExpression expression;
-                try
-                {
-                    expression = Fes20Parser.ParseFilter(token);
-                }
-                catch (Fes20ParseException ex)
-                {
-                    return CreateWmsServiceException(context, "InvalidParameterValue",
-                        $"Invalid FILTER XML: {ex.Message}");
-                }
-
-                expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, renderLayers[f]);
-                if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
-                {
-                    return CreateWmsServiceException(context, "InvalidParameterValue",
-                        "FILTER expression must be a boolean predicate.");
-                }
-
-                var translation = filterExpressionService.Translate(expression, renderLayers[f]);
-                if (!translation.IsSuccess)
-                {
-                    return CreateWmsServiceException(context, "InvalidParameterValue",
-                        translation.ErrorMessage ?? "Invalid filter expression.");
-                }
-
-                layerFilters[f] = translation.SqlFilter;
-            }
-
-            activity?.SetTag("wms.filter_applied", true);
+            return filterResult.Error;
         }
+        var layerFilters = filterResult.Filters;
+        activity?.SetTag("wms.filter_applied", layerFilters is not null);
 
         var effectiveTransparent = transparent && string.Equals(imageFormat, "png", StringComparison.OrdinalIgnoreCase);
         await using var renderLease = await context.RequestServices
@@ -497,7 +475,7 @@ internal static partial class MapServerEndpoints
         MapServerLog.WmsRequested(logger, serviceId, "GetFeatureInfo");
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.MapServerIdentify, ActivityKind.Internal);
-        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.MapServer);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcMaps);
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "wms-getfeatureinfo");
 
@@ -596,6 +574,18 @@ internal static partial class MapServerEndpoints
             return CreateWmsServiceException(context, "InvalidFormat", "Unsupported INFO_FORMAT. Supported values are text/plain and application/json.");
         }
 
+        var filterResult = TryParseWmsLayerFilters(context, query, mapLayers);
+        if (filterResult.Error != null)
+        {
+            return filterResult.Error;
+        }
+        var filtersByLayerId = filterResult.Filters is null
+            ? null
+            : mapLayers
+                .Select((layer, index) => (layer.Id, Filter: filterResult.Filters[index]))
+                .Where(item => item.Filter is not null)
+                .ToDictionary(item => item.Id, item => item.Filter);
+
         var featureCount = WmsDefaultFeatureInfoCount;
         var featureCountRaw = GetQueryValue(query, "FEATURE_COUNT");
         if (!string.IsNullOrWhiteSpace(featureCountRaw))
@@ -657,7 +647,7 @@ internal static partial class MapServerEndpoints
         var remaining = Math.Min(featureCount, 1000);
 
         var plainText = new StringBuilder();
-        var jsonFeatures = new List<object>();
+        var jsonFeatures = new List<WmsFeatureInfoFeature>();
 
         foreach (var layer in queryLayers)
         {
@@ -669,6 +659,9 @@ internal static partial class MapServerEndpoints
             var featureQuery = new FeatureQuery
             {
                 SpatialFilter = spatialFilter,
+                SqlFilter = filtersByLayerId != null && filtersByLayerId.TryGetValue(layer.Id, out var sqlFilter)
+                    ? sqlFilter
+                    : null,
                 SpatialReferenceSrid = service.SpatialReference.Srid,
                 OutputSrid = requestSrid,
                 Limit = remaining
@@ -689,19 +682,20 @@ internal static partial class MapServerEndpoints
 
                 remaining--;
                 var layerName = GetWmsLayerName(layer);
+                var attributes = BuildVisibleFeatureInfoAttributes(item);
 
                 if (string.Equals(infoFormat, WmsJsonMimeType, StringComparison.OrdinalIgnoreCase))
                 {
-                    jsonFeatures.Add(new
+                    jsonFeatures.Add(new WmsFeatureInfoFeature
                     {
-                        layer = layerName,
-                        attributes = item.Attributes
+                        Layer = layerName,
+                        Attributes = attributes
                     });
                     continue;
                 }
 
                 plainText.Append("Layer=").Append(layerName).AppendLine();
-                foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+                foreach (var attribute in attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
                 {
                     plainText.Append(attribute.Key)
                         .Append('=')
@@ -715,13 +709,12 @@ internal static partial class MapServerEndpoints
 
         if (string.Equals(infoFormat, WmsJsonMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            var payload = new
+            var payload = new WmsFeatureInfoResponse
             {
-                type = "FeatureInfoResponse",
-                features = jsonFeatures
+                Features = [.. jsonFeatures]
             };
 
-            return Results.Json(payload, contentType: WmsJsonMimeType);
+            return Results.Json(payload, MapServerJsonContext.Default.WmsFeatureInfoResponse, contentType: WmsJsonMimeType);
         }
 
         var body = plainText.Length > 0
@@ -787,6 +780,68 @@ internal static partial class MapServerEndpoints
 
         layers = [.. resolved];
         return true;
+    }
+
+    private static (SqlFragment?[]? Filters, IResult? Error) TryParseWmsLayerFilters(
+        HttpContext context,
+        IQueryCollection query,
+        LayerDefinition[] layers)
+    {
+        // OGC WMS 1.3.0 clause 7.3.3.4: optional FILTER parameter
+        // (semicolon-delimited FES XML per layer).
+        var filterParam = GetQueryValue(query, "FILTER");
+        if (string.IsNullOrWhiteSpace(filterParam))
+        {
+            return (null, null);
+        }
+
+        var filterTokens = SplitWmsFilterTokens(filterParam);
+        if (filterTokens.Length != 1 && filterTokens.Length != layers.Length)
+        {
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                $"FILTER must contain exactly 1 or {layers.Length.ToString(CultureInfo.InvariantCulture)} filter(s), separated by semicolons, matching the number of LAYERS."));
+        }
+
+        var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+        var layerFilters = new SqlFragment?[layers.Length];
+
+        for (var i = 0; i < layers.Length; i++)
+        {
+            var token = filterTokens.Length == 1 ? filterTokens[0] : filterTokens[i];
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                continue;
+            }
+
+            FilterExpression expression;
+            try
+            {
+                expression = Fes20Parser.ParseFilter(token);
+            }
+            catch (Fes20ParseException ex)
+            {
+                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                    $"Invalid FILTER XML: {ex.Message}"));
+            }
+
+            expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, layers[i]);
+            if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
+            {
+                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                    "FILTER expression must be a boolean predicate."));
+            }
+
+            var translation = filterExpressionService.Translate(expression, layers[i]);
+            if (!translation.IsSuccess)
+            {
+                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                    translation.ErrorMessage ?? "Invalid filter expression."));
+            }
+
+            layerFilters[i] = translation.SqlFilter;
+        }
+
+        return (layerFilters, null);
     }
 
     private static bool TryParseWmsBbox(
@@ -1115,6 +1170,22 @@ internal static partial class MapServerEndpoints
         }
 
         return value.ToString() ?? string.Empty;
+    }
+
+    private static Dictionary<string, object?> BuildVisibleFeatureInfoAttributes(Feature feature)
+    {
+        var attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var attribute in feature.Attributes)
+        {
+            if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
+            {
+                continue;
+            }
+
+            attributes[attribute.Key] = Honua.Server.Features.FeatureServer.Models.GeoServicesValueNormalizer.Normalize(attribute.Value);
+        }
+
+        return attributes;
     }
 
     private static bool TryGetRequiredQueryValue(

@@ -18,6 +18,12 @@ namespace Honua.Server.Features.HealthCheck;
 /// </summary>
 internal static class ProductionHealthChecks
 {
+    private static readonly string[] DatabaseTags = ["db", "sql", "postgres"];
+    private static readonly string[] RedisTags = ["cache", "redis"];
+    private static readonly string[] UploadTags = ["upload", "queue"];
+    private static readonly string[] ExternalServiceTags = ["external", "http"];
+    private static readonly string[] MetricsTags = ["metrics", "monitoring"];
+
     /// <summary>
     /// Adds production health checks to the service collection.
     /// </summary>
@@ -36,7 +42,7 @@ internal static class ProductionHealthChecks
             healthChecksBuilder.AddCheck<DatabaseHealthCheck>(
                 "database",
                 HealthStatus.Degraded,
-                new[] { "db", "sql", "postgres" });
+                DatabaseTags);
         }
 
         // Redis cache health check (if Redis is configured)
@@ -46,26 +52,26 @@ internal static class ProductionHealthChecks
             healthChecksBuilder.AddCheck<RedisHealthCheck>(
                 "redis",
                 HealthStatus.Degraded,
-                new[] { "cache", "redis" });
+                RedisTags);
         }
 
         // File upload service health check
         healthChecksBuilder.AddCheck<FileUploadHealthCheck>(
             "file-upload",
             HealthStatus.Degraded,
-            new[] { "upload", "queue" });
+            UploadTags);
 
         // External service connectivity checks
         healthChecksBuilder.AddCheck<ExternalServiceHealthCheck>(
             "external-services",
             HealthStatus.Degraded,
-            new[] { "external", "http" });
+            ExternalServiceTags);
 
         // Production metrics health check
         healthChecksBuilder.AddCheck<ProductionMetricsHealthCheck>(
             "production-metrics",
             HealthStatus.Degraded,
-            new[] { "metrics", "monitoring" });
+            MetricsTags);
 
         return services;
     }
@@ -179,7 +185,7 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Database health check failed");
+            ProductionHealthChecksLog.DatabaseHealthCheckFailed(_logger, ex);
             return HealthCheckResult.Unhealthy(
                 "Database connectivity failed",
                 ex,
@@ -276,7 +282,7 @@ internal sealed class RedisHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Redis health check failed");
+            ProductionHealthChecksLog.RedisHealthCheckFailed(_logger, ex);
             return HealthCheckResult.Unhealthy(
                 "Redis connectivity failed",
                 ex,
@@ -355,7 +361,7 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "File upload health check failed");
+            ProductionHealthChecksLog.FileUploadHealthCheckFailed(_logger, ex);
             return HealthCheckResult.Unhealthy(
                 "File upload service check failed",
                 ex,
@@ -403,7 +409,7 @@ internal sealed class ExternalServiceHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "External service health check failed");
+            ProductionHealthChecksLog.ExternalServiceHealthCheckFailed(_logger, ex);
             return Task.FromResult(HealthCheckResult.Degraded(
                 "External service connectivity check failed",
                 ex,
@@ -468,7 +474,7 @@ internal sealed class ProductionMetricsHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Production metrics health check failed");
+            ProductionHealthChecksLog.ProductionMetricsHealthCheckFailed(_logger, ex);
             return HealthCheckResult.Degraded(
                 "Production metrics collection failed",
                 ex,

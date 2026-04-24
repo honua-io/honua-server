@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.GeometryService.Models;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -24,7 +25,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_PointGeometry_ReturnsPolygon()
     {
         var body = """
@@ -41,7 +42,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
         response.Be200Ok();
 
@@ -58,7 +59,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_GeodesicProjectedInSR_ReturnsPolygon()
     {
         var body = """
@@ -75,7 +76,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
         response.Be200Ok();
 
@@ -91,7 +92,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_NonGeodesicGeographicInput_UsesLinearDistanceUnits()
     {
         var body = """
@@ -108,7 +109,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
         response.Be200Ok();
 
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -136,7 +137,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_MultipleDistances_ReturnsMultipleGeometries()
     {
         var body = """
@@ -156,7 +157,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
         response.Be200Ok();
 
@@ -165,12 +166,12 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
             responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
 
         result.Should().NotBeNull();
-        result!.Geometries.Should().HaveCount(2);
+        result!.Geometries.Should().HaveCount(4, "ArcGIS buffers each input geometry at each requested distance");
     }
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_UnionResults_ReturnsSingleGeometry()
     {
         var body = """
@@ -191,7 +192,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
         response.Be200Ok();
 
@@ -205,7 +206,42 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
+    public async Task Buffer_MultipleDistancesWithUnionResults_ReturnsOneGeometryPerDistance()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [
+                    {"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}},
+                    {"x": -122.4180, "y": 37.7760, "spatialReference": {"wkid": 4326}}
+                ]
+            },
+            "inSR": "4326",
+            "distances": "500,1000",
+            "unit": "esriMeters",
+            "unionResults": "true",
+            "geodesic": "true"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
+
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(2, "ArcGIS unions all buffers at each requested distance");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Buffer)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_InvalidGeometry_Returns400()
     {
         var body = """
@@ -220,14 +256,14 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_MalformedGeometryPayload_DoesNotLeakParserDetails()
     {
         const string sentinel = "GEOMETRY_SENTINEL";
@@ -243,12 +279,16 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
         response.Be400BadRequest();
 
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("Invalid geometry input.");
+        var error = JsonSerializer.Deserialize<ApiErrorResponse>(responseContent);
+        error.Should().NotBeNull();
+        error!.Error.Message.Should().Be("Bad Request");
+        error.Error.Details.Should().NotBeNull();
+        error.Error.Details!.Should().Contain(detail => detail.Contains("Invalid geometry input.", StringComparison.Ordinal));
         responseContent.Should().NotContain(sentinel);
         responseContent.Should().NotContain("BytePositionInLine");
         responseContent.Should().NotContain("LineNumber");
@@ -257,7 +297,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_MissingDistance_Returns400()
     {
         var body = """
@@ -271,14 +311,14 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_WithTooManyGeometries_Returns400()
     {
         var requestBody = JsonSerializer.Serialize(new
@@ -296,7 +336,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         });
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/buffer",
+            "/rest/services/Utilities/Geometry/GeometryServer/buffer",
             new StringContent(requestBody, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
@@ -307,7 +347,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_WithTooManyDistances_Returns400()
     {
         var distances = string.Join(",", Enumerable.Range(1, 1001));
@@ -327,7 +367,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         });
 
         var response = await _fixture.Client.PostAsync(
-            "/rest/services/geometry/buffer",
+            "/rest/services/Utilities/Geometry/GeometryServer/buffer",
             new StringContent(requestBody, Encoding.UTF8, "application/json"));
 
         response.Be400BadRequest();
@@ -338,10 +378,10 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("GET /rest/services/geometry/buffer")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_GetWithQueryString_ReturnsPolygon()
     {
-        var url = "/rest/services/geometry/buffer" +
+        var url = "/rest/services/Utilities/Geometry/GeometryServer/buffer" +
             "?geometries=%7B%22geometryType%22%3A%22esriGeometryPoint%22%2C%22geometries%22%3A%5B%7B%22x%22%3A-122.4194%2C%22y%22%3A37.7749%7D%5D%7D" +
             "&inSR=4326&distances=1000&unit=esriMeters&geodesic=true";
 
@@ -360,17 +400,17 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("GET /rest/services/geometry/buffer")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_GetMissingParameters_Returns400()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/geometry/buffer?inSR=4326");
+        var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer?inSR=4326");
 
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
-    [Endpoint("POST /rest/services/geometry/buffer")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_JsonSpatialReference_ParsesCorrectly()
     {
         var body = """
@@ -387,7 +427,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
         response.Be200Ok();
 

@@ -309,14 +309,13 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 
 ## **GeoServices REST GPServer**
 
-**Best for**: Esri geoprocessing workflows (job status polling and cancellation functional; submission and result retrieval routes registered, pending per-task projection of the built-in process catalog into the GPServer surface)
+**Best for**: Esri geoprocessing workflows over catalog-backed tasks with async submission, job polling, and cancellation
 
 **Endpoint structure:**
 ```
 /rest/services/{service-name}/GPServer
 |-- /                                      (service info — available tasks)
 |-- /{taskName}                            (task info — parameters, data types)
-|-- /{taskName}/execute                    (synchronous execution — 501 pending)
 |-- /{taskName}/submitJob                  (async job submission)
 |-- /{taskName}/jobs/{jobId}               (job status polling)
 |-- /{taskName}/jobs/{jobId}/results/{paramName}  (named output result)
@@ -325,21 +324,21 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 
 **Output formats:** JSON (Esri camelCase convention)
 
-**Limitations:** Synchronous `execute` returns 501 until canonical `ExecutePlan` is wired (#721). Task info and `submitJob` return 501 pending GPServer adapter projection of the built-in `IProcessCatalog` into per-task routes. Service info returns stub metadata (empty task list) until that projection lands. Unsupported GP environment controls (`env:*`, `context`) are rejected with 400. Per-parameter result retrieval route is registered but actual output retrieval is pending execution-engine and result-storage support.
+**Limitations:** Generic built-in tasks are currently async-only and do not publish a generic `execute` route until canonical `ExecutePlan` and synchronous-task projection exist. Generic task names are currently the published built-in process IDs (for example `geometry.buffer`). GP environment controls (`env:*`) are rejected with `400`; `context` is preserved as protocol metadata but not interpreted yet. Per-parameter result retrieval route is registered but actual output retrieval is pending execution-engine and result-storage support.
 
 **Typical use cases:**
 - ArcGIS Pro / SDK geoprocessing tool connectivity
 - Async analysis workflows with job lifecycle polling
-- Per-parameter result retrieval (route registered; output retrieval pending execution-engine support)
+- Per-parameter result retrieval for terminal jobs
 
 **Contract notes:**
-- GPServer is a protocol adapter over the canonical process runtime; it does not define its own job or result storage.
-- `execute`, `submitJob`, and `cancel` accept both GET and POST per Esri GP convention. All other endpoints are GET-only. For POST requests, query-string parameters are read first and then overlaid by form-encoded body values (body takes precedence on key collision).
-- `submitJob` currently returns 501 because the GPServer adapter has not yet been updated to resolve tasks against the built-in `IProcessCatalog`. Once that projection lands, `submitJob` will return HTTP 202 (Accepted) with the job envelope (`jobId`, `jobStatus`), differing from Esri's convention of HTTP 200 but carrying the same response body shape.
+- GPServer is a protocol adapter over the canonical process runtime; it does not define its own job storage, and result packages are read from persisted terminal packages or synthesized from the durable execution-job record.
+- Service root, task info, `submitJob`, and `cancel` accept both GET and POST on the generic adapter. Job status and named result resources are GET-only. PrintingTools continues to publish `execute` because it has a real synchronous implementation; generic built-in GPServer tasks do not. For POST requests, query-string parameters are read first and then overlaid by form-encoded body values (body takes precedence on key collision).
+- `submitJob` resolves `taskName` against the built-in `IProcessCatalog` and returns HTTP `200 OK` with the Esri job envelope (`jobId`, `jobStatus`), matching ArcGIS GPServer response shape.
 - Canonical `ExecutionJobStatus` maps to Esri status strings: `Queued`→`esriJobSubmitted`, `Provisioning`→`esriJobWaiting`, `Running`→`esriJobExecuting`, `Succeeded`→`esriJobSucceeded`, `Failed`→`esriJobFailed`, `Cancelled`→`esriJobCancelled`.
 - Parameter translation converts Esri GP types (GPDataFile, GPLinearUnit, GPFeatureRecordSetLayer, etc.) to canonical opaque step inputs and maps `ArtifactKind` back to GP data types on output.
 - Route binding is validated: job status/result/cancel endpoints verify the `serviceId` and `taskName` match the stored job metadata, returning 404 for mismatches. Jobs submitted via other protocols (e.g. gRPC) are rejected to prevent cross-protocol access.
-- For endpoints that currently return 501 (`execute`, `submitJob`), authentication (401/403) and parameter validation (400 for unsupported env controls) are enforced before the 501. Callers always see auth and validation errors before feature-availability errors.
+- Generic built-in tasks are currently async-only. PrintingTools remains the only published GPServer surface with synchronous `execute` support in this codebase.
 - See [ADR-0029](../contributor/adr/0029-geoprocess-canonical-model-mappings.md) for adapter invariants and the [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) for the full canonical model mapping.
 
 ---

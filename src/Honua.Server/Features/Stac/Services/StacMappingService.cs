@@ -98,7 +98,8 @@ internal sealed class StacMappingService
         Feature feature,
         LayerDefinition layer,
         string baseUrl,
-        IReadOnlySet<string>? selectedProperties = null)
+        IReadOnlySet<string>? selectedProperties = null,
+        int? geometrySrid = null)
     {
         var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
         var itemId = ResolveItemId(feature);
@@ -145,7 +146,7 @@ internal sealed class StacMappingService
             {
                 var parsed = WkbReaderCache.Get().Read(feature.Geometry);
                 geometry = ConvertGeometryToGeoJsonElement(parsed);
-                bbox = TryBuildBboxFromGeometry(parsed, layer.SpatialReference.Wkid);
+                bbox = TryBuildBboxFromGeometry(parsed, geometrySrid ?? layer.SpatialReference.Wkid);
             }
             catch
             {

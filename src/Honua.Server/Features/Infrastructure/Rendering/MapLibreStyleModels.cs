@@ -10,6 +10,8 @@ namespace Honua.Server.Features.Infrastructure.Rendering;
 /// </summary>
 internal sealed class MapLibreStyleLayer
 {
+    private readonly string? _type;
+
     /// <summary>
     /// Layer identifier.
     /// </summary>
@@ -18,9 +20,14 @@ internal sealed class MapLibreStyleLayer
 
     /// <summary>
     /// Layer type: fill, line, circle, symbol, background.
+    /// Constantly hidden layers are exposed as typeless so existing render loops skip them.
     /// </summary>
     [JsonPropertyName("type")]
-    public string? Type { get; init; }
+    public string? Type
+    {
+        get => IsHiddenByConstantVisibility() ? null : _type;
+        init => _type = value;
+    }
 
     /// <summary>
     /// Source layer name.
@@ -57,6 +64,12 @@ internal sealed class MapLibreStyleLayer
     /// </summary>
     [JsonPropertyName("layout")]
     public Dictionary<string, MapLibreExpression>? Layout { get; init; }
+
+    private bool IsHiddenByConstantVisibility()
+        => Layout != null
+            && Layout.TryGetValue("visibility", out var visibility)
+            && visibility.Kind == MapLibreExpressionKind.String
+            && string.Equals(visibility.StringValue, "none", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>

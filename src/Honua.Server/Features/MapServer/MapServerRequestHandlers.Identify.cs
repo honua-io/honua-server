@@ -46,7 +46,10 @@ internal static partial class MapServerEndpoints
         Envelope
     }
 
-    private sealed record IdentifyLayerSelection(IdentifyLayerMode Mode, RenderLayer[] RenderLayers);
+    private sealed record IdentifyLayerSelection(
+        IdentifyLayerMode Mode,
+        RenderLayer[] RenderLayers,
+        bool TopLayerFirst);
 
     private sealed record IdentifyGeometryInput(
         string RawValue,
@@ -68,6 +71,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleIdentify(HttpContext context)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
         {
@@ -76,9 +80,21 @@ internal static partial class MapServerEndpoints
 
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.MapServerEndpoints");
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "identify",
+            HonuaTelemetry.Protocols.MapServer,
+            "*");
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
+            .WithTag(HonuaTelemetry.Tags.Operation, "identify");
 
         try
         {
+            var earlyServiceError = await TryValidateMapServerServiceAsync(serviceId, context);
+            if (earlyServiceError is not null)
+            {
+                return earlyServiceError;
+            }
+
             var (values, readError) = await TryReadMapServerRequestValuesAsync(context);
             if (values == null)
             {
@@ -146,7 +162,7 @@ internal static partial class MapServerEndpoints
             }
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
+            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
             if (!serviceResult.IsValid)
             {
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -173,11 +189,22 @@ internal static partial class MapServerEndpoints
                     layerDefsError ?? "Invalid layerDefs parameter.");
             }
 
+            if (!TryParseLayerTimeOptions(GetValue(values, "layerTimeOptions"), out var layerTimeOptions, out var layerTimeOptionsError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    layerTimeOptionsError ?? "Invalid layerTimeOptions parameter.");
+            }
+
             if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), service, queryValidator, out var dynamicLayers, out var dynamicLayersError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     dynamicLayersError ?? "Invalid dynamicLayers parameter.");
             }
+
+            scope.WithTag(
+                HonuaTelemetry.Tags.LayerId,
+                ResolveIdentifyTelemetryLayerTag(layersParam, dynamicLayers.Count > 0));
 
             var timeValue = GetValue(values, "time");
             var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
@@ -219,11 +246,7 @@ internal static partial class MapServerEndpoints
                 }
             }
 
-            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
-                HonuaTelemetry.Activities.MapServerIdentify, ActivityKind.Internal);
-            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.MapServer);
-            activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
-            activity?.SetTag(HonuaTelemetry.Tags.Operation, "identify");
+            var stopwatch = Stopwatch.StartNew();
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var geometryConverter = context.RequestServices.GetRequiredService<IGeometryConverter>();
@@ -231,6 +254,20 @@ internal static partial class MapServerEndpoints
             var maxIdentifyResults = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query.MaxRecordCount;
 
             var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(mapExtent, imageWidth, imageDpi, geometrySrid);
+            var identifyAccessCandidates = ResolveIdentifyAccessCandidateLayers(
+                service,
+                layersParam,
+                dynamicLayers,
+                scaleDenominator);
+            var identifyAccessError = AccessPolicyHelpers.RequireAnyLayerAccess(
+                context,
+                identifyAccessCandidates,
+                service);
+            if (identifyAccessError != null)
+            {
+                return identifyAccessError;
+            }
+
             var identifySelection = ResolveIdentifyLayers(service, layersParam, dynamicLayers, context, scaleDenominator);
 
             var searchTolerance = CoordinateTransformer.PixelToMapUnits(tolerance, mapExtent, imageWidth);
@@ -249,11 +286,18 @@ internal static partial class MapServerEndpoints
             var results = new List<IdentifyResult>();
 
             var layersToSearch = identifySelection.Mode == IdentifyLayerMode.Top
-                ? identifySelection.RenderLayers.Reverse().ToArray()
+                ? (identifySelection.TopLayerFirst
+                    ? identifySelection.RenderLayers
+                    : identifySelection.RenderLayers.Reverse().ToArray())
                 : identifySelection.RenderLayers;
 
             foreach (var renderLayer in layersToSearch)
             {
+                if (results.Count >= maxIdentifyResults)
+                {
+                    break;
+                }
+
                 var layer = renderLayer.Layer;
                 if (!layer.HasGeometry)
                 {
@@ -266,8 +310,8 @@ internal static partial class MapServerEndpoints
                 if (!TryGetEffectiveTimeParameters(
                         timeValue,
                         timeRelationValue,
-                        layer,
-                        new Dictionary<int, LayerTimeOptions>(),
+                        renderLayer,
+                        layerTimeOptions,
                         out var effectiveTime,
                         out var effectiveTimeRelation,
                         out var timeError))
@@ -289,16 +333,22 @@ internal static partial class MapServerEndpoints
                         filterError ?? "Invalid filter parameter.");
                 }
 
+                var remainingResults = maxIdentifyResults - results.Count;
+                if (remainingResults <= 0)
+                {
+                    break;
+                }
+
                 var featureQuery = new FeatureQuery
                 {
                     SpatialFilter = spatialFilter,
                     SpatialReferenceSrid = service.SpatialReference.Srid,
                     OutputSrid = geometrySrid,
-                    Limit = maxIdentifyResults,
+                    Limit = remainingResults,
                     SqlFilter = sqlFilter
                 };
 
-                var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
+                var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
 
                 if (queryResult.Items.Length == 0)
                 {
@@ -348,32 +398,41 @@ internal static partial class MapServerEndpoints
                     };
 
                     results.Add(identifyResult);
+                    if (results.Count >= maxIdentifyResults)
+                    {
+                        break;
+                    }
                 }
 
-                if (identifySelection.Mode == IdentifyLayerMode.Top && results.Count > 0)
+                if ((identifySelection.Mode == IdentifyLayerMode.Top && results.Count > 0) ||
+                    results.Count >= maxIdentifyResults)
                 {
                     break;
                 }
             }
 
             MapServerLog.IdentifyCompleted(logger, serviceId, results.Count);
-            HonuaTelemetry.SetSuccess(activity, results.Count);
+            stopwatch.Stop();
+            scope.SetSuccess(results.Count);
+            scope.CategorizeLatency(stopwatch.Elapsed.TotalMilliseconds);
 
             var response = new IdentifyResponse { Results = [.. results] };
             return Results.Json(response, MapServerJsonContext.Default.IdentifyResponse, contentType: "application/json");
         }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
         catch (ArgumentException ex)
         {
             MapServerLog.IdentifyFailed(logger, serviceId, ex.Message, ex);
+            scope.RecordException(ex);
             return StandardErrorHelpers.CreateBadRequest(context, InvalidIdentifyRequestMessage);
         }
         catch (Exception ex)
         {
             MapServerLog.IdentifyFailed(logger, serviceId, ex.Message, ex);
+            scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "MapServer identify failed.");
         }
     }
@@ -690,6 +749,101 @@ internal static partial class MapServerEndpoints
             .ToArray();
 
         IdentifyLayerMode mode = IdentifyLayerMode.Top;
+        var hasExplicitMode = false;
+        HashSet<int>? ids = null;
+
+        if (!string.IsNullOrWhiteSpace(layersParam))
+        {
+            var spec = layersParam.Trim();
+            string? modeToken = null;
+            string? idPart = null;
+
+            var colonIndex = spec.IndexOf(':');
+            if (colonIndex >= 0)
+            {
+                modeToken = spec[..colonIndex];
+                idPart = spec[(colonIndex + 1)..];
+            }
+            else if (IsIdentifyLayerModeToken(spec))
+            {
+                modeToken = spec;
+            }
+            else
+            {
+                idPart = spec;
+            }
+
+            mode = modeToken?.ToLowerInvariant() switch
+            {
+                "all" => IdentifyLayerMode.All,
+                "visible" => IdentifyLayerMode.Visible,
+                "top" => IdentifyLayerMode.Top,
+                _ => IdentifyLayerMode.All
+            };
+            hasExplicitMode = modeToken != null;
+
+            if (!string.IsNullOrWhiteSpace(idPart))
+            {
+                ids = ParseLayerIds(idPart);
+            }
+        }
+
+        if (dynamicLayers.Count > 0)
+        {
+            var layerLookup = service.Layers.ToDictionary(l => l.Id);
+            var renderLayers = new List<RenderLayer>();
+
+            foreach (var dl in dynamicLayers)
+            {
+                if (!layerLookup.TryGetValue(dl.MapLayerId, out var layer))
+                {
+                    continue;
+                }
+
+                if (!AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+                {
+                    continue;
+                }
+
+                renderLayers.Add(new RenderLayer(layer, dl.Id, dl.DefinitionExpression));
+            }
+
+            var effectiveMode = hasExplicitMode && mode == IdentifyLayerMode.Top
+                ? IdentifyLayerMode.Top
+                : IdentifyLayerMode.All;
+
+            return new IdentifyLayerSelection(effectiveMode, renderLayers.ToArray(), TopLayerFirst: true);
+        }
+
+        IEnumerable<LayerDefinition> candidates = accessibleLayers;
+
+        if (mode is IdentifyLayerMode.Visible or IdentifyLayerMode.Top)
+        {
+            candidates = candidates.Where(l => l.DefaultVisibility);
+            if (scaleDenominator > 0)
+            {
+                candidates = candidates.Where(l => IsLayerVisibleAtScale(l, scaleDenominator));
+            }
+        }
+
+        if (ids is { Count: > 0 })
+        {
+            candidates = candidates.Where(l => ids.Contains(l.Id));
+        }
+
+        return new IdentifyLayerSelection(
+            mode,
+            candidates.Select(l => new RenderLayer(l, l.Id, null)).ToArray(),
+            TopLayerFirst: false);
+    }
+
+    private static LayerDefinition[] ResolveIdentifyAccessCandidateLayers(
+        ServiceDefinition service,
+        string? layersParam,
+        IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
+        double scaleDenominator)
+    {
+        IdentifyLayerMode mode = IdentifyLayerMode.Top;
         HashSet<int>? ids = null;
 
         if (!string.IsNullOrWhiteSpace(layersParam))
@@ -729,50 +883,40 @@ internal static partial class MapServerEndpoints
 
         if (dynamicLayers.Count > 0)
         {
-            var layerLookup = service.Layers.ToDictionary(l => l.Id);
-            var renderLayers = new List<RenderLayer>();
-
-            foreach (var dl in dynamicLayers)
-            {
-                if (!layerLookup.TryGetValue(dl.MapLayerId, out var layer))
-                {
-                    continue;
-                }
-
-                if (!AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
-                {
-                    continue;
-                }
-
-                if (ids is { Count: > 0 } && !ids.Contains(dl.Id))
-                {
-                    continue;
-                }
-
-                renderLayers.Add(new RenderLayer(layer, dl.Id, dl.DefinitionExpression));
-            }
-
-            return new IdentifyLayerSelection(mode, renderLayers.ToArray());
+            var layerLookup = service.Layers.ToDictionary(static layer => layer.Id);
+            return dynamicLayers
+                .Select(dynamicLayer => layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var layer) ? layer : null)
+                .Where(static layer => layer != null)
+                .Cast<LayerDefinition>()
+                .ToArray();
         }
 
-        IEnumerable<LayerDefinition> candidates = accessibleLayers;
-
+        IEnumerable<LayerDefinition> candidates = service.Layers;
         if (mode is IdentifyLayerMode.Visible or IdentifyLayerMode.Top)
         {
-            candidates = candidates.Where(l => l.DefaultVisibility);
+            candidates = candidates.Where(static layer => layer.DefaultVisibility);
             if (scaleDenominator > 0)
             {
-                candidates = candidates.Where(l => IsLayerVisibleAtScale(l, scaleDenominator));
+                candidates = candidates.Where(layer => IsLayerVisibleAtScale(layer, scaleDenominator));
             }
         }
 
         if (ids is { Count: > 0 })
         {
-            candidates = candidates.Where(l => ids.Contains(l.Id));
+            candidates = candidates.Where(layer => ids.Contains(layer.Id));
         }
 
-        return new IdentifyLayerSelection(mode,
-            candidates.Select(l => new RenderLayer(l, l.Id, null)).ToArray());
+        return candidates.ToArray();
+    }
+
+    private static string ResolveIdentifyTelemetryLayerTag(string? layersParam, bool hasDynamicLayers)
+    {
+        if (!string.IsNullOrWhiteSpace(layersParam))
+        {
+            return layersParam.Trim();
+        }
+
+        return hasDynamicLayers ? "dynamic:*" : "*";
     }
 
     private static bool IsIdentifyLayerModeToken(string token)

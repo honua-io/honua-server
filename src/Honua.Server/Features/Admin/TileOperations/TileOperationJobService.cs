@@ -1014,9 +1014,7 @@ internal sealed partial class TileOperationJobService(
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex,
-                    "Failed to persist missing-request status for tile operation job {JobId}.",
-                    jobId);
+                TileOperationLog.MissingRequestStatusPersistenceFailed(_logger, jobId, ex);
             }
         }
 
@@ -1042,10 +1040,7 @@ internal sealed partial class TileOperationJobService(
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(
-                ex,
-                "Skipping tile-operation recovery for job {JobId} because the Redis claim key could not be inspected.",
-                jobId);
+            TileOperationLog.RecoveryClaimInspectionFailed(_logger, jobId, ex);
             return false;
         }
     }
@@ -1069,7 +1064,7 @@ internal sealed partial class TileOperationJobService(
                 await Task.Delay(TimeSpan.FromMilliseconds(ClaimTtl.TotalMilliseconds / 3d), cancellationToken).ConfigureAwait(false);
                 if (!await leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
                 {
-                    _logger.LogWarning("Tile-operation lease renewal was lost while processing a background tile job.");
+                    TileOperationLog.LeaseRenewalLost(_logger);
                     break;
                 }
             }

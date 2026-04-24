@@ -62,6 +62,42 @@ public class OgcMapsBasicTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /ogc/maps/openapi.json")]
+    [Operation(Operations.Metadata)]
+    public async Task GetOpenApiSpec_DocumentsSecuritySchemesAndProtectedResponses()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/maps/openapi.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var components = json.RootElement.GetProperty("components");
+        var securitySchemes = components.GetProperty("securitySchemes");
+        securitySchemes.TryGetProperty("ApiKeyAuth", out _).Should().BeTrue();
+        securitySchemes.TryGetProperty("BearerAuth", out _).Should().BeTrue();
+
+        var collectionMap = json.RootElement.GetProperty("paths")
+            .GetProperty("/ogc/maps/collections/{collectionId}/map")
+            .GetProperty("get");
+        collectionMap.TryGetProperty("security", out var security).Should().BeTrue();
+        security.ValueKind.Should().Be(JsonValueKind.Array);
+        collectionMap.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
+        collectionMap.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
+
+        var styledCollectionMap = json.RootElement.GetProperty("paths")
+            .GetProperty("/ogc/maps/collections/{collectionId}/styles/{styleId}/map")
+            .GetProperty("get");
+        styledCollectionMap.TryGetProperty("security", out _).Should().BeTrue();
+        styledCollectionMap.GetProperty("responses").TryGetProperty("501", out _).Should().BeTrue();
+
+        var tilesets = json.RootElement.GetProperty("paths")
+            .GetProperty("/ogc/maps/collections/{collectionId}/map/tiles")
+            .GetProperty("get");
+        tilesets.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
+        tilesets.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /ogc/maps/conformance")]
     [Operation(Operations.Metadata)]
     public async Task GetConformance_BasicRequest_ReturnsConformanceClasses()
@@ -104,6 +140,22 @@ public class OgcMapsBasicTests : IAsyncLifetime
         // For now, we expect either success or a 404 (no rasters found)
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
 
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    [Operation(Operations.Render)]
+    public async Task GetCollectionMap_WithStringCollectionId_ReturnsMapOrNotFound()
+    {
+        var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=png";
+
+        var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/Test%20Layer/map{queryParams}");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
         if (response.StatusCode == HttpStatusCode.OK)
         {
             response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
@@ -193,7 +245,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
     [Operation(Operations.Render)]
-    public async Task GetStyledMap_WithValidStyle_ReturnsNotFound()
+    public async Task GetStyledMap_WithValidStyle_ReachesStyledMapEndpoint()
     {
         // Arrange
         var styleId = "default";
@@ -203,7 +255,12 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}/styles/{styleId}/map{queryParams}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().BeOneOf(
+            HttpStatusCode.OK,
+            HttpStatusCode.NotFound,
+            HttpStatusCode.Unauthorized,
+            HttpStatusCode.Forbidden,
+            HttpStatusCode.NotImplemented);
     }
 
     [IntegrationTest]
@@ -302,7 +359,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     [Operation(Operations.Render)]
-    public async Task GetCollectionMap_InvalidCollectionId_ReturnsBadRequest()
+    public async Task GetCollectionMap_InvalidCollectionId_ReturnsNotFound()
     {
         // Arrange
         var invalidCollectionId = "invalid";
@@ -312,7 +369,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{invalidCollectionId}/map{queryParams}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

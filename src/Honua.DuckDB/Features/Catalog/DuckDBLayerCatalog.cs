@@ -4,6 +4,7 @@
 using System.Collections.Frozen;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.DuckDB;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.DuckDB.Features.Catalog;
@@ -27,10 +28,7 @@ internal sealed class DuckDBLayerCatalog : ILayerCatalog
             s => s.Name,
             StringComparer.OrdinalIgnoreCase);
 
-        logger.LogInformation(
-            "DuckDB layer catalog initialized with {LayerCount} layers and {ServiceCount} services",
-            _layers.Count,
-            _services.Count);
+        DuckDbLog.LayerCatalogInitialized(logger, _layers.Count, _services.Count);
     }
 
     /// <inheritdoc />

@@ -70,14 +70,14 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
             // Check queue capacity
             if (_uploadQueue.Reader.Count >= _options.MaxQueuedUploads)
             {
-                _logger.LogWarning("Upload queue is full, rejecting upload for {FileName}", uploadJob.FileName);
+                StreamingFileUploadLog.UploadQueueFull(_logger, uploadJob.FileName);
                 return FileUploadResult.Failure("Upload queue is full. Please try again later.");
             }
 
             // Wait for processing slot
             if (!await _processingSlot.WaitAsync(TimeSpan.FromSeconds(30), combinedToken.Token))
             {
-                _logger.LogWarning("Timeout waiting for upload processing slot for {FileName}", uploadJob.FileName);
+                StreamingFileUploadLog.UploadProcessingSlotTimeout(_logger, uploadJob.FileName);
                 return FileUploadResult.Failure("Upload service is busy. Please try again later.");
             }
 
@@ -96,12 +96,12 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
         }
         catch (OperationCanceledException)
         {
-            _logger.LogInformation("File upload cancelled for {FileName}", uploadJob.FileName);
+            StreamingFileUploadLog.FileUploadCancelled(_logger, uploadJob.FileName);
             return FileUploadResult.Failure("Upload was cancelled.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to process file upload for {FileName}", uploadJob.FileName);
+            StreamingFileUploadLog.FileUploadProcessingFailed(_logger, uploadJob.FileName, ex);
             return FileUploadResult.Failure("Upload processing failed.");
         }
     }
@@ -121,10 +121,7 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
 
         try
         {
-            _logger.LogInformation(
-                "Starting streaming upload for {FileName} ({FileSize} bytes)",
-                uploadJob.FileName,
-                uploadJob.ContentLength);
+            StreamingFileUploadLog.StreamingUploadStarted(_logger, uploadJob.FileName, uploadJob.ContentLength);
 
             // Stream file to disk with size validation
             await StreamFileToDiskAsync(uploadJob.InputStream, tempFilePath, uploadJob.ContentLength, cancellationToken);
@@ -146,10 +143,7 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
             };
 
             var processingTime = DateTimeOffset.UtcNow - startTime;
-            _logger.LogInformation(
-                "File upload completed for {FileName} in {ProcessingTime}ms",
-                uploadJob.FileName,
-                processingTime.TotalMilliseconds);
+            StreamingFileUploadLog.FileUploadCompleted(_logger, uploadJob.FileName, processingTime.TotalMilliseconds);
 
             return FileUploadResult.Success(stagedFile);
         }
@@ -165,7 +159,7 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
             }
             catch (Exception deleteEx)
             {
-                _logger.LogWarning(deleteEx, "Failed to delete temp file {TempFilePath}", tempFilePath);
+                StreamingFileUploadLog.TempFileDeleteFailed(_logger, tempFilePath, deleteEx);
             }
 
             throw;
@@ -192,9 +186,9 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
         long totalBytesRead = 0;
         int bytesRead;
 
-        while ((bytesRead = await inputStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+        while ((bytesRead = await inputStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
         {
-            await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
+            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
             totalBytesRead += bytesRead;
 
             // Check for size exceeded during streaming

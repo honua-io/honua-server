@@ -3,9 +3,13 @@
 
 using System.Diagnostics;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Geoprocessing.GPServer.Models;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 
@@ -33,6 +37,14 @@ internal static class GPServerEndpoints
             .WithDescription("Returns metadata about the GPServer service including available tasks")
             .WithTags("GPServer");
 
+        endpoints.MapPost(RouteBase,
+                static (HttpContext context, CancellationToken ct) => HandleServiceInfo(context, ct))
+            .WithDisplayName("GPServer Service Info (POST)")
+            .WithName("GPServerServiceInfoPost")
+            .WithSummary("Get GPServer service metadata")
+            .WithDescription("Returns metadata about the GPServer service including available tasks")
+            .WithTags("GPServer");
+
         // Task info
         endpoints.MapGet($"{RouteBase}/{{taskName}}",
                 static (HttpContext context, CancellationToken ct) => HandleTaskInfo(context, ct))
@@ -42,21 +54,12 @@ internal static class GPServerEndpoints
             .WithDescription("Returns metadata about a specific GP task including parameters")
             .WithTags("GPServer");
 
-        // Synchronous execute (POST + GET per Esri GP contract)
-        endpoints.MapPost($"{RouteBase}/{{taskName}}/execute",
-                static (HttpContext context, CancellationToken ct) => HandleExecute(context, ct))
-            .WithDisplayName("GPServer Execute Task")
-            .WithName("GPServerExecute")
-            .WithSummary("Execute a GP task synchronously")
-            .WithDescription("Executes a GP task and returns results inline")
-            .WithTags("GPServer");
-
-        endpoints.MapGet($"{RouteBase}/{{taskName}}/execute",
-                static (HttpContext context, CancellationToken ct) => HandleExecute(context, ct))
-            .WithDisplayName("GPServer Execute Task (GET)")
-            .WithName("GPServerExecuteGet")
-            .WithSummary("Execute a GP task synchronously using GET")
-            .WithDescription("Executes a GP task and returns results inline")
+        endpoints.MapPost($"{RouteBase}/{{taskName}}",
+                static (HttpContext context, CancellationToken ct) => HandleTaskInfo(context, ct))
+            .WithDisplayName("GPServer Task Info (POST)")
+            .WithName("GPServerTaskInfoPost")
+            .WithSummary("Get GP task metadata")
+            .WithDescription("Returns metadata about a specific GP task including parameters")
             .WithTags("GPServer");
 
         // Async submit job (POST + GET per Esri GP contract)
@@ -118,87 +121,70 @@ internal static class GPServerEndpoints
     // Handlers
     // -----------------------------------------------------------------------
 
-    private static Task<IResult> HandleServiceInfo(HttpContext context, CancellationToken ct)
+    private static async Task<IResult> HandleServiceInfo(HttpContext context, CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
         EnrichActivity("ServiceInfo", serviceId);
         var logger = ResolveLogger(context);
         GPServerLog.ServiceInfoRequested(logger, serviceId);
+        var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
+        if (!serviceValidation.IsValid)
+        {
+            return serviceValidation.ErrorResult!;
+        }
+
+        var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
 
         var response = new GPServiceInfoResponse
         {
             ServiceDescription = $"Geoprocessing service for {serviceId}",
             ExecutionType = "esriExecutionTypeAsynchronous",
-            Tasks = [] // Stub until process catalog is formalized
+            Capabilities = string.Empty,
+            ResultMapServerName = string.Empty,
+            Tasks = [.. processCatalog.ListProcesses().Select(process => process.ProcessId)]
         };
 
-        return Task.FromResult(Results.Json(
+        return Results.Json(
             response, GPServerJsonContext.Default.GPServiceInfoResponse,
-            contentType: "application/json"));
+            contentType: "application/json");
     }
 
-    private static Task<IResult> HandleTaskInfo(HttpContext context, CancellationToken ct)
+    private static async Task<IResult> HandleTaskInfo(HttpContext context, CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
         var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
         EnrichActivity("TaskInfo", serviceId, taskName);
         var logger = ResolveLogger(context);
         GPServerLog.TaskInfoRequested(logger, serviceId, taskName);
-
-        // Process catalog is not yet formalized — cannot verify that {taskName}
-        // exists under {serviceId}. Reject instead of fabricating metadata for
-        // unknown tasks (see review finding: correctness/unpublished-tasks).
-        GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
-        return Task.FromResult(SetSpanErrorAndReturn(
-            StandardErrorHelpers.CreateNotImplemented(context,
-                $"Task '{taskName}' on service '{serviceId}' cannot be resolved. " +
-                "GP task metadata requires a formal process catalog (not yet available)."),
-            "Task resolution unavailable"));
-    }
-
-    private static async Task<IResult> HandleExecute(HttpContext context, CancellationToken ct)
-    {
-        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
-        var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
-        EnrichActivity("Execute", serviceId, taskName);
-        var logger = ResolveLogger(context);
-        GPServerLog.ExecuteRequested(logger, taskName);
-
-        try
+        var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
+        if (!serviceValidation.IsValid)
         {
-            // Auth must precede the 501 to guarantee 401/403 before feature-availability
-            // errors for unauthenticated callers (consistent with all other endpoints).
-            var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
-            jobService.EnsureCallerAuthorized(
-                context.User,
-                OperatorResourceType.Process,
-                OperatorOperation.Execute);
+            return serviceValidation.ErrorResult!;
+        }
 
-            // Read parameters and reject unsupported GP environment controls with 400
-            // before returning the 501 — matches documented contract behavior for execute.
-            var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context);
-            var envError = RejectUnsupportedEnvControls(context, logger, parameters);
-            if (envError != null)
-            {
-                return envError;
-            }
-
-            // Synchronous execute is not yet available (#721 ExecutePlan).
-            // Return 501 with structured error per design.
+        var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
+        var definition = ResolveTaskDefinition(processCatalog, taskName);
+        if (definition == null)
+        {
+            GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
             return SetSpanErrorAndReturn(
-                StandardErrorHelpers.CreateNotImplemented(context,
-                    "Synchronous GP task execution is not yet available. " +
-                    "Use submitJob for asynchronous execution."),
-                "Synchronous execute not yet available");
+                StandardErrorHelpers.CreateNotFound(
+                    context,
+                    $"Task '{taskName}' on service '{serviceId}' was not found."),
+                "Task not found");
         }
-        catch (Exception ex)
-        {
-            return MapExceptionToResult(context, logger, "Execute", ex);
-        }
+
+        return Results.Json(
+            BuildTaskInfo(definition),
+            GPServerJsonContext.Default.GPTaskInfoResponse,
+            contentType: "application/json");
     }
 
     private static async Task<IResult> HandleSubmitJob(HttpContext context, CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
         var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
         EnrichActivity("SubmitJob", serviceId, taskName);
@@ -208,6 +194,12 @@ internal static class GPServerEndpoints
 
         try
         {
+            var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
+            if (!serviceValidation.IsValid)
+            {
+                return serviceValidation.ErrorResult!;
+            }
+
             // Auth must precede parameter reading to guarantee 401/403 before 400
             // on invalid input from unauthenticated callers (see IGeoprocessingJobService contract).
             jobService.EnsureCallerAuthorized(
@@ -215,7 +207,7 @@ internal static class GPServerEndpoints
                 OperatorResourceType.Process,
                 OperatorOperation.Execute);
 
-            var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context);
+            var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
 
             // Reject unsupported GP environment controls (env:outSR, env:processSR, context)
             // with a clear 400 instead of silently stripping them.
@@ -225,16 +217,37 @@ internal static class GPServerEndpoints
                 return envError;
             }
 
-            // Process catalog is not yet formalized — cannot validate that
-            // {serviceId}:{taskName} resolves to a registered process definition.
-            // Reject to prevent creating durable jobs for unresolved processes
-            // (see review finding: correctness/unpublished-tasks).
-            GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
-            return SetSpanErrorAndReturn(
-                StandardErrorHelpers.CreateNotImplemented(context,
-                    $"Task '{taskName}' on service '{serviceId}' cannot be resolved. " +
-                    "GP job submission requires process catalog validation (not yet available)."),
-                "Task resolution unavailable");
+            var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
+            var definition = ResolveTaskDefinition(processCatalog, taskName);
+            if (definition == null)
+            {
+                GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateNotFound(
+                        context,
+                        $"Task '{taskName}' on service '{serviceId}' was not found."),
+                    "Task not found");
+            }
+
+            var plan = BuildSubmissionPlan(definition, serviceId, parameters);
+            var protocolMetadata = BuildProtocolMetadata(serviceId, taskName, definition, parameters);
+            var job = await jobService.SubmitJobAsync(
+                plan,
+                idempotencyKey: null,
+                context.User,
+                protocolMetadata,
+                ct);
+
+            var response = new GPSubmitJobResponse
+            {
+                JobId = job.OperationId,
+                JobStatus = GPServerStatusMapping.ToEsriJobStatus(job.Status)
+            };
+
+            return Results.Json(
+                response,
+                GPServerJsonContext.Default.GPSubmitJobResponse,
+                contentType: "application/json");
         }
         catch (Exception ex)
         {
@@ -244,6 +257,7 @@ internal static class GPServerEndpoints
 
     private static async Task<IResult> HandleJobStatus(HttpContext context, CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
         var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
         EnrichActivity("JobStatus", serviceId, taskName);
@@ -261,6 +275,12 @@ internal static class GPServerEndpoints
 
         try
         {
+            var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
+            if (!serviceValidation.IsValid)
+            {
+                return serviceValidation.ErrorResult!;
+            }
+
             var job = await jobService.GetJobAsync(jobId, context.User, ct);
 
             var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
@@ -304,9 +324,24 @@ internal static class GPServerEndpoints
             Dictionary<string, GPJobResultRef>? results = null;
             if (job.Status == ExecutionJobStatus.Succeeded)
             {
-                // Result references are populated when artifact storage is available.
-                // For now, return empty results dict to signal shape correctness.
-                results = new Dictionary<string, GPJobResultRef>();
+                results = new Dictionary<string, GPJobResultRef>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    var resultPackage = await jobService.GetJobResultsAsync(jobId, context.User, ct);
+                    foreach (var outputName in ResolvePublishedOutputParameterNames(job, resultPackage))
+                    {
+                        results[outputName] = new GPJobResultRef
+                        {
+                            ParamUrl = $"results/{Uri.EscapeDataString(outputName)}"
+                        };
+                    }
+                }
+                catch (GeoprocessingNotFoundException)
+                {
+                    // Result-package persistence is not yet universal across all
+                    // execution backends. Preserve the GPServer shape with an empty
+                    // results dictionary until a package becomes available.
+                }
             }
 
             var response = new GPJobStatusResponse
@@ -328,6 +363,7 @@ internal static class GPServerEndpoints
 
     private static async Task<IResult> HandleJobResult(HttpContext context, CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
         var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
         EnrichActivity("JobResult", serviceId, taskName);
@@ -355,6 +391,12 @@ internal static class GPServerEndpoints
 
         try
         {
+            var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
+            if (!serviceValidation.IsValid)
+            {
+                return serviceValidation.ErrorResult!;
+            }
+
             // Validate route binding before accessing results.
             var job = await jobService.GetJobAsync(jobId, context.User, ct);
             var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
@@ -363,16 +405,8 @@ internal static class GPServerEndpoints
                 return bindingError;
             }
 
-            // GetJobResultsAsync currently throws GeoprocessingNotFoundException
-            // because result storage is not yet implemented.
             var results = await jobService.GetJobResultsAsync(jobId, context.User, ct);
-
-            // Find the artifact matching the requested parameter name
-            var artifact = results.Artifacts.FirstOrDefault(a =>
-                string.Equals(
-                    GPServerParameterTranslation.ResolveOutputParameterName(a),
-                    paramName,
-                    StringComparison.OrdinalIgnoreCase));
+            var artifact = ResolveArtifactByPublishedOutputName(job, results, paramName, out var publishedName);
 
             if (artifact == null)
             {
@@ -384,7 +418,7 @@ internal static class GPServerEndpoints
 
             var response = new GPResultResponse
             {
-                ParamName = paramName,
+                ParamName = publishedName,
                 DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
                 Value = artifact.Uri ?? artifact.Label
             };
@@ -400,6 +434,7 @@ internal static class GPServerEndpoints
 
     private static async Task<IResult> HandleCancelJob(HttpContext context, CancellationToken ct)
     {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
         var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
         EnrichActivity("CancelJob", serviceId, taskName);
@@ -419,6 +454,12 @@ internal static class GPServerEndpoints
 
         try
         {
+            var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
+            if (!serviceValidation.IsValid)
+            {
+                return serviceValidation.ErrorResult!;
+            }
+
             // Validate route binding before attempting cancellation.
             var existing = await jobService.GetJobAsync(jobId, context.User, ct);
             var bindingError = ValidateJobBinding(context, logger, existing, serviceId, taskName);
@@ -472,6 +513,23 @@ internal static class GPServerEndpoints
     // Shared helpers
     // -----------------------------------------------------------------------
 
+    private static Task<ServiceResourceValidationHelpers.ServiceValidationResult> ValidateServiceAsync(
+        HttpContext context,
+        string serviceId,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        return ServiceResourceValidationHelpers.ValidateServiceAsync(
+            resourceValidator,
+            serviceId,
+            ServiceProtocols.GPServer,
+            context,
+            id => GPServerLog.ServiceNotFound(logger, id),
+            requireServiceAccess: true,
+            cancellationToken);
+    }
+
     /// <summary>
     /// Validates that the route <paramref name="serviceId"/> and <paramref name="taskName"/>
     /// match the protocol metadata stored with the job when it was submitted.
@@ -483,8 +541,8 @@ internal static class GPServerEndpoints
         HttpContext context, ILogger logger, ExecutionJobRecord job,
         string serviceId, string taskName)
     {
-        var storedService = job.Spec.Parameters.GetValueOrDefault("gpserver.serviceId");
-        var storedTask = job.Spec.Parameters.GetValueOrDefault("gpserver.taskName");
+        var storedService = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerServiceId);
+        var storedTask = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerTaskName);
 
         // Jobs without GPServer binding metadata were not submitted through GPServer.
         // Reject them to prevent cross-protocol job access.
@@ -511,8 +569,8 @@ internal static class GPServerEndpoints
     }
 
     /// <summary>
-    /// Rejects unsupported GP environment controls (<c>env:outSR</c>, <c>env:processSR</c>,
-    /// <c>context</c>) with a structured 400 error instead of silently stripping them.
+    /// Rejects unsupported GP environment controls (<c>env:outSR</c>, <c>env:processSR</c>)
+    /// with a structured 400 error instead of silently stripping them.
     /// Returns null when no unsupported controls are present.
     /// </summary>
     private static IResult? RejectUnsupportedEnvControls(
@@ -521,8 +579,7 @@ internal static class GPServerEndpoints
         List<string>? unsupported = null;
         foreach (var key in allParams.Keys)
         {
-            if (key.StartsWith("env:", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(key, "context", StringComparison.OrdinalIgnoreCase))
+            if (key.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
             {
                 unsupported ??= [];
                 unsupported.Add(key);
@@ -541,6 +598,242 @@ internal static class GPServerEndpoints
                 $"GP environment controls are not yet supported: {names}. " +
                 "Remove these parameters or wait for engine support."),
             $"Unsupported GP env controls: {names}");
+    }
+
+    private static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
+        => string.IsNullOrWhiteSpace(taskName) ? null : processCatalog.GetProcess(taskName);
+
+    private static GPTaskInfoResponse BuildTaskInfo(ProcessDefinition definition)
+    {
+        var parameters = new List<GPParameterInfo>(definition.Parameters.Count + definition.OutputArtifactKinds.Count);
+        foreach (var parameter in definition.Parameters)
+        {
+            parameters.Add(new GPParameterInfo
+            {
+                Name = parameter.Name,
+                DisplayName = parameter.DisplayName,
+                Description = parameter.Description,
+                DataType = GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
+                Direction = "esriGPParameterDirectionInput",
+                DefaultValue = parameter.DefaultValue,
+                ParameterType = parameter.Required
+                    ? "esriGPParameterTypeRequired"
+                    : "esriGPParameterTypeOptional"
+            });
+        }
+
+        for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
+        {
+            var kind = definition.OutputArtifactKinds[index];
+            var outputName = BuildOutputParameterName(kind, index, definition.OutputArtifactKinds);
+            parameters.Add(new GPParameterInfo
+            {
+                Name = outputName,
+                DisplayName = outputName,
+                Description = $"Output artifact of type {kind}.",
+                DataType = GPServerParameterTranslation.ToEsriDataType(kind),
+                Direction = "esriGPParameterDirectionOutput",
+                ParameterType = "esriGPParameterTypeRequired"
+            });
+        }
+
+        return new GPTaskInfoResponse
+        {
+            Name = definition.ProcessId,
+            DisplayName = definition.Title,
+            Description = definition.Description,
+            Category = definition.Category,
+            HelpUrl = string.Empty,
+            ExecutionType = "esriExecutionTypeAsynchronous",
+            Parameters = [.. parameters]
+        };
+    }
+
+    private static AnalysisPlan BuildSubmissionPlan(
+        ProcessDefinition definition,
+        string serviceId,
+        IReadOnlyDictionary<string, string> rawParameters)
+    {
+        var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in rawParameters)
+        {
+            if (IsProtocolControlParameter(key))
+            {
+                continue;
+            }
+
+            inputs[key] = value;
+        }
+
+        var translatedInputs = GPServerParameterTranslation.TranslateInbound(inputs);
+        var taskSlug = definition.ProcessId.Replace(".", "-", StringComparison.Ordinal);
+
+        return new AnalysisPlan
+        {
+            PlanId = $"gpserver-{serviceId}-{taskSlug}-{Guid.NewGuid():N}",
+            IntentId = $"gpserver:{serviceId}:{definition.ProcessId}",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = $"gp-task-{taskSlug}",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = definition.ProcessId,
+                    Inputs = translatedInputs
+                }
+            ],
+            Outputs = definition.OutputArtifactKinds
+        };
+    }
+
+    private static Dictionary<string, string> BuildProtocolMetadata(
+        string serviceId,
+        string taskName,
+        ProcessDefinition definition,
+        IReadOnlyDictionary<string, string> rawParameters)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["submittedVia"] = "GPServer",
+            [GeoprocessingProtocolMetadataKeys.GPServerServiceId] = serviceId,
+            [GeoprocessingProtocolMetadataKeys.GPServerTaskName] = taskName
+        };
+
+        for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
+        {
+            var outputName = BuildOutputParameterName(
+                definition.OutputArtifactKinds[index],
+                index,
+                definition.OutputArtifactKinds);
+            metadata[$"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}"] = outputName;
+        }
+
+        if (rawParameters.TryGetValue("context", out var contextValue) &&
+            !string.IsNullOrWhiteSpace(contextValue))
+        {
+            metadata[GeoprocessingProtocolMetadataKeys.GPServerContext] = contextValue;
+        }
+
+        return metadata;
+    }
+
+    private static bool IsProtocolControlParameter(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return true;
+        }
+
+        return string.Equals(key, "f", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, "token", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, "context", StringComparison.OrdinalIgnoreCase)
+            || key.StartsWith("env:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildOutputParameterName(
+        ArtifactKind kind,
+        int index,
+        IReadOnlyList<ArtifactKind> allKinds)
+    {
+        var baseName = kind switch
+        {
+            ArtifactKind.FeatureLayer => "outputFeatureLayer",
+            ArtifactKind.Table => "outputTable",
+            ArtifactKind.Raster => "outputRaster",
+            ArtifactKind.File => "outputFile",
+            ArtifactKind.Report => "outputReport",
+            ArtifactKind.Map => "outputMap",
+            ArtifactKind.Scalar => "outputScalar",
+            ArtifactKind.AppBundle => "outputBundle",
+            _ => "output"
+        };
+
+        var duplicateCount = allKinds.Count(candidate => candidate == kind);
+        if (duplicateCount <= 1)
+        {
+            return baseName;
+        }
+
+        var ordinal = 1;
+        for (var i = 0; i <= index; i++)
+        {
+            if (allKinds[i] == kind)
+            {
+                ordinal++;
+            }
+        }
+
+        return $"{baseName}{ordinal - 1}";
+    }
+
+    private static string[] ResolvePublishedOutputParameterNames(
+        ExecutionJobRecord job,
+        AnalysisResultPackage resultPackage)
+    {
+        if (resultPackage.Artifacts.Count == 0)
+        {
+            return [];
+        }
+
+        var allKinds = resultPackage.Artifacts.Select(artifact => artifact.Kind).ToArray();
+        var names = new string[resultPackage.Artifacts.Count];
+        for (var index = 0; index < resultPackage.Artifacts.Count; index++)
+        {
+            names[index] = ResolvePublishedOutputParameterName(
+                job,
+                resultPackage.Artifacts[index],
+                index,
+                allKinds);
+        }
+
+        return names;
+    }
+
+    private static ArtifactRef? ResolveArtifactByPublishedOutputName(
+        ExecutionJobRecord job,
+        AnalysisResultPackage resultPackage,
+        string requestedParamName,
+        out string? publishedName)
+    {
+        var allKinds = resultPackage.Artifacts.Select(artifact => artifact.Kind).ToArray();
+        for (var index = 0; index < resultPackage.Artifacts.Count; index++)
+        {
+            var artifact = resultPackage.Artifacts[index];
+            var outputName = ResolvePublishedOutputParameterName(job, artifact, index, allKinds);
+            if (!string.Equals(outputName, requestedParamName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            publishedName = outputName;
+            return artifact;
+        }
+
+        publishedName = null;
+        return null;
+    }
+
+    private static string ResolvePublishedOutputParameterName(
+        ExecutionJobRecord job,
+        ArtifactRef artifact,
+        int index,
+        IReadOnlyList<ArtifactKind> allKinds)
+    {
+        if (artifact.Metadata.TryGetValue(
+                GPServerParameterTranslation.OutputParameterMetadataKey,
+                out var metadataName) &&
+            !string.IsNullOrWhiteSpace(metadataName))
+        {
+            return metadataName;
+        }
+
+        if (job.Spec.Parameters.TryGetValue($"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}", out var storedName) &&
+            !string.IsNullOrWhiteSpace(storedName))
+        {
+            return storedName;
+        }
+
+        return BuildOutputParameterName(artifact.Kind, index, allKinds);
     }
 
     private static IResult MapExceptionToResult(
@@ -565,7 +858,7 @@ internal static class GPServerEndpoints
 
             GeoprocessingPreconditionFailedException preconditionEx =>
                 LogAndReturn(logger, operation, preconditionEx.Message,
-                    StandardErrorHelpers.CreateBadRequest(context, preconditionEx.Message)),
+                    StandardErrorHelpers.CreatePreconditionFailed(context, preconditionEx.Message)),
 
             GeoprocessingValidationException validationEx =>
                 LogAndReturn(logger, operation, validationEx.Message,
@@ -583,6 +876,14 @@ internal static class GPServerEndpoints
                 LogAndReturn(logger, operation, admissionEx.Message,
                     StandardErrorHelpers.CreateServiceUnavailable(
                         context, admissionEx.Message, admissionEx.RetryAfterSeconds)),
+
+            TimeoutException timeoutEx =>
+                LogAndReturn(logger, operation, timeoutEx.Message,
+                    StandardErrorHelpers.CreateRequestTimeout(context, timeoutEx.Message)),
+
+            OperationCanceledException canceledEx =>
+                LogAndReturn(logger, operation, canceledEx.Message,
+                    StandardErrorHelpers.CreateRequestTimeout(context, canceledEx.Message)),
 
             _ => LogAndReturn(logger, operation, ex.Message,
                 StandardErrorHelpers.CreateInternalServerError(context,
@@ -630,7 +931,7 @@ internal static class GPServerEndpoints
 
         if (!string.IsNullOrEmpty(taskName))
         {
-            activity.SetTag("honua.gp.task_name", taskName);
+            activity.SetTag(HonuaTelemetry.Tags.TaskName, taskName);
         }
     }
 

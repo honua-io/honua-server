@@ -3,14 +3,18 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.OData;
 
@@ -214,23 +218,54 @@ internal sealed class ODataCrudHandler(
             return layerValidation.ErrorResult!;
         }
 
-        var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        var result = await _crudService.GetFeatureAsync(layerId, objectId, baseUrl, effectiveToken);
-        if (!result.IsSuccess)
-        {
-            return ODataUtilityService.CreateResultFromCrudResult(context, result, format);
-        }
-
-        ODataUtilityService.SetODataHeaders(context, result.ETag);
-        return Results.Json(
-            result.Data,
-            ODataJsonContext.Default.DictionaryStringObject,
-            contentType: ODataUtilityService.GetODataContentType(context.Request, format));
+        return ODataUtilityService.CreateODataError(
+            context,
+            "ResourceNotFound",
+            "The $value path is only supported for primitive properties or media streams.",
+            StatusCodes.Status404NotFound);
     }
 
     /// <summary>
     /// Handles creating a new feature
     /// </summary>
+    public async Task<IResult> HandleCreateFeatureAsync(
+        HttpContext context,
+        int? layerId,
+        CancellationToken cancellationToken = default)
+    {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.None);
+        if (queryValidation != null)
+        {
+            return queryValidation;
+        }
+
+        if (layerId.HasValue)
+        {
+            var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
+                context, layerId.Value, effectiveToken);
+            if (!layerValidation.IsValid)
+            {
+                return layerValidation.ErrorResult!;
+            }
+        }
+        else
+        {
+            var authorizationError = await RequireAnyODataWriteAccessBeforeBodyAsync(context, effectiveToken);
+            if (authorizationError != null)
+            {
+                return authorizationError;
+            }
+        }
+
+        var (request, readError) = await ReadFeatureRequestAsync(context, effectiveToken);
+        return readError ?? await HandleCreateFeatureAsync(context, layerId, request!, cancellationToken);
+    }
+
     public async Task<IResult> HandleCreateFeatureAsync(
         HttpContext context,
         int? layerId,
@@ -295,6 +330,7 @@ internal sealed class ODataCrudHandler(
         if (result.IsSuccess)
         {
             var preferMinimal = ODataUtilityService.ShouldReturnMinimal(context.Request.Headers["Prefer"].ToString());
+            var hasCreatedObjectId = TryExtractObjectId(result.Data, out var createdObjectId);
 
             if (!preferMinimal && result.Data is Dictionary<string, object?> createdPayload)
             {
@@ -319,7 +355,7 @@ internal sealed class ODataCrudHandler(
             }
 
             await _mutationEventService.InvalidateLayerAsync(null, resolvedLayerId.Value, CancellationToken.None);
-            if (TryExtractObjectId(result.Data, out var createdObjectId))
+            if (hasCreatedObjectId)
             {
                 await _mutationEventService.PublishAsync(
                     context,
@@ -333,6 +369,10 @@ internal sealed class ODataCrudHandler(
             }
             HonuaTelemetry.SetSuccess(activity);
         }
+        else
+        {
+            RecordCrudFailure(activity, result.ErrorMessage);
+        }
 
         return ODataUtilityService.CreateResultFromCrudResult(context, result);
     }
@@ -344,7 +384,6 @@ internal sealed class ODataCrudHandler(
         HttpContext context,
         int layerId,
         long objectId,
-        [FromBody] ODataFeatureRequest request,
         CancellationToken cancellationToken = default)
     {
         var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
@@ -358,7 +397,94 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
-        var (isValid, errorMessage) = ODataUtilityService.ValidateFeatureRequest(request, "PATCH");
+        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
+            context, layerId, effectiveToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation.ErrorResult!;
+        }
+
+        var (request, readError) = await ReadFeatureRequestAsync(context, effectiveToken);
+        return readError ?? await HandleUpdateFeatureAsync(context, layerId, objectId, request!, cancellationToken);
+    }
+
+    public async Task<IResult> HandleUpdateFeatureAsync(
+        HttpContext context,
+        int layerId,
+        long objectId,
+        [FromBody] ODataFeatureRequest request,
+        CancellationToken cancellationToken = default)
+        => await HandleUpdateFeatureAsync(
+            context,
+            layerId,
+            objectId,
+            request,
+            replace: false,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<IResult> HandleReplaceFeatureAsync(
+        HttpContext context,
+        int layerId,
+        long objectId,
+        CancellationToken cancellationToken = default)
+    {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.None);
+        if (queryValidation != null)
+        {
+            return queryValidation;
+        }
+
+        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
+            context, layerId, effectiveToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation.ErrorResult!;
+        }
+
+        var (request, readError) = await ReadFeatureRequestAsync(context, effectiveToken);
+        return readError ?? await HandleReplaceFeatureAsync(context, layerId, objectId, request!, cancellationToken);
+    }
+
+    public async Task<IResult> HandleReplaceFeatureAsync(
+        HttpContext context,
+        int layerId,
+        long objectId,
+        [FromBody] ODataFeatureRequest request,
+        CancellationToken cancellationToken = default)
+        => await HandleUpdateFeatureAsync(
+            context,
+            layerId,
+            objectId,
+            request,
+            replace: true,
+            cancellationToken).ConfigureAwait(false);
+
+    private async Task<IResult> HandleUpdateFeatureAsync(
+        HttpContext context,
+        int layerId,
+        long objectId,
+        ODataFeatureRequest request,
+        bool replace,
+        CancellationToken cancellationToken)
+    {
+        var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
+
+        var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
+            context,
+            _validationService,
+            AllowedQueryParameters.None);
+        if (queryValidation != null)
+        {
+            return queryValidation;
+        }
+
+        var method = replace ? "PUT" : "PATCH";
+        var (isValid, errorMessage) = ODataUtilityService.ValidateFeatureRequest(request, method);
         if (!isValid)
         {
             return ODataUtilityService.CreateODataError(context, "InvalidRequest", errorMessage!);
@@ -389,7 +515,7 @@ internal sealed class ODataCrudHandler(
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
-        activity?.SetTag(HonuaTelemetry.Tags.Operation, "update");
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, replace ? "replace" : "update");
         activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
@@ -403,6 +529,7 @@ internal sealed class ODataCrudHandler(
             baseUrl,
             ifMatch,
             ifNoneMatch,
+            replace,
             effectiveToken);
         if (result.IsSuccess)
         {
@@ -434,13 +561,17 @@ internal sealed class ODataCrudHandler(
             await _mutationEventService.PublishAsync(
                 context,
                 layerId,
-                objectId,
-                "update",
-                HonuaTelemetry.Protocols.OData,
+                    objectId,
+                    replace ? "replace" : "update",
+                    HonuaTelemetry.Protocols.OData,
                 CancellationToken.None,
                 mutationFeature: result.MutationFeature,
                 serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
             HonuaTelemetry.SetSuccess(activity);
+        }
+        else
+        {
+            RecordCrudFailure(activity, result.ErrorMessage);
         }
 
         return ODataUtilityService.CreateResultFromCrudResult(context, result);
@@ -496,8 +627,88 @@ internal sealed class ODataCrudHandler(
                 serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
             HonuaTelemetry.SetSuccess(activity);
         }
+        else
+        {
+            RecordCrudFailure(activity, result.ErrorMessage);
+        }
 
         return ODataUtilityService.CreateResultFromCrudResult(context, result);
+    }
+
+    private static async Task<(ODataFeatureRequest? Request, IResult? Error)> ReadFeatureRequestAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var request = await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                ODataJsonContext.Default.ODataFeatureRequest,
+                cancellationToken);
+            if (request == null)
+            {
+                return (null, ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidRequest",
+                    "Invalid request body."));
+            }
+
+            return (request, null);
+        }
+        catch (JsonException)
+        {
+            return (null, ODataUtilityService.CreateODataError(
+                context,
+                "InvalidRequest",
+                "Request body must be valid JSON."));
+        }
+        catch (NotSupportedException)
+        {
+            return (null, ODataUtilityService.CreateODataError(
+                context,
+                "InvalidRequest",
+                "Request body must be valid JSON."));
+        }
+    }
+
+    private static async Task<IResult?> RequireAnyODataWriteAccessBeforeBodyAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var services = await layerCatalog.ListServicesAsync(cancellationToken);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services, ServiceProtocols.OData);
+        IResult? firstError = null;
+
+        foreach (var layer in services
+                     .SelectMany(static service => service.Layers)
+                     .DistinctBy(static layer => layer.Id)
+                     .OrderBy(static layer => layer.Id))
+        {
+            if (!primaryServices.TryGetValue(layer.Id, out var service) ||
+                !ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
+            {
+                continue;
+            }
+
+            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+                context,
+                layer,
+                service,
+                cancellationToken);
+            if (rbacError == null)
+            {
+                return null;
+            }
+
+            firstError ??= rbacError;
+        }
+
+        return firstError ?? ODataUtilityService.CreateODataError(
+            context,
+            "ResourceNotFound",
+            "No OData collections are available.",
+            StatusCodes.Status404NotFound);
     }
 
     private static bool TryExtractObjectId(object? payload, out long objectId)
@@ -523,4 +734,11 @@ internal sealed class ODataCrudHandler(
         };
     }
 
+    private static void RecordCrudFailure(Activity? activity, string? message)
+    {
+        var detail = string.IsNullOrWhiteSpace(message)
+            ? "OData write request failed."
+            : message;
+        HonuaTelemetry.RecordException(activity, new InvalidOperationException(detail));
+    }
 }

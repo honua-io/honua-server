@@ -98,7 +98,7 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         response.Headers.Should().ContainKey("OData-Version");
-        response.Headers.GetValues("OData-Version").First().Should().Be("4.0");
+        response.Headers.GetValues("OData-Version").First().Should().Be("4.01");
 
         var content = await response.Content.ReadAsStringAsync();
         var error = JsonSerializer.Deserialize<ODataError>(content);

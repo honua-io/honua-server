@@ -15,9 +15,10 @@ using Microsoft.Extensions.Primitives;
 namespace Honua.Server.Features.ImageServer.Handlers;
 
 /// <summary>
-/// Handler for the Esri Image Server <c>computeClass</c>/<c>analyze</c> endpoints.
-/// Validates a raster function chain document and returns a normalised description
-/// of the chain that the client can echo back to the export pipeline.
+/// Internal helper that validates a raster function chain document and returns a
+/// normalised description of the chain. This is intentionally not exposed as a
+/// public ArcGIS ImageServer endpoint because <c>/computeClass</c> is not part of
+/// the ImageServer contract.
 /// </summary>
 internal sealed class ImageServerAnalyzeHandler
 {
@@ -46,10 +47,10 @@ internal sealed class ImageServerAnalyzeHandler
         CancellationToken cancellationToken)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
-            "analyze",
+            "analyze-raster-function",
             HonuaTelemetry.Protocols.ImageServer,
             layerId.ToString(CultureInfo.InvariantCulture));
-        scope.WithTag(HonuaTelemetry.Tags.Operation, "analyze-function-chain");
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "analyze-raster-function");
 
         try
         {

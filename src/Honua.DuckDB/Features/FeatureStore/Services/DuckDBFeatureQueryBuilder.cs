@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.DuckDB.Features.Infrastructure;
@@ -1099,24 +1100,10 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
     /// includes non-geographic SRIDs (e.g. EPSG:4978 WGS 84 geocentric in meters) which
     /// would cause incorrect distance function selection.
     /// </summary>
-    private static bool IsGeographicSrid(int srid) =>
-        srid is 4326    // WGS 84
-            or 4269     // NAD83
-            or 4267     // NAD27
-            or 4258     // ETRS89
-            or 4283     // GDA94
-            or 4617     // NAD83(CSRS)
-            or 4759;    // NAD83(NSRS2007)
+    private static bool IsGeographicSrid(int srid) => DistanceConversions.IsGeographicSrid(srid);
 
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit) =>
-        unit switch
-        {
-            DistanceUnit.Meters => distance,
-            DistanceUnit.Feet => distance * 0.3048,
-            DistanceUnit.Kilometers => distance * 1000.0,
-            DistanceUnit.Miles => distance * 1609.344,
-            _ => distance
-        };
+        DistanceConversions.ToMeters(distance, unit);
 
     #endregion
 }

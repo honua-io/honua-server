@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.ImageServer;
 
 /// <summary>
 /// API surface integration tests for the ImageServer endpoints added in #520
-/// (catalog query, computeStatisticsHistograms, legend, computeClass).
+/// (catalog query, computeStatisticsHistograms, legend, computeClassStatistics).
 /// Each test exercises the actual route through <see cref="WebAppFixture"/> so
 /// route binding, telemetry, JSON formatting, and error handling are all covered
 /// per ADR-0011 API Surface Coverage.
@@ -167,7 +167,7 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
     [Operation(Operations.Query)]
-    public async Task ComputeStatisticsHistograms_Get_ReturnsStatisticsAndHistograms()
+    public async Task ComputeStatisticsHistograms_Get_WithoutGeometry_ReturnsBadRequest()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -175,12 +175,7 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("statistics").GetArrayLength().Should().Be(1);
-            json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
-            json.RootElement.GetProperty("statistics")[0].GetProperty("min").GetDouble().Should().Be(0);
-            json.RootElement.GetProperty("statistics")[0].GetProperty("max").GetDouble().Should().Be(255);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
         finally
         {
@@ -191,7 +186,7 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
     [Operation(Operations.Query)]
-    public async Task ComputeStatisticsHistograms_Post_FormBody_ReturnsStatistics()
+    public async Task ComputeStatisticsHistograms_Post_WithGeometry_ReturnsNotImplemented()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -199,41 +194,15 @@ public class ImageServerEndpointsTests
             var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("histogramParameters", "{\"size\":32}"),
+                new KeyValuePair<string, string>("geometryType", "esriGeometryEnvelope"),
+                new KeyValuePair<string, string>("geometry", "{\"xmin\":-180,\"ymin\":-90,\"xmax\":180,\"ymax\":90,\"spatialReference\":{\"wkid\":4326}}"),
             });
 
             var response = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms",
                 content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("statistics").GetArrayLength().Should().Be(1);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
-    [Operation(Operations.Query)]
-    public async Task ComputeStatisticsHistograms_RasterIdsAsCatalogIds_LooksUpRaster()
-    {
-        // Regression: rasterIds in the Esri spec are catalog object IDs (long),
-        // not band indices. The handler must look the raster up via the catalog
-        // and never fall back to GetPrimaryRasterInfoAsync.
-        var rasterStore = CreateRasterStoreSubstitute();
-        var fixture = await CreateFixtureAsync(rasterStore);
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json&rasterIds=100");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            await rasterStore.Received().GetRasterInfoAsync(TestLayerId, 100L, Arg.Any<CancellationToken>());
-            await rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(TestLayerId, Arg.Any<CancellationToken>());
+            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
         }
         finally
         {
@@ -284,23 +253,18 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /rest/services/{id}/ImageServer/computeClass")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeClassStatistics")]
     [Operation(Operations.Metadata)]
-    public async Task ComputeClass_Get_ReturnsAnalyzedFunctionChain()
+    public async Task ComputeClassStatistics_Get_WithClassDescriptions_ReturnsNotImplemented()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
-            const string renderingRule = """{"rasterFunction":"Identity"}""";
+            const string classDescriptions = """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}""";
             var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeClass?f=json&renderingRule={Uri.EscapeDataString(renderingRule)}");
+                $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json&classDescriptions={Uri.EscapeDataString(classDescriptions)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("rasterFunction").GetString().Should().Be("Identity");
-            json.RootElement.GetProperty("status").GetString().Should().Be("success");
-            json.RootElement.GetProperty("chainDepth").GetInt32().Should().BeGreaterThan(0);
+            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
         }
         finally
         {
@@ -309,9 +273,9 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /rest/services/{id}/ImageServer/computeClass")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/computeClassStatistics")]
     [Operation(Operations.Metadata)]
-    public async Task ComputeClass_Post_FormBody_ReturnsAnalyzedFunctionChain()
+    public async Task ComputeClassStatistics_Post_FormBody_ReturnsNotImplemented()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -319,16 +283,14 @@ public class ImageServerEndpointsTests
             var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("renderingRule", """{"rasterFunction":"Identity"}"""),
+                new KeyValuePair<string, string>("classDescriptions", """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}"""),
             });
 
             var response = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeClass",
+                $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics",
                 content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("rasterFunction").GetString().Should().Be("Identity");
+            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
         }
         finally
         {
@@ -337,15 +299,15 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /rest/services/{id}/ImageServer/computeClass")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeClassStatistics")]
     [Operation(Operations.Metadata)]
-    public async Task ComputeClass_MissingRenderingRule_ReturnsBadRequest()
+    public async Task ComputeClassStatistics_MissingClassDescriptions_ReturnsBadRequest()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
             var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeClass?f=json");
+                $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }

@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 const PORT = parseInt(process.env.OL_TEST_PAGE_PORT ?? '9876', 10);
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const NODE_MODULES = resolve(ROOT, '..', '..', 'node_modules');
+const API_PROXY_PREFIXES = ['/ogc/', '/api/', '/tiles/'];
+const PROXY_ORIGIN = `http://localhost:${PORT}`;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html',
@@ -34,6 +36,42 @@ function tryRead(filePath: string): Buffer | null {
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
   const pathname = url.pathname;
+
+  if (API_PROXY_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+    const upstreamBaseUrl = process.env.HONUA_BASE_URL;
+    if (!upstreamBaseUrl) {
+      res.writeHead(502);
+      res.end('HONUA_BASE_URL is not configured');
+      return;
+    }
+
+    void (async () => {
+      try {
+        const upstreamUrl = new URL(`${pathname}${url.search}`, upstreamBaseUrl);
+        const upstreamResponse = await fetch(upstreamUrl, { method: req.method });
+        const contentType = upstreamResponse.headers.get('content-type');
+        const upstreamOrigin = new URL(upstreamBaseUrl).origin;
+        if (contentType) {
+          res.setHeader('Content-Type', contentType);
+        }
+
+        res.writeHead(upstreamResponse.status);
+        if (contentType?.includes('json')) {
+          const body = await upstreamResponse.text();
+          res.end(body.replaceAll(upstreamOrigin, PROXY_ORIGIN));
+          return;
+        }
+
+        const body = Buffer.from(await upstreamResponse.arrayBuffer());
+        res.end(body);
+      } catch {
+        res.writeHead(502);
+        res.end('Upstream proxy request failed');
+      }
+    })();
+
+    return;
+  }
 
   // Serve test-page.html at root
   if (pathname === '/' || pathname === '/test-page.html') {

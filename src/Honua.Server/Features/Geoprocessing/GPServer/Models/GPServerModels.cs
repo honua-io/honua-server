@@ -14,29 +14,20 @@ internal sealed class GPServiceInfoResponse
     /// <summary>Service description.</summary>
     public string? ServiceDescription { get; set; }
 
-    /// <summary>List of GP tasks.</summary>
-    public GPTaskReference[]? Tasks { get; set; }
+    /// <summary>List of GP task names.</summary>
+    public string[]? Tasks { get; set; }
 
     /// <summary>Execution type for the service.</summary>
     public string? ExecutionType { get; set; }
+
+    /// <summary>Service capabilities.</summary>
+    public string? Capabilities { get; set; }
 
     /// <summary>Result map server name.</summary>
     public string? ResultMapServerName { get; set; }
 
     /// <summary>Maximum number of records returned.</summary>
     public int MaximumRecords { get; set; } = 1000;
-}
-
-/// <summary>
-/// Reference to a GP task in the service listing.
-/// </summary>
-internal sealed class GPTaskReference
-{
-    /// <summary>Task name.</summary>
-    public string? Name { get; set; }
-
-    /// <summary>Task display name.</summary>
-    public string? DisplayName { get; set; }
 }
 
 /// <summary>
@@ -49,6 +40,9 @@ internal sealed class GPTaskInfoResponse
 
     /// <summary>Task display name.</summary>
     public string? DisplayName { get; set; }
+
+    /// <summary>Task description.</summary>
+    public string? Description { get; set; }
 
     /// <summary>Category of the GP tool.</summary>
     public string? Category { get; set; }
@@ -76,6 +70,9 @@ internal sealed class GPParameterInfo
 
     /// <summary>Display name.</summary>
     public string? DisplayName { get; set; }
+
+    /// <summary>Parameter description.</summary>
+    public string? Description { get; set; }
 
     /// <summary>Parameter direction (esriGPParameterDirectionInput or esriGPParameterDirectionOutput).</summary>
     public string? Direction { get; set; }

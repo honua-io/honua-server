@@ -583,7 +583,8 @@ internal sealed class QueryFormatter : IQueryFormatter
             Length = field.Length,
             Nullable = field.Nullable,
             Editable = !field.IsGeometry,
-            DefaultValue = field.DefaultValue
+            DefaultValue = field.DefaultValue,
+            Domain = FeatureServerEndpoints.MapFieldDomainInfo(field.Domain, field.GeoServicesType)
         };
     }
 
@@ -596,6 +597,9 @@ internal sealed class QueryFormatter : IQueryFormatter
         bool returnZ,
         bool returnM)
     {
+        // GeoJSON/RFC 7946 positions may include altitude, but not M as a fourth ordinate.
+        returnM = false;
+
         if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
 

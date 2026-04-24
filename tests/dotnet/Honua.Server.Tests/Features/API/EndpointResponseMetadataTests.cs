@@ -37,7 +37,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
     {
         using var _ = _factory.CreateClient();
 
-        var expectedContentTypes = new[]
+        var layerQueryContentTypes = new[]
         {
             "application/json",
             "application/geo+json",
@@ -51,14 +51,16 @@ public sealed class EndpointResponseMetadataTests : IDisposable
         foreach (var (method, path) in new[]
                  {
                      ("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
-                     ("GET", "/rest/services/{serviceId}/FeatureServer/query"),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/query")
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/query")
                  })
         {
             var contentTypes = GetSuccessContentTypes(method, path);
-            contentTypes.Should().Contain(expectedContentTypes, $"{method} {path} must advertise every runtime-supported response format");
+            contentTypes.Should().Contain(layerQueryContentTypes, $"{method} {path} must advertise every runtime-supported response format");
         }
+
+        var serviceQueryContentTypes = GetSuccessContentTypes("GET", "/rest/services/{serviceId}/FeatureServer/query");
+        serviceQueryContentTypes.Should().Contain("application/json",
+            "GET /rest/services/{serviceId}/FeatureServer/query returns a multi-layer service response that is currently JSON-only");
     }
 
     [Fact]
@@ -69,12 +71,20 @@ public sealed class EndpointResponseMetadataTests : IDisposable
 
         foreach (var (method, path, expectedType) in new[]
                  {
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits", typeof(Honua.Server.Features.FeatureServer.Models.ServiceApplyEditsResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures", typeof(Honua.Server.Features.FeatureServer.Models.ApplyEditsResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures", typeof(Honua.Server.Features.FeatureServer.Models.ApplyEditsResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures", typeof(Honua.Server.Features.FeatureServer.Models.ApplyEditsResponse)),
+                     ("GET", "/rest/services/{serviceId}/FeatureServer/replicas", typeof(Honua.Server.Features.FeatureServer.Models.ReplicaSummary[])),
+                     ("GET", "/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}", typeof(Honua.Server.Features.FeatureServer.Models.ReplicaInfoResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/createReplica", typeof(Honua.Server.Features.FeatureServer.Models.CreateReplicaResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/extractChanges", typeof(Honua.Server.Features.FeatureServer.Models.ExtractChangesResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/synchronizeReplica", typeof(Honua.Server.Features.FeatureServer.Models.SynchronizeReplicaResponse))
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/synchronizeReplica", typeof(Honua.Server.Features.FeatureServer.Models.SynchronizeReplicaResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/unRegisterReplica", typeof(Honua.Server.Features.FeatureServer.Models.SuccessResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/append", typeof(Honua.Server.Features.FeatureServer.Models.AppendResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append", typeof(Honua.Server.Features.FeatureServer.Models.AppendResponse)),
+                     ("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate", typeof(Honua.Server.Features.FeatureServer.Models.CalculateResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate", typeof(Honua.Server.Features.FeatureServer.Models.CalculateResponse))
                  })
         {
             var successMetadata = GetResponseMetadata(method, path, StatusCodes.Status200OK);

@@ -5,13 +5,14 @@ namespace Honua.Server;
 
 /// <summary>
 /// Registry of public-interface operations that are not fully represented by HTTP route metadata alone.
-/// Complements <see cref="EndpointRegistry"/> by tracking WFS dispatcher operations and gRPC service methods.
+/// Complements <see cref="EndpointRegistry"/> by tracking dispatched operations, query-option operation
+/// families, and gRPC service methods.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <see cref="EndpointRegistry"/> enforces HTTP route drift and integration-test coverage.
 /// This registry extends that policy to logical operations dispatched within a single route
-/// (WFS 2.0) and non-HTTP protocol surfaces (gRPC).
+/// (WFS 2.0 and WMS 1.3.0), option-driven OData surfaces, and non-HTTP protocol surfaces (gRPC).
 /// </para>
 /// <para>
 /// Add new dispatched operations here when the implementation ships so the
@@ -25,6 +26,8 @@ public static class OperationRegistry
     // The architecture test AllInterfaceOperationAttributes_ShouldUseRegisteredValues
     // validates that attribute values match entries here, catching any drift.
     private const string Wfs20 = "WFS-2.0";
+    private const string Wms13 = "WMS-1.3.0";
+    private const string ODataV4 = "OData-v4";
     private const string Grpc = "Grpc";
 
     /// <summary>
@@ -40,6 +43,18 @@ public static class OperationRegistry
         new(Wfs20, "Transaction"),
         new(Wfs20, "ListStoredQueries"),
         new(Wfs20, "DescribeStoredQueries"),
+
+        // WMS 1.3.0 operations (dispatched via GET /MapServer/WMS?REQUEST=...)
+        new(Wms13, "GetCapabilities"),
+        new(Wms13, "GetMap"),
+        new(Wms13, "GetFeatureInfo"),
+
+        // OData operation families that share routes with query-option or payload dispatch
+        new(ODataV4, "Metadata"),
+        new(ODataV4, "Batch"),
+        new(ODataV4, "Apply"),
+        new(ODataV4, "Search"),
+        new(ODataV4, "DeltaTracking"),
 
         // gRPC FeatureService methods (geospatial.v1.FeatureService)
         new(Grpc, "geospatial.v1.FeatureService/QueryFeatures"),

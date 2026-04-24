@@ -177,35 +177,25 @@ internal abstract class RedisServiceBase : IRedisService
 
     private void LogServiceInitialization()
     {
+        var serviceTypeName = GetType().Name;
+
         if (Redis != null)
         {
-            Logger.LogInformation(
-                "Service {ServiceType} initialized with Redis support (strategy: {Strategy})",
-                GetType().Name,
-                FallbackStrategy.Mode);
+            RedisServiceBaseLog.InitializedWithRedis(Logger, serviceTypeName, FallbackStrategy.Mode);
         }
         else
         {
-            Logger.LogInformation(
-                "Service {ServiceType} initialized without Redis (strategy: {Strategy})",
-                GetType().Name,
-                FallbackStrategy.Mode);
+            RedisServiceBaseLog.InitializedWithoutRedis(Logger, serviceTypeName, FallbackStrategy.Mode);
         }
     }
 
     private void LogFallbackOperation(string operation)
     {
-        Logger.LogWarning(
-            "Redis unavailable for {Operation} - using fallback (service: {ServiceType})",
-            operation,
-            GetType().Name);
+        RedisServiceBaseLog.UsingFallback(Logger, operation, GetType().Name);
     }
 
     private void LogRedisOperationFailed(string operation, Exception ex)
     {
-        Logger.LogWarning(ex,
-            "Redis operation failed for {Operation} (service: {ServiceType})",
-            operation,
-            GetType().Name);
+        RedisServiceBaseLog.OperationFailed(Logger, operation, GetType().Name, ex);
     }
 }

@@ -24,7 +24,7 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Project)]
-    [Endpoint("POST /rest/services/geometry/project")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_Wgs84ToWebMercator_ReturnsCorrectCoordinates()
     {
         var body = """
@@ -39,7 +39,7 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
         response.Be200Ok();
 
@@ -58,7 +58,7 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Project)]
-    [Endpoint("POST /rest/services/geometry/project")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_SameSrid_ReturnsUnchanged()
     {
         var body = """
@@ -73,7 +73,7 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
         response.Be200Ok();
 
@@ -91,7 +91,7 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Project)]
-    [Endpoint("POST /rest/services/geometry/project")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_InvalidSrid_Returns400()
     {
         var body = """
@@ -106,14 +106,14 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Project)]
-    [Endpoint("POST /rest/services/geometry/project")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_BatchGeometries_ReturnsAll()
     {
         var body = """
@@ -132,7 +132,7 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
         response.Be200Ok();
 
@@ -146,12 +146,12 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Project)]
-    [Endpoint("GET /rest/services/geometry/project")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_GetWithQueryString_ReturnsProjectedGeometry()
     {
         var geometries = Uri.EscapeDataString(
             """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0}]}""");
-        var url = $"/rest/services/geometry/project?geometries={geometries}&inSR=4326&outSR=3857";
+        var url = $"/rest/services/Utilities/Geometry/GeometryServer/project?geometries={geometries}&inSR=4326&outSR=3857";
 
         var response = await _fixture.Client.GetAsync(url);
 
@@ -168,17 +168,17 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Project)]
-    [Endpoint("GET /rest/services/geometry/project")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_GetMissingParameters_Returns400()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/geometry/project?inSR=4326");
+        var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer/project?inSR=4326");
 
         response.Be400BadRequest();
     }
 
     [IntegrationTest]
     [Operation(Operations.Project)]
-    [Endpoint("POST /rest/services/geometry/project")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_JsonSpatialReference_WithLatestWkid_ParsesCorrectly()
     {
         var body = """
@@ -193,7 +193,7 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
         response.Be200Ok();
 
@@ -207,7 +207,7 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Project)]
-    [Endpoint("POST /rest/services/geometry/project")]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_JsonSpatialReference_WithName_ParsesCorrectly()
     {
         var body = """
@@ -222,7 +222,7 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
         response.Be200Ok();
 

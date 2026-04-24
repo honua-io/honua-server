@@ -65,6 +65,47 @@ public sealed class TileRendererWkbTests
         lePng.Should().Equal(bePng);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public void RenderTilePng_BigAndLittleEndianMultiPoint_ProduceSameImage()
+    {
+        var littleEndian = TileRenderer.RenderTilePng(
+            ImmutableArray.Create(Feature.Create(1, BuildMultiPointWkb([(64d, 64d), (192d, 192d)], littleEndian: true))),
+            TestBounds,
+            GeometryType.MultiPoint);
+
+        var bigEndian = TileRenderer.RenderTilePng(
+            ImmutableArray.Create(Feature.Create(1, BuildMultiPointWkb([(64d, 64d), (192d, 192d)], littleEndian: false))),
+            TestBounds,
+            GeometryType.MultiPoint);
+
+        littleEndian.Should().Equal(bigEndian);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public void RenderTilePng_PolygonHole_RendersDifferentlyFromSolidPolygon()
+    {
+        var polygonWithHole = TileRenderer.RenderTilePng(
+            ImmutableArray.Create(Feature.Create(1, BuildPolygonWkb(
+                [
+                    [(32d, 32d), (224d, 32d), (224d, 224d), (32d, 224d), (32d, 32d)],
+                    [(96d, 96d), (160d, 96d), (160d, 160d), (96d, 160d), (96d, 96d)]
+                ]))),
+            TestBounds,
+            GeometryType.Polygon);
+
+        var solidPolygon = TileRenderer.RenderTilePng(
+            ImmutableArray.Create(Feature.Create(1, BuildPolygonWkb(
+                [[(32d, 32d), (224d, 32d), (224d, 224d), (32d, 224d), (32d, 32d)]]))),
+            TestBounds,
+            GeometryType.Polygon);
+
+        polygonWithHole.Should().NotEqual(solidPolygon);
+    }
+
     /// <summary>
     /// Builds a WKB Point payload with the specified byte order.
     /// Layout: [byteOrder(1)] [type(4)] [x(8)] [y(8)] = 21 bytes
@@ -88,5 +129,68 @@ public sealed class TileRendererWkbTests
         }
 
         return wkb;
+    }
+
+    private static byte[] BuildMultiPointWkb((double X, double Y)[] points, bool littleEndian)
+    {
+        var childSize = 21;
+        var wkb = new byte[1 + 4 + 4 + (points.Length * childSize)];
+        var offset = 0;
+
+        wkb[offset++] = (byte)(littleEndian ? 1 : 0);
+        WriteInt32(wkb, ref offset, 4, littleEndian);
+        WriteInt32(wkb, ref offset, points.Length, littleEndian);
+
+        foreach (var point in points)
+        {
+            var pointWkb = BuildPointWkb(point.X, point.Y, littleEndian);
+            pointWkb.CopyTo(wkb, offset);
+            offset += pointWkb.Length;
+        }
+
+        return wkb;
+    }
+
+    private static byte[] BuildPolygonWkb((double X, double Y)[][] rings)
+    {
+        var size = 1 + 4 + 4;
+        foreach (var ring in rings)
+        {
+            size += 4 + (ring.Length * 16);
+        }
+
+        var wkb = new byte[size];
+        var offset = 0;
+        wkb[offset++] = 1;
+        WriteInt32(wkb, ref offset, 3, littleEndian: true);
+        WriteInt32(wkb, ref offset, rings.Length, littleEndian: true);
+
+        foreach (var ring in rings)
+        {
+            WriteInt32(wkb, ref offset, ring.Length, littleEndian: true);
+            foreach (var point in ring)
+            {
+                BinaryPrimitives.WriteDoubleLittleEndian(wkb.AsSpan(offset, 8), point.X);
+                offset += 8;
+                BinaryPrimitives.WriteDoubleLittleEndian(wkb.AsSpan(offset, 8), point.Y);
+                offset += 8;
+            }
+        }
+
+        return wkb;
+    }
+
+    private static void WriteInt32(byte[] buffer, ref int offset, int value, bool littleEndian)
+    {
+        if (littleEndian)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(offset, 4), value);
+        }
+        else
+        {
+            BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(offset, 4), value);
+        }
+
+        offset += 4;
     }
 }

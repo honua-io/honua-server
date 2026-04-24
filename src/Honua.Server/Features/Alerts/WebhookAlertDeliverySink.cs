@@ -59,7 +59,7 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
 
         try
         {
-            var destinationValidation = await OutboundHttpUrlValidator
+            var destinationValidation = await Honua.Core.Features.Infrastructure.Validation.OutboundHttpUrlValidator
                 .ValidateAsync(destination, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 

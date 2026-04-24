@@ -125,13 +125,13 @@ public static class Fes20Parser
             "Overlaps" => ParseSpatialBinary(element, SpatialOperator.Overlaps),
             "Disjoint" => ParseSpatialBinary(element, SpatialOperator.Disjoint),
             "Equals" => ParseSpatialBinary(element, SpatialOperator.Equals),
+            "EnvelopeIntersects" => ParseSpatialBinary(element, SpatialOperator.Intersects),
             "DWithin" => ParseDWithin(element),
             "Beyond" => ParseBeyond(element),
 
-            // Temporal operators (basic support)
-            "During" => ParseTemporal(element),
-            "Before" => ParseTemporal(element),
-            "After" => ParseTemporal(element),
+            // Temporal operators
+            "After" or "Before" or "During" or "Meets" or "MetBy" or "OverlappedBy" or
+                "Starts" or "StartedBy" or "Finishes" or "FinishedBy" => ParseTemporal(element),
 
             // Resource identifier
             "ResourceId" => ParseResourceId(element),
@@ -434,7 +434,7 @@ public static class Fes20Parser
     }
 
     /// <summary>
-    /// Parses temporal operations (basic support)
+    /// Parses temporal operations.
     /// </summary>
     private static TemporalPredicate ParseTemporal(XElement element)
     {
@@ -452,16 +452,31 @@ public static class Fes20Parser
         var property = new PropertyReference(children[0].Value.Trim());
         var temporalOperand = ParseTemporalOperand(children[1]);
 
-        var op = element.Name.LocalName switch
-        {
-            "After" => TemporalOperator.After,
-            "Before" => TemporalOperator.Before,
-            "During" => TemporalOperator.During,
-            _ => throw new Fes20ParseException($"Unsupported temporal operator {element.Name.LocalName}")
-        };
+        var op = MapTemporalOperator(element.Name.LocalName);
 
         return new TemporalPredicate(op, property, temporalOperand);
     }
+
+    private static TemporalOperator MapTemporalOperator(string operatorName)
+        => operatorName switch
+        {
+            "After" => TemporalOperator.After,
+            "Before" => TemporalOperator.Before,
+            "Contains" => TemporalOperator.Contains,
+            "Disjoint" => TemporalOperator.Disjoint,
+            "During" => TemporalOperator.During,
+            "Equals" => TemporalOperator.Equals,
+            "FinishedBy" => TemporalOperator.FinishedBy,
+            "Finishes" => TemporalOperator.Finishes,
+            "Intersects" => TemporalOperator.Intersects,
+            "Meets" => TemporalOperator.Meets,
+            "MetBy" => TemporalOperator.MetBy,
+            "OverlappedBy" => TemporalOperator.OverlappedBy,
+            "Overlaps" => TemporalOperator.Overlaps,
+            "StartedBy" => TemporalOperator.StartedBy,
+            "Starts" => TemporalOperator.Starts,
+            _ => throw new Fes20ParseException($"Unsupported temporal operator {operatorName}")
+        };
 
     /// <summary>
     /// Parses ResourceId element

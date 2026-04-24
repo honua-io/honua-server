@@ -9,6 +9,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -130,6 +131,7 @@ internal static class CollectionsEndpoints
                 visibleLayers,
                 (layer, ct) => CreateCollectionAsync(
                     layer,
+                    layerToService.TryGetValue(layer.Id, out var service) ? service : null,
                     baseUrl,
                     featureReader,
                     crsRegistry,
@@ -195,6 +197,7 @@ internal static class CollectionsEndpoints
         string collectionId,
         HttpContext context,
         string? f,
+        [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
         [FromServices] ICoordinateTransformService coordinateTransformService,
@@ -218,23 +221,24 @@ internal static class CollectionsEndpoints
 
             OgcFeaturesLog.CollectionRequested(logger, collectionId);
 
-            if (!TryResolveCollectionId(context, collectionId, out var resolvedCollectionId, out var layerId, out var errorResult))
+            var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+            var collectionResolution = await ResolveCollectionIdAsync(context, collectionId, cancellationToken);
+            if (!collectionResolution.Found)
             {
-                if (errorResult != null)
+                if (collectionResolution.ErrorResult != null)
                 {
-                    return errorResult;
+                    return collectionResolution.ErrorResult;
                 }
 
                 OgcFeaturesLog.CollectionNotFound(logger, collectionId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
-            collectionId = resolvedCollectionId;
+            collectionId = collectionResolution.ResolvedCollectionId;
 
-            var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
                 context,
-                layerId,
+                collectionResolution.LayerId,
                 LayerValidationHelpers.ValidationProtocol.OgcFeatures,
                 requiredProtocol: ServiceProtocols.OgcFeatures,
                 cancellationToken: cancellationToken);
@@ -244,9 +248,13 @@ internal static class CollectionsEndpoints
             }
 
             var layer = layerValidation.Layer!;
+            var services = await layerCatalog.ListServicesAsync(cancellationToken);
+            var layerToService = LayerValidationHelpers.BuildPrimaryServiceMap(services, ServiceProtocols.OgcFeatures);
+            layerToService.TryGetValue(layer.Id, out var service);
 
-            var collection = await CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, coordinateTransformService, cancellationToken);
-            var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}";
+            var collection = await CreateCollectionAsync(layer, service, baseUrl, featureReader, crsRegistry, coordinateTransformService, cancellationToken);
+            var collectionSegment = Uri.EscapeDataString(collectionId);
+            var basePath = $"{baseUrl}/ogc/features/collections/{collectionSegment}";
             var selfHref = $"{basePath}{request.QueryString}";
             var updatedLinks = collection.Links.Select(link =>
                     string.Equals(link.Rel, RelationTypes.Self, StringComparison.OrdinalIgnoreCase)
@@ -326,24 +334,25 @@ internal static class CollectionsEndpoints
                 return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
-            if (!TryResolveCollectionId(context, collectionId, out var resolvedCollectionId, out var layerId, out var errorResult))
+            var effectiveToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+            var collectionResolution = await ResolveCollectionIdAsync(context, collectionId, effectiveToken);
+            if (!collectionResolution.Found)
             {
-                if (errorResult != null)
+                if (collectionResolution.ErrorResult != null)
                 {
-                    return errorResult;
+                    return collectionResolution.ErrorResult;
                 }
 
                 OgcFeaturesLog.CollectionNotFound(logger, collectionId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
-            collectionId = resolvedCollectionId;
+            collectionId = collectionResolution.ResolvedCollectionId;
             OgcFeaturesLog.CollectionRequested(logger, collectionId);
 
-            var effectiveToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
                 context,
-                layerId,
+                collectionResolution.LayerId,
                 LayerValidationHelpers.ValidationProtocol.OgcFeatures,
                 requiredProtocol: ServiceProtocols.OgcFeatures,
                 cancellationToken: effectiveToken);
@@ -355,7 +364,7 @@ internal static class CollectionsEndpoints
             var layer = layerValidation.Layer!;
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var queryablesId = $"{baseUrl}/ogc/features/collections/{collectionId}/queryables";
+            var queryablesId = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/queryables";
 
             // Build queryables schema from layer fields
             var queryables = CreateQueryablesSchema(layer, queryablesId);
@@ -400,6 +409,7 @@ internal static class CollectionsEndpoints
     /// </summary>
     private static async Task<CollectionInfo> CreateCollectionAsync(
         LayerDefinition layer,
+        ServiceDefinition? service,
         string baseUrl,
         IFeatureReader featureReader,
         ICrsRegistry crsRegistry,
@@ -438,12 +448,15 @@ internal static class CollectionsEndpoints
             type: MediaTypes.GeoJson,
             title: "Data"));
 
-        // Collection map representation
-        collectionLinks.Add(Link.Create(
-            href: $"{baseUrl}/ogc/maps/collections/{collectionId}/map",
-            rel: RelationTypes.Map,
-            type: "image/png",
-            title: "Map"));
+        var metadata = service?.Metadata ?? layer.Metadata;
+        if (ServiceProtocols.IsProtocolEnabled(metadata, ServiceProtocols.OgcApiMaps))
+        {
+            collectionLinks.Add(Link.Create(
+                href: $"{baseUrl}/ogc/maps/collections/{collectionId}/map",
+                rel: RelationTypes.Map,
+                type: "image/png",
+                title: "Map"));
+        }
 
         // Parent (collections)
         collectionLinks.Add(Link.Create(
@@ -466,12 +479,14 @@ internal static class CollectionsEndpoints
             type: MediaTypes.Json,
             title: "Style"));
 
-        // Tilesets list link (OGC API Tiles)
-        collectionLinks.Add(Link.Create(
-            href: $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles",
-            rel: RelationTypes.TilesetsVector,
-            type: MediaTypes.Json,
-            title: "Vector tilesets"));
+        if (ServiceProtocols.IsProtocolEnabled(metadata, ServiceProtocols.OgcApiTiles))
+        {
+            collectionLinks.Add(Link.Create(
+                href: $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles",
+                rel: RelationTypes.TilesetsVector,
+                type: MediaTypes.Json,
+                title: "Vector tilesets"));
+        }
 
         SpatialExtent? spatialExtent = null;
         if (layer.Extent != null)
@@ -676,35 +691,51 @@ internal static class CollectionsEndpoints
             _ => ("string", null)
         };
 
-    private static bool TryResolveCollectionId(
+    private static async Task<CollectionResolution> ResolveCollectionIdAsync(
         HttpContext context,
         string collectionId,
-        out string resolvedCollectionId,
-        out int layerId,
-        out IResult? errorResult)
+        CancellationToken cancellationToken)
     {
-        resolvedCollectionId = collectionId;
-        layerId = default;
-        errorResult = null;
-
         var routeValidator = context.RequestServices.GetRequiredService<IRouteParameterValidator>();
         var collectionResult = routeValidator.ValidateCollectionId(context);
         if (!collectionResult.IsValid || string.IsNullOrWhiteSpace(collectionResult.Value))
         {
-            errorResult = StandardErrorHelpers.CreateBadRequest(
-                context,
-                collectionResult.ErrorMessage ?? "Collection ID is required.");
-            return false;
+            return new CollectionResolution(
+                Found: false,
+                ResolvedCollectionId: collectionId,
+                LayerId: 0,
+                ErrorResult: StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    collectionResult.ErrorMessage ?? "Collection ID is required."));
         }
 
-        resolvedCollectionId = collectionResult.Value!;
-        if (!int.TryParse(resolvedCollectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId))
+        var resolvedCollectionId = collectionResult.Value!;
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var validationResult = await resourceValidator.ValidateCollectionAsync(resolvedCollectionId, cancellationToken);
+        if (!validationResult.IsValid)
         {
-            return false;
+            var errorResult = validationResult.ErrorCode == ResourceValidationError.InvalidIdentifier
+                ? StandardErrorHelpers.CreateBadRequest(context, validationResult.ErrorMessage ?? "Invalid collection ID.")
+                : null;
+            return new CollectionResolution(
+                Found: false,
+                ResolvedCollectionId: resolvedCollectionId,
+                LayerId: 0,
+                ErrorResult: errorResult);
         }
 
-        return true;
+        return new CollectionResolution(
+            Found: true,
+            ResolvedCollectionId: resolvedCollectionId,
+            LayerId: validationResult.Resource!.Id,
+            ErrorResult: null);
     }
+
+    private readonly record struct CollectionResolution(
+        bool Found,
+        string ResolvedCollectionId,
+        int LayerId,
+        IResult? ErrorResult);
 
 }
 

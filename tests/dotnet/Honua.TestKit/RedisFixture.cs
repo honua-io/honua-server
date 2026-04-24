@@ -32,8 +32,7 @@ public sealed class RedisFixture : IAsyncLifetime
                 var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
                 if (string.IsNullOrWhiteSpace(externalConnectionString))
                 {
-                    _sharedContainer = new RedisBuilder()
-                        .WithImage("redis:7.2-alpine")
+                    _sharedContainer = new RedisBuilder("redis:7.2-alpine")
                         .Build();
                     await _sharedContainer.StartAsync();
                     _sharedConnectionString = _sharedContainer.GetConnectionString();

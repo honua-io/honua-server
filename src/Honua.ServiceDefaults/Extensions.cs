@@ -23,6 +23,30 @@ namespace Honua.ServiceDefaults;
 /// </summary>
 public static partial class Extensions
 {
+    // Performance monitoring constants
+    private const double DefaultSlowRequestThresholdMs = 1000.0;
+    private const int DefaultMemorySamplingIntervalMs = 100;
+    private const int DefaultHttpErrorStatusCode = 400;
+    private static readonly string[] _meterNames =
+    [
+        HonuaTelemetry.ServiceName,
+        "Honua.Wfs20.Transactions",
+        "Honua.Database.ConnectionPool",
+        "Honua.Production.Metrics"
+    ];
+    private static readonly string[] _activitySourceNames =
+    [
+        HonuaTelemetry.ServiceName,
+        "Honua.Server.Export",
+        "Honua.Wfs20.Transactions",
+        "Honua.Core.Metadata"
+    ];
+
+    /// <summary>
+    /// Adds the standard Honua service defaults for telemetry, health checks, and service discovery.
+    /// </summary>
+    /// <param name="builder">The application builder being configured.</param>
+    /// <returns>The application builder for chaining.</returns>
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
         // Adaptive sampling configuration
@@ -47,6 +71,11 @@ public static partial class Extensions
         return builder;
     }
 
+    /// <summary>
+    /// Adds the standard telemetry defaults without applying the full service-default stack.
+    /// </summary>
+    /// <param name="builder">The application builder being configured.</param>
+    /// <returns>The application builder for chaining.</returns>
     public static IHostApplicationBuilder AddTelemetryDefaults(this IHostApplicationBuilder builder)
     {
         builder.AddAdaptiveSampling();
@@ -54,6 +83,11 @@ public static partial class Extensions
         return builder;
     }
 
+    /// <summary>
+    /// Configures OpenTelemetry tracing, metrics, and logging exporters for the current application.
+    /// </summary>
+    /// <param name="builder">The application builder being configured.</param>
+    /// <returns>The application builder for chaining.</returns>
     public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicationBuilder builder)
     {
         // Bind tracing options from configuration
@@ -91,7 +125,7 @@ public static partial class Extensions
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
-                .AddMeter(HonuaTelemetry.ServiceName)
+                .AddMeter(_meterNames)
                 .AddPrometheusExporter();
 
             if (useOtlp)
@@ -134,7 +168,7 @@ public static partial class Extensions
                 });
 
                 tracing
-                    .AddSource(HonuaTelemetry.ServiceName)
+                    .AddSource(_activitySourceNames)
                     .SetResourceBuilder(
                         ResourceBuilder.CreateDefault()
                             .AddService(
@@ -145,7 +179,7 @@ public static partial class Extensions
                     {
                         options.EnrichWithHttpResponse = (activity, response) =>
                         {
-                            if (response.StatusCode >= 400)
+                            if (response.StatusCode >= DefaultHttpErrorStatusCode)
                             {
                                 activity.SetTag(HonuaTelemetry.Tags.Error, true);
                             }
@@ -347,7 +381,7 @@ public static partial class Extensions
 
             if (_includeExceptionStackTraces)
             {
-                SanitizeExceptionTag(activity, "exception.stacktrace", Math.Max(_maxExceptionDetailLength, 2048));
+                SanitizeExceptionTag(activity, "exception.stacktrace", Math.Max(_maxExceptionDetailLength, HonuaTelemetry.MinStackTraceDetailLength));
             }
             else
             {
@@ -401,8 +435,8 @@ public static partial class Extensions
         builder.Services.Configure<PerformanceMonitoringOptions>(options =>
         {
             options.EnableMemoryTracking = true;
-            options.SlowRequestThreshold = TimeSpan.FromMilliseconds(1000);
-            options.MemorySamplingInterval = 100;
+            options.SlowRequestThreshold = TimeSpan.FromMilliseconds(DefaultSlowRequestThresholdMs);
+            options.MemorySamplingInterval = DefaultMemorySamplingIntervalMs;
             options.EnableDetailedRequestTracking = true;
         });
 
@@ -452,7 +486,7 @@ public static partial class Extensions
                             memoryUsage.AllocatedBytes / (1024.0 * 1024.0));
                     }
 
-                    await Task.Delay(_interval, stoppingToken);
+                    await Task.Delay(_interval, stoppingToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -462,7 +496,7 @@ public static partial class Extensions
                 catch (Exception ex)
                 {
                     MemoryMonitoringLog.MemoryMonitoringServiceFailed(_logger, ex);
-                    await Task.Delay(_interval, stoppingToken);
+                    await Task.Delay(_interval, stoppingToken).ConfigureAwait(false);
                 }
             }
         }
@@ -483,6 +517,11 @@ public static partial class Extensions
         public static partial void MemoryMonitoringServiceFailed(ILogger logger, Exception exception);
     }
 
+    /// <summary>
+    /// Adds the baseline health checks used by all Honua-hosted services.
+    /// </summary>
+    /// <param name="builder">The application builder being configured.</param>
+    /// <returns>The application builder for chaining.</returns>
     public static IHostApplicationBuilder AddDefaultHealthChecks(this IHostApplicationBuilder builder)
     {
         builder.Services.AddHealthChecks()
@@ -491,6 +530,11 @@ public static partial class Extensions
         return builder;
     }
 
+    /// <summary>
+    /// Maps the default infrastructure endpoints exposed by Honua services.
+    /// </summary>
+    /// <param name="app">The web application being configured.</param>
+    /// <returns>The web application for chaining.</returns>
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
         // Map health endpoints for Aspire dashboard

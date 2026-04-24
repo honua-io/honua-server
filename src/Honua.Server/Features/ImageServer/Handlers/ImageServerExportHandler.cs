@@ -3,16 +3,13 @@
 
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.ImageServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Geometries;
 
@@ -20,20 +17,17 @@ namespace Honua.Server.Features.ImageServer.Handlers;
 
 /// <summary>
 /// Handler for Image Server export image operations.
-/// Provides raster image export with clipping, reprojection, and format conversion.
+/// Provides raster image export with clipping and format conversion using the
+/// public contract that this service currently supports.
 /// </summary>
 internal sealed class ImageServerExportHandler
 {
     private const string InlineImageFormat = "image";
+    private const int DefaultOutputDimension = 400;
     private const int MinOutputDimension = 1;
     private const int MaxAllowedOutputDimension = 4096;
-    private const int DefaultMaxOutputDimension = 1024;
-    private const int MinCompressionQuality = 1;
+    private const int MinCompressionQuality = 0;
     private const int MaxCompressionQuality = 100;
-    private const int MinCompression = 0;
-    private const int MaxCompression = 100;
-    private const int MinPixelType = 0;
-    private const int MaxPixelType = 255;
 
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterStore _rasterStore;
@@ -62,14 +56,13 @@ internal sealed class ImageServerExportHandler
         CancellationToken cancellationToken = default)
     {
         using var scope = HonuaTelemetryScope.StartFeature(
-            "export",
+            "export-image",
             HonuaTelemetry.Protocols.ImageServer,
             layerId.ToString(CultureInfo.InvariantCulture));
         scope.WithTag(HonuaTelemetry.Tags.Operation, "export-image");
 
         try
         {
-            // Validate layer exists and access
             var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
             if (layer == null)
             {
@@ -77,7 +70,6 @@ internal sealed class ImageServerExportHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            // Resolve the primary raster without scanning the entire layer.
             var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
             if (primaryRaster is null)
             {
@@ -86,26 +78,22 @@ internal sealed class ImageServerExportHandler
             }
             var primaryRasterInfo = primaryRaster.Value;
 
-            // Parse export parameters
-            var query = ParseExportParameters(request);
-            if (query == null)
+            if (!TryParseExportParameters(request, out var exportQuery, out var parseError))
             {
-                ImageServerLog.InvalidExportParameters(_logger, layerId, "Unable to parse export parameters");
-                return StandardErrorHelpers.CreateBadRequest(context, "Invalid export parameters");
+                ImageServerLog.InvalidExportParameters(_logger, layerId, parseError.Detail);
+                return parseError.IsNotImplemented
+                    ? StandardErrorHelpers.CreateNotImplemented(context, parseError.Detail)
+                    : StandardErrorHelpers.CreateBadRequest(context, parseError.Detail);
             }
 
-            // Determine output dimensions and propagate to query
-            var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
-            var (width, height) = await CalculateOutputDimensionsAsync(
-                request,
-                primaryRasterInfo,
-                coordinateTransformService,
-                cancellationToken).ConfigureAwait(false);
-            var exportQuery = query.Value with { OutputWidth = width, OutputHeight = height };
-            var formatName = exportQuery.OutputFormat.ToString();
-            ImageServerLog.ExportImageStarted(_logger, layerId, width, height, formatName);
+            var outputFormat = exportQuery.OutputFormat.ToString();
+            ImageServerLog.ExportImageStarted(
+                _logger,
+                layerId,
+                exportQuery.OutputWidth ?? DefaultOutputDimension,
+                exportQuery.OutputHeight ?? DefaultOutputDimension,
+                outputFormat);
 
-            // Export the image
             var result = await _rasterStore.ExportImageAsync(layerId, primaryRasterInfo.Id, exportQuery, cancellationToken);
 
             if (WantsInlineImageResponse(request.F))
@@ -115,7 +103,6 @@ internal sealed class ImageServerExportHandler
                 return Results.File(result.Data, result.ContentType);
             }
 
-            // Store the image temporarily and get the public URL
             var imageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
                 result.Data,
                 result.ContentType,
@@ -140,9 +127,9 @@ internal sealed class ImageServerExportHandler
                     SpatialReference = new SpatialReference
                     {
                         Wkid = extent?.Srid ?? result.Srid ?? 4326,
-                        LatestWkid = extent?.Srid ?? result.Srid ?? 4326
-                    }
-                }
+                        LatestWkid = extent?.Srid ?? result.Srid ?? 4326,
+                    },
+                },
             };
 
             ImageServerLog.ExportImageCompleted(_logger, layerId, result.Data.Length);
@@ -170,74 +157,98 @@ internal sealed class ImageServerExportHandler
         }
     }
 
-    private static RasterQuery? ParseExportParameters(ExportImageRequest request)
+    private static bool TryParseExportParameters(
+        ExportImageRequest request,
+        out RasterQuery query,
+        out ExportParameterParseError error)
     {
+        query = default;
+        error = default;
+
         try
         {
-            // renderingRule and mosaicRule are not yet wired into the raster pipeline.
-            // Accepting them silently produces unrendered/un-mosaicked imagery that
-            // looks wrong to the client without any indication why. Reject explicitly
-            // so callers know to drop the parameter until the raster function runtime
-            // is available.
-            if (!string.IsNullOrWhiteSpace(request.RenderingRule)
-                || !string.IsNullOrWhiteSpace(request.MosaicRule))
+            if (!string.IsNullOrWhiteSpace(request.RenderingRule))
             {
-                return null;
+                error = new ExportParameterParseError(
+                    "renderingRule is not implemented on this service.",
+                    IsNotImplemented: true);
+                return false;
             }
 
-            if (!TryParseRequestedSize(request.Size, out var requestedWidth, out var requestedHeight))
+            if (!string.IsNullOrWhiteSpace(request.MosaicRule))
             {
-                return null;
+                error = new ExportParameterParseError(
+                    "mosaicRule is not implemented on this service.",
+                    IsNotImplemented: true);
+                return false;
+            }
+
+            if (!TryParseRequestedSize(request.Size, out var requestedWidth, out var requestedHeight, out var sizeError))
+            {
+                error = new ExportParameterParseError(sizeError ?? "Invalid size parameter.");
+                return false;
             }
 
             if (request.CompressionQuality.HasValue &&
                 (request.CompressionQuality.Value < MinCompressionQuality || request.CompressionQuality.Value > MaxCompressionQuality))
             {
-                return null;
-            }
-
-            if (request.Compression.HasValue &&
-                (request.Compression.Value < MinCompression || request.Compression.Value > MaxCompression))
-            {
-                return null;
-            }
-
-            if (request.PixelType.HasValue &&
-                (request.PixelType.Value < MinPixelType || request.PixelType.Value > MaxPixelType))
-            {
-                return null;
+                error = new ExportParameterParseError("compressionQuality must be between 0 and 100.");
+                return false;
             }
 
             var outputSrid = SpatialReferenceHelpers.TryParseSrid(request.ImageSr);
             if (!string.IsNullOrWhiteSpace(request.ImageSr) && !outputSrid.HasValue)
             {
-                return null;
+                error = new ExportParameterParseError("imageSr must be a valid spatial reference.");
+                return false;
             }
 
             var bboxSrid = SpatialReferenceHelpers.TryParseSrid(request.BboxSr);
             if (!string.IsNullOrWhiteSpace(request.BboxSr) && !bboxSrid.HasValue)
             {
-                return null;
+                error = new ExportParameterParseError("bboxSr must be a valid spatial reference.");
+                return false;
             }
 
-            if (!RasterParsingHelpers.TryParseRasterFormat(request.Format ?? "png", out var outputFormat))
+            if (!string.IsNullOrWhiteSpace(request.PixelType) &&
+                !string.Equals(request.PixelType, "UNKNOWN", StringComparison.OrdinalIgnoreCase))
             {
-                return null;
+                error = new ExportParameterParseError(
+                    "pixelType conversion is not implemented on this service. Omit pixelType or use UNKNOWN.",
+                    IsNotImplemented: true);
+                return false;
             }
 
-            var query = new RasterQuery
+            if (!RasterParsingHelpers.TryParseRasterFormat(request.Format ?? "png", out var outputFormat) ||
+                outputFormat is RasterFormat.COG or RasterFormat.Raw)
+            {
+                error = new ExportParameterParseError(
+                    "format must be one of the supported export formats: png, jpg, jpeg, tiff, tif.");
+                return false;
+            }
+
+            if (!TryResolveTiffCompression(request.Compression, outputFormat, out var tiffCompression, out var compressionError))
+            {
+                error = new ExportParameterParseError(compressionError ?? "compression is invalid.");
+                return false;
+            }
+
+            query = new RasterQuery
             {
                 OutputFormat = outputFormat,
                 Quality = request.CompressionQuality,
-                OutputSrid = outputSrid
+                OutputSrid = outputSrid,
+                OutputWidth = requestedWidth,
+                OutputHeight = requestedHeight,
+                TiffCompression = tiffCompression,
             };
 
-            // Parse bounding box if provided
             if (!string.IsNullOrEmpty(request.Bbox))
             {
                 if (!RasterParsingHelpers.TryParseBoundingBox(request.Bbox, out var minX, out var minY, out var maxX, out var maxY))
                 {
-                    return null; // Invalid bbox format
+                    error = new ExportParameterParseError("bbox must be in format xmin,ymin,xmax,ymax.");
+                    return false;
                 }
 
                 var envelope = new Envelope(minX, maxX, minY, maxY);
@@ -252,40 +263,78 @@ internal sealed class ImageServerExportHandler
                     ClipRegion = new RasterClipRegion
                     {
                         Geometry = geometryBytes,
-                        Srid = bboxSrid
-                    }
+                        Srid = bboxSrid,
+                    },
                 };
             }
 
-            // Parse resampling method
             if (!string.IsNullOrEmpty(request.Interpolation))
             {
                 query = query with { ResamplingAlgorithm = ParseInterpolation(request.Interpolation) };
             }
 
-            return query;
+            return true;
         }
         catch (FormatException)
         {
-            return null;
+            error = new ExportParameterParseError("Invalid numeric export parameter.");
+            return false;
         }
         catch (OverflowException)
         {
-            return null;
+            error = new ExportParameterParseError("Export parameter is outside the supported range.");
+            return false;
         }
         catch (ArgumentException)
         {
-            return null;
+            error = new ExportParameterParseError("Invalid export parameter.");
+            return false;
         }
     }
 
-    // Parses Esri /exportImage size values: either "W" (width only, height inferred
-    // from the raster's aspect ratio) or "W,H" (explicit pair). Returns false when
-    // either component is outside the permitted output range.
-    private static bool TryParseRequestedSize(string? size, out int? width, out int? height)
+    private static bool TryResolveTiffCompression(
+        string? compression,
+        RasterFormat outputFormat,
+        out TiffCompression? tiffCompression,
+        out string? errorMessage)
     {
-        width = null;
-        height = null;
+        tiffCompression = null;
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(compression))
+        {
+            return true;
+        }
+
+        if (outputFormat != RasterFormat.TIFF)
+        {
+            return true;
+        }
+
+        tiffCompression = compression.Trim().ToUpperInvariant() switch
+        {
+            "NONE" => TiffCompression.None,
+            "JPEG" => TiffCompression.JPEG,
+            "LZ77" => TiffCompression.Deflate,
+            _ => null
+        };
+
+        if (tiffCompression.HasValue)
+        {
+            return true;
+        }
+
+        errorMessage = "compression must be one of: None, JPEG, or LZ77.";
+        return false;
+    }
+
+    // Public /exportImage follows the ArcGIS contract: size is "width,height" and
+    // defaults to 400,400 when omitted.
+    private static bool TryParseRequestedSize(string? size, out int width, out int height, out string? error)
+    {
+        width = DefaultOutputDimension;
+        height = DefaultOutputDimension;
+        error = null;
 
         if (string.IsNullOrWhiteSpace(size))
         {
@@ -293,60 +342,31 @@ internal sealed class ImageServerExportHandler
         }
 
         var parts = size.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length is not 1 and not 2)
+        if (parts.Length != 2)
         {
+            error = "size must be a comma-separated width,height pair.";
             return false;
         }
 
-        if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var w)
-            || w < MinOutputDimension || w > MaxAllowedOutputDimension)
+        if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var w) ||
+            w < MinOutputDimension ||
+            w > MaxAllowedOutputDimension)
         {
+            error = $"size width must be between {MinOutputDimension} and {MaxAllowedOutputDimension}.";
+            return false;
+        }
+
+        if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var h) ||
+            h < MinOutputDimension ||
+            h > MaxAllowedOutputDimension)
+        {
+            error = $"size height must be between {MinOutputDimension} and {MaxAllowedOutputDimension}.";
             return false;
         }
 
         width = w;
-        if (parts.Length == 2)
-        {
-            if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var h)
-                || h < MinOutputDimension || h > MaxAllowedOutputDimension)
-            {
-                return false;
-            }
-            height = h;
-        }
-
+        height = h;
         return true;
-    }
-
-    private static async Task<(int width, int height)> CalculateOutputDimensionsAsync(
-        ExportImageRequest request,
-        Core.Features.Raster.Domain.RasterInfo raster,
-        ICoordinateTransformService? coordinateTransformService,
-        CancellationToken cancellationToken)
-    {
-        var aspectRatio = await GetOutputAspectRatioAsync(request, raster, coordinateTransformService, cancellationToken).ConfigureAwait(false);
-
-        if (!TryParseRequestedSize(request.Size, out var width, out var height))
-        {
-            // Input is already filtered by ParseExportParameters; fall through to defaults.
-            width = null;
-            height = null;
-        }
-
-        if (width.HasValue && height.HasValue)
-        {
-            // Both dimensions supplied — honor the client's exact request.
-            return (width.Value, height.Value);
-        }
-
-        if (width.HasValue)
-        {
-            return ScaleWidthToAspectRatio(width.Value, aspectRatio, MaxAllowedOutputDimension);
-        }
-
-        var sourceWidth = raster.Width > 0 ? raster.Width : DefaultMaxOutputDimension;
-        var defaultWidth = Math.Clamp(sourceWidth, MinOutputDimension, DefaultMaxOutputDimension);
-        return ScaleWidthToAspectRatio(defaultWidth, aspectRatio, DefaultMaxOutputDimension);
     }
 
     private static ResamplingAlgorithm ParseInterpolation(string interpolation)
@@ -356,123 +376,12 @@ internal sealed class ImageServerExportHandler
             "RSP_NearestNeighbor" => ResamplingAlgorithm.NearestNeighbor,
             "RSP_BilinearInterpolation" => ResamplingAlgorithm.Bilinear,
             "RSP_CubicConvolution" => ResamplingAlgorithm.Bicubic,
-            _ => ResamplingAlgorithm.Bilinear
+            _ => ResamplingAlgorithm.Bilinear,
         };
     }
 
     private static bool WantsInlineImageResponse(string? format)
         => string.Equals(format, InlineImageFormat, StringComparison.OrdinalIgnoreCase);
 
-    private static async Task<double> GetOutputAspectRatioAsync(
-        ExportImageRequest request,
-        RasterInfo raster,
-        ICoordinateTransformService? coordinateTransformService,
-        CancellationToken cancellationToken)
-    {
-        if (await TryGetRequestedExtentAspectRatioAsync(request, raster, coordinateTransformService, cancellationToken).ConfigureAwait(false) is { } bboxAspectRatio)
-        {
-            return bboxAspectRatio;
-        }
-
-        if (raster.Width > 0 && raster.Height > 0)
-        {
-            return (double)raster.Height / raster.Width;
-        }
-
-        return 1d;
-    }
-
-    private static async Task<double?> TryGetRequestedExtentAspectRatioAsync(
-        ExportImageRequest request,
-        RasterInfo raster,
-        ICoordinateTransformService? coordinateTransformService,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(request.Bbox))
-        {
-            return null;
-        }
-
-        if (!RasterParsingHelpers.TryParseBoundingBox(request.Bbox, out var minX, out var minY, out var maxX, out var maxY))
-        {
-            return null;
-        }
-
-        var bboxSrid = SpatialReferenceHelpers.TryParseSrid(request.BboxSr);
-        var targetSrid = SpatialReferenceHelpers.TryParseSrid(request.ImageSr) ?? raster.Srid ?? bboxSrid;
-        if (bboxSrid.HasValue && targetSrid.HasValue && bboxSrid.Value != targetSrid.Value)
-        {
-            if (coordinateTransformService != null)
-            {
-                var transformed = await coordinateTransformService.TransformExtentAsync(
-                    minX,
-                    minY,
-                    maxX,
-                    maxY,
-                    bboxSrid.Value,
-                    targetSrid.Value,
-                    cancellationToken).ConfigureAwait(false);
-                if (transformed.HasValue)
-                {
-                    minX = transformed.Value.MinX;
-                    minY = transformed.Value.MinY;
-                    maxX = transformed.Value.MaxX;
-                    maxY = transformed.Value.MaxY;
-                }
-            }
-            else
-            {
-                try
-                {
-                    var transformedExtent = CoordinateTransformer.TransformExtent(
-                        new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY),
-                        bboxSrid.Value,
-                        targetSrid.Value);
-
-                    minX = transformedExtent.MinX;
-                    minY = transformedExtent.MinY;
-                    maxX = transformedExtent.MaxX;
-                    maxY = transformedExtent.MaxY;
-                }
-                catch (NotSupportedException)
-                {
-                    // Fall back to the raw bbox aspect ratio when reprojection is unavailable.
-                }
-            }
-        }
-
-        var width = Math.Abs(maxX - minX);
-        var height = Math.Abs(maxY - minY);
-        if (width <= double.Epsilon || height <= double.Epsilon)
-        {
-            return null;
-        }
-
-        var ratio = height / width;
-        if (!double.IsFinite(ratio) || ratio <= 0)
-        {
-            return null;
-        }
-
-        return ratio;
-    }
-
-    private static (int width, int height) ScaleWidthToAspectRatio(int requestedWidth, double aspectRatio, int maxDimension)
-    {
-        var width = Math.Clamp(requestedWidth, MinOutputDimension, maxDimension);
-        var height = Math.Max(
-            MinOutputDimension,
-            (int)Math.Round(width * aspectRatio, MidpointRounding.AwayFromZero));
-
-        if (height > maxDimension)
-        {
-            height = maxDimension;
-            width = Math.Max(
-                MinOutputDimension,
-                (int)Math.Round(height / aspectRatio, MidpointRounding.AwayFromZero));
-        }
-
-        return (Math.Clamp(width, MinOutputDimension, maxDimension), Math.Clamp(height, MinOutputDimension, maxDimension));
-    }
-
+    private readonly record struct ExportParameterParseError(string Detail, bool IsNotImplemented = false);
 }

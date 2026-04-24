@@ -82,22 +82,22 @@ internal static class LayerPublishingEndpoints
         }
         catch (LayerPublishingException ex)
         {
-            logger.LogWarning(ex, "Layer list failed: {Message}", ex.Message);
+            LayerPublishingLog.LayerListFailed(logger, ex.Message, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
-            logger.LogWarning(ex, "Layer list invalid request");
+            LayerPublishingLog.LayerListInvalidRequest(logger, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
         catch (ResourceNotFoundException ex)
         {
-            logger.LogWarning(ex, "Layer list connection not found");
+            LayerPublishingLog.LayerListConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (InvalidOperationException ex)
         {
-            logger.LogError(ex, "Layer list failed due to invalid operation");
+            LayerPublishingLog.LayerListInvalidOperation(logger, ex);
             return TypedResults.Problem(
                 title: "Layer list failed",
                 detail: "An internal error occurred while retrieving layers.",
@@ -105,7 +105,7 @@ internal static class LayerPublishingEndpoints
         }
         catch (UnauthorizedAccessException ex)
         {
-            logger.LogWarning(ex, "Layer list forbidden");
+            LayerPublishingLog.LayerListForbidden(logger, ex);
             return TypedResults.Forbid();
         }
     }
@@ -142,7 +142,7 @@ internal static class LayerPublishingEndpoints
 
             if (!migrationResult.Successful)
             {
-                logger.LogError(migrationResult.Error, "Layer publish migration failed: {Message}", migrationResult.ErrorMessage);
+                LayerPublishingLog.LayerPublishMigrationFailed(logger, migrationResult.ErrorMessage, migrationResult.Error);
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
@@ -179,32 +179,32 @@ internal static class LayerPublishingEndpoints
         }
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.Conflict)
         {
-            logger.LogWarning(ex, "Layer publish conflict");
+            LayerPublishingLog.LayerPublishConflict(logger, ex);
             return TypedResults.Conflict(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
         {
-            logger.LogWarning(ex, "Layer publish not found");
+            LayerPublishingLog.LayerPublishNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (LayerPublishingException ex)
         {
-            logger.LogWarning(ex, "Layer publish validation failed");
+            LayerPublishingLog.LayerPublishValidationFailed(logger, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
-            logger.LogWarning(ex, "Layer publish invalid request");
+            LayerPublishingLog.LayerPublishInvalidRequest(logger, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
         catch (ResourceNotFoundException ex)
         {
-            logger.LogWarning(ex, "Layer publish connection not found");
+            LayerPublishingLog.LayerPublishConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (InvalidOperationException ex)
         {
-            logger.LogError(ex, "Layer publish failed due to invalid operation");
+            LayerPublishingLog.LayerPublishInvalidOperation(logger, ex);
             return TypedResults.Problem(
                 title: "Layer publish failed",
                 detail: "An internal error occurred while publishing the layer.",
@@ -238,7 +238,7 @@ internal static class LayerPublishingEndpoints
 
             if (!migrationResult.Successful)
             {
-                logger.LogError(migrationResult.Error, "Layer enable migration failed: {Message}", migrationResult.ErrorMessage);
+                LayerPublishingLog.LayerEnableMigrationFailed(logger, migrationResult.ErrorMessage, migrationResult.Error);
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
@@ -264,22 +264,22 @@ internal static class LayerPublishingEndpoints
         }
         catch (LayerPublishingException ex)
         {
-            logger.LogWarning(ex, "Layer toggle failed");
+            LayerPublishingLog.LayerToggleFailed(logger, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
-            logger.LogWarning(ex, "Layer toggle invalid request");
+            LayerPublishingLog.LayerToggleInvalidRequest(logger, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
         catch (ResourceNotFoundException ex)
         {
-            logger.LogWarning(ex, "Layer toggle connection not found");
+            LayerPublishingLog.LayerToggleConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (InvalidOperationException ex)
         {
-            logger.LogError(ex, "Layer toggle failed due to invalid operation");
+            LayerPublishingLog.LayerToggleInvalidOperation(logger, ex);
             return TypedResults.Problem(
                 title: "Layer toggle failed",
                 detail: "An internal error occurred while updating layer state.",
@@ -312,7 +312,7 @@ internal static class LayerPublishingEndpoints
 
             if (!migrationResult.Successful)
             {
-                logger.LogError(migrationResult.Error, "Layer bulk enable migration failed: {Message}", migrationResult.ErrorMessage);
+                LayerPublishingLog.LayerBulkEnableMigrationFailed(logger, migrationResult.ErrorMessage, migrationResult.Error);
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
@@ -335,22 +335,22 @@ internal static class LayerPublishingEndpoints
         }
         catch (LayerPublishingException ex)
         {
-            logger.LogWarning(ex, "Layer bulk toggle failed");
+            LayerPublishingLog.LayerBulkToggleFailed(logger, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
-            logger.LogWarning(ex, "Layer bulk toggle invalid request");
+            LayerPublishingLog.LayerBulkToggleInvalidRequest(logger, ex);
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
         catch (ResourceNotFoundException ex)
         {
-            logger.LogWarning(ex, "Layer bulk toggle connection not found");
+            LayerPublishingLog.LayerBulkToggleConnectionNotFound(logger, ex);
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (InvalidOperationException ex)
         {
-            logger.LogError(ex, "Layer bulk toggle failed due to invalid operation");
+            LayerPublishingLog.LayerBulkToggleInvalidOperation(logger, ex);
             return TypedResults.Problem(
                 title: "Layer bulk toggle failed",
                 detail: "An internal error occurred while updating service layer state.",
@@ -410,7 +410,7 @@ internal static class LayerPublishingEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "Failed to invalidate service catalog cache for {ServiceName}", serviceName);
+            LayerPublishingLog.InvalidateServiceCatalogCacheFailed(logger, serviceName, ex);
         }
     }
 

@@ -14,9 +14,11 @@ using System.Xml.Linq;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -58,6 +60,10 @@ internal sealed partial class Wfs20Handler
     private readonly IFeatureWriter _featureWriter;
     private readonly IGmlFeatureStore _gmlFeatureStore;
     private readonly IFilterExpressionService _filterExpressionService;
+    private readonly IQueryParameterAdapter<Wfs20QueryRequest> _queryParameterAdapter;
+    private readonly IQueryProcessor _queryProcessor;
+    private readonly IEditParameterAdapter<Wfs20EditRequest> _editParameterAdapter;
+    private readonly IEditProcessor _editProcessor;
     private readonly OgcFeaturesGeometryServices _geometryServices;
     private readonly Wfs20Options _wfs20Options;
     private readonly ICoordinateTransformService _coordinateTransformService;
@@ -76,6 +82,10 @@ internal sealed partial class Wfs20Handler
         _featureWriter = queryServices.FeatureWriter;
         _gmlFeatureStore = queryServices.GmlFeatureStore;
         _filterExpressionService = queryServices.FilterExpressionService;
+        _queryParameterAdapter = queryServices.QueryParameterAdapter;
+        _queryProcessor = queryServices.QueryProcessor;
+        _editParameterAdapter = queryServices.EditParameterAdapter;
+        _editProcessor = queryServices.EditProcessor;
         _geometryServices = queryServices.GeometryServices;
         _coordinateTransformService = queryServices.CoordinateTransformService;
         _crsRegistry = queryServices.CrsRegistry;
@@ -159,6 +169,24 @@ internal sealed partial class Wfs20Handler
                     "InvalidParameterValue",
                     $"Unsupported output format '{outputFormat}'. Supported formats: {string.Join(", ", Wfs20Utilities.OutputFormats.All)}",
                     "outputFormat");
+            }
+
+            if (TryGetMultiQueryXmlRequest(context, out var xmlQueries))
+            {
+                return await HandleGetFeatureXmlQueriesAsync(
+                    context,
+                    xmlQueries,
+                    normalizedFormat,
+                    outputFormat,
+                    maxFeatures,
+                    offset,
+                    sortBy,
+                    bbox,
+                    resourceId,
+                    srsName,
+                    normalizedResultType,
+                    isHitsRequest,
+                    cancellationToken);
             }
 
             var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
@@ -565,6 +593,221 @@ internal sealed partial class Wfs20Handler
         return new LayerQueryPlanSet(plans.ToImmutable(), totalMatched);
     }
 
+    private async Task<IResult> HandleGetFeatureXmlQueriesAsync(
+        HttpContext context,
+        IReadOnlyList<Wfs20XmlQueryParameters> xmlQueries,
+        string normalizedFormat,
+        string? outputFormat,
+        int maxFeatures,
+        int offset,
+        string? sortBy,
+        string? bbox,
+        string? resourceId,
+        string? fallbackSrsName,
+        string? normalizedResultType,
+        bool isHitsRequest,
+        CancellationToken cancellationToken)
+    {
+        var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+        var unknownTypes = xmlQueries
+            .SelectMany(query => Wfs20Utilities.ParseTypeNames(query.TypeNames))
+            .Where(requestedType => GetUnknownRequestedFeatureTypes(publishedTypes, new[] { requestedType }).Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (unknownTypes.Length > 0)
+        {
+            var requestedTypeMessage = unknownTypes.Length == 1
+                ? $"Unknown feature type '{unknownTypes[0]}'."
+                : $"Unknown feature types: {string.Join(", ", unknownTypes.Select(type => $"'{type}'"))}.";
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                requestedTypeMessage,
+                "typeNames");
+        }
+
+        var planSet = await BuildXmlQueryPlansAsync(
+            publishedTypes,
+            xmlQueries,
+            sortBy,
+            bbox,
+            resourceId,
+            fallbackSrsName,
+            offset,
+            maxFeatures,
+            cancellationToken);
+
+        var selectedTypes = xmlQueries
+            .SelectMany(query => ResolveRequestedFeatureTypes(publishedTypes, Wfs20Utilities.ParseTypeNames(query.TypeNames)))
+            .DistinctBy(static descriptor => descriptor.QualifiedName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var wfsUrl = $"{BaseUrlResolver.GetBaseUrl(context)}/wfs";
+
+        if (planSet.TotalMatched == 0)
+        {
+            var emptyMetadata = BuildFeatureCollectionResponseMetadata(
+                wfsUrl,
+                selectedTypes,
+                outputFormat,
+                maxFeatures.ToString(CultureInfo.InvariantCulture),
+                sortBy,
+                bbox,
+                null,
+                resourceId,
+                null,
+                fallbackSrsName,
+                normalizedResultType,
+                offset,
+                maxFeatures,
+                0,
+                0);
+            return isHitsRequest
+                ? CreateHitsFeatureCollectionResult(0, emptyMetadata.SchemaLocation, emptyMetadata.PagingLinks.Next, emptyMetadata.PagingLinks.Previous)
+                : CreateEmptyFeatureCollectionResult(normalizedFormat, emptyMetadata.SchemaLocation, emptyMetadata.PagingLinks.Next, emptyMetadata.PagingLinks.Previous);
+        }
+
+        var responseMetadata = BuildFeatureCollectionResponseMetadata(
+            wfsUrl,
+            selectedTypes,
+            outputFormat,
+            maxFeatures.ToString(CultureInfo.InvariantCulture),
+            sortBy,
+            bbox,
+            null,
+            resourceId,
+            null,
+            fallbackSrsName,
+            normalizedResultType,
+            offset,
+            maxFeatures,
+            planSet.TotalMatched,
+            isHitsRequest ? 0 : planSet.Plans.Sum(plan => plan.Query.Limit ?? 0));
+
+        if (isHitsRequest)
+        {
+            return CreateHitsFeatureCollectionResult(
+                planSet.TotalMatched,
+                responseMetadata.SchemaLocation,
+                responseMetadata.PagingLinks.Next,
+                responseMetadata.PagingLinks.Previous);
+        }
+
+        var (result, returnedCount) = normalizedFormat switch
+        {
+            Wfs20Utilities.OutputFormats.Csv => await BuildCsvResultAsync(planSet, cancellationToken),
+            Wfs20Utilities.OutputFormats.GeoJson or Wfs20Utilities.OutputFormats.Json => await BuildJsonResultAsync(planSet, normalizedFormat, cancellationToken),
+            _ => await BuildGmlResultAsync(
+                planSet,
+                responseMetadata.SchemaLocation,
+                responseMetadata.PagingLinks.Next,
+                responseMetadata.PagingLinks.Previous,
+                cancellationToken)
+        };
+
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            var matchedSummary = planSet.TotalMatched.ToString(CultureInfo.InvariantCulture);
+            Wfs20Log.GetFeatureReturned(
+                _logger,
+                returnedCount,
+                matchedSummary);
+        }
+
+        return result;
+    }
+
+    private async Task<LayerQueryPlanSet> BuildXmlQueryPlansAsync(
+        ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
+        IReadOnlyList<Wfs20XmlQueryParameters> xmlQueries,
+        string? sortBy,
+        string? bbox,
+        string? resourceId,
+        string? fallbackSrsName,
+        int offset,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        var plans = ImmutableArray.CreateBuilder<LayerQueryPlan>();
+        var remainingOffset = offset;
+        var remainingCount = count;
+        long totalMatched = 0;
+
+        foreach (var xmlQuery in xmlQueries)
+        {
+            var selectedTypes = ResolveRequestedFeatureTypes(
+                publishedTypes,
+                Wfs20Utilities.ParseTypeNames(xmlQuery.TypeNames));
+            foreach (var featureType in selectedTypes)
+            {
+                var query = await BuildFeatureQueryAsync(
+                    featureType.Layer,
+                    xmlQuery.PropertyName,
+                    xmlQuery.SortBy ?? sortBy,
+                    bbox,
+                    xmlQuery.Filter,
+                    resourceId,
+                    xmlQuery.SrsName ?? fallbackSrsName,
+                    enforceResourceIdTypeMatch: true,
+                    requireResourceIdQualifier: selectedTypes.Length > 1,
+                    cancellationToken: cancellationToken);
+
+                var layerMatched = await _featureReader.CountAsync(featureType.Layer.Id, query, cancellationToken);
+                totalMatched += layerMatched;
+
+                if (layerMatched == 0)
+                {
+                    continue;
+                }
+
+                if (remainingOffset >= layerMatched)
+                {
+                    remainingOffset -= (int)Math.Min(remainingOffset, layerMatched);
+                    continue;
+                }
+
+                if (remainingCount <= 0)
+                {
+                    continue;
+                }
+
+                var layerOffset = remainingOffset;
+                remainingOffset = 0;
+                var availableCount = layerMatched - layerOffset;
+                var layerLimit = (int)Math.Min(remainingCount, Math.Min(availableCount, int.MaxValue));
+
+                if (layerLimit <= 0)
+                {
+                    continue;
+                }
+
+                plans.Add(new LayerQueryPlan(
+                    featureType,
+                    query with { Offset = layerOffset, Limit = layerLimit },
+                    layerMatched));
+
+                remainingCount -= layerLimit;
+            }
+        }
+
+        return new LayerQueryPlanSet(plans.ToImmutable(), totalMatched);
+    }
+
+    private static bool TryGetMultiQueryXmlRequest(
+        HttpContext context,
+        out Wfs20XmlQueryParameters[] queries)
+    {
+        if (context.Items.TryGetValue(Wfs20DispatcherEndpoint.ParsedXmlQueriesItemKey, out var value) &&
+            value is Wfs20XmlQueryParameters[] parsedQueries &&
+            parsedQueries.Length > 1)
+        {
+            queries = parsedQueries;
+            return true;
+        }
+
+        queries = [];
+        return false;
+    }
+
     private async Task<LayerValuePlanSet> BuildLayerValuePlansAsync(
         IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes,
         string valueReference,
@@ -659,18 +902,31 @@ internal sealed partial class Wfs20Handler
         var orderBy = ParseSortBy(layer, sortBy);
         var outputSrid = await ResolveRequestedOutputSridAsync(layer, srsName, cancellationToken).ConfigureAwait(false);
         var outputAxisOrder = await ResolveOutputAxisOrderAsync(srsName, outputSrid, cancellationToken).ConfigureAwait(false);
-
-        return new FeatureQuery
+        var queryAdapterResult = await _queryParameterAdapter.ConvertAsync(
+            new Wfs20QueryRequest
+            {
+                SqlFilter = sqlFilter,
+                ObjectIds = resourceIds.ObjectIds,
+                OutFields = projectedFields,
+                SpatialFilter = spatialFilter,
+                OutputCrs = QueryCrs.Create(outputSrid, outputAxisOrder),
+                OrderBy = orderBy
+            },
+            layer,
+            cancellationToken).ConfigureAwait(false);
+        if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
         {
-            SqlFilter = sqlFilter,
-            ObjectIds = resourceIds.ObjectIds,
-            OutFields = projectedFields,
-            SpatialFilter = spatialFilter,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-            OutputSrid = outputSrid,
-            OutputAxisOrder = outputAxisOrder,
-            OrderBy = orderBy
-        };
+            throw new ArgumentException(queryAdapterResult.ErrorMessage ?? "Invalid WFS query parameters.");
+        }
+
+        var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
+        var validation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
+        if (!validation.IsValid)
+        {
+            throw new ArgumentException(validation.ErrorMessage ?? "Invalid WFS query parameters.");
+        }
+
+        return _queryProcessor.ToFeatureQuery(unifiedQuery, layer);
     }
 
     private async ValueTask<FeatureQuery> BuildValueQueryAsync(
@@ -697,17 +953,30 @@ internal sealed partial class Wfs20Handler
             : sqlFilter;
         var outputSrid = await ResolveRequestedOutputSridAsync(layer, srsName, cancellationToken).ConfigureAwait(false);
         var outputAxisOrder = await ResolveOutputAxisOrderAsync(srsName, outputSrid, cancellationToken).ConfigureAwait(false);
-
-        return new FeatureQuery
+        var queryAdapterResult = await _queryParameterAdapter.ConvertAsync(
+            new Wfs20QueryRequest
+            {
+                SqlFilter = sqlFilter,
+                ObjectIds = resourceIds.ObjectIds,
+                OutFields = outFields,
+                SpatialFilter = spatialFilter,
+                OutputCrs = QueryCrs.Create(outputSrid, outputAxisOrder)
+            },
+            layer,
+            cancellationToken).ConfigureAwait(false);
+        if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
         {
-            SqlFilter = sqlFilter,
-            ObjectIds = resourceIds.ObjectIds,
-            OutFields = outFields,
-            SpatialFilter = spatialFilter,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-            OutputSrid = outputSrid,
-            OutputAxisOrder = outputAxisOrder
-        };
+            throw new ArgumentException(queryAdapterResult.ErrorMessage ?? "Invalid WFS query parameters.");
+        }
+
+        var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
+        var validation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
+        if (!validation.IsValid)
+        {
+            throw new ArgumentException(validation.ErrorMessage ?? "Invalid WFS query parameters.");
+        }
+
+        return _queryProcessor.ToFeatureQuery(unifiedQuery, layer);
     }
 
     private SqlFragment? TranslateFesFilter(LayerDefinition layer, string? filter)

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Xunit.Abstractions;
+using Honua.Server.Tests;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
@@ -37,7 +38,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:honua"] = "Host=localhost;Database=test;Username=test;Password=test"
+                        ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString
                     });
                 });
             });
@@ -86,7 +87,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test"
+                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString
                     });
                 });
             });
@@ -115,7 +116,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test"
+                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString
                     });
                 });
             });
@@ -141,8 +142,8 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test",
-                        ["ConnectionStrings:honua"] = "Host=localhost;Database=test;Username=test;Password=test",
+                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString,
+                        ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString,
                         ["ConnectionStrings:redis"] = "localhost"
                     });
                 });
@@ -168,8 +169,8 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test",
-                        ["ConnectionStrings:honua"] = "Host=localhost;Database=test;Username=test;Password=test",
+                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString,
+                        ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString,
                         ["ConnectionStrings:redis"] = "localhost"
                     });
                 });
@@ -196,8 +197,8 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test",
-                        ["ConnectionStrings:honua"] = "Host=localhost;Database=test;Username=test;Password=test",
+                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString,
+                        ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString,
                         ["ConnectionStrings:redis"] = "localhost"
                     });
                 });

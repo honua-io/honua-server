@@ -88,7 +88,7 @@ internal sealed class RateLimitingMiddleware
     /// </summary>
     /// <param name="context">The HTTP context.</param>
     /// <returns>Rate limit key or null if no rate limiting should be applied.</returns>
-    private string? DetermineRateLimitKey(HttpContext context)
+    private static string? DetermineRateLimitKey(HttpContext context)
     {
         // Skip rate limiting for health checks and metrics endpoints
         var path = context.Request.Path.Value?.ToLowerInvariant();
@@ -137,7 +137,7 @@ internal sealed class RateLimitingMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to check rate limit for key {RateLimitKey}, allowing request", rateLimitKey);
+            RateLimitingLog.RateLimitCheckFailed(_logger, rateLimitKey, ex);
 
             // Allow request if rate limiting fails to avoid blocking legitimate traffic
             return new RateLimitResult
@@ -281,11 +281,8 @@ internal sealed class RateLimitingMiddleware
     /// <returns>A task representing the async operation.</returns>
     private async Task HandleRateLimitExceededAsync(HttpContext context, RateLimitResult result)
     {
-        _logger.LogWarning(
-            "Rate limit exceeded for {RateLimitKey}. Requests: {RequestCount}/{Limit}",
-            DetermineRateLimitKey(context),
-            result.RequestCount,
-            result.Limit);
+        var rateLimitKey = DetermineRateLimitKey(context);
+        RateLimitingLog.RateLimitExceeded(_logger, rateLimitKey, result.RequestCount, result.Limit);
 
         AddRateLimitHeaders(context, result);
         context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;

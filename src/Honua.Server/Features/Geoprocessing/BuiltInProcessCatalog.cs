@@ -53,7 +53,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "geometry",
             Parameters =
             [
-                Param("wkb", "Input Geometry", "Geometry to buffer in WKB format.", ProcessParameterValueType.Wkb, required: true),
+                Param("wkb", "Input Geometry", "Geometry to buffer as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
                 Param("distance", "Buffer Distance", "Buffer distance in meters.", ProcessParameterValueType.FloatingPoint, required: true),
                 Param("geodesic", "Geodesic", "Use geodesic (geography-based) buffering.", ProcessParameterValueType.Flag, defaultValue: "false"),
@@ -68,7 +68,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "geometry",
             Parameters =
             [
-                Param("wkb", "Input Geometry", "Geometry to simplify in WKB format.", ProcessParameterValueType.Wkb, required: true),
+                Param("wkb", "Input Geometry", "Geometry to simplify as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("tolerance", "Tolerance", "Simplification tolerance in spatial reference units.", ProcessParameterValueType.FloatingPoint, required: true),
                 Param("preserveTopology", "Preserve Topology", "Use topology-preserving simplification.", ProcessParameterValueType.Flag, defaultValue: "true"),
             ],
@@ -82,7 +82,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "geometry",
             Parameters =
             [
-                Param("wkb", "Input Geometry", "Geometry to reproject in WKB format.", ProcessParameterValueType.Wkb, required: true),
+                Param("wkb", "Input Geometry", "Geometry to reproject as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("fromSrid", "From SRID", "Source spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
                 Param("toSrid", "To SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
             ],
@@ -96,7 +96,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "geometry",
             Parameters =
             [
-                Param("wkb", "Input Geometry", "Geometry to repair in WKB format.", ProcessParameterValueType.Wkb, required: true),
+                Param("wkb", "Input Geometry", "Geometry to repair as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -109,7 +109,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "geometry",
             Parameters =
             [
-                Param("wkbs", "Input Geometries", "Array of geometries to union in WKB format.", ProcessParameterValueType.WkbArray, required: true),
+                Param("wkbs", "Input Geometries", "Array of geometries to union as base64-encoded WKB strings.", ProcessParameterValueType.WkbArray, required: true),
                 Param("srid", "Spatial Reference", "SRID of the input geometries.", ProcessParameterValueType.Srid, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -122,8 +122,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "geometry",
             Parameters =
             [
-                Param("targetWkb", "Target Geometry", "Target geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
-                Param("intersectorWkb", "Intersector Geometry", "Intersector geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
+                Param("targetWkb", "Target Geometry", "Target geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
+                Param("intersectorWkb", "Intersector Geometry", "Intersector geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of both geometries.", ProcessParameterValueType.Srid, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -136,8 +136,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "geometry",
             Parameters =
             [
-                Param("targetWkb", "Target Geometry", "Target geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
-                Param("clipEnvelopeWkb", "Clip Envelope", "Clipping geometry whose bounding envelope is used.", ProcessParameterValueType.Wkb, required: true),
+                Param("targetWkb", "Target Geometry", "Target geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
+                Param("clipEnvelopeWkb", "Clip Envelope", "Clipping geometry whose bounding envelope is used, provided as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of both geometries.", ProcessParameterValueType.Srid, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -150,8 +150,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "geometry",
             Parameters =
             [
-                Param("targetWkb", "Target Geometry", "Target geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
-                Param("eraserWkb", "Eraser Geometry", "Geometry to subtract in WKB format.", ProcessParameterValueType.Wkb, required: true),
+                Param("targetWkb", "Target Geometry", "Target geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
+                Param("eraserWkb", "Eraser Geometry", "Geometry to subtract as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of both geometries.", ProcessParameterValueType.Srid, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -164,7 +164,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "geometry",
             Parameters =
             [
-                Param("wkb", "Input Geometry", "Polygon geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
+                Param("wkb", "Input Geometry", "Polygon geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.Scalar]
@@ -177,7 +177,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "geometry",
             Parameters =
             [
-                Param("wkb", "Input Geometry", "Line geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
+                Param("wkb", "Input Geometry", "Line geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.Scalar]

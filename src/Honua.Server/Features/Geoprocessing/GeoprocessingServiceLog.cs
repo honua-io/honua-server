@@ -107,6 +107,18 @@ internal static partial class GeoprocessingServiceLog
         string fieldPath,
         string detail);
 
+    [LoggerMessage(8018, LogLevel.Warning, "Stored result-package read failed for job {JobId}; synthesizing from terminal job state")]
+    public static partial void JobResultsStoreReadFailed(
+        ILogger logger,
+        string jobId,
+        Exception exception);
+
+    [LoggerMessage(8019, LogLevel.Warning, "Result-package persistence failed for job {JobId}; retrieval will synthesize from terminal job state")]
+    public static partial void JobResultsStoreWriteFailed(
+        ILogger logger,
+        string jobId,
+        Exception exception);
+
     [LoggerMessage(8020, LogLevel.Information, "Map package created: MapPackageId={MapPackageId}, Status={Status}")]
     public static partial void MapPackageCreated(
         ILogger logger,

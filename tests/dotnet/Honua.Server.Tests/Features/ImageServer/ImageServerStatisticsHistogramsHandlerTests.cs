@@ -21,8 +21,8 @@ namespace Honua.Server.Tests.Features.ImageServer;
 
 /// <summary>
 /// Tests for <see cref="ImageServerStatisticsHistogramsHandler"/>. Verifies the
-/// per-band statistics and histograms returned by the
-/// <c>computeStatisticsHistograms</c> endpoint.
+/// internal whole-raster statistics/histogram helper retained behind the public
+/// ImageServer contract until geometry-scoped support is implemented.
 /// </summary>
 [Protocol(Protocols.ImageServer)]
 public class ImageServerStatisticsHistogramsHandlerTests
@@ -556,7 +556,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = new DefaultHttpContext();
         context.RequestServices = services.BuildServiceProvider();
-        context.Request.Path = "/rest/services/1/ImageServer/computeStatisticsHistograms";
+        context.Request.Path = "/rest/services/1/ImageServer/_internal/computeStatisticsHistograms";
         context.Response.Body = new MemoryStream();
         return context;
     }

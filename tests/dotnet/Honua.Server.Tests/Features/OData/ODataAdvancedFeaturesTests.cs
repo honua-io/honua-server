@@ -41,6 +41,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ODataBatch)]
+    [InterfaceOperation(Protocols.ODataV4, "Batch")]
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithSingleGetRequest_ReturnsFeature()
     {
@@ -75,7 +76,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
-    public async Task Batch_WithPutRequest_ReturnsMethodNotAllowed()
+    public async Task Batch_WithPutRequest_ReplacesFeature()
     {
         var createdId = await _fixture.InsertFeatureAsync(TestLayerId, "Batch PUT Candidate");
 
@@ -108,7 +109,12 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var responses = document.RootElement.GetProperty("responses");
         responses.GetArrayLength().Should().Be(1);
-        responses[0].GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.MethodNotAllowed);
+        var item = responses[0];
+        item.GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.OK);
+        var body = item.GetProperty("body");
+        body.GetProperty("ObjectId").GetInt64().Should().Be(createdId);
+        var attributes = ODataTestHelpers.ParseAttributes(body);
+        attributes.GetProperty("name").GetString().Should().Be("Updated Via Put");
     }
 
     [IntegrationTest]
@@ -145,7 +151,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
-    public async Task Batch_WithFeatureValueRequest_ReturnsRawPayload()
+    public async Task Batch_WithFeatureValueRequest_ReturnsNotFound()
     {
         var batchRequest = new ODataBatchRequest
         {
@@ -168,10 +174,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         using var document = JsonDocument.Parse(responseContent);
 
         var item = document.RootElement.GetProperty("responses")[0];
-        item.GetProperty("status").GetInt32().Should().Be(200);
-        var body = item.GetProperty("body");
-        body.GetProperty("ObjectId").GetInt64().Should().Be(1);
-        body.GetProperty("LayerId").GetInt32().Should().Be(TestLayerId);
+        item.GetProperty("status").GetInt32().Should().Be(404);
+        item.GetProperty("body").GetProperty("error").GetProperty("code").GetString().Should().Be("ResourceNotFound");
     }
 
     [IntegrationTest]
@@ -449,6 +453,36 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithAbsoluteSubrequestUrl_ReturnsBadRequestWithoutEchoingHost()
+    {
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "absolute-url",
+                Method = "GET",
+                Url = "https://attacker.example/odata/Features(0,1)"
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().NotContain("attacker.example");
+        using var document = JsonDocument.Parse(payload);
+
+        var batchResponses = document.RootElement.GetProperty("responses");
+        batchResponses.GetArrayLength().Should().Be(1);
+        batchResponses[0].GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithCollectionGetRequest_ReturnsCollectionPayload()
     {
         var batchRequest = new ODataBatchRequest
@@ -478,6 +512,90 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         var body = item.GetProperty("body");
         body.GetProperty("value").GetArrayLength().Should().BeLessThanOrEqualTo(2);
         body.TryGetProperty("@odata.count", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithCollectionGetFilterAndOrderBy_UsesSharedQueryPipeline()
+    {
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "collection-filtered",
+                Method = "GET",
+                Url = "Layers(0)/Features?$filter=ObjectId gt 3&$orderby=ObjectId desc&$top=2"
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+
+        var values = document.RootElement.GetProperty("responses")[0]
+            .GetProperty("body")
+            .GetProperty("value")
+            .EnumerateArray()
+            .Select(item => item.GetProperty("ObjectId").GetInt64())
+            .ToArray();
+
+        values.Should().Equal(15, 14);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithContentIdReference_FollowsCreatedEntity()
+    {
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(
+                new ODataBatchRequestItem
+                {
+                    Id = "create-city",
+                    Method = "POST",
+                    Url = $"Layers({TestLayerId})/Features",
+                    Body = new Dictionary<string, object?>
+                    {
+                        ["Attributes"] = new Dictionary<string, object?>
+                        {
+                            ["name"] = "Batch Content-ID City"
+                        }
+                    }
+                },
+                new ODataBatchRequestItem
+                {
+                    Id = "fetch-created",
+                    Method = "GET",
+                    Url = "$create-city",
+                    DependsOn = ["create-city"]
+                })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+
+        var responses = document.RootElement.GetProperty("responses")
+            .EnumerateArray()
+            .ToDictionary(
+                item => item.GetProperty("id").GetString()!,
+                item => item);
+
+        responses["create-city"].GetProperty("status").GetInt32().Should().Be(201);
+        responses["fetch-created"].GetProperty("status").GetInt32().Should().Be(200);
+        responses["fetch-created"].GetProperty("body").GetProperty("name").GetString().Should().Be("Batch Content-ID City");
     }
 
     [IntegrationTest]
@@ -554,7 +672,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var responseBody = await response.Content.ReadAsStringAsync();
         responseBody.Should().Contain("HTTP/1.1 200");
-        responseBody.Should().Contain("OData-Version: 4.0");
+        responseBody.Should().Contain("OData-Version: 4.01");
     }
 
     private async Task<long> CountFeaturesAsync()
@@ -575,6 +693,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ODataApply)]
+    [InterfaceOperation(Protocols.ODataV4, "Apply")]
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithSimpleAggregate_ReturnsSumResult()
     {
@@ -744,7 +863,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         using var document = JsonDocument.Parse(responseContent);
 
         document.RootElement.TryGetProperty("error", out var error).Should().BeTrue();
-        error.GetProperty("code").GetString().Should().Be("BadRequest");
+        error.GetProperty("code").GetString().Should().Be("InvalidQueryOption");
     }
 
     [IntegrationTest]
@@ -761,7 +880,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         using var document = JsonDocument.Parse(responseContent);
 
         document.RootElement.TryGetProperty("error", out var error).Should().BeTrue();
-        error.GetProperty("code").GetString().Should().Be("BadRequest");
+        error.GetProperty("code").GetString().Should().Be("InvalidQueryOption");
     }
 
     [IntegrationTest]
@@ -781,6 +900,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ODataSearch)]
+    [InterfaceOperation(Protocols.ODataV4, "Search")]
     [Endpoint("GET /odata/Features({layerId})/$search")]
     public async Task Search_WithSimpleTerm_ReturnsMatchingFeatures()
     {
@@ -958,7 +1078,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         using var document = JsonDocument.Parse(responseContent);
 
         document.RootElement.TryGetProperty("error", out var error).Should().BeTrue();
-        error.GetProperty("code").GetString().Should().Be("BadRequest");
+        error.GetProperty("code").GetString().Should().Be("InvalidQueryOption");
     }
 
     [IntegrationTest]
@@ -1115,7 +1235,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
-        values.Should().Contain("4.0");
+        values.Should().Contain("4.01");
     }
 
     [IntegrationTest]
@@ -1186,6 +1306,9 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         feature.TryGetProperty("Landmarks", out var landmarks).Should().BeTrue();
         landmarks.ValueKind.Should().Be(JsonValueKind.Array);
         landmarks.GetArrayLength().Should().BeGreaterThan(0);
+        var landmark = landmarks[0];
+        landmark.TryGetProperty("name", out _).Should().BeTrue();
+        landmark.TryGetProperty("Geometry", out _).Should().BeFalse();
     }
 
     [IntegrationTest]

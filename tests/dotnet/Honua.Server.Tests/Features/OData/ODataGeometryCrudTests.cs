@@ -253,17 +253,10 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         using var createDocument = JsonDocument.Parse(createContent);
         var objectId = createDocument.RootElement.GetProperty("ObjectId").GetInt64();
 
-        // Update with explicit null geometry
-        var updateRequest = new ODataFeatureRequest
-        {
-            Geometry = null,
-            Attributes = new Dictionary<string, object?>
-            {
-                ["name"] = "Lost Geometry"
-            }
-        };
-
-        var updateJson = JsonSerializer.Serialize(updateRequest, ODataJsonContext.Default.ODataFeatureRequest);
+        // Source-generated serialization omits nulls, so use raw JSON to exercise an explicit Geometry:null PATCH.
+        const string updateJson = """
+            {"Geometry":null,"Attributes":{"name":"Lost Geometry"}}
+            """;
         var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},{objectId})")
         {
             Content = new StringContent(updateJson, Encoding.UTF8, "application/json")
@@ -272,6 +265,99 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         var updateResponse = await _fixture.Client.SendAsync(message);
 
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var updateContent = await updateResponse.Content.ReadAsStringAsync();
+        using var updateDocument = JsonDocument.Parse(updateContent);
+        updateDocument.RootElement.GetProperty("Geometry").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /odata/Features({layerId},{objectId})")]
+    public async Task ReplaceFeature_AttributesOnly_ClearsGeometry()
+    {
+        var initialRequest = new ODataFeatureRequest
+        {
+            Geometry = CreatePointGeometry(-122.0, 37.0),
+            Attributes = new Dictionary<string, object?>
+            {
+                ["name"] = "Will Be Replaced"
+            }
+        };
+
+        var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
+        var createResponse = await _fixture.Client.PostAsync(
+            $"/odata/Layers({TestLayerId})/Features",
+            new StringContent(createJson, Encoding.UTF8, "application/json"));
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createContent = await createResponse.Content.ReadAsStringAsync();
+        using var createDocument = JsonDocument.Parse(createContent);
+        var objectId = createDocument.RootElement.GetProperty("ObjectId").GetInt64();
+
+        const string replaceJson = """
+            {"Attributes":{"name":"Replaced"}}
+            """;
+        var message = new HttpRequestMessage(HttpMethod.Put, $"/odata/Features({TestLayerId},{objectId})")
+        {
+            Content = new StringContent(replaceJson, Encoding.UTF8, "application/json")
+        };
+
+        var replaceResponse = await _fixture.Client.SendAsync(message);
+
+        replaceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var replaceContent = await replaceResponse.Content.ReadAsStringAsync();
+        using var replaceDocument = JsonDocument.Parse(replaceContent);
+        var replaceRoot = replaceDocument.RootElement;
+        replaceRoot.GetProperty("Geometry").ValueKind.Should().Be(JsonValueKind.Null);
+        var attributes = ODataTestHelpers.ParseAttributes(replaceRoot);
+        attributes.GetProperty("name").GetString().Should().Be("Replaced");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /odata/Layers({layerId})/Features({objectId})")]
+    public async Task ReplaceFeature_NestedLayerRoute_ReturnsUpdatedFeature()
+    {
+        var objectId = await _fixture.InsertFeatureAsync(TestLayerId, "Nested PUT Candidate");
+        const string replaceJson = """
+            {"Attributes":{"name":"Nested PUT Updated"}}
+            """;
+        var message = new HttpRequestMessage(HttpMethod.Put, $"/odata/Layers({TestLayerId})/Features({objectId})")
+        {
+            Content = new StringContent(replaceJson, Encoding.UTF8, "application/json")
+        };
+
+        var response = await _fixture.Client.SendAsync(message);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var attributes = ODataTestHelpers.ParseAttributes(document.RootElement);
+        attributes.GetProperty("name").GetString().Should().Be("Nested PUT Updated");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    public async Task ReplaceFeature_NamedKeyRoute_ReturnsUpdatedFeature()
+    {
+        var objectId = await _fixture.InsertFeatureAsync(TestLayerId, "Named PUT Candidate");
+        const string replaceJson = """
+            {"Attributes":{"name":"Named PUT Updated"}}
+            """;
+        var message = new HttpRequestMessage(HttpMethod.Put, $"/odata/Features(LayerId={TestLayerId},ObjectId={objectId})")
+        {
+            Content = new StringContent(replaceJson, Encoding.UTF8, "application/json")
+        };
+
+        var response = await _fixture.Client.SendAsync(message);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var attributes = ODataTestHelpers.ParseAttributes(document.RootElement);
+        attributes.GetProperty("name").GetString().Should().Be("Named PUT Updated");
     }
 
     #endregion

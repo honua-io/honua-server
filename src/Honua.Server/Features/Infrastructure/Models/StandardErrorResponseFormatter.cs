@@ -6,6 +6,7 @@ using System.Security;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.OData.Models;
+using Honua.Server.Features.OData.Services;
 
 namespace Honua.Server.Features.Infrastructure.Models;
 
@@ -15,8 +16,7 @@ namespace Honua.Server.Features.Infrastructure.Models;
 /// </summary>
 internal static class StandardErrorResponseFormatter
 {
-    private const string ODataContentType = "application/json;odata.metadata=minimal";
-    private const string ODataVersion = "4.0";
+    private const string ODataContentType = "application/json;metadata=minimal";
 
     /// <summary>
     /// Formats a StandardErrorResponse into an appropriate IResult based on the request protocol.
@@ -87,7 +87,9 @@ internal static class StandardErrorResponseFormatter
     {
         SetODataHeaders(context, options);
 
-        var code = ProtocolRequestClassifier.MapODataCode(errorResponse.StatusCode, includeConflict: true);
+        var code = string.IsNullOrWhiteSpace(options.ODataErrorCode)
+            ? ProtocolRequestClassifier.MapODataCode(errorResponse.StatusCode, includeConflict: true)
+            : options.ODataErrorCode;
         var details = BuildODataDetails(context, errorResponse, options);
 
         var error = new ODataError
@@ -95,7 +97,9 @@ internal static class StandardErrorResponseFormatter
             Error = new ErrorDetails
             {
                 Code = code,
-                Message = errorResponse.Title,
+                Message = string.IsNullOrWhiteSpace(errorResponse.Detail)
+                    ? errorResponse.Title
+                    : errorResponse.Detail,
                 Details = details
             }
         };
@@ -358,7 +362,7 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     private static void SetODataHeaders(HttpContext context, ErrorResponseFormatterOptions options)
     {
-        context.Response.Headers["OData-Version"] = ODataVersion;
+        ODataProtocolHeaders.SetVersionHeader(context);
         AddResponseHeaders(context, options);
     }
 

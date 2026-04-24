@@ -22,6 +22,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.MapServer.Models;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
@@ -61,7 +62,6 @@ internal static partial class MapServerEndpoints
     private const int DefaultDpi = 96;
     private const int MaxFeaturesPerLayer = 10_000;
     private const string InvalidExportRequestMessage = "Invalid export request parameters.";
-    private const string InvalidLayerDefsJsonMessage = "layerDefs contains invalid JSON.";
     private const string InvalidLayerTimeOptionsJsonMessage = "layerTimeOptions contains invalid JSON.";
     private const string InvalidDynamicLayersJsonMessage = "dynamicLayers contains invalid JSON.";
     private const string InvalidTimeParameterMessage = "Invalid time parameter.";
@@ -85,6 +85,12 @@ internal static partial class MapServerEndpoints
 
         try
         {
+            var earlyServiceError = await TryValidateMapServerServiceAsync(serviceId, context);
+            if (earlyServiceError is not null)
+            {
+                return earlyServiceError;
+            }
+
             var (values, readError) = await TryReadMapServerRequestValuesAsync(context);
             if (values == null)
             {
@@ -380,7 +386,7 @@ internal static partial class MapServerEndpoints
                 if (!TryGetEffectiveTimeParameters(
                         timeValue,
                         timeRelationValue,
-                        layer,
+                        renderLayer,
                         layerTimeOptions,
                         out var effectiveTime,
                         out var effectiveTimeRelation,
@@ -1548,130 +1554,7 @@ internal static partial class MapServerEndpoints
         ICommonQueryValidator queryValidator,
         out Dictionary<int, string?> layerDefs,
         out string? error)
-    {
-        layerDefs = new Dictionary<int, string?>();
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(layerDefsValue))
-        {
-            return true;
-        }
-
-        var trimmed = layerDefsValue.Trim();
-        if (trimmed.StartsWith('{'))
-        {
-            return TryParseLayerDefsJson(trimmed, queryValidator, layerDefs, out error);
-        }
-
-        return TryParseLayerDefsPairs(trimmed, queryValidator, layerDefs, out error);
-    }
-
-    private static bool TryParseLayerDefsJson(
-        string layerDefsValue,
-        ICommonQueryValidator queryValidator,
-        Dictionary<int, string?> layerDefs,
-        out string? error)
-    {
-        error = null;
-
-        try
-        {
-            using var document = JsonDocument.Parse(layerDefsValue);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                error = "layerDefs must be a JSON object.";
-                return false;
-            }
-
-            foreach (var property in document.RootElement.EnumerateObject())
-            {
-                if (!int.TryParse(property.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-                {
-                    error = $"Invalid layer id '{property.Name}' in layerDefs.";
-                    return false;
-                }
-
-                string? where;
-                if (property.Value.ValueKind == JsonValueKind.String)
-                {
-                    where = property.Value.GetString();
-                }
-                else if (property.Value.ValueKind == JsonValueKind.Null)
-                {
-                    where = null;
-                }
-                else
-                {
-                    error = $"Invalid layerDefs value for layer '{property.Name}'. Expected a string.";
-                    return false;
-                }
-
-                if (!string.IsNullOrWhiteSpace(where))
-                {
-                    var validation = queryValidator.ValidateWhereClause(where);
-                    if (!validation.IsValid)
-                    {
-                        error = validation.ErrorMessage ?? "Invalid layerDefs where clause.";
-                        return false;
-                    }
-                }
-
-                layerDefs[layerId] = string.IsNullOrWhiteSpace(where) ? null : where;
-            }
-
-            return true;
-        }
-        catch (JsonException)
-        {
-            error = InvalidLayerDefsJsonMessage;
-            return false;
-        }
-    }
-
-    private static bool TryParseLayerDefsPairs(
-        string layerDefsValue,
-        ICommonQueryValidator queryValidator,
-        Dictionary<int, string?> layerDefs,
-        out string? error)
-    {
-        error = null;
-
-        var pairs = layerDefsValue.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        foreach (var pair in pairs)
-        {
-            var separatorIndex = pair.IndexOf(':');
-            if (separatorIndex <= 0)
-            {
-                error = "layerDefs must use the format: layerId:where;layerId:where";
-                return false;
-            }
-
-            var idPart = pair[..separatorIndex].Trim();
-            var where = separatorIndex == pair.Length - 1
-                ? string.Empty
-                : pair[(separatorIndex + 1)..].Trim();
-
-            if (!int.TryParse(idPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-            {
-                error = $"Invalid layer id '{idPart}' in layerDefs.";
-                return false;
-            }
-
-            if (!string.IsNullOrWhiteSpace(where))
-            {
-                var validation = queryValidator.ValidateWhereClause(where);
-                if (!validation.IsValid)
-                {
-                    error = validation.ErrorMessage ?? "Invalid layerDefs where clause.";
-                    return false;
-                }
-            }
-
-            layerDefs[layerId] = string.IsNullOrWhiteSpace(where) ? null : where;
-        }
-
-        return true;
-    }
+        => LayerDefsParser.TryParse(layerDefsValue, queryValidator, out layerDefs, out error);
 
     private static bool TryParseLayerTimeOptions(
         string? layerTimeOptionsValue,
@@ -2098,18 +1981,19 @@ internal static partial class MapServerEndpoints
     private static bool TryGetEffectiveTimeParameters(
         string? globalTime,
         string? globalTimeRelation,
-        LayerDefinition layer,
+        RenderLayer renderLayer,
         IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
         out string? effectiveTime,
         out string? effectiveTimeRelation,
         out string? error)
     {
+        var layer = renderLayer.Layer;
         effectiveTime = globalTime;
         effectiveTimeRelation = globalTimeRelation;
         error = null;
 
         LayerTimeOptions? options = null;
-        if (layerTimeOptions.TryGetValue(layer.Id, out var resolvedOptions))
+        if (TryResolveLayerTimeOptions(layerTimeOptions, renderLayer, out var resolvedOptions))
         {
             options = resolvedOptions;
             if (options.UseTime is false)
@@ -2170,6 +2054,30 @@ internal static partial class MapServerEndpoints
         effectiveTime = BuildTimeParameter(start, end);
         effectiveTimeRelation = NormalizeTimeRelation(effectiveTimeRelation);
         return true;
+    }
+
+    private static bool TryResolveLayerTimeOptions(
+        IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
+        RenderLayer renderLayer,
+        out LayerTimeOptions resolvedOptions)
+    {
+        if (layerTimeOptions.TryGetValue(renderLayer.Id, out var directOptions) &&
+            directOptions is not null)
+        {
+            resolvedOptions = directOptions;
+            return true;
+        }
+
+        if (renderLayer.Id != renderLayer.Layer.Id &&
+            layerTimeOptions.TryGetValue(renderLayer.Layer.Id, out var sourceLayerOptions) &&
+            sourceLayerOptions is not null)
+        {
+            resolvedOptions = sourceLayerOptions;
+            return true;
+        }
+
+        resolvedOptions = default!;
+        return false;
     }
 
     private static string BuildTimeParameter(DateTimeOffset? start, DateTimeOffset? end)

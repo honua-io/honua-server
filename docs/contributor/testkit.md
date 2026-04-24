@@ -132,6 +132,7 @@ public class MyTests
 #### External Database (opt-in)
 
 Set `HONUA_TEST_DB_URL` to use an existing PostGIS database instead of Testcontainers.
+A reusable local PostGIS instance is available via `docker compose -f docker/docker-compose.test-db.yml up -d`.
 
 ```bash
 export HONUA_TEST_DB_URL="Host=localhost;Database=honua_test;Username=test;Password=test"
@@ -454,14 +455,16 @@ validation, so it is `matched-approval-required` (Passed) when the scenario
 expected `requiresApproval: true` and `unexpected-approval-required` (Failed)
 otherwise. `503` / `501` remain environmental skips, and when OGC execution
 cannot enqueue because Redis is unavailable, that probe is recorded as
-`Skipped(service-unavailable)` rather than `Failed`. Because the GPServer
-adapter still lacks a formal task catalog binding, its probe is recorded as
-`Skipped(task-resolution-unavailable)` instead of a false `Passed`. When an
-HTTP probe is canceled for a reason other than the outer run's own
-`CancellationToken` (for example an `HttpClient.Timeout` firing), the probe is
-recorded as `Failed(http-timeout)` so the overall scenario keeps its no-throw
-reporting contract instead of aborting mid-run. Spans are emitted from the
-`Honua.Tests.Eval` `ActivitySource` (one span per scenario, one per stage).
+`Skipped(service-unavailable)` rather than `Failed`. The GPServer probe now
+targets the published `geometry.buffer` task directly, so it records either
+`Passed(matched-acceptance)` or an environmental skip such as
+`Skipped(service-unavailable)` / `Skipped(authorization-required)` instead of a
+synthetic task-resolution skip. When an HTTP probe is canceled for a reason
+other than the outer run's own `CancellationToken` (for example an
+`HttpClient.Timeout` firing), the probe is recorded as `Failed(http-timeout)`
+so the overall scenario keeps its no-throw reporting contract instead of
+aborting mid-run. Spans are emitted from the `Honua.Tests.Eval`
+`ActivitySource` (one span per scenario, one per stage).
 
 ### Fixture corpus
 

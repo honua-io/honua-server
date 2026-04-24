@@ -33,6 +33,8 @@ internal sealed class ImageServerCatalogPage
     public required bool ExceededTransferLimit { get; init; }
 
     public required RasterExtent? AggregateExtent { get; init; }
+
+    public int? NativeSrid { get; init; }
 }
 
 /// <summary>
@@ -137,9 +139,15 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
                 Items = Array.Empty<ImageServerCatalogItem>(),
                 TotalCount = 0,
                 ExceededTransferLimit = false,
-                AggregateExtent = null
+                AggregateExtent = null,
+                NativeSrid = null,
             };
         }
+
+        var includeGeometry = query.ReturnGeometry &&
+            !query.ReturnIdsOnly &&
+            !query.ReturnCountOnly &&
+            !query.ReturnExtentOnly;
 
         // Project each raster row into the catalog item shape Esri expects.
         // We need to retain the source raster reference so the aggregate extent uses the
@@ -147,7 +155,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         var projected = new List<(ImageServerCatalogItem Item, RasterInfo Source)>(rasters.Length);
         foreach (var raster in rasters)
         {
-            projected.Add((ProjectRaster(raster, query), raster));
+            projected.Add((ProjectRaster(raster, includeGeometry), raster));
         }
 
         // Apply objectIds filter (cheap; usually provided alongside or instead of where).
@@ -201,27 +209,39 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         }
 
         var totalMatched = projected.Count;
+        var nativeSrid = aggregateExtent?.Srid
+            ?? projected.Select(p => p.Item.FootprintSrid).FirstOrDefault(srid => srid.HasValue);
 
-        // Apply offset/limit + exceededTransferLimit semantics that mirror FeatureServer.
-        var offset = Math.Max(0, query.Offset);
-        var limit = query.Limit > 0 ? query.Limit : totalMatched;
-        var pageEnd = Math.Min(totalMatched, offset + limit);
-        var pageItems = offset < pageEnd
-            ? projected.GetRange(offset, pageEnd - offset).Select(p => p.Item).ToList()
-            : new List<ImageServerCatalogItem>();
-
-        var exceeded = pageEnd < totalMatched;
+        // ArcGIS returns all matching IDs for returnIdsOnly, without maxRecordCount pagination.
+        IReadOnlyList<ImageServerCatalogItem> pageItems;
+        bool exceeded;
+        if (query.ReturnIdsOnly)
+        {
+            pageItems = projected.Select(p => p.Item).ToList();
+            exceeded = false;
+        }
+        else
+        {
+            var offset = Math.Max(0, query.Offset);
+            var limit = query.Limit > 0 ? query.Limit : totalMatched;
+            var pageEnd = Math.Min(totalMatched, offset + limit);
+            pageItems = offset < pageEnd
+                ? projected.GetRange(offset, pageEnd - offset).Select(p => p.Item).ToList()
+                : new List<ImageServerCatalogItem>();
+            exceeded = pageEnd < totalMatched;
+        }
 
         return new ImageServerCatalogPage
         {
             Items = pageItems,
             TotalCount = totalMatched,
             ExceededTransferLimit = exceeded,
-            AggregateExtent = aggregateExtent
+            AggregateExtent = aggregateExtent,
+            NativeSrid = nativeSrid,
         };
     }
 
-    private static ImageServerCatalogItem ProjectRaster(RasterInfo raster, ImageServerCatalogQuery query)
+    private static ImageServerCatalogItem ProjectRaster(RasterInfo raster, bool includeGeometry)
     {
         var pixelSizeX = 0d;
         var pixelSizeY = 0d;
@@ -243,7 +263,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         var shapeArea = width * height;
 
         double[][][]? rings = null;
-        if (query.ReturnGeometry && extent is { } footprint)
+        if (includeGeometry && extent is { } footprint)
         {
             rings = new[]
             {

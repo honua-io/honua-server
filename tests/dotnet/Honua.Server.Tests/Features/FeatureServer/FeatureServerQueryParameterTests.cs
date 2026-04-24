@@ -187,6 +187,19 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoJsonFormatAndReturnM_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=geojson&returnM=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("GeoJSON output does not support returnM=true");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithGeoParquetFormatNoGeometryAndNon4326OutSR_ReturnsOk()
     {
         // When returnGeometry=false the parquet file has no geometry column or CRS metadata,
@@ -301,6 +314,38 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithAcceptHeaderQuality_PrefersHighestWeightedFormat()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query");
+        request.Headers.TryAddWithoutValidation("Accept", "application/json;q=0.1, application/geo+json;q=0.9");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithAcceptHeaderQuality_IgnoresZeroWeightedFormats()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query");
+        request.Headers.TryAddWithoutValidation("Accept", "application/vnd.flatgeobuf;q=0, application/json;q=0.5");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithExplicitFormat_PrefersFOverAcceptHeader()
     {
         using var request = new HttpRequestMessage(
@@ -312,6 +357,20 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithPjsonFormat_ReturnsCompactJson()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=pjson");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        content.Should().NotContain("\n");
     }
 
     [IntegrationTest]

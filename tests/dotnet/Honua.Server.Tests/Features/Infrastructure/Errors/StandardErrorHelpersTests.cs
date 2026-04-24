@@ -149,7 +149,7 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
 
         odataError.Should().NotBeNull();
         odataError!.Error.Code.Should().Be("BadRequest");
-        odataError.Error.Message.Should().Be("Bad Request");
+        odataError.Error.Message.Should().Be("Invalid field values");
 
         // Check that validation details are preserved
         odataError.Error.Details.Should().NotBeNull();

@@ -299,19 +299,22 @@ internal sealed class SecretResolutionPostConfigureOptions<
     {
         if (options == null) return;
 
+        var optionsTypeName = typeof(TOptions).Name;
+
         try
         {
             ResolveSecretsInOptions(options);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to resolve secrets in configuration options {OptionsType}", typeof(TOptions).Name);
+            ConfigurationServiceExtensionsLog.OptionsSecretResolutionFailed(_logger, optionsTypeName, ex);
             throw;
         }
     }
 
     private void ResolveSecretsInOptions(TOptions options)
     {
+        var optionsTypeName = typeof(TOptions).Name;
         var properties = typeof(TOptions).GetProperties(
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
 
@@ -331,11 +334,11 @@ internal sealed class SecretResolutionPostConfigureOptions<
                     {
                         var resolvedValue = SecretReferenceResolver.ResolveEnvironmentReference(
                             value,
-                            $"{typeof(TOptions).Name}.{property.Name}");
+                            $"{optionsTypeName}.{property.Name}");
                         property.SetValue(options, resolvedValue);
-                        _logger.LogDebug(
-                            "Resolved environment secret reference for {OptionsType}.{PropertyName}",
-                            typeof(TOptions).Name,
+                        ConfigurationServiceExtensionsLog.EnvironmentSecretReferenceResolved(
+                            _logger,
+                            optionsTypeName,
                             property.Name);
                         continue;
                     }
@@ -343,13 +346,17 @@ internal sealed class SecretResolutionPostConfigureOptions<
                     if (_secretProvider.IsSecretReference(value))
                     {
                         throw new InvalidOperationException(
-                            $"Configuration option '{typeof(TOptions).Name}.{property.Name}' uses secret reference '{value}', but only env: references are supported for startup-bound option binding.");
+                            $"Configuration option '{optionsTypeName}.{property.Name}' uses secret reference '{value}', but only env: references are supported for startup-bound option binding.");
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to resolve secret reference for {OptionsType}.{PropertyName}: {SecretRef}",
-                        typeof(TOptions).Name, property.Name, value);
+                    ConfigurationServiceExtensionsLog.SecretReferenceResolutionFailed(
+                        _logger,
+                        optionsTypeName,
+                        property.Name,
+                        value,
+                        ex);
                     throw;
                 }
             }
@@ -381,7 +388,7 @@ internal sealed class ConfigurationValidationStartupService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Starting configuration validation...");
+        ConfigurationServiceExtensionsLog.ConfigurationValidationStarting(_logger);
 
         try
         {
@@ -401,21 +408,20 @@ internal sealed class ConfigurationValidationStartupService : IHostedService
                         "Application startup aborted. See logs for details.");
                 }
 
-                _logger.LogWarning(
-                    "Configuration validation completed with {ErrorCount} errors and {WarningCount} warnings, " +
-                    "but startup will continue in {Environment} environment",
-                    validationResult.TotalErrors, validationResult.TotalWarnings, _environment.EnvironmentName);
+                ConfigurationServiceExtensionsLog.ConfigurationValidationContinuingWithErrors(
+                    _logger,
+                    validationResult.TotalErrors,
+                    validationResult.TotalWarnings,
+                    _environment.EnvironmentName);
             }
             else
             {
-                _logger.LogInformation(
-                    "Configuration validation completed successfully. Validated {SectionCount} sections",
-                    validationResult.Results.Count);
+                ConfigurationValidatorLog.ValidationCompleted(_logger, validationResult.Results.Count);
             }
         }
         catch (Exception ex) when (!(ex is InvalidOperationException))
         {
-            _logger.LogError(ex, "Configuration validation failed due to unexpected error");
+            ConfigurationServiceExtensionsLog.ConfigurationValidationUnexpectedFailure(_logger, ex);
 
             if (_secureOptions.FailOnSecretValidationError && !_environment.IsDevelopment())
             {

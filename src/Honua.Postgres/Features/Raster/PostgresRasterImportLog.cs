@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Raster.Domain;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Postgres.Features.Raster;
@@ -15,7 +16,7 @@ internal static partial class PostgresRasterImportLog
         EventId = 7820,
         Level = LogLevel.Information,
         Message = "Starting raster import for layer {LayerId}: file={FileName}, format={Format}")]
-    public static partial void ImportStarted(ILogger logger, int layerId, string fileName, string format);
+    public static partial void ImportStarted(ILogger logger, int layerId, string fileName, SupportedRasterFormat format);
 
     [LoggerMessage(
         EventId = 7821,

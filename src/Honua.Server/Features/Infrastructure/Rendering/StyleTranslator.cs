@@ -79,6 +79,23 @@ internal static class StyleTranslator
     }
 
     /// <summary>
+    /// Returns whether a style layer should be rendered for the supplied zoom, when zoom is known.
+    /// If zoom is not known, minzoom/maxzoom are left unapplied and layer visibility is still honored.
+    /// </summary>
+    public static bool ShouldRenderLayer(
+        MapLibreStyleLayer layer,
+        double? zoom = null,
+        ImmutableDictionary<string, object?>? properties = null)
+    {
+        if (zoom.HasValue && !IsLayerInZoomRange(layer, zoom.Value))
+        {
+            return false;
+        }
+
+        return IsLayerVisible(layer, properties ?? ImmutableDictionary<string, object?>.Empty);
+    }
+
+    /// <summary>
     /// Resolves a fill style from a MapLibre layer for a specific feature.
     /// </summary>
     public static ResolvedFillStyle ResolveFillStyle(
@@ -100,7 +117,7 @@ internal static class StyleTranslator
         var outlineColor = ResolveOptionalColor(paint, "fill-outline-color", properties);
         var antialias = ResolveBool(paint, "fill-antialias", properties, true);
 
-        fillColor = fillColor.WithAlpha((byte)Math.Clamp(fillOpacity * 255f, 0f, 255f));
+        fillColor = ApplyOpacity(fillColor, fillOpacity);
 
         return new ResolvedFillStyle
         {
@@ -163,7 +180,7 @@ internal static class StyleTranslator
             }
         }
 
-        lineColor = lineColor.WithAlpha((byte)Math.Clamp(lineOpacity * lineColor.Alpha / 255f * 255f, 0f, 255f));
+        lineColor = ApplyOpacity(lineColor, lineOpacity);
 
         return new ResolvedLineStyle
         {
@@ -199,7 +216,7 @@ internal static class StyleTranslator
         var strokeColor = ResolveOptionalColor(paint, "circle-stroke-color", properties);
         var strokeWidth = ResolveFloat(paint, "circle-stroke-width", properties, 0f);
 
-        fillColor = fillColor.WithAlpha((byte)Math.Clamp(fillOpacity * 255f, 0f, 255f));
+        fillColor = ApplyOpacity(fillColor, fillOpacity);
 
         return new ResolvedCircleStyle
         {
@@ -259,6 +276,40 @@ internal static class StyleTranslator
                 }),
             _ => (new SKPaint { Style = SKPaintStyle.Fill, Color = fillColor, IsAntialias = true }, null)
         };
+    }
+
+    private static bool IsLayerVisible(
+        MapLibreStyleLayer layer,
+        ImmutableDictionary<string, object?> properties)
+    {
+        if (layer.Layout == null || layer.Layout.Count == 0)
+        {
+            return true;
+        }
+
+        var visibility = ResolveString(layer.Layout, "visibility", properties);
+        return !string.Equals(visibility, "none", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsLayerInZoomRange(MapLibreStyleLayer layer, double zoom)
+    {
+        if (layer.MinZoom.HasValue && zoom < layer.MinZoom.Value)
+        {
+            return false;
+        }
+
+        if (layer.MaxZoom.HasValue && zoom >= layer.MaxZoom.Value)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static SKColor ApplyOpacity(SKColor color, float opacity)
+    {
+        var alpha = color.Alpha * Math.Clamp(opacity, 0f, 1f);
+        return color.WithAlpha((byte)Math.Clamp(alpha, 0f, 255f));
     }
 
     private static SKColor ResolveColor(

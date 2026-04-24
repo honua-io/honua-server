@@ -98,7 +98,7 @@ public class ImageServerParameterValidationTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/exportImage" +
-            "?f=json&bbox=-180,-90,180,90&size=512&format=png" +
+            "?f=json&bbox=-180,-90,180,90&size=512,512&format=png" +
             "&imageSr=4326&bboxSr=4326&interpolation=RSP_BilinearInterpolation" +
             "&compressionQuality=85");
 
@@ -179,7 +179,7 @@ public class ImageServerParameterValidationTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/exportImage" +
-            "?f=json&bbox=-180,-90,180,90&size=1");
+            "?f=json&bbox=-180,-90,180,90&size=1,1");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
     }
@@ -191,7 +191,7 @@ public class ImageServerParameterValidationTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/exportImage" +
-            "?f=json&bbox=-180,-90,180,90&size=4096");
+            "?f=json&bbox=-180,-90,180,90&size=4096,4096");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
     }

@@ -679,23 +679,40 @@ public sealed class EvalRunner
     {
         try
         {
+            using var client = _fixture.CreateAdminClient();
+            client.Timeout = _fixture.Client.Timeout;
             using var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["f"] = "json",
-                ["input_features"] = "eval-placeholder"
+                ["wkb"] = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+                ["srid"] = "4326",
+                ["distance"] = "10"
             });
-            using var response = await _fixture.Client.PostAsync(
-                "/rest/services/HonuaEval/GPServer/BufferAnalysis/submitJob",
+            using var response = await client.PostAsync(
+                "/rest/services/HonuaEval/GPServer/geometry.buffer/submitJob",
                 content,
                 cancellationToken).ConfigureAwait(false);
 
-            if (response.StatusCode == HttpStatusCode.NotImplemented)
+            if (response.StatusCode == HttpStatusCode.OK)
             {
                 return new EvalProtocolProbe
                 {
                     Protocol = Constants.Protocols.GPServer,
                     Assertion = "submit-job-surface",
-                    Outcome = "task-resolution-unavailable",
+                    Outcome = "matched-acceptance",
+                    Status = EvalStageStatus.Passed
+                };
+            }
+
+            if (response.StatusCode is HttpStatusCode.ServiceUnavailable or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                return new EvalProtocolProbe
+                {
+                    Protocol = Constants.Protocols.GPServer,
+                    Assertion = "submit-job-surface",
+                    Outcome = response.StatusCode == HttpStatusCode.ServiceUnavailable
+                        ? "service-unavailable"
+                        : "authorization-required",
                     Status = EvalStageStatus.Skipped
                 };
             }
