@@ -4,22 +4,6 @@
 namespace Honua.Core.Features.Spec.Domain;
 
 /// <summary>
-/// Severity of a <see cref="SpecWarning"/>. Errors are structural and block
-/// plan / apply; warnings inform the operator but do not stop execution.
-/// </summary>
-public enum SpecDiagnosticSeverity
-{
-    /// <summary>Informational — surfaces a non-blocking observation.</summary>
-    Info,
-
-    /// <summary>Warning — non-blocking but operator attention recommended.</summary>
-    Warning,
-
-    /// <summary>Error — structural; apply must not proceed.</summary>
-    Error
-}
-
-/// <summary>
 /// Structured diagnostic emitted by the plan / apply engine. Transports the
 /// stable <see cref="Code"/> (one of <see cref="SpecDiagnosticCodes"/>) plus
 /// an operator-facing <see cref="Message"/> and optional remediation hint.
