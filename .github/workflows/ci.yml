@@ -364,13 +364,41 @@ jobs:
         run: mkdir -p ./tests/TestResults
 
       - name: Pre-pull Docker images for faster tests
+        shell: bash
         run: |
-          docker pull --quiet postgis/postgis:16-3.4-alpine || true
-          docker pull --quiet postgis/postgis:18-3.6 || true
+          pull_with_retry() {
+            local image="$1"
+            local required="${2:-true}"
+
+            for attempt in 1 2 3 4 5; do
+              if docker pull --quiet "$image"; then
+                return 0
+              fi
+
+              if [ "$attempt" -eq 5 ]; then
+                if [ "$required" = "true" ]; then
+                  echo "Failed to pull required image $image after $attempt attempts." >&2
+                  return 1
+                fi
+
+                echo "Could not pre-pull optional image $image after $attempt attempts." >&2
+                return 0
+              fi
+
+              sleep_seconds=$((attempt * 5))
+              echo "Pull failed for $image (attempt $attempt/5); retrying in ${sleep_seconds}s..." >&2
+              sleep "$sleep_seconds"
+            done
+          }
+
+          pull_with_retry postgis/postgis:16-3.4-alpine false
+          pull_with_retry postgis/postgis:18-3.6 false
+          pull_with_retry localstack/localstack:3.6.0
+          pull_with_retry mcr.microsoft.com/azure-storage/azurite:3.31.0
 
       - name: Start emulator containers (Azurite + Localstack)
         run: |
-          docker compose -f docker/docker-compose.emulators.yml up -d --quiet-pull
+          docker compose -f docker/docker-compose.emulators.yml up -d --pull never
           for i in {1..30}; do
             if (echo > /dev/tcp/localhost/4566) >/dev/null 2>&1 \
               && (echo > /dev/tcp/localhost/10000) >/dev/null 2>&1; then

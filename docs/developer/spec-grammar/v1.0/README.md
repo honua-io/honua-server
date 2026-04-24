@@ -83,7 +83,8 @@ Round-trip invariants:
   and strings are UTF-8.
 - **text → JSON → text** is semantically equivalent. Comments from the text
   form are preserved in `meta.comments` keyed by JSON-Pointer so tools can
-  render them back during formatting.
+  render them back during formatting. Array-backed sections use numeric
+  indices in those pointers (for example `/sources/0` and `/outputs/0`).
 - **JSON → AST → JSON** is byte-for-byte idempotent.
 
 ## Canonical JSON layout
@@ -104,11 +105,16 @@ Root keys, in sort order:
 | `sources`      | yes      | Ordered array of source bindings.                        |
 | `title`        | —        | Optional human title.                                    |
 
+`map.layers` uses canonical string ids such as `["rivers", "schools"]`
+rather than `@`-prefixed reference tokens.
+
 ### Unit and geometry encoding
 
 Unit-carrying numeric literals (`500.m`, `15.min`, `2.ha`) are emitted as
 structured objects, not strings, so downstream consumers don't have to
-re-parse them:
+re-parse them. v1.0 currently recognizes distance suffixes `km`, `m`, `mi`,
+`ft`, `nm`; duration suffixes `ms`, `s`, `min`, `h`, `d`; and area suffixes
+`m2`, `km2`, `ha`, `ac`:
 
 ```json
 { "kind": "distance", "unit": "m", "value": 500 }
@@ -217,3 +223,10 @@ wire up any other feature slice.
   and surface `UnsupportedGrammarVersion` for anything newer.
 - **Breaking change.** Bump the grammar major and publish a new directory
   (`v2.0/`). Keep the previous directory intact for back-compat reads.
+
+## Related surfaces
+
+- [Spec Grounding v1.0](../../spec-grounding/v1.0/README.md) — `/v1/grounding/spec/mutate`
+  and `/v1/grounding/spec/summarize` author, refine, and describe canonical
+  specs from natural-language turns while preserving unchanged sections
+  byte-for-byte.

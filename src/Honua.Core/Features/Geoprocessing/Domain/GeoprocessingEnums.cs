@@ -297,7 +297,32 @@ public enum ClarificationReasonCode
     /// <summary>
     /// The system has low confidence in its interpretation of the user's intent.
     /// </summary>
-    LowConfidence
+    LowConfidence,
+
+    /// <summary>
+    /// Multiple columns on the resolved dataset match the user's description.
+    /// </summary>
+    AmbiguousColumn,
+
+    /// <summary>
+    /// A filter value cannot be resolved to a concrete literal without user input.
+    /// </summary>
+    AmbiguousFilterValue,
+
+    /// <summary>
+    /// A unit-carrying numeric literal (distance, duration, area) is missing an explicit unit.
+    /// </summary>
+    AmbiguousUnit,
+
+    /// <summary>
+    /// A CRS-sensitive operator requires an explicit projected CRS that cannot be inferred.
+    /// </summary>
+    AmbiguousCrs,
+
+    /// <summary>
+    /// A planned mutation introduces a heavy operation that requires explicit user confirmation.
+    /// </summary>
+    HeavyOperationConfirmation
 }
 
 /// <summary>

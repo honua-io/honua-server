@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-04-19T00:00:00Z",
+  "updatedUtc": "2026-04-21T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -1367,6 +1367,52 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#728",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "spec-grounding",
+      "displayName": "Spec grounding HTTP surface",
+      "surfaceKind": "http-route-family",
+      "protocol": "Grounding",
+      "canonicalIdentifier": "/v1/grounding/spec/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/v1/grounding/spec/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Endpoint integration coverage plus service-level wire-envelope, clarification retry, preservation, and round-trip invariants",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingServiceTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Spec/SpecContractRegressionTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecMutationApplierTests.cs",
+            "docs/developer/spec-grounding/v1.0/README.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#790",
           "versionCaptureRule": null
         }
       ]

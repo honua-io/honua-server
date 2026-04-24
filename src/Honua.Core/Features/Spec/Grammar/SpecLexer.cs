@@ -136,7 +136,7 @@ public sealed class SpecLexer
                     continue;
             }
 
-            if (char.IsDigit(ch))
+            if (char.IsDigit(ch) || (ch == '-' && char.IsDigit(Peek(1))))
             {
                 ReadNumber();
                 continue;
@@ -366,6 +366,14 @@ public sealed class SpecLexer
         var startColumn = _column;
         var startOffset = _offset;
         var hasDot = false;
+
+        // Grammar allows an optional leading minus (e.g., -122.0 for west
+        // longitudes). Callers dispatch here only when the current character is
+        // a digit or a minus followed by a digit, so consume the sign if present.
+        if (_input[_offset] == '-')
+        {
+            Advance();
+        }
 
         while (_offset < _input.Length)
         {

@@ -155,4 +155,9 @@ public static class Protocols
     /// Declarative spec plan/apply engine (HTTP /v1/spec/* and gRPC SpecService).
     /// </summary>
     public const string Spec = "Spec";
+
+    /// <summary>
+    /// Natural-language grounding and canonical spec synthesis endpoints.
+    /// </summary>
+    public const string Grounding = "Grounding";
 }
