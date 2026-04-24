@@ -70,8 +70,8 @@
   "$defs": {
     "layerId": {
       "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-      "description": "Canonical map-layer identifier string (for example 'rivers')."
+      "minLength": 1,
+      "description": "Canonical map-layer identifier string (for example '0' or 'rivers')."
     },
     "reference": {
       "type": "string",

@@ -26,12 +26,12 @@ public sealed class SpecContractRegressionTests
     private static readonly SpecValidator Validator = new(new OperatorCatalog());
 
     [Fact]
-    public async Task CanonicalJson_WithMapLayerStrings_ValidatesAgainstPublishedSchema()
+    public async Task CanonicalJson_WithMapLayerIdStrings_ValidatesAgainstPublishedSchema()
     {
         const string source = """
             grammar "v1.0"
             source rivers { type = "layer", ref = "osm:waterway=river" }
-            map { layers = ["rivers"] }
+            map { layers = ["0", "rivers"] }
             """;
 
         var parsed = Parser.Parse(source);
