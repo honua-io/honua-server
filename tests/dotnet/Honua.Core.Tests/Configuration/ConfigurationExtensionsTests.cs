@@ -18,12 +18,12 @@ public class ConfigurationExtensionsTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["HONUA_ADMIN_UI"] = "true"
+                ["HONUA_SAMPLE"] = "true"
             })
             .Build();
 
         // Act
-        var result = config.IsFeatureEnabled("ADMIN_UI");
+        var result = config.IsFeatureEnabled("SAMPLE");
 
         // Assert
         Assert.True(result);
@@ -90,12 +90,12 @@ public class ConfigurationExtensionsTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["HONUA_ADMIN_UI"] = "false"
+                ["HONUA_SAMPLE"] = "false"
             })
             .Build();
 
         // Act
-        var result = config.IsFeatureEnabled("ADMIN_UI");
+        var result = config.IsFeatureEnabled("SAMPLE");
 
         // Assert
         Assert.False(result);

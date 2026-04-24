@@ -32,10 +32,7 @@ COPY src/Honua.Server/*.csproj src/Honua.Server/
 COPY docs/developer/api-specs/admin-api.json docs/developer/api-specs/
 COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 
-# Build arguments consumed in restore/publish
 ARG TARGETARCH
-# Slim by default: set HONUA_INCLUDE_ADMIN_UI=true to keep Admin UI static assets.
-ARG HONUA_INCLUDE_ADMIN_UI=false
 # Slim by default: set HONUA_INCLUDE_STAC_OPS_DEMO=true to keep the hosted STAC ops demo assets.
 ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
 
@@ -47,7 +44,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     export PROTOBUF_PROTOC=/usr/bin/protoc && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI -p:HonuaIncludeStacOpsDemo=false" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false" && \
     dotnet restore src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS
@@ -64,7 +61,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     export PROTOBUF_PROTOC=/usr/bin/protoc && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI -p:HonuaIncludeStacOpsDemo=false" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false" && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
@@ -82,8 +79,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       cp -a /tmp/stac-ops-demo/wwwroot/samples/stac-ops /app/wwwroot/samples/; \
     fi && \
     rm -rf /tmp/stac-ops-demo && \
-    rm -rf /app/BlazorDebugProxy && \
-    if [ "$HONUA_INCLUDE_ADMIN_UI" != "true" ]; then rm -rf /app/wwwroot/admin; fi && \
+    rm -rf /app/BlazorDebugProxy /app/wwwroot/admin && \
     if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" != "true" ]; then rm -rf /app/wwwroot/samples/stac-ops; fi && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
@@ -130,14 +126,11 @@ LABEL security.non-root="true" \
       org.opencontainers.image.description="Production-ready geospatial feature server" \
       org.opencontainers.image.licenses="Elastic-2.0"
 
-# Runtime configuration
-ARG HONUA_INCLUDE_ADMIN_UI=false
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_URLS=http://+:8080 \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
-    DOTNET_EnableDiagnostics=0 \
-    HONUA_SERVE_ADMIN_UI=${HONUA_INCLUDE_ADMIN_UI}
+    DOTNET_EnableDiagnostics=0
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

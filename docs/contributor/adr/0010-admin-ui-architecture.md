@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded for this repo. The Blazor Admin UI now lives in the separate `honua-server-admin` repository; `Honua.Server` only serves the `/api/v1/admin/*` backing API and does not host `/admin` static assets.
 
 ## Context
 
@@ -32,48 +32,19 @@ The Admin UI needs architectural decisions around:
 - Well-suited for data-heavy admin interfaces
 - Active community, good Blazor WASM support
 
-### Hosting Model: Dual Support
+### Hosting Model: Standalone
 
-Support both integrated and standalone hosting:
+The integrated hosting option has been removed from this repository. The Admin UI is built and deployed from `honua-server-admin`; this server exposes only the `/api/v1/admin/*` API surface and related auth endpoints.
 
-```
-Option A: Integrated (Default for dev/simple deployments)
-┌─────────────────────────────────────────┐
-│           Honua.Server                   │
-│  ├── /rest/services/...  (API)          │
-│  ├── /ogc/features/...   (API)          │
-│  ├── /odata/v4/...       (API)          │
-│  └── /admin/...          (Blazor WASM)  │
-└─────────────────────────────────────────┘
-
-Option B: Standalone (Production/CDN)
+```text
 ┌─────────────────┐     ┌─────────────────┐
-│  S3/CloudFront  │     │  Honua.Server   │
-│  /admin/*       │────▶│  /api/v1/admin/*   │
-│  (Static WASM)  │     │  (API only)     │
+│  CDN/static app │     │  Honua.Server   │
+│  /admin/*       │────▶│  /api/v1/admin/*│
+│  Blazor WASM    │     │  API only       │
 └─────────────────┘     └─────────────────┘
 ```
 
-**Configuration:**
-```csharp
-// Program.cs
-if (builder.Configuration.GetValue<bool>("ServeAdminUI", true))
-{
-    // Integrated: serve WASM from /admin
-    app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
-}
-// Standalone: Admin UI hosted separately, only API endpoints served
-```
-
-**Environment variables:**
-```bash
-# Integrated (default)
-HONUA_SERVE_ADMIN_UI=true
-
-# Standalone (API only, WASM hosted elsewhere)
-HONUA_SERVE_ADMIN_UI=false
-HONUA_ADMIN_UI_CORS_ORIGINS=https://admin.example.com
-```
+Use `HONUA_ADMIN_UI_CORS_ORIGINS=https://admin.example.com` when the standalone UI origin differs from the server origin.
 
 ### Admin UI Authentication
 
@@ -205,14 +176,14 @@ public async Task Admin_CanPublishLayerFromTable()
 **Test project structure:**
 ```
 tests/
-├── Honua.Admin.Tests/           # bUnit component tests
+├── honua-server-admin.Tests/    # bUnit component tests
 │   ├── Components/
 │   │   ├── ConnectionFormTests.cs
 │   │   └── LayerListTests.cs
 │   └── Pages/
 │       └── DashboardTests.cs
 │
-└── Honua.Admin.Playwright/      # Playwright E2E tests
+└── honua-server-admin.Playwright/  # Playwright E2E tests
     ├── AdminFlowTests.cs
     ├── ImportWizardTests.cs
     └── PlaywrightFixture.cs
@@ -275,7 +246,7 @@ window.initMapLibre = (containerId, options) => {
 ## Project Structure
 
 ```
-src/Honua.Admin/
+honua-server-admin/
 ├── wwwroot/
 │   ├── index.html
 │   ├── css/
@@ -318,7 +289,7 @@ src/Honua.Admin/
 ## Package References
 
 ```xml
-<!-- Honua.Admin.csproj -->
+<!-- honua-server-admin.csproj -->
 <ItemGroup>
   <!-- UI Components -->
   <PackageReference Include="MudBlazor" Version="7.*" />
@@ -330,13 +301,13 @@ src/Honua.Admin/
   <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="9.*" />
 </ItemGroup>
 
-<!-- Honua.Admin.Tests.csproj -->
+<!-- honua-server-admin.Tests.csproj -->
 <ItemGroup>
   <PackageReference Include="bunit" Version="1.*" />
   <PackageReference Include="MudBlazor" Version="7.*" />
 </ItemGroup>
 
-<!-- Honua.Admin.Playwright.csproj -->
+<!-- honua-server-admin.Playwright.csproj -->
 <ItemGroup>
   <PackageReference Include="Microsoft.Playwright" Version="1.*" />
   <PackageReference Include="Microsoft.Playwright.NUnit" Version="1.*" />

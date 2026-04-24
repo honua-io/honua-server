@@ -71,7 +71,7 @@ public sealed class StacOpsDemoEndpointTests : IAsyncLifetime
     [Operation(Operations.StacCatalog)]
     [Endpoint("GET /samples/stac-ops/index.html")]
     [Endpoint("GET /samples/stac-ops/_framework/blazor.webassembly.js")]
-    public async Task GetStacOpsDemoAssets_WhenDemoDisabled_Return404EvenWhenAdminUiEnabled()
+    public async Task GetStacOpsDemoAssets_WhenDemoDisabled_Return404()
     {
         var isolatedFixture = new WebAppFixture()
             .ConfigureWebHost(builder =>

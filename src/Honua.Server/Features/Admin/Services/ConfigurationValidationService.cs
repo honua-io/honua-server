@@ -43,7 +43,6 @@ internal static class ConfigurationValidationService
         ValidateDeploymentDependencies(configuration, deploymentMode, errors, warnings);
 
         // Check feature flags and log their status
-        LogFeatureStatus(configuration, logger, "HONUA_ADMIN_UI", "Admin UI");
         LogFeatureStatus(configuration, logger, "HONUA_OBSERVABILITY", "Observability");
         LogFeatureStatus(configuration, logger, "HONUA_OPENTELEMETRY", "OpenTelemetry tracing");
         LogFeatureStatus(configuration, logger, "HONUA_SKIP_MIGRATIONS", "Skip migrations");

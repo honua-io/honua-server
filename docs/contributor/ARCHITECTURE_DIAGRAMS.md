@@ -84,7 +84,7 @@ graph TB
         subgraph "Application Containers"
             Server["<b>Honua.Server</b><br/><i>ASP.NET Core API</i><br/><br/>Hosts all protocol endpoints:<br/>• FeatureServer REST<br/>• MapServer REST<br/>• OGC API Features<br/>• OData v4<br/>• Vector Tiles<br/>• Admin API"]
 
-            AdminUI["<b>Honua.Admin</b><br/><i>Blazor WebAssembly</i><br/><br/>Admin interface:<br/>• Connection management<br/>• Layer publishing<br/>• File import<br/>• Style editing"]
+            AdminUI["<b>honua-server-admin</b><br/><i>Blazor WebAssembly</i><br/><br/>Standalone admin interface:<br/>• Connection management<br/>• Layer publishing<br/>• File import<br/>• Style editing"]
         end
 
         subgraph "Infrastructure"
@@ -109,7 +109,7 @@ graph TB
 | Container | Technology | Responsibility |
 |-----------|------------|----------------|
 | **Honua.Server** | ASP.NET Core 10, Native AOT | API host, business logic, protocol translation |
-| **Honua.Admin** | Blazor WebAssembly | Admin UI, served at `/admin` in integrated mode; can be hosted standalone |
+| **honua-server-admin** | Blazor WebAssembly | Standalone Admin UI deployed separately from `Honua.Server` |
 | **PostgreSQL + PostGIS** | PostgreSQL 16, PostGIS 3.4 | Data storage, spatial ops, MVT generation |
 | **Redis** (optional) | Redis 7 | Metadata caching, output caching |
 
@@ -436,7 +436,7 @@ erDiagram
 
 ```mermaid
 graph TB
-    subgraph "Honua.Admin (Blazor WASM)"
+    subgraph "honua-server-admin (Blazor WASM)"
         subgraph "Pages"
             Dashboard[Dashboard.razor<br/><i>Health overview</i>]
             Connections[Connections.razor<br/><i>DB connection mgmt</i>]

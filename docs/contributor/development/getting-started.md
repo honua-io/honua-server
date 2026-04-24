@@ -150,7 +150,7 @@ src/
 │   └── Features/          # FeatureServer, OGC, OData, Admin, Import, Tiles
 ├── Honua.Core/            # Domain models and abstractions (no infrastructure deps)
 ├── Honua.Postgres/        # PostGIS implementation of Core interfaces
-└── Honua.Admin/           # Blazor WASM admin UI
+└── Honua.DuckDB/          # DuckDB read-only provider
 
 tests/
 ├── Honua.Server.Tests/    # Integration tests (Testcontainers + real PostGIS)
@@ -173,7 +173,6 @@ Once the server is running:
 | `http://localhost:8080/odata` | OData service root |
 | `http://localhost:8080/openapi.json` | OGC API Features OpenAPI spec |
 | `http://localhost:8080/docs` | Interactive API explorer (Scalar; dev mode only, or set `HONUA_SERVE_API_DOCS=true`) |
-| `http://localhost:8080/admin` | Admin UI (requires `HONUA_SERVE_ADMIN_UI=true`, default on) |
 
 ## Debugging
 

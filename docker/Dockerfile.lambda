@@ -20,7 +20,6 @@ COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
 COPY src/Honua.Server/*.csproj src/Honua.Server/
 
 ARG TARGETARCH
-ARG HONUA_INCLUDE_ADMIN_UI=false
 
 RUN --mount=type=cache,target=/root/.nuget/packages \
     case "${TARGETARCH:-amd64}" in \
@@ -31,8 +30,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     export PROTOBUF_PROTOC=/usr/bin/protoc && \
     dotnet restore src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
-      -p:RuntimeIdentifier="$RUNTIME_ID" \
-      -p:HonuaIncludeAdminUi="$HONUA_INCLUDE_ADMIN_UI"
+      -p:RuntimeIdentifier="$RUNTIME_ID"
 
 COPY . .
 
@@ -52,10 +50,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
       -p:PublishAot=false \
       -p:DebugType=None \
-      -p:DebugSymbols=false \
-      -p:HonuaIncludeAdminUi="$HONUA_INCLUDE_ADMIN_UI" && \
-    rm -rf /app/BlazorDebugProxy && \
-    if [ "$HONUA_INCLUDE_ADMIN_UI" != "true" ]; then rm -rf /app/wwwroot; fi && \
+      -p:DebugSymbols=false && \
+    rm -rf /app/BlazorDebugProxy /app/wwwroot && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 FROM public.ecr.aws/lambda/provided:al2023 AS runtime

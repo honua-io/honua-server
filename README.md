@@ -82,7 +82,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | Vector Tiles (MVT) | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, OpenLayers, Leaflet, Mapbox GL |
 | TileJSON | `/tiles/{layerId}/tile.json` | MapLibre |
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
-| Admin API | `/api/v1/admin` | Admin UI, automation scripts |
+| Admin API | `/api/v1/admin` | Standalone Admin UI, automation scripts |
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
@@ -112,7 +112,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 **Service import** — Migrate existing Esri feature and map services, preserving structure and metadata.
 
-**Admin** — REST API and Blazor WASM UI (`/admin`) for managing connections, services, layers, relationships, styles (with auto-cartographic suggestions), and import jobs.
+**Admin** — REST API for managing connections, services, layers, relationships, styles (with auto-cartographic suggestions), and import jobs. The Blazor admin UI lives in the separate `honua-server-admin` repo and is deployed as a standalone static app.
 
 **Caching** — Multi-layer: output cache, Redis, in-memory fallback.
 
@@ -139,7 +139,6 @@ See the [DuckDB Provider Guide](docs/operator/duckdb-provider.md) for layer and 
 
 **Common options:**
 ```bash
-HONUA_SERVE_ADMIN_UI=true                 # Serve admin UI at /admin
 HONUA_SERVE_STAC_DEMO=true               # Serve the STAC operations demo at /samples/stac-ops/ (default: on in Development/Test; Docker production builds also require --build-arg HONUA_INCLUDE_STAC_OPS_DEMO=true)
 HONUA_SERVE_API_DOCS=true                # Interactive API explorer at /docs (default: on in Development)
 HONUA_OBSERVABILITY=true                  # Metrics and health endpoints
@@ -158,7 +157,6 @@ src/
   Honua.Postgres/     PostGIS implementation
   Honua.DuckDB/       DuckDB read-only provider (analytics, GeoParquet, edge)
   Honua.Server/       HTTP host (Minimal APIs, vertical slices)
-  Honua.Admin/        Blazor WASM admin UI
   Honua.AppHost/      .NET Aspire orchestration
   Honua.ServiceDefaults/  Shared service configuration
 ```

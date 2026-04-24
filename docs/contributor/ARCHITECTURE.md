@@ -17,8 +17,7 @@ src/
 ├── Honua.Server/     # ASP.NET Core host + Minimal API endpoints
 ├── Honua.Core/       # Domain models + abstractions
 ├── Honua.Postgres/   # PostgreSQL/PostGIS implementation (read/write)
-├── Honua.DuckDB/     # DuckDB implementation (read-only)
-└── Honua.Admin/      # Blazor WASM admin UI
+└── Honua.DuckDB/     # DuckDB implementation (read-only)
 ```
 
 Key points:
@@ -26,7 +25,7 @@ Key points:
 - **Honua.Postgres** implements Core interfaces using raw Npgsql and PostGIS.
 - **Honua.DuckDB** implements Core read interfaces (`IFeatureReader`, `IStreamingFeatureStore`, etc.) for embedded DuckDB databases. Write operations are rejected at startup via capability stripping.
 - **Honua.Server** composes endpoints and handlers, selecting the active provider via `DataSource:Provider` configuration.
-- **Honua.Admin** is a standalone UI that talks to the Admin API.
+- The Blazor admin UI lives in the separate `honua-server-admin` repo and talks to this server's Admin API.
 
 ## Feature Slices (Server)
 

@@ -313,8 +313,7 @@ src/
 ├── Honua.Server/          # Main host (Minimal APIs)
 ├── Honua.Core/            # Domain models, abstractions
 ├── Honua.Postgres/        # PostgreSQL implementation
-├── Honua.DuckDB/          # DuckDB read-only provider
-└── Honua.Admin/           # Blazor WASM admin UI
+└── Honua.DuckDB/          # DuckDB read-only provider
 
 tests/
 ├── Honua.TestKit/         # Shared test infrastructure

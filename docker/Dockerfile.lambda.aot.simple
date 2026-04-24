@@ -28,8 +28,7 @@ RUN case "${TARGETARCH:-amd64}" in \
     esac && \
     dotnet restore src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
-      -p:RuntimeIdentifier="$RUNTIME_ID" \
-      -p:HonuaIncludeAdminUi=false
+      -p:RuntimeIdentifier="$RUNTIME_ID"
 
 COPY . .
 
@@ -45,7 +44,6 @@ RUN case "${TARGETARCH:-amd64}" in \
       --self-contained true \
       --output /app \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
-      -p:HonuaIncludeAdminUi=false \
       -p:PublishAot=true \
       -p:DebugType=None \
       -p:DebugSymbols=false \

@@ -53,9 +53,9 @@ Challenge behavior:
 
 ## Admin UI Deployment
 
-- Served at `/<host>/admin` when enabled via `ServeAdminUI` or `HONUA_SERVE_ADMIN_UI`.
+- The Blazor Admin UI is deployed separately from this server from the `honua-server-admin` repo.
 - Admin API calls require authentication (API key or OIDC).
-- Restrict `/admin` at the edge (network allowlists or VPN).
+- Restrict the standalone Admin UI and `/api/v1/admin/*` at the edge (network allowlists or VPN).
 
 ---
 

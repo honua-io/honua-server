@@ -210,14 +210,14 @@
             Features use the HONUA_* prefix pattern.
             </summary>
             <param name="configuration">The configuration instance.</param>
-            <param name="featureName">The feature name (e.g., "ADMIN_UI", "OBSERVABILITY").</param>
+            <param name="featureName">The feature name (e.g., "OBSERVABILITY").</param>
             <returns>True if the feature is enabled; false otherwise.</returns>
             <example>
             <code>
-            // Check if admin UI is enabled via HONUA_ADMIN_UI=true
-            if (configuration.IsFeatureEnabled("ADMIN_UI"))
+            // Check if observability is enabled via HONUA_OBSERVABILITY=true
+            if (configuration.IsFeatureEnabled("OBSERVABILITY"))
             {
-                // Enable admin UI features
+                // Enable observability features
             }
             </code>
             </example>
