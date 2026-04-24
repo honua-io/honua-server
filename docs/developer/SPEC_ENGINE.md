@@ -125,9 +125,13 @@ references) are surfaced as `400 Bad Request` / `InvalidArgument` **before**
 the SSE stream is opened — the response body is a `SpecProblem` envelope with
 the matching stable `code`, never an event frame.
 
-Malformed request bodies (parse failures) are reported as
-`400 invalid-request-body` on both `POST /v1/spec/plan` and
-`POST /v1/spec/apply` without opening a stream.
+Malformed request bodies (parse failures, or a body that explicitly sets
+`"nodes": null`) are reported as `400 invalid-request-body` on both
+`POST /v1/spec/plan` and `POST /v1/spec/apply` without opening a stream.
+Request arrays that contain a `null` entry are rejected with
+`400 invalid-node-id` identifying the offending index, so a client that
+serialised a dropped node as `null` sees the same stable diagnostic that
+`SpecDagResolver` uses for blank / whitespace ids.
 
 ### Cancellation contract
 
@@ -216,15 +220,23 @@ The cache key is derived — never caller-supplied:
 
 ```
 sha256( grammarVersion || processFamilyVersion || nodeId || kind || op
-        || canonicalFragment OR sorted(parameters + sourcePins)
-        || sorted(input hashes) )
+        || ( canonicalFragment
+             OR sorted(parameters) || sorted(sourcePins) || sorted(inputs-keyed) )
+        || sorted(input hashes by dependency node id) )
 ```
 
 The derivation lives in
 `src/Honua.Core/Features/Spec/Services/SpecContentHashCalculator.cs`.
-Re-applying the same spec with unchanged input hashes completes with zero
-compute invocations; mutating a single node invalidates only its transitive
-closure.
+When `canonicalFragment` is absent the fallback emits each `inputs[paramName]`
+with a discriminator — `R:<upstream-hash>` for `@node` references resolved
+against the caller-supplied `inputHashes` dictionary, `L:<literal>` for scalar
+literals. Keying inputs by parameter name makes the hash sensitive to
+**swapped `@node` bindings** (`{left:@a,right:@b}` vs `{left:@b,right:@a}`
+resolve to the same upstream hash set but different cache keys) and prevents
+scalar-only input changes from being silently collapsed when no
+`canonicalFragment` is supplied. Re-applying the same spec with unchanged
+input hashes completes with zero compute invocations; mutating a single node
+invalidates only its transitive closure.
 
 ## Structured diagnostic codes
 
@@ -245,8 +257,8 @@ Admin tooling keys off these strings:
 | `dag-cycle` | error | Spec declares a cycle. |
 | `duplicate-node-id` | error | Two nodes share an id. |
 | `unresolved-reference` | error | `@` reference points to a missing id. |
-| `invalid-node-id` | error | Node declared without a usable `id` (null, empty, or whitespace). Rejected by the resolver before duplicate / dependency analysis so the diagnostic surface is unambiguous. |
-| `invalid-request-body` | error | Request body could not be parsed as a canonical spec document. |
+| `invalid-node-id` | error | Node declared without a usable `id` (null, empty, or whitespace) **or** a `null` node entry in the request `nodes` array. Rejected by the transport-boundary check / resolver before duplicate / dependency analysis so the diagnostic surface is unambiguous. |
+| `invalid-request-body` | error | Request body could not be parsed as a canonical spec document, including `"nodes": null`. |
 | `apply-token-unknown` | error | Cancel targets a token the in-process registry does not know (usually after a restart). |
 | `artifact-not-found` | error | Requested artifact hash is unknown or evicted. |
 | `upstream-failed` | warning | A parent node failed and the current node was skipped. |

@@ -11,14 +11,19 @@ namespace Honua.Core.Features.Spec.Abstractions;
 /// <remarks>
 /// Keys are produced by <c>SpecContentHashCalculator</c>:
 /// <c>sha256(grammar_version || process_family_version || node_id || node_kind
-/// || node_op || canonical_fragment OR sorted(parameters + source_pins)
-/// || sorted(input_hashes))</c>. The canonical-fragment branch is used when
-/// the upstream has emitted a canonicalised JSON fragment; otherwise the
-/// calculator falls back to a deterministic serialisation of the node's
-/// parameter and source-pin bags. Entries are addressable via
-/// <see cref="CachedArtifactRef.Uri"/>. Mutable sources without pinned
-/// versions receive TTL-backed entries; all other entries live until the
-/// content hash changes.
+/// || node_op || (canonical_fragment OR sorted(parameters) || sorted(source_pins)
+/// || sorted(inputs-keyed-by-param-name)) || sorted(input_hashes))</c>. The
+/// canonical-fragment branch is used when the upstream has emitted a
+/// canonicalised JSON fragment; otherwise the calculator falls back to a
+/// deterministic serialisation of the node's parameter, source-pin, and
+/// inputs bags. The fallback emits each inputs entry as
+/// <c>paramName=R:&lt;upstream-hash&gt;</c> for resolved <c>@node</c>
+/// references or <c>paramName=L:&lt;literal&gt;</c> for scalar inputs so that
+/// swapping two <c>@node</c> bindings or mutating a scalar input yields a
+/// distinct cache key even when the upstream hash set is unchanged. Entries
+/// are addressable via <see cref="CachedArtifactRef.Uri"/>. Mutable sources
+/// without pinned versions receive TTL-backed entries; all other entries live
+/// until the content hash changes.
 /// </remarks>
 public interface IContentHashArtifactCache
 {
