@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Import;
 /// Tests the streaming parser, batch processing, and background job functionality.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public class StreamingImportTests : IAsyncLifetime
 {

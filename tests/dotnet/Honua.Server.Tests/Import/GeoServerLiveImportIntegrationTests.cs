@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Import;
 /// Integration tests that exercise GeoServer import endpoints against a live GeoServer container.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class GeoServerLiveImportIntegrationTests : IAsyncLifetime
 {

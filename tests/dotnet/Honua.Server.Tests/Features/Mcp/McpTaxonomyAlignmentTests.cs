@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// geospatial-mcp taxonomy v1 as described in <c>AI_OPERATOR_CONTRACT.md §MCP
 /// Contract Families</c>. A rename on either side trips this test.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class McpTaxonomyAlignmentTests
 {
     private static readonly string[] TaxonomyToolNames =

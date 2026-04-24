@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// Integration tests for admin style suggestion endpoint.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

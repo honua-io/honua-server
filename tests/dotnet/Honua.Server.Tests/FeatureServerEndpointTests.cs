@@ -6,7 +6,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -23,7 +23,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for streaming query functionality (Issue #229)
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _webAppFixture = new();
@@ -239,7 +239,7 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
     }
 }
 
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class FeatureServerEndpointTests : IAsyncLifetime
 {

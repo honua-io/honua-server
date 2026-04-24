@@ -16,7 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Infrastructure.Monitoring;
 
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.ErrorHandling)]
 public sealed class RecentErrorsEndpointTests
 {

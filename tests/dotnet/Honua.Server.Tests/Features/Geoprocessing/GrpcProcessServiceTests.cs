@@ -26,7 +26,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// <summary>
 /// Unit tests for the gRPC ProcessService implementation.
 /// </summary>
-[Protocol(Protocols.Grpc)]
+[Protocol(TestProtocols.Grpc)]
 public sealed class GrpcProcessServiceTests
 {
     private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();

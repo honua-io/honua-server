@@ -27,7 +27,7 @@ namespace Honua.Server.Tests.Import;
 /// Tests for upload progress tracking with AWS S3 cloud storage.
 /// </summary>
 [Collection("Emulators")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class AwsS3UploadProgressTests : IAsyncLifetime
 {

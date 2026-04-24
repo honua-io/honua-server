@@ -635,7 +635,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             ".github/workflows/ci.yml",
-            "tests/dotnet/Honua.Server.Tests/Features/OData/ODataClientIntegrationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientIntegrationTests.cs",
             "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
           ],
           "ownerRepo": "honua-server",
@@ -649,8 +649,8 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             ".github/workflows/ci.yml",
-            "tests/dotnet/Honua.Server.Tests/Features/OData/ODataClientCertificationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/OData/ODataClientModels.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientModels.cs",
             "tests/dotnet/Honua.TestKit/Infrastructure/CertificationEvidenceCollector.cs",
             "tests/dotnet/Honua.TestKit/Infrastructure/CertEnvelope.cs",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
@@ -906,10 +906,10 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceAdvancedOperationsTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceBufferTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceProjectTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceSimplifyTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceAdvancedOperationsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceBufferTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceProjectTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceSimplifyTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -969,7 +969,7 @@
           "executionLane": "nightly:ogc-maps-conformance",
           "evidenceLocations": [
             ".github/workflows/ogc-maps-conformance.yml",
-            "tests/dotnet/Honua.Server.Tests/Features/OgcMaps/OgcMapsConformanceTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/OgcMapsConformanceTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1025,9 +1025,9 @@
           "proofMechanism": "GPServer adapter retains happy-path and negative-path depth for endpoint routing, parameter translation, and status mapping",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GPServerEndpointTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GPServerParameterTranslationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GPServerStatusMappingTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerParameterTranslationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerStatusMappingTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1121,7 +1121,7 @@
           "executionLane": "nightly:cite-wfs20-conformance",
           "evidenceLocations": [
             ".github/workflows/cite-wfs20-conformance.yml",
-            "tests/dotnet/Honua.Server.Tests/Features/Wfs20/Wfs20EndpointsTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/Wfs20EndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",

@@ -26,7 +26,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// Integration tests for admin operations progress endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
 public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 {

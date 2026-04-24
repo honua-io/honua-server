@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// <summary>
 /// Integration tests for manifest drift detection and version history endpoints.
 /// </summary>
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Collection("Database")]
 public sealed class ManifestDriftEndpointsTests : IAsyncLifetime
 {

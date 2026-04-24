@@ -4,7 +4,7 @@
 using System.Net.Http.Json;
 using System.Globalization;
 using FluentAssertions;
-using Honua.Server.Features.Ogc.Common;
+using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -15,7 +15,7 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Integration tests for OGC API Features Core endpoints (landing page and conformance)
 /// </summary>
-[Protocol(Protocols.OgcApiFeatures)]
+[Protocol(TestProtocols.OgcApiFeatures)]
 [Collection("Database")]
 public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
 {

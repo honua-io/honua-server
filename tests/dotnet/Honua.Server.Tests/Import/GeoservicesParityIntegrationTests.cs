@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Import;
 /// External parity checks that compare selected ArcGIS layer responses with imported Honua table data.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 [Operation(Operations.Query)]
 public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposable
@@ -159,7 +159,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             importedRowCount.Should().Be(sourceSnapshot.TotalCount);
 
             var importedColumns = await ReadImportedTableColumnsAsync(tableSchema, tableName);
-            importedColumns.Should().Contain("fid", because: "import creates an internal primary key column");
+            importedColumns.Should().Contain("objectid", because: "import creates an internal primary key column");
             importedColumns.Should().Contain("geom", because: "imported feature layers should include geometry");
 
             foreach (var expectedField in sourceSnapshot.ExpectedImportedFields)
@@ -604,7 +604,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         string caseName)
     {
         var importedColumns = await ReadImportedTableColumnsAsync(tableSchema, tableName);
-        importedColumns.Should().Contain("fid");
+        importedColumns.Should().Contain("objectid");
         importedColumns.Should().Contain("geom");
 
         var selectedFields = importedColumns
@@ -620,7 +620,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             LayerName = $"Parity {caseName}",
             Description = "External query parity validation layer",
             GeometryColumn = "geom",
-            PrimaryKey = "fid",
+            PrimaryKey = "objectid",
             Fields = selectedFields,
             ServiceName = serviceName,
             Enabled = true
@@ -718,7 +718,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT
-                (to_jsonb(src) - 'fid' - 'geom')::text AS attrs_json,
+                (to_jsonb(src) - 'objectid' - 'geom')::text AS attrs_json,
                 CASE
                     WHEN src.geom IS NULL THEN NULL
                     WHEN ST_SRID(src.geom) = 4326 THEN ST_AsGeoJSON(src.geom)
@@ -726,7 +726,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
                     ELSE ST_AsGeoJSON(ST_Transform(src.geom, 4326))
                 END AS geom_geojson
             FROM {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)} AS src
-            ORDER BY src.fid
+            ORDER BY src.objectid
             LIMIT @batchSize
             OFFSET @offset;
             """;
@@ -1649,7 +1649,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             .Except(sourceSnapshot.ExpectedImportedFields, StringComparer.Ordinal)
             .ToArray();
         unexpectedHonuaFields.Should().OnlyContain(
-            static field => string.Equals(field, "fid", StringComparison.Ordinal),
+            static field => string.Equals(field, "objectid", StringComparison.Ordinal),
             because: "published metadata should only add the table primary key field beyond imported source fields");
     }
 
@@ -2580,7 +2580,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         command.CommandText =
             $"SELECT COALESCE({QuoteIdentifier(compareField)}::text, '<null>') " +
             $"FROM {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)} " +
-            "ORDER BY fid LIMIT @sampleCount;";
+            "ORDER BY objectid LIMIT @sampleCount;";
         command.Parameters.AddWithValue("sampleCount", sampleCount);
 
         var values = new List<string>();

@@ -16,7 +16,7 @@ namespace Honua.Server.Tests;
 /// Tests for health check endpoints (/healthz/live, /healthz/ready)
 /// Validates Kubernetes-compatible health checks with PostgreSQL connectivity
 /// </summary>
-[Protocol(Protocols.Health)]
+[Protocol(TestProtocols.Health)]
 [Collection("Performance")]
 public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFactory>
 {

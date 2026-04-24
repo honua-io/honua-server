@@ -17,7 +17,7 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Features.Infrastructure.Redis;
 
 [Collection("Redis")]
-[Protocol(Protocols.Infrastructure)]
+[Protocol(TestProtocols.Infrastructure)]
 public sealed class RedisFailureScenarioTests : IClassFixture<RedisFixture>
 {
     private readonly RedisFixture _redisFixture;

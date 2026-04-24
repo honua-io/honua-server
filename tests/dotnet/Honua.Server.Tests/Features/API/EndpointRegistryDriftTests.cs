@@ -4,7 +4,7 @@
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Server;
-using Honua.Server.Features.Wfs20;
+using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 

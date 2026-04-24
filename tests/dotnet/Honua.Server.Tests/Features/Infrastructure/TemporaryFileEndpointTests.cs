@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Infrastructure;
 /// Integration tests for temporary file endpoint authorization behavior.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Infrastructure)]
+[Protocol(TestProtocols.Infrastructure)]
 public sealed class TemporaryFileEndpointTests : IDisposable
 {
     private const string AdminPassword = "test-temp-admin-password";

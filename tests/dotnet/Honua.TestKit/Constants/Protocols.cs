@@ -20,9 +20,14 @@ public static class Protocols
     public const string MapServer = "MapServer";
 
     /// <summary>
-    /// OGC Web Map Service 1.3.0 operations exposed by MapServer.
+    /// OGC Web Map Service 1.3.0 operations.
     /// </summary>
     public const string Wms13 = "WMS-1.3.0";
+
+    /// <summary>
+    /// OGC Web Map Tile Service 1.0.0 operations.
+    /// </summary>
+    public const string Wmts10 = "WMTS-1.0.0";
 
     /// <summary>
     /// OGC API - Features (Part 1: Core, Part 2: CRS, Part 3: Filtering).

@@ -5,7 +5,7 @@ using FluentAssertions;
 using System.Text;
 using System.Text.Json;
 using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -20,7 +20,7 @@ namespace Honua.Server.Tests;
 /// Critical spatial bug verification focusing on antimeridian, CRS, and boundary edge cases.
 /// Based on Round 1 spatial bug findings - tests actual query behavior and data corruption potential.
 /// </summary>
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class SpatialCorrectnessTests : IAsyncLifetime
 {

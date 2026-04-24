@@ -20,7 +20,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.NlQuery;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class NlQueryPlanProviderTests
 {
     private readonly LayerDefinition _testLayer;

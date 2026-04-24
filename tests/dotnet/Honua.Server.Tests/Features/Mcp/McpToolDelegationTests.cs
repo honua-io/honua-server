@@ -24,7 +24,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// operation, and domain plan, and that they translate the service result into
 /// the published MCP output shape.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class McpToolDelegationTests
 {
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();

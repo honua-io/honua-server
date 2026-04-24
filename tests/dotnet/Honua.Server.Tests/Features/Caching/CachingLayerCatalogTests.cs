@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Caching;
 /// <summary>
 /// Tests for CachingLayerCatalog - validates caching decorator behavior.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class CachingLayerCatalogTests : IDisposable
 {
     private readonly MockLayerCatalog _innerCatalog;

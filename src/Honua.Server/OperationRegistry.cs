@@ -44,7 +44,8 @@ public static class OperationRegistry
         new(Wfs20, "ListStoredQueries"),
         new(Wfs20, "DescribeStoredQueries"),
 
-        // WMS 1.3.0 operations (dispatched via GET /MapServer/WMS?REQUEST=...)
+        // WMS 1.3.0 operations (dispatched via GET /ogc/services/{id}/wms?REQUEST=...
+        // and the GeoServices compatibility /MapServer/WMS alias)
         new(Wms13, "GetCapabilities"),
         new(Wms13, "GetMap"),
         new(Wms13, "GetFeatureInfo"),

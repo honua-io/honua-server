@@ -14,7 +14,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for PostgresLayerCatalog using real PostgreSQL database.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.TestInfrastructure)]
 public class PostgresLayerCatalogTests : IAsyncLifetime
 {

@@ -13,7 +13,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class ManifestApprovalWebhookDispatcherTests
 {
     [UnitTest]

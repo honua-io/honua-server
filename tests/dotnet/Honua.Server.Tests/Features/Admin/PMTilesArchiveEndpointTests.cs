@@ -14,7 +14,7 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Admin;
 
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Tile)]
 public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
 {

@@ -8,9 +8,9 @@ As of **February 24, 2026**, the public OGC CITE packaging path for `ets-ogcapi-
 
 Until that is stable, Honua enforces Maps conformance with a dedicated integration conformance suite:
 
-- `tests/dotnet/Honua.Server.Tests/Features/OgcMaps/OgcMapsConformanceTests.cs`
-- `tests/dotnet/Honua.Server.Tests/Features/OgcMaps/OgcMapsBasicTests.cs`
-- `tests/dotnet/Honua.Server.Tests/Features/OgcMaps/OgcMapsConformanceHandlerTests.cs`
+- `tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/OgcMapsConformanceTests.cs`
+- `tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/OgcMapsBasicTests.cs`
+- `tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/OgcMapsConformanceHandlerTests.cs`
 
 ## Local Run
 

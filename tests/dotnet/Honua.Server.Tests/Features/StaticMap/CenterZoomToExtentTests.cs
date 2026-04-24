@@ -10,7 +10,7 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.StaticMap;
 
-[Protocol(Protocols.StaticMap)]
+[Protocol(TestProtocols.StaticMap)]
 public sealed class CenterZoomToExtentTests
 {
     private const double MercatorMaxLat = SpatialConstants.WebMercatorMaxLatitude; // 85.0511…

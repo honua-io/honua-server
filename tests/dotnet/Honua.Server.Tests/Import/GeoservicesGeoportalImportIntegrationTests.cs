@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Import;
 /// External integration tests that exercise Geoservices import against real Geoportal-backed services.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class GeoservicesGeoportalImportIntegrationTests : IAsyncLifetime
 {

@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Import;
 /// Integration tests for GeoParquet import (upload) endpoint.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class GeoParquetImportTests : IAsyncLifetime
 {

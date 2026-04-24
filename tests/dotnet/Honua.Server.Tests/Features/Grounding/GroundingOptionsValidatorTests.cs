@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Grounding;
 /// configuration must fail fast instead of silently corrupting banding,
 /// capping, or ambiguity evaluation at request time.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class GroundingOptionsValidatorTests
 {
     private readonly GroundingOptionsValidator _validator = new();

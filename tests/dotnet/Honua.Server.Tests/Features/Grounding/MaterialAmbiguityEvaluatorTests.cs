@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Grounding;
 /// positive and one negative case so a refactor that drops a finding trips
 /// here rather than in a downstream conformance run.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class MaterialAmbiguityEvaluatorTests
 {
     private readonly GroundingOptions _options = new();

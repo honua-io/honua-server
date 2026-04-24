@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -18,7 +18,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for limits enforcement across all protocols.
 /// Tests Issue #63 - Shared limits configuration implementation.
 /// </summary>
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class LimitsEnforcementTests : IAsyncLifetime
 {

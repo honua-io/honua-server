@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Performance;
 [Trait("Category", "Integration")]
 [Trait("Category", "Performance")]
 [Collection("Database")]
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.PerformanceTesting)]
 public sealed class ConnectionPoolTests : IAsyncLifetime
 {

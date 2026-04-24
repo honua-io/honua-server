@@ -68,6 +68,22 @@ public sealed class DependencyRulesTests
     }
 
     [ArchitectureTest]
+    public void ClassicOgcProtocols_ShouldNotDependOn_GeoServicesProtocols()
+    {
+        var serverAssembly = typeof(EndpointRegistry).Assembly;
+
+        var result = Types.InAssembly(serverAssembly)
+            .That()
+            .ResideInNamespace("Honua.Server.Features.Protocols.Ogc.Classic")
+            .ShouldNot()
+            .HaveDependencyOn("Honua.Server.Features.Protocols.GeoServices")
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            "classic OGC protocol adapters must consume shared rendering/query capabilities, not GeoServices adapters");
+    }
+
+    [ArchitectureTest]
     public void Postgres_ShouldNotExposeNonStaticPublicTypes()
     {
         var postgresAssembly = typeof(ServiceCollectionExtensions).Assembly;

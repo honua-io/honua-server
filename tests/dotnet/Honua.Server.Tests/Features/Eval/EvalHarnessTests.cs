@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Eval;
 /// scenario suite and emits the versioned report consumed by honua-devops-31.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.OperatorEval, Protocols.Grpc, Protocols.OgcApiProcesses, Protocols.GPServer)]
+[Protocol(TestProtocols.OperatorEval, TestProtocols.Grpc, TestProtocols.OgcApiProcesses, TestProtocols.GPServer)]
 public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
 {
     private readonly EvalHarnessFixture _fixture;
@@ -58,7 +58,7 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         var result = await _fixture.Runner.RunAsync(scenario, CancellationToken.None);
 
         var gpServerProbe = result.ProtocolParity.Probes
-            .Single(probe => probe.Protocol == Protocols.GPServer);
+            .Single(probe => probe.Protocol == TestProtocols.GPServer);
 
         gpServerProbe.Assertion.Should().Be("submit-job-surface");
         gpServerProbe.Outcome.Should().BeOneOf("matched-acceptance", "service-unavailable", "authorization-required");
@@ -119,7 +119,7 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
             var result = await runner.RunAsync(scenario, CancellationToken.None);
 
             var ogcProbe = result.ProtocolParity.Probes
-                .Single(probe => probe.Protocol == Protocols.OgcApiProcesses);
+                .Single(probe => probe.Protocol == TestProtocols.OgcApiProcesses);
 
             ogcProbe.Assertion.Should().Be("plan-shape-accepted");
             ogcProbe.Outcome.Should().Be("matched-approval-required");
@@ -203,12 +203,12 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
             result.Should().NotBeNull();
 
             var ogcProbe = result.ProtocolParity.Probes
-                .Single(probe => probe.Protocol == Protocols.OgcApiProcesses);
+                .Single(probe => probe.Protocol == TestProtocols.OgcApiProcesses);
             ogcProbe.Status.Should().Be(EvalStageStatus.Failed);
             ogcProbe.Outcome.Should().Be("http-timeout");
 
             var gpServerProbe = result.ProtocolParity.Probes
-                .Single(probe => probe.Protocol == Protocols.GPServer);
+                .Single(probe => probe.Protocol == TestProtocols.GPServer);
             gpServerProbe.Status.Should().Be(EvalStageStatus.Failed);
             gpServerProbe.Outcome.Should().Be("http-timeout");
         }

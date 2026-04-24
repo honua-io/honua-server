@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Grounding;
 /// weighted bag-of-lemma candidate ranker. These pin the canonical outputs the
 /// conformance harness (honua-server-734) replays against fixtures.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class DeterministicGroundingEngineTests
 {
     private readonly DeterministicGroundingEngine _engine = new();

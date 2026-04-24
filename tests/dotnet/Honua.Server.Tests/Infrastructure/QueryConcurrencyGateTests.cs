@@ -12,7 +12,7 @@ namespace Honua.Server.Tests.Infrastructure;
 /// <summary>
 /// Tests for <see cref="QueryConcurrencyGate"/> semaphore-based admission control.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class QueryConcurrencyGateTests
 {
     [UnitTest]

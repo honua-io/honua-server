@@ -27,7 +27,7 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Export;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class ExportJobServiceTests
 {
     [UnitTest]

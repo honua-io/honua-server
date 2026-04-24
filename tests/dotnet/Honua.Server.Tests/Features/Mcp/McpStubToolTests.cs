@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// Stubs still enforce authentication and emit structured output. The grounder
 /// and clarifier have shipped and are covered by their own delegation tests.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class McpStubToolTests
 {
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();

@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// Integration tests for database performance monitoring endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
 {
     private readonly WebAppFixture _fixture;

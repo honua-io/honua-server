@@ -23,7 +23,7 @@ public class PrintingToolsRequestHandlerTests
     // --- ResolveFormat ---
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void ResolveFormat_Null_DefaultsToPng32()
     {
         PrintingToolsRequestHandlers.ResolveFormat(null).Should().Be("PNG32");
@@ -32,7 +32,7 @@ public class PrintingToolsRequestHandlerTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void ResolveFormat_ValidFormat_PreservedTrimmed()
     {
         PrintingToolsRequestHandlers.ResolveFormat("PDF").Should().Be("PDF");
@@ -42,7 +42,7 @@ public class PrintingToolsRequestHandlerTests
     // --- ResolveDpi ---
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void ResolveDpi_Default_Returns96()
     {
         var webMap = new WebMapDefinition();
@@ -51,14 +51,14 @@ public class PrintingToolsRequestHandlerTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void ResolveDpi_Null_Returns96()
     {
         PrintingToolsRequestHandlers.ResolveDpi(null).Should().Be(96);
     }
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void ResolveDpi_ClampsToRange()
     {
         var low = new WebMapDefinition { ExportOptions = new WebMapExportOptions { Dpi = 10 } };
@@ -71,7 +71,7 @@ public class PrintingToolsRequestHandlerTests
     // --- ValidateEdition ---
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void ValidateEdition_CommunityMapOnlyPng_Allowed()
     {
         LayoutTemplateRegistry.TryGetTemplate("MAP_ONLY", out var template);
@@ -80,7 +80,7 @@ public class PrintingToolsRequestHandlerTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void ValidateEdition_CommunityPdf_Blocked()
     {
         LayoutTemplateRegistry.TryGetTemplate("MAP_ONLY", out var template);
@@ -89,7 +89,7 @@ public class PrintingToolsRequestHandlerTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void ValidateEdition_CommunityLayoutTemplate_Blocked()
     {
         LayoutTemplateRegistry.TryGetTemplate("Letter ANSI A Portrait", out var template);
@@ -98,7 +98,7 @@ public class PrintingToolsRequestHandlerTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void ValidateEdition_ProEdition_AllAllowed()
     {
         LayoutTemplateRegistry.TryGetTemplate("Letter ANSI A Portrait", out var template);
@@ -109,7 +109,7 @@ public class PrintingToolsRequestHandlerTests
     // --- CollectWarnings ---
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void CollectWarnings_WithBaseMap_EmitsWarning()
     {
         var json = """{"baseMap":{"title":"Topographic"},"mapOptions":{"extent":{"xmin":0,"ymin":0,"xmax":1,"ymax":1}}}""";
@@ -124,7 +124,7 @@ public class PrintingToolsRequestHandlerTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void CollectWarnings_WithoutBaseMap_NoWarnings()
     {
         var json = """{"mapOptions":{"extent":{"xmin":0,"ymin":0,"xmax":1,"ymax":1}}}""";
@@ -139,7 +139,7 @@ public class PrintingToolsRequestHandlerTests
     // --- PrintOutputFormat ---
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void PrintOutputFormat_IsSupported_KnownFormats()
     {
         PrintOutputFormat.IsSupported("PDF").Should().BeTrue();
@@ -151,7 +151,7 @@ public class PrintingToolsRequestHandlerTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void PrintOutputFormat_GetContentType_ReturnsCorrectMimeTypes()
     {
         PrintOutputFormat.GetContentType("PDF").Should().Be("application/pdf");
@@ -160,7 +160,7 @@ public class PrintingToolsRequestHandlerTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.PrintingTools)]
+    [Protocol(TestProtocols.PrintingTools)]
     public void PrintOutputFormat_GetExtension_ReturnsCorrectExtensions()
     {
         PrintOutputFormat.GetExtension("PDF").Should().Be(".pdf");

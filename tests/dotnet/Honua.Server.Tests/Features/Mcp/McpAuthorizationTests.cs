@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// <see cref="McpErrorMapper"/> translates into the <c>unauthenticated</c>
 /// error envelope for operators.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class McpAuthorizationTests
 {
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();

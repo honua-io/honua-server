@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Cloud;
 /// Validates real cloud deployments after infrastructure provisioning completes.
 /// These tests are intended to run against a live environment after Terraform apply.
 /// </summary>
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public sealed class CloudDeploymentValidationTests
 {
     private const string BaseUrlEnv = "HONUA_CLOUD_TEST_BASE_URL";

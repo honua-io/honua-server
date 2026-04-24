@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Security;
 /// Tests for file upload security validation.
 /// Validates path traversal prevention, malicious file detection, and content validation.
 /// </summary>
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 public sealed class FileUploadSecurityTests
 {
     #region File Name Validation

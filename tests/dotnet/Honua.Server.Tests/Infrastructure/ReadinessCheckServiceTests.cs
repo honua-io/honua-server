@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Infrastructure;
 /// <summary>
 /// Tests for ReadinessCheckService - validates separated health check orchestration logic
 /// </summary>
-[Protocol(Protocols.Health)]
+[Protocol(TestProtocols.Health)]
 public sealed class ReadinessCheckServiceTests
 {
     [UnitTest]

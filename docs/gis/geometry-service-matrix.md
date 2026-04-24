@@ -114,8 +114,8 @@ These routes are implemented in Honua, but they are not Esri Geometry Service op
 
 ## Implementation evidence
 
-- Endpoint mapping: [GeometryServiceEndpoints](../../src/Honua.Server/Features/GeometryService/GeometryServiceEndpoints.cs)
-- Request parsing and format validation: [GeometryServiceRequestParser](../../src/Honua.Server/Features/GeometryService/Services/GeometryServiceRequestParser.cs)
-- Operation implementation: [GeometryServiceHandler](../../src/Honua.Server/Features/GeometryService/Services/GeometryServiceHandler.cs)
-- Integration tests: [GeometryServiceBufferTests](../../tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceBufferTests.cs), [GeometryServiceProjectTests](../../tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceProjectTests.cs), [GeometryServiceSimplifyTests](../../tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceSimplifyTests.cs), [GeometryServiceAdvancedOperationsTests](../../tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceAdvancedOperationsTests.cs)
+- Endpoint mapping: [GeometryServiceEndpoints](../../src/Honua.Server/Features/Protocols/GeoServices/GeometryService/GeometryServiceEndpoints.cs)
+- Request parsing and format validation: [GeometryServiceRequestParser](../../src/Honua.Server/Features/Protocols/GeoServices/GeometryService/Services/GeometryServiceRequestParser.cs)
+- Operation implementation: [GeometryServiceHandler](../../src/Honua.Server/Features/Protocols/GeoServices/GeometryService/Services/GeometryServiceHandler.cs)
+- Integration tests: [GeometryServiceBufferTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceBufferTests.cs), [GeometryServiceProjectTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceProjectTests.cs), [GeometryServiceSimplifyTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceSimplifyTests.cs), [GeometryServiceAdvancedOperationsTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceAdvancedOperationsTests.cs)
 - Contract depth check: [ContractCoverageMatrixTests](../../tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs)

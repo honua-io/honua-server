@@ -149,7 +149,7 @@ public record FeatureQuery
 
 **Protocol-Specific Mapping**
 ```csharp
-// Honua.Server/Features/FeatureServer/FeatureServerEndpoints.cs
+// Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs
 private static FeatureQuery MapToFeatureQuery(FeatureServerQueryParameters parameters)
 {
     return new FeatureQuery
@@ -163,7 +163,7 @@ private static FeatureQuery MapToFeatureQuery(FeatureServerQueryParameters param
     };
 }
 
-// Honua.Server/Features/OgcFeatures/OgcFeaturesEndpoints.cs
+// Honua.Server/Features/Protocols/Ogc/Api/Features/OgcFeaturesEndpoints.cs
 private static FeatureQuery MapToFeatureQuery(OgcQueryParameters parameters)
 {
     return new FeatureQuery

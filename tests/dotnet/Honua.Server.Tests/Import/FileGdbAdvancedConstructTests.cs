@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Import;
 /// Integration tests for FileGDB advanced construct detection during preview.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class FileGdbAdvancedConstructTests : IAsyncLifetime
 {

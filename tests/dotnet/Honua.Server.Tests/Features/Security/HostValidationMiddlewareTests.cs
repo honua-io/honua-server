@@ -18,7 +18,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Honua.Server.Tests.Features.Security;
 
 [Collection("Database")]
-[Protocol(Protocols.OgcApiFeatures)]
+[Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class HostValidationMiddlewareTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()
@@ -74,7 +74,7 @@ public sealed class HostValidationMiddlewareTests : IAsyncLifetime
 }
 
 [Collection("Database")]
-[Protocol(Protocols.OgcApiFeatures)]
+[Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class HostValidationFallbackTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()

@@ -24,7 +24,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
-[Protocol(Protocols.Geocoding)]
+[Protocol(TestProtocols.Geocoding)]
 public sealed class GeocodingEndpointTests
 {
     [IntegrationTest]

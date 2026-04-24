@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// Integration tests for user management admin endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]
 public class UserManagementEndpointsTests : IAsyncLifetime
 {

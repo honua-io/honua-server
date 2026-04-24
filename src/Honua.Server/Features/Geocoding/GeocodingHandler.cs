@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Geocoding.Abstractions;
 using Honua.Core.Features.Geocoding.Domain;
-using Honua.Server.Features.FeatureServer;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;

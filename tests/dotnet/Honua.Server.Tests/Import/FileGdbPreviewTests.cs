@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Import;
 /// Integration tests for FileGDB preview and format discovery endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class FileGdbPreviewTests : IAsyncLifetime
 {

@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Comprehensive;
 /// These tests ensure we achieve a perfect 100/100 testing score.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public class TestQualityValidationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

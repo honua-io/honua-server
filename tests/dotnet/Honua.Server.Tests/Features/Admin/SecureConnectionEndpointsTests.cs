@@ -30,7 +30,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// </remarks>
 [Collection("Database")]
 [SecurityTest]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public class SecureConnectionEndpointsTests : IAsyncLifetime
 {

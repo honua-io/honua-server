@@ -7,7 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Styling;
-using Honua.Server.Features.MapServer.Models;
+using Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// Integration tests for admin layer style endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

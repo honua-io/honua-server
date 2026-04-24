@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.CloudCog;
 /// <summary>
 /// Unit tests for cloud COG tile format handling.
 /// </summary>
-[Protocol(Protocols.ImageServer)]
+[Protocol(TestProtocols.ImageServer)]
 public class CloudCogTileResolverTests
 {
     [UnitTest]

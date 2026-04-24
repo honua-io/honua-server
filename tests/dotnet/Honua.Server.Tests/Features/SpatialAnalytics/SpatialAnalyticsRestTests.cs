@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.SpatialAnalytics;
 /// behavior is verified in the unit-tests elsewhere.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.SpatialAnalytics)]
+[Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

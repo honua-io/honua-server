@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// <summary>
 /// Integration tests for upload queue monitoring endpoints.
 /// </summary>
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public sealed class UploadQueueMonitoringEndpointsTests
 {
     private const string AdminPassword = "upload-queue-monitoring-admin-key";

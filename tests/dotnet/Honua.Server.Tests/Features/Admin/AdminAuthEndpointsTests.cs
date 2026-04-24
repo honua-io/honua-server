@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// Integration tests for the anonymous admin auth bootstrap and backend-assisted OIDC endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 {

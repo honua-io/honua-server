@@ -12,7 +12,7 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Integration tests for health endpoints.
 /// </summary>
-[Protocol(Protocols.Health)]
+[Protocol(TestProtocols.Health)]
 [Collection("Database")]
 public sealed class HealthEndpointTests : IAsyncLifetime
 {

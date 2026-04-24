@@ -14,7 +14,7 @@ using Microsoft.Extensions.Configuration;
 namespace Honua.Server.Tests.Features.Infrastructure;
 
 [Collection("Database")]
-[Protocol(Protocols.FeatureServer, Protocols.OgcApiFeatures, Protocols.ODataV4, Protocols.Mvt)]
+[Protocol(TestProtocols.FeatureServer, TestProtocols.OgcApiFeatures, TestProtocols.ODataV4, TestProtocols.Mvt)]
 public sealed class LayerEnablementIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()

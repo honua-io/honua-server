@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Ogc;
 /// Integration tests for shared OGC OpenAPI content negotiation.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.OgcApiFeatures)]
+[Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class OpenApiSpecNegotiationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

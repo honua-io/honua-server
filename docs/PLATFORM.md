@@ -20,7 +20,7 @@ Honua is a cloud-native geospatial feature server. It publishes, queries, edits,
                     |     Honua Server        |
                     |                         |
                     |  FeatureServer          |
-                    |  MapServer/WMS/WMTS     |
+                    |  MapServer + OGC WMS/WMTS|
                     |  ImageServer            |
                     |  OGC Features/Maps/Tiles|
                     |  OData v4              |

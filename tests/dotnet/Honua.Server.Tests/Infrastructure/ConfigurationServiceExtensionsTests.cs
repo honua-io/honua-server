@@ -18,7 +18,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class ConfigurationServiceExtensionsTests
 {
     [UnitTest]

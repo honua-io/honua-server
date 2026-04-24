@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Caching;
 /// Redis integration tests for RedisCacheService.
 /// </summary>
 [Collection("Redis")]
-[Protocol(Protocols.Infrastructure)]
+[Protocol(TestProtocols.Infrastructure)]
 public sealed class RedisCacheServiceRedisIntegrationTests
 {
     private readonly RedisFixture _redis;

@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// </summary>
 [Collection("Database")]
 [SecurityTest]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public sealed class AdminAuthorizationTests : IAsyncLifetime
 {

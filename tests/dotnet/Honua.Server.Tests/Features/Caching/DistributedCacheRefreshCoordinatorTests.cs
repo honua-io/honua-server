@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Caching;
 /// <summary>
 /// Tests for DistributedCacheRefreshCoordinator — validates distributed coordination with Redis.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 {
     private readonly DistributedCacheRefreshCoordinator _coordinator;

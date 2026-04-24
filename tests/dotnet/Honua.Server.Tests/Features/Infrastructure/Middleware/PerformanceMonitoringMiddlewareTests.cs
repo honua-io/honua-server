@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 /// Integration tests for PerformanceMonitoringMiddleware.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public class PerformanceMonitoringMiddlewareTests
 {
 

@@ -12,7 +12,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Geoprocessing;
-using Honua.Server.Features.Geoprocessing.GPServer;
+using Honua.Server.Features.Protocols.GeoServices.GPServer;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -26,7 +26,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// Unit tests for the shared <see cref="GeoprocessingJobService"/>
 /// that backs both gRPC and REST adapters.
 /// </summary>
-[Protocol(Protocols.GPServer)]
+[Protocol(TestProtocols.GPServer)]
 public sealed class GeoprocessingJobServiceTests
 {
     private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();

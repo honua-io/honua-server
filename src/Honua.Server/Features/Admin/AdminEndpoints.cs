@@ -12,7 +12,7 @@ using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Ogc.Common;
+using Honua.Server.Features.Protocols.Ogc.Common;
 
 namespace Honua.Server.Features.Admin;
 

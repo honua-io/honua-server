@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// envelope so clients can react to recoverable signals (approval, idempotency,
 /// auth) without parsing message strings.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class McpErrorMappingTests
 {
     private const int JsonRpcServerError = -32000;

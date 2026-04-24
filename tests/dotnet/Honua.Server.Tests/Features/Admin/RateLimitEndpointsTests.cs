@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// Integration tests confirming the MVP runtime does not expose application rate-limit admin endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public sealed class RateLimitEndpointsTests : IAsyncLifetime
 {
     private const string AdminPassword = "ratelimit-admin-key";

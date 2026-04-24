@@ -17,7 +17,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Server.Features.FeatureServer;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Infrastructure;

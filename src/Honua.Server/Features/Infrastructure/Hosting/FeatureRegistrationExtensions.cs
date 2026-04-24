@@ -3,31 +3,32 @@
 
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Alerts;
-using Honua.Server.Features.FeatureServer;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Geocoding;
-using Honua.Server.Features.GeometryService;
+using Honua.Server.Features.Protocols.GeoServices.GeometryService;
 using Honua.Server.Features.Geoprocessing;
-using Honua.Server.Features.Geoprocessing.GPServer;
-using Honua.Server.Features.GeoservicesCatalog;
+using Honua.Server.Features.Protocols.GeoServices.GPServer;
+using Honua.Server.Features.Protocols.GeoServices.Catalog;
 using Honua.Server.Features.Grpc;
-using Honua.Server.Features.ImageServer;
+using Honua.Server.Features.Protocols.GeoServices.ImageServer;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
-using Honua.Server.Features.MapServer;
+using Honua.Server.Features.Protocols.GeoServices.MapServer;
 using Honua.Server.Features.Mcp;
 using Honua.Server.Features.NlQuery;
-using Honua.Server.Features.OData;
-using Honua.Server.Features.OgcFeatures;
-using Honua.Server.Features.OgcMaps;
-using Honua.Server.Features.OgcProcesses;
-using Honua.Server.Features.OgcTiles;
+using Honua.Server.Features.Protocols.OData;
+using Honua.Server.Features.Protocols.Ogc.Api.Features;
+using Honua.Server.Features.Protocols.Ogc.Api.Maps;
+using Honua.Server.Features.Protocols.Ogc.Api.Processes;
+using Honua.Server.Features.Protocols.Ogc.Api.Tiles;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.PrintingTools;
+using Honua.Server.Features.Protocols.Tiles;
+using Honua.Server.Features.Protocols.Ogc.Classic;
 using Honua.Server.Features.SpatialAnalytics;
-using Honua.Server.Features.Stac;
+using Honua.Server.Features.Protocols.Stac;
 using Honua.Server.Features.StaticMap;
-using Honua.Server.Features.Tiles;
-using Honua.Server.Features.Wfs20;
+using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
 
 namespace Honua.Server.Features.Infrastructure.Hosting;
 
@@ -82,6 +83,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapGeoservicesCatalogEndpoints();
         endpoints.MapImageServerEndpoints();
         endpoints.MapMapServerEndpoints();
+        endpoints.MapOgcClassicEndpoints();
         endpoints.MapAttachmentEndpoints();
         endpoints.MapTileJsonEndpoints();
         endpoints.MapStyleEndpoints();

@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Grpc;
 /// Uses gRPC-Web transport (HTTP/1.1) since the in-memory test server does not support HTTP/2.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Grpc)]
+[Protocol(TestProtocols.Grpc)]
 public sealed class GrpcIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
@@ -59,7 +59,7 @@ public sealed class GrpcIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryFeatures")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.FeatureService/QueryFeatures")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_CountOnly_ReturnsCount()
     {
         var request = new Proto.QueryFeaturesRequest
@@ -78,7 +78,7 @@ public sealed class GrpcIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryFeaturesStream")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.FeatureService/QueryFeaturesStream")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_ReturnsPages()
     {
         var request = new Proto.QueryFeaturesRequest
@@ -103,7 +103,7 @@ public sealed class GrpcIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.FeatureService/ApplyEdits")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyEdits")]
     public async Task ApplyEdits_WithAdd_ReturnsResult()
     {
         var request = new Proto.ApplyEditsRequest

@@ -13,7 +13,7 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Integration tests for the interactive API explorer (Scalar) at /docs.
 /// </summary>
-[Protocol(Protocols.Infrastructure)]
+[Protocol(TestProtocols.Infrastructure)]
 [Collection("Database")]
 public sealed class ApiExplorerEndpointTests : IAsyncLifetime
 {

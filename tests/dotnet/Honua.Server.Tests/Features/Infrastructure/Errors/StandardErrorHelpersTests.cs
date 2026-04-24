@@ -5,7 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.OData.Models;
+using Honua.Server.Features.Protocols.OData.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 /// Tests for StandardErrorHelpers ensuring consistent error creation across all protocols.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Infrastructure)]
+[Protocol(TestProtocols.Infrastructure)]
 public sealed class StandardErrorHelpersTests : IAsyncLifetime
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()

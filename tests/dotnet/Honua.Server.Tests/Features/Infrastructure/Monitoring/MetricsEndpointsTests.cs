@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// Integration tests for metrics endpoints functionality.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Health)]
+[Protocol(TestProtocols.Health)]
 public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()

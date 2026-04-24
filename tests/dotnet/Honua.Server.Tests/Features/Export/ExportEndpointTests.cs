@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Export;
 /// Integration tests for the data export endpoint.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public sealed class ExportEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

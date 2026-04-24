@@ -20,24 +20,12 @@ public sealed class VerticalSliceIsolationTests
     {
         "Admin",
         "Alerts",
-        "FeatureServer",
-        "GeoservicesCatalog",
         "Geocoding",
         "Geoprocessing",
-        "GeometryService",
         "Grounding",
-        "ImageServer",
-        "MapServer",
         "Mcp",
-        "Ogc",
-        "OgcFeatures",
-        "OgcMaps",
-        "OgcProcesses",
-        "OgcTiles",
         "Orchestration",
-        "Tiles",
-        "Wfs20",
-        "OData",
+        "Protocols",
         "Grpc",
         "NlQuery",
         "Export",
@@ -45,7 +33,6 @@ public sealed class VerticalSliceIsolationTests
         "FileStorage",
         "PrintingTools",
         "HealthCheck",
-        "Stac",
         "Streaming",
         "CloudCog",
         "Infrastructure", // Infrastructure is allowed to be referenced by others
@@ -55,9 +42,8 @@ public sealed class VerticalSliceIsolationTests
 
     /// <summary>
     /// Protocol-adapter features that are allowed to consume a specific domain
-    /// feature's transport-neutral services. OGC API Processes and the Mcp
-    /// operator surface adapt <c>IGeoprocessingJobService</c> the same way the
-    /// gRPC and GPServer adapters do, but live in their own vertical slices per
+    /// feature's transport-neutral services. The Mcp operator surface adapts
+    /// <c>IGeoprocessingJobService</c>, but lives in its own vertical slice per
     /// ticket #728.
     /// Grounding is a domain feature that reuses the Geoprocessing process
     /// catalog + destructive classifier per ticket #742. Each entry lists the
@@ -67,7 +53,6 @@ public sealed class VerticalSliceIsolationTests
         new(StringComparer.Ordinal)
         {
             ["Mcp"] = new[] { "Geoprocessing", "Grounding" },
-            ["OgcProcesses"] = new[] { "Geoprocessing" },
             ["Grounding"] = new[] { "Geoprocessing" }
         };
 
@@ -77,7 +62,7 @@ public sealed class VerticalSliceIsolationTests
         var serverAssembly = typeof(EndpointRegistry).Assembly;
         var violations = new List<string>();
 
-        foreach (var featureName in _featureNames.Where(f => f is not ("Infrastructure" or "Ogc" or "Wfs20")))
+        foreach (var featureName in _featureNames.Where(f => f is not ("Infrastructure" or "Protocols")))
         {
             var featureTypes = GetTypesInFeature(serverAssembly, featureName);
             var illegalReferences = FindCrossFeatureReferences(featureTypes, featureName);
@@ -110,7 +95,7 @@ public sealed class VerticalSliceIsolationTests
 
             // Skip infrastructure as it's a cross-cutting concern
             if (featureDir.Equals("Infrastructure", StringComparison.OrdinalIgnoreCase) ||
-                featureDir.Equals("Ogc", StringComparison.OrdinalIgnoreCase))
+                featureDir.Equals("Protocols", StringComparison.OrdinalIgnoreCase))
                 continue;
 
             // Each feature should have at least one of these files to be considered a proper vertical slice
@@ -156,7 +141,7 @@ public sealed class VerticalSliceIsolationTests
         var forbiddenNamespaces = new[]
         {
             "Honua.Server.Features.Grpc",
-            "Honua.Server.Features.Geoprocessing.GPServer"
+            "Honua.Server.Features.Protocols.GeoServices.GPServer"
         };
 
         var violations = new List<string>();
@@ -237,7 +222,7 @@ public sealed class VerticalSliceIsolationTests
             : Array.Empty<string>();
         var otherFeatures = _featureNames
             .Where(f => f != currentFeature
-                && f is not ("Infrastructure" or "Ogc" or "Wfs20")
+                && f is not ("Infrastructure" or "Protocols")
                 && !allowed.Contains(f, StringComparer.Ordinal))
             .ToArray();
 

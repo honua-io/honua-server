@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Caching;
 /// <summary>
 /// Tests for RedisCacheService - validates caching with fallback behavior.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class RedisCacheServiceTests : IDisposable
 {
     private const string ScopedKeyPrefix = "test:scope:default:";

@@ -11,7 +11,7 @@ namespace Honua.Server.Tests.Scale;
 /// <summary>
 /// Scale-out validation for multi-node deployments using Redis and the nginx load balancer.
 /// </summary>
-[Protocol(Protocols.OgcApiFeatures)]
+[Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class RedisScaleOutTests
 {
     private const string BaseUrlEnv = "HONUA_SCALE_TEST_BASE_URL";

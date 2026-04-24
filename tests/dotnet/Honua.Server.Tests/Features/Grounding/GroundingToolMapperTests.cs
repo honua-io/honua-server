@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.Grounding;
 /// The MCP error mapper depends on <see cref="GeoprocessingValidationException"/>
 /// being thrown for invalid shapes, so each failure mode is asserted here.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class GroundingToolMapperTests
 {
     // -----------------------------------------------------------------------
