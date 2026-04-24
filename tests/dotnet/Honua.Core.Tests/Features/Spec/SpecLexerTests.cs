@@ -107,6 +107,31 @@ public sealed class SpecLexerTests
     }
 
     [Fact]
+    public void Tokenize_AllowsNegativeNumbers()
+    {
+        const string text = "longitude = -122.0";
+        var lexer = new SpecLexer(text);
+        var tokens = lexer.Tokenize();
+
+        lexer.Diagnostics.Should().BeEmpty();
+        tokens[2].Type.Should().Be(SpecTokenType.Number);
+        tokens[2].Text.Should().Be("-122.0");
+    }
+
+    [Fact]
+    public void Tokenize_AllowsNegativeNumbersInArrays()
+    {
+        const string text = "bounds = [-180, -90, 180, 90]";
+        var lexer = new SpecLexer(text);
+        var tokens = lexer.Tokenize();
+
+        lexer.Diagnostics.Should().BeEmpty();
+        tokens.Where(token => token.Type == SpecTokenType.Number)
+            .Select(token => token.Text)
+            .Should().Equal("-180", "-90", "180", "90");
+    }
+
+    [Fact]
     public void Tokenize_ReferenceCapturesAtPrefix()
     {
         const string text = "target = @hospitals";

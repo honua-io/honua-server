@@ -779,6 +779,22 @@ public sealed class SpecGroundingServiceTests
     }
 
     [Fact]
+    public async Task Mutate_DatasetNameContainingOutOfScopeSubstring_IsNotClassifiedOutOfScope()
+    {
+        using var harness = CreateHarness(SpecGroundingTestSupport.CreateLayer(1, "Apple Orchards"));
+
+        var result = await harness.Service.MutateAsync(
+            SpecGroundingTestSupport.CreateEmptySpecDocument(),
+            "use apple orchards as orchards",
+            context: null,
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().NotBe(SpecGroundingErrorKind.OutOfScope);
+    }
+
+    [Fact]
     public async Task Mutate_UnknownTurn_ReturnsStructuredUnresolvableError()
     {
         using var harness = CreateHarness();

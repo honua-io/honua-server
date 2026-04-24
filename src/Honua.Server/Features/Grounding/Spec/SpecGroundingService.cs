@@ -560,12 +560,14 @@ internal sealed partial class SpecGroundingService
         return ClausePlanResult.None();
     }
 
+#pragma warning disable CA1822 // Mark members as static — kept as instance method so later refactors can log/observe without changing callers.
     private ClausePlanResult ResolveOnlyClause(
         SpecDocument document,
         string tail,
         SpecGroundingContext context,
         IReadOnlyList<LayerDefinition> layers,
         ClarificationResponse? clarificationAnswer)
+#pragma warning restore CA1822
     {
         var targetId = ResolveScopeTarget(document, context, tail);
         if (targetId is null)
@@ -682,12 +684,14 @@ internal sealed partial class SpecGroundingService
         return resolution.ToClauseResult();
     }
 
+#pragma warning disable CA1822 // Mark members as static — kept as instance method so later refactors can log/observe without changing callers.
     private async Task<SourceResolution> ResolveSourceReferenceAsync(
         SpecDocument document,
         string sourcePhrase,
         string? sourceIdHint,
         IReadOnlyList<LayerDefinition> layers,
         ClarificationResponse? clarificationAnswer)
+#pragma warning restore CA1822
     {
         var existing = TryMatchExistingSource(document, sourcePhrase);
         if (existing is not null)
@@ -778,12 +782,7 @@ internal sealed partial class SpecGroundingService
         }
     }
 
-    private static bool IsOutOfScope(string clause)
-        => clause.Contains("schedule", StringComparison.OrdinalIgnoreCase) ||
-           clause.Contains("publish", StringComparison.OrdinalIgnoreCase) ||
-           clause.Contains("deploy", StringComparison.OrdinalIgnoreCase) ||
-           clause.Contains("dashboard", StringComparison.OrdinalIgnoreCase) ||
-           clause.Contains("app", StringComparison.OrdinalIgnoreCase);
+    private static bool IsOutOfScope(string clause) => OutOfScopePattern().IsMatch(clause);
 
     private static bool HasError(IEnumerable<SpecDiagnostic> diagnostics)
         => diagnostics.Any(diagnostic => diagnostic.Severity == SpecDiagnosticSeverity.Error);
@@ -1663,6 +1662,9 @@ internal sealed partial class SpecGroundingService
 
     [GeneratedRegex(@"(?<=[A-Za-z0-9""])\.\s+|[\r\n;]+", RegexOptions.CultureInvariant)]
     private static partial Regex SentenceBreakPattern();
+
+    [GeneratedRegex(@"\b(?:schedule|publish|deploy|dashboard|app)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex OutOfScopePattern();
 
     [GeneratedRegex(@"^source\s+(?<id>[a-z0-9_]+)\s+uses\s+dataset\s+(?<dataset>.+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SummarySourcePattern();

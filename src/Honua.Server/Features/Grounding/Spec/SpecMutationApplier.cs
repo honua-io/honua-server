@@ -10,7 +10,9 @@ namespace Honua.Server.Features.Grounding.Spec;
 
 internal sealed partial class SpecMutationApplier
 {
+#pragma warning disable CA1822 // Mark members as static — kept as instance method for DI-resolved consumption.
     public SpecDocument Apply(SpecDocument document, IReadOnlyList<SpecMutation> mutations)
+#pragma warning restore CA1822
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(mutations);

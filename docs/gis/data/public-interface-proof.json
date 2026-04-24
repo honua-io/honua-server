@@ -1391,8 +1391,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1404,8 +1404,8 @@
           "proofMechanism": "Endpoint integration coverage plus service-level wire-envelope, clarification retry, preservation, and round-trip invariants",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingEndpointTests.cs",
-            "tests/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingServiceTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingServiceTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Spec/SpecContractRegressionTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecMutationApplierTests.cs",
             "docs/developer/spec-grounding/v1.0/README.md"
