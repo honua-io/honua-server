@@ -158,8 +158,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
         Assert.Equal(0, store.QueryCallCount);
         httpClientFactory.DidNotReceive().CreateClient("feature-change-webhook");
 
-        cts.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executeTask);
+        await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
     [UnitTest]
@@ -228,13 +227,15 @@ public sealed class FeatureChangeWebhookDispatcherTests
         using var cts = new CancellationTokenSource();
         var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
 
-        await Task.Delay(500);
+        await WaitForConditionAsync(
+            () => ReadDeliveredCursor(dispatcher) == 1L,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromMilliseconds(50));
 
         Assert.Equal(0, handler.SendCount);
         Assert.Equal(1L, ReadDeliveredCursor(dispatcher));
 
-        cts.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executeTask);
+        await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
     [UnitTest]
@@ -374,8 +375,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
         Assert.True(claimExtendCalls >= 1, $"expected at least one delivery-claim renewal while webhook delivery was in flight, but saw {claimExtendCalls}");
 
-        cts.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executeTask);
+        await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
     [UnitTest]
@@ -490,8 +490,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
         Assert.Equal(0, store.QueryCallCount);
         httpClientFactory.DidNotReceive().CreateClient("feature-change-webhook");
 
-        cts.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executeTask);
+        await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
     private static FeatureChangeEvent CreateEvent()
@@ -557,6 +556,23 @@ public sealed class FeatureChangeWebhookDispatcherTests
             }
 
             await Task.Delay(pollInterval);
+        }
+    }
+
+    private static async Task CancelAndAwaitDispatcherShutdownAsync(
+        CancellationTokenSource cancellationTokenSource,
+        Task executeTask)
+    {
+        cancellationTokenSource.Cancel();
+
+        try
+        {
+            await executeTask.WaitAsync(TimeSpan.FromSeconds(3));
+        }
+        catch (OperationCanceledException) when (cancellationTokenSource.IsCancellationRequested)
+        {
+            // ExecuteAsync may either observe cancellation at an awaited operation or exit
+            // cleanly after the loop guard sees the cancellation request.
         }
     }
 
