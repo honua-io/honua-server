@@ -327,6 +327,25 @@ internal static class SpecEndpoints
 
     private static CanonicalSpecDocument ToDocument(SpecDocumentRequest request)
     {
+        // `SpecDocumentRequest.Nodes` defaults to an empty list, but System.Text.Json
+        // preserves an explicit `"nodes": null` as a genuine null. Treat that
+        // and any null node entry as a structural problem with the canonical
+        // document rather than letting the enumeration NRE later.
+        var requestNodes = request.Nodes;
+        if (requestNodes is null)
+        {
+            throw new SpecDocumentInvalidException(new[]
+            {
+                new SpecWarning
+                {
+                    Code = SpecDiagnosticCodes.InvalidRequestBody,
+                    Message = "Request body is missing the 'nodes' collection.",
+                    Severity = SpecDiagnosticSeverity.Error,
+                    Remedy = "Provide a 'nodes' array (may be empty, but must not be null)."
+                }
+            });
+        }
+
         // Reject nodes with an omitted or unrecognised kind at the transport
         // boundary rather than defaulting them to Compute (see finding:
         // unknown-kind). JsonStringEnumConverter still accepts numeric values,
@@ -335,8 +354,22 @@ internal static class SpecEndpoints
         // offenders so an operator fixing a large document sees the full list
         // in one round-trip.
         List<SpecWarning>? fatal = null;
-        foreach (var n in request.Nodes)
+        for (var i = 0; i < requestNodes.Count; i++)
         {
+            var n = requestNodes[i];
+            if (n is null)
+            {
+                fatal ??= new List<SpecWarning>();
+                fatal.Add(new SpecWarning
+                {
+                    Code = SpecDiagnosticCodes.InvalidNodeId,
+                    Message = $"Node at index {i} is null.",
+                    Severity = SpecDiagnosticSeverity.Error,
+                    Remedy = "Remove the null entry or replace it with a populated node object."
+                });
+                continue;
+            }
+
             if (n.Kind is null || !IsDefinedResourceKind(n.Kind.Value))
             {
                 fatal ??= new List<SpecWarning>();
@@ -358,8 +391,8 @@ internal static class SpecEndpoints
             throw new SpecDocumentInvalidException(fatal);
         }
 
-        var nodes = new List<CanonicalSpecNode>(request.Nodes.Count);
-        foreach (var n in request.Nodes)
+        var nodes = new List<CanonicalSpecNode>(requestNodes.Count);
+        foreach (var n in requestNodes)
         {
             nodes.Add(new CanonicalSpecNode
             {

@@ -286,9 +286,11 @@ All signals hang off the shared `Honua` meter and activity source (see
   Durable backing over the existing `CloudFileStorageBase` stack
   (local / S3 / Azure Blob) is a follow-on that will land alongside
   multi-instance coordination.
-- **S1 compute ops** reuse existing geoprocessing implementations (`filter`,
-  `spatial_join`, `buffer`, `reproject`, `zonal_stats`, `slope`). Additional
-  ops ship with the grammar / validator ticket.
+- **S1 compute executor** is a deterministic placeholder
+  (`SpecComputeExecutor`) that emits a stable JSON payload describing the node
+  and its resolved inputs. It proves content-hash identity, cache reuse, and
+  apply-event streaming end-to-end without invoking the geoprocessing process
+  families. Wiring real compute ops is tracked on ticket #790.
 
 ## Related documents
 

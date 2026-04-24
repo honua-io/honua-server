@@ -351,6 +351,85 @@ public sealed class SpecEndpointsTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/plan")]
+    public async Task Plan_NullNodesCollection_Returns400WithInvalidRequestBody()
+    {
+        // The DTO default is an empty list, but System.Text.Json preserves an
+        // explicit null. Previously the transport swallowed it and the
+        // downstream enumeration tripped a NullReferenceException — today the
+        // boundary validates and maps to the documented 400 contract.
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var document = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["grammarVersion"] = "grammar/1.0",
+            ["processFamilyVersion"] = "family/1.0",
+            ["nodes"] = null
+        };
+
+        using var response = await client.PostAsync("/v1/spec/plan", JsonContent(document));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("invalid-request-body", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/plan")]
+    public async Task Plan_NullNodeEntry_Returns400WithInvalidNodeId()
+    {
+        // `[null]` deserialises as a real null entry inside the nodes list. The
+        // boundary rejects it with a stable diagnostic instead of throwing NRE
+        // at the first enumeration.
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var document = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["grammarVersion"] = "grammar/1.0",
+            ["processFamilyVersion"] = "family/1.0",
+            ["nodes"] = new object?[] { null }
+        };
+
+        using var response = await client.PostAsync("/v1/spec/plan", JsonContent(document));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("invalid-node-id", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_NullNodeEntry_Returns400WithoutOpeningStream()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var document = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["grammarVersion"] = "grammar/1.0",
+            ["processFamilyVersion"] = "family/1.0",
+            ["nodes"] = new object?[] { null }
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
+        {
+            Content = JsonContent(document)
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotEqual("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("invalid-node-id", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_BlankNodeId_Returns400WithoutOpeningStream()

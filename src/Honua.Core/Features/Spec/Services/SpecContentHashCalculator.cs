@@ -43,8 +43,12 @@ internal static class SpecContentHashCalculator
         builder.Append(node.Op ?? string.Empty).Append(Separator);
 
         // Canonical fragment participates when provided. Fall back to
-        // deterministic serialisation of Parameters + SourcePins so the hash
-        // remains stable even without an upstream-canonicalised fragment.
+        // deterministic serialisation of Parameters + SourcePins + Inputs so
+        // the hash remains stable even without an upstream-canonicalised
+        // fragment. Inputs must participate keyed by parameter name so that
+        // swapping two @node bindings (e.g. left/right) produces a distinct
+        // hash even though the outer inputHashes set is unchanged, and so
+        // scalar literals are not silently dropped.
         if (!string.IsNullOrEmpty(node.CanonicalFragment))
         {
             builder.Append(node.CanonicalFragment).Append(Separator);
@@ -54,6 +58,8 @@ internal static class SpecContentHashCalculator
             AppendSortedPairs(builder, node.Parameters);
             builder.Append(Separator);
             AppendSortedPairs(builder, node.SourcePins);
+            builder.Append(Separator);
+            AppendSortedInputs(builder, node.Inputs, inputHashes);
             builder.Append(Separator);
         }
 
@@ -82,6 +88,31 @@ internal static class SpecContentHashCalculator
         foreach (var key in pairs.Keys.OrderBy(k => k, StringComparer.Ordinal))
         {
             builder.Append(key).Append('=').Append(pairs[key]).Append(ItemSeparator);
+        }
+    }
+
+    private static void AppendSortedInputs(
+        StringBuilder builder,
+        IReadOnlyDictionary<string, string> inputs,
+        IReadOnlyDictionary<string, string> inputHashes)
+    {
+        // Sort by parameter name to preserve key-order stability, then emit a
+        // discriminator so a scalar that happens to match a hex digest cannot
+        // collide with a resolved reference.
+        //   'R' -> @node reference resolved to an upstream content hash
+        //   'L' -> scalar literal preserved verbatim
+        foreach (var key in inputs.Keys.OrderBy(k => k, StringComparer.Ordinal))
+        {
+            var value = inputs[key];
+            if (value.Length >= 2 && value[0] == '@' &&
+                inputHashes.TryGetValue(value[1..], out var resolved))
+            {
+                builder.Append(key).Append('=').Append('R').Append(':').Append(resolved).Append(ItemSeparator);
+            }
+            else
+            {
+                builder.Append(key).Append('=').Append('L').Append(':').Append(value).Append(ItemSeparator);
+            }
         }
     }
 

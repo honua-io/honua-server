@@ -171,6 +171,64 @@ public class SpecContentHashCalculatorTests
     }
 
     [Fact]
+    public void ScalarInputChange_WithoutCanonicalFragment_ProducesDifferentHash()
+    {
+        // Scalar inputs are not @-references, so SpecDagResolver never promotes
+        // them to dependency hashes. The fallback hash must include the literal
+        // value under its input key so that changing the scalar alone produces
+        // a different cache identity.
+        var nodeA = MakeComputeNode("n1") with
+        {
+            Inputs = new Dictionary<string, string>(StringComparer.Ordinal) { ["distance"] = "100" }
+        };
+        var nodeB = MakeComputeNode("n1") with
+        {
+            Inputs = new Dictionary<string, string>(StringComparer.Ordinal) { ["distance"] = "250" }
+        };
+
+        var hashA = SpecContentHashCalculator.Compute(GrammarV1, FamilyV1, nodeA, new Dictionary<string, string>());
+        var hashB = SpecContentHashCalculator.Compute(GrammarV1, FamilyV1, nodeB, new Dictionary<string, string>());
+
+        Assert.NotEqual(hashA, hashB);
+    }
+
+    [Fact]
+    public void SwappedInputBindings_WithoutCanonicalFragment_ProduceDifferentHash()
+    {
+        // SpecPlanner keys inputHashes by dependency node id, so {left:@a,
+        // right:@b} and {left:@b, right:@a} would deliver the same {a,b} hash
+        // set to the calculator. The fallback hash must key the input bindings
+        // by parameter name to distinguish the two specs.
+        var nodeA = MakeComputeNode("n1") with
+        {
+            Inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["left"] = "@a",
+                ["right"] = "@b"
+            }
+        };
+        var nodeB = MakeComputeNode("n1") with
+        {
+            Inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["left"] = "@b",
+                ["right"] = "@a"
+            }
+        };
+
+        var inputHashes = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["a"] = "aaa111",
+            ["b"] = "bbb222"
+        };
+
+        var hashA = SpecContentHashCalculator.Compute(GrammarV1, FamilyV1, nodeA, inputHashes);
+        var hashB = SpecContentHashCalculator.Compute(GrammarV1, FamilyV1, nodeB, inputHashes);
+
+        Assert.NotEqual(hashA, hashB);
+    }
+
+    [Fact]
     public void CanonicalFragment_SupersedesParametersAndSourcePins()
     {
         // Fragment is the canonical form; when it is present, the hash is
