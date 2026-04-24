@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Configuration;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
