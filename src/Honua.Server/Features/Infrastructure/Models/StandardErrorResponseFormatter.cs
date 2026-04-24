@@ -6,6 +6,7 @@ using System.Security;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.OData.Models;
+using Honua.Server.Features.OData.Services;
 
 namespace Honua.Server.Features.Infrastructure.Models;
 
@@ -16,7 +17,6 @@ namespace Honua.Server.Features.Infrastructure.Models;
 internal static class StandardErrorResponseFormatter
 {
     private const string ODataContentType = "application/json;metadata=minimal";
-    private const string ODataVersion = "4.01";
 
     /// <summary>
     /// Formats a StandardErrorResponse into an appropriate IResult based on the request protocol.
@@ -362,7 +362,7 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     private static void SetODataHeaders(HttpContext context, ErrorResponseFormatterOptions options)
     {
-        context.Response.Headers["OData-Version"] = ODataVersion;
+        ODataProtocolHeaders.SetVersionHeader(context);
         AddResponseHeaders(context, options);
     }
 

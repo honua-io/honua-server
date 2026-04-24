@@ -22,11 +22,6 @@ internal static class ODataUtilityService
     internal const string TrackChangesPreferenceValue = "odata.track-changes";
 
     /// <summary>
-    /// OData protocol version
-    /// </summary>
-    private const string ODataVersion = "4.01";
-
-    /// <summary>
     /// OData JSON content type with minimal metadata
     /// </summary>
     private const string ODataMediaType = "application/json";
@@ -76,7 +71,7 @@ internal static class ODataUtilityService
     /// </summary>
     public static void SetODataHeaders(HttpContext context, string? etag = null)
     {
-        context.Response.Headers["OData-Version"] = ODataVersion;
+        ODataProtocolHeaders.SetVersionHeader(context);
         if (etag != null)
         {
             context.Response.Headers.ETag = NormalizeEtagHeader(etag);

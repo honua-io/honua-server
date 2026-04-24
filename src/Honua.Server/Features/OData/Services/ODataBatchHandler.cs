@@ -186,6 +186,7 @@ internal sealed partial class ODataBatchHandler
     private const string NonAtomicGroupKey = "__non-atomic__";
     private const string AtomicGroupPrefix = "atomic:";
     private const int DefaultBatchCollectionTop = 1000;
+    private const string AbsoluteBatchRequestUrlMessage = "Absolute batch request URLs are not supported.";
 
     private static bool HasDependencies(ImmutableArray<ODataBatchRequestItem> requests)
         => requests.Any(r => r.DependsOn is { Length: > 0 });
@@ -398,7 +399,18 @@ internal sealed partial class ODataBatchHandler
                     continue;
                 }
 
-                var parsed = ParseUrl(NormalizeRequestUrlForParsing(request.Url));
+                if (!TryNormalizeClientBatchTargetUrl(request.Url, out var normalizedUrl, out var urlError))
+                {
+                    responses.Add(CreateErrorResponse(
+                        request.Id,
+                        400,
+                        "InvalidRequest",
+                        urlError ?? "Invalid batch request URL."));
+                    rollback = true;
+                    continue;
+                }
+
+                var parsed = ParseUrl(normalizedUrl);
                 if (parsed.Kind is not ODataResourceKind.Feature && parsed.Kind is not ODataResourceKind.Features)
                 {
                     responses.Add(CreateErrorResponse(
@@ -1183,6 +1195,25 @@ internal sealed partial class ODataBatchHandler
         return trimmed.TrimStart('/');
     }
 
+    private static bool TryNormalizeClientBatchTargetUrl(
+        string url,
+        out string normalizedUrl,
+        out string? errorMessage)
+    {
+        var trimmed = url.Trim();
+        normalizedUrl = trimmed.TrimStart('/');
+        errorMessage = null;
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+        {
+            normalizedUrl = string.Empty;
+            errorMessage = AbsoluteBatchRequestUrlMessage;
+            return false;
+        }
+
+        return true;
+    }
+
     private static IResult CreateUnsupportedBatchRequestResult(
         HttpContext context,
         ODataBatchRequestItem request,
@@ -1391,8 +1422,7 @@ internal sealed partial class ODataBatchHandler
         var trimmed = url.Trim();
         if (!trimmed.StartsWith('$'))
         {
-            resolvedUrl = NormalizeBatchTargetUrl(trimmed);
-            return true;
+            return TryNormalizeClientBatchTargetUrl(trimmed, out resolvedUrl, out errorMessage);
         }
 
         var delimiterIndex = trimmed.IndexOfAny(['/', '?']);

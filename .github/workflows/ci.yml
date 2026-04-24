@@ -296,15 +296,23 @@ jobs:
           - shard_name: Feature APIs
             artifact_suffix: feature-apis
             log_name: server-tests-feature-apis
-            timeout_minutes: 30
+            timeout_minutes: 35
+            max_cpu_count: ""
+            upload_operator_eval_report: false
+            upload_odata_evidence: false
+            filter: "FullyQualifiedName~Honua.Server.Tests.Features.FeatureServer|FullyQualifiedName~Honua.Server.Tests.Features.OgcFeatures|FullyQualifiedName~Honua.Server.Tests.Features.API"
+          - shard_name: OData
+            artifact_suffix: odata
+            log_name: server-tests-odata
+            timeout_minutes: 35
             max_cpu_count: ""
             upload_operator_eval_report: false
             upload_odata_evidence: true
-            filter: "FullyQualifiedName~Honua.Server.Tests.Features.FeatureServer|FullyQualifiedName~Honua.Server.Tests.Features.OData|FullyQualifiedName~Honua.Server.Tests.Features.OgcFeatures|FullyQualifiedName~Honua.Server.Tests.Features.API"
+            filter: "FullyQualifiedName~Honua.Server.Tests.Features.OData"
           - shard_name: Map and Imagery
             artifact_suffix: map-imagery
             log_name: server-tests-map-imagery
-            timeout_minutes: 30
+            timeout_minutes: 45
             max_cpu_count: ""
             upload_operator_eval_report: false
             upload_odata_evidence: false

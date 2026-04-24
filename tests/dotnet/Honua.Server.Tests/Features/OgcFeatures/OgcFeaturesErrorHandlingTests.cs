@@ -152,11 +152,12 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     public async Task UpdateFeature_InvalidRequest_ReturnsStandardizedErrorFormat()
     {
         // Arrange - Invalid GeoJSON payload
+        var existingId = await _fixture.InsertFeatureAsync(0, "Invalid Update Target");
         var invalidPayload = "{ \"invalid\": \"json\" }";
         var content = new StringContent(invalidPayload, System.Text.Encoding.UTF8, "application/geo+json");
 
         // Act
-        var response = await _fixture.Client.PutAsync("/ogc/features/collections/0/items/123", content);
+        var response = await _fixture.Client.PutAsync($"/ogc/features/collections/0/items/{existingId}", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);

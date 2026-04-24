@@ -46,7 +46,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
             $"/odata/Features({TestLayerId})?$filter=invalid_syntax");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidQuery");
     }
 
     [IntegrationTest]
@@ -139,7 +139,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidQueryOption");
     }
 
     [IntegrationTest]
@@ -150,7 +150,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=-1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidQueryOption");
     }
 
     [IntegrationTest]
@@ -183,7 +183,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?unsupported=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidQueryOption");
     }
 
     #endregion
@@ -198,7 +198,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=invalid-field");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidQuery");
 
         var message = await GetODataErrorMessageAsync(response);
         message.Should().Contain("Invalid field name in $orderby");
@@ -227,7 +227,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
             $"/odata/Features({TestLayerId})?$orderby=population asc nulls last");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidQuery");
     }
 
     #endregion
@@ -550,7 +550,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$apply");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidQueryOption");
     }
 
     [IntegrationTest]
@@ -562,7 +562,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
             $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(population as Total)");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidQueryOption");
     }
 
     [IntegrationTest]
@@ -613,7 +613,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$search");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidQueryOption");
     }
 
     #endregion
@@ -855,7 +855,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
             new StringContent(payload, Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidRequest");
 
         var message = await GetODataErrorMessageAsync(response);
         message.Should().Contain("maximum of 1000 operations");
@@ -888,7 +888,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertODataErrorAsync(response, "BadRequest");
+        await AssertODataErrorAsync(response, "InvalidRequest");
 
         var message = await GetODataErrorMessageAsync(response);
         message.Should().Contain("maximum allowed size");

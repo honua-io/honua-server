@@ -68,8 +68,15 @@ internal sealed class ODataQueryParameterAdapter(
                         parseResult.ErrorMessage ?? "Invalid OData filter expression."));
                 }
 
-                filter = QueryFilter.FromExpression(
-                    parseResult.Expression,
+                var translationResult = _filterExpressionService.Translate(parseResult.Expression, layer);
+                if (!translationResult.IsSuccess || translationResult.SqlFilter == null)
+                {
+                    return Task.FromResult(QueryAdapterResult.Failure(
+                        translationResult.ErrorMessage ?? "Invalid OData filter expression."));
+                }
+
+                filter = QueryFilter.FromSql(
+                    translationResult.SqlFilter,
                     new FilterSource(parameters.Filter, FilterLanguage.OData, ProtocolName));
             }
 
@@ -127,7 +134,7 @@ internal sealed class ODataQueryParameterAdapter(
         catch (ArgumentException ex)
         {
             ODataPreparedAdaptersLog.InvalidQueryParameters(_logger, ex);
-            return Task.FromResult(QueryAdapterResult.Failure("Invalid OData query parameters."));
+            return Task.FromResult(QueryAdapterResult.Failure(ex.Message));
         }
         catch (Exception ex)
         {

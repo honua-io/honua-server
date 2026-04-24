@@ -134,7 +134,7 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
-    public async Task MultipartBatch_WithAbsoluteSubrequestUrl_ExecutesPathWithoutEchoingHost()
+    public async Task MultipartBatch_WithAbsoluteSubrequestUrl_ReturnsBadRequestWithoutEchoingHost()
     {
         const string boundary = "batch_absolute_url";
         var payload = string.Join("\r\n",
@@ -157,7 +157,7 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var responseBody = await response.Content.ReadAsStringAsync();
-        responseBody.Should().Contain("HTTP/1.1 200");
+        responseBody.Should().Contain("HTTP/1.1 400");
         responseBody.Should().NotContain("attacker.example");
     }
 

@@ -486,14 +486,7 @@ internal sealed partial class ODataBatchOperationHandler(
 
     private static string NormalizeBatchUrl(string url)
     {
-        var trimmed = url.Trim();
-        if (trimmed.Contains("://", StringComparison.Ordinal) &&
-            Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri))
-        {
-            return absoluteUri.PathAndQuery.TrimStart('/');
-        }
-
-        return trimmed.TrimStart('/');
+        return url.Trim().TrimStart('/');
     }
 
     private static string CreateMultipartBatchResponsePayload(ODataBatchResponse response, string boundary)
