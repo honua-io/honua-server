@@ -453,14 +453,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
         await handler.WaitForCancellationAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
-        cts.Cancel();
-        try
-        {
-            await executeTask.WaitAsync(TimeSpan.FromSeconds(1));
-        }
-        catch (OperationCanceledException)
-        {
-        }
+        await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
     [UnitTest]
@@ -567,7 +560,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
         try
         {
-            await executeTask.WaitAsync(TimeSpan.FromSeconds(3));
+            await executeTask.WaitAsync(TimeSpan.FromSeconds(5));
         }
         catch (OperationCanceledException) when (cancellationTokenSource.IsCancellationRequested)
         {

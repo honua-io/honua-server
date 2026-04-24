@@ -34,12 +34,11 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Collection("Database")]
 [Protocol(Protocols.Admin, Protocols.Health, Protocols.FeatureServer)]
 [Operation(Operations.Security)]
-public class OidcAuthenticationTests : IAsyncLifetime
+public class OidcAuthenticationTests
 {
     private const string TestConnectionEncryptionMasterKey = "AuthTestsConnectionMasterKey-123456";
     private const string TestAdminPassword = "TestAdminPassword123!";
     private readonly ITestOutputHelper _output;
-    private readonly WebAppFixture _fixture = new();
     private const string TestSigningKey = "ThisIsATestSigningKeyThatIsLongEnoughForHS256Algorithm!";
     private const string TestIssuer = "https://test-issuer.example.com";
     private const string TestAudience = "test-client-id";
@@ -47,16 +46,6 @@ public class OidcAuthenticationTests : IAsyncLifetime
     public OidcAuthenticationTests(ITestOutputHelper output)
     {
         _output = output;
-    }
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
     }
 
     /// <summary>
@@ -90,7 +79,8 @@ public class OidcAuthenticationTests : IAsyncLifetime
                     {
                         ["ConnectionStrings:DefaultConnection"] = TestPostgresConnectionString,
                         ["ConnectionStrings:honua"] = TestPostgresConnectionString,
-                        ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey
+                        ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey,
+                        ["HONUA_DEV_AUTH"] = "false"
                     };
 
                     if (oidcSettings != null)
@@ -175,7 +165,8 @@ public class OidcAuthenticationTests : IAsyncLifetime
             ["Oidc:ClaimsMapping:RoleClaimType"] = ClaimTypes.Role,
             ["Oidc:TokenValidation:SymmetricSigningKey"] = TestSigningKey,
             ["Oidc:TokenValidation:EnableTokenReplayProtection"] = "false",
-            ["HONUA_ADMIN_PASSWORD"] = TestAdminPassword
+            ["HONUA_ADMIN_PASSWORD"] = TestAdminPassword,
+            ["HONUA_DEV_AUTH"] = "false"
         };
 
         if (additionalSettings != null)
