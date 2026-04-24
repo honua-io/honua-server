@@ -123,19 +123,19 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Compute Statistics Histograms (GET)")
             .WithName("ComputeStatisticsHistogramsGet")
             .WithSummary("Compute per-band statistics and histograms")
-            .WithDescription("ArcGIS ImageServer computeStatisticsHistograms contract. Requires geometry and geometryType and returns per-band statistics and histograms for the primary raster.")
-            .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
+            .WithDescription("ArcGIS ImageServer computeStatisticsHistograms contract. Requires geometry and geometryType; returns 501 until geometry-scoped raster statistics are implemented.")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         group.MapPost("/computeStatisticsHistograms", ComputeStatisticsHistogramsPost)
             .WithDisplayName("Compute Statistics Histograms (POST)")
             .WithName("ComputeStatisticsHistogramsPost")
             .WithSummary("Compute per-band statistics and histograms via POST")
             .WithDescription("POST equivalent of the ArcGIS ImageServer computeStatisticsHistograms endpoint")
-            .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         // Legend endpoint - per-class swatches for the layer renderer
         group.MapGet("/legend", GetLegend)
@@ -247,16 +247,16 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Compute Statistics Histograms by Service (GET)")
             .WithName("ComputeStatisticsHistogramsGetByService")
             .WithSummary("Compute per-band statistics and histograms")
-            .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
         serviceGroup.MapPost("/computeStatisticsHistograms", ComputeStatisticsHistogramsPostByService)
             .WithDisplayName("Compute Statistics Histograms by Service (POST)")
             .WithName("ComputeStatisticsHistogramsPostByService")
             .WithSummary("Compute per-band statistics and histograms")
-            .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
 
         serviceGroup.MapGet("/legend", GetLegendByService)
             .WithDisplayName("Get Image Server Legend by Service")
@@ -603,7 +603,9 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return await handler.ComputeAsync(context, id, values, cancellationToken);
+        return StandardErrorHelpers.CreateNotImplemented(
+            context,
+            "computeStatisticsHistograms is not yet implemented on this service.");
     }
 
     private static async Task<IResult> ComputeStatisticsHistogramsGetByService(
@@ -662,7 +664,9 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return await handler.ComputeAsync(context, id, merged, cancellationToken);
+        return StandardErrorHelpers.CreateNotImplemented(
+            context,
+            "computeStatisticsHistograms is not yet implemented on this service.");
     }
 
     private static async Task<IResult> ComputeStatisticsHistogramsPostByService(

@@ -14,36 +14,54 @@ namespace Honua.Server.Tests.Features.Wfs20;
 public class Wfs20FilterCapabilitiesComplianceTests
 {
     [Fact]
-    public void FilterCapabilities_TemporalOperators_ShouldAdvertiseRuntimeSupportedSubset()
+    public void FilterCapabilities_TemporalOperators_ShouldAdvertiseRuntimeSupportedOperators()
     {
         var filterCapabilities = GetActualFilterCapabilities();
         var operatorNames = filterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
             .Select(op => op.Name)
             .ToArray();
 
-        operatorNames.Should().BeEquivalentTo("After", "Before", "During");
+        operatorNames.Should().BeEquivalentTo(
+            "After",
+            "Before",
+            "During",
+            "Contains",
+            "Equals",
+            "Disjoint",
+            "Intersects",
+            "Meets",
+            "MetBy",
+            "Overlaps",
+            "OverlappedBy",
+            "Starts",
+            "StartedBy",
+            "Finishes",
+            "FinishedBy");
     }
 
     [Fact]
-    public void FilterCapabilities_FunctionsAndCql2_ShouldNotOverAdvertiseUnsupportedCapabilities()
+    public void FilterCapabilities_FunctionsAndCql2_ShouldAdvertiseRuntimeCapabilities()
     {
         var filterCapabilities = GetActualFilterCapabilities();
         var constraintDict = filterCapabilities.Conformance.Constraints
             .ToDictionary(c => c.Name, c => c.DefaultValue);
 
-        filterCapabilities.Functions.Should().BeNull();
-        constraintDict["ImplementsFunctions"].Should().Be("FALSE");
-        constraintDict["ImplementsArithmeticOperators"].Should().Be("FALSE");
-        constraintDict["ImplementsExtendedOperators"].Should().Be("FALSE");
-        constraintDict["ImplementsCQL2Text"].Should().Be("FALSE");
-        constraintDict["ImplementsCQL2JSON"].Should().Be("FALSE");
-        constraintDict["ImplementsCQL2BasicCQL"].Should().Be("FALSE");
-        constraintDict["ImplementsCQL2AdvancedComparison"].Should().Be("FALSE");
-        constraintDict["ImplementsCQL2BasicSpatial"].Should().Be("FALSE");
-        constraintDict["ImplementsCQL2SpatialOperators"].Should().Be("FALSE");
-        constraintDict["ImplementsCQL2TemporalOperators"].Should().Be("FALSE");
+        filterCapabilities.Functions.Should().NotBeNull();
+        filterCapabilities.Functions!.Functions.Select(function => function.Name)
+            .Should().Contain(["ST_NumGeometries", "UPPER", "SQRT", "NOW", "COUNT"]);
+        filterCapabilities.Functions.Functions.Should().HaveCountGreaterOrEqualTo(35);
+        constraintDict["ImplementsFunctions"].Should().Be("TRUE");
+        constraintDict["ImplementsArithmeticOperators"].Should().Be("TRUE");
+        constraintDict["ImplementsExtendedOperators"].Should().Be("TRUE");
+        constraintDict["ImplementsCQL2Text"].Should().Be("TRUE");
+        constraintDict["ImplementsCQL2JSON"].Should().Be("TRUE");
+        constraintDict["ImplementsCQL2BasicCQL"].Should().Be("TRUE");
+        constraintDict["ImplementsCQL2AdvancedComparison"].Should().Be("TRUE");
+        constraintDict["ImplementsCQL2BasicSpatial"].Should().Be("TRUE");
+        constraintDict["ImplementsCQL2SpatialOperators"].Should().Be("TRUE");
+        constraintDict["ImplementsCQL2TemporalOperators"].Should().Be("TRUE");
         constraintDict["ImplementsCQL2ArrayOperators"].Should().Be("FALSE");
-        constraintDict["ImplementsCQL2Functions"].Should().Be("FALSE");
+        constraintDict["ImplementsCQL2Functions"].Should().Be("TRUE");
     }
 
     [Fact]
@@ -92,6 +110,7 @@ public class Wfs20FilterCapabilitiesComplianceTests
                      "Overlaps",
                      "Disjoint",
                      "Equals",
+                     "EnvelopeIntersects",
                      "DWithin",
                      "Beyond"
                  })

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
@@ -30,8 +31,13 @@ internal static class OgcFeatureEntityTag
             ["attributes"] = NormalizeForEtag(feature.Attributes)
         };
 
-        var json = JsonSerializer.SerializeToUtf8Bytes(payload);
-        return etagService.ComputeETag(json);
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            WriteCanonicalJson(writer, payload);
+        }
+
+        return etagService.ComputeETag(buffer.WrittenSpan);
     }
 
     public static string ComputeRepresentation(byte[] payload, string entityETag, IETagService etagService)
@@ -157,5 +163,121 @@ internal static class OgcFeatureEntityTag
             JsonValueKind.Null or JsonValueKind.Undefined => null,
             _ => element.GetRawText()
         };
+    }
+
+    private static void WriteCanonicalJson(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNullValue();
+                return;
+
+            case string stringValue:
+                writer.WriteStringValue(stringValue);
+                return;
+
+            case bool boolValue:
+                writer.WriteBooleanValue(boolValue);
+                return;
+
+            case byte byteValue:
+                writer.WriteNumberValue(byteValue);
+                return;
+
+            case sbyte sbyteValue:
+                writer.WriteNumberValue(sbyteValue);
+                return;
+
+            case short shortValue:
+                writer.WriteNumberValue(shortValue);
+                return;
+
+            case ushort ushortValue:
+                writer.WriteNumberValue(ushortValue);
+                return;
+
+            case int intValue:
+                writer.WriteNumberValue(intValue);
+                return;
+
+            case uint uintValue:
+                writer.WriteNumberValue(uintValue);
+                return;
+
+            case long longValue:
+                writer.WriteNumberValue(longValue);
+                return;
+
+            case ulong ulongValue:
+                writer.WriteNumberValue(ulongValue);
+                return;
+
+            case float floatValue:
+                writer.WriteNumberValue(floatValue);
+                return;
+
+            case double doubleValue:
+                writer.WriteNumberValue(doubleValue);
+                return;
+
+            case decimal decimalValue:
+                writer.WriteNumberValue(decimalValue);
+                return;
+
+            case DateTime dateTime:
+                writer.WriteStringValue(dateTime.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+                return;
+
+            case DateTimeOffset dateTimeOffset:
+                writer.WriteStringValue(dateTimeOffset.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+                return;
+
+            case Guid guid:
+                writer.WriteStringValue(guid.ToString("D"));
+                return;
+
+            case byte[] bytes:
+                writer.WriteStringValue(Convert.ToBase64String(bytes));
+                return;
+
+            case JsonElement element:
+                WriteCanonicalJson(writer, NormalizeJsonElement(element));
+                return;
+
+            case IReadOnlyDictionary<string, object?> readOnlyDictionary:
+                WriteObject(writer, readOnlyDictionary);
+                return;
+
+            case IDictionary<string, object?> dictionary:
+                WriteObject(writer, dictionary);
+                return;
+
+            case IEnumerable enumerable when value is not string and not byte[]:
+                writer.WriteStartArray();
+                foreach (var item in enumerable)
+                {
+                    WriteCanonicalJson(writer, item);
+                }
+
+                writer.WriteEndArray();
+                return;
+
+            default:
+                writer.WriteStringValue(Convert.ToString(value, CultureInfo.InvariantCulture));
+                return;
+        }
+    }
+
+    private static void WriteObject(Utf8JsonWriter writer, IEnumerable<KeyValuePair<string, object?>> dictionary)
+    {
+        writer.WriteStartObject();
+        foreach (var (key, value) in dictionary.OrderBy(static entry => entry.Key, StringComparer.Ordinal))
+        {
+            writer.WritePropertyName(key);
+            WriteCanonicalJson(writer, value);
+        }
+
+        writer.WriteEndObject();
     }
 }

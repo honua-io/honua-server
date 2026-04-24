@@ -186,7 +186,7 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
     [Operation(Operations.Query)]
-    public async Task ComputeStatisticsHistograms_Post_WithGeometry_ReturnsStatisticsAndHistograms()
+    public async Task ComputeStatisticsHistograms_Post_WithGeometry_ReturnsNotImplemented()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -202,10 +202,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms",
                 content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("statistics").GetArrayLength().Should().Be(1);
-            json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
+            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
         }
         finally
         {

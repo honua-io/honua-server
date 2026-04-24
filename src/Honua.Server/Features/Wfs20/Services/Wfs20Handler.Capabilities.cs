@@ -533,22 +533,22 @@ internal sealed partial class Wfs20Handler
                     // Additional capabilities
                     CreateBooleanFesConstraint("ImplementsVersionNav", false),
                     CreateBooleanFesConstraint("ImplementsSorting", true),
-                    CreateBooleanFesConstraint("ImplementsExtendedOperators", false),
-                    CreateBooleanFesConstraint("ImplementsFunctions", false),
-                    CreateBooleanFesConstraint("ImplementsArithmeticOperators", false),
+                    CreateBooleanFesConstraint("ImplementsExtendedOperators", true),
+                    CreateBooleanFesConstraint("ImplementsFunctions", true),
+                    CreateBooleanFesConstraint("ImplementsArithmeticOperators", true),
                     CreateBooleanFesConstraint("ImplementsLogicalOperators", true),
                     CreateBooleanFesConstraint("ImplementsComparisonOperators", true),
 
                     // CQL2 support
-                    CreateBooleanFesConstraint("ImplementsCQL2Text", false),
-                    CreateBooleanFesConstraint("ImplementsCQL2JSON", false),
-                    CreateBooleanFesConstraint("ImplementsCQL2BasicCQL", false),
-                    CreateBooleanFesConstraint("ImplementsCQL2AdvancedComparison", false),
-                    CreateBooleanFesConstraint("ImplementsCQL2BasicSpatial", false),
-                    CreateBooleanFesConstraint("ImplementsCQL2SpatialOperators", false),
-                    CreateBooleanFesConstraint("ImplementsCQL2TemporalOperators", false),
+                    CreateBooleanFesConstraint("ImplementsCQL2Text", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2JSON", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2BasicCQL", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2AdvancedComparison", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2BasicSpatial", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2SpatialOperators", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2TemporalOperators", true),
                     CreateBooleanFesConstraint("ImplementsCQL2ArrayOperators", false),
-                    CreateBooleanFesConstraint("ImplementsCQL2Functions", false)
+                    CreateBooleanFesConstraint("ImplementsCQL2Functions", true)
                 ]
             },
             IdCapabilities = new IdCapabilities
@@ -619,6 +619,7 @@ internal sealed partial class Wfs20Handler
                         new Models.SpatialOperator { Name = "Overlaps" },
                         new Models.SpatialOperator { Name = "Disjoint" },
                         new Models.SpatialOperator { Name = "Equals" },
+                        new Models.SpatialOperator { Name = "EnvelopeIntersects" },
 
                         // Distance operators
                         new Models.SpatialOperator { Name = "DWithin" },
@@ -644,12 +645,82 @@ internal sealed partial class Wfs20Handler
                 {
                     Operators =
                     [
-                        // All supported temporal operators per OGC Filter Encoding 2.0
+                        // All supported temporal operators per OGC Filter Encoding 2.0 / CQL2.
                         new Models.TemporalOperator { Name = "After" },
                         new Models.TemporalOperator { Name = "Before" },
-                        new Models.TemporalOperator { Name = "During" }
+                        new Models.TemporalOperator { Name = "During" },
+                        new Models.TemporalOperator { Name = "Contains" },
+                        new Models.TemporalOperator { Name = "Equals" },
+                        new Models.TemporalOperator { Name = "Disjoint" },
+                        new Models.TemporalOperator { Name = "Intersects" },
+                        new Models.TemporalOperator { Name = "Meets" },
+                        new Models.TemporalOperator { Name = "MetBy" },
+                        new Models.TemporalOperator { Name = "Overlaps" },
+                        new Models.TemporalOperator { Name = "OverlappedBy" },
+                        new Models.TemporalOperator { Name = "Starts" },
+                        new Models.TemporalOperator { Name = "StartedBy" },
+                        new Models.TemporalOperator { Name = "Finishes" },
+                        new Models.TemporalOperator { Name = "FinishedBy" }
                     ]
                 }
+            },
+            Functions = new FunctionList
+            {
+                Functions =
+                [
+                    CreateFunction("ST_Area", "xsd:double"),
+                    CreateFunction("ST_Length", "xsd:double"),
+                    CreateFunction("ST_Perimeter", "xsd:double"),
+                    CreateFunction("ST_Distance", "xsd:double"),
+                    CreateFunction("ST_Buffer", "gml:AbstractGeometryType"),
+                    CreateFunction("ST_Centroid", "gml:PointPropertyType"),
+                    CreateFunction("ST_Envelope", "gml:EnvelopeType"),
+                    CreateFunction("ST_ConvexHull", "gml:AbstractGeometryType"),
+                    CreateFunction("ST_Boundary", "gml:AbstractGeometryType"),
+                    CreateFunction("ST_IsValid", "xsd:boolean"),
+                    CreateFunction("ST_IsSimple", "xsd:boolean"),
+                    CreateFunction("ST_IsClosed", "xsd:boolean"),
+                    CreateFunction("ST_IsEmpty", "xsd:boolean"),
+                    CreateFunction("ST_GeometryType", "xsd:string"),
+                    CreateFunction("ST_NumGeometries", "xsd:integer"),
+                    CreateFunction("ST_SRID", "xsd:integer"),
+                    CreateFunction("UPPER", "xsd:string"),
+                    CreateFunction("LOWER", "xsd:string"),
+                    CreateFunction("CONCAT", "xsd:string"),
+                    CreateFunction("LENGTH", "xsd:integer"),
+                    CreateFunction("CHAR_LENGTH", "xsd:integer"),
+                    CreateFunction("SUBSTRING", "xsd:string"),
+                    CreateFunction("TRIM", "xsd:string"),
+                    CreateFunction("REPLACE", "xsd:string"),
+                    CreateFunction("POSITION", "xsd:integer"),
+                    CreateFunction("ABS", "xsd:double"),
+                    CreateFunction("CEIL", "xsd:double"),
+                    CreateFunction("CEILING", "xsd:double"),
+                    CreateFunction("FLOOR", "xsd:double"),
+                    CreateFunction("ROUND", "xsd:double"),
+                    CreateFunction("SQRT", "xsd:double"),
+                    CreateFunction("POWER", "xsd:double"),
+                    CreateFunction("MOD", "xsd:double"),
+                    CreateFunction("SIN", "xsd:double"),
+                    CreateFunction("COS", "xsd:double"),
+                    CreateFunction("TAN", "xsd:double"),
+                    CreateFunction("LOG", "xsd:double"),
+                    CreateFunction("EXP", "xsd:double"),
+                    CreateFunction("YEAR", "xsd:integer"),
+                    CreateFunction("MONTH", "xsd:integer"),
+                    CreateFunction("DAY", "xsd:integer"),
+                    CreateFunction("HOUR", "xsd:integer"),
+                    CreateFunction("MINUTE", "xsd:integer"),
+                    CreateFunction("SECOND", "xsd:integer"),
+                    CreateFunction("NOW", "xsd:dateTime"),
+                    CreateFunction("CURRENT_DATE", "xsd:date"),
+                    CreateFunction("CURRENT_TIMESTAMP", "xsd:dateTime"),
+                    CreateFunction("COUNT", "xsd:integer"),
+                    CreateFunction("SUM", "xsd:double"),
+                    CreateFunction("AVG", "xsd:double"),
+                    CreateFunction("MIN", "xsd:anyType"),
+                    CreateFunction("MAX", "xsd:anyType")
+                ]
             }
         };
     }
@@ -662,6 +733,16 @@ internal sealed partial class Wfs20Handler
             Name = name,
             AllowedValues = new AllowedValues { Values = ["TRUE", "FALSE"] },
             DefaultValue = defaultValue ? "TRUE" : "FALSE"
+        };
+    }
+
+
+    private static FunctionDefinition CreateFunction(string name, string returnType)
+    {
+        return new FunctionDefinition
+        {
+            Name = name,
+            Returns = new FunctionReturn { Type = returnType }
         };
     }
 

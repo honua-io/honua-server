@@ -87,6 +87,7 @@ describe('GPServer Smoke', () => {
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/x-www-form-urlencoded',
+          ...(config.apiKey ? { 'X-API-Key': config.apiKey } : {}),
         },
         body: new URLSearchParams({
           f: 'json',

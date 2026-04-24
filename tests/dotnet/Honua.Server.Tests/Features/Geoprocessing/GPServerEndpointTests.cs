@@ -20,6 +20,7 @@ using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
@@ -314,6 +315,49 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 content);
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CatalogStorageUnavailable_ReturnsServiceUnavailable()
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IResourceValidator>();
+                services.AddSingleton<IResourceValidator>(
+                    new ThrowingResourceValidator(new PostgresException(
+                        "relation \"honua.services\" does not exist",
+                        "ERROR",
+                        "ERROR",
+                        PostgresErrorCodes.UndefinedTable)));
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "25.5"
+            });
+
+            using var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().NotContain("honua.services");
         }
         finally
         {
@@ -1079,5 +1123,29 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                     : [ServiceProtocols.FeatureServer]
             }
         };
+    }
+
+    private sealed class ThrowingResourceValidator(Exception exception) : IResourceValidator
+    {
+        public Task<ResourceValidationResult<LayerDefinition>> ValidateLayerAsync(
+            int layerId,
+            CancellationToken cancellationToken = default)
+            => throw exception;
+
+        public Task<ResourceValidationResult<LayerDefinition>> ValidateCollectionAsync(
+            string collectionId,
+            CancellationToken cancellationToken = default)
+            => throw exception;
+
+        public Task<ResourceValidationResult<ServiceDefinition>> ValidateServiceAsync(
+            string serviceId,
+            CancellationToken cancellationToken = default)
+            => throw exception;
+
+        public Task<ResourceValidationResult<(ServiceDefinition Service, LayerDefinition Layer)>> ValidateServiceLayerAsync(
+            string serviceId,
+            int layerId,
+            CancellationToken cancellationToken = default)
+            => throw exception;
     }
 }

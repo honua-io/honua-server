@@ -5,11 +5,14 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Npgsql;
 
 namespace Honua.Server.Features.Infrastructure.Helpers;
 
 internal static class ServiceResourceValidationHelpers
 {
+    private const string ServiceCatalogUnavailableMessage = "Service catalog is temporarily unavailable.";
+
     internal readonly record struct ServiceValidationResult(
         bool IsValid,
         ServiceDefinition? Service,
@@ -52,7 +55,19 @@ internal static class ServiceResourceValidationHelpers
         ArgumentException.ThrowIfNullOrWhiteSpace(protocol);
         ArgumentNullException.ThrowIfNull(context);
 
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        ResourceValidationResult<ServiceDefinition> serviceResult;
+        try
+        {
+            serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (IsCatalogStorageUnavailable(ex))
+        {
+            return new ServiceValidationResult(
+                false,
+                null,
+                StandardErrorHelpers.CreateServiceUnavailable(context, ServiceCatalogUnavailableMessage));
+        }
+
         if (!serviceResult.IsValid)
         {
             var errorMessage = serviceResult.ErrorMessage ?? "Resource not found.";
@@ -105,10 +120,23 @@ internal static class ServiceResourceValidationHelpers
         ArgumentException.ThrowIfNullOrWhiteSpace(protocol);
         ArgumentNullException.ThrowIfNull(context);
 
-        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(
-            serviceId,
-            layerId,
-            cancellationToken).ConfigureAwait(false);
+        ResourceValidationResult<(ServiceDefinition Service, LayerDefinition Layer)> resourceResult;
+        try
+        {
+            resourceResult = await resourceValidator.ValidateServiceLayerAsync(
+                serviceId,
+                layerId,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (IsCatalogStorageUnavailable(ex))
+        {
+            return new ServiceLayerValidationResult(
+                false,
+                null,
+                null,
+                StandardErrorHelpers.CreateServiceUnavailable(context, ServiceCatalogUnavailableMessage));
+        }
+
         if (!resourceResult.IsValid)
         {
             var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
@@ -153,4 +181,7 @@ internal static class ServiceResourceValidationHelpers
             resourceResult.Resource.Layer,
             null);
     }
+
+    private static bool IsCatalogStorageUnavailable(PostgresException exception)
+        => exception.SqlState == PostgresErrorCodes.UndefinedTable;
 }

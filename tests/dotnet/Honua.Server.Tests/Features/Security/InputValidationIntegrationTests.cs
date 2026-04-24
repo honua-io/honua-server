@@ -66,6 +66,21 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithNestedWhereExpression_IsAllowed()
+    {
+        var where = Uri.EscapeDataString("((name = 'a' OR name = 'b') AND objectid > 0) OR category = 'test'");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/test/FeatureServer/0/query?where={where}&f=json");
+        request.Headers.Add("X-API-Key", AdminPassword);
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 }
 
 [Collection("Database")]

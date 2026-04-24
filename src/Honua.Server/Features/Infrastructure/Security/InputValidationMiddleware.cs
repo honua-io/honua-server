@@ -259,17 +259,22 @@ internal sealed class InputValidationMiddleware
 
     private static bool IsProtocolFilterQueryOption(HttpRequest request, string paramType, string name)
     {
-        if (!paramType.Equals("query", StringComparison.Ordinal) ||
-            !name.Equals("filter", StringComparison.OrdinalIgnoreCase))
+        if (!paramType.Equals("query", StringComparison.Ordinal))
         {
             return false;
         }
 
         var path = request.Path.Value;
-        return path?.StartsWith("/stac", StringComparison.OrdinalIgnoreCase) == true ||
-               path?.StartsWith("/ogc/features", StringComparison.OrdinalIgnoreCase) == true ||
-               path?.Contains("/wfs", StringComparison.OrdinalIgnoreCase) == true ||
-               path?.Contains("/wms", StringComparison.OrdinalIgnoreCase) == true;
+        if (name.Equals("filter", StringComparison.OrdinalIgnoreCase))
+        {
+            return path?.StartsWith("/stac", StringComparison.OrdinalIgnoreCase) == true ||
+                   path?.StartsWith("/ogc/features", StringComparison.OrdinalIgnoreCase) == true ||
+                   path?.Contains("/wfs", StringComparison.OrdinalIgnoreCase) == true ||
+                   path?.Contains("/wms", StringComparison.OrdinalIgnoreCase) == true;
+        }
+
+        return name.Equals("where", StringComparison.OrdinalIgnoreCase) &&
+               path?.StartsWith("/rest/services", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static InputValidationResult ValidateHeaderValue(string headerName, Microsoft.Extensions.Primitives.StringValues values)
