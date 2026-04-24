@@ -9,17 +9,17 @@ namespace Honua.Core.Features.Raster.Domain;
 public enum SlopeUnits
 {
     /// <summary>
-    /// Slope reported as degrees from the horizontal plane.
+    /// Slope reported as degrees from the horizontal plane (0–90).
     /// </summary>
     Degrees = 0,
 
     /// <summary>
-    /// Slope reported as rise/run percent.
+    /// Slope reported as rise/run percent (0–∞).
     /// </summary>
     Percent = 1,
 
     /// <summary>
-    /// Slope reported as radians from the horizontal plane.
+    /// Slope reported as radians from the horizontal plane (0–π/2).
     /// </summary>
     Radians = 2
 }
@@ -30,17 +30,17 @@ public enum SlopeUnits
 public enum RugosityMethod
 {
     /// <summary>
-    /// Terrain Ruggedness Index.
+    /// Terrain Ruggedness Index (mean absolute elevation difference over the window).
     /// </summary>
     TerrainRuggednessIndex = 0,
 
     /// <summary>
-    /// Topographic Position Index.
+    /// Topographic Position Index (center minus mean over the window).
     /// </summary>
     TopographicPositionIndex = 1,
 
     /// <summary>
-    /// Roughness.
+    /// Roughness (max minus min over the window).
     /// </summary>
     Roughness = 2
 }
@@ -49,6 +49,11 @@ public enum RugosityMethod
 /// Shared identification for the raster that a surface operation reads and the
 /// layer that will receive the derived raster output.
 /// </summary>
+/// <remarks>
+/// The derived raster is written into <see cref="OutputLayerId"/> via the same
+/// PostGIS <c>raster_data</c> path the import service uses, so callers downstream
+/// can read it through <see cref="Abstractions.IRasterStore"/>.
+/// </remarks>
 public readonly record struct SurfaceAnalysisRequest
 {
     /// <summary>
@@ -106,6 +111,11 @@ public readonly record struct SurfaceAnalysisResult
 /// <summary>
 /// Zonal statistics row: one aggregate row per eligible input zone feature.
 /// </summary>
+/// <remarks>
+/// The stats map always contains every requested stat name (case-insensitive,
+/// canonicalized to lowercase). Values are <c>null</c> when the stat could not
+/// be computed for the zone (for example, an empty intersection with the raster).
+/// </remarks>
 public readonly record struct RasterZonalStatisticsRow
 {
     /// <summary>
@@ -114,17 +124,18 @@ public readonly record struct RasterZonalStatisticsRow
     public required long ZoneFeatureId { get; init; }
 
     /// <summary>
-    /// Band number the stats were computed over.
+    /// Band number the stats were computed over (1-based).
     /// </summary>
     public required int Band { get; init; }
 
     /// <summary>
-    /// Number of valid pixels that contributed to the aggregates.
+    /// Number of valid (non-NoData) pixels that contributed to the aggregates.
     /// </summary>
     public required long PixelCount { get; init; }
 
     /// <summary>
-    /// Aggregate values keyed by stat name.
+    /// Aggregate values keyed by stat name (e.g. "count", "sum", "mean", "min",
+    /// "max", "stddev", "variance").
     /// </summary>
     public required IReadOnlyDictionary<string, double?> Stats { get; init; }
 }

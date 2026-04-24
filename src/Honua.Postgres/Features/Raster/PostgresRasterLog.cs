@@ -122,6 +122,6 @@ internal static partial class PostgresRasterLog
     [LoggerMessage(
         EventId = 7818,
         Level = LogLevel.Debug,
-        Message = "Computed surface raster ({Operation}) from layer {LayerId}, source raster {SourceRasterId} -> output raster {OutputRasterId} in layer {OutputLayerId}")]
+        Message = "Computed surface raster ({Operation}) from layer {LayerId}, source raster {SourceRasterId} → output raster {OutputRasterId} in layer {OutputLayerId}")]
     public static partial void SurfaceRasterComputed(ILogger logger, string operation, int layerId, long sourceRasterId, int outputLayerId, long outputRasterId);
 }

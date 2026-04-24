@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
@@ -9,6 +10,8 @@ namespace Honua.Postgres.Features.Infrastructure;
 
 internal static class PostgresDataSourceFactory
 {
+    [RequiresDynamicCode("Calls ResolveConnectionLimits which binds configuration via ConfigurationBinder.Bind(Object).")]
+    [RequiresUnreferencedCode("Calls ResolveConnectionLimits which binds configuration via ConfigurationBinder.Bind(Object).")]
     public static NpgsqlDataSource Create(string connectionString, IConfiguration configuration, bool schemaHeadersEnabled)
     {
         ArgumentNullException.ThrowIfNull(configuration);

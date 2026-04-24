@@ -872,6 +872,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             throw new ArgumentOutOfRangeException(nameof(band), band, "Band index must be >= 1.");
         }
 
+        // Dedupe + canonicalize (lowercase) stat names, preserving caller order for output keys.
         var requestedStats = new List<string>(statistics.Count);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var raw in statistics)
@@ -900,6 +901,9 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+        // Require an existing source raster before running the zonal query so missing
+        // rasters surface as a first-class error rather than silently becoming zero-count
+        // rows per zone. See IRasterStore.ComputeZonalStatisticsAsync contract.
         int rasterSrid;
         await using (var sridCommand = connection.CreateCommand())
         {
@@ -919,9 +923,11 @@ internal sealed class PostgresRasterStore : IRasterStore
                     $"Raster {rasterId} was not found in layer {layerId}.");
             }
 
-            rasterSrid = Convert.ToInt32(sridScalar, CultureInfo.InvariantCulture);
+            rasterSrid = Convert.ToInt32(sridScalar, System.Globalization.CultureInfo.InvariantCulture);
         }
 
+        // Reject rasters with an unknown CRS up front: ST_Transform(geometry, 0) aborts
+        // the whole query in PostGIS, so surface this as a controlled error instead.
         if (rasterSrid <= 0)
         {
             throw new InvalidOperationException(
@@ -929,6 +935,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         await using var command = connection.CreateCommand();
+        // Normalize each zone geometry to the raster SRID up front (reject zones with
+        // unknown SRIDs explicitly) so ST_Intersects and ST_Clip operate on matched
+        // coordinate systems. CROSS JOIN guarantees one row per zone only after the
+        // source raster existence check above.
         command.CommandText = $"""
             WITH src AS (
                 SELECT raster, ST_SRID(raster) AS raster_srid
@@ -994,7 +1004,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                     "min" => minVal,
                     "max" => maxVal,
                     "stddev" => stddevVal,
-                    "variance" => stddevVal.HasValue ? stddevVal.Value * stddevVal.Value : null,
+                    "variance" => stddevVal.HasValue ? stddevVal.Value * stddevVal.Value : (double?)null,
                     _ => null,
                 };
             }

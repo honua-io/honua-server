@@ -260,6 +260,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
         // -----------------------------------------------------------------------
         // Surface-analysis operations (6)
+        // DEM-derived raster products. These are catalog-first declarations only;
+        // heavyweight execution still flows through the canonical job/runtime path.
         // -----------------------------------------------------------------------
         new ProcessDefinition
         {
@@ -344,6 +346,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
         // -----------------------------------------------------------------------
         // Raster operations (5)
+        // Raster analysis and mutation workflows surfaced through the seeded
+        // process catalog rather than a separate discovery plane.
         // -----------------------------------------------------------------------
         new ProcessDefinition
         {
@@ -418,6 +422,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
         // -----------------------------------------------------------------------
         // Conversion operations (4)
+        // Explicit format/CRS conversion idioms so adapters can expose them
+        // without inventing a second semantic layer.
         // -----------------------------------------------------------------------
         new ProcessDefinition
         {
@@ -583,8 +589,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     ];
 
     // Shared layer/raster selector used by surface, raster, and raster-conversion
-    // families. `rasterId` is modeled as Text so the validator can admit full
-    // 64-bit ids instead of truncating to Int32.
+    // families. `rasterId` is modeled as Text rather than WholeNumber so the
+    // validator can admit full 64-bit ids instead of truncating to Int32.
     private static readonly ProcessParameterSpec[] SharedRasterSourceParameters =
     [
         Param("layerId", "Layer", "Target raster layer identifier.", ProcessParameterValueType.LayerId, required: true),

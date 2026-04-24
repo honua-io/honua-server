@@ -1824,7 +1824,7 @@
       "implementedSurface": [
         "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
         "PrintingTools Get Layout Templates Info Task (sync execute)",
-        "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (19 seeded processes across geometry.*, analytics.*, generalization.*, data-management.*)"
+        "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (34 seeded processes across geometry.*, analytics.*, surface.*, raster.*, conversion.*, generalization.*, data-management.*)"
       ],
       "knownGaps": [
         "generic built-in tasks are async-only and do not publish a generic execute route until synchronous task projection exists",
@@ -1936,7 +1936,7 @@
       },
       "knownLimitations": [
         "PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented via dedicated endpoints.",
-        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 19 processes across geometry.*, analytics.*, generalization.*, and data-management.* families for plan validation (#735, #737); destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Published task names currently mirror those built-in process IDs.",
+        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 34 processes across geometry.*, analytics.*, surface.*, raster.*, conversion.*, generalization.*, and data-management.* families for plan validation (#735, #736, #737); heavyweight surface.* and raster.* workloads remain on the canonical worker/executor boundary (optional #727 executor adapters), and destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Published task names currently mirror those built-in process IDs.",
         "Generic built-in tasks are async-only; a generic synchronous execute route is not published until ExecutePlan and synchronous task projection exist.",
         "Canonical model and lifecycle state mappings are established in #360."
       ]

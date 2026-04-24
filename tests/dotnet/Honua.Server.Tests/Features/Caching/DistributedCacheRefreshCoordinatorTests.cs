@@ -370,8 +370,16 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         // Wait for refresh to start
         await refreshStarted.Task;
 
-        // Wait for timeout + processing
-        await Task.Delay(TimeSpan.FromSeconds(2));
+        // Poll for the failure bookkeeping to settle instead of a fixed wait.
+        // The configured RefreshTimeoutSeconds is 1, but propagating the
+        // timeout cancellation into the FailureCount counter takes additional
+        // async hops that occasionally exceed the prior 2-second fixed wait
+        // under CI load. Bound the wait at 10s with a 50ms tick.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline && coordinator.FailureCount == 0)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
 
         coordinator.FailureCount.Should().Be(1);
 
