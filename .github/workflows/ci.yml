@@ -188,7 +188,12 @@ jobs:
             --no-restore \
             --configuration Release
 
-      - name: Run .NET Tests (Core/Postgres)
+      - name: Run .NET Tests (Core)
+        # Honua.Postgres.Tests is covered by the postgres-compat job which
+        # runs it against the full Postgres version matrix (16/17/18). Running
+        # it here as well was duplicating ~2 min of test time per PR on the
+        # baseline 16-3.4 image. Keep core + loadtests here; defer Postgres
+        # coverage entirely to postgres-compat.
         timeout-minutes: 20
         run: |
           dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
@@ -204,14 +209,6 @@ jobs:
             --no-restore \
             --configuration Release \
             --logger "trx;LogFileName=load-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-          dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --logger "trx;LogFileName=postgres-tests.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
