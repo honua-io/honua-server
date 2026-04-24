@@ -249,32 +249,44 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         _stopTokenSource?.Cancel();
         _renewalTimer.Dispose();
 
-        // Release leadership
+        // Best-effort release must not make synchronous disposal depend on
+        // Redis/network responsiveness.
         if (_isLeader && IsUsingRedis)
         {
-            try
-            {
-                ReleaseLeadershipAsync(CancellationToken.None).WaitAsync(DisposeReleaseTimeout).GetAwaiter().GetResult();
-            }
-            catch (TimeoutException)
-            {
-                UpdateLeadershipStatus(false);
-                Log.DisposeReleaseTimedOut(Logger, _nodeId, DisposeReleaseTimeout);
-            }
-            catch (Exception ex)
-            {
-                UpdateLeadershipStatus(false);
-                Log.DisposeCleanupFailed(Logger, _nodeId, ex);
-            }
+            _ = ReleaseLeadershipOnDisposeAsync();
         }
-        else
-        {
-            UpdateLeadershipStatus(false);
-        }
+
+        UpdateLeadershipStatus(false);
 
         _disposed = true;
         _stopTokenSource?.Dispose();
         Log.LeaderElectionDisposed(Logger, _nodeId);
+    }
+
+    private async Task ReleaseLeadershipOnDisposeAsync()
+    {
+        try
+        {
+            await ExecuteWithFallbackAsync(
+                    "release-leadership",
+                    async (database, ct) =>
+                    {
+                        await database.LockReleaseAsync(_leadershipKey, _nodeId).ConfigureAwait(false);
+                        return true;
+                    },
+                    fallbackOperation: ct => Task.FromResult(true),
+                    CancellationToken.None)
+                .WaitAsync(DisposeReleaseTimeout)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            Log.DisposeReleaseTimedOut(Logger, _nodeId, DisposeReleaseTimeout);
+        }
+        catch (Exception ex)
+        {
+            Log.DisposeCleanupFailed(Logger, _nodeId, ex);
+        }
     }
 
     private static partial class Log

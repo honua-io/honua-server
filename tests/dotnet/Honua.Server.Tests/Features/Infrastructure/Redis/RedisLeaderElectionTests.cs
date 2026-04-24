@@ -191,6 +191,7 @@ public sealed class RedisLeaderElectionTests : IDisposable
         await election.TryAcquireOrExtendLeadershipAsync();
 
         election.Dispose();
+        await Task.Delay(50);
 
         _mockDatabase.Verify(
             db => db.LockReleaseAsync("test-key", It.IsAny<RedisValue>()),
