@@ -35,11 +35,11 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_ListProcesses_ReturnsExactly19BuiltIns()
+    public void Catalog_ListProcesses_ReturnsExactly34BuiltIns()
     {
         var all = _catalog.ListProcesses();
 
-        all.Should().HaveCount(19);
+        all.Should().HaveCount(34);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
@@ -213,6 +213,12 @@ public sealed class ProcessCatalogTests
             "geometry.clip", "geometry.difference", "geometry.area",
             "geometry.length", "analytics.cluster", "analytics.spatial-join",
             "analytics.buffer-aggregate", "analytics.density",
+            "surface.slope", "surface.aspect", "surface.hillshade",
+            "surface.rugosity-tri", "surface.rugosity-tpi", "surface.roughness",
+            "raster.clip", "raster.reproject", "raster.statistics",
+            "raster.histogram", "raster.zonal-statistics",
+            "conversion.geometry-format", "conversion.feature-project",
+            "conversion.raster-format", "conversion.raster-reproject",
             "generalization.simplify-layer", "generalization.dissolve",
             "data-management.copy-features", "data-management.delete-features",
             "data-management.calculate-field"

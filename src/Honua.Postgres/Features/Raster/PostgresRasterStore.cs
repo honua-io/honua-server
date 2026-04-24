@@ -20,12 +20,14 @@ internal sealed class PostgresRasterStore : IRasterStore
 {
     private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG", "COG" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedResamplingAlgorithms = new[] { "NearestNeighbor", "Bilinear", "Cubic", "Lanczos" }.ToFrozenSet(StringComparer.Ordinal);
+    private static readonly FrozenSet<string> _allowedZonalStatistics = new[] { "count", "sum", "mean", "min", "max", "stddev", "variance" }.ToFrozenSet(StringComparer.Ordinal);
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterStore> _logger;
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
     private readonly string _rasterTilesTable;
+    private readonly string _featuresTable;
 
     public PostgresRasterStore(
         IDatabaseConnectionProvider connectionProvider,
@@ -38,6 +40,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
         _rasterTilesTable = SchemaSearchPath.QualifyTable("raster_tiles", schemaName);
+        _featuresTable = SchemaSearchPath.QualifyTable(DatabaseSchema.FeaturesTable, schemaName);
     }
 
     /// <inheritdoc />
@@ -852,6 +855,171 @@ internal sealed class PostgresRasterStore : IRasterStore
             PostgresRasterLog.HistogramBatchFallback(_logger, ex, layerId, rasterId);
             return null;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterZonalStatisticsRow[]> ComputeZonalStatisticsAsync(
+        int layerId,
+        long rasterId,
+        int zonesLayerId,
+        int band,
+        IReadOnlyList<string> statistics,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(statistics);
+        if (band < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(band), band, "Band index must be >= 1.");
+        }
+
+        // Dedupe + canonicalize (lowercase) stat names, preserving caller order for output keys.
+        var requestedStats = new List<string>(statistics.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in statistics)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                throw new ArgumentException("Statistic name cannot be null or whitespace.", nameof(statistics));
+            }
+
+            var normalized = raw.Trim().ToLowerInvariant();
+            if (!_allowedZonalStatistics.Contains(normalized))
+            {
+                throw new ArgumentException($"Unsupported zonal statistic '{raw}'. Allowed values: {string.Join(", ", _allowedZonalStatistics)}.", nameof(statistics));
+            }
+
+            if (seen.Add(normalized))
+            {
+                requestedStats.Add(normalized);
+            }
+        }
+
+        if (requestedStats.Count == 0)
+        {
+            throw new ArgumentException("At least one statistic must be requested.", nameof(statistics));
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Require an existing source raster before running the zonal query so missing
+        // rasters surface as a first-class error rather than silently becoming zero-count
+        // rows per zone. See IRasterStore.ComputeZonalStatisticsAsync contract.
+        int rasterSrid;
+        await using (var sridCommand = connection.CreateCommand())
+        {
+            sridCommand.CommandText = $"""
+                SELECT ST_SRID(raster)
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id = @rasterId
+                """;
+            AddParameter(sridCommand, "@layerId", layerId);
+            AddParameter(sridCommand, "@rasterId", rasterId);
+
+            var sridScalar = await sridCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (sridScalar is null || sridScalar is DBNull)
+            {
+                PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
+                throw new InvalidOperationException(
+                    $"Raster {rasterId} was not found in layer {layerId}.");
+            }
+
+            rasterSrid = Convert.ToInt32(sridScalar, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        // Reject rasters with an unknown CRS up front: ST_Transform(geometry, 0) aborts
+        // the whole query in PostGIS, so surface this as a controlled error instead.
+        if (rasterSrid <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Raster {rasterId} in layer {layerId} has unknown SRID ({rasterSrid}); assign a CRS before computing zonal statistics.");
+        }
+
+        await using var command = connection.CreateCommand();
+        // Normalize each zone geometry to the raster SRID up front (reject zones with
+        // unknown SRIDs explicitly) so ST_Intersects and ST_Clip operate on matched
+        // coordinate systems. CROSS JOIN guarantees one row per zone only after the
+        // source raster existence check above.
+        command.CommandText = $"""
+            WITH src AS (
+                SELECT raster, ST_SRID(raster) AS raster_srid
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id = @rasterId
+            ),
+            zones AS (
+                SELECT objectid,
+                       CASE
+                           WHEN ST_SRID(geometry) = @rasterSrid THEN geometry
+                           ELSE ST_Transform(geometry, @rasterSrid)
+                       END AS geometry
+                FROM {_featuresTable}
+                WHERE layer_id = @zonesLayerId
+                  AND geometry IS NOT NULL
+                  AND ST_SRID(geometry) > 0
+            ),
+            zone_stats AS (
+                SELECT z.objectid AS zone_id,
+                       CASE WHEN NOT ST_Intersects(r.raster, z.geometry)
+                            THEN NULL
+                            ELSE ST_SummaryStats(ST_Clip(r.raster, z.geometry, TRUE), @band)
+                       END AS stats
+                FROM zones z
+                CROSS JOIN src r
+            )
+            SELECT zone_id,
+                   COALESCE((stats).count, 0)::bigint AS pixel_count,
+                   (stats).sum        AS sum_val,
+                   (stats).mean       AS mean_val,
+                   (stats).min        AS min_val,
+                   (stats).max        AS max_val,
+                   (stats).stddev     AS stddev_val
+            FROM zone_stats
+            ORDER BY zone_id
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterId", rasterId);
+        AddParameter(command, "@zonesLayerId", zonesLayerId);
+        AddParameter(command, "@band", band);
+        AddParameter(command, "@rasterSrid", rasterSrid);
+
+        var rows = new List<RasterZonalStatisticsRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var zoneId = reader.GetInt64(0);
+            var pixelCount = reader.GetInt64(1);
+            var sumVal = reader.IsDBNull(2) ? (double?)null : reader.GetDouble(2);
+            var meanVal = reader.IsDBNull(3) ? (double?)null : reader.GetDouble(3);
+            var minVal = reader.IsDBNull(4) ? (double?)null : reader.GetDouble(4);
+            var maxVal = reader.IsDBNull(5) ? (double?)null : reader.GetDouble(5);
+            var stddevVal = reader.IsDBNull(6) ? (double?)null : reader.GetDouble(6);
+
+            var stats = new Dictionary<string, double?>(requestedStats.Count, StringComparer.Ordinal);
+            foreach (var name in requestedStats)
+            {
+                stats[name] = name switch
+                {
+                    "count" => pixelCount,
+                    "sum" => sumVal,
+                    "mean" => meanVal,
+                    "min" => minVal,
+                    "max" => maxVal,
+                    "stddev" => stddevVal,
+                    "variance" => stddevVal.HasValue ? stddevVal.Value * stddevVal.Value : (double?)null,
+                    _ => null,
+                };
+            }
+
+            rows.Add(new RasterZonalStatisticsRow
+            {
+                ZoneFeatureId = zoneId,
+                Band = band,
+                PixelCount = pixelCount,
+                Stats = stats,
+            });
+        }
+
+        PostgresRasterLog.ZonalStatisticsComputed(_logger, layerId, rasterId, zonesLayerId, band, rows.Count);
+        return rows.ToArray();
     }
 
     /// <inheritdoc />
