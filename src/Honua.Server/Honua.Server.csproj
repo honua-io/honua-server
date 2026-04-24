@@ -80,7 +80,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.6" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.6" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.6" />
-    <PackageReference Include="ParquetSharp" Version="21.0.0" />
+    <PackageReference Include="ParquetSharp" Version="23.0.0.1" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.14.1" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
     <Content Update="openapi.json">
