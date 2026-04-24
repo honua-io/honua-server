@@ -125,4 +125,16 @@ public interface IRasterStore
         int[]? bands = null,
         int binCount = 256,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Computes zonal aggregates by intersecting a raster with the geometries
+    /// of a zones feature layer, producing one row per eligible zone.
+    /// </summary>
+    Task<RasterZonalStatisticsRow[]> ComputeZonalStatisticsAsync(
+        int layerId,
+        long rasterId,
+        int zonesLayerId,
+        int band,
+        IReadOnlyList<string> statistics,
+        CancellationToken cancellationToken = default);
 }

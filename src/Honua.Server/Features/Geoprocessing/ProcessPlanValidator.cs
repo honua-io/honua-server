@@ -50,6 +50,37 @@ internal static partial class ProcessPlanValidator
         "miles", "mile", "mi"
     };
 
+    private static readonly HashSet<string> SurfaceSlopeUnitValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "degrees", "degree", "percent", "radians", "radian"
+    };
+
+    private static readonly HashSet<string> RasterResamplingValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "nearestneighbor", "nearest-neighbor", "nearest",
+        "bilinear",
+        "cubic", "bicubic",
+        "lanczos"
+    };
+
+    private static readonly HashSet<string> RasterFormatValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "gtiff", "geotiff", "tiff", "tif",
+        "png",
+        "jpeg", "jpg",
+        "cog"
+    };
+
+    private static readonly HashSet<string> GeometryFormatValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "wkt", "geojson", "wkb", "ewkt"
+    };
+
+    private static readonly HashSet<string> RasterZonalStatisticValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "count", "sum", "mean", "min", "max", "stddev", "variance"
+    };
+
     // Mirrors SpatialAnalyticsRequestHandlers.TryParseStatisticType so the
     // validator rejects the same statisticType values the handler would reject.
     private static readonly HashSet<string> StatisticTypeValues = new(StringComparer.OrdinalIgnoreCase)
@@ -222,6 +253,46 @@ internal static partial class ProcessPlanValidator
     {
         switch (step.ProcessId)
         {
+            case "surface.slope":
+                ValidateSurfaceSlopeSemantics(step, violations);
+                break;
+            case "surface.aspect":
+                ValidateSharedRasterSourceSemantics(step, violations);
+                break;
+            case "surface.hillshade":
+                ValidateSurfaceHillshadeSemantics(step, violations);
+                break;
+            case "surface.rugosity-tri":
+            case "surface.rugosity-tpi":
+            case "surface.roughness":
+                ValidateSurfaceRugositySemantics(step, violations);
+                break;
+            case "raster.clip":
+                ValidateSharedRasterSourceSemantics(step, violations);
+                break;
+            case "raster.reproject":
+                ValidateRasterReprojectSemantics(step, violations);
+                break;
+            case "raster.statistics":
+                ValidateRasterStatisticsSemantics(step, violations);
+                break;
+            case "raster.histogram":
+                ValidateRasterHistogramSemantics(step, violations);
+                break;
+            case "raster.zonal-statistics":
+                ValidateRasterZonalStatisticsSemantics(step, violations);
+                break;
+            case "conversion.geometry-format":
+                ValidateGeometryFormatConversionSemantics(step, violations);
+                break;
+            case "conversion.feature-project":
+                break;
+            case "conversion.raster-format":
+                ValidateConversionRasterFormatSemantics(step, violations);
+                break;
+            case "conversion.raster-reproject":
+                ValidateRasterReprojectSemantics(step, violations);
+                break;
             case "analytics.cluster":
                 ValidateClusterSemantics(step, analyticsLimits, violations);
                 ApplySharedAnalyticsFilterSemantics(step, violations);
@@ -256,6 +327,112 @@ internal static partial class ProcessPlanValidator
                 ValidateCalculateFieldSemantics(step, violations);
                 break;
         }
+    }
+
+    private static void ValidateSurfaceSlopeSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateSharedRasterSourceSemantics(step, violations);
+
+        if (step.Inputs.TryGetValue("units", out var unitsRaw)
+            && !string.IsNullOrWhiteSpace(unitsRaw)
+            && !SurfaceSlopeUnitValues.Contains(unitsRaw.Trim()))
+        {
+            AddEnumViolation(step, "units", unitsRaw, "degrees, percent, radians", violations);
+        }
+
+        RequirePositiveFiniteDouble(step, "zFactor", violations);
+    }
+
+    private static void ValidateSurfaceHillshadeSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateSharedRasterSourceSemantics(step, violations);
+        RequireDoubleInClosedRange(step, "azimuth", 0d, 360d, "degrees", violations);
+        RequireDoubleInClosedRange(step, "altitude", 0d, 90d, "degrees", violations);
+        RequirePositiveFiniteDouble(step, "zFactor", violations);
+    }
+
+    private static void ValidateSurfaceRugositySemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateSharedRasterSourceSemantics(step, violations);
+        RequireIntExactly(step, "windowRadius", 1, violations);
+    }
+
+    private static void ValidateRasterReprojectSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateSharedRasterSourceSemantics(step, violations);
+
+        if (step.Inputs.TryGetValue("resampling", out var resamplingRaw)
+            && !string.IsNullOrWhiteSpace(resamplingRaw)
+            && !RasterResamplingValues.Contains(resamplingRaw.Trim()))
+        {
+            AddEnumViolation(step, "resampling", resamplingRaw, "nearestneighbor, bilinear, cubic, lanczos", violations);
+        }
+    }
+
+    private static void ValidateRasterStatisticsSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateSharedRasterSourceSemantics(step, violations);
+        ValidatePositiveIntegerList(step, "bands", violations);
+    }
+
+    private static void ValidateRasterHistogramSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateRasterStatisticsSemantics(step, violations);
+        RequireIntAtLeast(step, "binCount", 1, violations);
+    }
+
+    private static void ValidateRasterZonalStatisticsSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateSharedRasterSourceSemantics(step, violations);
+        RequireIntAtLeast(step, "band", 1, violations);
+        ValidateEnumList(step, "statistics", RasterZonalStatisticValues, "count, sum, mean, min, max, stddev, variance", violations);
+    }
+
+    private static void ValidateGeometryFormatConversionSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("target", out var targetRaw)
+            && !string.IsNullOrWhiteSpace(targetRaw)
+            && !GeometryFormatValues.Contains(targetRaw.Trim()))
+        {
+            AddEnumViolation(step, "target", targetRaw, "wkt, geojson, wkb, ewkt", violations);
+        }
+    }
+
+    private static void ValidateConversionRasterFormatSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateSharedRasterSourceSemantics(step, violations);
+
+        if (step.Inputs.TryGetValue("targetFormat", out var targetFormatRaw)
+            && !string.IsNullOrWhiteSpace(targetFormatRaw)
+            && !RasterFormatValues.Contains(targetFormatRaw.Trim()))
+        {
+            AddEnumViolation(step, "targetFormat", targetFormatRaw, "GTiff, PNG, JPEG, COG", violations);
+        }
+    }
+
+    private static void ValidateSharedRasterSourceSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidatePositiveLong(step, "rasterId", violations);
     }
 
     // Layer-scoped counterpart of geometry.simplify: tolerance must be strictly
@@ -796,6 +973,82 @@ internal static partial class ProcessPlanValidator
         _ => distance,
     };
 
+    private static void ValidatePositiveLong(
+        AnalysisPlanStep step,
+        string parameter,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            || parsed <= 0)
+        {
+            AddRangeViolationIfNew(step, parameter, $"expected positive 64-bit integer, got '{value}'", violations);
+        }
+    }
+
+    private static void ValidatePositiveIntegerList(
+        AnalysisPlanStep step,
+        string parameter,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var raw)
+            || string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            AddRangeViolationIfNew(step, parameter, "expected comma-separated positive integers", violations);
+            return;
+        }
+
+        foreach (var part in parts)
+        {
+            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                || parsed < 1)
+            {
+                AddRangeViolationIfNew(step, parameter, $"expected comma-separated positive integers, got '{raw}'", violations);
+                return;
+            }
+        }
+    }
+
+    private static void ValidateEnumList(
+        AnalysisPlanStep step,
+        string parameter,
+        HashSet<string> allowedValues,
+        string allowedList,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var raw)
+            || string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            AddRangeViolationIfNew(step, parameter, $"expected comma-separated values from ({allowedList})", violations);
+            return;
+        }
+
+        foreach (var part in parts)
+        {
+            if (!allowedValues.Contains(part))
+            {
+                AddRangeViolationIfNew(step, parameter, $"'{part}' is not in the allowed set ({allowedList})", violations);
+                return;
+            }
+        }
+    }
+
     private static void AddEnumViolation(
         AnalysisPlanStep step,
         string parameter,
@@ -834,6 +1087,24 @@ internal static partial class ProcessPlanValidator
             Message = $"Step '{step.StepId}' is missing required parameter '{parameter}' for process '{step.ProcessId}' when {condition}.",
             FieldPath = fieldPath
         });
+    }
+
+    private static void RequirePositiveFiniteDouble(
+        AnalysisPlanStep step,
+        string parameter,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || double.IsNaN(parsed) || double.IsInfinity(parsed)
+            || parsed <= 0d)
+        {
+            AddRangeViolationIfNew(step, parameter, $"expected positive number, got '{value}'", violations);
+        }
     }
 
     private static void RequireDoubleInRange(
@@ -904,6 +1175,24 @@ internal static partial class ProcessPlanValidator
             || parsed < minimum)
         {
             AddRangeViolationIfNew(step, parameter, $"expected integer ≥ {minimum}, got '{value}'", violations);
+        }
+    }
+
+    private static void RequireIntExactly(
+        AnalysisPlanStep step,
+        string parameter,
+        int expected,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            || parsed != expected)
+        {
+            AddRangeViolationIfNew(step, parameter, $"must equal {expected}, got '{value}'", violations);
         }
     }
 
