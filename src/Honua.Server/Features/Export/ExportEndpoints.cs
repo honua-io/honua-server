@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
+using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -13,6 +15,7 @@ using Honua.Server.Features.Export.Writers;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Export;
@@ -22,8 +25,6 @@ namespace Honua.Server.Features.Export;
 /// </summary>
 internal static class ExportEndpoints
 {
-    private static readonly ActivitySource _activitySource = new("Honua.Server.Export");
-
     private const long AsyncThreshold = 50_000;
 
     private static readonly HashSet<string> _validFormats = new(StringComparer.OrdinalIgnoreCase)
@@ -114,22 +115,54 @@ internal static class ExportEndpoints
             }
         }
 
-        // Build query
-        var query = BuildQuery(where, bbox, outFields, outSR, layer);
+        using var activity = HonuaTelemetry.StartFeatureActivity(
+            "export",
+            HonuaTelemetry.Protocols.Admin,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceName);
+        activity?.SetTag("honua.export.format", format);
 
-        // Count features
-        var count = await featureReader.CountAsync(layerId, query, cancellationToken);
+        var sw = Stopwatch.StartNew();
 
-        using var activity = _activitySource.StartActivity("ExportLayer");
-        activity?.SetTag("service", serviceName);
-        activity?.SetTag("layer", layerId);
-        activity?.SetTag("format", format);
-        activity?.SetTag("feature_count", count);
+        var selectedFields = ResolveOutputFields(layer, outFields);
+        if (!TryBuildQuery(where, bbox, outSR, layer, out var countQuery, out var queryError))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                queryError);
+        }
+
+        var query = ApplyOutputFieldProjection(countQuery, selectedFields, outFields);
+        long count;
+        var countSw = Stopwatch.StartNew();
+        using (var countActivity = HonuaTelemetry.StartDatabaseActivity(
+            "export.count",
+            layerId.ToString(CultureInfo.InvariantCulture)))
+        {
+            countActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Admin);
+            countActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceName);
+            try
+            {
+                count = await featureReader.CountAsync(layerId, countQuery, cancellationToken);
+                HonuaTelemetry.SetSuccess(countActivity, ToTelemetryFeatureCount(count));
+            }
+            catch (Exception ex)
+            {
+                HonuaTelemetry.RecordException(countActivity, ex);
+                HonuaTelemetry.RecordException(activity, ex);
+                throw;
+            }
+            finally
+            {
+                HonuaTelemetry.CategorizeLatency(countActivity, countSw.Elapsed.TotalMilliseconds);
+            }
+        }
+
+        activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, count);
 
         ExportLog.ExportRequested(logger, serviceName, layerId, format, count);
 
-        // Resolve fields for output
-        var selectedFields = ResolveOutputFields(layer, outFields);
         var outputSrid = outSR ?? layer.SpatialReference.Wkid;
 
         // Async path for large exports
@@ -168,6 +201,8 @@ internal static class ExportEndpoints
                 "Large exports require durable background job storage to be configured.",
                 StringComparison.Ordinal))
             {
+                HonuaTelemetry.RecordException(activity, ex);
+                HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
                 return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status503ServiceUnavailable,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
@@ -178,13 +213,23 @@ internal static class ExportEndpoints
                 "Export queue is full. Please retry later.",
                 StringComparison.Ordinal))
             {
+                HonuaTelemetry.RecordException(activity, ex);
+                HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
                 return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status503ServiceUnavailable,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
                     ex.Message);
             }
+            catch (Exception ex)
+            {
+                HonuaTelemetry.RecordException(activity, ex);
+                HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
+                throw;
+            }
 
             ExportLog.AsyncExportQueued(logger, jobId, serviceName, layerId, format, count);
+            HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(count));
+            HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
 
             var response = new ExportAcceptedResponse
             {
@@ -199,21 +244,30 @@ internal static class ExportEndpoints
         }
 
         // Sync path — stream directly
-        var sw = Stopwatch.StartNew();
         var features = streamingStore.StreamFeaturesAsync(layerId, query, cancellationToken);
 
-        return format.ToLowerInvariant() switch
+        try
         {
-            "csv" => await WriteCsvResponseAsync(httpContext, features, selectedFields, serviceName, layer, logger, sw),
-            "shapefile" => await WriteShapefileResponseAsync(httpContext, features, selectedFields, layer, outputSrid,
-                crsRegistry, serviceName, logger, sw, cancellationToken),
-            "gpkg" => await WriteGeoPackageResponseAsync(httpContext, features, selectedFields, layer, outputSrid,
-                crsRegistry, serviceName, logger, sw, cancellationToken),
-            _ => ProblemDetailsHelpers.CreateAdminProblem(
-                StatusCodes.Status400BadRequest,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                $"Unsupported format: {format}")
-        };
+            return format.ToLowerInvariant() switch
+            {
+                "csv" => await WriteCsvResponseAsync(httpContext, features, selectedFields, serviceName, layer, logger, sw, activity),
+                "shapefile" => await WriteShapefileResponseAsync(httpContext, features, selectedFields, layer, outputSrid,
+                    crsRegistry, serviceName, logger, sw, activity, cancellationToken),
+                "gpkg" => await WriteGeoPackageResponseAsync(httpContext, features, selectedFields, layer, outputSrid,
+                    crsRegistry, serviceName, logger, sw, activity, cancellationToken),
+                _ => ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status400BadRequest,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                    $"Unsupported format: {format}")
+            };
+        }
+        catch (Exception ex)
+        {
+            ExportLog.ExportFailed(logger, serviceName, layerId, format, ex);
+            HonuaTelemetry.RecordException(activity, ex);
+            HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
+            throw;
+        }
     }
 
     private static async Task<IResult> WriteCsvResponseAsync(
@@ -223,7 +277,8 @@ internal static class ExportEndpoints
         string serviceName,
         LayerDefinition layer,
         ILogger logger,
-        Stopwatch sw)
+        Stopwatch sw,
+        Activity? activity)
     {
         var response = httpContext.Response;
         response.ContentType = "text/csv";
@@ -233,6 +288,8 @@ internal static class ExportEndpoints
         var csvRowCount = await CsvExportWriter.WriteAsync(response.Body, features, fields, httpContext.RequestAborted);
 
         ExportLog.ExportCompleted(logger, serviceName, layer.Id, "csv", csvRowCount, sw.Elapsed.TotalMilliseconds);
+        HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(csvRowCount));
+        HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
         return Results.Empty;
     }
 
@@ -246,6 +303,7 @@ internal static class ExportEndpoints
         string serviceName,
         ILogger logger,
         Stopwatch sw,
+        Activity? activity,
         CancellationToken cancellationToken)
     {
         // Resolve CRS WKT for .prj file from PostGIS spatial_ref_sys
@@ -267,6 +325,8 @@ internal static class ExportEndpoints
 
         ExportLog.ExportCompleted(logger, serviceName, layer.Id, "shapefile", result.WrittenCount,
             sw.Elapsed.TotalMilliseconds);
+        HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(result.WrittenCount));
+        HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
         return Results.Empty;
     }
 
@@ -280,6 +340,7 @@ internal static class ExportEndpoints
         string serviceName,
         ILogger logger,
         Stopwatch sw,
+        Activity? activity,
         CancellationToken cancellationToken)
     {
         // Resolve CRS info for GeoPackage metadata
@@ -312,6 +373,8 @@ internal static class ExportEndpoints
 
             ExportLog.ExportCompleted(logger, serviceName, layer.Id, "gpkg", featureCount,
                 sw.Elapsed.TotalMilliseconds);
+            HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(featureCount));
+            HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
             return Results.Empty;
         }
         finally
@@ -324,33 +387,37 @@ internal static class ExportEndpoints
         }
     }
 
-    private static FeatureQuery BuildQuery(
+    private static bool TryBuildQuery(
         string? where,
         string? bbox,
-        string? outFields,
         int? outSR,
-        LayerDefinition layer)
+        LayerDefinition layer,
+        out FeatureQuery query,
+        out string error)
     {
-        var query = new FeatureQuery
+        query = new FeatureQuery
         {
             Where = where,
             OutputSrid = outSR,
             SpatialReferenceSrid = layer.SpatialReference.Wkid
         };
+        error = string.Empty;
 
         // Parse bbox
         if (!string.IsNullOrEmpty(bbox))
         {
-            var parts = bbox.Split(',');
+            var parts = bbox.Split(',', StringSplitOptions.TrimEntries);
             if (parts.Length == 4
-                && double.TryParse(parts[0], System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var xmin)
-                && double.TryParse(parts[1], System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var ymin)
-                && double.TryParse(parts[2], System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var xmax)
-                && double.TryParse(parts[3], System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var ymax))
+                && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var xmin)
+                && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var ymin)
+                && double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var xmax)
+                && double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var ymax)
+                && double.IsFinite(xmin)
+                && double.IsFinite(ymin)
+                && double.IsFinite(xmax)
+                && double.IsFinite(ymax)
+                && xmin < xmax
+                && ymin < ymax)
             {
                 var envelope = new NetTopologySuite.Geometries.GeometryFactory()
                     .ToGeometry(new NetTopologySuite.Geometries.Envelope(xmin, xmax, ymin, ymax));
@@ -362,11 +429,19 @@ internal static class ExportEndpoints
                         SpatialRelationship.Intersects,
                         layer.SpatialReference.Wkid)
                 };
+
+                return true;
             }
+
+            error = "Invalid bbox parameter. Expected format: xmin,ymin,xmax,ymax with finite coordinates where xmin < xmax and ymin < ymax.";
+            return false;
         }
 
-        return query;
+        return true;
     }
+
+    private static int ToTelemetryFeatureCount(long featureCount)
+        => featureCount > int.MaxValue ? int.MaxValue : (int)Math.Max(featureCount, 0);
 
     internal static string SanitizeExportFilename(string serviceName, string layerName)
         => FileUploadSecurity.SanitizeFileName($"{serviceName}_{layerName}");
@@ -383,6 +458,22 @@ internal static class ExportEndpoints
             StringComparer.OrdinalIgnoreCase);
 
         return attributeFields.Where(f => requested.Contains(f.Name)).ToArray();
+    }
+
+    private static FeatureQuery ApplyOutputFieldProjection(
+        FeatureQuery query,
+        FieldDefinition[] selectedFields,
+        string? outFields)
+    {
+        if (string.IsNullOrWhiteSpace(outFields) || string.Equals(outFields, "*", StringComparison.Ordinal))
+        {
+            return query;
+        }
+
+        return query with
+        {
+            OutFields = selectedFields.Select(field => field.Name).ToImmutableArray()
+        };
     }
 }
 

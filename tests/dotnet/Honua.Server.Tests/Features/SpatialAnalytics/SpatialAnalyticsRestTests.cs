@@ -1059,7 +1059,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         // in the seed, so the same `time={start,end}` shape that FeatureServer's
         // main query handler accepts should also flow through the analytics
         // path. The fix wires TryBuildFeatureQueryAsync to call the same
-        // FeatureServerTemporalQueryBuilder used by the main handler, so the
+        // GeoServicesTemporalQueryBuilder used by the main handler, so the
         // request must succeed and yield a well-formed feature collection.
         var payload = JsonSerializer.Serialize(new
         {

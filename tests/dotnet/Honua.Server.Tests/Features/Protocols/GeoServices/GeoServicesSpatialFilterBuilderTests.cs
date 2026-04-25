@@ -2,20 +2,20 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
+namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 
-public sealed class FeatureServerSpatialFilterBuilderTests
+public sealed class GeoServicesSpatialFilterBuilderTests
 {
     [UnitTest]
     public void BuildSpatialFilter_WithDatelineCrossingEnvelope_ReturnsMultiPolygon()
     {
-        var filter = FeatureServerSpatialFilterBuilder.BuildSpatialFilter(
+        var filter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
             new QueryParameters(),
             new GeoServicesGeometry
             {

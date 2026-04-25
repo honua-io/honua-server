@@ -50,6 +50,7 @@ internal static class TileJsonEndpoints
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
             context,
             layerId,
+            requiredProtocol: ServiceProtocols.FeatureServer,
             cancellationToken: cancellationToken);
         if (!layerValidation.IsValid)
         {

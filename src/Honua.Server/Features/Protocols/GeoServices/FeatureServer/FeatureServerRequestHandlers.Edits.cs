@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -311,7 +312,7 @@ internal static partial class FeatureServerEndpoints
 
         if (!string.IsNullOrWhiteSpace(geometry))
         {
-            if (!FeatureServerGeometryParser.TryParseGeoServicesGeometry(
+            if (!GeoServicesGeometryParser.TryParseGeoServicesGeometry(
                 geometry, geometryType, out var parsedGeometry, out var geoError))
             {
                 return (null, StandardErrorHelpers.CreateBadRequest(context,
@@ -336,7 +337,7 @@ internal static partial class FeatureServerEndpoints
                     SpatialRel = spatialRel,
                     InSr = inSr
                 };
-                var spatialFilter = FeatureServerSpatialFilterBuilder.BuildSpatialFilter(
+                var spatialFilter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
                     deleteQueryParams, parsedGeometry, inputSrid);
                 query = query with { SpatialFilter = spatialFilter };
             }

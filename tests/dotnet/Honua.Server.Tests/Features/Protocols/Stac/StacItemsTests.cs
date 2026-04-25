@@ -357,6 +357,14 @@ public sealed class StacItemsTests : IAsyncLifetime
 
         json.RootElement.GetProperty("id").GetString().Should().Be(canonicalItemId);
         json.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Canonical STAC ID Item");
+
+        var assetHref = json.RootElement.GetProperty("assets").GetProperty("geojson")
+            .GetProperty("href").GetString();
+        assetHref.Should().NotBeNullOrWhiteSpace();
+        assetHref.Should().EndWith($"/ogc/features/collections/{collectionId}/items/{targetFeatureId}");
+
+        var assetResponse = await _fixture.Client.GetAsync(ToRelativeUri(assetHref!));
+        assetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -378,8 +386,12 @@ public sealed class StacItemsTests : IAsyncLifetime
         var json = JsonDocument.Parse(content);
 
         json.RootElement.GetProperty("id").GetString().Should().Be(numericStacId);
-        json.RootElement.GetProperty("assets").GetProperty("geojson")
-            .GetProperty("href").GetString().Should().Contain($"/items/{numericStacId}");
+        var assetHref = json.RootElement.GetProperty("assets").GetProperty("geojson")
+            .GetProperty("href").GetString();
+        assetHref.Should().NotBeNullOrWhiteSpace();
+
+        var assetResponse = await _fixture.Client.GetAsync(ToRelativeUri(assetHref!));
+        assetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -425,6 +437,16 @@ public sealed class StacItemsTests : IAsyncLifetime
 
     private async Task PromoteStacItemIdAsync(long featureId, string itemId)
         => await SetFeatureAttributeAsync(featureId, "id", itemId);
+
+    private static string ToRelativeUri(string href)
+    {
+        if (!Uri.TryCreate(href, UriKind.Absolute, out var absoluteUri))
+        {
+            return href;
+        }
+
+        return absoluteUri.PathAndQuery;
+    }
 
     private async Task SetFeatureAttributeAsync(long featureId, string attributeName, string attributeValue)
     {

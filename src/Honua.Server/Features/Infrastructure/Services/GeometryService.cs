@@ -25,7 +25,7 @@ namespace Honua.Server.Features.Infrastructure.Services;
 /// <para>
 /// Behavior reference: Consolidates logic from:
 /// - ../Features/Protocols/Ogc/Api/Features/FeaturesEndpoints.cs (GetHasZandM method)
-/// - ../Features/Protocols/GeoServices/FeatureServer/Services/GeoServicesGeometryConverter.cs (GetHasZandM, HasOrdinateValues methods)
+/// - ../Features/Protocols/GeoServices/GeoServicesGeometryConverter.cs (GetHasZandM, HasOrdinateValues methods)
 /// - ../Features/Protocols/GeoServices/FeatureServer/Services/GeometryValidator.cs (HasZ/HasM detection in ValidateWkb)
 /// </para>
 /// </remarks>

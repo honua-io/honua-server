@@ -8,11 +8,11 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.SpatialAnalytics.Models;
+using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.Protocols.GeoServices;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Server.Features.Protocols.SpatialAnalytics.Models;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Infrastructure.Analytics;
@@ -21,9 +21,9 @@ namespace Honua.Server.Features.Infrastructure.Analytics;
 /// Builds the shared <see cref="FeatureQuery"/> consumed by every spatial analytics
 /// endpoint from the GeoServices-style filter bundle the SpatialAnalytics handlers
 /// receive. The implementation intentionally lives in the Infrastructure namespace so
-/// the filter-parsing glue can reference FeatureServer types
-/// (<see cref="GeoServicesGeometry"/>, <see cref="QueryParameters"/>,
-/// <see cref="IFeatureServerQueryServices"/>) without pulling SpatialAnalytics into a
+/// the filter-parsing glue can reference shared GeoServices query types
+/// (<see cref="GeoServicesGeometry"/>, <see cref="QueryParameters"/>)
+/// without pulling SpatialAnalytics into a
 /// direct cross-feature reference — the vertical-slice architecture test treats
 /// Infrastructure as an exempt shared-services layer, so helper state machines
 /// declared here never trigger a violation.
@@ -35,8 +35,8 @@ namespace Honua.Server.Features.Infrastructure.Analytics;
 /// which <c>VerticalSliceIsolationTests</c> skips because the checker iterates
 /// <c>_featureNames.Where(f =&gt; f is not ("Infrastructure" or "Ogc" or "Wfs20"))</c>.
 /// The callers in SpatialAnalytics only observe the <see cref="FeatureQuery"/> /
-/// <see cref="IResult"/> tuple so their own state machines stay clean of FeatureServer
-/// captures.
+/// <see cref="IResult"/> tuple so their own state machines stay clean of
+/// protocol-specific service captures.
 /// </para>
 /// <para>
 /// Supported parameters:
@@ -104,7 +104,7 @@ internal static class AnalyticsFeatureQueryFactory
             var timeRelation = GetValueString(values, SpatialAnalyticsParameters.TimeRelation);
             try
             {
-                temporalExpression = FeatureServerTemporalQueryBuilder.BuildTemporalExpression(
+                temporalExpression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
                     time, timeRelation, layer);
             }
             catch (ArgumentException ex)
@@ -163,7 +163,7 @@ internal static class AnalyticsFeatureQueryFactory
         if (!string.IsNullOrWhiteSpace(geometryRaw))
         {
             var geometryType = GetValueString(values, SpatialAnalyticsParameters.GeometryType);
-            if (!FeatureServerGeometryParser.TryParseGeoServicesGeometry(
+            if (!GeoServicesGeometryParser.TryParseGeoServicesGeometry(
                     geometryRaw, geometryType, out var parsedGeometry, out var geometryError) ||
                 parsedGeometry == null)
             {
@@ -173,12 +173,12 @@ internal static class AnalyticsFeatureQueryFactory
                     [geometryError ?? "geometry could not be parsed."]));
             }
 
-            var queryServices = context.RequestServices.GetRequiredService<IFeatureServerQueryServices>();
+            var spatialReferenceResolver = context.RequestServices.GetRequiredService<SpatialReferenceResolver>();
             var inSr = GetValueString(values, SpatialAnalyticsParameters.InSr);
             int? inputSrid;
             try
             {
-                inputSrid = await queryServices.ResolveSridAsync(
+                inputSrid = await spatialReferenceResolver.ResolveSridAsync(
                     inSr, parsedGeometry.SpatialReference, cancellationToken);
             }
             catch (ArgumentException ex)
@@ -208,7 +208,7 @@ internal static class AnalyticsFeatureQueryFactory
             try
             {
                 var queryParamsForFilter = new QueryParameters { SpatialRel = spatialRel };
-                spatialFilter = FeatureServerSpatialFilterBuilder.BuildSpatialFilter(
+                spatialFilter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
                     queryParamsForFilter, parsedGeometry, inputSrid);
             }
             catch (ArgumentException ex)

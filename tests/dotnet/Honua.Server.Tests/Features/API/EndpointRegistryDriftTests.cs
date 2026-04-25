@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Reflection;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Server;
 using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,12 +17,17 @@ namespace Honua.Server.Tests.Features.API;
 /// Verifies that EndpointRegistry stays in sync with actually deployed endpoints.
 /// Prevents drift where new endpoints are added to the app but not tracked in the registry.
 /// </summary>
-public sealed class EndpointRegistryDriftTests : IDisposable
+[Collection("Database")]
+public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 {
     private static readonly Regex _routeConstraintRegex =
         new(@"\{([^{}:]+):[^{}]+\}", RegexOptions.Compiled);
 
-    private readonly TestWebApplicationFactory _factory = new();
+    private readonly WebAppFixture _fixture = new();
+
+    public Task InitializeAsync() => _fixture.InitializeAsync();
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     /// <summary>
     /// Endpoints deployed in the application that are intentionally excluded from the registry.
@@ -41,12 +49,34 @@ public sealed class EndpointRegistryDriftTests : IDisposable
         "GET /{*path}",
     };
 
+    private static readonly HashSet<string> _conditionallyMappedRegistryPatterns = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Mapped only when ServeApiDocs/HONUA_SERVE_API_DOCS is enabled.
+        "GET /docs",
+        // These surfaces have direct endpoint-level tests, but ASP.NET's test-host
+        // EndpointDataSource does not expose their route metadata consistently.
+        "GET /monitoring/alerts",
+        "GET /monitoring/health/comprehensive",
+        "GET /monitoring/health/production",
+        "GET /monitoring/metrics/cache",
+        "GET /monitoring/metrics/connection-pool",
+        "GET /monitoring/metrics/database-resilience",
+        "GET /monitoring/metrics/resources",
+        "GET /monitoring/metrics/upload-queue",
+        "GET /samples/stac-ops",
+        "GET /static/{serviceId}/{center}/{dimensions}.{format}",
+        "GET /static/{serviceId}/bbox/{bbox}/{dimensions}.{format}",
+        "GET /v1/spec/artifact/{hash}",
+        "POST /v1/spec/apply",
+        "POST /v1/spec/cancel",
+        "POST /v1/spec/plan",
+    };
+
     [Fact]
     [Trait("Category", "Architecture")]
     public void AllDeployedEndpoints_AreTrackedInRegistry()
     {
-        using var _ = _factory.CreateClient();
-        var endpointSources = _factory.Services.GetServices<EndpointDataSource>();
+        var endpointSources = _fixture.Services.GetServices<EndpointDataSource>();
         var deployedEndpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var source in endpointSources)
@@ -73,6 +103,13 @@ public sealed class EndpointRegistryDriftTests : IDisposable
                 var httpMethods = endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods;
                 if (httpMethods == null || httpMethods.Count == 0)
                 {
+                    var normalizedPath = NormalizePath(pattern);
+                    var key = $"GET {normalizedPath}";
+                    if (!IsExcluded(key))
+                    {
+                        deployedEndpoints.Add(key);
+                    }
+
                     continue;
                 }
 
@@ -99,14 +136,38 @@ public sealed class EndpointRegistryDriftTests : IDisposable
         untracked.Should().BeEmpty(
             "every deployed endpoint must be tracked in EndpointRegistry.All. " +
             "Add missing endpoints to src/Honua.Server/EndpointRegistry.cs");
+
+        var stale = registeredEndpoints
+            .Where(e => !deployedEndpoints.Contains(e) && !_conditionallyMappedRegistryPatterns.Contains(e))
+            .OrderBy(e => e)
+            .ToArray();
+
+        stale.Should().BeEmpty(
+            "every HTTP endpoint in EndpointRegistry.All must correspond to a deployed endpoint. " +
+            "Remove stale entries from src/Honua.Server/EndpointRegistry.cs or re-deploy the endpoint. " +
+            "Stale entries: {0}",
+            string.Join(", ", stale));
+    }
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void MetadataOpaqueRegistryEntries_AreCoveredByIntegrationTests()
+    {
+        var testedEndpoints = CollectIntegrationTestEndpoints();
+        var missing = _conditionallyMappedRegistryPatterns
+            .Where(endpoint => !testedEndpoints.Contains(endpoint))
+            .OrderBy(endpoint => endpoint)
+            .ToArray();
+
+        missing.Should().BeEmpty(
+            "EndpointRegistry entries excluded from EndpointDataSource stale checks must still have direct integration coverage");
     }
 
     [Fact]
     [Trait("Category", "Architecture")]
     public void AllDeployedGrpcMethods_AreTrackedInOperationRegistry()
     {
-        using var _ = _factory.CreateClient();
-        var endpointSources = _factory.Services.GetServices<EndpointDataSource>();
+        var endpointSources = _fixture.Services.GetServices<EndpointDataSource>();
         var deployedGrpcMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var source in endpointSources)
@@ -203,9 +264,6 @@ public sealed class EndpointRegistryDriftTests : IDisposable
             "implementation in the dispatcher. Remove stale entries from " +
             "src/Honua.Server/OperationRegistry.cs or implement the operation");
     }
-
-    public void Dispose() => _factory.Dispose();
-
     private static string NormalizePath(string pattern)
     {
         var normalized = pattern.Trim();
@@ -271,6 +329,45 @@ public sealed class EndpointRegistryDriftTests : IDisposable
                path.StartsWith("/odata", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/rest/", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("/stac", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("/stac/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/tiles/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static HashSet<string> CollectIntegrationTestEndpoints()
+    {
+        var testAssembly = typeof(EndpointRegistryDriftTests).Assembly;
+        var endpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var type in testAssembly.GetTypes())
+        {
+            var classHasIntegration = type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
+
+            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
+            {
+                var methodHasIntegration = classHasIntegration ||
+                    method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
+                if (!methodHasIntegration)
+                {
+                    continue;
+                }
+
+                foreach (var endpointAttribute in method.GetCustomAttributes(typeof(EndpointAttribute), inherit: true).Cast<EndpointAttribute>())
+                {
+                    endpoints.Add(NormalizeEndpointKey(endpointAttribute.Endpoint));
+                }
+            }
+        }
+
+        return endpoints;
+    }
+
+    private static string NormalizeEndpointKey(string endpoint)
+    {
+        var trimmed = endpoint.Trim();
+        var parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 2
+            ? $"{parts[0].ToUpperInvariant()} {NormalizePath(parts[1])}"
+            : trimmed;
     }
 }

@@ -16,19 +16,19 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Infrastructure.Analytics;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.SpatialAnalytics.Models;
+using Honua.Server.Features.Protocols.SpatialAnalytics.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.SpatialAnalytics;
+namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
 /// <summary>
 /// Shared request handlers for the Pro-tier spatial analytics endpoints.
@@ -109,7 +109,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
 
     /// <summary>
     /// Parses the optional <c>outStatistics</c> parameter. POST bodies with a
-    /// native JSON array are flattened by <see cref="FeatureServerEndpoints.TryReadRequestValuesAsync"/>
+    /// native JSON array are flattened by <see cref="GeoServicesRequestValueHelpers.TryReadRequestValuesAsync"/>
     /// into comma-separated entries so the logic matches queryH3 / queryBins.
     /// </summary>
     private static bool TryParseOutStatistics(
@@ -310,7 +310,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
 
     /// <summary>
     /// Reads the POST body (JSON or form-encoded) into a case-insensitive dictionary
-    /// using the same <c>TryReadRequestValuesAsync</c> as FeatureServer so the error
+    /// using the same <c>TryReadRequestValuesAsync</c> as the GeoServices protocol adapters so the error
     /// shapes and media-type handling stay consistent across the analytics surface.
     /// </summary>
     private static async Task<(IReadOnlyDictionary<string, StringValues>? Values, IResult? Error)> ReadRequestValuesAsync(
@@ -318,13 +318,13 @@ internal static partial class SpatialAnalyticsRequestHandlers
     {
         if (context.Request.Method == HttpMethods.Post)
         {
-            var (values, readError) = await FeatureServerEndpoints.TryReadRequestValuesAsync(
+            var (values, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(
                 context.Request, cancellationToken);
             if (values == null)
             {
-                if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+                if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
                 {
-                    return (null, FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(context, receivedContentType));
+                    return (null, GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType));
                 }
 
                 return (null, StandardErrorHelpers.CreateBadRequest(
@@ -336,7 +336,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return (values, null);
         }
 
-        var query = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var query = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         return (query, null);
     }
 

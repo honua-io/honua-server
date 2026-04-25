@@ -74,10 +74,16 @@ internal static class SearchEndpoints
         [FromQuery(Name = "filter-crs")] string? filterCrs,
         [FromServices] StacSearchDependencies deps)
     {
+        using var activity = StacTelemetry.StartActivity(
+            StacTelemetry.Operations.SearchGet,
+            "/stac/search",
+            HttpMethods.Get);
+
         var validationError = OgcCommonUtilities.ValidateQueryParameters(
             context.Request, StacConstants.AllowedQueryParameters.SearchGet);
         if (validationError is not null)
         {
+            StacTelemetry.SetFailed(activity, "invalid_query_parameters");
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
@@ -97,6 +103,7 @@ internal static class SearchEndpoints
                 out var request,
                 out var requestError))
         {
+            StacTelemetry.SetFailed(activity, "invalid_search_parameters");
             return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid search parameters.");
         }
 
@@ -119,6 +126,11 @@ internal static class SearchEndpoints
         [FromBody] StacSearchRequest request,
         [FromServices] StacSearchDependencies deps)
     {
+        using var activity = StacTelemetry.StartActivity(
+            StacTelemetry.Operations.SearchPost,
+            "/stac/search",
+            HttpMethods.Post);
+
         return await ExecuteSearchAsync(
             request,
             0,
@@ -142,6 +154,10 @@ internal static class SearchEndpoints
         bool defaultFilterLangIsText,
         ILogger logger)
     {
+        using var activity = StacTelemetry.StartActivity(
+            StacTelemetry.Operations.SearchExecute,
+            "/stac/search",
+            context.Request.Method);
         var effectiveLimit = Math.Clamp(
             request.Limit ?? StacConstants.DefaultSearchLimit,
             1,
@@ -165,6 +181,7 @@ internal static class SearchEndpoints
             {
                 if (!TryParseIntegerTokenSet(requestedCollections, out var collectionIds, out var collectionError))
                 {
+                    StacTelemetry.SetFailed(activity, "invalid_collections");
                     return StandardErrorHelpers.CreateBadRequest(context, collectionError ?? "Invalid collections parameter.");
                 }
 
@@ -175,10 +192,12 @@ internal static class SearchEndpoints
             {
                 if (!TryNormalizeIdTokenSet(requestedIds, out var normalizedIds, out var idsError))
                 {
+                    StacTelemetry.SetFailed(activity, "invalid_ids");
                     return StandardErrorHelpers.CreateBadRequest(context, idsError ?? "Invalid ids parameter.");
                 }
 
                 var layerList = targetLayers.ToArray();
+                StacTelemetry.SetSearchTags(activity, effectiveLimit, offset, collectionCount, layerList.Length);
                 return await ExecuteSearchAcrossLayersAsync(
                     request,
                     offset,
@@ -194,6 +213,8 @@ internal static class SearchEndpoints
                     effectiveLimit);
             }
 
+            var allLayerList = targetLayers.ToArray();
+            StacTelemetry.SetSearchTags(activity, effectiveLimit, offset, collectionCount, allLayerList.Length);
             return await ExecuteSearchAcrossLayersAsync(
                 request,
                 offset,
@@ -204,17 +225,19 @@ internal static class SearchEndpoints
                 filterProcessor,
                 defaultFilterLangIsText,
                 logger,
-                targetLayers.ToArray(),
+                allLayerList,
                 null,
                 effectiveLimit);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
+            StacTelemetry.RecordException(activity, ex);
             throw;
         }
         catch (Exception ex)
         {
+            StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context, "An error occurred during STAC search.");
@@ -235,6 +258,17 @@ internal static class SearchEndpoints
         ImmutableArray<string>? requestedItemIds,
         int effectiveLimit)
     {
+        using var activity = StacTelemetry.StartActivity(
+            StacTelemetry.Operations.SearchWork,
+            "/stac/search",
+            context.Request.Method);
+        StacTelemetry.SetSearchTags(
+            activity,
+            effectiveLimit,
+            offset,
+            request.Collections is { IsDefault: false } collections ? collections.Length : 0,
+            layerList.Length);
+
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var allItems = ImmutableArray.CreateBuilder<StacItem>();
         long totalMatched = 0;
@@ -259,6 +293,7 @@ internal static class SearchEndpoints
                 cancellationToken);
             if (!layerQueryResult.IsSuccess)
             {
+                StacTelemetry.SetFailed(activity, "invalid_search_parameters");
                 return StandardErrorHelpers.CreateBadRequest(context, layerQueryResult.Error ?? "Invalid search parameters.");
             }
 
@@ -350,6 +385,7 @@ internal static class SearchEndpoints
         };
 
         StacLog.SearchReturned(logger, allItems.Count);
+        StacTelemetry.SetResultCount(activity, allItems.Count, totalMatched);
         return Results.Json(response, StacJsonContext.Default.StacItemCollection, MediaTypes.GeoJson);
     }
 
@@ -527,12 +563,21 @@ internal static class SearchEndpoints
                 return false;
             }
 
-            orderByBuilder.Add(
-                string.Equals(sort.Direction, "desc", StringComparison.OrdinalIgnoreCase)
-                    ? OrderByClause.Desc(normalizedField)
-                    : string.Equals(sort.Direction, "asc", StringComparison.OrdinalIgnoreCase)
-                        ? OrderByClause.Asc(normalizedField)
-                        : throw new ArgumentException($"Invalid sort direction '{sort.Direction}'."));
+            if (string.Equals(sort.Direction, "desc", StringComparison.OrdinalIgnoreCase))
+            {
+                orderByBuilder.Add(OrderByClause.Desc(normalizedField));
+                continue;
+            }
+
+            if (string.Equals(sort.Direction, "asc", StringComparison.OrdinalIgnoreCase))
+            {
+                orderByBuilder.Add(OrderByClause.Asc(normalizedField));
+                continue;
+            }
+
+            error = $"Invalid sort direction '{sort.Direction}'. Use 'asc' or 'desc'.";
+            orderBy = default;
+            return false;
         }
 
         error = null;

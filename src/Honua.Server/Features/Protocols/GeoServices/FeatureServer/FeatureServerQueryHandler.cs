@@ -18,6 +18,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Abstractions;
@@ -830,7 +831,7 @@ internal sealed class FeatureServerQueryHandler(
         CancellationToken cancellationToken)
     {
         GeoServicesGeometry? parsedGeometry = null;
-        if (!FeatureServerGeometryParser.TryParseGeoServicesGeometry(validatedParams.Geometry, validatedParams.GeometryType, out parsedGeometry, out var geometryError))
+        if (!GeoServicesGeometryParser.TryParseGeoServicesGeometry(validatedParams.Geometry, validatedParams.GeometryType, out parsedGeometry, out var geometryError))
         {
             return (null, null, StandardErrorHelpers.CreateBadRequest(context,
                 ErrorMessages.Validation.InvalidGeometryParameter,
@@ -955,7 +956,10 @@ internal sealed class FeatureServerQueryHandler(
         {
             try
             {
-                temporalExpression = FeatureServerTemporalQueryBuilder.BuildTemporalExpression(validatedParams, layer);
+                temporalExpression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
+                    validatedParams.Time,
+                    validatedParams.TimeRelation,
+                    layer);
             }
             catch (ArgumentException)
             {

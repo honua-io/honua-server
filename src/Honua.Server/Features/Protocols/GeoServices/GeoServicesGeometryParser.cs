@@ -5,12 +5,12 @@ using System.Text.Json;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Parsing;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Server.Features.Protocols.GeoServices;
 
 /// <summary>
 /// Parses GeoServices geometry parameters from query strings into structured geometry objects.
 /// </summary>
-internal static class FeatureServerGeometryParser
+internal static class GeoServicesGeometryParser
 {
     private static readonly char[] _coordinateSeparators = { ',', ' ' };
 

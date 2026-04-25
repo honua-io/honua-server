@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.SpatialAnalytics.Models;
+namespace Honua.Server.Features.Protocols.SpatialAnalytics.Models;
 
 /// <summary>
 /// Shared parameter-name constants for the spatial analytics endpoints. The same

@@ -4,23 +4,37 @@
 import { test, expect } from '@playwright/test';
 import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { createMap } from './support/map-harness.js';
-import { BASE_URL, POINT_LAYER_ID, POINT_CENTER } from './support/constants.js';
+import {
+  BASE_URL,
+  LINE_LAYER_ID,
+  POINT_LAYER_ID,
+  POINT_CENTER,
+  POLYGON_LAYER_ID,
+} from './support/constants.js';
+
+const STYLE_LAYERS = [
+  { name: 'point', layerId: POINT_LAYER_ID },
+  { name: 'line', layerId: LINE_LAYER_ID },
+  { name: 'polygon', layerId: POLYGON_LAYER_ID },
+];
 
 test.describe('Style Loading', () => {
-  test('[CERT-CONN-01] fetch style JSON returns valid MapLibre v8 document', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`);
-    expect(response.status()).toBe(200);
+  for (const layer of STYLE_LAYERS) {
+    test(`[CERT-CONN-01] ${layer.name} style JSON is valid MapLibre v8`, async ({ request }) => {
+      const response = await request.get(`${BASE_URL}/api/styles/${layer.layerId}.json`);
+      expect(response.status()).toBe(200);
 
-    const style = await response.json();
-    expect(style.version).toBe(8);
-    expect(style.sources).toBeDefined();
-    expect(style.layers).toBeDefined();
-    expect(Array.isArray(style.layers)).toBe(true);
-    expect(style.layers.length).toBeGreaterThan(0);
+      const style = await response.json();
+      expect(style.version).toBe(8);
+      expect(style.sources).toBeDefined();
+      expect(style.layers).toBeDefined();
+      expect(Array.isArray(style.layers)).toBe(true);
+      expect(style.layers.length).toBeGreaterThan(0);
 
-    const validationErrors = validateStyleMin(style);
-    expect(validationErrors.map((error) => error.message)).toEqual([]);
-  });
+      const validationErrors = validateStyleMin(style);
+      expect(validationErrors.map((error) => error.message)).toEqual([]);
+    });
+  }
 
   test('[CERT-CONN-01] fetch TileJSON returns valid metadata with style URL', async ({ request }) => {
     const response = await request.get(`${BASE_URL}/tiles/${POINT_LAYER_ID}/tile.json`);

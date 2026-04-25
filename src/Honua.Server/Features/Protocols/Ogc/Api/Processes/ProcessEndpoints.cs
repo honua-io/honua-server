@@ -33,7 +33,7 @@ internal static class ProcessEndpoints
         Title = "Honua Geoprocessing",
         Description = "Executes an analysis plan through the Honua canonical geoprocessing runtime.",
         Version = "1.0.0",
-        JobControlOptions = ImmutableArray.Create("async-execute", "dismiss"),
+        JobControlOptions = ImmutableArray.Create("async-execute"),
         OutputTransmission = ImmutableArray.Create("value")
     };
 
@@ -51,7 +51,7 @@ internal static class ProcessEndpoints
                       "document-mode results body (empty until the canonical process declares " +
                       "value-typed outputs).",
         Version = "1.0.0",
-        JobControlOptions = ImmutableArray.Create("async-execute", "dismiss"),
+        JobControlOptions = ImmutableArray.Create("async-execute"),
         OutputTransmission = ImmutableArray.Create("value"),
         Inputs = ImmutableDictionary.CreateRange(new[]
         {

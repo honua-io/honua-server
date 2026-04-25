@@ -11,7 +11,7 @@ using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+namespace Honua.Server.Features.Protocols.GeoServices;
 
 /// <summary>
 /// Shared helpers for GeoServices geometry conversions.

@@ -4,15 +4,14 @@
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Server.Features.Protocols.GeoServices;
 
 /// <summary>
-/// Builds temporal filter expressions for FeatureServer time queries.
+/// Builds temporal filter expressions for GeoServices time queries.
 /// </summary>
-internal static class FeatureServerTemporalQueryBuilder
+internal static class GeoServicesTemporalQueryBuilder
 {
     internal enum TimeRelation
     {
@@ -44,32 +43,18 @@ internal static class FeatureServerTemporalQueryBuilder
             return null;
         }
 
-        var queryParams = new QueryParameters
-        {
-            Time = time,
-            TimeRelation = timeRelation
-        };
-
-        return BuildTemporalExpression(queryParams, layer);
+        return BuildTemporalExpressionCore(time, timeRelation, layer);
     }
 
-    /// <summary>
-    /// Builds a temporal filter expression for FeatureServer time queries.
-    /// </summary>
-    internal static FilterExpression? BuildTemporalExpression(QueryParameters queryParams, LayerDefinition layer)
+    private static FilterExpression? BuildTemporalExpressionCore(string time, string? timeRelation, LayerDefinition layer)
     {
-        if (string.IsNullOrWhiteSpace(queryParams.Time))
-        {
-            return null;
-        }
-
         var selection = TemporalExtentHelpers.ResolveTemporalFieldsOrThrow(layer);
-        if (!TryParseTimeParameter(queryParams.Time, out var startTime, out var endTime))
+        if (!TryParseTimeParameter(time, out var startTime, out var endTime))
         {
-            throw new ArgumentException($"Invalid time parameter format: {queryParams.Time}");
+            throw new ArgumentException($"Invalid time parameter format: {time}");
         }
 
-        var relation = ParseTimeRelation(queryParams.TimeRelation);
+        var relation = ParseTimeRelation(timeRelation);
         var temporalType = selection.StartField.Type;
         var queryStart = ToTemporalLiteral(startTime, temporalType);
         var queryEnd = ToTemporalLiteral(endTime, temporalType);

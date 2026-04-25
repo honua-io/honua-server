@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Protocols.GeoServices;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Protocols.GeoServices.MapServer;
@@ -12,7 +12,7 @@ internal static partial class MapServerEndpoints
     private static async Task<(Dictionary<string, StringValues>? Values, string? Error)> TryReadMapServerRequestValuesAsync(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var values = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
 
         if (!HttpMethods.IsPost(context.Request.Method) && !HttpMethods.IsPut(context.Request.Method))
         {
@@ -24,7 +24,7 @@ internal static partial class MapServerEndpoints
             return (values, null);
         }
 
-        var (bodyValues, error) = await FeatureServerEndpoints.TryReadRequestValuesAsync(
+        var (bodyValues, error) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(
             context.Request,
             cancellationToken);
         if (bodyValues == null)

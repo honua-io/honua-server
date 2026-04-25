@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -510,7 +510,7 @@ internal static class ImageServerEndpoints
             return layerValidation.ErrorResult!;
         }
 
-        var values = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         return await handler.QueryCatalogAsync(context, id, values, cancellationToken);
     }
 
@@ -543,18 +543,18 @@ internal static class ImageServerEndpoints
             return layerValidation.ErrorResult!;
         }
 
-        var (bodyValues, readError) = await FeatureServerEndpoints.TryReadRequestValuesAsync(context.Request, cancellationToken);
+        var (bodyValues, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (bodyValues is null)
         {
-            if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
             {
-                return FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                return GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
             }
 
             return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
         }
 
-        var merged = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var merged = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         foreach (var pair in bodyValues)
         {
             merged[pair.Key] = pair.Value;
@@ -592,7 +592,7 @@ internal static class ImageServerEndpoints
             return layerValidation.ErrorResult!;
         }
 
-        var values = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
@@ -637,18 +637,18 @@ internal static class ImageServerEndpoints
             return layerValidation.ErrorResult!;
         }
 
-        var (bodyValues, readError) = await FeatureServerEndpoints.TryReadRequestValuesAsync(context.Request, cancellationToken);
+        var (bodyValues, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (bodyValues is null)
         {
-            if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
             {
-                return FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                return GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
             }
 
             return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
         }
 
-        var merged = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var merged = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         foreach (var pair in bodyValues)
         {
             merged[pair.Key] = pair.Value;
@@ -736,7 +736,7 @@ internal static class ImageServerEndpoints
             return layerValidation.ErrorResult!;
         }
 
-        var values = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
         {
             return CreateUnsupportedJsonFormatResult(context);
@@ -779,18 +779,18 @@ internal static class ImageServerEndpoints
             return layerValidation.ErrorResult!;
         }
 
-        var (bodyValues, readError) = await FeatureServerEndpoints.TryReadRequestValuesAsync(context.Request, cancellationToken);
+        var (bodyValues, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (bodyValues is null)
         {
-            if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
             {
-                return FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                return GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
             }
 
             return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
         }
 
-        var merged = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var merged = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         foreach (var pair in bodyValues)
         {
             merged[pair.Key] = pair.Value;
@@ -913,15 +913,15 @@ internal static class ImageServerEndpoints
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var (bodyValues, readError) = await FeatureServerEndpoints.TryReadRequestValuesAsync(context.Request, cancellationToken);
+        var (bodyValues, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (bodyValues is not null)
         {
             return (bodyValues, null);
         }
 
-        if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+        if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
         {
-            return (null, FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(context, receivedContentType));
+            return (null, GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType));
         }
 
         return (null, StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body."));
@@ -931,7 +931,7 @@ internal static class ImageServerEndpoints
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> bodyValues)
     {
-        var merged = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var merged = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         foreach (var pair in bodyValues)
         {
             merged[pair.Key] = pair.Value;

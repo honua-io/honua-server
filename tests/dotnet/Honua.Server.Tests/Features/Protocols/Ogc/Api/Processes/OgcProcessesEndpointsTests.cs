@@ -162,6 +162,7 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
         first.GetProperty("id").GetString().Should().Be("honua-geoprocessing");
         first.TryGetProperty("jobControlOptions", out var jco).Should().BeTrue();
         jco.EnumerateArray().Select(e => e.GetString()).Should().Contain("async-execute");
+        jco.EnumerateArray().Select(e => e.GetString()).Should().NotContain("dismiss");
     }
 
     // -----------------------------------------------------------------------
@@ -182,6 +183,8 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
         json.RootElement.TryGetProperty("outputs", out _).Should().BeTrue();
         json.RootElement.GetProperty("jobControlOptions").EnumerateArray()
             .Select(e => e.GetString()).Should().Contain("async-execute");
+        json.RootElement.GetProperty("jobControlOptions").EnumerateArray()
+            .Select(e => e.GetString()).Should().NotContain("dismiss");
     }
 
     [IntegrationTest]

@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.SpatialAnalytics;
+namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
 /// <summary>
 /// Service collection extensions for the Pro-tier spatial analytics slice.

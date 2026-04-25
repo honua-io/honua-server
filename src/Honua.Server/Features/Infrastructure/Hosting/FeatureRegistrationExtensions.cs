@@ -25,7 +25,7 @@ using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Protocols.Tiles;
 using Honua.Server.Features.Protocols.Ogc.Classic;
-using Honua.Server.Features.SpatialAnalytics;
+using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.Server.Features.Protocols.Stac;
 using Honua.Server.Features.Spec;
 using Honua.Server.Features.StaticMap;

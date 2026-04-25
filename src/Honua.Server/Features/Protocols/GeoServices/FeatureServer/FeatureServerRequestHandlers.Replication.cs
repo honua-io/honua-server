@@ -8,6 +8,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Configuration;
 using System.Collections.Immutable;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;

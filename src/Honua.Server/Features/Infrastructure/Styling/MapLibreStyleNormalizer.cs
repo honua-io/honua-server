@@ -13,6 +13,159 @@ internal static class MapLibreStyleNormalizer
     private const int MinSupportedZoom = 0;
     private const int MaxSupportedZoom = 24;
 
+    private static readonly HashSet<string> CssNamedColors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "transparent",
+        "aliceblue",
+        "antiquewhite",
+        "aqua",
+        "aquamarine",
+        "azure",
+        "beige",
+        "bisque",
+        "black",
+        "blanchedalmond",
+        "blue",
+        "blueviolet",
+        "brown",
+        "burlywood",
+        "cadetblue",
+        "chartreuse",
+        "chocolate",
+        "coral",
+        "cornflowerblue",
+        "cornsilk",
+        "crimson",
+        "cyan",
+        "darkblue",
+        "darkcyan",
+        "darkgoldenrod",
+        "darkgray",
+        "darkgreen",
+        "darkgrey",
+        "darkkhaki",
+        "darkmagenta",
+        "darkolivegreen",
+        "darkorange",
+        "darkorchid",
+        "darkred",
+        "darksalmon",
+        "darkseagreen",
+        "darkslateblue",
+        "darkslategray",
+        "darkslategrey",
+        "darkturquoise",
+        "darkviolet",
+        "deeppink",
+        "deepskyblue",
+        "dimgray",
+        "dimgrey",
+        "dodgerblue",
+        "firebrick",
+        "floralwhite",
+        "forestgreen",
+        "fuchsia",
+        "gainsboro",
+        "ghostwhite",
+        "gold",
+        "goldenrod",
+        "gray",
+        "green",
+        "greenyellow",
+        "grey",
+        "honeydew",
+        "hotpink",
+        "indianred",
+        "indigo",
+        "ivory",
+        "khaki",
+        "lavender",
+        "lavenderblush",
+        "lawngreen",
+        "lemonchiffon",
+        "lightblue",
+        "lightcoral",
+        "lightcyan",
+        "lightgoldenrodyellow",
+        "lightgray",
+        "lightgreen",
+        "lightgrey",
+        "lightpink",
+        "lightsalmon",
+        "lightseagreen",
+        "lightskyblue",
+        "lightslategray",
+        "lightslategrey",
+        "lightsteelblue",
+        "lightyellow",
+        "lime",
+        "limegreen",
+        "linen",
+        "magenta",
+        "maroon",
+        "mediumaquamarine",
+        "mediumblue",
+        "mediumorchid",
+        "mediumpurple",
+        "mediumseagreen",
+        "mediumslateblue",
+        "mediumspringgreen",
+        "mediumturquoise",
+        "mediumvioletred",
+        "midnightblue",
+        "mintcream",
+        "mistyrose",
+        "moccasin",
+        "navajowhite",
+        "navy",
+        "oldlace",
+        "olive",
+        "olivedrab",
+        "orange",
+        "orangered",
+        "orchid",
+        "palegoldenrod",
+        "palegreen",
+        "paleturquoise",
+        "palevioletred",
+        "papayawhip",
+        "peachpuff",
+        "peru",
+        "pink",
+        "plum",
+        "powderblue",
+        "purple",
+        "rebeccapurple",
+        "red",
+        "rosybrown",
+        "royalblue",
+        "saddlebrown",
+        "salmon",
+        "sandybrown",
+        "seagreen",
+        "seashell",
+        "sienna",
+        "silver",
+        "skyblue",
+        "slateblue",
+        "slategray",
+        "slategrey",
+        "snow",
+        "springgreen",
+        "steelblue",
+        "tan",
+        "teal",
+        "thistle",
+        "tomato",
+        "turquoise",
+        "violet",
+        "wheat",
+        "white",
+        "whitesmoke",
+        "yellow",
+        "yellowgreen"
+    };
+
     private static readonly HashSet<string> SupportedLayerTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "background",
@@ -463,9 +616,15 @@ internal static class MapLibreStyleNormalizer
     private static bool TryValidateColorValue(JsonNode? value, string property, string layerId, out string? error)
     {
         error = null;
-        if (TryGetString(value) is { Length: > 0 })
+        if (TryGetString(value) is { Length: > 0 } color)
         {
-            return true;
+            if (IsValidColorLiteral(color))
+            {
+                return true;
+            }
+
+            error = $"MapLibre style layer '{layerId}' property '{property}' must be a valid CSS color string or expression.";
+            return false;
         }
 
         if (IsExpression(value))
@@ -475,6 +634,165 @@ internal static class MapLibreStyleNormalizer
 
         error = $"MapLibre style layer '{layerId}' property '{property}' must be a color string or expression.";
         return false;
+    }
+
+    private static bool IsValidColorLiteral(string color)
+    {
+        var trimmed = color.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        if (CssNamedColors.Contains(trimmed))
+        {
+            return true;
+        }
+
+        if (TryValidateHexColor(trimmed))
+        {
+            return true;
+        }
+
+        return TryValidateColorFunction(trimmed);
+    }
+
+    private static bool TryValidateHexColor(string color)
+    {
+        if (color[0] != '#')
+        {
+            return false;
+        }
+
+        var length = color.Length - 1;
+        if (length is not (3 or 4 or 6 or 8))
+        {
+            return false;
+        }
+
+        for (var index = 1; index < color.Length; index++)
+        {
+            if (!Uri.IsHexDigit(color[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateColorFunction(string color)
+    {
+        var openParen = color.IndexOf('(');
+        if (openParen <= 0 || color[^1] != ')')
+        {
+            return false;
+        }
+
+        var functionName = color[..openParen].Trim();
+        var body = color[(openParen + 1)..^1].Trim();
+        if (body.Length == 0)
+        {
+            return false;
+        }
+
+        return functionName.ToLowerInvariant() switch
+        {
+            "rgb" => TryValidateRgbFunction(body, allowAlpha: true),
+            "rgba" => TryValidateRgbFunction(body, allowAlpha: true),
+            "hsl" => TryValidateHslFunction(body, allowAlpha: true),
+            "hsla" => TryValidateHslFunction(body, allowAlpha: true),
+            _ => false
+        };
+    }
+
+    private static bool TryValidateRgbFunction(string body, bool allowAlpha)
+    {
+        var components = SplitCssFunctionArguments(body);
+        if (components.Length != 3 && !(allowAlpha && components.Length == 4))
+        {
+            return false;
+        }
+
+        return TryValidateRgbComponent(components[0]) &&
+               TryValidateRgbComponent(components[1]) &&
+               TryValidateRgbComponent(components[2]) &&
+               (components.Length == 3 || TryValidateAlphaComponent(components[3]));
+    }
+
+    private static bool TryValidateHslFunction(string body, bool allowAlpha)
+    {
+        var components = SplitCssFunctionArguments(body);
+        if (components.Length != 3 && !(allowAlpha && components.Length == 4))
+        {
+            return false;
+        }
+
+        return TryValidateFiniteCssNumber(StripHueUnit(components[0]), out _) &&
+               TryValidatePercentageComponent(components[1]) &&
+               TryValidatePercentageComponent(components[2]) &&
+               (components.Length == 3 || TryValidateAlphaComponent(components[3]));
+    }
+
+    private static string StripHueUnit(string component)
+    {
+        var trimmed = component.Trim();
+        foreach (var unit in new[] { "deg", "grad", "rad", "turn" })
+        {
+            if (trimmed.EndsWith(unit, StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed[..^unit.Length];
+            }
+        }
+
+        return trimmed;
+    }
+
+    private static string[] SplitCssFunctionArguments(string body)
+    {
+        if (body.Contains(','))
+        {
+            return body.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        }
+
+        return body.Replace("/", " ", StringComparison.Ordinal)
+            .Split(' ', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    private static bool TryValidateRgbComponent(string component)
+    {
+        if (component.EndsWith('%'))
+        {
+            return TryValidatePercentageComponent(component);
+        }
+
+        return TryValidateFiniteCssNumber(component, out var value) && value is >= 0d and <= 255d;
+    }
+
+    private static bool TryValidatePercentageComponent(string component)
+    {
+        if (!component.EndsWith('%'))
+        {
+            return false;
+        }
+
+        return TryValidateFiniteCssNumber(component[..^1], out var value) && value is >= 0d and <= 100d;
+    }
+
+    private static bool TryValidateAlphaComponent(string component)
+    {
+        if (component.EndsWith('%'))
+        {
+            return TryValidatePercentageComponent(component);
+        }
+
+        return TryValidateFiniteCssNumber(component, out var value) && value is >= 0d and <= 1d;
+    }
+
+    private static bool TryValidateFiniteCssNumber(string component, out double value)
+    {
+        return double.TryParse(component, NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
+               double.IsFinite(value);
     }
 
     private static bool TryValidateOpacityValue(JsonNode? value, string property, string layerId, out string? error)

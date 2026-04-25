@@ -43,12 +43,17 @@ internal static class CatalogEndpoints
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
+        using var activity = StacTelemetry.StartActivity(
+            StacTelemetry.Operations.Catalog,
+            "/stac",
+            HttpMethods.Get);
         StacLog.CatalogRequested(logger);
 
         var validationError = OgcCommonUtilities.ValidateQueryParameters(
             context.Request, StacConstants.AllowedQueryParameters.Catalog);
         if (validationError is not null)
         {
+            StacTelemetry.SetFailed(activity, "invalid_query_parameters");
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
@@ -123,15 +128,18 @@ internal static class CatalogEndpoints
             };
 
             StacLog.CatalogReturned(logger, visibleLayers.Length);
+            StacTelemetry.SetResultCount(activity, visibleLayers.Length);
             return Results.Json(catalog, StacJsonContext.Default.StacCatalog, MediaTypes.Json);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
+            StacTelemetry.RecordException(activity, ex);
             throw;
         }
         catch (Exception ex)
         {
+            StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context, "An error occurred while retrieving the STAC catalog.");

@@ -38,6 +38,11 @@ internal static class RequestTelemetryClassifier
             return HonuaTelemetry.Protocols.Wfs20;
         }
 
+        if (StartsWithPathSegment(value, "/stac"))
+        {
+            return HonuaTelemetry.Protocols.Stac;
+        }
+
         if (value.StartsWith("/ogc/services/", StringComparison.OrdinalIgnoreCase) &&
             value.EndsWith("/wmts", StringComparison.OrdinalIgnoreCase))
         {
@@ -443,6 +448,11 @@ internal static class RequestTelemetryClassifier
             return "tile";
         }
 
+        if (StartsWithPathSegment(path, "/stac"))
+        {
+            return ResolveStacOperation(path, method);
+        }
+
         if (StartsWithPathSegment(path, "/odata"))
         {
             if (string.Equals(path, "/odata", StringComparison.OrdinalIgnoreCase))
@@ -523,6 +533,26 @@ internal static class RequestTelemetryClassifier
             if (path.Contains("/items/batch", StringComparison.OrdinalIgnoreCase))
             {
                 return "batch";
+            }
+
+            if (path.Contains("/clusters", StringComparison.OrdinalIgnoreCase))
+            {
+                return "queryClusters";
+            }
+
+            if (path.Contains("/spatialJoin", StringComparison.OrdinalIgnoreCase))
+            {
+                return "spatialJoin";
+            }
+
+            if (path.Contains("/bufferAggregate", StringComparison.OrdinalIgnoreCase))
+            {
+                return "queryBufferAggregate";
+            }
+
+            if (path.Contains("/density", StringComparison.OrdinalIgnoreCase))
+            {
+                return "queryDensity";
             }
 
             if (path.Contains("/items/", StringComparison.OrdinalIgnoreCase))
@@ -675,6 +705,43 @@ internal static class RequestTelemetryClassifier
         }
 
         return prefix + "." + request.Trim().ToLowerInvariant();
+    }
+
+    private static string ResolveStacOperation(string path, string method)
+    {
+        if (string.Equals(path, "/stac", StringComparison.OrdinalIgnoreCase))
+        {
+            return "catalog";
+        }
+
+        if (string.Equals(path, "/stac/collections", StringComparison.OrdinalIgnoreCase))
+        {
+            return "collections";
+        }
+
+        if (string.Equals(path, "/stac/search", StringComparison.OrdinalIgnoreCase))
+        {
+            return method.Equals(HttpMethods.Post, StringComparison.OrdinalIgnoreCase)
+                ? "search.post"
+                : "search.get";
+        }
+
+        if (path.StartsWith("/stac/collections/", StringComparison.OrdinalIgnoreCase))
+        {
+            if (path.Contains("/items/", StringComparison.OrdinalIgnoreCase))
+            {
+                return "item";
+            }
+
+            if (path.EndsWith("/items", StringComparison.OrdinalIgnoreCase))
+            {
+                return "items";
+            }
+
+            return "collection";
+        }
+
+        return "stac";
     }
 
     private static string ResolveQueryRequestOperation(HttpContext context, string prefix)

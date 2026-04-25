@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.SpatialAnalytics;
+namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
 /// <summary>
 /// Source-generated log messages for the spatial analytics endpoints.

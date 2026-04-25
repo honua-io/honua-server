@@ -3,6 +3,7 @@
 
 using System.IO.Compression;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -175,6 +176,25 @@ public sealed class ExportEndpointTests : IAsyncLifetime
         lines.Length.Should().BeGreaterThanOrEqualTo(2);
     }
 
+    [Trait("Category", "Integration")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Theory]
+    [InlineData("not-a-bbox")]
+    [InlineData("-123,37,-122")]
+    [InlineData("-123,37,-122,NaN")]
+    [InlineData("-122,37,-123,38")]
+    public async Task Export_WithInvalidBbox_Returns400ValidationError(string bbox)
+    {
+        var response = await _client.GetAsync(
+            $"/api/v1/admin/services/test/layers/0/export?format=csv&bbox={Uri.EscapeDataString(bbox)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Invalid bbox parameter");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
@@ -194,6 +214,52 @@ public sealed class ExportEndpointTests : IAsyncLifetime
         header.Should().Contain("WKT");
         // Should NOT contain other fields
         header.Should().NotContain("description");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    public async Task Export_WithOutFields_PushesProjectionIntoStreamingQuery()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        featureReader
+            .CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(0L);
+
+        FeatureQuery? streamedQuery = null;
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        streamingStore
+            .StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                streamedQuery = call.ArgAt<FeatureQuery>(1);
+                return EmptyFeatureStream();
+            });
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IFeatureReader>();
+                services.AddSingleton(featureReader);
+                services.RemoveAll<IStreamingFeatureStore>();
+                services.AddSingleton(streamingStore);
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                "/api/v1/admin/services/test/layers/0/export?format=csv&outFields=name");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            streamedQuery.Should().NotBeNull();
+            streamedQuery!.Value.OutFields.Should().NotBeNull();
+            streamedQuery.Value.OutFields!.Value.Should().ContainSingle().Which.Should().Be("name");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -291,5 +357,13 @@ public sealed class ExportEndpointTests : IAsyncLifetime
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static async IAsyncEnumerable<Feature> EmptyFeatureStream(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await Task.CompletedTask;
+        yield break;
     }
 }

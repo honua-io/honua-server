@@ -8,16 +8,16 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Infrastructure.Analytics;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.SpatialAnalytics.Models;
+using Honua.Server.Features.Protocols.SpatialAnalytics.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.SpatialAnalytics;
+namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
 /// <summary>
 /// Density binning handler. REST entry:
@@ -34,14 +34,14 @@ internal static partial class SpatialAnalyticsRequestHandlers
         HttpContext context)
     {
         var logger = context.RequestServices
-            .GetService<ILoggerFactory>()?.CreateLogger("Honua.Server.Features.SpatialAnalytics.Density");
+            .GetService<ILoggerFactory>()?.CreateLogger("Honua.Server.Features.Protocols.SpatialAnalytics.Density");
         var editionError = RequireProEdition(context, DensityOperation, logger);
         if (editionError != null)
         {
             return editionError;
         }
 
-        var cancellationToken = FeatureServerEndpoints.GetTimeoutAwareCancellationToken(context);
+        var cancellationToken = GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
 
         var (values, readError) = await ReadRequestValuesAsync(context, cancellationToken);
         if (values == null)
@@ -71,14 +71,14 @@ internal static partial class SpatialAnalyticsRequestHandlers
         HttpContext context)
     {
         var logger = context.RequestServices
-            .GetService<ILoggerFactory>()?.CreateLogger("Honua.Server.Features.SpatialAnalytics.Density");
+            .GetService<ILoggerFactory>()?.CreateLogger("Honua.Server.Features.Protocols.SpatialAnalytics.Density");
         var editionError = RequireProEdition(context, DensityOperation, logger);
         if (editionError != null)
         {
             return editionError;
         }
 
-        var cancellationToken = FeatureServerEndpoints.GetTimeoutAwareCancellationToken(context);
+        var cancellationToken = GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
 
         var (values, readError) = await ReadRequestValuesAsync(context, cancellationToken);
         if (values == null)

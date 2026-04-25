@@ -4,9 +4,9 @@
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+namespace Honua.Server.Features.Protocols.GeoServices;
 
-internal static class FeatureServerSpatialFilterBuilder
+internal static class GeoServicesSpatialFilterBuilder
 {
     public static SpatialFilter BuildSpatialFilter(
         QueryParameters queryParams,

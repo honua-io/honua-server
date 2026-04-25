@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.ServiceDefaults;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -25,6 +28,40 @@ public sealed class StacSearchTests : IAsyncLifetime
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_RecordsSharedTelemetryForSearchWork()
+    {
+        var stoppedActivities = new ConcurrentBag<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == HonuaTelemetry.ServiceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName.StartsWith("honua.stac.", StringComparison.Ordinal))
+                {
+                    stoppedActivities.Add(activity);
+                }
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var response = await _fixture.Client.GetAsync("/stac/search?limit=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var searchWork = stoppedActivities
+            .Should()
+            .ContainSingle(activity => activity.OperationName == "honua.stac.search.work")
+            .Subject;
+        searchWork.GetTagItem(HonuaTelemetry.Tags.Protocol).Should().Be("STAC");
+        searchWork.GetTagItem(HonuaTelemetry.Tags.Operation).Should().Be("search.work");
+        searchWork.GetTagItem("honua.stac.search.limit").Should().Be(1);
+        searchWork.GetTagItem("honua.stac.returned").Should().Be(1);
+    }
 
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
@@ -225,6 +262,26 @@ public sealed class StacSearchTests : IAsyncLifetime
         json.RootElement.GetProperty("features").EnumerateArray().Should().NotBeEmpty();
         json.RootElement.GetProperty("context").GetProperty("limit")
             .GetInt32().Should().Be(5);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("POST /stac/search")]
+    public async Task SearchPost_WithInvalidSortDirection_ReturnsBadRequest()
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            collections = new[] { WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture) },
+            sortby = new[] { new { field = "name", direction = "sideways" } }
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/stac/search",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Invalid sort direction");
     }
 
     [IntegrationTest]

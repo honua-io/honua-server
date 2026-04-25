@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Validation;
 
@@ -83,7 +84,7 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
                 throw new InvalidOperationException("Geometry is required for nearest neighbor queries");
             }
 
-            var spatialFilter = FeatureServerSpatialFilterBuilder.BuildSpatialFilter(
+            var spatialFilter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
                 context.QueryParams,
                 context.ParsedGeometry!,
                 context.InputSrid);

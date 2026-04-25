@@ -10,11 +10,10 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Validation;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
@@ -66,55 +65,9 @@ internal static partial class FeatureServerEndpoints
         public static readonly FrozenSet<string> LayerMetadata =
             new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-        public static readonly FrozenSet<string> Query = new[]
-            {
-                "where",
-                "objectIds",
-                "outFields",
-                "orderByFields",
-                "geometry",
-                "inSR",
-                "outSR",
-                "geometryType",
-                "spatialRel",
-                "units",
-                "f",
-                "resultOffset",
-                "resultRecordCount",
-                "nearestCount",
-                "distance",
-                "returnGeometry",
-                "returnIdsOnly",
-                "returnCountOnly",
-                "returnExtentOnly",
-                "returnDistance",
-                "returnCentroid",
-                "returnDistinctValues",
-                "returnZ",
-                "returnM",
-                "returnTrueCurves",
-                "returnExceededLimitFeatures",
-                "time",
-                "timeRelation",
-                "geometryPrecision",
-                "maxAllowableOffset",
-                "resultType",
-                "outStatistics",
-                "groupByFieldsForStatistics",
-                "having",
-                "sqlFormat",
-                "gdbVersion",
-                "quantizationParameters",
-                "datumTransformation"
-            }
-            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+        public static readonly FrozenSet<string> Query = GeoServicesRequestValueHelpers.LayerQueryAllowedParameters;
 
-        public static readonly FrozenSet<string> ServiceQuery =
-            Query
-                .Append("layerId")
-                .Append("layers")
-                .Append("layerDefs")
-                .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+        public static readonly FrozenSet<string> ServiceQuery = GeoServicesRequestValueHelpers.ServiceQueryAllowedParameters;
 
         public static readonly FrozenSet<string> GenerateRenderer = new[]
             {
@@ -270,38 +223,7 @@ internal static partial class FeatureServerEndpoints
     /// Gets timeout-aware cancellation token
     /// </summary>
     internal static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
-    {
-        const string tokenKey = "FeatureServerQueryTimeoutToken";
-
-        if (context.Items.TryGetValue(tokenKey, out var existing) && existing is CancellationToken cachedToken)
-        {
-            return cachedToken;
-        }
-
-        var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
-        var queryTimeout = limits.Query.QueryTimeout;
-
-        var baseToken = context.RequestAborted;
-        if (context.Items.TryGetValue("LimitsTimeoutToken", out var tokenObj) && tokenObj is CancellationToken timeoutToken)
-        {
-            baseToken = timeoutToken;
-        }
-
-        if (queryTimeout <= TimeSpan.Zero)
-        {
-            context.Items[tokenKey] = baseToken;
-            return baseToken;
-        }
-
-        var timeoutCts = new CancellationTokenSource(queryTimeout);
-        var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(baseToken, timeoutCts.Token);
-
-        context.Response.RegisterForDispose(timeoutCts);
-        context.Response.RegisterForDispose(combinedCts);
-
-        context.Items[tokenKey] = combinedCts.Token;
-        return combinedCts.Token;
-    }
+        => GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
 
     /// <summary>
     /// Maps service definition to FeatureServer response
@@ -547,26 +469,14 @@ internal static partial class FeatureServerEndpoints
         ICommonQueryValidator queryValidator,
         FrozenSet<string> allowedParameters,
         out string? error)
-    {
-        error = QueryParameterValidationHelpers.GetValidationError(
-            queryValidator,
-            query.Keys.ToArray(),
-            allowedParameters);
-        return error == null;
-    }
+        => GeoServicesRequestValueHelpers.TryValidateAllowedParameters(query, queryValidator, allowedParameters, out error);
 
     internal static bool TryValidateAllowedParameters(
         IReadOnlyDictionary<string, StringValues> values,
         ICommonQueryValidator queryValidator,
         FrozenSet<string> allowedParameters,
         out string? error)
-    {
-        error = QueryParameterValidationHelpers.GetValidationError(
-            queryValidator,
-            values.Keys.ToArray(),
-            allowedParameters);
-        return error == null;
-    }
+        => GeoServicesRequestValueHelpers.TryValidateAllowedParameters(values, queryValidator, allowedParameters, out error);
 
     private static string[] NormalizeSupportedQueryFormats(string[]? formats, bool supportsGeobufOutput)
     {

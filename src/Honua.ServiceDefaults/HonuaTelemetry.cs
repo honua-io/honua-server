@@ -294,6 +294,9 @@ public static class HonuaTelemetry
         /// <summary>GeoServices GPServer REST API.</summary>
         public const string GPServer = "GPServer";
 
+        /// <summary>SpatioTemporal Asset Catalog API.</summary>
+        public const string Stac = "STAC";
+
         /// <summary>Model Context Protocol operator surface.</summary>
         public const string Mcp = "Mcp";
     }

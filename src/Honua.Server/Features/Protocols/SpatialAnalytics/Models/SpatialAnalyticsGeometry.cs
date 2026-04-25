@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.SpatialAnalytics.Models;
+namespace Honua.Server.Features.Protocols.SpatialAnalytics.Models;
 
 /// <summary>
 /// Simple GeoJSON geometry representation for the spatial analytics slice.

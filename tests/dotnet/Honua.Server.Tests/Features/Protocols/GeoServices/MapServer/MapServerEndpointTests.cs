@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.IO.Compression;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
@@ -914,6 +915,41 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             payload);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
+    public async Task MapServer_Query_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var payload = """
+            {
+              "where": "1=1",
+              "f": "json"
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
+            new StringContent(payload, Encoding.UTF8, "text/plain"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Unsupported Media Type");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
+    public async Task MapServer_Query_Post_WithInvalidJson_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
+            new StringContent("{\"where\":\"1=1\"", Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Invalid JSON payload");
     }
 
     [IntegrationTest]

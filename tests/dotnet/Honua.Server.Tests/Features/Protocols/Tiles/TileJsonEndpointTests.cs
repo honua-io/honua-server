@@ -6,6 +6,9 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -59,6 +62,21 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
 
         var styleResponse = await GetStyleFromTileJsonAsync(styleUrl!);
         styleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /tiles/{layerId}/tile.json")]
+    public async Task GetTileJson_FeatureServerProtocolDisabled_ReturnsNotFound()
+    {
+        await UpdateServiceProtocolsAsync(
+            ServiceProtocols.All
+                .Where(protocol => !string.Equals(protocol, ServiceProtocols.FeatureServer, StringComparison.Ordinal))
+                .ToArray());
+
+        var response = await _fixture.Client.GetAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -248,5 +266,16 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
         }
 
         return template;
+    }
+
+    private async Task UpdateServiceProtocolsAsync(string[] enabledProtocols)
+    {
+        var updater = _fixture.GetService<IServiceMetadataUpdater>();
+        await updater.UpdateServiceMetadataAsync(
+            WebAppFixture.TestServiceId,
+            new CatalogMetadata
+            {
+                EnabledProtocols = enabledProtocols
+            });
     }
 }

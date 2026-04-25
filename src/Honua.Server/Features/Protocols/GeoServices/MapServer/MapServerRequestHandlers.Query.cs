@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -25,10 +25,10 @@ internal static partial class MapServerEndpoints
         }
 
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        if (!FeatureServerEndpoints.TryValidateAllowedParameters(
+        if (!GeoServicesRequestValueHelpers.TryValidateAllowedParameters(
                 context.Request.Query,
                 queryValidator,
-                FeatureServerEndpoints.FeatureServerQueryAllowedParameters,
+                GeoServicesRequestValueHelpers.LayerQueryAllowedParameters,
                 out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -37,8 +37,8 @@ internal static partial class MapServerEndpoints
         }
 
         var queryHandler = context.RequestServices.GetRequiredService<IFeatureQueryDispatcher>();
-        var cancellationToken = FeatureServerEndpoints.GetTimeoutAwareCancellationToken(context);
-        var values = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var cancellationToken = GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
 
         return await queryHandler.HandleQueryFeaturesAsync(
             serviceId,
@@ -62,10 +62,10 @@ internal static partial class MapServerEndpoints
         }
 
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        if (!FeatureServerEndpoints.TryValidateAllowedParameters(
+        if (!GeoServicesRequestValueHelpers.TryValidateAllowedParameters(
                 context.Request.Query,
                 queryValidator,
-                FeatureServerEndpoints.FeatureServerQueryAllowedParameters,
+                GeoServicesRequestValueHelpers.LayerQueryAllowedParameters,
                 out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -73,13 +73,13 @@ internal static partial class MapServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
-        var cancellationToken = FeatureServerEndpoints.GetTimeoutAwareCancellationToken(context);
-        var (values, readError) = await FeatureServerEndpoints.TryReadRequestValuesAsync(context.Request, cancellationToken);
+        var cancellationToken = GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
+        var (values, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
-            if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
             {
-                return FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                return GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
             }
 
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -87,10 +87,10 @@ internal static partial class MapServerEndpoints
                 [readError ?? "Invalid request body."]);
         }
 
-        if (!FeatureServerEndpoints.TryValidateAllowedParameters(
+        if (!GeoServicesRequestValueHelpers.TryValidateAllowedParameters(
                 values,
                 queryValidator,
-                FeatureServerEndpoints.FeatureServerQueryAllowedParameters,
+                GeoServicesRequestValueHelpers.LayerQueryAllowedParameters,
                 out error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -99,7 +99,7 @@ internal static partial class MapServerEndpoints
         }
 
         var queryHandler = context.RequestServices.GetRequiredService<IFeatureQueryDispatcher>();
-        var mergedValues = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var mergedValues = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         foreach (var pair in values)
         {
             mergedValues[pair.Key] = pair.Value;
@@ -127,10 +127,10 @@ internal static partial class MapServerEndpoints
         }
 
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        if (!FeatureServerEndpoints.TryValidateAllowedParameters(
+        if (!GeoServicesRequestValueHelpers.TryValidateAllowedParameters(
                 context.Request.Query,
                 queryValidator,
-                FeatureServerEndpoints.FeatureServerServiceQueryAllowedParameters,
+                GeoServicesRequestValueHelpers.ServiceQueryAllowedParameters,
                 out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -138,7 +138,7 @@ internal static partial class MapServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
-        var values = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         if (!TryResolveServiceLayerId(values, out var layerId, out var layerError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -147,7 +147,7 @@ internal static partial class MapServerEndpoints
         }
 
         var queryHandler = context.RequestServices.GetRequiredService<IFeatureQueryDispatcher>();
-        var cancellationToken = FeatureServerEndpoints.GetTimeoutAwareCancellationToken(context);
+        var cancellationToken = GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
 
         return await queryHandler.HandleQueryFeaturesAsync(
             serviceId,
@@ -171,10 +171,10 @@ internal static partial class MapServerEndpoints
         }
 
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        if (!FeatureServerEndpoints.TryValidateAllowedParameters(
+        if (!GeoServicesRequestValueHelpers.TryValidateAllowedParameters(
                 context.Request.Query,
                 queryValidator,
-                FeatureServerEndpoints.FeatureServerServiceQueryAllowedParameters,
+                GeoServicesRequestValueHelpers.ServiceQueryAllowedParameters,
                 out var error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -182,13 +182,13 @@ internal static partial class MapServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
-        var cancellationToken = FeatureServerEndpoints.GetTimeoutAwareCancellationToken(context);
-        var (bodyValues, readError) = await FeatureServerEndpoints.TryReadRequestValuesAsync(context.Request, cancellationToken);
+        var cancellationToken = GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
+        var (bodyValues, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (bodyValues == null)
         {
-            if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
             {
-                return FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                return GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
             }
 
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -196,10 +196,10 @@ internal static partial class MapServerEndpoints
                 [readError ?? "Invalid request body."]);
         }
 
-        if (!FeatureServerEndpoints.TryValidateAllowedParameters(
+        if (!GeoServicesRequestValueHelpers.TryValidateAllowedParameters(
                 bodyValues,
                 queryValidator,
-                FeatureServerEndpoints.FeatureServerServiceQueryAllowedParameters,
+                GeoServicesRequestValueHelpers.ServiceQueryAllowedParameters,
                 out error))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -207,7 +207,7 @@ internal static partial class MapServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
-        var mergedValues = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        var mergedValues = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
         foreach (var pair in bodyValues)
         {
             mergedValues[pair.Key] = pair.Value;

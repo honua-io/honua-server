@@ -60,12 +60,17 @@ internal static class CollectionEndpoints
         [FromServices] ICoordinateTransformService? coordinateTransformService,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
+        using var activity = StacTelemetry.StartActivity(
+            StacTelemetry.Operations.Collections,
+            "/stac/collections",
+            HttpMethods.Get);
         StacLog.CollectionsRequested(logger);
 
         var validationError = OgcCommonUtilities.ValidateQueryParameters(
             context.Request, StacConstants.AllowedQueryParameters.Collections);
         if (validationError is not null)
         {
+            StacTelemetry.SetFailed(activity, "invalid_query_parameters");
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
@@ -107,15 +112,18 @@ internal static class CollectionEndpoints
             };
 
             StacLog.CollectionsReturned(logger, collections.Length);
+            StacTelemetry.SetResultCount(activity, collections.Length);
             return Results.Json(response, StacJsonContext.Default.StacCollectionsResponse, MediaTypes.Json);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
+            StacTelemetry.RecordException(activity, ex);
             throw;
         }
         catch (Exception ex)
         {
+            StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context, "An error occurred while retrieving STAC collections.");
@@ -129,6 +137,11 @@ internal static class CollectionEndpoints
         [FromServices] ICoordinateTransformService? coordinateTransformService,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
+        using var activity = StacTelemetry.StartActivity(
+            StacTelemetry.Operations.Collection,
+            "/stac/collections/{collectionId}",
+            HttpMethods.Get,
+            collectionId);
         StacLog.CollectionRequested(logger, collectionId);
 
         try
@@ -138,6 +151,7 @@ internal static class CollectionEndpoints
                 context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
+                StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");
                 StacLog.CollectionNotFound(logger, collectionId);
                 return validation.ErrorResult!;
             }
@@ -151,15 +165,18 @@ internal static class CollectionEndpoints
                 coordinateTransformService,
                 cancellationToken);
 
+            StacTelemetry.SetResultCount(activity, 1);
             return Results.Json(collection, StacJsonContext.Default.StacCollection, MediaTypes.Json);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
+            StacTelemetry.RecordException(activity, ex);
             throw;
         }
         catch (Exception ex)
         {
+            StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context, "An error occurred while retrieving the STAC collection.");

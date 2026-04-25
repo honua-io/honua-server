@@ -10,8 +10,9 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
+using Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
+using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Stac.Models;
 using NetTopologySuite.IO;
 
@@ -103,6 +104,9 @@ internal sealed class StacMappingService
     {
         var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
         var itemId = ResolveItemId(feature);
+        var escapedItemId = Uri.EscapeDataString(itemId);
+        var ogcItemId = OgcFeatureIdentifierResolver.FormatPublicId(feature, layer);
+        var escapedOgcItemId = Uri.EscapeDataString(ogcItemId);
         var stacBase = $"{baseUrl}/stac";
         IReadOnlyDictionary<string, object?> attributes = feature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
         var selectedPropertiesLookup = selectedProperties is null
@@ -156,7 +160,7 @@ internal sealed class StacMappingService
 
         var links = ImmutableArray.Create(
             Link.Create(
-                href: $"{stacBase}/collections/{collectionId}/items/{itemId}",
+                href: $"{stacBase}/collections/{collectionId}/items/{escapedItemId}",
                 rel: RelationTypes.Self,
                 type: MediaTypes.GeoJson,
                 title: $"Item {itemId}"),
@@ -176,7 +180,7 @@ internal sealed class StacMappingService
         {
             ["geojson"] = new StacAsset
             {
-                Href = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{itemId}",
+                Href = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{escapedOgcItemId}",
                 Title = "GeoJSON",
                 Type = MediaTypes.GeoJson,
                 Roles = ImmutableArray.Create("data")

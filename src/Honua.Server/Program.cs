@@ -779,7 +779,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Export.ExportJsonContext.Default,
         Honua.Server.Features.Protocols.Stac.StacJsonContext.Default,
         Honua.Server.Features.CloudCog.CloudCogJsonContext.Default,
-        Honua.Server.Features.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
+        Honua.Server.Features.Protocols.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
 });

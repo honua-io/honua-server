@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.SpatialAnalytics.Models;
+namespace Honua.Server.Features.Protocols.SpatialAnalytics.Models;
 
 /// <summary>
 /// GeoJSON-shaped FeatureCollection returned by the spatial analytics endpoints.

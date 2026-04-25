@@ -60,12 +60,18 @@ internal static class ItemEndpoints
         [FromServices] IFeatureReader featureReader,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
+        using var activity = StacTelemetry.StartActivity(
+            StacTelemetry.Operations.Items,
+            "/stac/collections/{collectionId}/items",
+            HttpMethods.Get,
+            collectionId);
         StacLog.ItemsRequested(logger, collectionId, limit);
 
         var validationError = OgcCommonUtilities.ValidateQueryParameters(
             context.Request, StacConstants.AllowedQueryParameters.Items);
         if (validationError is not null)
         {
+            StacTelemetry.SetFailed(activity, "invalid_query_parameters");
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
@@ -76,6 +82,7 @@ internal static class ItemEndpoints
                 context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
+                StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");
                 StacLog.CollectionNotFound(logger, collectionId);
                 return validation.ErrorResult!;
             }
@@ -99,6 +106,7 @@ internal static class ItemEndpoints
                 var spatialFilter = StacFilterHelpers.ParseBbox(bbox);
                 if (spatialFilter is null)
                 {
+                    StacTelemetry.SetFailed(activity, "invalid_bbox");
                     return StandardErrorHelpers.CreateBadRequest(context, "Invalid bbox parameter.");
                 }
 
@@ -111,6 +119,7 @@ internal static class ItemEndpoints
                 var temporalFilter = StacFilterHelpers.ParseDatetime(datetime, layer);
                 if (temporalFilter is null)
                 {
+                    StacTelemetry.SetFailed(activity, "invalid_datetime");
                     return StandardErrorHelpers.CreateBadRequest(context, "Invalid datetime parameter.");
                 }
 
@@ -169,15 +178,18 @@ internal static class ItemEndpoints
             };
 
             StacLog.ItemsReturned(logger, items.Length, collectionId);
+            StacTelemetry.SetResultCount(activity, items.Length, result.TotalCount);
             return Results.Json(response, StacJsonContext.Default.StacItemCollection, MediaTypes.GeoJson);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
+            StacTelemetry.RecordException(activity, ex);
             throw;
         }
         catch (Exception ex)
         {
+            StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context, "An error occurred while retrieving STAC items.");
@@ -191,6 +203,12 @@ internal static class ItemEndpoints
         [FromServices] IFeatureReader featureReader,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
+        using var activity = StacTelemetry.StartActivity(
+            StacTelemetry.Operations.Item,
+            "/stac/collections/{collectionId}/items/{itemId}",
+            HttpMethods.Get,
+            collectionId,
+            itemId);
         StacLog.ItemRequested(logger, collectionId, itemId);
 
         try
@@ -200,6 +218,7 @@ internal static class ItemEndpoints
                 context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
+                StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");
                 StacLog.CollectionNotFound(logger, collectionId);
                 return validation.ErrorResult!;
             }
@@ -223,6 +242,7 @@ internal static class ItemEndpoints
 
             if (feature is null)
             {
+                StacTelemetry.SetFailed(activity, "item_not_found");
                 StacLog.ItemNotFound(logger, collectionId, itemId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Item '{itemId}' not found in collection '{collectionId}'.");
             }
@@ -230,15 +250,18 @@ internal static class ItemEndpoints
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var item = StacMappingService.MapFeatureToItem(feature.Value, layer, baseUrl, geometrySrid: Wgs84Srid);
 
+            StacTelemetry.SetResultCount(activity, 1);
             return Results.Json(item, StacJsonContext.Default.StacItem, MediaTypes.GeoJson);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
+            StacTelemetry.RecordException(activity, ex);
             throw;
         }
         catch (Exception ex)
         {
+            StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context, "An error occurred while retrieving the STAC item.");
