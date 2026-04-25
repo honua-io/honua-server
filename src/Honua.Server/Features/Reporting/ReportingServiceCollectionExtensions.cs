@@ -4,7 +4,7 @@
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
-using Honua.Server.Features.Mcp.Resources;
+using Honua.Server.Features.Protocols.Mcp.Resources;
 using Honua.Server.Features.Reporting.Mcp;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

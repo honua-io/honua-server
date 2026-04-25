@@ -3,9 +3,9 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Reporting.Domain;
-using Honua.Server.Features.Mcp;
-using Honua.Server.Features.Mcp.Models;
-using Honua.Server.Features.Mcp.Resources;
+using Honua.Server.Features.Protocols.Mcp;
+using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Server.Features.Protocols.Mcp.Resources;
 using Honua.Server.Features.Reporting.Models;
 
 namespace Honua.Server.Features.Reporting.Mcp;

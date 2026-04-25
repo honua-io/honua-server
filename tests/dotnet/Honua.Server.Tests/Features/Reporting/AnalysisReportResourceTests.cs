@@ -8,7 +8,7 @@ using Honua.Core.Features.Reporting.Domain;
 using Honua.Server.Features.Reporting;
 using Honua.Server.Features.Reporting.Mcp;
 using Honua.Server.Features.Reporting.Models;
-using Honua.Server.Tests.Features.Mcp;
+using Honua.Server.Tests.Features.Protocols.Mcp;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
