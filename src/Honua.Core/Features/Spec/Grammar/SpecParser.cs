@@ -1025,6 +1025,10 @@ public sealed class SpecParser : ISpecParser
         var builder = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
         var commentIndex = 0;
         var attached = new bool[comments.Count];
+        var sourceIndex = 0;
+        var scopeIndex = 0;
+        var computeIndex = 0;
+        var outputIndex = 0;
 
         foreach (var section in sectionOrder)
         {
@@ -1033,7 +1037,15 @@ public sealed class SpecParser : ISpecParser
                 break;
             }
 
-            var path = SectionToJsonPointer(section);
+            var path = section switch
+            {
+                _ when section.StartsWith("source:", StringComparison.Ordinal) => $"/sources/{sourceIndex++}",
+                "scope" => $"/scope/{scopeIndex++}",
+                _ when section.StartsWith("compute:", StringComparison.Ordinal) => $"/compute/{computeIndex++}",
+                _ when section.StartsWith("output:", StringComparison.Ordinal) => $"/outputs/{outputIndex++}",
+                _ => SectionToJsonPointer(section)
+            };
+
             if (path is null)
             {
                 continue;
@@ -1069,21 +1081,6 @@ public sealed class SpecParser : ISpecParser
 
     private static string? SectionToJsonPointer(string section)
     {
-        if (section.StartsWith("source:", StringComparison.Ordinal))
-        {
-            return $"/sources/{EscapeJsonPointerSegment(section[7..])}";
-        }
-
-        if (section.StartsWith("compute:", StringComparison.Ordinal))
-        {
-            return $"/compute/{EscapeJsonPointerSegment(section[8..])}";
-        }
-
-        if (section.StartsWith("output:", StringComparison.Ordinal))
-        {
-            return $"/outputs/{EscapeJsonPointerSegment(section[7..])}";
-        }
-
         return section switch
         {
             "grammar" => "/grammar",
@@ -1093,16 +1090,6 @@ public sealed class SpecParser : ISpecParser
             "map" => "/map",
             _ => null
         };
-    }
-
-    private static string EscapeJsonPointerSegment(string value)
-    {
-        if (!value.Contains('~') && !value.Contains('/'))
-        {
-            return value;
-        }
-
-        return value.Replace("~", "~0", StringComparison.Ordinal).Replace("/", "~1", StringComparison.Ordinal);
     }
 
     private static SourceSpan SpanFrom(SourceSpan start, SourceSpan end)

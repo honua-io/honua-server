@@ -155,6 +155,10 @@ public static class Operations
     public const string StacCatalog = "StacCatalog";
     public const string StacSearch = "StacSearch";
 
+    // Grounding Operations
+    public const string GroundingMutate = "GroundingMutate";
+    public const string GroundingSummarize = "GroundingSummarize";
+
     // Test Quality Operations
     public const string TestQuality = "TestQuality";
     public const string FuzzTesting = "FuzzTesting";
