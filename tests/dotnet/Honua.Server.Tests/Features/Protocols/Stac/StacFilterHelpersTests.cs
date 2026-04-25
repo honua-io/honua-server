@@ -1,0 +1,176 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Protocols.Stac.Services;
+using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
+using NSubstitute;
+using CatalogGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
+
+namespace Honua.Server.Tests.Features.Protocols.Stac;
+
+public sealed class StacFilterHelpersTests
+{
+    [UnitTest]
+    public async Task ResolveStacVisibleLayers_WithSharedLayerAcrossServices_IsDeterministic()
+    {
+        var sharedLayer = CreateLayer(1);
+        var alphaService = CreateService("alpha", sharedLayer, allowAnonymous: true);
+        var betaService = CreateService("beta", sharedLayer);
+
+        var firstOrder = await ResolveVisibleLayersAsync(
+            [alphaService, betaService],
+            [sharedLayer]);
+
+        var secondOrder = await ResolveVisibleLayersAsync(
+            [betaService, alphaService],
+            [sharedLayer]);
+
+        firstOrder.Should().ContainSingle(layer => layer.Id == sharedLayer.Id);
+        secondOrder.Should().ContainSingle(layer => layer.Id == sharedLayer.Id);
+    }
+
+    [UnitTest]
+    public async Task ResolveStacVisibleLayers_FallsBackToLayerMetadata_WhenNoStacServiceClaimsLayer()
+    {
+        var metadataOnlyLayer = CreateLayer(1, allowAnonymous: true, stacEnabled: true);
+        var stacServiceLayer = CreateLayer(2);
+        var stacService = CreateService("alpha", stacServiceLayer, allowAnonymous: true, stacEnabled: true);
+
+        var visibleLayers = await ResolveVisibleLayersAsync(
+            [stacService],
+            [metadataOnlyLayer, stacServiceLayer]);
+
+        visibleLayers.Should().ContainSingle(layer => layer.Id == metadataOnlyLayer.Id);
+        visibleLayers.Should().ContainSingle(layer => layer.Id == stacServiceLayer.Id);
+    }
+
+    [UnitTest]
+    public async Task ResolveStacVisibleLayers_DoesNotUseLayerMetadata_WhenOwningServiceIsNotStacEnabled()
+    {
+        var serviceOwnedLayer = CreateLayer(1, allowAnonymous: true, stacEnabled: true);
+        var stacServiceLayer = CreateLayer(2);
+        var nonStacService = CreateService("alpha", serviceOwnedLayer, allowAnonymous: true, stacEnabled: false);
+        var stacService = CreateService("beta", stacServiceLayer, allowAnonymous: true, stacEnabled: true);
+
+        var visibleLayers = await ResolveVisibleLayersAsync(
+            [nonStacService, stacService],
+            [serviceOwnedLayer, stacServiceLayer]);
+
+        visibleLayers.Should().ContainSingle(layer => layer.Id == stacServiceLayer.Id);
+        visibleLayers.Should().NotContain(layer => layer.Id == serviceOwnedLayer.Id);
+    }
+
+    [UnitTest]
+    public void ParseBbox_WithDatelineCrossingBBox_ReturnsMultiPolygonFilter()
+    {
+        var filter = StacFilterHelpers.ParseBbox("170,-10,-170,10");
+
+        filter.Should().NotBeNull();
+
+        var geometry = new WKBReader().Read(filter!.Value.Geometry);
+        geometry.Should().BeOfType<MultiPolygon>();
+
+        var multiPolygon = (MultiPolygon)geometry;
+        multiPolygon.NumGeometries.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void ParseBbox_WithThreeDimensionalBBox_ReturnsNull()
+    {
+        var filter = StacFilterHelpers.ParseBbox("170,-10,-170,10,5,6");
+
+        filter.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ParseBbox_WithOutOfRangeCoordinates_ReturnsNull()
+    {
+        var filter = StacFilterHelpers.ParseBbox("200,95,210,100");
+
+        filter.Should().BeNull();
+    }
+
+    private static async Task<LayerDefinition[]> ResolveVisibleLayersAsync(
+        ServiceDefinition[] services,
+        LayerDefinition[] layers)
+    {
+        var layerCatalog = Substitute.For<ILayerCatalog>();
+        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(services));
+        layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(layers));
+
+        using var provider = new ServiceCollection()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = provider
+        };
+
+        return await StacFilterHelpers.ResolveStacVisibleLayersAsync(context, layerCatalog, CancellationToken.None);
+    }
+
+    private static LayerDefinition CreateLayer(int id, bool allowAnonymous = false, bool stacEnabled = false)
+    {
+        var metadata = stacEnabled || allowAnonymous
+            ? new CatalogMetadata
+            {
+                EnabledProtocols = stacEnabled ? [ServiceProtocols.Stac] : null,
+                AccessPolicy = allowAnonymous
+                    ? new AccessPolicy { AllowAnonymous = true }
+                    : null
+            }
+            : null;
+
+        return new LayerDefinition(
+            id,
+            $"Layer{id}",
+            "Test layer",
+            CatalogGeometryType.Point,
+            SpatialReference.WGS84,
+            [
+                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                new FieldDefinition("name", FieldType.String, Length: 128)
+            ],
+            Metadata: metadata);
+    }
+
+    private static ServiceDefinition CreateService(
+        string name,
+        LayerDefinition layer,
+        bool allowAnonymous = false,
+        bool stacEnabled = true)
+    {
+        string[]? enabledProtocols =
+            stacEnabled
+                ? [ServiceProtocols.Stac]
+                : [ServiceProtocols.FeatureServer];
+        var metadata = new CatalogMetadata
+        {
+            EnabledProtocols = enabledProtocols,
+            AccessPolicy = allowAnonymous
+                ? new AccessPolicy { AllowAnonymous = true }
+                : null
+        };
+
+        return new ServiceDefinition(
+            name,
+            $"{name} service",
+            [layer],
+            SpatialReference.WGS84,
+            Metadata: metadata);
+    }
+}

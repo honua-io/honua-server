@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Admin;
 /// Regression tests for layer publishing exception-to-status-code mapping.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public sealed class LayerPublishingExceptionMappingTests
 {
     [IntegrationTest]

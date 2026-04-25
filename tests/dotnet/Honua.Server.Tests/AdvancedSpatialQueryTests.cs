@@ -4,7 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -16,7 +16,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for advanced spatial query patterns (Issue #99).
 /// Tests distance-based queries (ST_DWithin, ST_Distance) and K-Nearest Neighbor (KNN) queries.
 /// </summary>
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
 {

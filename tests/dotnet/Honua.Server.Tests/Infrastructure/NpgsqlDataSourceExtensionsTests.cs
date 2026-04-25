@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Infrastructure;
 /// Uses real PostgreSQL database to test connection retry behavior
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class NpgsqlDataSourceExtensionsTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;

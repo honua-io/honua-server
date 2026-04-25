@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Scale;
 /// <summary>
 /// Multi-node scale tests that validate replica state is shared across instances.
 /// </summary>
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerReplicaScaleTests
 {
     private const string BaseUrlEnv = "HONUA_SCALE_TEST_BASE_URL";

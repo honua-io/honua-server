@@ -89,7 +89,7 @@ src/Honua.Server/Features/SensorThings/
 
 URL pattern: `/sensorthings/v1.1/{EntitySet}` and `/sensorthings/v1.1/{EntitySet}({id})` per OGC 18-088 Section 9.
 
-This follows the same pattern as `Features/OgcFeatures/`, `Features/OData/`, and `Features/Wfs20/`.
+This follows the same pattern as `Features/OgcFeatures/`, `Features/OData/`, and the OGC Classic WFS adapter under `Features/Protocols/Ogc/Classic/Wfs20/`.
 
 ### OData Query Reuse
 

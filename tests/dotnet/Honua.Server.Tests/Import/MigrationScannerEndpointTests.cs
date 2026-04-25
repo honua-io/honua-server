@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Import;
 /// Integration tests for the unified migration source scanner endpoint.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class MigrationScannerEndpointTests : IAsyncLifetime
 {

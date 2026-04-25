@@ -12,7 +12,7 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Admin;
 
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
 public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
 {

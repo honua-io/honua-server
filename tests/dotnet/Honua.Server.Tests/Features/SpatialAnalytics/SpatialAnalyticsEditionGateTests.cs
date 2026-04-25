@@ -4,7 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Server.Features.SpatialAnalytics;
+using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
@@ -22,11 +22,11 @@ namespace Honua.Server.Tests.Features.SpatialAnalytics;
 /// This proves that <see cref="SpatialAnalyticsRequestHandlers.RequireProEdition"/>
 /// blocks Community licenses with HTTP 403 and lets Pro / Enterprise through.
 /// </summary>
-[Protocol(Protocols.SpatialAnalytics)]
+[Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsEditionGateTests
 {
     [UnitTest]
-    [Protocol(Protocols.SpatialAnalytics)]
+    [Protocol(TestProtocols.SpatialAnalytics)]
     public void RequireProEdition_CommunityEdition_ReturnsForbidden()
     {
         var context = BuildHttpContext(HonuaEdition.Community);
@@ -39,7 +39,7 @@ public sealed class SpatialAnalyticsEditionGateTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.SpatialAnalytics)]
+    [Protocol(TestProtocols.SpatialAnalytics)]
     public void RequireProEdition_ProEdition_ReturnsNull()
     {
         var context = BuildHttpContext(HonuaEdition.Pro);
@@ -51,7 +51,7 @@ public sealed class SpatialAnalyticsEditionGateTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.SpatialAnalytics)]
+    [Protocol(TestProtocols.SpatialAnalytics)]
     public void RequireProEdition_EnterpriseEdition_ReturnsNull()
     {
         var context = BuildHttpContext(HonuaEdition.Enterprise);
@@ -63,7 +63,7 @@ public sealed class SpatialAnalyticsEditionGateTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.SpatialAnalytics)]
+    [Protocol(TestProtocols.SpatialAnalytics)]
     public void RequireProEdition_LoggerNull_StillBlocksCommunity()
     {
         // The handler tolerates a null logger (it's resolved best-effort from DI)

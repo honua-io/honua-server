@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Server.Features.FeatureServer.Models;
-using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.Protocols.GeoServices;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.Infrastructure.Services;

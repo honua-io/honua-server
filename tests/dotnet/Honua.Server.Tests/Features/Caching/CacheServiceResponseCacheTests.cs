@@ -11,7 +11,7 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class CacheServiceResponseCacheTests
 {
     [Theory]

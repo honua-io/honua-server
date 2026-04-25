@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Infrastructure.Middleware;
 /// across client-provided IDs, OpenTelemetry integration, and fallback generation.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Health)]
+[Protocol(TestProtocols.Health)]
 [Operation(Operations.HealthCheck)]
 public class CorrelationIdMiddlewareTests : IAsyncLifetime
 {

@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// Integration tests for platform admin endpoints: license, identity, cache, geocoding, features.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

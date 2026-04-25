@@ -8,7 +8,7 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class HonuaTelemetryTests
 {
     [UnitTest]

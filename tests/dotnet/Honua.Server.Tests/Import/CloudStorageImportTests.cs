@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Import;
 /// Uses StubHttpClientFactory to mock HTTP responses from cloud URLs.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class CloudStorageImportTests : IAsyncLifetime
 {

@@ -6,7 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
-using Honua.Server.Features.SpatialAnalytics;
+using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
@@ -23,11 +23,11 @@ namespace Honua.Server.Tests.Features.SpatialAnalytics;
 /// through to HTTP 500. This matters on the DuckDB read-only provider which maps the
 /// analytics routes alongside the rest of FeatureServer but does not ship a backend.
 /// </summary>
-[Protocol(Protocols.SpatialAnalytics)]
+[Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsReaderAvailabilityTests
 {
     [UnitTest]
-    [Protocol(Protocols.SpatialAnalytics)]
+    [Protocol(TestProtocols.SpatialAnalytics)]
     public void TryGetAnalyticsReader_NoReaderRegistered_ReturnsNotImplemented()
     {
         var context = BuildHttpContext(registerReader: false);
@@ -42,7 +42,7 @@ public sealed class SpatialAnalyticsReaderAvailabilityTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.SpatialAnalytics)]
+    [Protocol(TestProtocols.SpatialAnalytics)]
     public void TryGetAnalyticsReader_ReaderRegistered_ReturnsReader()
     {
         var context = BuildHttpContext(registerReader: true);
@@ -56,7 +56,7 @@ public sealed class SpatialAnalyticsReaderAvailabilityTests
     }
 
     [UnitTest]
-    [Protocol(Protocols.SpatialAnalytics)]
+    [Protocol(TestProtocols.SpatialAnalytics)]
     public void TryGetAnalyticsReader_NullLoggerMissingReader_StillReturnsNotImplemented()
     {
         // The helper tolerates a null logger (it's resolved best-effort from DI)

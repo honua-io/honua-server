@@ -16,7 +16,7 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class ManifestDriftWebhookDispatcherTests
 {
     private static readonly Uri WebhookUri = new("https://example.com/manifest-drift");

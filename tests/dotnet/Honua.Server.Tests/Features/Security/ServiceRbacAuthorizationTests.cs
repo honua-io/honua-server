@@ -16,12 +16,12 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.OData.Models;
-using Honua.Server.Features.Ogc.Common;
-using Honua.Server.Features.OgcFeatures;
-using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.Protocols.OData.Models;
+using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Server.Features.Protocols.Ogc.Api.Features;
+using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Authentication;
@@ -33,7 +33,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using OgcGeoJsonFeature = Honua.Server.Features.OgcFeatures.Models.GeoJsonFeature;
+using OgcGeoJsonFeature = Honua.Server.Features.Protocols.Ogc.Api.Features.Models.GeoJsonFeature;
 
 namespace Honua.Server.Tests.Features.Security;
 
@@ -42,7 +42,7 @@ public sealed class FeatureServerServiceRbacTests
     private const string CalculateExpression = "[{\"field\":\"name\",\"sqlExpression\":\"'RBAC'\"}]";
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithReadOnlyRole_ReturnsForbidden()
@@ -58,7 +58,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithScopedDataEditor_AllowsMatchingService()
@@ -74,7 +74,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithScopedDataEditor_DeniesOtherService()
@@ -90,7 +90,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithAdminRole_AllowsAnyService()
@@ -106,7 +106,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Append)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
     public async Task Append_WithAnonymousClient_AndEmptyEdits_ReturnsUnauthorized()
@@ -129,7 +129,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Append)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
     public async Task Append_WithReadOnlyRole_AndEmptyEdits_ReturnsForbidden()
@@ -152,7 +152,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Calculate)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithAnonymousClient_ReturnsUnauthorized()
@@ -167,7 +167,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Calculate)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithReadOnlyRole_ReturnsForbidden()
@@ -182,7 +182,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Calculate)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithScopedDataEditor_DeniesOtherService()
@@ -197,7 +197,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Calculate)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithScopedDataEditor_AllowsMatchingService()
@@ -212,7 +212,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithReadOnlyRole_ReturnsForbidden()
@@ -235,7 +235,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithAnonymousClient_AndMalformedBody_ReturnsUnauthorizedBeforeBodyValidation()
@@ -251,7 +251,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_WithReadOnlyRole_AndMalformedBody_ReturnsForbiddenBeforeBodyValidation()
@@ -267,7 +267,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.UnRegisterReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica")]
     public async Task UnRegisterReplica_WithReadOnlyRole_AndMalformedBody_ReturnsForbiddenBeforeBodyValidation()
@@ -283,7 +283,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
@@ -322,7 +322,7 @@ public sealed class FeatureServerServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.UnRegisterReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica")]
@@ -365,7 +365,7 @@ public sealed class GeoServicesRouteValidationTests
     private const string NumericLeadingService = "123service";
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task FeatureServer_Metadata_AllowsNumericLeadingServiceId()
@@ -382,7 +382,7 @@ public sealed class GeoServicesRouteValidationTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.MapServer)]
+    [Protocol(TestProtocols.MapServer)]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
     public async Task MapServer_Metadata_AllowsNumericLeadingServiceId()
@@ -402,7 +402,7 @@ public sealed class GeoServicesRouteValidationTests
 public sealed class WmsServiceRbacTests
 {
     [IntegrationTest]
-    [Protocol(Protocols.Wms13)]
+    [Protocol(TestProtocols.Wms13)]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task GetCapabilities_WithAnonymousClient_ReturnsWmsAccessDeniedException()
@@ -424,7 +424,7 @@ public sealed class WmsServiceRbacTests
 public sealed class OgcServiceRbacTests
 {
     [IntegrationTest]
-    [Protocol(Protocols.OgcApiFeatures)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WithScopedDataEditor_AllowsMatchingService()
@@ -440,7 +440,7 @@ public sealed class OgcServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OgcApiFeatures)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WithScopedDataEditor_DeniesOtherService()
@@ -456,7 +456,7 @@ public sealed class OgcServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OgcApiFeatures)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WithAdminRole_AllowsAnyService()
@@ -477,7 +477,7 @@ public sealed class FeatureServerServiceAccessPolicyTests
     private const string CalculateExpression = "[{\"field\":\"name\",\"sqlExpression\":\"'RBAC'\"}]";
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService()
@@ -495,7 +495,7 @@ public sealed class FeatureServerServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService()
@@ -520,7 +520,7 @@ public sealed class FeatureServerServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer()
@@ -544,7 +544,7 @@ public sealed class FeatureServerServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithLayerWriteRolePolicy_AllowsMatchingRole()
@@ -562,7 +562,7 @@ public sealed class FeatureServerServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Calculate)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer()
@@ -588,7 +588,7 @@ public sealed class FeatureServerServiceAccessPolicyTests
 public sealed class FeatureServerReplicationAccessPolicyTests
 {
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer()
@@ -619,7 +619,7 @@ public sealed class FeatureServerReplicationAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithLayerWriteRolePolicy_AllowsMatchingRole()
@@ -644,7 +644,7 @@ public sealed class FeatureServerReplicationAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ExtractChanges)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
@@ -683,7 +683,7 @@ public sealed class FeatureServerReplicationAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
@@ -722,7 +722,7 @@ public sealed class FeatureServerReplicationAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.UnRegisterReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica")]
@@ -787,7 +787,7 @@ public sealed class FeatureServerReplicationAccessPolicyTests
 public sealed class OgcServiceAccessPolicyTests
 {
     [IntegrationTest]
-    [Protocol(Protocols.OgcApiFeatures)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WithAdminRole_RespectsServiceWritePolicy()
@@ -811,7 +811,7 @@ public sealed class OgcServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OgcApiFeatures)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService()
@@ -829,7 +829,7 @@ public sealed class OgcServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OgcApiFeatures)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WithLayerWriteRolePolicy_AllowsMatchingRole()
@@ -847,7 +847,7 @@ public sealed class OgcServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OgcApiTiles)]
+    [Protocol(TestProtocols.OgcApiTiles)]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
     public async Task GetCollection_WithAnonymousClient_RespectsServiceReadPolicy()
@@ -873,7 +873,7 @@ public sealed class OgcServiceAccessPolicyTests
 public sealed class ODataServiceRbacTests
 {
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Create)]
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_WithScopedDataEditor_AllowsMatchingService()
@@ -889,7 +889,7 @@ public sealed class ODataServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Create)]
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_WithScopedDataEditor_DeniesOtherService()
@@ -905,7 +905,7 @@ public sealed class ODataServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Create)]
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_WithAdminRole_AllowsAnyService()
@@ -921,7 +921,7 @@ public sealed class ODataServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithScopedDataEditor_DeniesOtherService()
@@ -960,7 +960,7 @@ public sealed class ODataServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithAnonymousClient_AllowsPublicLayerReads()
@@ -1000,7 +1000,7 @@ public sealed class ODataServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.ODataSearch)]
     [Endpoint("GET /odata/Features({layerId})?$search")]
     public async Task Search_WithAnonymousClient_ReturnsUnauthorized()
@@ -1015,7 +1015,7 @@ public sealed class ODataServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.ODataApply)]
     [Endpoint("GET /odata/Features({layerId})?$apply")]
     public async Task Apply_WithAnonymousClient_ReturnsUnauthorized()
@@ -1030,7 +1030,7 @@ public sealed class ODataServiceRbacTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.ODataSearch)]
     [Endpoint("GET /odata/Features?$search")]
     public async Task Search_AllLayersRoute_WithAnonymousClient_ReturnsUnauthorized()
@@ -1048,7 +1048,7 @@ public sealed class ODataServiceRbacTests
 public sealed class ODataServiceAccessPolicyTests
 {
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Create)]
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_WithAdminRole_RespectsServiceWritePolicy()
@@ -1072,7 +1072,7 @@ public sealed class ODataServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Create)]
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService()
@@ -1090,7 +1090,7 @@ public sealed class ODataServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Create)]
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_WithLayerWriteRolePolicy_AllowsMatchingRole()
@@ -1108,7 +1108,7 @@ public sealed class ODataServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithAdminRole_RespectsServiceWritePolicy()
@@ -1155,7 +1155,7 @@ public sealed class ODataServiceAccessPolicyTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService()
@@ -1199,7 +1199,7 @@ public sealed class ODataServiceAccessPolicyTests
 public sealed class ODataServiceBoundaryTests
 {
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Layers")]
     public async Task GetLayers_WithSharedLayerInSecondaryService_DoesNotLeakCanonicalBoundary()
@@ -1224,7 +1224,7 @@ public sealed class ODataServiceBoundaryTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Create)]
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_WithSecondaryScopedEditor_DeniesCanonicalServiceMismatch()
@@ -1241,7 +1241,7 @@ public sealed class ODataServiceBoundaryTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Create)]
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_PublishesCanonicalServiceId()
@@ -1262,7 +1262,7 @@ public sealed class ODataServiceBoundaryTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.ODataV4)]
+    [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
     public async Task BatchCreateFeature_PublishesCanonicalServiceId()
@@ -1304,7 +1304,7 @@ public sealed class ODataServiceBoundaryTests
 public sealed class OgcServiceBoundaryTests
 {
     [IntegrationTest]
-    [Protocol(Protocols.OgcApiFeatures)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections")]
     public async Task GetCollections_WithSharedLayerInSecondaryService_DoesNotLeakCanonicalBoundary()
@@ -1329,7 +1329,7 @@ public sealed class OgcServiceBoundaryTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OgcApiFeatures)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WithSecondaryScopedEditor_DeniesCanonicalServiceMismatch()
@@ -1346,7 +1346,7 @@ public sealed class OgcServiceBoundaryTests
     }
 
     [IntegrationTest]
-    [Protocol(Protocols.OgcApiFeatures)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_PublishesCanonicalServiceId()

@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Infrastructure;
 /// Tests for structured logging with Serilog and source generators
 /// Validates AOT-compatible logging methods and event IDs
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class StructuredLoggingTests
 {
     [UnitTest]

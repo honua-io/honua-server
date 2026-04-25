@@ -5,8 +5,8 @@ using System.Globalization;
 using System.Security;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.OData.Models;
-using Honua.Server.Features.OData.Services;
+using Honua.Server.Features.Protocols.OData.Models;
+using Honua.Server.Features.Protocols.OData.Services;
 
 namespace Honua.Server.Features.Infrastructure.Models;
 

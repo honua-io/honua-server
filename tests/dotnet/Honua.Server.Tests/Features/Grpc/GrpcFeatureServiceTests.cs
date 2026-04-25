@@ -32,7 +32,7 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Grpc;
 
-[Protocol(Protocols.Grpc)]
+[Protocol(TestProtocols.Grpc)]
 [Operation(Operations.Query)]
 public sealed class GrpcFeatureServiceTests
 {

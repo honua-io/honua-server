@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Infrastructure.Middleware;
 /// are applied to all responses per MVP security requirements.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Comprehensive)]
+[Protocol(TestProtocols.Comprehensive)]
 [Operation(Operations.Security)]
 public class SecurityHeadersMiddlewareTests : IAsyncLifetime
 {

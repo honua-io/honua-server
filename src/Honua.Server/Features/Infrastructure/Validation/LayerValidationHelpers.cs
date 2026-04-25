@@ -8,8 +8,8 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.OData.Services;
-using Honua.Server.Features.OgcFeatures;
+using Honua.Server.Features.Protocols.OData.Services;
+using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Microsoft.Extensions.DependencyInjection;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 

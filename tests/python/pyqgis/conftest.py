@@ -504,7 +504,8 @@ def make_oapif_layer(base_url: str, collection_id: str, *, extra_params: str = "
     """Construct a QGIS vector layer via the OGC API Features (OAPIF) provider."""
     from qgis.core import QgsVectorLayer
 
-    uri = f"url='{base_url}/ogc/features' collectionId='{collection_id}'"
+    # QGIS' OAPIF provider names the OGC API collection id parameter "typename".
+    uri = f"url='{base_url}/ogc/features' typename='{collection_id}'"
     if extra_params:
         uri = f"{uri} {extra_params}"
     return QgsVectorLayer(uri, "oapif_test", "OAPIF")

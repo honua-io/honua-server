@@ -128,6 +128,6 @@ Each protocol has extension methods to convert between shared models and protoco
 |---|---|
 | `src/Honua.Core/Features/Shared/Models/GeoJsonBase.cs` | `GeoJsonFeatureBase`, `PagedResponseBase` |
 | `src/Honua.Core/Features/Shared/Models/ModelConversions.cs` | Exception → ServiceError, Feature → GeoJsonFeatureBase |
-| `src/Honua.Server/Features/FeatureServer/Models/FeatureServerExtensions.cs` | FeatureServer conversions |
-| `src/Honua.Server/Features/OgcFeatures/Models/OgcExtensions.cs` | OGC conversions |
-| `src/Honua.Server/Features/OData/Models/ODataExtensions.cs` | OData conversions |
+| `src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/Models/FeatureServerExtensions.cs` | FeatureServer conversions |
+| `src/Honua.Server/Features/Protocols/Ogc/Api/Features/Models/OgcExtensions.cs` | OGC conversions |
+| `src/Honua.Server/Features/Protocols/OData/Models/ODataExtensions.cs` | OData conversions |

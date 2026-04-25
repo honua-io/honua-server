@@ -27,7 +27,7 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 /// Integration tests for API key authentication with development bypass functionality
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin, Protocols.Health, Protocols.FeatureServer)]
+[Protocol(TestProtocols.Admin, TestProtocols.Health, TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
 public class ApiKeyAuthenticationTests : IAsyncLifetime
 {

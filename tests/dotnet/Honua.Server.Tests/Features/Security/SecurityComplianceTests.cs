@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Security;
 /// Comprehensive security compliance tests covering OWASP Top 10 and enterprise security requirements
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Comprehensive)]
+[Protocol(TestProtocols.Comprehensive)]
 [Operation(Operations.Security)]
 public sealed class SecurityComplianceTests : IAsyncLifetime
 {

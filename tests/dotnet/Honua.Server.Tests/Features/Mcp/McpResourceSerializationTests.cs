@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// operators parse — job ids, resource URIs, map-package identifiers, and
 /// stub markers — so accidental rename of a JSON property breaks the build.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class McpResourceSerializationTests
 {
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();

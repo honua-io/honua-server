@@ -105,6 +105,12 @@ public static class HonuaTelemetry
         /// <summary>Tile generation activity.</summary>
         public const string TileGeneration = "honua.tile.generate";
 
+        /// <summary>Map image rendering activity shared by map protocols.</summary>
+        public const string MapRender = "honua.map.render";
+
+        /// <summary>Feature identify operation activity shared by map protocols.</summary>
+        public const string FeatureIdentify = "honua.feature.identify";
+
         /// <summary>File import processing activity.</summary>
         public const string FileImport = "honua.import.file";
 
@@ -287,6 +293,9 @@ public static class HonuaTelemetry
 
         /// <summary>GeoServices GPServer REST API.</summary>
         public const string GPServer = "GPServer";
+
+        /// <summary>SpatioTemporal Asset Catalog API.</summary>
+        public const string Stac = "STAC";
 
         /// <summary>Model Context Protocol operator surface.</summary>
         public const string Mcp = "Mcp";

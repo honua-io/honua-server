@@ -75,7 +75,7 @@ src/Honua.Server/Features/
 **All code for a feature lives together:**
 ```csharp
 // Everything for FeatureServer query operations in one place
-Features/FeatureServer/
+Features/Protocols/GeoServices/FeatureServer/
 |-- FeatureServerEndpoints.cs     # HTTP layer: MapGet/MapPost
 |-- FeatureServerHandler.cs       # Business logic: validation, transformation
 |-- FeatureServerLog.cs           # Observability: structured logging
@@ -87,7 +87,7 @@ Features/FeatureServer/
 **Each protocol slice is self-contained:**
 ```csharp
 // OGC Features completely independent of FeatureServer
-Features/OgcFeatures/
+Features/Protocols/Ogc/Api/Features/
 |-- OgcFeaturesEndpoints.cs       # OGC-specific HTTP endpoints
 |-- OgcJsonContext.cs             # OGC-specific JSON serialization
 |-- Models/OgcModels.cs           # OGC-specific DTOs
@@ -112,7 +112,7 @@ Features/Infrastructure/
 **Each feature slice registers its own services:**
 
 ```csharp
-// Features/FeatureServer/FeatureServerServices.cs
+// Features/Protocols/GeoServices/FeatureServer/FeatureServerServices.cs
 public static class FeatureServerServices
 {
     public static IServiceCollection AddFeatureServerServices(
@@ -127,7 +127,7 @@ public static class FeatureServerServices
     }
 }
 
-// Features/OgcFeatures/OgcFeaturesServices.cs
+// Features/Protocols/Ogc/Api/Features/OgcFeaturesServices.cs
 public static class OgcFeaturesServices
 {
     public static IServiceCollection AddOgcFeaturesServices(
@@ -151,7 +151,7 @@ builder.Services.AddODataServices();
 **Each feature exposes its endpoints independently:**
 
 ```csharp
-// Features/FeatureServer/FeatureServerEndpoints.cs
+// Features/Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs
 public static class FeatureServerEndpoints
 {
     public static void MapFeatureServerEndpoints(this WebApplication app)
@@ -233,7 +233,7 @@ private static async Task<IResult> GetFeatures(
 **Configuration organized by feature:**
 
 ```csharp
-// Features/FeatureServer/Models/FeatureServerConfiguration.cs
+// Features/Protocols/GeoServices/FeatureServer/Models/FeatureServerConfiguration.cs
 public record FeatureServerConfiguration
 {
     public int MaxRecordCount { get; init; } = 1000;
@@ -241,7 +241,7 @@ public record FeatureServerConfiguration
     public string[] SupportedFormats { get; init; } = ["json", "geojson"];
 }
 
-// Features/OgcFeatures/Models/OgcConfiguration.cs
+// Features/Protocols/Ogc/Api/Features/Models/OgcConfiguration.cs
 public record OgcConfiguration
 {
     public int DefaultLimit { get; init; } = 10;
@@ -264,10 +264,10 @@ services.Configure<OgcConfiguration>(
 ```bash
 # Working on FeatureServer query enhancement
 git status
-    modified: Features/FeatureServer/FeatureServerEndpoints.cs
-    modified: Features/FeatureServer/FeatureServerHandler.cs
-    added:    Features/FeatureServer/Services/AdvancedQueryValidator.cs
-    modified: tests/dotnet/Honua.Server.Tests/Features/FeatureServer/QueryTests.cs
+    modified: Features/Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs
+    modified: Features/Protocols/GeoServices/FeatureServer/FeatureServerHandler.cs
+    added:    Features/Protocols/GeoServices/FeatureServer/Services/AdvancedQueryValidator.cs
+    modified: tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/QueryTests.cs
 ```
 
 **All changes localized to FeatureServer slice - no cross-cutting modifications**
@@ -275,8 +275,8 @@ git status
 ### 2. Team Organization
 **Teams can own entire vertical slices:**
 
-- **GeoServices Team**: Owns `Features/FeatureServer/` completely
-- **Standards Team**: Owns `Features/OgcFeatures/` and `Features/OData/`
+- **GeoServices Team**: Owns `Features/Protocols/GeoServices/FeatureServer/` completely
+- **Standards Team**: Owns `Features/Protocols/Ogc/Api/Features/` and `Features/Protocols/OData/`
 - **Admin Team**: Owns `Features/Admin/` and `Features/Import/`
 - **Platform Team**: Owns `Features/Infrastructure/` and shared Core
 
@@ -341,8 +341,8 @@ tests/dotnet/Honua.Server.Tests/Features/
 ###  Cross-Slice Dependencies
 ```csharp
 // WRONG: FeatureServer depending on OGC-specific code
-Features/FeatureServer/FeatureServerHandler.cs:
-using Honua.Server.Features.OgcFeatures.Models;  //  Cross-slice dependency
+Features/Protocols/GeoServices/FeatureServer/FeatureServerHandler.cs:
+using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;  // Cross-slice dependency
 
 // CORRECT: Both slices depend on shared Core abstractions
 using Honua.Core.Features.Models;  //  Shared domain model
@@ -409,7 +409,7 @@ public static IServiceCollection AddFeatureServices(this IServiceCollection serv
 **Each feature can expose health status:**
 
 ```csharp
-// Features/FeatureServer/FeatureServerHealthCheck.cs
+// Features/Protocols/GeoServices/FeatureServer/FeatureServerHealthCheck.cs
 public class FeatureServerHealthCheck : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(
@@ -431,7 +431,7 @@ services.AddHealthChecks()
 **Feature-specific observability:**
 
 ```csharp
-// Features/FeatureServer/FeatureServerMetrics.cs
+// Features/Protocols/GeoServices/FeatureServer/FeatureServerMetrics.cs
 public class FeatureServerMetrics
 {
     private readonly Counter<long> _queryCounter;

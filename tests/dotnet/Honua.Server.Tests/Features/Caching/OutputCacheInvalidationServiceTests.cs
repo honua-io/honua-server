@@ -17,7 +17,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class OutputCacheInvalidationServiceTests
 {
     private static string ScopedKey(string key) => CacheScopeKeys.EnsureScoped(key, null);

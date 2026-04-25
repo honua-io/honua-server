@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Admin;
 /// Integration tests for table discovery with a separate PostGIS database connection.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.TableDiscovery)]
 public sealed class ConnectionDiscoveryIntegrationTests : IAsyncLifetime
 {

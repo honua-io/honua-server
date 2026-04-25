@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -19,7 +19,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for FeatureServer attachment endpoints.
 /// Tests Issue #13 - Attachment CRUD operations implementation.
 /// </summary>
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class AttachmentEndpointTests : IAsyncLifetime
 {

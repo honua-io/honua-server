@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// <summary>
 /// Unit tests for the built-in process catalog and plan validator.
 /// </summary>
-[Protocol(Protocols.Grpc)]
+[Protocol(TestProtocols.Grpc)]
 public sealed class ProcessCatalogTests
 {
     private readonly BuiltInProcessCatalog _catalog = new();

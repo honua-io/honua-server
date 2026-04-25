@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Admin;
 /// Integration tests for layer publishing admin endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()

@@ -13,7 +13,7 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Tests for database migration functionality using DbUp
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 [Collection("Database")]
 public sealed class DatabaseMigrationTests : IAsyncLifetime
 {

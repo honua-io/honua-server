@@ -689,7 +689,7 @@ public sealed class EvalRunner
                 ["distance"] = "10"
             });
             using var response = await client.PostAsync(
-                "/rest/services/HonuaEval/GPServer/geometry.buffer/submitJob",
+                $"/rest/services/{WebAppFixture.TestServiceId}/GPServer/geometry.buffer/submitJob",
                 content,
                 cancellationToken).ConfigureAwait(false);
 

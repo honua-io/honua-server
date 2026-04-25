@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Import;
 /// Verifies that invalid GeoParquet metadata returns 400 instead of 500.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class GeoParquetUrlPreviewTests : IAsyncLifetime
 {

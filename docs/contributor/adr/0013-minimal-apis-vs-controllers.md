@@ -29,7 +29,7 @@ The legacy Honua system suffered from controllers with 20+ dependencies injected
 
 **Endpoint Registration**
 ```csharp
-// Honua.Server/Features/FeatureServer/FeatureServerEndpoints.cs
+// Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs
 public static class FeatureServerEndpoints
 {
     public static void MapFeatureServerEndpoints(this WebApplication app)
@@ -65,7 +65,7 @@ public static class FeatureServerEndpoints
 **Protocol Separation**
 ```csharp
 // Each protocol gets its own endpoint class
-// Honua.Server/Features/OgcFeatures/OgcFeaturesEndpoints.cs
+// Honua.Server/Features/Protocols/Ogc/Api/Features/OgcFeaturesEndpoints.cs
 public static class OgcFeaturesEndpoints
 {
     public static void MapOgcFeaturesEndpoints(this WebApplication app)

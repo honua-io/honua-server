@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Import;
 /// Integration tests that verify GeoServer discovery against deterministic seeded resources.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class GeoServerCuratedImportIntegrationTests : IAsyncLifetime
 {

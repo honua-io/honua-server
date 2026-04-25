@@ -13,7 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Import;
 
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class ImportUrlEndpointTests : IAsyncLifetime
 {

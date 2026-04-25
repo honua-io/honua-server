@@ -16,7 +16,7 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class FeatureChangeWebhookDispatcherTests
 {
     [UnitTest]

@@ -31,7 +31,7 @@ namespace Honua.Server.Tests.Import;
 /// Tests for shapefile import from AWS S3 cloud storage.
 /// </summary>
 [Collection("Emulators")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class AwsS3ShapefileImportTests : IAsyncLifetime
 {
@@ -146,7 +146,7 @@ public sealed class AwsS3ShapefileImportTests : IAsyncLifetime
 /// Tests for shapefile import from Azure Blob storage.
 /// </summary>
 [Collection("Emulators")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class AzureBlobShapefileImportTests : IAsyncLifetime
 {

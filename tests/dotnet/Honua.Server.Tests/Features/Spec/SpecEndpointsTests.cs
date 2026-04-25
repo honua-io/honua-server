@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Spec;
 /// event shape, plan structure, artifact retrieval, and error envelopes — the
 /// operator-facing evidence for ticket #789's acceptance criteria.
 /// </summary>
-[Protocol(Protocols.Spec)]
+[Protocol(TestProtocols.Spec)]
 public sealed class SpecEndpointsTests
 {
     [IntegrationTest]

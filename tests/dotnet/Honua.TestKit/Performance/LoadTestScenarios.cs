@@ -84,16 +84,20 @@ public static class LoadTestScenarios
 
         return Scenario.Create("spatial_query_load", async context =>
             {
-                // Generate random bounding boxes for testing
+                // Keep generated envelopes inside the seeded test extent and below configured spatial limits.
                 var random = new Random(context.InvocationNumber.GetHashCode());
-                var minX = random.NextDouble() * 360 - 180;
-                var minY = random.NextDouble() * 180 - 90;
-                var maxX = minX + random.NextDouble() * 10;
-                var maxY = minY + random.NextDouble() * 10;
+                var centerX = -122.50 + random.NextDouble() * 0.20;
+                var centerY = 37.70 + random.NextDouble() * 0.12;
+                var halfWidth = 0.0025 + random.NextDouble() * 0.005;
+                var halfHeight = 0.0025 + random.NextDouble() * 0.005;
+                var minX = centerX - halfWidth;
+                var minY = centerY - halfHeight;
+                var maxX = centerX + halfWidth;
+                var maxY = centerY + halfHeight;
 
-                var bbox = $"{minX},{minY},{maxX},{maxY}";
+                var bbox = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3}", minX, minY, maxX, maxY);
                 var response = await httpClient.GetAsync(
-                    $"{baseUrl}/rest/services/test/FeatureServer/{layerId}/query?f=json&geometry={bbox}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects");
+                    $"{baseUrl}/rest/services/test/FeatureServer/{layerId}/query?f=json&geometry={bbox}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&inSR=4326");
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })

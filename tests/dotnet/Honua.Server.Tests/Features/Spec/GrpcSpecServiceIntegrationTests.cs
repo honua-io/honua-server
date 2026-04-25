@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Spec;
 /// Uses gRPC-Web transport (HTTP/1.1) since the in-memory test server does not
 /// support HTTP/2. Proves the gRPC apply/plan/cancel surface ships end-to-end.
 /// </summary>
-[Protocol(Protocols.Grpc)]
+[Protocol(TestProtocols.Grpc)]
 public sealed class GrpcSpecServiceIntegrationTests : IDisposable
 {
     private readonly TestWebApplicationFactory _factory;
@@ -45,7 +45,7 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.SpecService/PlanSpec")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/PlanSpec")]
     public async Task PlanSpec_SingleNodeDocument_ReturnsPlanWithContentHash()
     {
         var request = new Proto.PlanSpecRequest { Document = BuildDocument("node-a") };
@@ -61,7 +61,7 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.SpecService/ApplySpec")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/ApplySpec")]
     public async Task ApplySpec_SingleNodeDocument_StreamsTerminalEvents()
     {
         var request = new Proto.ApplySpecRequest
@@ -506,7 +506,7 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("POST /geospatial.v1.SpecService/CancelApply")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.SpecService/CancelApply")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/CancelApply")]
     public async Task CancelApply_UnknownToken_ReturnsCancelledFalse()
     {
         var request = new Proto.CancelApplyRequest { ApplyToken = "does-not-exist" };

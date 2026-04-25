@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Infrastructure.Security;
 [Trait("Category", "Integration")]
 [Trait("Component", "Security")]
 [Trait("Feature", "CspViolationReporting")]
-[Protocol(Protocols.Comprehensive)]
+[Protocol(TestProtocols.Comprehensive)]
 [Operation(Operations.Security)]
 public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationFactory>
 {

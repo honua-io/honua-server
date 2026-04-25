@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Comprehensive;
 /// with security, performance, and edge case validation.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Comprehensive)]
+[Protocol(TestProtocols.Comprehensive)]
 public class ApiSurfaceComplianceTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

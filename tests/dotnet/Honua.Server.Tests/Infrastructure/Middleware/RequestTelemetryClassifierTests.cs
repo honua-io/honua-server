@@ -25,6 +25,8 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/ogc/processes", HonuaTelemetry.Protocols.OgcProcesses)]
     [InlineData("/ogc/services/test/wms", HonuaTelemetry.Protocols.OgcMaps)]
     [InlineData("/wfs", HonuaTelemetry.Protocols.Wfs20)]
+    [InlineData("/stac", HonuaTelemetry.Protocols.Stac)]
+    [InlineData("/stac/search", HonuaTelemetry.Protocols.Stac)]
     public void ResolveProtocol_KnownSurface_ReturnsExpectedProtocol(string path, string expectedProtocol)
     {
         RequestTelemetryClassifier.ResolveProtocol(new PathString(path)).Should().Be(expectedProtocol);
@@ -38,6 +40,7 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/ogc/featuresx")]
     [InlineData("/collectionsx")]
     [InlineData("/odatax")]
+    [InlineData("/stacx")]
     public void ResolveProtocol_PrefixWithoutSegmentBoundary_ReturnsNull(string path)
     {
         RequestTelemetryClassifier.ResolveProtocol(new PathString(path)).Should().BeNull();
@@ -50,6 +53,7 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/ogc/processes2")]
     [InlineData("/ogc/featuresx")]
     [InlineData("/odatax")]
+    [InlineData("/stacx")]
     public void ResolveOperation_PrefixWithoutSegmentBoundary_ReturnsNull(string path)
     {
         var context = new DefaultHttpContext();
@@ -81,8 +85,18 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/rest/services/test/FeatureServer/0/queryDensity", "queryDensity")]
     [InlineData("/rest/services/test/FeatureServer/queryDomains", "queryDomains")]
     [InlineData("/rest/services/test/FeatureServer/replicas/abc123", "replicaInfo")]
+    [InlineData("/ogc/features/collections/1/clusters", "queryClusters")]
+    [InlineData("/ogc/features/collections/1/spatialJoin", "spatialJoin")]
+    [InlineData("/ogc/features/collections/1/bufferAggregate", "queryBufferAggregate")]
+    [InlineData("/ogc/features/collections/1/density", "queryDensity")]
     [InlineData("/ogc/processes/processes/honua-geoprocessing/execution", "execute")]
     [InlineData("/ogc/processes/jobs/abc123/results", "jobResults")]
+    [InlineData("/stac", "catalog")]
+    [InlineData("/stac/collections", "collections")]
+    [InlineData("/stac/collections/1", "collection")]
+    [InlineData("/stac/collections/1/items", "items")]
+    [InlineData("/stac/collections/1/items/abc", "item")]
+    [InlineData("/stac/search", "search.get")]
     public void ResolveOperation_KnownSurface_ReturnsExpectedOperation(string path, string expectedOperation)
     {
         var context = new DefaultHttpContext();
@@ -90,6 +104,16 @@ public sealed class RequestTelemetryClassifierTests
         context.Request.Path = path;
 
         RequestTelemetryClassifier.ResolveOperation(context).Should().Be(expectedOperation);
+    }
+
+    [Fact]
+    public void ResolveOperation_StacSearchPost_ReturnsSearchPost()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Post;
+        context.Request.Path = "/stac/search";
+
+        RequestTelemetryClassifier.ResolveOperation(context).Should().Be("search.post");
     }
 
     [Fact]

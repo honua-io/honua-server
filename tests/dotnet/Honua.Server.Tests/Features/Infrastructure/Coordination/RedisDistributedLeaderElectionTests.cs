@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Coordination;
 /// <summary>
 /// Tests for RedisDistributedLeaderElection — validates distributed leader election behavior.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class RedisDistributedLeaderElectionTests : IDisposable
 {
     private readonly RedisDistributedLeaderElection _leaderElection;

@@ -481,10 +481,10 @@ if (!isTestEnvironment)
     builder.Services.AddOrchestrationBackgroundServices();
 }
 
-builder.Services.AddSingleton<Honua.Server.Features.FeatureServer.DistributedReplicaStore>(sp =>
-    new Honua.Server.Features.FeatureServer.DistributedReplicaStore(
+builder.Services.AddSingleton<Honua.Server.Features.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
+    new Honua.Server.Features.Protocols.GeoServices.FeatureServer.DistributedReplicaStore(
         sp.GetService<IDistributedCache>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.FeatureServer.DistributedReplicaStore>>()));
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>>()));
 // Replica/change-tracking services are provider-specific: Postgres registers concrete
 // implementations; DuckDB (read-only) registers no-op stubs via AddDuckDBServices.
 var replicaProvider = builder.Configuration.GetValue<string>("DataSource:Provider");
@@ -497,9 +497,9 @@ if (!string.Equals(replicaProvider, "duckdb", StringComparison.OrdinalIgnoreCase
         new Honua.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
 }
-builder.Services.AddScoped<Honua.Server.Features.FeatureServer.IReplicaStore>(sp =>
-    new Honua.Server.Features.FeatureServer.Services.CachingReplicaStore(
-        sp.GetRequiredService<Honua.Server.Features.FeatureServer.DistributedReplicaStore>(),
+builder.Services.AddScoped<Honua.Server.Features.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
+    new Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
+        sp.GetRequiredService<Honua.Server.Features.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
         sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
 
 // Register Geoservices import job manager and background service
@@ -732,12 +732,12 @@ builder.Services.AddApiVersioning(options =>
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
-        Honua.Server.Features.FeatureServer.Models.FeatureServerJsonContext.Default,
-        Honua.Server.Features.ImageServer.Models.ImageServerJsonContext.Default,
-        Honua.Server.Features.OData.Models.ODataJsonContext.Default,
-        Honua.Server.Features.OgcFeatures.OgcJsonContext.Default,
-        Honua.Server.Features.OgcMaps.Models.OgcMapsJsonContext.Default,
-        Honua.Server.Features.OgcTiles.OgcTilesJsonContext.Default,
+        Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.FeatureServerJsonContext.Default,
+        Honua.Server.Features.Protocols.GeoServices.ImageServer.Models.ImageServerJsonContext.Default,
+        Honua.Server.Features.Protocols.OData.Models.ODataJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Features.OgcJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Maps.Models.OgcMapsJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Tiles.OgcTilesJsonContext.Default,
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
         Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
@@ -775,13 +775,13 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
         Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
-        Honua.Server.Features.GeometryService.Models.GeometryServiceJsonContext.Default,
+        Honua.Server.Features.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
         Honua.Server.Features.Export.ExportJsonContext.Default,
-        Honua.Server.Features.Stac.StacJsonContext.Default,
+        Honua.Server.Features.Protocols.Stac.StacJsonContext.Default,
         Honua.Server.Features.CloudCog.CloudCogJsonContext.Default,
-        Honua.Server.Features.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
+        Honua.Server.Features.Protocols.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
-        Honua.Server.Features.OgcProcesses.OgcProcessesJsonContext.Default);
+        Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation

@@ -13,7 +13,7 @@ using Microsoft.Extensions.Hosting;
 namespace Honua.Server.Tests.Features.Security;
 
 [Collection("Database")]
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
 public sealed class InputValidationIntegrationTests : IAsyncLifetime
 {
@@ -84,7 +84,7 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 }
 
 [Collection("Database")]
-[Protocol(Protocols.ODataV4)]
+[Protocol(TestProtocols.ODataV4)]
 [Operation(Operations.Security)]
 public sealed class InputValidationODataIntegrationTests : IAsyncLifetime
 {

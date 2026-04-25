@@ -98,7 +98,7 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>GET  /rest/services/Utilities/Geometry/GeometryServer/lengths</term><description>missing-params</description></item>
 /// </list>
 /// </remarks>
-[Protocol(Protocols.Comprehensive)]
+[Protocol(TestProtocols.Comprehensive)]
 public sealed class ContractCoverageMatrixTests
 {
     /// <summary>

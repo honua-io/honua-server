@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.SpatialAnalytics;
 /// is missing.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.SpatialAnalytics)]
+[Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsOgcTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

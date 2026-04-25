@@ -71,20 +71,20 @@ public sealed class EndpointResponseMetadataTests : IDisposable
 
         foreach (var (method, path, expectedType) in new[]
                  {
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits", typeof(Honua.Server.Features.FeatureServer.Models.ServiceApplyEditsResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures", typeof(Honua.Server.Features.FeatureServer.Models.ApplyEditsResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures", typeof(Honua.Server.Features.FeatureServer.Models.ApplyEditsResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures", typeof(Honua.Server.Features.FeatureServer.Models.ApplyEditsResponse)),
-                     ("GET", "/rest/services/{serviceId}/FeatureServer/replicas", typeof(Honua.Server.Features.FeatureServer.Models.ReplicaSummary[])),
-                     ("GET", "/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}", typeof(Honua.Server.Features.FeatureServer.Models.ReplicaInfoResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/createReplica", typeof(Honua.Server.Features.FeatureServer.Models.CreateReplicaResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/extractChanges", typeof(Honua.Server.Features.FeatureServer.Models.ExtractChangesResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/synchronizeReplica", typeof(Honua.Server.Features.FeatureServer.Models.SynchronizeReplicaResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/unRegisterReplica", typeof(Honua.Server.Features.FeatureServer.Models.SuccessResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/append", typeof(Honua.Server.Features.FeatureServer.Models.AppendResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append", typeof(Honua.Server.Features.FeatureServer.Models.AppendResponse)),
-                     ("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate", typeof(Honua.Server.Features.FeatureServer.Models.CalculateResponse)),
-                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate", typeof(Honua.Server.Features.FeatureServer.Models.CalculateResponse))
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.ServiceApplyEditsResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse)),
+                     ("GET", "/rest/services/{serviceId}/FeatureServer/replicas", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.ReplicaSummary[])),
+                     ("GET", "/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.ReplicaInfoResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/createReplica", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.CreateReplicaResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/extractChanges", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.ExtractChangesResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/synchronizeReplica", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.SynchronizeReplicaResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/unRegisterReplica", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.SuccessResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/append", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.AppendResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.AppendResponse)),
+                     ("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.CalculateResponse)),
+                     ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate", typeof(Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.CalculateResponse))
                  })
         {
             var successMetadata = GetResponseMetadata(method, path, StatusCodes.Status200OK);

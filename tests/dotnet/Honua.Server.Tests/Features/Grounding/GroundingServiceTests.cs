@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Grounding;
 /// catalog falls back to empty datasets; injected catalog failures surface
 /// <see cref="GroundingErrorKind.CatalogUnavailable"/>), and error translation.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class GroundingServiceTests
 {
     private readonly IGroundingEngine _engine = Substitute.For<IGroundingEngine>();

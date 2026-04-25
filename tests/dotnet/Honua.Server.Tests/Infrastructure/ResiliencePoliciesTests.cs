@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Infrastructure;
 /// Validates retry behavior, callback threading via Context, and isolation of
 /// circuit-breaker state across distinct <see cref="NpgsqlDataSource"/> instances.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class ResiliencePoliciesTests
 {
     private const string FakeConnectionString1 =

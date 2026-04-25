@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// fields, surface provenance edges, enforce authorization, return not-found for
 /// unknown identifiers, and cap list reads with a <c>truncated</c> flag.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class McpPromotionResourceTests
 {
     private static readonly DateTimeOffset PublishedAt =

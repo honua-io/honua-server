@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Admin;
 /// Regression tests for connection discovery exception-to-status-code mapping.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.TableDiscovery)]
 public sealed class ConnectionDiscoveryExceptionMappingTests
 {

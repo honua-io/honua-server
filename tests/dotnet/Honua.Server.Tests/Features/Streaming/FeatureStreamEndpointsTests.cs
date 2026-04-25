@@ -24,7 +24,7 @@ namespace Honua.Server.Tests.Features.Streaming;
 /// cursor replay on reconnect, and admin session visibility.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Streaming)]
+[Protocol(TestProtocols.Streaming)]
 [Operation(Operations.Streaming)]
 public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 {

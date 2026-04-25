@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// result into the published MCP output shape. Error-path tests (missing
 /// fields, unknown enums) live on the mapper; these pin the full invocation.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class McpGroundingToolDelegationTests
 {
     private readonly IGroundingService _groundingService = Substitute.For<IGroundingService>();

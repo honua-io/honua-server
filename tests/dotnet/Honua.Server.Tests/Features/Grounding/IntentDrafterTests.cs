@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Grounding;
 /// including the BuildApp / AutomateDeploy stubs that ship as schema-stable
 /// envelopes pending their typed-intent domains.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class IntentDrafterTests
 {
     [UnitTest]

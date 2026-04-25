@@ -4,7 +4,7 @@
 using FluentAssertions;
 using System.Text;
 using System.Text.Json;
-using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -17,7 +17,7 @@ namespace Honua.Server.Tests;
 /// Focused testing of coordinate reference system transformations and axis order handling.
 /// Tests critical PostgresCrsRegistry functionality and real-world coordinate scenarios.
 /// </summary>
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
 {

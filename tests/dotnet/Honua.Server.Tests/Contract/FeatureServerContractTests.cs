@@ -11,7 +11,7 @@ using Honua.TestKit.Contract;
 namespace Honua.Server.Tests.Contract;
 
 [Collection("Database")]
-[Protocol(Protocols.FeatureServer)]
+[Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerContractTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

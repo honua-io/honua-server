@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.FeatureStore;
 /// Comprehensive integration tests for PostgreSQL feature store operations
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 {
     private const int PointsLayerId = 11001;

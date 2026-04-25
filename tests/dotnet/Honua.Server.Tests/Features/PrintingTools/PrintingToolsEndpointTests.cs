@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.PrintingTools;
 /// Integration tests for the GeoServices PrintingTools endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.PrintingTools)]
+[Protocol(TestProtocols.PrintingTools)]
 public sealed class PrintingToolsEndpointTests : IAsyncLifetime
 {
     private static readonly int[] DefaultOutputSize = [800, 600];

@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// Integration tests for license management admin endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.LicenseManagement)]
 public class LicenseEndpointsTests : IAsyncLifetime
 {

@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Import;
 /// Integration tests for file import endpoints
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public class ImportEndpointTests : IAsyncLifetime
 {

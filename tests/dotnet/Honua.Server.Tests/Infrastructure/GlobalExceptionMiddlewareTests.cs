@@ -8,7 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.OData.Models;
+using Honua.Server.Features.Protocols.OData.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;

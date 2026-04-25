@@ -15,7 +15,7 @@ namespace Honua.Server.Tests;
 /// Tests edge cases in geometric validation and boundary box parsing.
 /// Focuses on RasterParsingHelpers and geometric validation functions.
 /// </summary>
-[Protocol(Protocols.Infrastructure)]
+[Protocol(TestProtocols.Infrastructure)]
 public class SpatialGeometryValidationTests
 {
     #region ANTIMERIDIAN BOUNDING BOX VALIDATION

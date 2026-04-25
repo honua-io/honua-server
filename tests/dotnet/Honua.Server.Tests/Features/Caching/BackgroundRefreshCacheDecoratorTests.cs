@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.Caching;
 /// Tests for BackgroundRefreshCacheDecorator — validates stale-while-revalidate behavior,
 /// near-expiry detection, write-through refresh, and refresh deduplication.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
 {
     private readonly MockLayerCatalog _innerCatalog;

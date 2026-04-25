@@ -8,14 +8,13 @@ using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Raster;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
 [Collection("Database")]
-[Protocol(Protocols.Grpc)]
+[Protocol(TestProtocols.Grpc)]
 public sealed class RasterSurfaceServiceTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

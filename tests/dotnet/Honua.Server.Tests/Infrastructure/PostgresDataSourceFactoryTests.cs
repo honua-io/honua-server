@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Infrastructure;
 /// Tests for <see cref="PostgresDataSourceFactory"/> multiplexing resolution
 /// and connection pool default tuning.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class PostgresDataSourceFactoryTests
 {
     [Theory]

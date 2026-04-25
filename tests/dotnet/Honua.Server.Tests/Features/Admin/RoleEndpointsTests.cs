@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// Integration tests for role and permission management admin endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.RoleManagement)]
 public class RoleEndpointsTests : IAsyncLifetime
 {

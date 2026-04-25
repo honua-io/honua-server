@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// with a real PostgreSQL database via <see cref="WebAppFixture"/>.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Grpc)]
+[Protocol(TestProtocols.Grpc)]
 public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
@@ -53,7 +53,7 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.ProcessService/ValidatePlan")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/ValidatePlan")]
     public async Task ValidatePlan_WithValidPlan_ReturnsExecutable()
     {
         var request = new Proto.ValidatePlanRequest { Plan = CreateValidPlan() };
@@ -67,7 +67,7 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/DryRunPlan")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.ProcessService/DryRunPlan")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/DryRunPlan")]
     public async Task DryRunPlan_WithValidPlan_ReturnsEstimation()
     {
         var plan = CreateValidPlan();
@@ -84,7 +84,7 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlan")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.ProcessService/ExecutePlan")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/ExecutePlan")]
     public async Task ExecutePlan_ReturnsUnimplemented()
     {
         var request = new Proto.ExecutePlanRequest { Plan = CreateValidPlan() };
@@ -98,7 +98,7 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.ProcessService/SubmitPlanJob")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/SubmitPlanJob")]
     public async Task SubmitPlanJob_ThroughPipeline_ReturnsExpectedResponse()
     {
         var request = new Proto.SubmitPlanJobRequest
@@ -122,7 +122,7 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/GetJob")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.ProcessService/GetJob")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/GetJob")]
     public async Task GetJob_WithEmptyJobId_ReturnsInvalidArgument()
     {
         var request = new Proto.GetJobRequest { JobId = "" };
@@ -136,7 +136,7 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.ProcessService/GetJobResults")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/GetJobResults")]
     public async Task GetJobResults_WithEmptyJobId_ReturnsInvalidArgument()
     {
         var request = new Proto.GetJobResultsRequest { JobId = "" };
@@ -150,7 +150,7 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Delete)]
     [Endpoint("POST /geospatial.v1.ProcessService/CancelJob")]
-    [InterfaceOperation(Protocols.Grpc, "geospatial.v1.ProcessService/CancelJob")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/CancelJob")]
     public async Task CancelJob_WithEmptyJobId_ReturnsInvalidArgument()
     {
         var request = new Proto.CancelJobRequest { JobId = "" };

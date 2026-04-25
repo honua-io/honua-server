@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Infrastructure;
 /// Unit tests for <see cref="RasterParsingHelpers"/> shared parsing utilities.
 /// These tests do NOT require Docker/database since they test pure static methods.
 /// </summary>
-[Protocol(Protocols.Infrastructure)]
+[Protocol(TestProtocols.Infrastructure)]
 public class RasterParsingHelpersTests
 {
     #region TryParseBoundingBox

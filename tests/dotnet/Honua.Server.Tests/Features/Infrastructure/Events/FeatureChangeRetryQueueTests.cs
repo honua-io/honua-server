@@ -18,7 +18,7 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class FeatureChangeRetryQueueTests : IDisposable
 {
     private readonly FeatureStreamSessionManager _sessionManager;

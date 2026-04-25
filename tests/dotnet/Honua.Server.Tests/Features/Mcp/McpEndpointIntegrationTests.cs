@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// to end, not just at the handler level.
 /// </summary>
 [Collection("Database")]
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class McpEndpointIntegrationTests : IAsyncLifetime
 {
     private const string McpRoute = "/mcp";

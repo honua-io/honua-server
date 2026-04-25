@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Hosting;
 namespace Honua.Server.Tests.Features.Admin;
 
 [Collection("Database")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.LicenseManagement)]
 public sealed class AdminApiVersioningTests : IAsyncLifetime
 {

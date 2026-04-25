@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// <summary>
 /// Integration tests for production monitoring security hardening.
 /// </summary>
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 public sealed class ProductionMonitoringEndpointSecurityTests
 {
     private const string AdminPassword = "production-monitoring-security-admin-key";

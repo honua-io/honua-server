@@ -68,20 +68,20 @@ public static class RedisConfigurationExample
         // Replace existing DistributedReplicaStore with standardized version
         // Remove the old registration first
         var oldReplicaStore = services.FirstOrDefault(d =>
-            d.ServiceType == typeof(Features.FeatureServer.DistributedReplicaStore));
+            d.ServiceType == typeof(Features.Protocols.GeoServices.FeatureServer.DistributedReplicaStore));
         if (oldReplicaStore != null)
         {
             services.Remove(oldReplicaStore);
         }
 
         // Add standardized version
-        services.AddSingleton<Features.FeatureServer.StandardizedDistributedReplicaStore>(sp =>
-            new Features.FeatureServer.StandardizedDistributedReplicaStore(
+        services.AddSingleton<Features.Protocols.GeoServices.FeatureServer.StandardizedDistributedReplicaStore>(sp =>
+            new Features.Protocols.GeoServices.FeatureServer.StandardizedDistributedReplicaStore(
                 sp.GetService<IDistributedCache>(),
                 sp.GetService<IConnectionMultiplexer>(),
                 sp.GetRequiredService<IRedisHealthMonitor>(),
                 sp.GetRequiredService<IHostEnvironment>(),
-                sp.GetRequiredService<ILogger<Features.FeatureServer.StandardizedDistributedReplicaStore>>()));
+                sp.GetRequiredService<ILogger<Features.Protocols.GeoServices.FeatureServer.StandardizedDistributedReplicaStore>>()));
 
         // Replace existing RedisImportJobManager with standardized job queue
         services.AddSingleton<IRedisJobQueue>(sp =>

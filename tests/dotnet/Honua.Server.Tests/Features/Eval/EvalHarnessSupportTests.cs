@@ -9,7 +9,7 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Eval;
 
-[Protocol(Protocols.OperatorEval)]
+[Protocol(TestProtocols.OperatorEval)]
 public sealed class EvalHarnessSupportTests
 {
     [UnitTest]

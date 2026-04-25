@@ -5,11 +5,10 @@ using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.TestKit.Attributes;
-using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-[Protocol(Protocols.Grpc)]
+[Protocol(TestProtocols.Grpc)]
 public sealed class ProcessCatalogSurfaceRasterTests
 {
     private readonly BuiltInProcessCatalog _catalog = new();

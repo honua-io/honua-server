@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Import;
 /// Verifies the cloud upload/download staging path used during import processing.
 /// </summary>
 [Collection("Emulators")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class EmulatorAwsS3CloudStorageImportTests : IAsyncLifetime
 {
@@ -237,7 +237,7 @@ public sealed class EmulatorAwsS3CloudStorageImportTests : IAsyncLifetime
 /// Verifies the Azure Blob upload/download staging path used during import processing.
 /// </summary>
 [Collection("Emulators")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class EmulatorAzureBlobCloudStorageImportTests : IAsyncLifetime
 {

@@ -17,7 +17,7 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Import;
 
 [Collection("Redis")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class UniversalProgressStoreIntegrationTests
 {

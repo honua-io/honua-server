@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Import;
 /// Redis integration tests for distributed import job coordination.
 /// </summary>
 [Collection("Redis")]
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisImportJobManagerIntegrationTests

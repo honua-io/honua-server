@@ -10,7 +10,7 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.StaticMap;
 
 [Collection("Database")]
-[Protocol(Protocols.StaticMap)]
+[Protocol(TestProtocols.StaticMap)]
 public sealed class StaticMapEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

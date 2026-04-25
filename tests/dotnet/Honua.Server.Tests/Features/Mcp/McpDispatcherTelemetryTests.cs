@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 /// / <c>resources/templates/list</c>, and counter samples for the anonymous
 /// <c>tools/call</c> and <c>resources/read</c> auth short-circuits.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 [Collection("McpTelemetry")]
 public sealed class McpDispatcherTelemetryTests
 {

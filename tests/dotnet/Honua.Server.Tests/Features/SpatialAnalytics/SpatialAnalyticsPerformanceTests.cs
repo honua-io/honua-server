@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.SpatialAnalytics;
 [Trait("Category", "Integration")]
 [Trait("Category", "Performance")]
 [Collection("Database")]
-[Protocol(Protocols.SpatialAnalytics)]
+[Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsPerformanceTests : IAsyncLifetime
 {
     private const int SyntheticFeatureCount = 100_000;

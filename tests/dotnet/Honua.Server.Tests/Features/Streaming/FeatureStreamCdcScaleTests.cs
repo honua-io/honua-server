@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Streaming;
 /// Validates that 100 concurrent subscribers receive 1000 edits/sec
 /// with &lt;500ms p95 delivery latency.
 /// </summary>
-[Protocol(Protocols.Streaming)]
+[Protocol(TestProtocols.Streaming)]
 [Operation(Operations.Streaming)]
 [Collection("Performance")]
 public sealed class FeatureStreamCdcScaleTests : IDisposable

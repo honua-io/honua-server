@@ -1089,6 +1089,24 @@ internal static partial class ProcessPlanValidator
         });
     }
 
+    private static void RequirePositiveFiniteDouble(
+        AnalysisPlanStep step,
+        string parameter,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || double.IsNaN(parsed) || double.IsInfinity(parsed)
+            || parsed <= 0d)
+        {
+            AddRangeViolationIfNew(step, parameter, $"expected positive number, got '{value}'", violations);
+        }
+    }
+
     private static void RequireDoubleInRange(
         AnalysisPlanStep step,
         string parameter,
@@ -1115,24 +1133,6 @@ internal static partial class ProcessPlanValidator
             AddRangeViolationIfNew(step, parameter,
                 $"must not exceed {maximum.ToString(CultureInfo.InvariantCulture)} {maximumUnit}, got '{value}'",
                 violations);
-        }
-    }
-
-    private static void RequirePositiveFiniteDouble(
-        AnalysisPlanStep step,
-        string parameter,
-        List<GeoprocessingValidationFailure> violations)
-    {
-        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
-        {
-            return;
-        }
-
-        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
-            || double.IsNaN(parsed) || double.IsInfinity(parsed)
-            || parsed <= 0d)
-        {
-            AddRangeViolationIfNew(step, parameter, $"expected positive number, got '{value}'", violations);
         }
     }
 

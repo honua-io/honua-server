@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// <summary>
 /// Integration tests for GitOps watch configuration and change management endpoints.
 /// </summary>
-[Protocol(Protocols.Admin)]
+[Protocol(TestProtocols.Admin)]
 [Collection("Database")]
 public sealed class GitOpsWatchEndpointsTests : IAsyncLifetime
 {
