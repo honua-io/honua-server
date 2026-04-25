@@ -39,7 +39,7 @@ public sealed record CogOverviewLevelSummary(int Level, int Width, int Height);
 /// <summary>
 /// Persisted catalog entry for a cloud-hosted COG.
 /// </summary>
-public sealed record CloudCogRegistration
+public sealed record CogRegistration
 {
     /// <summary>
     /// Unique registration identifier.
@@ -100,7 +100,7 @@ public sealed record CloudCogRegistration
 /// <summary>
 /// Request to register a cloud-hosted COG.
 /// </summary>
-public sealed record CloudCogRegistrationRequest
+public sealed record CogRegistrationRequest
 {
     /// <summary>
     /// Layer to associate the COG with.

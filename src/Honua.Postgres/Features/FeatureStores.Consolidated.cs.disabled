@@ -80,7 +80,7 @@ public static class FeatureStoresConsolidated
             (typeof(IRasterStore), typeof(PostgresRasterStore), ServiceLifetime.Scoped),
             (typeof(IRasterMapRenderer), typeof(PostgresRasterMapRenderer), ServiceLifetime.Scoped),
             (typeof(IRasterImportService), typeof(PostgresRasterImportService), ServiceLifetime.Scoped),
-            (typeof(ICloudCogStore), typeof(PostgresCloudCogStore), ServiceLifetime.Scoped));
+            (typeof(ICogStore), typeof(PostgresCogStore), ServiceLifetime.Scoped));
 
         return services;
     }
