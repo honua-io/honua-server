@@ -12,7 +12,7 @@
 
 ## Why Honua
 
-- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), STAC API, OGC API Features/Maps/Tiles/Processes, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
+- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), classic OGC WMS/WFS compatibility, STAC API, OGC API Features/Maps/Tiles/Processes, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
 - **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
 - **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf (`.fgb`), File Geodatabase (`.gdb.zip`), and GeoParquet (`.parquet`, `.geoparquet`) directly. Import from live Esri REST services or public object URLs for migration.
 - **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.

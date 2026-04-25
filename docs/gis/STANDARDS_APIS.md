@@ -9,7 +9,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 | **ArcGIS Pro/Desktop** | FeatureServer / MapServer | `/rest/services/{id}/FeatureServer` or `/rest/services/{id}/MapServer` | Esri compatibility (data + maps) |
 | **QGIS/OpenLayers** | OGC API Features | `/ogc/features` | Open standards |
 | **STAC browsers/catalog tooling** | STAC API | `/stac` | Catalog discovery, item search, extension-aware metadata |
-| **QGIS/GeoServer clients (legacy OGC)** | WMS 1.3 / WMTS 1.0 | `.../MapServer/WMS` or `.../MapServer/WMTS` | Legacy OGC raster map services |
+| **QGIS/GeoServer clients (legacy OGC)** | WMS 1.1.1/1.3, WFS 1.0/1.1/2.0, WMTS 1.0 | `.../MapServer/WMS`, `/wfs`, or `.../MapServer/WMTS` | Legacy OGC raster map and feature services |
 | **Server-rendered maps (OGC)** | OGC API Maps | `/ogc/maps` | Standards-based rendered map images |
 | **Power BI/Excel** | OData v4 | `/odata` | BI integration |
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
@@ -228,14 +228,15 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 
 ---
 
-## **WMS 1.3 / WMTS 1.0**
+## **WMS 1.1.1 / 1.3 and WMTS 1.0**
 
 **Best for**: Legacy OGC map services (QGIS, GeoServer ecosystem clients)
 
 **Endpoint structure:**
 ```
 /rest/services/{id}/MapServer/WMS    (or /ogc/services/{id}/wms)
-|-- ?service=WMS&request=GetCapabilities
+|-- ?service=WMS&request=GetCapabilities&version=1.3.0
+|-- ?service=WMS&request=GetCapabilities&version=1.1.1
 |-- ?service=WMS&request=GetMap
 |-- ?service=WMS&request=GetFeatureInfo
 
@@ -245,7 +246,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 |-- ?service=WMTS&request=GetFeatureInfo
 ```
 
-**Limitations:** WMTS currently supports WebMercatorQuad tile matrix set only.
+**Limitations:** WMTS currently supports WebMercatorQuad tile matrix set only. WMS 1.1.1 is KVP read-only compatibility; use `SRS`, `X/Y`, and lon/lat `EPSG:4326` BBOX order for that version.
 
 **Typical use cases:**
 - QGIS WMS/WMTS layer connections
@@ -434,6 +435,8 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 - OGC API Features: 137/137 tests
 - OGC API Tiles: 16/16 tests
 - WMS 1.3: 227/227 tests
+- WMS 1.1.1: CITE Basic evidence pending
+- WFS 1.1.0 / 1.0.0: CITE Basic evidence pending
 - WMTS 1.0: 118/118 tests
 - OGC API Maps: 32/32 tests
 - OGC API Processes: CITE ETS not yet available; conformance validated manually against OGC 18-062r2

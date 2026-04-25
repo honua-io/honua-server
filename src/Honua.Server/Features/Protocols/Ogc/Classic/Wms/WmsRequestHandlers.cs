@@ -32,10 +32,14 @@ namespace Honua.Server.Features.Protocols.Ogc.Classic.Wms;
 internal static class WmsRequestHandlers
 {
     private const int WmsMaxImageDimension = 4096;
+    private const string Wms13Version = "1.3.0";
+    private const string Wms111Version = "1.1.1";
     private const string WmsCapabilitiesMimeType = "text/xml";
     private const string WmsXmlExceptionMimeType = "text/xml";
     private const string WmsExceptionSchemaLocation = "http://www.opengis.net/ogc http://schemas.opengis.net/wms/1.3.0/exceptions_1_3_0.xsd";
     private const string WmsCapabilitiesSchemaLocation = "http://www.opengis.net/wms http://schemas.opengis.net/wms/1.3.0/capabilities_1_3_0.xsd";
+    private const string Wms111CapabilitiesDtd = "http://schemas.opengis.net/wms/1.1.1/WMS_MS_Capabilities.dtd";
+    private const string Wms111ExceptionDtd = "http://schemas.opengis.net/wms/1.1.1/exception_1_1_1.dtd";
     private const double WmsWebMercatorMax = SpatialConstants.WebMercatorExtent;
     private const string WmsWarningHeaderName = "Warning";
     private const string CiteLakesLayerTitle = "cite:Lakes";
@@ -159,7 +163,7 @@ internal static class WmsRequestHandlers
                     return CreateWmsServiceException(
                         context,
                         "InvalidParameterValue",
-                        $"Unsupported WMS VERSION '{version}'. Supported version is 1.3.0.");
+                        $"Unsupported WMS VERSION '{version}'. Supported versions are 1.3.0 and 1.1.1.");
                 }
 
                 if (!XmlContentNegotiation.IsXmlAccepted(
@@ -171,7 +175,8 @@ internal static class WmsRequestHandlers
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-                var xml = await BuildWmsCapabilities(context, svcDef, serviceId, baseUrl).ConfigureAwait(false);
+                var capabilitiesVersion = string.IsNullOrWhiteSpace(version) ? Wms13Version : version.Trim();
+                var xml = await BuildWmsCapabilities(context, svcDef, serviceId, baseUrl, capabilitiesVersion).ConfigureAwait(false);
                 return Results.Content(xml, WmsCapabilitiesMimeType, Encoding.UTF8, StatusCodes.Status200OK);
             }
 
@@ -236,7 +241,7 @@ internal static class WmsRequestHandlers
 
         if (!IsSupportedWmsVersion(versionValue))
         {
-            return CreateWmsServiceException(context, "InvalidParameterValue", "Unsupported VERSION value. Only 1.3.0 is supported.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "Unsupported VERSION value. Supported values are 1.3.0 and 1.1.1.");
         }
 
         var crsValue = GetQueryValue(query, "CRS");
@@ -250,7 +255,7 @@ internal static class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidCRS", "Invalid or missing CRS/SRS parameter.");
         }
 
-        if (!TryParseWmsBbox(bboxValue, normalizedCrs, out var requestedExtent))
+        if (!TryParseWmsBbox(bboxValue, normalizedCrs, versionValue, out var requestedExtent))
         {
             return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
@@ -502,7 +507,7 @@ internal static class WmsRequestHandlers
 
         if (!IsSupportedWmsVersion(versionValue))
         {
-            return CreateWmsServiceException(context, "InvalidParameterValue", "Unsupported VERSION value. Only 1.3.0 is supported.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "Unsupported VERSION value. Supported values are 1.3.0 and 1.1.1.");
         }
 
         var crsValue = GetQueryValue(query, "CRS");
@@ -516,7 +521,7 @@ internal static class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidCRS", "Invalid or missing CRS/SRS parameter.");
         }
 
-        if (!TryParseWmsBbox(bboxValue, normalizedCrs, out var requestedExtent))
+        if (!TryParseWmsBbox(bboxValue, normalizedCrs, versionValue, out var requestedExtent))
         {
             return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
@@ -844,6 +849,7 @@ internal static class WmsRequestHandlers
     private static bool TryParseWmsBbox(
         string? bbox,
         string normalizedCrs,
+        string version,
         out SkiaMapRenderer.RenderExtent extent)
     {
         extent = default;
@@ -863,7 +869,7 @@ internal static class WmsRequestHandlers
         // imagery and GetFeatureInfo can emit a targeted CRS-range exception.
         if (!RasterParsingHelpers.TryParseBoundingBox(
                 bbox,
-                crsDefinition.AxisOrder,
+                ResolveWmsBboxAxisOrder(normalizedCrs, version, crsDefinition.AxisOrder),
                 isGeographic: false,
                 out var minX,
                 out var minY,
@@ -919,7 +925,22 @@ internal static class WmsRequestHandlers
 
     private static bool IsSupportedWmsVersion(string version)
     {
-        return string.Equals(version, "1.3.0", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(version, Wms13Version, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(version, Wms111Version, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsWms111Version(string? version)
+        => string.Equals(version, Wms111Version, StringComparison.OrdinalIgnoreCase);
+
+    private static AxisOrder ResolveWmsBboxAxisOrder(string normalizedCrs, string version, AxisOrder defaultAxisOrder)
+    {
+        if (IsWms111Version(version) &&
+            string.Equals(normalizedCrs, "EPSG:4326", StringComparison.OrdinalIgnoreCase))
+        {
+            return AxisOrder.EastNorth;
+        }
+
+        return defaultAxisOrder;
     }
 
     private static bool IsExtentWithinCrsBounds(SkiaMapRenderer.RenderExtent extent, string normalizedCrs)
@@ -1217,13 +1238,31 @@ internal static class WmsRequestHandlers
                 includeClientErrors: true);
         }
 
-        var xml = BuildWmsServiceExceptionReport(code, message);
+        var version = context is null ? Wms13Version : GetQueryValue(context.Request.Query, "VERSION");
+        var xml = BuildWmsServiceExceptionReport(code, message, version);
         var contentType = GetWmsExceptionMimeType(context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS"));
         return Results.Content(xml, contentType, Encoding.UTF8, statusCode);
     }
 
-    private static string BuildWmsServiceExceptionReport(string code, string message)
+    private static string BuildWmsServiceExceptionReport(string code, string message, string? version)
     {
+        if (IsWms111Version(version))
+        {
+            var legacy = new StringBuilder(512);
+            legacy.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+            legacy.Append("<!DOCTYPE ServiceExceptionReport SYSTEM \"")
+                .Append(Wms111ExceptionDtd)
+                .AppendLine("\">");
+            legacy.AppendLine("<ServiceExceptionReport version=\"1.1.1\">");
+            legacy.Append("  <ServiceException code=\"")
+                .Append(EscapeXml(code))
+                .Append("\">")
+                .Append(EscapeXml(message))
+                .AppendLine("</ServiceException>");
+            legacy.AppendLine("</ServiceExceptionReport>");
+            return legacy.ToString();
+        }
+
         var sb = new StringBuilder(512);
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         sb.Append("<ServiceExceptionReport xmlns=\"http://www.opengis.net/ogc\" ")
@@ -1973,22 +2012,43 @@ internal static class WmsRequestHandlers
         return null;
     }
 
-    private static async Task<string> BuildWmsCapabilities(HttpContext context, ServiceDefinition service, string serviceId, string baseUrl)
+    private static async Task<string> BuildWmsCapabilities(
+        HttpContext context,
+        ServiceDefinition service,
+        string serviceId,
+        string baseUrl,
+        string version)
     {
+        var isWms111 = IsWms111Version(version);
+        var responseVersion = isWms111 ? Wms111Version : Wms13Version;
+        var crsElementName = isWms111 ? "SRS" : "CRS";
         var normalizedBaseUrl = baseUrl.TrimEnd('/');
         var wmsEndpoint = $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS";
         var wmsUrlPrefix = $"{wmsEndpoint}?";
-        var metadataUrl = $"{wmsEndpoint}?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0";
+        var metadataUrl = $"{wmsEndpoint}?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={responseVersion}";
 
         var sb = new StringBuilder(8192);
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        sb.Append("<WMS_Capabilities ")
-            .Append("xmlns=\"http://www.opengis.net/wms\" ")
-            .Append("xmlns:xlink=\"http://www.w3.org/1999/xlink\" ")
-            .Append("xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" ")
-            .Append("version=\"1.3.0\" xsi:schemaLocation=\"")
-            .Append(WmsCapabilitiesSchemaLocation)
-            .AppendLine("\">");
+        if (isWms111)
+        {
+            sb.Append("<!DOCTYPE WMT_MS_Capabilities SYSTEM \"")
+                .Append(Wms111CapabilitiesDtd)
+                .AppendLine("\">");
+            sb.Append("<WMT_MS_Capabilities ")
+                .Append("version=\"1.1.1\" ")
+                .Append("xmlns:xlink=\"http://www.w3.org/1999/xlink\" ")
+                .AppendLine(">");
+        }
+        else
+        {
+            sb.Append("<WMS_Capabilities ")
+                .Append("xmlns=\"http://www.opengis.net/wms\" ")
+                .Append("xmlns:xlink=\"http://www.w3.org/1999/xlink\" ")
+                .Append("xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" ")
+                .Append("version=\"1.3.0\" xsi:schemaLocation=\"")
+                .Append(WmsCapabilitiesSchemaLocation)
+                .AppendLine("\">");
+        }
 
         sb.AppendLine("  <Service>");
         sb.AppendLine("    <Name>WMS</Name>");
@@ -2053,20 +2113,30 @@ internal static class WmsRequestHandlers
 
         sb.AppendLine("    </Request>");
         sb.AppendLine("    <Exception>");
-        sb.AppendLine("      <Format>XML</Format>");
+        if (isWms111)
+        {
+            sb.AppendLine("      <Format>application/vnd.ogc.se_xml</Format>");
+        }
+        else
+        {
+            sb.AppendLine("      <Format>XML</Format>");
+        }
         sb.AppendLine("    </Exception>");
 
         sb.AppendLine("    <Layer>");
         sb.Append("      <Title>").Append(EscapeXml(service.Name ?? serviceId)).AppendLine("</Title>");
         sb.Append("      <Abstract>").Append(EscapeXml(service.Description ?? "Honua WMS root layer")).AppendLine("</Abstract>");
-        sb.AppendLine("      <CRS>EPSG:4326</CRS>");
-        sb.AppendLine("      <CRS>EPSG:3857</CRS>");
-        sb.AppendLine("      <CRS>CRS:84</CRS>");
+        sb.Append("      <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
+        sb.Append("      <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
+        if (!isWms111)
+        {
+            sb.AppendLine("      <CRS>CRS:84</CRS>");
+        }
 
         if (service.EffectiveExtent.HasValue)
         {
             var rootExtent = service.EffectiveExtent.Value;
-            await AppendWmsGeographicBoundsAsync(context, sb, rootExtent, "      ").ConfigureAwait(false);
+            await AppendWmsGeographicBoundsAsync(context, sb, rootExtent, "      ", isWms111).ConfigureAwait(false);
         }
 
         var visibleLayers = service.Layers
@@ -2089,14 +2159,17 @@ internal static class WmsRequestHandlers
             sb.AppendLine("          <Name>default</Name>");
             sb.AppendLine("          <Title>Default style</Title>");
             sb.AppendLine("        </Style>");
-            sb.AppendLine("        <CRS>EPSG:4326</CRS>");
-            sb.AppendLine("        <CRS>EPSG:3857</CRS>");
-            sb.AppendLine("        <CRS>CRS:84</CRS>");
+            sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
+            sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
+            if (!isWms111)
+            {
+                sb.AppendLine("        <CRS>CRS:84</CRS>");
+            }
 
             var extent = layer.Extent ?? service.EffectiveExtent;
             if (extent.HasValue)
             {
-                await AppendWmsGeographicBoundsAsync(context, sb, extent.Value, "        ").ConfigureAwait(false);
+                await AppendWmsGeographicBoundsAsync(context, sb, extent.Value, "        ", isWms111).ConfigureAwait(false);
             }
 
             AppendWmsCiteDimensions(sb, layer, "        ");
@@ -2110,7 +2183,7 @@ internal static class WmsRequestHandlers
 
         sb.AppendLine("    </Layer>");
         sb.AppendLine("  </Capability>");
-        sb.AppendLine("</WMS_Capabilities>");
+        sb.Append(isWms111 ? "</WMT_MS_Capabilities>" : "</WMS_Capabilities>").AppendLine();
         return sb.ToString();
     }
 
@@ -2118,7 +2191,8 @@ internal static class WmsRequestHandlers
         HttpContext context,
         StringBuilder sb,
         FeatureExtent extent,
-        string indent)
+        string indent,
+        bool isWms111)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var geographicExtent = extent;
@@ -2144,29 +2218,53 @@ internal static class WmsRequestHandlers
                 4326);
         }
 
-        AppendWmsGeographicBoundingBox(
-            sb,
-            geographicExtent.MinX,
-            geographicExtent.MinY,
-            geographicExtent.MaxX,
-            geographicExtent.MaxY,
-            indent);
-        AppendWmsBoundingBox(
-            sb,
-            "CRS:84",
-            geographicExtent.MinX,
-            geographicExtent.MinY,
-            geographicExtent.MaxX,
-            geographicExtent.MaxY,
-            indent);
-        AppendWmsBoundingBox(
-            sb,
-            "EPSG:4326",
-            geographicExtent.MinX,
-            geographicExtent.MinY,
-            geographicExtent.MaxX,
-            geographicExtent.MaxY,
-            indent);
+        if (isWms111)
+        {
+            AppendWms111LatLonBoundingBox(
+                sb,
+                geographicExtent.MinX,
+                geographicExtent.MinY,
+                geographicExtent.MaxX,
+                geographicExtent.MaxY,
+                indent);
+            AppendWmsBoundingBox(
+                sb,
+                "EPSG:4326",
+                geographicExtent.MinX,
+                geographicExtent.MinY,
+                geographicExtent.MaxX,
+                geographicExtent.MaxY,
+                indent,
+                isWms111);
+        }
+        else
+        {
+            AppendWmsGeographicBoundingBox(
+                sb,
+                geographicExtent.MinX,
+                geographicExtent.MinY,
+                geographicExtent.MaxX,
+                geographicExtent.MaxY,
+                indent);
+            AppendWmsBoundingBox(
+                sb,
+                "CRS:84",
+                geographicExtent.MinX,
+                geographicExtent.MinY,
+                geographicExtent.MaxX,
+                geographicExtent.MaxY,
+                indent,
+                isWms111);
+            AppendWmsBoundingBox(
+                sb,
+                "EPSG:4326",
+                geographicExtent.MinX,
+                geographicExtent.MinY,
+                geographicExtent.MaxX,
+                geographicExtent.MaxY,
+                indent,
+                isWms111);
+        }
     }
 
     private static void AppendWmsGeographicBoundingBox(
@@ -2192,13 +2290,15 @@ internal static class WmsRequestHandlers
         double minY,
         double maxX,
         double maxY,
-        string indent)
+        string indent,
+        bool isWms111)
     {
         var outputMinX = minX;
         var outputMinY = minY;
         var outputMaxX = maxX;
         var outputMaxY = maxY;
-        if (string.Equals(crs, "EPSG:4326", StringComparison.OrdinalIgnoreCase))
+        if (!isWms111 &&
+            string.Equals(crs, "EPSG:4326", StringComparison.OrdinalIgnoreCase))
         {
             outputMinX = minY;
             outputMinY = minX;
@@ -2207,7 +2307,9 @@ internal static class WmsRequestHandlers
         }
 
         sb.Append(indent)
-            .Append("<BoundingBox CRS=\"")
+            .Append("<BoundingBox ")
+            .Append(isWms111 ? "SRS" : "CRS")
+            .Append("=\"")
             .Append(EscapeXml(crs))
             .Append("\" minx=\"")
             .Append(outputMinX.ToString("F6", CultureInfo.InvariantCulture))
@@ -2217,6 +2319,26 @@ internal static class WmsRequestHandlers
             .Append(outputMaxX.ToString("F6", CultureInfo.InvariantCulture))
             .Append("\" maxy=\"")
             .Append(outputMaxY.ToString("F6", CultureInfo.InvariantCulture))
+            .AppendLine("\" />");
+    }
+
+    private static void AppendWms111LatLonBoundingBox(
+        StringBuilder sb,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY,
+        string indent)
+    {
+        sb.Append(indent)
+            .Append("<LatLonBoundingBox minx=\"")
+            .Append(minX.ToString("F6", CultureInfo.InvariantCulture))
+            .Append("\" miny=\"")
+            .Append(minY.ToString("F6", CultureInfo.InvariantCulture))
+            .Append("\" maxx=\"")
+            .Append(maxX.ToString("F6", CultureInfo.InvariantCulture))
+            .Append("\" maxy=\"")
+            .Append(maxY.ToString("F6", CultureInfo.InvariantCulture))
             .AppendLine("\" />");
     }
 

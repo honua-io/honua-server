@@ -28,7 +28,7 @@ Sources:
 | Layer query | `.../MapServer/{layerId}/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/{layerId}/query` | Delegates to the FeatureServer query handler. See [FeatureServer Matrix](feature-server-matrix.md). |
 | Service-level query | `.../MapServer/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/query` | Delegates to the FeatureServer service-query handler using `layerId` or `layers`. |
 | Tile | `.../MapServer/tile/{z}/{y}/{x}` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}` | Returns rendered PNG map tiles. |
-| WMS | `.../MapServer/WMS` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/WMS`, `GET /ogc/services/{serviceId}/wms` | Supports `GetCapabilities`, `GetMap`, and `GetFeatureInfo` (KVP). |
+| WMS | `.../MapServer/WMS` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/WMS`, `GET /ogc/services/{serviceId}/wms` | Supports WMS 1.3.0 and 1.1.1 `GetCapabilities`, `GetMap`, and `GetFeatureInfo` (KVP). |
 
 ### Partial
 

@@ -20,6 +20,8 @@ internal static class Wfs20DispatcherEndpoint
 {
     internal const string ParsedXmlDocumentItemKey = "__honua_wfs20_parsed_xml_document";
     internal const string ParsedXmlQueriesItemKey = "__honua_wfs20_parsed_xml_queries";
+    private const string Wfs11Version = "1.1.0";
+    private const string Wfs10Version = "1.0.0";
 
     private delegate Task<IResult> WfsOperationHandler(
         HttpContext context, WfsRequestParameters parameters,
@@ -142,6 +144,13 @@ internal static class Wfs20DispatcherEndpoint
                     "request");
             }
 
+            var legacyVersion = SelectLegacyWfsVersion(parameters, requestParam);
+            if (legacyVersion is not null)
+            {
+                return await HandleLegacyWfsRequest(context, parameters, handler, logger, requestParam, legacyVersion)
+                    .ConfigureAwait(false);
+            }
+
             // Dispatch via the handler dictionary (single source of truth for implemented operations).
             if (_operationHandlers.TryGetValue(requestParam, out var operationHandler))
             {
@@ -171,6 +180,124 @@ internal static class Wfs20DispatcherEndpoint
         {
             Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process WFS request");
+        }
+    }
+
+    private static async Task<IResult> HandleLegacyWfsRequest(
+        HttpContext context,
+        WfsRequestParameters parameters,
+        Wfs20Handler handler,
+        ILogger logger,
+        string requestParam,
+        string version)
+    {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var validationError = ValidateLegacyRequestParameters(parameters, requestParam, version);
+        if (validationError is not null)
+        {
+            return Wfs20Handler.CreateLegacyWfsException(
+                version,
+                validationError.ExceptionCode,
+                validationError.Detail,
+                validationError.Locator);
+        }
+
+        if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
+        {
+            return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+        }
+
+        try
+        {
+            if (string.Equals(requestParam, Wfs20Utilities.Operations.GetCapabilities, StringComparison.OrdinalIgnoreCase))
+            {
+                var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+                var xml = await handler.HandleLegacyGetCapabilitiesAsync(context, version, baseUrl, cancellationToken)
+                    .ConfigureAwait(false);
+                return Results.Content(xml, "application/xml", Encoding.UTF8);
+            }
+
+            if (string.Equals(requestParam, Wfs20Utilities.Operations.DescribeFeatureType, StringComparison.OrdinalIgnoreCase))
+            {
+                var typeNames = parameters.Get(
+                    Wfs20Utilities.ParameterNames.TypeNames,
+                    Wfs20Utilities.ParameterNames.TypeName);
+                var outputFormat = parameters.Get(Wfs20Utilities.ParameterNames.OutputFormat);
+                if (!IsLegacyDescribeFeatureTypeOutputFormat(outputFormat))
+                {
+                    return Wfs20Handler.CreateLegacyWfsException(
+                        version,
+                        "InvalidParameterValue",
+                        $"Unsupported output format '{outputFormat}'. DescribeFeatureType requires XML output.",
+                        "outputFormat");
+                }
+
+                var schema = await handler.HandleLegacyDescribeFeatureTypeAsync(context, version, typeNames, cancellationToken)
+                    .ConfigureAwait(false);
+                return Results.Content(schema, "application/xml", Encoding.UTF8);
+            }
+
+            if (string.Equals(requestParam, Wfs20Utilities.Operations.GetFeature, StringComparison.OrdinalIgnoreCase))
+            {
+                var typeNames = parameters.Get(
+                    Wfs20Utilities.ParameterNames.TypeNames,
+                    Wfs20Utilities.ParameterNames.TypeName);
+                var outputFormat = parameters.Get(Wfs20Utilities.ParameterNames.OutputFormat);
+                var maxFeatures = parameters.Get(
+                    Wfs20Utilities.ParameterNames.MaxFeatures,
+                    Wfs20Utilities.ParameterNames.Count);
+                var sortBy = parameters.Get(Wfs20Utilities.ParameterNames.SortBy);
+                var bbox = parameters.Get(Wfs20Utilities.ParameterNames.BBox);
+                var filter = parameters.Get(Wfs20Utilities.ParameterNames.Filter);
+                var featureId = parameters.Get(
+                    Wfs20Utilities.ParameterNames.FeatureId,
+                    Wfs20Utilities.ParameterNames.ResourceId);
+                var propertyName = parameters.Get(Wfs20Utilities.ParameterNames.PropertyName);
+                var srsName = parameters.Get(
+                    Wfs20Utilities.ParameterNames.SrsName,
+                    Wfs20Utilities.ParameterNames.Srs);
+                var resultType = parameters.Get(Wfs20Utilities.ParameterNames.ResultType);
+
+                return await handler.HandleLegacyGetFeatureAsync(
+                    context,
+                    version,
+                    typeNames,
+                    outputFormat,
+                    maxFeatures,
+                    sortBy,
+                    bbox,
+                    filter,
+                    featureId,
+                    propertyName,
+                    srsName,
+                    resultType,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            return Wfs20Handler.CreateLegacyWfsException(
+                version,
+                "OperationNotSupported",
+                $"Unsupported WFS {version} operation '{requestParam}'. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature.",
+                "request",
+                StatusCodes.Status501NotImplemented);
+        }
+        catch (ArgumentException ex)
+        {
+            Wfs20DispatcherLog.DescribeFeatureTypeValidationFailed(logger, ex);
+            return Wfs20Handler.CreateLegacyWfsException(version, "InvalidParameterValue", ex.Message, "typeName");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
+            return Wfs20Handler.CreateLegacyWfsException(
+                version,
+                "NoApplicableCode",
+                "Failed to process WFS request.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
@@ -647,6 +774,102 @@ internal static class Wfs20DispatcherEndpoint
         }
 
         return null;
+    }
+
+    private static WfsValidationError? ValidateLegacyRequestParameters(
+        WfsRequestParameters parameters,
+        string requestParam,
+        string version)
+    {
+        var service = parameters.Get(Wfs20Utilities.ParameterNames.Service);
+        if (string.IsNullOrWhiteSpace(service) &&
+            !string.Equals(requestParam, Wfs20Utilities.Operations.GetCapabilities, StringComparison.OrdinalIgnoreCase))
+        {
+            return new WfsValidationError(
+                "MissingParameterValue",
+                "service",
+                "Missing required 'service' parameter.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(service) &&
+            !string.Equals(service, Wfs20Utilities.ServiceType, StringComparison.OrdinalIgnoreCase))
+        {
+            return new WfsValidationError(
+                "InvalidParameterValue",
+                "service",
+                $"Invalid service parameter. Expected '{Wfs20Utilities.ServiceType}', got '{service}'.");
+        }
+
+        var requestedVersion = parameters.Get(Wfs20Utilities.ParameterNames.Version);
+        if (string.IsNullOrWhiteSpace(requestedVersion) &&
+            !string.Equals(requestParam, Wfs20Utilities.Operations.GetCapabilities, StringComparison.OrdinalIgnoreCase))
+        {
+            return new WfsValidationError(
+                "MissingParameterValue",
+                "version",
+                "Missing required 'version' parameter.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestedVersion) &&
+            !string.Equals(requestedVersion, version, StringComparison.OrdinalIgnoreCase))
+        {
+            return new WfsValidationError(
+                "VersionNegotiationFailed",
+                null,
+                $"Unsupported version. Expected '{version}', got '{requestedVersion}'.");
+        }
+
+        return null;
+    }
+
+    private static string? SelectLegacyWfsVersion(WfsRequestParameters parameters, string requestParam)
+    {
+        var version = parameters.Get(Wfs20Utilities.ParameterNames.Version);
+        if (IsLegacyWfsVersion(version))
+        {
+            return version!.Trim();
+        }
+
+        if (!string.Equals(requestParam, Wfs20Utilities.Operations.GetCapabilities, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var acceptVersions = parameters.Get(Wfs20Utilities.ParameterNames.AcceptVersions);
+        if (string.IsNullOrWhiteSpace(acceptVersions))
+        {
+            return null;
+        }
+
+        var acceptedVersions = acceptVersions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (acceptedVersions.Contains(Wfs20Utilities.Version, StringComparer.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (acceptedVersions.Contains(Wfs11Version, StringComparer.OrdinalIgnoreCase))
+        {
+            return Wfs11Version;
+        }
+
+        return acceptedVersions.Contains(Wfs10Version, StringComparer.OrdinalIgnoreCase)
+            ? Wfs10Version
+            : null;
+    }
+
+    private static bool IsLegacyWfsVersion(string? version)
+        => string.Equals(version, Wfs11Version, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(version, Wfs10Version, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsLegacyDescribeFeatureTypeOutputFormat(string? outputFormat)
+    {
+        if (string.IsNullOrWhiteSpace(outputFormat))
+        {
+            return true;
+        }
+
+        return outputFormat.Contains("xml", StringComparison.OrdinalIgnoreCase) ||
+               outputFormat.Contains("gml", StringComparison.OrdinalIgnoreCase);
     }
 
     private static WfsValidationError? ValidateOperationRequestParameters(WfsRequestParameters parameters)
