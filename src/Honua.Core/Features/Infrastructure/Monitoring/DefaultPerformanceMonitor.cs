@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -343,9 +344,45 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
 
         if (_logger != null && context != null)
         {
-            using var scope = _logger.BeginScope(context);
+            // Caller-supplied context can contain user-controlled values (cache keys, schema
+            // names, raw coordinates). Sanitize CR/LF and bound length before placing values
+            // into a logging scope so a malicious input cannot forge log lines or smuggle
+            // unbounded text into structured logs.
+            using var scope = _logger.BeginScope(SanitizeScopeContext(context));
             PerformanceMonitorLog.ErrorWithContext(_logger, errorType, operation, exception);
         }
+    }
+
+    private static Dictionary<string, object> SanitizeScopeContext(IDictionary<string, object> context)
+    {
+        var sanitized = new Dictionary<string, object>(context.Count, StringComparer.Ordinal);
+        foreach (var (key, value) in context)
+        {
+            sanitized[key] = SanitizeScopeValue(value);
+        }
+
+        return sanitized;
+    }
+
+    private static object SanitizeScopeValue(object? value)
+    {
+        if (value is null)
+        {
+            return string.Empty;
+        }
+
+        // Pass primitive numeric / boolean / enum / fixed-format values through untouched —
+        // they cannot carry CR/LF and have bounded textual length. Only arbitrary strings
+        // are control-character or length-bounded.
+        return value switch
+        {
+            string s => LogValueRedactor.SanitizeForLog(s),
+            bool or byte or sbyte or short or ushort or int or uint or long or ulong
+                or float or double or decimal or Enum or DateTime or DateTimeOffset
+                or TimeSpan or Guid or Uri => value,
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty,
+            _ => LogValueRedactor.SanitizeForLog(value.ToString())
+        };
     }
 
     /// <summary>

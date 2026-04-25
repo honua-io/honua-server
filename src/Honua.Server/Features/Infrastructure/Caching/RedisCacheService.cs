@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Server.Features.Infrastructure.Middleware;
@@ -737,13 +738,13 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         catch (JsonException ex)
         {
             value = null;
-            RedisCacheServiceLog.CacheEntryDeserializationFailed(_logger, cacheKey, ex);
+            RedisCacheServiceLog.CacheEntryDeserializationFailed(_logger, GetCacheKeyFamily(cacheKey), LogValueRedactor.Hash(cacheKey), ex);
             return false;
         }
         catch (NotSupportedException ex)
         {
             value = null;
-            RedisCacheServiceLog.CacheEntryDeserializationFailed(_logger, cacheKey, ex);
+            RedisCacheServiceLog.CacheEntryDeserializationFailed(_logger, GetCacheKeyFamily(cacheKey), LogValueRedactor.Hash(cacheKey), ex);
             return false;
         }
     }
@@ -759,7 +760,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         catch (NotSupportedException ex)
         {
             data = Array.Empty<byte>();
-            RedisCacheServiceLog.CacheEntrySerializationFailed(_logger, cacheKey, ex);
+            RedisCacheServiceLog.CacheEntrySerializationFailed(_logger, GetCacheKeyFamily(cacheKey), LogValueRedactor.Hash(cacheKey), ex);
             return false;
         }
     }
@@ -824,7 +825,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             catch (Exception ex)
             {
                 // Redis failed, handle as failure but don't switch to fallback for locks
-                RedisCacheServiceLog.DistributedLockFailed(_logger, key, ex);
+                RedisCacheServiceLog.DistributedLockFailed(_logger, GetCacheKeyFamily(key), LogValueRedactor.Hash(key), ex);
             }
         }
 
@@ -925,7 +926,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             }
             catch (Exception ex)
             {
-                RedisCacheIndexLog.RedisIndexTrackFailed(_logger, prefixedKey, ex);
+                RedisCacheIndexLog.RedisIndexTrackFailed(_logger, GetCacheKeyFamily(prefixedKey), LogValueRedactor.Hash(prefixedKey), ex);
                 return;
             }
         }
@@ -952,7 +953,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             }
             catch (Exception ex)
             {
-                RedisCacheIndexLog.RedisIndexRemoveFailed(_logger, prefixedKey, ex);
+                RedisCacheIndexLog.RedisIndexRemoveFailed(_logger, GetCacheKeyFamily(prefixedKey), LogValueRedactor.Hash(prefixedKey), ex);
                 return;
             }
         }
@@ -1326,13 +1327,19 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         [LoggerMessage(1004, LogLevel.Debug, "Cleaned up {Count} expired cache entries from fallback cache")]
         public static partial void CleanupExpiredCacheEntries(ILogger logger, int count);
 
-        [LoggerMessage(1005, LogLevel.Warning, "Failed to deserialize cache entry {CacheKey}")]
-        public static partial void CacheEntryDeserializationFailed(ILogger logger, string cacheKey, Exception exception);
+        [LoggerMessage(1005, LogLevel.Warning, "Failed to deserialize cache entry {KeyFamily} {KeyHash}")]
+        public static partial void CacheEntryDeserializationFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
 
-        [LoggerMessage(1006, LogLevel.Debug, "Failed to acquire distributed lock for cache key {CacheKey}")]
-        public static partial void DistributedLockFailed(ILogger logger, string cacheKey, Exception exception);
+        [LoggerMessage(1006, LogLevel.Debug, "Failed to acquire distributed lock for cache key {KeyFamily} {KeyHash}")]
+        public static partial void DistributedLockFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
 
-        [LoggerMessage(1007, LogLevel.Warning, "Failed to serialize cache entry {CacheKey}")]
-        public static partial void CacheEntrySerializationFailed(ILogger logger, string cacheKey, Exception exception);
+        [LoggerMessage(1007, LogLevel.Warning, "Failed to serialize cache entry {KeyFamily} {KeyHash}")]
+        public static partial void CacheEntrySerializationFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
+
+        [LoggerMessage(1008, LogLevel.Warning, "Failed to track cache key {KeyFamily} {KeyHash} in Redis index.")]
+        public static partial void IndexTrackFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
+
+        [LoggerMessage(1009, LogLevel.Warning, "Failed to remove cache key {KeyFamily} {KeyHash} from Redis index.")]
+        public static partial void IndexRemoveFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
     }
 }
