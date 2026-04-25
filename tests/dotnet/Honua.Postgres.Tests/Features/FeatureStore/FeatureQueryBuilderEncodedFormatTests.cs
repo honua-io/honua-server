@@ -20,6 +20,7 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
         var result = queryBuilder.BuildSelectGeoJsonQuery(layerId: 1, query: new FeatureQuery());
 
         result.Sql.Should().Contain("ST_AsGeoJSON(");
+        result.Sql.Should().Contain("ST_AsGeoJSON(").And.Contain(", 8, 0)");
         result.Sql.Should().Contain("AS geometry");
         result.Sql.Should().NotContain("ST_AsBinary(");
     }
@@ -76,7 +77,7 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
     {
         var poolProvider = new DefaultObjectPoolProvider();
         var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
-        var geometryProcessor = new GeometryProcessor();
+        var geometryProcessor = new GeometryProcessor(geoJsonTextPrecision: 8);
         return new FeatureQueryBuilder(stringBuilderPool, geometryProcessor);
     }
 

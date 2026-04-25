@@ -253,8 +253,8 @@ jobs:
             ;;
           "PARTIAL")
             if [ "${{ env.PASSED_TESTS }}" -gt 0 ]; then
-              echo "⚠️ Partial WFS 2.0 compliance - acceptable for development"
-              exit 0  # Don't fail CI for partial compliance during development
+              echo "❌ Partial WFS 2.0 compliance is not sufficient for this conformance gate"
+              exit 1
             else
               echo "❌ No tests passed - implementation needs work"
               exit 1

@@ -44,6 +44,23 @@ internal sealed partial class FeatureDataAccess
         return Task.FromResult(EncodedGeoJsonFeature.Create(id, geometryGeoJson, attributes));
     }
 
+    private static Task<RawGeoJsonFeature> ReadRawGeoJsonFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
+    {
+        var id = reader.GetInt64(0);
+        var geometryGeoJson = reader.IsDBNull(1) ? null : reader.GetString(1);
+        var propertiesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
+        return Task.FromResult(RawGeoJsonFeature.Create(id, geometryGeoJson, propertiesJson));
+    }
+
+    private static RawGeoServicesFeature ReadRawGeoServicesFeature(NpgsqlDataReader reader)
+    {
+        var id = reader.GetInt64(0);
+        var attributesJson = reader.IsDBNull(1) ? null : reader.GetString(1);
+        double? x = reader.IsDBNull(2) ? null : reader.GetDouble(2);
+        double? y = reader.IsDBNull(3) ? null : reader.GetDouble(3);
+        return RawGeoServicesFeature.Create(id, attributesJson, x, y);
+    }
+
     private Task<KmlFeature> ReadKmlFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
     {
         var id = reader.GetInt64(0);

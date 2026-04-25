@@ -42,6 +42,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
     public async Task Initialize_WithSupportedVersion_NegotiatesAndReturnsServerInfo()
     {
         var response = await PostRpcAsync("""
@@ -399,6 +400,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task LargeIntegerId_IsAcceptedAndEchoedVerbatim()
     {
         // JSON's numeric model has no maximum, and MCP only requires the id to
@@ -577,6 +579,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "resources/templates/list")]
     public async Task ResourceTemplatesList_AdvertisesParameterizedUris()
     {
         var response = await PostRpcAsync("""
@@ -600,6 +603,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "resources/list")]
     public async Task ResourcesList_ExcludesParameterizedUris()
     {
         var response = await PostRpcAsync("""
@@ -621,6 +625,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_WithToolExecutionFailure_SurfacesIsErrorInsideResult()
     {
         // honua_cancel_job throws GeoprocessingValidationException for a blank
@@ -699,6 +704,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "resources/read")]
     public async Task ResourcesRead_UnknownUri_ReturnsResourceNotFoundJsonRpcCode()
     {
         var response = await PostRpcAsync("""

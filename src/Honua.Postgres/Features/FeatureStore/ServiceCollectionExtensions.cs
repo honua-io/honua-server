@@ -40,7 +40,12 @@ internal static class ServiceCollectionExtensions
             poolProvider.Create(new DictionaryPooledObjectPolicy()));
 
         // Register core feature store services
-        services.AddSingleton<IGeometryProcessor>(_ => new GeometryProcessor());
+        services.AddSingleton<IGeometryProcessor>(provider =>
+        {
+            var limits = provider.GetService<IOptions<LimitsOptions>>()?.Value?.Geometry;
+            var geoJsonPrecision = limits?.MaxCoordinatePrecision ?? FeatureQueryEncoding.GeometryTextPrecision;
+            return new GeometryProcessor(geoJsonPrecision);
+        });
 
         services.AddScoped<IFeatureCacheManager>(provider =>
         {

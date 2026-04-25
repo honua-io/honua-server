@@ -153,6 +153,41 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             $"(LN(TAN((90.0 + {clampedLatitude}) * PI() / 360.0)) * {WebMercatorEarthRadius.ToString(CultureInfo.InvariantCulture)})");
     }
 
+    public CoreParameterizedQuery BuildSelectGeoServicesPointQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var spatialFilter = query.SpatialFilter;
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+            var pointGeometry = _geometryProcessor.GetGeometryOperand(geometryStorageType, layerSrid: query.SpatialReferenceSrid);
+
+            if (query.OutputSrid.HasValue &&
+                (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
+            {
+                pointGeometry = $"ST_Transform({pointGeometry}, {query.OutputSrid.Value})";
+            }
+
+            sql.Append(CultureInfo.InvariantCulture,
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {DatabaseSchema.AttributesColumn}::text AS {DatabaseSchema.AttributesColumn}, ST_X({pointGeometry}) AS x, ST_Y({pointGeometry}) AS y FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+            AppendPagination(sql, isKnnQuery: false, query, spatialFilter, ref paramIndex);
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
     public CoreParameterizedQuery BuildSelectGmlQuery(
         int layerId,
         FeatureQuery query,

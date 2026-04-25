@@ -1082,7 +1082,7 @@ internal sealed class StreamingQueryFormatter
         writer.WriteStartObject();
         writer.WriteString("type", "Feature");
         writer.WritePropertyName("id");
-        JsonSerializer.Serialize(writer, featureBase.Id);
+        JsonSerializer.Serialize(writer, featureBase.Id, FeatureServerJsonContext.Default.Object);
 
         // Write geometry if requested and available
         if (returnGeometry && feature.Geometry != null)

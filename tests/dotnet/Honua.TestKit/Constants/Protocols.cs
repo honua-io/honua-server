@@ -65,6 +65,11 @@ public static class Protocols
     public const string Admin = "Admin";
 
     /// <summary>
+    /// Cloud Optimized GeoTIFF registration and tile-serving endpoints.
+    /// </summary>
+    public const string Cog = "Cog";
+
+    /// <summary>
     /// Infrastructure and cross-cutting concerns.
     /// </summary>
     public const string Infrastructure = "Infrastructure";

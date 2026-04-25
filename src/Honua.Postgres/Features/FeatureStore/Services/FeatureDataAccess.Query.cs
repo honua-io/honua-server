@@ -126,6 +126,50 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    public async Task<ImmutableArray<RawGeoServicesFeature>> ExecuteSelectRawGeoServicesPointQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = await CreateCommandAsync(
+                connection,
+                query.Sql,
+                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+                cancellationToken).ConfigureAwait(false);
+
+            var capacity = featureQuery.Limit is > 0 and < int.MaxValue
+                ? featureQuery.Limit.Value
+                : 256;
+            var features = new List<RawGeoServicesFeature>(capacity);
+            await using var reader = await command.ExecuteReaderAsync(
+                CommandBehavior.SequentialAccess | CommandBehavior.SingleResult,
+                cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                features.Add(ReadRawGeoServicesFeature(reader));
+            }
+
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_raw_geoservices", stopwatch.ElapsedMilliseconds, features.Count);
+            RecordPerformanceQuery("select_raw_geoservices", layerId, stopwatch.ElapsedMilliseconds, features.Count);
+            LogSlowQuery("select_raw_geoservices", stopwatch.ElapsedMilliseconds, layerId, features.Count);
+
+            return features.ToImmutableArray();
+        }
+        catch (Exception)
+        {
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_raw_geoservices_error", stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
     public async Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(CoreParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -198,6 +242,48 @@ internal sealed partial class FeatureDataAccess
         {
             stopwatch.Stop();
             _cacheManager.RecordQueryMetrics("select_geojson_error", stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
+    public async Task<ImmutableArray<RawGeoJsonFeature>> ExecuteSelectRawGeoJsonQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = await CreateCommandAsync(
+                connection,
+                query.Sql,
+                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+                cancellationToken).ConfigureAwait(false);
+
+            var features = new List<RawGeoJsonFeature>();
+            await using var reader = await command.ExecuteReaderAsync(
+                CommandBehavior.SequentialAccess | CommandBehavior.SingleResult,
+                cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var feature = await ReadRawGeoJsonFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
+                features.Add(feature);
+            }
+
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_raw_geojson", stopwatch.ElapsedMilliseconds, features.Count);
+            RecordPerformanceQuery("select_raw_geojson", layerId, stopwatch.ElapsedMilliseconds, features.Count);
+            LogSlowQuery("select_raw_geojson", stopwatch.ElapsedMilliseconds, layerId, features.Count);
+
+            return features.ToImmutableArray();
+        }
+        catch (Exception)
+        {
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_raw_geojson_error", stopwatch.ElapsedMilliseconds);
             throw;
         }
     }

@@ -3,6 +3,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Features.Query;
 
@@ -32,7 +33,7 @@ public static class QueryServiceCollectionExtensions
     /// <typeparam name="TAdapter">Adapter implementation type</typeparam>
     /// <param name="services">Service collection</param>
     /// <returns>Service collection for chaining</returns>
-    public static IServiceCollection AddQueryParameterAdapter<TParams, TAdapter>(this IServiceCollection services)
+    public static IServiceCollection AddQueryParameterAdapter<TParams, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TAdapter>(this IServiceCollection services)
         where TAdapter : class, IQueryParameterAdapter<TParams>
     {
         services.TryAddSingleton<IQueryParameterAdapter<TParams>, TAdapter>();
@@ -40,7 +41,11 @@ public static class QueryServiceCollectionExtensions
         // Register the adapter with the unified query service
         services.Configure<UnifiedQueryServiceOptions>(options =>
         {
-            options.AdapterRegistrations.Add(typeof(TParams));
+            options.AdapterRegistrations.Add((unifiedQueryService, serviceProvider) =>
+            {
+                var adapter = serviceProvider.GetRequiredService<IQueryParameterAdapter<TParams>>();
+                unifiedQueryService.RegisterAdapter(adapter);
+            });
         });
 
         return services;
@@ -65,9 +70,9 @@ public static class QueryServiceCollectionExtensions
 public sealed class UnifiedQueryServiceOptions
 {
     /// <summary>
-    /// List of adapter parameter types to register.
+    /// Adapter registration callbacks to run once the unified service is available.
     /// </summary>
-    public List<Type> AdapterRegistrations { get; } = new();
+    internal List<Action<UnifiedQueryService, IServiceProvider>> AdapterRegistrations { get; } = new();
 }
 
 /// <summary>
@@ -97,20 +102,9 @@ internal sealed class UnifiedQueryServiceConfigurator : IUnifiedQueryServiceConf
 
     public void Configure(UnifiedQueryService unifiedQueryService, IServiceProvider serviceProvider)
     {
-        foreach (var parameterType in _options.AdapterRegistrations)
+        foreach (var registerAdapter in _options.AdapterRegistrations)
         {
-            var adapterType = typeof(IQueryParameterAdapter<>).MakeGenericType(parameterType);
-            var adapter = serviceProvider.GetService(adapterType);
-
-            if (adapter != null)
-            {
-                // Use reflection to call RegisterAdapter<T>
-                var registerMethod = typeof(UnifiedQueryService)
-                    .GetMethod(nameof(UnifiedQueryService.RegisterAdapter))!
-                    .MakeGenericMethod(parameterType);
-
-                registerMethod.Invoke(unifiedQueryService, new[] { adapter });
-            }
+            registerAdapter(unifiedQueryService, serviceProvider);
         }
     }
 }

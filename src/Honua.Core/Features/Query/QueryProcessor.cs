@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -295,6 +294,12 @@ public sealed class QueryProcessor : IQueryProcessor
             Distinct = query.Aggregation?.Distinct ?? false
         };
 
+        if (query.Extensions?.TryGetValue("includeNullGeometry", out var includeNullGeometryValue) == true &&
+            includeNullGeometryValue is bool includeNullGeometry)
+        {
+            featureQuery = featureQuery with { IncludeNullGeometry = includeNullGeometry };
+        }
+
         // Handle aggregation
         if (query.RequiresAggregation)
         {
@@ -313,27 +318,265 @@ public sealed class QueryProcessor : IQueryProcessor
     public string BuildCacheKey(UnifiedQuery query, LayerDefinition layer, string protocol)
     {
         // Create a deterministic hash of the query for caching
-        var keyData = new
-        {
-            Protocol = protocol,
-            LayerId = layer.Id,
-            Filter = query.Filter?.GetFilterExpression()?.ToString() ??
-                    query.Filter?.GetSqlFragment()?.Sql,
-            FilterParams = query.Filter?.GetSqlFragment()?.Parameters?.ToArray(),
-            SpatialFilter = query.SpatialFilter,
-            TemporalFilter = query.TemporalFilter,
-            ObjectIds = query.ObjectIds?.ToArray(),
-            OutFields = query.OutFields?.ToArray(),
-            OrderBy = query.OrderBy?.ToArray(),
-            Offset = query.Offset,
-            Limit = query.Limit,
-            OutputCrs = query.OutputCrs,
-            Aggregation = query.Aggregation
-        };
+        var keyBuilder = new StringBuilder();
+        AppendKeyPart(keyBuilder, nameof(protocol), protocol);
+        AppendKeyPart(keyBuilder, nameof(layer.Id), layer.Id);
+        AppendKeyPart(keyBuilder, "Filter", query.Filter?.GetFilterExpression()?.ToString() ?? query.Filter?.GetSqlFragment()?.Sql);
+        AppendSequence(keyBuilder, "FilterParams", query.Filter?.GetSqlFragment()?.Parameters);
+        AppendSpatialFilter(keyBuilder, query.SpatialFilter);
+        AppendTemporalFilter(keyBuilder, query.TemporalFilter);
+        AppendImmutableArray(keyBuilder, nameof(query.ObjectIds), query.ObjectIds);
+        AppendImmutableArray(keyBuilder, nameof(query.OutFields), query.OutFields);
+        AppendOrderBy(keyBuilder, query.OrderBy);
+        AppendQueryCrs(keyBuilder, query.OutputCrs);
+        AppendAggregation(keyBuilder, query.Aggregation);
+        AppendHints(keyBuilder, query.Hints);
+        AppendDictionary(keyBuilder, nameof(query.Extensions), query.Extensions);
+        AppendKeyPart(keyBuilder, nameof(query.Offset), query.Offset);
+        AppendKeyPart(keyBuilder, nameof(query.Limit), query.Limit);
 
-        var json = JsonSerializer.Serialize(keyData);
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(keyBuilder.ToString()));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static void AppendKeyPart(StringBuilder builder, string name, object? value)
+    {
+        builder.Append(name);
+        builder.Append('=');
+        AppendKeyValue(builder, value);
+        builder.Append(';');
+    }
+
+    private static void AppendSequence<T>(StringBuilder builder, string name, IEnumerable<T>? values)
+    {
+        builder.Append(name);
+        builder.Append("=[");
+        if (values != null)
+        {
+            var first = true;
+            foreach (var value in values)
+            {
+                if (!first)
+                {
+                    builder.Append(',');
+                }
+
+                AppendKeyValue(builder, value);
+                first = false;
+            }
+        }
+
+        builder.Append("];");
+    }
+
+    private static void AppendImmutableArray<T>(StringBuilder builder, string name, ImmutableArray<T>? values)
+    {
+        if (!values.HasValue || values.Value.IsDefault)
+        {
+            AppendKeyPart(builder, name, null);
+            return;
+        }
+
+        AppendSequence(builder, name, values.Value);
+    }
+
+    private static void AppendSpatialFilter(StringBuilder builder, SpatialFilter? spatialFilter)
+    {
+        builder.Append("SpatialFilter=");
+        if (!spatialFilter.HasValue)
+        {
+            builder.Append("<null>;");
+            return;
+        }
+
+        var value = spatialFilter.Value;
+        builder.Append(value.SpatialRelationship);
+        builder.Append('|');
+        builder.Append(value.Srid?.ToString(CultureInfo.InvariantCulture) ?? "<null>");
+        builder.Append('|');
+        builder.Append(value.Distance?.ToString("R", CultureInfo.InvariantCulture) ?? "<null>");
+        builder.Append('|');
+        builder.Append(value.DistanceUnit);
+        builder.Append('|');
+        builder.Append(value.NearestCount?.ToString(CultureInfo.InvariantCulture) ?? "<null>");
+        builder.Append('|');
+        builder.Append(value.ReturnDistance);
+        builder.Append('|');
+        builder.Append(value.Geometry == null ? "<null>" : Convert.ToHexString(value.Geometry));
+        builder.Append(';');
+    }
+
+    private static void AppendTemporalFilter(StringBuilder builder, TemporalFilter? temporalFilter)
+    {
+        builder.Append("TemporalFilter=");
+        if (!temporalFilter.HasValue)
+        {
+            builder.Append("<null>;");
+            return;
+        }
+
+        var value = temporalFilter.Value;
+        builder.Append(value.PropertyName);
+        builder.Append('|');
+        builder.Append(value.PropertyType);
+        builder.Append('|');
+        builder.Append(value.Start?.ToString("O", CultureInfo.InvariantCulture) ?? "<null>");
+        builder.Append('|');
+        builder.Append(value.End?.ToString("O", CultureInfo.InvariantCulture) ?? "<null>");
+        builder.Append(';');
+    }
+
+    private static void AppendOrderBy(StringBuilder builder, ImmutableArray<OrderByClause>? orderBy)
+    {
+        builder.Append("OrderBy=[");
+        if (orderBy.HasValue && !orderBy.Value.IsDefault)
+        {
+            var first = true;
+            foreach (var clause in orderBy.Value)
+            {
+                if (!first)
+                {
+                    builder.Append(',');
+                }
+
+                builder.Append(clause.Field);
+                builder.Append(':');
+                builder.Append(clause.Ascending);
+                builder.Append(':');
+                builder.Append(clause.FieldType?.ToString() ?? "<null>");
+                first = false;
+            }
+        }
+
+        builder.Append("];");
+    }
+
+    private static void AppendQueryCrs(StringBuilder builder, QueryCrs? outputCrs)
+    {
+        builder.Append("OutputCrs=");
+        if (!outputCrs.HasValue)
+        {
+            builder.Append("<null>;");
+            return;
+        }
+
+        var value = outputCrs.Value;
+        builder.Append(value.Srid?.ToString(CultureInfo.InvariantCulture) ?? "<null>");
+        builder.Append('|');
+        builder.Append(value.AxisOrder?.ToString() ?? "<null>");
+        builder.Append('|');
+        builder.Append(value.Uri ?? "<null>");
+        builder.Append(';');
+    }
+
+    private static void AppendAggregation(StringBuilder builder, QueryAggregation? aggregation)
+    {
+        builder.Append("Aggregation=");
+        if (!aggregation.HasValue)
+        {
+            builder.Append("<null>;");
+            return;
+        }
+
+        var value = aggregation.Value;
+        builder.Append("Distinct:");
+        builder.Append(value.Distinct);
+        builder.Append("|Stats:[");
+        if (value.Statistics.HasValue && !value.Statistics.Value.IsDefault)
+        {
+            var first = true;
+            foreach (var statistic in value.Statistics.Value)
+            {
+                if (!first)
+                {
+                    builder.Append(',');
+                }
+
+                builder.Append(statistic.StatisticType);
+                builder.Append(':');
+                builder.Append(statistic.OnStatisticField);
+                builder.Append(':');
+                builder.Append(statistic.OutStatisticFieldName);
+                builder.Append(':');
+                builder.Append(statistic.FieldType?.ToString() ?? "<null>");
+                first = false;
+            }
+        }
+
+        builder.Append("]|GroupBy:");
+        AppendImmutableArray(builder, nameof(value.GroupByFields), value.GroupByFields);
+        builder.Append("Having:");
+        builder.Append(value.HavingFilter?.GetFilterExpression()?.ToString() ?? value.HavingFilter?.GetSqlFragment()?.Sql ?? "<null>");
+        builder.Append(';');
+    }
+
+    private static void AppendHints(StringBuilder builder, QueryHints? hints)
+    {
+        builder.Append("Hints=");
+        if (!hints.HasValue)
+        {
+            builder.Append("<null>;");
+            return;
+        }
+
+        var value = hints.Value;
+        builder.Append("PreferStreaming:");
+        AppendKeyValue(builder, value.PreferStreaming);
+        builder.Append("|EnableCaching:");
+        AppendKeyValue(builder, value.EnableCaching);
+        builder.Append("|EstimatedResultSize:");
+        AppendKeyValue(builder, value.EstimatedResultSize);
+        builder.Append("|RequireExactCount:");
+        AppendKeyValue(builder, value.RequireExactCount);
+        builder.Append("|TimeoutMs:");
+        AppendKeyValue(builder, value.TimeoutMs);
+        builder.Append('|');
+        AppendDictionary(builder, nameof(value.OptimizationHints), value.OptimizationHints);
+    }
+
+    private static void AppendDictionary(StringBuilder builder, string name, IReadOnlyDictionary<string, object>? values)
+    {
+        builder.Append(name);
+        builder.Append("={");
+        if (values != null)
+        {
+            var first = true;
+            foreach (var pair in values.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+            {
+                if (!first)
+                {
+                    builder.Append(',');
+                }
+
+                AppendKeyValue(builder, pair.Key);
+                builder.Append(':');
+                AppendKeyValue(builder, pair.Value);
+                first = false;
+            }
+        }
+
+        builder.Append("};");
+    }
+
+    private static void AppendKeyValue(StringBuilder builder, object? value)
+    {
+        var formatted = FormatKeyValue(value);
+        builder.Append(formatted.Length.ToString(CultureInfo.InvariantCulture));
+        builder.Append(':');
+        builder.Append(formatted);
+    }
+
+    private static string FormatKeyValue(object? value)
+    {
+        return value switch
+        {
+            null => "<null>",
+            byte[] bytes => Convert.ToHexString(bytes),
+            DateTime dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
+            DateTimeOffset dateTimeOffset => dateTimeOffset.ToString("O", CultureInfo.InvariantCulture),
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty,
+            _ => value.ToString() ?? string.Empty
+        };
     }
 
     /// <inheritdoc />

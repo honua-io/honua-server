@@ -30,6 +30,12 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 [JsonSerializable(typeof(CachedServiceList))]
 [JsonSerializable(typeof(CachedCacheKeyIndex))]
 [JsonSerializable(typeof(CachedResponse))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(byte[]))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

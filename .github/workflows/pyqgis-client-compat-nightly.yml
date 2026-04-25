@@ -81,6 +81,7 @@ jobs:
           HONUA_PYQGIS_BASE_URL: http://localhost:5000
           HONUA_PYQGIS_SERVICE_ID: ${{ env.CLIENT_COMPAT_SERVICE_ID }}
           HONUA_PYQGIS_COLLECTION_ID: ${{ env.CLIENT_COMPAT_COLLECTION_ID }}
+          HONUA_PYQGIS_REQUIRE_WFS: "1"
           QT_QPA_PLATFORM: offscreen
         run: |
           xvfb-run -a pytest tests/python/pyqgis \

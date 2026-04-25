@@ -83,4 +83,67 @@ public sealed class QueryProcessorTests
         result.ErrorMessage.Should().NotContain("<svg");
         result.ErrorMessage.Should().NotContain("onload=");
     }
+
+    [Fact]
+    public void BuildCacheKey_FilterParametersWithDelimiter_DoNotCollide()
+    {
+        var firstQuery = UnifiedQuery.WithFilter(QueryFilter.FromSql(
+            new SqlFragment("name IN (@p0, @p1)", ["a,b", "c"])));
+        var secondQuery = UnifiedQuery.WithFilter(QueryFilter.FromSql(
+            new SqlFragment("name IN (@p0, @p1)", ["a", "b,c"])));
+
+        var firstKey = _processor.BuildCacheKey(firstQuery, _layer, "test");
+        var secondKey = _processor.BuildCacheKey(secondQuery, _layer, "test");
+
+        firstKey.Should().NotBe(secondKey);
+    }
+
+    [Fact]
+    public void BuildCacheKey_ResultAffectingExtensions_DoNotCollide()
+    {
+        var firstQuery = new UnifiedQuery
+        {
+            Extensions = ImmutableDictionary<string, object>.Empty.Add("includeNullGeometry", false)
+        };
+        var secondQuery = firstQuery with
+        {
+            Extensions = ImmutableDictionary<string, object>.Empty.Add("includeNullGeometry", true)
+        };
+
+        var firstKey = _processor.BuildCacheKey(firstQuery, _layer, "OGC-API-Features");
+        var secondKey = _processor.BuildCacheKey(secondQuery, _layer, "OGC-API-Features");
+
+        firstKey.Should().NotBe(secondKey);
+    }
+
+    [Fact]
+    public void BuildCacheKey_ResultAffectingHints_DoNotCollide()
+    {
+        var firstQuery = new UnifiedQuery
+        {
+            Hints = QueryHints.Create(preferStreaming: false)
+        };
+        var secondQuery = firstQuery with
+        {
+            Hints = QueryHints.Create(preferStreaming: true)
+        };
+
+        var firstKey = _processor.BuildCacheKey(firstQuery, _layer, "OGC-API-Features");
+        var secondKey = _processor.BuildCacheKey(secondQuery, _layer, "OGC-API-Features");
+
+        firstKey.Should().NotBe(secondKey);
+    }
+
+    [Fact]
+    public void ToFeatureQuery_IncludeNullGeometryExtension_PropagatesToFeatureQuery()
+    {
+        var query = new UnifiedQuery
+        {
+            Extensions = ImmutableDictionary<string, object>.Empty.Add("includeNullGeometry", true)
+        };
+
+        var featureQuery = _processor.ToFeatureQuery(query, _layer);
+
+        featureQuery.IncludeNullGeometry.Should().BeTrue();
+    }
 }

@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Protocols.Cog;
 /// Integration tests for COG admin endpoints.
 /// </summary>
 [Collection("Database")]
-[Protocol(TestProtocols.Admin)]
+[Protocol(TestProtocols.Cog)]
 [Operation(Operations.CogAdmin)]
 public class CogEndpointTests : IAsyncLifetime
 {
