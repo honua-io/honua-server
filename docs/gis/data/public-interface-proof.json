@@ -1356,13 +1356,13 @@
           "proofMechanism": "JSON-RPC framing, auth, tool delegation, stub envelopes, resource reads, and error mapping are covered through unit and integration tests against the operator surface",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpEndpointIntegrationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpToolDelegationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpErrorMappingTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpAuthorizationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpStubToolTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpResourceSerializationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpTaxonomyAlignmentTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpEndpointIntegrationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpToolDelegationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpErrorMappingTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpAuthorizationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpStubToolTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpResourceSerializationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpTaxonomyAlignmentTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",

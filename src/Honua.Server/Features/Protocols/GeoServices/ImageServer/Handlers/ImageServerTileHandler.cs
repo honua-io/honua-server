@@ -22,18 +22,18 @@ internal sealed class ImageServerTileHandler
 {
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterStore _rasterStore;
-    private readonly ICloudCogTileResolver? _cloudCogTileResolver;
+    private readonly ICogTileResolver? _cogTileResolver;
     private readonly ILogger<ImageServerTileHandler> _logger;
 
     public ImageServerTileHandler(
         ILayerCatalog layerCatalog,
         IRasterStore rasterStore,
         ILogger<ImageServerTileHandler> logger,
-        ICloudCogTileResolver? cloudCogTileResolver = null)
+        ICogTileResolver? cogTileResolver = null)
     {
         _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
-        _cloudCogTileResolver = cloudCogTileResolver;
+        _cogTileResolver = cogTileResolver;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -86,7 +86,7 @@ internal sealed class ImageServerTileHandler
 
             ImageServerLog.ImageTileRequested(_logger, layerId, level, row, col);
 
-            if (primaryRaster is null && _cloudCogTileResolver == null)
+            if (primaryRaster is null && _cogTileResolver == null)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
@@ -113,10 +113,10 @@ internal sealed class ImageServerTileHandler
                 }
             }
 
-            // Fallback: Check cloud COGs (Pro edition required)
-            if (_cloudCogTileResolver != null)
+            // Fallback: Check COGs (Pro edition required)
+            if (_cogTileResolver != null)
             {
-                var lookup = await _cloudCogTileResolver.GetTileForLayerAsync(
+                var lookup = await _cogTileResolver.GetTileForLayerAsync(
                     layerId, level, row, col, rasterFormat, cancellationToken);
 
                 if (lookup.EditionGateHit)

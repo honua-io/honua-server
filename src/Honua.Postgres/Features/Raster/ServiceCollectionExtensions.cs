@@ -43,11 +43,11 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<ILogger<PostgresRasterImportService>>(),
                 schemaName));
 
-        // Register cloud COG catalog store
-        services.AddScoped<ICloudCogStore>(provider =>
-            new PostgresCloudCogStore(
+        // Register COG catalog store
+        services.AddScoped<ICogStore>(provider =>
+            new PostgresCogStore(
                 provider.GetRequiredService<IDatabaseConnectionProvider>(),
-                provider.GetRequiredService<ILogger<PostgresCloudCogStore>>(),
+                provider.GetRequiredService<ILogger<PostgresCogStore>>(),
                 schemaName));
 
         // Register surface-analysis service

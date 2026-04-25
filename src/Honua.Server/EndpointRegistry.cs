@@ -573,7 +573,7 @@ public static class EndpointRegistry
         // Data export
         new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/export"),
 
-        // Cloud COG admin endpoints (#519)
+        // COG admin endpoints (#519)
         new("POST", "/api/v1/admin/cloud-rasters"),
         new("GET", "/api/v1/admin/cloud-rasters"),
         new("GET", "/api/v1/admin/cloud-rasters/{id}"),
