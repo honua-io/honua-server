@@ -41,6 +41,7 @@ public sealed class McpTaxonomyAlignmentTests
     {
         "honua://jobs/{jobId}",
         "honua://jobs/{jobId}/results",
+        "honua://jobs/{jobId}/report",
         "honua://workspaces/{workspaceId}",
         "honua://catalog/processes",
         "honua://published-services",
@@ -125,6 +126,7 @@ public sealed class McpTaxonomyAlignmentTests
         {
             McpTelemetry.ResourceFamily.Jobs,
             McpTelemetry.ResourceFamily.JobResults,
+            McpTelemetry.ResourceFamily.JobReports,
             McpTelemetry.ResourceFamily.Workspaces,
             McpTelemetry.ResourceFamily.Catalog,
             McpTelemetry.ResourceFamily.PublishedServices,
@@ -291,12 +293,16 @@ public sealed class McpTaxonomyAlignmentTests
     private static IMcpResource[] BuildResources()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
+        var reportService = Substitute.For<Honua.Server.Features.Reporting.IAnalysisReportService>();
         var services = Substitute.For<IPublishedServiceStore>();
         var deployments = Substitute.For<IDeploymentStore>();
         return
         [
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
             new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance),
+            new Honua.Server.Features.Reporting.Mcp.AnalysisReportResource(
+                reportService,
+                NullLogger<Honua.Server.Features.Reporting.Mcp.AnalysisReportResource>.Instance),
             new WorkspaceResource(jobService, NullLogger<WorkspaceResource>.Instance),
             new ProcessCatalogResource(jobService, NullLogger<ProcessCatalogResource>.Instance),
             new PublishedServiceResource(

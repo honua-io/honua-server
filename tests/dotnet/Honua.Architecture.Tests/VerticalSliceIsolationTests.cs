@@ -35,7 +35,8 @@ public sealed class VerticalSliceIsolationTests
         "Infrastructure", // Infrastructure is allowed to be referenced by others
         "StaticMap",
         "SpatialAnalytics",
-        "Spec"
+        "Spec",
+        "Reporting"
     };
 
     /// <summary>
@@ -50,7 +51,9 @@ public sealed class VerticalSliceIsolationTests
     private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
         new(StringComparer.Ordinal)
         {
-            ["Grounding"] = new[] { "Geoprocessing" }
+            ["Mcp"] = new[] { "Geoprocessing", "Grounding" },
+            ["Grounding"] = new[] { "Geoprocessing" },
+            ["Reporting"] = new[] { "Geoprocessing", "Mcp" }
         };
 
     private static readonly string[] _protocolAdapterNames =

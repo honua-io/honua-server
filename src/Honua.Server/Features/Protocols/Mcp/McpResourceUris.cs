@@ -14,6 +14,7 @@ internal static class McpResourceUris
 
     public const string JobsPrefix = "honua://jobs/";
     public const string JobResultsSuffix = "/results";
+    public const string JobReportSuffix = "/report";
     public const string WorkspacesPrefix = "honua://workspaces/";
     public const string CatalogProcesses = "honua://catalog/processes";
 
@@ -31,6 +32,9 @@ internal static class McpResourceUris
 
     /// <summary>Builds the <c>honua://jobs/{jobId}/results</c> URI.</summary>
     public static string JobResultsUri(string jobId) => $"{JobsPrefix}{jobId}{JobResultsSuffix}";
+
+    /// <summary>Builds the <c>honua://jobs/{jobId}/report</c> URI.</summary>
+    public static string JobReportUri(string jobId) => $"{JobsPrefix}{jobId}{JobReportSuffix}";
 
     /// <summary>Builds the <c>honua://workspaces/{workspaceId}</c> URI.</summary>
     public static string WorkspaceUri(string workspaceId) => $"{WorkspacesPrefix}{workspaceId}";

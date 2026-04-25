@@ -51,6 +51,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Reporting feature: HTML renderer reads inline CSS via GetManifestResourceStream. -->
+    <EmbeddedResource Include="Features/Reporting/Templates/Resources/report.css" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Honua.Core.Tests" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Postgres" />
