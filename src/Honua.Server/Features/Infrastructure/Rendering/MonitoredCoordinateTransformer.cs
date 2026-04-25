@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
 
@@ -56,7 +58,7 @@ internal static class MonitoredCoordinateTransformer
                 {
                     ["from_srid"] = fromSrid,
                     ["to_srid"] = toSrid,
-                    ["extent"] = extent.ToString()
+                    ["extent_hash"] = LogValueRedactor.Hash(extent.ToString())
                 },
                 ex);
 
@@ -104,7 +106,7 @@ internal static class MonitoredCoordinateTransformer
                 {
                     ["from_srid"] = fromSrid,
                     ["to_srid"] = toSrid,
-                    ["point"] = $"({x}, {y})"
+                    ["point_hash"] = LogValueRedactor.Hash(FormatPoint(x, y))
                 },
                 ex);
 
@@ -143,8 +145,7 @@ internal static class MonitoredCoordinateTransformer
                 "lonlat_to_webmercator",
                 new Dictionary<string, object>
                 {
-                    ["longitude"] = longitude,
-                    ["latitude"] = latitude
+                    ["point_hash"] = LogValueRedactor.Hash(FormatPoint(longitude, latitude))
                 },
                 ex);
 
@@ -183,8 +184,7 @@ internal static class MonitoredCoordinateTransformer
                 "webmercator_to_lonlat",
                 new Dictionary<string, object>
                 {
-                    ["x"] = x,
-                    ["y"] = y
+                    ["point_hash"] = LogValueRedactor.Hash(FormatPoint(x, y))
                 },
                 ex);
 
@@ -224,7 +224,7 @@ internal static class MonitoredCoordinateTransformer
                 "calculate_scale_denominator",
                 new Dictionary<string, object>
                 {
-                    ["extent"] = extent.ToString(),
+                    ["extent_hash"] = LogValueRedactor.Hash(extent.ToString()),
                     ["image_width"] = imageWidth,
                     ["dpi"] = dpi,
                     ["srid"] = srid
@@ -266,7 +266,7 @@ internal static class MonitoredCoordinateTransformer
                 new Dictionary<string, object>
                 {
                     ["pixel_tolerance"] = pixelTolerance,
-                    ["map_extent"] = mapExtent.ToString(),
+                    ["map_extent_hash"] = LogValueRedactor.Hash(mapExtent.ToString()),
                     ["image_width"] = imageWidth
                 },
                 ex);
@@ -274,4 +274,7 @@ internal static class MonitoredCoordinateTransformer
             throw;
         }
     }
+
+    private static string FormatPoint(double a, double b) =>
+        string.Create(CultureInfo.InvariantCulture, $"{a:R}:{b:R}");
 }

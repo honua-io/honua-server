@@ -277,6 +277,9 @@ jobs:
           docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
           echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
 
+      # Restrict SARIF upload to HIGH/CRITICAL so the per-image category in the GitHub
+      # Security tab only carries actionable findings. Lower severities remain in the
+      # workflow logs and can be re-introduced by removing `--severity` if needed.
       - name: Run Trivy vulnerability scanner
         shell: bash
         env:
@@ -293,6 +296,7 @@ jobs:
             "$TRIVY_IMAGE" image \
             --scanners vuln \
             --skip-version-check \
+            --severity HIGH,CRITICAL \
             --format sarif \
             --output "/work/$SARIF_OUTPUT" \
             "$SCAN_LOCAL"

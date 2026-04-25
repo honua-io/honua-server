@@ -136,6 +136,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # Restrict SARIF upload to HIGH/CRITICAL so the GitHub Security tab carries only
+      # actionable findings. Lower severities remain in the failure-gate step output and
+      # the uploaded SARIF artifact for ops triage.
       - name: Run Trivy SARIF scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
@@ -143,6 +146,7 @@ jobs:
           scan-ref: .
           format: sarif
           output: trivy-filesystem-results.sarif
+          severity: HIGH,CRITICAL
 
       - name: Upload filesystem SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v4
@@ -206,6 +210,9 @@ jobs:
           cache-from: type=gha,scope=security-jit
           cache-to: type=gha,mode=max,scope=security-jit
 
+      # Restrict SARIF upload to HIGH/CRITICAL so the GitHub Security tab carries only
+      # actionable findings. Lower severities remain in the failure-gate step output and
+      # the uploaded SARIF artifact for ops triage.
       - name: Run container Trivy SARIF scan
         id: trivy-sarif
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
@@ -213,6 +220,7 @@ jobs:
           image-ref: ${{ env.IMAGE_NAME }}:security-test
           format: sarif
           output: trivy-container-results.sarif
+          severity: HIGH,CRITICAL
 
       - name: Upload container Trivy SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v4
