@@ -7,6 +7,8 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -149,6 +151,18 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
                 return EncodedGeoJsonFeature.Create(id, geometryGeoJson, attributes);
             },
             cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<ImmutableArray<RawGeoJsonFeature>> ExecuteSelectRawGeoJsonQueryAsync(
+        ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
+    {
+        var features = await ExecuteSelectGeoJsonQueryAsync(query, featureQuery, layerId, cancellationToken).ConfigureAwait(false);
+        return features.Select(feature => RawGeoJsonFeature.Create(
+                feature.Id,
+                feature.GeometryGeoJson,
+                JsonSerializer.Serialize(feature.Attributes, DuckDbFeatureAttributesJsonContext.Default.ImmutableDictionaryStringObject)))
+            .ToImmutableArray();
     }
 
     /// <inheritdoc />
@@ -633,4 +647,25 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     }
 
     #endregion
+}
+
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    WriteIndented = false)]
+[JsonSerializable(typeof(ImmutableDictionary<string, object?>))]
+[JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(object))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(float))]
+[JsonSerializable(typeof(decimal))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(DateTime))]
+[JsonSerializable(typeof(DateTimeOffset))]
+[JsonSerializable(typeof(JsonElement))]
+internal sealed partial class DuckDbFeatureAttributesJsonContext : JsonSerializerContext
+{
 }

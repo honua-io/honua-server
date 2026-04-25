@@ -8,10 +8,13 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.ServiceDefaults;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
@@ -61,6 +64,54 @@ public sealed class StacSearchTests : IAsyncLifetime
         searchWork.GetTagItem(HonuaTelemetry.Tags.Operation).Should().Be("search.work");
         searchWork.GetTagItem("honua.stac.search.limit").Should().Be(1);
         searchWork.GetTagItem("honua.stac.returned").Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WhenFeatureReaderFails_RecordsSearchWorkException()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<QueryResult<Feature>>(new InvalidOperationException("reader failure")));
+
+        var fixture = new WebAppFixture()
+            .ReplaceService<IFeatureReader>(reader);
+
+        var stoppedActivities = new ConcurrentBag<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == HonuaTelemetry.ServiceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName.StartsWith("honua.stac.", StringComparison.Ordinal))
+                {
+                    stoppedActivities.Add(activity);
+                }
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var response = await fixture.Client.GetAsync("/stac/search?limit=1");
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+            var searchWork = stoppedActivities
+                .Should()
+                .ContainSingle(activity => activity.OperationName == "honua.stac.search.work")
+                .Subject;
+            searchWork.Status.Should().Be(ActivityStatusCode.Error);
+            searchWork.GetTagItem(HonuaTelemetry.Tags.Error).Should().Be(true);
+            searchWork.Events.Should().Contain(e => e.Name == "exception");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

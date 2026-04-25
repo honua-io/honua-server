@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Caching.Distributed;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
@@ -29,8 +30,8 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
             var bytes = await _distributedCache.GetAsync(key, cancellationToken);
             if (bytes == null) return default;
 
-            var json = System.Text.Encoding.UTF8.GetString(bytes);
-            return JsonSerializer.Deserialize<T>(json);
+            var value = JsonSerializer.Deserialize(bytes, ResolveTypeInfo<T>());
+            return value is T typed ? typed : default;
         }
         catch (Exception ex)
         {
@@ -43,8 +44,7 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
     {
         try
         {
-            var json = JsonSerializer.Serialize(value);
-            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+            var bytes = JsonSerializer.SerializeToUtf8Bytes((object?)value, ResolveTypeInfo<T>());
             var options = new DistributedCacheEntryOptions();
 
             if (expiration.HasValue)
@@ -107,6 +107,12 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
             HitRatePercent = 0,
             HealthMessage = "IDistributedCache adapter - limited health info available"
         };
+    }
+
+    private static JsonTypeInfo ResolveTypeInfo<T>()
+    {
+        return CacheJsonContext.Default.GetTypeInfo(typeof(T))
+            ?? throw new NotSupportedException($"Type '{typeof(T).FullName}' is not registered in {nameof(CacheJsonContext)}.");
     }
 }
 

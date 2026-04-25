@@ -3,7 +3,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
@@ -37,8 +36,6 @@ internal static class SecurityServiceCollectionExtensions
     ///
     /// All services are registered with appropriate lifetimes and logging.
     /// </remarks>
-    [RequiresDynamicCode("Registers SecureConnectionDataSourceCache which binds configuration via ConfigurationBinder.Bind(Object).")]
-    [RequiresUnreferencedCode("Registers SecureConnectionDataSourceCache which binds configuration via ConfigurationBinder.GetValue<T>(String).")]
     public static IServiceCollection AddSecureConnectionServices(
         this IServiceCollection services,
         IConfiguration configuration)

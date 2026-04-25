@@ -189,6 +189,7 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
 builder.Host.UseSerilog((context, services, config) =>
 {
     var isDevelopment = context.HostingEnvironment.IsDevelopment();
+    var benchmarkQuietLogs = context.Configuration.GetValue<bool>("HONUA_BENCHMARK_QUIET_LOGS");
 
     config
         .MinimumLevel.Information()
@@ -204,6 +205,17 @@ builder.Host.UseSerilog((context, services, config) =>
         .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
         .Enrich.WithProperty("Application", "Honua")
         .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown");
+
+    if (benchmarkQuietLogs)
+    {
+        config
+            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Serilog.AspNetCore.RequestLoggingMiddleware", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Honua.Server.Features.Infrastructure.Middleware.SecurityHeadersMiddleware", Serilog.Events.LogEventLevel.Error)
+            .MinimumLevel.Override("Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationHandler", Serilog.Events.LogEventLevel.Error)
+            .MinimumLevel.Override("Honua.Server.Features.Protocols.Ogc.Api.Features.OgcFeaturesQueryHandler", Serilog.Events.LogEventLevel.Warning);
+    }
 
     if (isDevelopment)
     {

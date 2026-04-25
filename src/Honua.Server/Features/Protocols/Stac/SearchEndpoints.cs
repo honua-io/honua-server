@@ -270,123 +270,136 @@ internal static class SearchEndpoints
             layerList.Length);
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var allItems = ImmutableArray.CreateBuilder<StacItem>();
-        long totalMatched = 0;
-        var remainingSkip = offset;
-        var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
-        var layerSelections = new Dictionary<int, IReadOnlySet<string>?>();
-
-        foreach (var layer in layerList)
+        try
         {
-            if (hasEmptyIdFilter)
+            var allItems = ImmutableArray.CreateBuilder<StacItem>();
+            long totalMatched = 0;
+            var remainingSkip = offset;
+            var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
+            var layerSelections = new Dictionary<int, IReadOnlySet<string>?>();
+
+            foreach (var layer in layerList)
             {
-                break;
-            }
-
-            var layerQueryResult = await TryBuildLayerQuery(
-                request,
-                layer,
-                requestedItemIds,
-                geometryService,
-                filterProcessor,
-                defaultFilterLangIsText,
-                cancellationToken);
-            if (!layerQueryResult.IsSuccess)
-            {
-                StacTelemetry.SetFailed(activity, "invalid_search_parameters");
-                return StandardErrorHelpers.CreateBadRequest(context, layerQueryResult.Error ?? "Invalid search parameters.");
-            }
-
-            var query = layerQueryResult.Query;
-            var selectedProperties = layerQueryResult.SelectedProperties;
-            layerSelections[layer.Id] = selectedProperties;
-
-            if (remainingSkip > 0)
-            {
-                var layerCount = await featureReader.CountAsync(layer.Id, query, cancellationToken);
-                totalMatched += layerCount;
-
-                if (remainingSkip >= layerCount)
+                if (hasEmptyIdFilter)
                 {
-                    remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
-                    continue;
+                    break;
                 }
 
-                var remaining = effectiveLimit - allItems.Count;
-                query = query with { Offset = remainingSkip, Limit = remaining };
-                remainingSkip = 0;
+                var layerQueryResult = await TryBuildLayerQuery(
+                    request,
+                    layer,
+                    requestedItemIds,
+                    geometryService,
+                    filterProcessor,
+                    defaultFilterLangIsText,
+                    cancellationToken);
+                if (!layerQueryResult.IsSuccess)
+                {
+                    StacTelemetry.SetFailed(activity, "invalid_search_parameters");
+                    return StandardErrorHelpers.CreateBadRequest(context, layerQueryResult.Error ?? "Invalid search parameters.");
+                }
 
-                var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
-                allItems.AddRange(result.Features
-                    .Select(f => StacMappingService.MapFeatureToItem(
-                        f,
-                        layer,
-                        baseUrl,
-                        selectedProperties,
-                        geometrySrid: Wgs84Srid)));
+                var query = layerQueryResult.Query;
+                var selectedProperties = layerQueryResult.SelectedProperties;
+                layerSelections[layer.Id] = selectedProperties;
+
+                if (remainingSkip > 0)
+                {
+                    var layerCount = await featureReader.CountAsync(layer.Id, query, cancellationToken);
+                    totalMatched += layerCount;
+
+                    if (remainingSkip >= layerCount)
+                    {
+                        remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
+                        continue;
+                    }
+
+                    var remaining = effectiveLimit - allItems.Count;
+                    query = query with { Offset = remainingSkip, Limit = remaining };
+                    remainingSkip = 0;
+
+                    var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                    allItems.AddRange(result.Features
+                        .Select(f => StacMappingService.MapFeatureToItem(
+                            f,
+                            layer,
+                            baseUrl,
+                            selectedProperties,
+                            geometrySrid: Wgs84Srid)));
+                }
+                else if (allItems.Count < effectiveLimit)
+                {
+                    var remaining = effectiveLimit - allItems.Count;
+                    query = query with { Limit = remaining };
+
+                    var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                    totalMatched += result.TotalCount;
+
+                    allItems.AddRange(result.Features
+                        .Select(f => StacMappingService.MapFeatureToItem(
+                            f,
+                            layer,
+                            baseUrl,
+                            selectedProperties,
+                            geometrySrid: Wgs84Srid)));
+                }
+                else
+                {
+                    totalMatched += await featureReader.CountAsync(layer.Id, query, cancellationToken);
+                }
             }
-            else if (allItems.Count < effectiveLimit)
-            {
-                var remaining = effectiveLimit - allItems.Count;
-                query = query with { Limit = remaining };
 
-                var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
-                totalMatched += result.TotalCount;
-
-                allItems.AddRange(result.Features
-                    .Select(f => StacMappingService.MapFeatureToItem(
-                        f,
-                        layer,
-                        baseUrl,
-                        selectedProperties,
-                        geometrySrid: Wgs84Srid)));
-            }
-            else
-            {
-                totalMatched += await featureReader.CountAsync(layer.Id, query, cancellationToken);
-            }
-        }
-
-        var stacBase = $"{baseUrl}/stac";
-        var linksBuilder = ImmutableArray.CreateBuilder<Link>();
-        linksBuilder.Add(Link.Create(
-            href: $"{stacBase}/search?{BuildSearchQuery(effectiveLimit, offset, request, defaultFilterLangIsText)}",
-            rel: RelationTypes.Self,
-            type: MediaTypes.GeoJson,
-            title: "Search results"));
-        linksBuilder.Add(Link.Create(
-            href: stacBase,
-            rel: StacConstants.StacRelations.Root,
-            type: MediaTypes.Json,
-            title: "STAC Catalog"));
-
-        var nextOffset = offset + allItems.Count;
-        if (totalMatched > nextOffset)
-        {
+            var stacBase = $"{baseUrl}/stac";
+            var linksBuilder = ImmutableArray.CreateBuilder<Link>();
             linksBuilder.Add(Link.Create(
-                href: $"{stacBase}/search?{BuildSearchQuery(effectiveLimit, nextOffset, request, defaultFilterLangIsText)}",
-                rel: "next",
+                href: $"{stacBase}/search?{BuildSearchQuery(effectiveLimit, offset, request, defaultFilterLangIsText)}",
+                rel: RelationTypes.Self,
                 type: MediaTypes.GeoJson,
-                title: "Next page"));
-        }
+                title: "Search results"));
+            linksBuilder.Add(Link.Create(
+                href: stacBase,
+                rel: StacConstants.StacRelations.Root,
+                type: MediaTypes.Json,
+                title: "STAC Catalog"));
 
-        var response = new StacItemCollection
-        {
-            Features = allItems.ToImmutable(),
-            Links = linksBuilder.ToImmutable(),
-            NumberReturned = allItems.Count,
-            NumberMatched = totalMatched,
-            Context = new StacSearchContext
+            var nextOffset = offset + allItems.Count;
+            if (totalMatched > nextOffset)
             {
-                Returned = allItems.Count,
-                Matched = totalMatched,
-                Limit = effectiveLimit
+                linksBuilder.Add(Link.Create(
+                    href: $"{stacBase}/search?{BuildSearchQuery(effectiveLimit, nextOffset, request, defaultFilterLangIsText)}",
+                    rel: "next",
+                    type: MediaTypes.GeoJson,
+                    title: "Next page"));
             }
-        };
 
-        StacLog.SearchReturned(logger, allItems.Count);
-        StacTelemetry.SetResultCount(activity, allItems.Count, totalMatched);
-        return Results.Json(response, StacJsonContext.Default.StacItemCollection, MediaTypes.GeoJson);
+            var response = new StacItemCollection
+            {
+                Features = allItems.ToImmutable(),
+                Links = linksBuilder.ToImmutable(),
+                NumberReturned = allItems.Count,
+                NumberMatched = totalMatched,
+                Context = new StacSearchContext
+                {
+                    Returned = allItems.Count,
+                    Matched = totalMatched,
+                    Limit = effectiveLimit
+                }
+            };
+
+            StacLog.SearchReturned(logger, allItems.Count);
+            StacTelemetry.SetResultCount(activity, allItems.Count, totalMatched);
+            return Results.Json(response, StacJsonContext.Default.StacItemCollection, MediaTypes.GeoJson);
+        }
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            StacTelemetry.RecordException(activity, ex);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            StacTelemetry.RecordException(activity, ex);
+            throw;
+        }
     }
 
     private static async Task<(bool IsSuccess, FeatureQuery Query, IReadOnlySet<string>? SelectedProperties, string? Error)> TryBuildLayerQuery(

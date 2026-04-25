@@ -31,6 +31,7 @@ jobs:
 
       # 1. DOCKERFILE SECURITY
       - name: Run Hadolint (Dockerfile Linter)
+        id: hadolint
         uses: hadolint/hadolint-action@v3.3.0
         with:
           dockerfile: Dockerfile
@@ -72,6 +73,7 @@ jobs:
           sarif_file: 'trivy-results.sarif'
 
       - name: Run Trivy for high/critical vulnerabilities (fail build)
+        id: trivy-vulnerabilities
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:security-test
@@ -122,6 +124,7 @@ jobs:
           EOF
 
       - name: Run container structure tests
+        id: structure-tests
         run: |
           container-structure-test test \
             --image ${{ env.IMAGE_NAME }}:security-test \
@@ -146,6 +149,7 @@ jobs:
           sleep 10
 
       - name: Test runtime security constraints
+        id: runtime-security
         run: |
           echo "🔒 Testing runtime security constraints..."
 
@@ -190,6 +194,18 @@ jobs:
       - name: Generate security summary
         if: always()
         run: |
+          status_line() {
+            local name="$1"
+            local status="$2"
+            case "$status" in
+              success) echo "✅ ${name}: passed" ;;
+              failure) echo "❌ ${name}: failed" ;;
+              cancelled) echo "⚪ ${name}: cancelled" ;;
+              skipped) echo "⚪ ${name}: skipped" ;;
+              *) echo "⚪ ${name}: ${status}" ;;
+            esac
+          }
+
           echo "# 🔒 Container Security Report" > security-report.md
           echo "" >> security-report.md
           echo "**Scan Date**: $(date)" >> security-report.md
@@ -199,10 +215,10 @@ jobs:
 
           echo "## 🛡️ Security Checks Completed" >> security-report.md
           echo "" >> security-report.md
-          echo "✅ Dockerfile Security Analysis (Hadolint)" >> security-report.md
-          echo "✅ Vulnerability Scanning (Trivy)" >> security-report.md
-          echo "✅ Container Structure Tests" >> security-report.md
-          echo "✅ Runtime Security Analysis" >> security-report.md
+          status_line "Dockerfile Security Analysis (Hadolint)" "${{ steps.hadolint.outcome }}" >> security-report.md
+          status_line "Vulnerability Scanning (Trivy)" "${{ steps.trivy-vulnerabilities.outcome }}" >> security-report.md
+          status_line "Container Structure Tests" "${{ steps.structure-tests.outcome }}" >> security-report.md
+          status_line "Runtime Security Analysis" "${{ steps.runtime-security.outcome }}" >> security-report.md
           echo "" >> security-report.md
 
           echo "## 🔧 Security Features Validated" >> security-report.md

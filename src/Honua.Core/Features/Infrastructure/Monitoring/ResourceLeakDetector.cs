@@ -4,7 +4,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Text;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -489,37 +488,24 @@ internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHos
 
     private static string GetAllocationContext()
     {
-        var frame = new StackFrame(2, false); // Skip TrackResource and immediate caller
-        return frame.GetMethod()?.DeclaringType?.FullName ?? "Unknown";
+        return "Unknown";
     }
 
     private string? CaptureStackTrace()
     {
         if (!_options.CaptureAllocationStackTraces) return null;
 
-        var stackTrace = new StackTrace(2, true); // Skip TrackResource and immediate caller
-        var frames = stackTrace.GetFrames();
-
-        if (frames == null) return null;
-
-        var sb = new StringBuilder();
-        var frameCount = Math.Min(frames.Length, _options.MaxStackTraceFrames);
-
-        for (int i = 0; i < frameCount; i++)
+        var stackTrace = Environment.StackTrace;
+        if (_options.MaxStackTraceFrames <= 0)
         {
-            var frame = frames[i];
-            var method = frame.GetMethod();
-
-            if (method != null)
-            {
-                sb.Append("   at ");
-                sb.Append(method.DeclaringType?.FullName);
-                sb.Append('.');
-                sb.AppendLine(method.Name);
-            }
+            return stackTrace;
         }
 
-        return sb.ToString();
+        var stackFrames = stackTrace
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Skip(2)
+            .Take(_options.MaxStackTraceFrames);
+        return string.Join(Environment.NewLine, stackFrames);
     }
 
     public void Dispose()

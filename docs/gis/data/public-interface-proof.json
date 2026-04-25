@@ -504,7 +504,11 @@
       "endpointContains": [
         "/MapServer/WMTS"
       ],
-      "operationKeys": [],
+      "operationKeys": [
+        "WMTS-1.0.0::GetCapabilities",
+        "WMTS-1.0.0::GetTile",
+        "WMTS-1.0.0::GetFeatureInfo"
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
@@ -1335,7 +1339,14 @@
         "/mcp"
       ],
       "endpointContains": [],
-      "operationKeys": [],
+      "operationKeys": [
+        "Mcp::initialize",
+        "Mcp::tools/list",
+        "Mcp::tools/call",
+        "Mcp::resources/list",
+        "Mcp::resources/templates/list",
+        "Mcp::resources/read"
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",

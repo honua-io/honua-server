@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices;
@@ -88,6 +89,12 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
                 context.QueryParams,
                 context.ParsedGeometry!,
                 context.InputSrid);
+
+            if (CanUsePointEnvelopeIntersectsFastPath(context, spatialFilter))
+            {
+                spatialFilter = spatialFilter with { SpatialRelationship = SpatialRelationship.EnvelopeIntersects };
+            }
+
             return query with { SpatialFilter = spatialFilter };
         }
         catch (ArgumentException ex)
@@ -98,6 +105,31 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
         {
             throw new InvalidOperationException("Invalid geometry.", ex);
         }
+    }
+
+    private static bool CanUsePointEnvelopeIntersectsFastPath(
+        QueryBuildingContext context,
+        SpatialFilter spatialFilter)
+    {
+        if (context.Layer.GeometryType != GeometryType.Point ||
+            spatialFilter.SpatialRelationship != SpatialRelationship.Intersects)
+        {
+            return false;
+        }
+
+        if (!string.Equals(context.QueryParams.GeometryType, "esriGeometryEnvelope", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var geometry = context.ParsedGeometry;
+        return geometry is
+        {
+            Xmin: not null,
+            Ymin: not null,
+            Xmax: not null,
+            Ymax: not null
+        };
     }
 
 }

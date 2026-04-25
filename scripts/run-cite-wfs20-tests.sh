@@ -429,8 +429,8 @@ if [[ "$COMPLIANCE_STATUS" == "COMPLIANT" ]]; then
     exit 0
 elif [[ "$COMPLIANCE_STATUS" == "PARTIAL" && $PASSED_TESTS -gt 0 ]]; then
     echo -e "\n${YELLOW}⚠️ Partial WFS 2.0 compliance - some tests passed${NC}"
-    echo -e "${BLUE}📋 Review detailed logs for improvement opportunities${NC}"
-    exit 0  # Don't fail CI for partial compliance during development
+    echo -e "${RED}❌ Partial compliance is not sufficient for the CITE conformance gate${NC}"
+    exit 1
 elif [[ $TOTAL_TESTS -eq 0 ]]; then
     echo -e "\n${RED}❌ CITE tests did not yield any authoritative results${NC}"
     exit 1

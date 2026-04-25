@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
@@ -33,6 +34,7 @@ internal sealed class FeatureServerQueryExecutor
     }
 
     public bool SupportsGeobufOutput => _featureReader is IGeobufFeatureStore;
+    public bool SupportsRawGeoServicesPointOutput => _featureReader is IPagedRawGeoServicesFeatureStore;
 
     public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
         => _featureReader.CountAsync(layerId, query, cancellationToken);
@@ -80,6 +82,132 @@ internal sealed class FeatureServerQueryExecutor
         {
             throw new InvalidOperationException("Query execution failed.", ex);
         }
+    }
+
+    public async Task<(ReadOnlyMemory<byte> Payload, int Count)> QueryRawGeoServicesPointJsonWithValidationAsync(
+        int layerId,
+        FeatureQuery query,
+        LayerDefinition layer,
+        int? outputSrid,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_featureReader is not IPagedRawGeoServicesFeatureStore rawGeoServicesFeatureStore)
+            {
+                throw new InvalidOperationException("Raw GeoServices output is not supported by the configured feature store.");
+            }
+
+            var result = await rawGeoServicesFeatureStore.QueryGeoServicesRawPointPageAsync(
+                layerId,
+                query,
+                cancellationToken).ConfigureAwait(false);
+
+            return (CreateRawGeoServicesPointPayload(result, layer, outputSrid), result.Items.Length);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException("Invalid query.", ex);
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException("Invalid query format.", ex);
+        }
+        catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
+        {
+            throw new InvalidOperationException("Invalid query syntax.", ex);
+        }
+        catch (NpgsqlException ex)
+        {
+            throw new InvalidOperationException("Query execution failed.", ex);
+        }
+    }
+
+    private static ReadOnlyMemory<byte> CreateRawGeoServicesPointPayload(
+        PagedQueryResult<RawGeoServicesFeature> result,
+        LayerDefinition layer,
+        int? outputSrid)
+    {
+        var objectIdFieldName = layer.ObjectIdFieldName;
+        var queryFields = QueryFormatter.BuildQueryFields(layer, outFields: null, objectIdFieldName);
+        var displayFieldName = QueryFormatter.ResolveDisplayFieldName(queryFields, objectIdFieldName);
+        var srid = outputSrid ?? layer.SpatialReference.Wkid;
+        var buffer = new ArrayBufferWriter<byte>(EstimateRawGeoServicesPointPayloadCapacity(result, queryFields));
+        using var writer = new Utf8JsonWriter(buffer);
+
+        writer.WriteStartObject();
+        writer.WriteString("geometryType", "esriGeometryPoint");
+        writer.WritePropertyName("spatialReference");
+        JsonSerializer.Serialize(
+            writer,
+            new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid },
+            FeatureServerJsonContext.Default.GeoServicesSpatialReference);
+        writer.WriteString("displayFieldName", displayFieldName);
+        writer.WritePropertyName("fields");
+        JsonSerializer.Serialize(writer, queryFields, FeatureServerJsonContext.Default.GeoServicesFieldInfoArray);
+        writer.WriteString("objectIdFieldName", objectIdFieldName);
+        writer.WriteStartArray("features");
+
+        foreach (var feature in result.Items)
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("attributes");
+            if (string.IsNullOrWhiteSpace(feature.AttributesJson))
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber(objectIdFieldName, feature.Id);
+                writer.WriteEndObject();
+            }
+            else
+            {
+                writer.WriteRawValue(feature.AttributesJson, skipInputValidation: true);
+            }
+
+            writer.WritePropertyName("geometry");
+            if (feature.X.HasValue && feature.Y.HasValue)
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("x", feature.X.Value);
+                writer.WriteNumber("y", feature.Y.Value);
+                writer.WriteEndObject();
+            }
+            else
+            {
+                writer.WriteNullValue();
+            }
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        if (result.HasMoreResults)
+        {
+            writer.WriteBoolean("exceededTransferLimit", true);
+        }
+
+        writer.WriteEndObject();
+        writer.Flush();
+        return buffer.WrittenMemory;
+    }
+
+    private static int EstimateRawGeoServicesPointPayloadCapacity(
+        PagedQueryResult<RawGeoServicesFeature> result,
+        GeoServicesFieldInfo[] queryFields)
+    {
+        const int MinimumCapacity = 16 * 1024;
+        const int FixedPayloadOverhead = 512;
+        const int FieldOverhead = 128;
+        const int FeatureOverhead = 96;
+
+        long estimated = FixedPayloadOverhead + (queryFields.Length * FieldOverhead);
+        foreach (var feature in result.Items)
+        {
+            estimated += (feature.AttributesJson?.Length ?? 32) + FeatureOverhead;
+        }
+
+        return estimated >= int.MaxValue
+            ? int.MaxValue
+            : Math.Max(MinimumCapacity, (int)estimated);
     }
 
     public async Task<byte[]?> QueryFlatGeobufWithValidationAsync(

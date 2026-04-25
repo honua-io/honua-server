@@ -3,6 +3,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Features.Edit;
 
@@ -42,7 +43,7 @@ public static class EditServiceCollectionExtensions
     /// <param name="services">The service collection</param>
     /// <param name="lifetime">Service lifetime</param>
     /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection AddEditParameterAdapter<TRequest, TAdapter>(
+    public static IServiceCollection AddEditParameterAdapter<TRequest, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TAdapter>(
         this IServiceCollection services,
         ServiceLifetime lifetime = ServiceLifetime.Singleton)
         where TAdapter : class, IEditParameterAdapter<TRequest>
@@ -51,6 +52,15 @@ public static class EditServiceCollectionExtensions
             typeof(IEditParameterAdapter<TRequest>),
             typeof(TAdapter),
             lifetime));
+
+        services.Configure<UnifiedEditServiceOptions>(options =>
+        {
+            options.AdapterRegistrations.Add((unifiedEditService, serviceProvider) =>
+            {
+                var adapter = serviceProvider.GetRequiredService<IEditParameterAdapter<TRequest>>();
+                unifiedEditService.RegisterAdapter(adapter);
+            });
+        });
 
         return services;
     }
@@ -72,6 +82,15 @@ public static class EditServiceCollectionExtensions
             typeof(IEditParameterAdapter<TRequest>),
             factory,
             lifetime));
+
+        services.Configure<UnifiedEditServiceOptions>(options =>
+        {
+            options.AdapterRegistrations.Add((unifiedEditService, serviceProvider) =>
+            {
+                var adapter = serviceProvider.GetRequiredService<IEditParameterAdapter<TRequest>>();
+                unifiedEditService.RegisterAdapter(adapter);
+            });
+        });
 
         return services;
     }
@@ -121,6 +140,11 @@ public sealed class UnifiedEditServiceOptions
     /// Default transaction configuration.
     /// </summary>
     public TransactionConfiguration DefaultTransactionConfiguration { get; set; } = TransactionConfiguration.Default;
+
+    /// <summary>
+    /// Adapter registration callbacks to run once the unified service is available.
+    /// </summary>
+    internal List<Action<UnifiedEditService, IServiceProvider>> AdapterRegistrations { get; } = new();
 }
 
 /// <summary>
@@ -158,28 +182,20 @@ public interface IEditServiceConfigurator
 /// </summary>
 internal sealed class EditServiceConfigurator : IEditServiceConfigurator
 {
+    private readonly UnifiedEditServiceOptions _options;
+
+    public EditServiceConfigurator(Microsoft.Extensions.Options.IOptions<UnifiedEditServiceOptions> options)
+    {
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+    }
+
     public void Configure(IServiceProvider serviceProvider)
     {
         var unifiedEditService = serviceProvider.GetRequiredService<UnifiedEditService>();
 
-        // Register all available adapters with the unified service
-        var adapters = serviceProvider.GetServices<object>()
-            .Where(service => service.GetType().GetInterfaces()
-                .Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEditParameterAdapter<>)))
-            .ToList();
-
-        foreach (var adapter in adapters)
+        foreach (var registerAdapter in _options.AdapterRegistrations)
         {
-            var adapterType = adapter.GetType();
-            var interfaceType = adapterType.GetInterfaces()
-                .First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEditParameterAdapter<>));
-
-            var requestType = interfaceType.GetGenericArguments()[0];
-            var registerMethod = typeof(UnifiedEditService)
-                .GetMethod("RegisterAdapter")!
-                .MakeGenericMethod(requestType);
-
-            registerMethod.Invoke(unifiedEditService, new[] { adapter });
+            registerAdapter(unifiedEditService, serviceProvider);
         }
     }
 }

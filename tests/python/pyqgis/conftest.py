@@ -505,7 +505,10 @@ def make_oapif_layer(base_url: str, collection_id: str, *, extra_params: str = "
     from qgis.core import QgsVectorLayer
 
     # QGIS' OAPIF provider names the OGC API collection id parameter "typename".
-    uri = f"url='{base_url}/ogc/features' typename='{collection_id}'"
+    # Numeric collection IDs must remain unquoted; QGIS 3.44 treats quoted "0"
+    # as an empty OAPIF typename and then requests /collections//items.
+    typename = collection_id if collection_id.isdecimal() else f"'{collection_id}'"
+    uri = f"url='{base_url}/ogc/features' typename={typename}"
     if extra_params:
         uri = f"{uri} {extra_params}"
     return QgsVectorLayer(uri, "oapif_test", "OAPIF")

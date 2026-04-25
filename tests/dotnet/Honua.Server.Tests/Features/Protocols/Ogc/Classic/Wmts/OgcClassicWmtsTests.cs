@@ -26,6 +26,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
     public async Task Wmts_GetCapabilities_ReturnsXml()
     {
         var response = await _fixture.Client.GetAsync(
@@ -168,6 +169,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
     public async Task Wmts_GetTile_ReturnsPngImage()
     {
         var response = await _fixture.Client.GetAsync(
@@ -439,6 +441,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetFeatureInfo")]
     public async Task Wmts_GetFeatureInfo_ReturnsPlainText()
     {
         var response = await _fixture.Client.GetAsync(

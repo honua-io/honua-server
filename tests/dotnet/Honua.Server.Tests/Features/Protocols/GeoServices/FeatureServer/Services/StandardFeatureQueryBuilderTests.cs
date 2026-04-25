@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services.QueryBuilding;
@@ -32,6 +33,35 @@ public sealed class StandardFeatureQueryBuilderTests
         var thrown = act.Should().Throw<InvalidOperationException>().Which;
         thrown.Message.Should().Be("Invalid spatial parameters.");
         thrown.InnerException.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void BuildQuery_WhenPointLayerIntersectsEnvelope_UsesEnvelopeIntersects()
+    {
+        var sut = new StandardFeatureQueryBuilder();
+        var context = new QueryBuildingContext
+        {
+            QueryParams = new QueryParameters
+            {
+                GeometryType = "esriGeometryEnvelope",
+                SpatialRel = "esriSpatialRelIntersects"
+            },
+            Service = CreateService(),
+            Layer = CreateLayer(),
+            ParsedGeometry = new GeoServicesGeometry
+            {
+                Xmin = 1,
+                Ymin = 2,
+                Xmax = 3,
+                Ymax = 4
+            },
+            InputSrid = 4326
+        };
+
+        var query = sut.BuildQuery(context);
+
+        query.SpatialFilter.Should().NotBeNull();
+        query.SpatialFilter!.Value.SpatialRelationship.Should().Be(SpatialRelationship.EnvelopeIntersects);
     }
 
     private static ServiceDefinition CreateService()

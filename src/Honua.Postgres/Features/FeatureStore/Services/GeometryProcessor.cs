@@ -13,6 +13,13 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 /// </summary>
 internal sealed class GeometryProcessor : IGeometryProcessor
 {
+    private readonly int _geoJsonTextPrecision;
+
+    public GeometryProcessor(int geoJsonTextPrecision = FeatureQueryEncoding.GeometryTextPrecision)
+    {
+        _geoJsonTextPrecision = Math.Clamp(geoJsonTextPrecision, 0, 15);
+    }
+
     public string GetGeometrySelectExpression(CoreGeometryStorageType storageType, FeatureQuery query)
     {
         var baseGeometry = GetGeometryOperand(storageType, layerSrid: query.SpatialReferenceSrid);
@@ -49,7 +56,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
         }
 
-        return $"ST_AsGeoJSON({baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision}, 0)";
+        return $"ST_AsGeoJSON({baseGeometry}, {_geoJsonTextPrecision}, 0)";
     }
 
     public string GetGeometryKmlExpression(CoreGeometryStorageType storageType, FeatureQuery query)

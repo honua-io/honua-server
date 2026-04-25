@@ -671,14 +671,14 @@ run_full_featureserver() {
   local page01_oids=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     page01_count=$(jq -r '.features | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
-    page01_oids=$(jq -c '[.features[].attributes.OBJECTID]' "$LAST_BODY_PATH" 2>/dev/null || echo "")
+    page01_oids=$(jq -c '[.features[].attributes | .OBJECTID // .objectid // .ObjectId // .objectId]' "$LAST_BODY_PATH" 2>/dev/null || echo "")
   fi
   append_cert_result "$proto" "CERT-PAGE-01" "$LAST_STATUS" "$LAST_DURATION_MS" "$page01_count" "" ""
 
   # CERT-PAGE-02: Second page (non-overlapping features)
   local fs_page02_jq='(.features | length) == 3'
   if [[ -n "$page01_oids" && "$page01_oids" != "null" ]]; then
-    fs_page02_jq="((.features | length) == 3) and (([.features[].attributes.OBJECTID] - ${page01_oids}) | length) == (.features | length)"
+    fs_page02_jq="((.features | length) == 3) and (([.features[].attributes | .OBJECTID // .objectid // .ObjectId // .objectId] - ${page01_oids}) | length) == (.features | length)"
   fi
   request_json \
     "fs-page-second" \

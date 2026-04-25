@@ -27,8 +27,10 @@ public static class OperationRegistry
     // validates that attribute values match entries here, catching any drift.
     private const string Wfs20 = "WFS-2.0";
     private const string Wms13 = "WMS-1.3.0";
+    private const string Wmts10 = "WMTS-1.0.0";
     private const string ODataV4 = "OData-v4";
     private const string Grpc = "Grpc";
+    private const string Mcp = "Mcp";
 
     /// <summary>
     /// All public-interface operations that require integration test coverage.
@@ -50,12 +52,25 @@ public static class OperationRegistry
         new(Wms13, "GetMap"),
         new(Wms13, "GetFeatureInfo"),
 
+        // WMTS 1.0.0 operations (KVP, RESTful, and GeoServices compatibility aliases)
+        new(Wmts10, "GetCapabilities"),
+        new(Wmts10, "GetTile"),
+        new(Wmts10, "GetFeatureInfo"),
+
         // OData operation families that share routes with query-option or payload dispatch
         new(ODataV4, "Metadata"),
         new(ODataV4, "Batch"),
         new(ODataV4, "Apply"),
         new(ODataV4, "Search"),
         new(ODataV4, "DeltaTracking"),
+
+        // MCP JSON-RPC methods dispatched through POST /mcp
+        new(Mcp, "initialize"),
+        new(Mcp, "tools/list"),
+        new(Mcp, "tools/call"),
+        new(Mcp, "resources/list"),
+        new(Mcp, "resources/templates/list"),
+        new(Mcp, "resources/read"),
 
         // gRPC FeatureService methods (geospatial.v1.FeatureService)
         new(Grpc, "geospatial.v1.FeatureService/QueryFeatures"),

@@ -388,8 +388,7 @@ internal static class ObservabilityServiceCollectionExtensions
         // MIME types for geospatial data formats
         string[] additionalMimeTypes =
         [
-            "application/geo+json",    // GeoJSON format
-            "application/json"         // Standard JSON responses
+            "application/geo+json"     // GeoJSON format
         ];
 
         services.AddResponseCompression(options =>
@@ -410,10 +409,10 @@ internal static class ObservabilityServiceCollectionExtensions
         {
             // Small content (< 4KB): Use fastest compression for low latency
             options.SmallContentLevel = CompressionLevel.Fastest;
-            // Medium content (4KB-64KB): Balanced compression
-            options.MediumContentLevel = CompressionLevel.SmallestSize;
-            // Large content (> 64KB): Optimal compression for bandwidth savings
-            options.LargeContentLevel = CompressionLevel.Optimal;
+            // Medium and large API payloads are frequently CPU-bound in practice; favor
+            // low-latency compression over maximal byte reduction on the hot path.
+            options.MediumContentLevel = CompressionLevel.Fastest;
+            options.LargeContentLevel = CompressionLevel.Fastest;
         });
 
         // Register adaptive compression providers
