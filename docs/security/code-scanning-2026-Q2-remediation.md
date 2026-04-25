@@ -60,14 +60,15 @@ requires an external lookup, which is the intended tradeoff.
 
 ## OGC Processes `Location` (CodeQL open-redirect)
 
-`src/Honua.Server/Features/OgcProcesses/ProcessEndpoints.cs` now emits a
-relative `Location` header (`{BasePath}/jobs/{jobId}`) when no public base URL
-is configured, and uses the configured `Public:BaseUrl` /
-`PUBLIC_BASE_URL` value when one is. The header no longer reflects request-
-derived host data into the redirect target. Relative `Location` is RFC 9110
-§10.2.2 and OGC API Processes-conformant, so compliant clients are unaffected;
-production deployments that need absolute URLs configure the public base URL
-exactly as they would for any other link generator.
+`src/Honua.Server/Features/Protocols/Ogc/Api/Processes/ProcessEndpoints.cs`
+builds the `Location` header from `BaseUrlResolver.GetBaseUrl(...)`, which
+returns the configured `Public:BaseUrl` / `PUBLIC_BASE_URL` value when set and
+otherwise derives a safe origin from the connection's local endpoint (or the
+request `PathBase`). The resolver never reads the request `Host` header, so
+the `Location` target cannot be steered by an attacker-controlled host even
+when no public base URL is configured. Production deployments that need
+absolute URLs configure the public base URL exactly as they would for any
+other link generator.
 
 ## Hadolint dispositions
 
