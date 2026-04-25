@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Reporting;
 /// to a committed Markdown/HTML body; byte-equal comparison ensures template
 /// changes surface as reviewable diffs.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class RenderGoldenTests
 {
     /// <summary>

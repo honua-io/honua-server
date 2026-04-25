@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.Reporting;
 /// execution engine; this test is the thin-slice replacement that gates the
 /// reporting pipeline against the scenario contract until that stage is wired.
 /// </summary>
-[Protocol(Protocols.OperatorEval)]
+[Protocol(TestProtocols.OperatorEval)]
 public sealed class AnalysisReportEvalPipelineTests
 {
     [IntegrationTest]

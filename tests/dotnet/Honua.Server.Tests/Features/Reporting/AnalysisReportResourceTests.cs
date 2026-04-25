@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Reporting;
 /// <see cref="AnalysisReport"/> into a JSON envelope that round-trips through
 /// the source-generated context without reflection.
 /// </summary>
-[Protocol(Protocols.Mcp)]
+[Protocol(TestProtocols.Mcp)]
 public sealed class AnalysisReportResourceTests
 {
     [UnitTest]

@@ -24,7 +24,7 @@ namespace Honua.Server.Tests.Features.Reporting;
 /// Exercises the server-side report orchestrator: authorization delegation,
 /// render caching, and not-found / failed-precondition propagation.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class AnalysisReportServiceTests
 {
     [UnitTest]
