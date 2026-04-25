@@ -66,6 +66,8 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         "GET /samples/stac-ops",
         "GET /static/{serviceId}/{center}/{dimensions}.{format}",
         "GET /static/{serviceId}/bbox/{bbox}/{dimensions}.{format}",
+        "POST /v1/grounding/spec/mutate",
+        "POST /v1/grounding/spec/summarize",
         "GET /v1/spec/artifact/{hash}",
         "POST /v1/spec/apply",
         "POST /v1/spec/cancel",
