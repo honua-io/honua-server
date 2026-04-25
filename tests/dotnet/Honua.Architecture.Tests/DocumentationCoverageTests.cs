@@ -14,7 +14,7 @@ namespace Honua.Architecture.Tests;
 /// <summary>
 /// Enforces XML documentation coverage for all public types.
 /// Public APIs must be documented to maintain code quality and developer experience.
-/// Reference: CLAUDE.md Architecture Enforcement
+/// Reference: AGENTS.md Architecture Enforcement
 /// </summary>
 [Trait("Category", "Architecture")]
 public sealed class DocumentationCoverageTests

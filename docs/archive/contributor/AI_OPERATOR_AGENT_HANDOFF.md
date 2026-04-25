@@ -17,7 +17,7 @@ documents under the contract-first knowledge repo model.
 Load these documents first:
 
 - the current ticket contract document from the contract store or knowledge repo
-- the target repo root `AGENTS.md` plus `CLAUDE.md` / `CODEX.md` when present
+- the target repo root `AGENTS.md`
 - [AI Operator Technical Plan](AI_OPERATOR_TECHNICAL_PLAN.md)
 - [AI-First Operator Architecture](AI_OPERATOR_ARCHITECTURE.md)
 - [AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md)

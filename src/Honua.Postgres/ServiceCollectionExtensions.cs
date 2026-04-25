@@ -13,6 +13,7 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Import.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -280,6 +281,7 @@ internal static class ServiceCollectionExtensions
             return new StreamingFileImportService(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ICrsDetectionService>(),
+                serviceProvider.GetRequiredService<IFileFormatDetectionService>(),
                 performanceMonitor,
                 logger,
                 limits,

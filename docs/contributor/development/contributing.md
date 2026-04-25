@@ -35,7 +35,7 @@ dotnet format Honua.sln
 Run these locally before creating a PR:
 
 ```bash
-# 1. Instruction sync
+# 1. Canonical instruction check
 bash scripts/check-instructions-sync.sh
 
 # 2. Build

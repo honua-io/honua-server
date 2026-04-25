@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-Honua Server is a greenfield implementation of a geospatial feature server supporting multiple protocols (GeoServices REST, OGC API Features, OData v4, MVT). This is a **clean rewrite** — the legacy codebase exists as reference only.
+Honua Server is a greenfield implementation of a geospatial server that exposes one shared geospatial capability set through multiple protocol adapters: GeoServices REST, OGC API, classic OGC services (WFS/WMS/WMTS), OData v4, STAC, MVT/TileJSON, COG/raster routes, MCP, and gRPC. This is a **clean rewrite** — the legacy codebase exists as reference only.
 
 ## MVP Deferrals (Operational Simplicity)
 
@@ -45,6 +45,38 @@ When porting behavior, document the source:
 - **Dependency limits**: Max 5 dependencies per endpoint, max 4 per handler
 - **Code formatting**: Always run `dotnet format Honua.sln` before creating PRs to prevent CI failures
 
+### Protocol Adapter Architecture
+
+Every public API surface must be a thin protocol adapter over shared canonical pipelines. Protocol-specific code may parse requests, perform protocol-level validation, map to canonical request/response models, and format protocol-compliant responses; it must not reimplement query, edit, metadata, raster, process, security, caching, logging, or telemetry behavior when shared infrastructure exists.
+
+Canonical pipelines:
+- **Query/read**: FeatureServer, OGC API Features, WFS, OData, STAC, MVT, and gRPC query surfaces must adapt into the shared query/filter/paging/CRS pipeline rather than building independent data access paths.
+- **Edit/transaction**: FeatureServer edits, OGC API Features mutations, WFS Transaction, OData CRUD, gRPC edits, and admin mutation paths must use the shared edit/transaction pipeline so validation, authorization, optimistic behavior, errors, and telemetry stay consistent.
+- **Metadata/capabilities**: OGC landing/conformance/OpenAPI/capabilities, WFS/WMS/WMTS capabilities, GeoServices service/layer metadata, OData `$metadata`, STAC catalogs, TileJSON, MCP resources, and gRPC reflection/metadata surfaces must be generated from shared catalog/capability/metadata services wherever possible.
+- **Raster/render/tile/export**: MapServer, ImageServer, WMS/WMTS, OGC API Maps/Tiles, COG, static maps, MVT, and export routes must share raster/render/tile/style/CRS/cache helpers instead of duplicating rendering or geodesy logic.
+- **Process/job execution**: OGC API Processes, GeoServices GPServer, MCP tools, and gRPC ProcessService must adapt to the canonical process/job runtime and not create protocol-local job lifecycle semantics.
+- **Format I/O**: GeoJSON, Esri JSON, GML, KML, GeoPackage, GeoParquet, FlatGeobuf, shapefile, file geodatabase, WKT/WKB, and CSV readers/writers must live in shared import/export/format services unless the behavior is truly protocol-specific.
+
+Adapter rules:
+- Put protocol entrypoints under `src/Honua.Server/Features/Protocols/` (`Ogc/Api`, `Ogc/Classic`, `GeoServices`, `OData`, `Stac`, `Tiles`, `Cog`, `Mcp`, `Grpc`, etc.).
+- Keep protocol DTOs and wire-format serializers in the protocol slice, but keep domain models, canonical requests, query/edit/raster/process abstractions, CRS math, filter parsers, validation helpers, and reusable format readers/writers in `Honua.Core` or shared server infrastructure.
+- Do not let one protocol depend on another protocol's handler or endpoint implementation. Share behavior by extracting a neutral service/helper, then have both protocols adapt to it.
+- Capabilities, OpenAPI documents, conformance declarations, and public metadata must match runtime behavior and registered routes/operations.
+- If a protocol intentionally diverges from the shared pipeline, document why in code and add direct endpoint-level tests proving the divergence.
+
+### Cross-Cutting Concerns
+
+Cross-cutting behavior must be consistent across protocol families and should be implemented once in shared infrastructure.
+
+- **Exception handling**: Map failures through shared problem/error helpers. Do not leak raw exception messages, SQL, stack traces, filesystem paths, connection strings, or provider internals to clients.
+- **Logging**: Use structured, source-generated logging where practical. Include stable identifiers needed for diagnosis (`serviceName`, `layerId`, `collectionId`, `jobId`, `operation`, `protocol`) and avoid duplicate/noisy logs.
+- **Telemetry**: Important query, edit, metadata, raster/render/export, import, batch, and job execution paths need activities/spans with protocol, operation, service/layer identifiers, result size/count, cache hit/miss, and exception status where relevant.
+- **Caching**: Use shared cache helpers and vary cache keys by every behavior-changing input: auth/tenant, service/layer, operation, query/filter, CRS/SRID, bbox/geometry, style, format/content negotiation, language, host/scheme when links are emitted, and protocol preferences.
+- **Security/RBAC**: Authorization must be enforced in the shared pipeline or a common policy service, not by caller discipline. Check service, layer, field, task/job, import/export, and mutation permissions consistently across equivalent protocols.
+- **Validation**: Route/query/body validation must use shared validators and protocol adapters. Validate identifiers, formats, CRS, filters, geometry, paging limits, output formats, URLs, file paths, headers, and upload sizes before reaching provider code.
+- **Performance**: Avoid sync-over-async, repeated parsing/serialization, per-feature catalog lookups, unbounded buffering, and protocol-local duplicate expensive computation. Use streaming/paging/shared format readers where available.
+- **DRY/shared reuse**: Duplicated protocol helpers are only acceptable for wire-format differences. If duplicate logic affects behavior, error mapping, auth, caching, telemetry, CRS, filters, rendering, or data access, extract a shared helper before adding more protocol code.
+
 ### MCP Code Search
 
 - Prefer the MCP code-search tools before broad file reads when working in `honua-server`.
@@ -63,7 +95,7 @@ When porting behavior, document the source:
 - **Draft specifications**: Delete incomplete or superseded documentation drafts
 - **Development scratch files**: Remove any temporary files created for planning or testing approaches
 
-**Why this matters**: Development artifacts confuse future AI interactions and create misleading "authoritative" documentation that contradicts the actual source of truth. Always integrate findings directly into the canonical files (CLAUDE.md, ADRs, etc.) and delete the artifacts.
+**Why this matters**: Development artifacts confuse future AI interactions and create misleading "authoritative" documentation that contradicts the actual source of truth. Always integrate findings directly into the canonical files (AGENTS.md, ADRs, etc.) and delete the artifacts.
 
 **Rule**: If you create temporary documentation during development, either integrate it into canonical docs or delete it before committing.
 
@@ -91,7 +123,7 @@ public class QueryEndpointTests
 }
 ```
 
-For WFS or gRPC operations, also add `[InterfaceOperation]` to map to `OperationRegistry`:
+For logical operations that are not fully represented by route metadata, also add `[InterfaceOperation]` to map to `OperationRegistry` (for example WFS/WMS dispatch operations, OData option/payload operation families, and gRPC methods):
 ```csharp
 [Collection("Database")]
 [Protocol(Protocols.Wfs20)]
@@ -109,7 +141,7 @@ public class Wfs20EndpointsTests
 | Level | Target | Enforcement |
 |-------|--------|-------------|
 | API Surface (HTTP routes) | 100% | Architecture test — `EndpointRegistry` (hard fail) |
-| Operation Coverage (WFS/gRPC) | 100% | Architecture test — `OperationRegistry` (hard fail) |
+| Operation Coverage (WFS/WMS/OData/gRPC) | 100% | Architecture test — `OperationRegistry` (hard fail) |
 | Line Coverage | 80% | CI gate (hard fail) |
 | Branch Coverage | 70% | CI gate (hard fail) |
 
@@ -157,7 +189,7 @@ public class FeaturesController : ControllerBase  // BLOCKING - No controllers a
 }
 
 // CORRECT: Minimal API pattern
-// File: src/Honua.Server/Features/FeatureServer/FeatureServerEndpoints.cs
+// File: src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs
 public static void MapFeatureServerEndpoints(this WebApplication app)
 {
     app.MapGet("/rest/services/{id}/FeatureServer/{layerId}/query",
@@ -206,10 +238,14 @@ src/
 
 // PREFERRED: Vertical slice organization
 src/Honua.Server/Features/
-├── FeatureServer/         // Feature-based organization
-│   ├── FeatureServerEndpoints.cs
-│   ├── FeatureServerHandler.cs
-│   └── Models/
+├── Protocols/
+│   ├── GeoServices/FeatureServer/
+│   │   ├── FeatureServerEndpoints.cs
+│   │   ├── FeatureServerQueryHandler.cs
+│   │   └── Models/
+│   └── Ogc/Api/Features/
+│       ├── OgcFeaturesEndpoints.cs
+│       └── Services/
 └── Admin/
     ├── AdminEndpoints.cs
     └── Services/
@@ -255,12 +291,12 @@ public static async Task<IResult> QueryFeatures(IFeatureReader reader) { }
 **2. Vertical slice organization**
 ```csharp
 // GOOD: Feature cohesion
-Features/FeatureServer/
+Features/Protocols/GeoServices/FeatureServer/
 ├── FeatureServerEndpoints.cs    // API endpoints
-├── FeatureServerHandler.cs      // Business logic
-├── FeatureServerModels.cs       // DTOs
+├── FeatureServerQueryHandler.cs // Adapter-to-canonical query behavior
+├── Models/                      // Protocol DTOs
 └── Services/                    // Supporting services
-    └── GeometryConverter.cs
+    └── QueryFormatters.cs
 ```
 
 **3. Proper testing structure**
@@ -290,6 +326,8 @@ For AI reviews - check these patterns:
 5. Count constructor parameters (endpoints <= 5, handlers <= 4)
 6. Search for `.Result` or `.Wait()` (sync-over-async anti-pattern)
 7. Verify file organization follows vertical slice pattern
+8. Verify protocol endpoints adapt to shared query/edit/metadata/raster/process pipelines
+9. Verify exception handling, logging, telemetry, caching, security/RBAC, and validation use shared infrastructure
 
 Severity assessment:
 - BLOCKING: Dependency violations, controller usage, public infrastructure types, missing docs

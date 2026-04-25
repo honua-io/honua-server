@@ -1,28 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-check_pair() {
-  local left="$1"
-  local right="$2"
+if [[ ! -f "AGENTS.md" ]]; then
+  echo "::error::Missing canonical instruction file: AGENTS.md"
+  exit 1
+fi
 
-  if [[ ! -f "$left" ]]; then
-    echo "::error::Missing file: $left"
+for stale_file in CLAUDE.md CODEX.md; do
+  if [[ -f "$stale_file" ]]; then
+    echo "::error::Stale duplicate instruction file found: $stale_file. Use AGENTS.md as the canonical source."
     exit 1
   fi
+done
 
-  if [[ ! -f "$right" ]]; then
-    echo "::error::Missing file: $right"
-    exit 1
-  fi
-
-  if ! diff -q "$left" "$right" >/dev/null; then
-    echo "::error::Instruction files out of sync: $left vs $right"
-    diff -u "$left" "$right" || true
-    exit 1
-  fi
-}
-
-# Only sync root instruction documents that provide project context.
-check_pair "CLAUDE.md" "CODEX.md"
-
-echo "Instruction files are in sync."
+echo "Canonical instruction file is present."

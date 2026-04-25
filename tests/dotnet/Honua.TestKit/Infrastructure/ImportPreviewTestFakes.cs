@@ -24,6 +24,7 @@ public static class PreviewImportServiceFactory
         return new StreamingFileImportService(
             new ThrowingConnectionProvider(),
             new NoopCrsDetectionService(),
+            new TestFileFormatDetectionService(),
             new NoopPerformanceMonitor(),
             NullLogger<StreamingFileImportService>.Instance,
             limits);
@@ -52,6 +53,63 @@ public sealed class ThrowingConnectionProvider : IDatabaseConnectionProvider
 
     public Task ExecuteWithDeadlockRetryAsync(Func<Task> operation, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Database access is not expected in preview tests.");
+}
+
+/// <summary>
+/// File format detector for preview tests that exercise the import service
+/// directly without the application's dependency-injection container.
+/// </summary>
+public sealed class TestFileFormatDetectionService : IFileFormatDetectionService
+{
+    public SupportedFileFormat? DetectFormat(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return null;
+        }
+
+        if (fileName.EndsWith(".gdb.zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return SupportedFileFormat.FileGdb;
+        }
+
+        return Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".geojson" or ".json" => SupportedFileFormat.GeoJson,
+            ".kml" or ".kmz" => SupportedFileFormat.Kml,
+            ".wkt" => SupportedFileFormat.Wkt,
+            ".zip" => SupportedFileFormat.Shapefile,
+            ".gpkg" => SupportedFileFormat.GeoPackage,
+            ".gpx" => SupportedFileFormat.Gpx,
+            ".csv" => SupportedFileFormat.Csv,
+            ".parquet" or ".geoparquet" => SupportedFileFormat.GeoParquet,
+            ".fgb" => SupportedFileFormat.FlatGeobuf,
+            _ => null
+        };
+    }
+
+    public string[] GetSupportedExtensions()
+    {
+        return
+        [
+            ".geojson",
+            ".json",
+            ".kml",
+            ".kmz",
+            ".wkt",
+            ".zip",
+            ".gpkg",
+            ".gpx",
+            ".csv",
+            ".parquet",
+            ".geoparquet",
+            ".fgb",
+            ".gdb.zip"
+        ];
+    }
+
+    public SupportedFileFormat? DetectFormatFromContent(ReadOnlySpan<byte> fileContent, string fileName)
+        => DetectFormat(fileName);
 }
 
 /// <summary>

@@ -12,7 +12,7 @@ using Honua.Server.Features.Protocols.Mcp.Grounding;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
-namespace Honua.Server.Tests.Features.Grounding;
+namespace Honua.Server.Tests.Features.Protocols.Mcp.Grounding;
 
 /// <summary>
 /// Unit tests for <see cref="GroundingToolMapper"/>. Pin the wire↔domain

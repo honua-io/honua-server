@@ -130,7 +130,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Instruction Sync (Claude/Codex)
+      - name: Canonical Instruction Check
         run: bash scripts/check-instructions-sync.sh
 
       - name: Setup .NET

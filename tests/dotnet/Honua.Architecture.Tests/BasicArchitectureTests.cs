@@ -25,7 +25,7 @@ public class BasicArchitectureTests
         Directory.Exists(Path.Combine(projectRoot, "docs")).Should().BeTrue($"docs directory should exist in {projectRoot}");
 
         File.Exists(Path.Combine(projectRoot, "Honua.sln")).Should().BeTrue($"Solution file should exist in {projectRoot}");
-        File.Exists(Path.Combine(projectRoot, "CLAUDE.md")).Should().BeTrue($"Project instructions should exist in {projectRoot}");
+        File.Exists(Path.Combine(projectRoot, "AGENTS.md")).Should().BeTrue($"Project instructions should exist in {projectRoot}");
     }
 
     private static string FindProjectRoot(string startPath)
