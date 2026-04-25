@@ -11,6 +11,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
@@ -24,6 +25,7 @@ using NetTopologySuite.IO.Esri;
 using NetTopologySuite.IO.Esri.Shapefiles.Readers;
 using Npgsql;
 using NpgsqlTypes;
+using FileGdb = Honua.Core.Features.Import.Services.FileGdb;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Postgres.Features.Import;
@@ -37,6 +39,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsDetectionService _crsDetectionService;
+    private readonly IFileFormatDetectionService _formatDetectionService;
     private readonly ImportLimits _limits;
     private readonly StreamingGeoJsonReader _geoJsonReader;
     private readonly IPerformanceMonitor _performanceMonitor;
@@ -50,26 +53,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private const long DefaultMaxArchiveExtractedBytes = 1024L * 1024 * 1024;
     private const double DefaultMaxArchiveCompressionRatio = 200d;
 
-    /// <summary>
-    /// Supported file extensions mapped to formats
-    /// </summary>
-    private static readonly FrozenDictionary<string, SupportedFileFormat> _fileExtensions =
-        new Dictionary<string, SupportedFileFormat>(StringComparer.OrdinalIgnoreCase)
-        {
-            [".geojson"] = SupportedFileFormat.GeoJson,
-            [".json"] = SupportedFileFormat.GeoJson,
-            [".kml"] = SupportedFileFormat.Kml,
-            [".kmz"] = SupportedFileFormat.Kml,
-            [".wkt"] = SupportedFileFormat.Wkt,
-            [".zip"] = SupportedFileFormat.Shapefile,
-            [".gpkg"] = SupportedFileFormat.GeoPackage,
-            [".gpx"] = SupportedFileFormat.Gpx,
-            [".csv"] = SupportedFileFormat.Csv,
-            [".parquet"] = SupportedFileFormat.GeoParquet,
-            [".geoparquet"] = SupportedFileFormat.GeoParquet,
-            [".fgb"] = SupportedFileFormat.FlatGeobuf
-        }
-        .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     private static readonly FrozenSet<string> _shapefileComponentExtensions = new[]
         {
             ".shp", ".dbf", ".shx", ".prj", ".cpg"
@@ -94,6 +77,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     public StreamingFileImportService(
         IDatabaseConnectionProvider connectionProvider,
         ICrsDetectionService crsDetectionService,
+        IFileFormatDetectionService formatDetectionService,
         IPerformanceMonitor performanceMonitor,
         ILogger<StreamingFileImportService> logger,
         ImportLimits? limits = null,
@@ -101,6 +85,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
+        _formatDetectionService = formatDetectionService ?? throw new ArgumentNullException(nameof(formatDetectionService));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _limits = limits ?? ImportLimits.Default;
@@ -112,21 +97,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     public ImportLimits Limits => _limits;
 
     /// <inheritdoc/>
-    public SupportedFileFormat? DetectFormat(string fileName)
-    {
-        // FileGDB archives are typically named *.gdb.zip
-        if (fileName.EndsWith(".gdb.zip", StringComparison.OrdinalIgnoreCase))
-        {
-            return SupportedFileFormat.FileGdb;
-        }
-
-        var extension = Path.GetExtension(fileName);
-        return string.IsNullOrEmpty(extension) ? null :
-               _fileExtensions.TryGetValue(extension, out var format) ? format : null;
-    }
+    public SupportedFileFormat? DetectFormat(string fileName) => _formatDetectionService.DetectFormat(fileName);
 
     /// <inheritdoc/>
-    public string[] GetSupportedExtensions() => _fileExtensions.Keys.Append(".gdb.zip").ToArray();
+    public string[] GetSupportedExtensions() => _formatDetectionService.GetSupportedExtensions();
 
     /// <inheritdoc/>
     public Task<ImportResult> ImportFileAsync(ImportRequest request, CancellationToken cancellationToken = default)

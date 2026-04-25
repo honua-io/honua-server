@@ -6,6 +6,7 @@ using FlatGeobuf.NTS;
 using Google.FlatBuffers;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.Services;
 using Honua.Postgres.Features.Import;
 using Honua.TestKit.Infrastructure;
 using NetTopologySuite.Features;

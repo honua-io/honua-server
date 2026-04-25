@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "🔍 Running pre-PR validation..."
 
-echo "1. Checking instruction sync..."
+echo "1. Checking canonical instructions..."
 bash scripts/check-instructions-sync.sh
 
 echo "2. Restoring packages..."
@@ -151,9 +151,9 @@ dotnet publish \
     -o ./publish
 cd ../..
 
-echo "8. Local Claude architecture review..."
+echo "8. Local architecture review..."
 if command -v python3 >/dev/null 2>&1; then
-    python3 scripts/claude-architecture-review.py || {
+    python3 scripts/local-architecture-review.py || {
         echo "❌ Architecture review found blocking issues!"
         echo "   Fix violations before creating PR"
         exit 1

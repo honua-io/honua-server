@@ -130,7 +130,7 @@ public sealed class GeoParquetPreviewTests
         var act = () => service.PreviewFileAsync(stream, "non_wkb.parquet");
 
         await act.Should().ThrowAsync<NotSupportedException>()
-            .WithMessage("*Only WKB encoding is supported*");
+            .WithMessage("*supports only WKB geometry encoding*");
     }
 
     [Fact]

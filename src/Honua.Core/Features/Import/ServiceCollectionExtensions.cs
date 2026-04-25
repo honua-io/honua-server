@@ -20,6 +20,7 @@ public static class ServiceCollectionExtensions
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddImportSuggestionsCore(this IServiceCollection services)
     {
+        services.TryAddScoped<IFileFormatDetectionService, FileFormatDetectionService>();
         services.TryAddSingleton<IImportSchemaSuggestionService, ImportSchemaSuggestionService>();
         return services;
     }

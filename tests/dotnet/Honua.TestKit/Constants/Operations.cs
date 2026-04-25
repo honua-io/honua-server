@@ -148,8 +148,8 @@ public static class Operations
     // Streaming Operations
     public const string Streaming = "Streaming";
 
-    // Cloud COG Operations
-    public const string CloudCogAdmin = "CloudCogAdmin";
+    // COG Operations
+    public const string CogAdmin = "CogAdmin";
 
     // STAC Operations
     public const string StacCatalog = "StacCatalog";

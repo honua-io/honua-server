@@ -11,7 +11,7 @@ namespace Honua.Architecture.Tests;
 /// <summary>
 /// Enforces vertical slice isolation by preventing cross-feature dependencies.
 /// Each feature should be independent and not directly reference other features.
-/// Reference: CLAUDE.md Architecture Enforcement
+/// Reference: AGENTS.md Architecture Enforcement
 /// </summary>
 [Trait("Category", "Architecture")]
 public sealed class VerticalSliceIsolationTests
@@ -23,10 +23,8 @@ public sealed class VerticalSliceIsolationTests
         "Geocoding",
         "Geoprocessing",
         "Grounding",
-        "Mcp",
         "Orchestration",
         "Protocols",
-        "Grpc",
         "NlQuery",
         "Export",
         "Import",
@@ -34,7 +32,6 @@ public sealed class VerticalSliceIsolationTests
         "PrintingTools",
         "HealthCheck",
         "Streaming",
-        "CloudCog",
         "Infrastructure", // Infrastructure is allowed to be referenced by others
         "StaticMap",
         "SpatialAnalytics",
@@ -53,9 +50,15 @@ public sealed class VerticalSliceIsolationTests
     private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
         new(StringComparer.Ordinal)
         {
-            ["Mcp"] = new[] { "Geoprocessing", "Grounding" },
             ["Grounding"] = new[] { "Geoprocessing" }
         };
+
+    private static readonly string[] _protocolAdapterNames =
+    {
+        "Cog",
+        "Grpc",
+        "Mcp"
+    };
 
     [ArchitectureTest]
     public void Features_ShouldNotDirectlyReference_OtherFeatures()
@@ -114,12 +117,6 @@ public sealed class VerticalSliceIsolationTests
                 Directory.GetFiles(featurePath, "*Endpoints.cs").Length > 0 ||
                 Directory.GetFiles(featurePath, "*Handler.cs").Length > 0;
 
-            if (!hasEndpointsOrHandler &&
-                featureDir.Equals("Grpc", StringComparison.OrdinalIgnoreCase))
-            {
-                hasEndpointsOrHandler = Directory.GetFiles(featurePath, "*Service.cs").Length > 0;
-            }
-
             if (!hasEndpointsOrHandler)
             {
                 hasEndpointsOrHandler =
@@ -137,11 +134,11 @@ public sealed class VerticalSliceIsolationTests
     public void Mcp_ShouldNotReference_OtherProtocolAdapters()
     {
         var serverAssembly = typeof(EndpointRegistry).Assembly;
-        var mcpTypes = GetTypesInFeature(serverAssembly, "Mcp");
+        var mcpTypes = GetTypesInProtocol(serverAssembly, "Mcp");
 
         var forbiddenNamespaces = new[]
         {
-            "Honua.Server.Features.Grpc",
+            "Honua.Server.Features.Protocols.Grpc",
             "Honua.Server.Features.Protocols.GeoServices.GPServer"
         };
 
@@ -172,6 +169,24 @@ public sealed class VerticalSliceIsolationTests
         violations.Should().BeEmpty(
             "The MCP feature must only adapt transport-neutral domain services (Geoprocessing), " +
             "not other protocol adapters like Grpc or the GPServer REST endpoints.");
+    }
+
+    [ArchitectureTest]
+    public void ProtocolAdapters_ShouldLiveUnder_ProtocolsFolder()
+    {
+        var currentDir = Directory.GetCurrentDirectory();
+        var projectRoot = FindProjectRoot(currentDir);
+        var featuresPath = Path.Combine(projectRoot, "src", "Honua.Server", "Features");
+
+        foreach (var adapterName in _protocolAdapterNames)
+        {
+            Directory.Exists(Path.Combine(featuresPath, adapterName)).Should().BeFalse(
+                $"{adapterName} is a protocol adapter and must live under Features/Protocols/{adapterName}");
+        }
+
+        var legacyCogFolder = string.Concat("Cloud", "Cog");
+        Directory.Exists(Path.Combine(featuresPath, legacyCogFolder)).Should().BeFalse(
+            "COG protocol code should use the concise Features/Protocols/Cog location and naming.");
     }
 
     [ArchitectureTest]
@@ -212,6 +227,13 @@ public sealed class VerticalSliceIsolationTests
     {
         return assembly.GetTypes()
             .Where(type => type.Namespace?.Contains($"Features.{featureName}") == true)
+            .ToArray();
+    }
+
+    private static Type[] GetTypesInProtocol(Assembly assembly, string protocolName)
+    {
+        return assembly.GetTypes()
+            .Where(type => type.Namespace?.Contains($"Features.Protocols.{protocolName}") == true)
             .ToArray();
     }
 

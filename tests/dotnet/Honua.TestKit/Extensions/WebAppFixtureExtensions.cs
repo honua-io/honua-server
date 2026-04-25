@@ -3,7 +3,7 @@
 
 using System.Globalization;
 
-namespace Honua.TestKit;
+namespace Honua.TestKit.Extensions;
 
 public static class WebAppFixtureExtensions
 {

@@ -3,6 +3,7 @@
 
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Alerts;
+using Honua.Server.Features.Protocols.Cog;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.Grounding.Spec;
@@ -10,12 +11,12 @@ using Honua.Server.Features.Protocols.GeoServices.GeometryService;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Protocols.GeoServices.GPServer;
 using Honua.Server.Features.Protocols.GeoServices.Catalog;
-using Honua.Server.Features.Grpc;
+using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Protocols.GeoServices.MapServer;
-using Honua.Server.Features.Mcp;
+using Honua.Server.Features.Protocols.Mcp;
 using Honua.Server.Features.NlQuery;
 using Honua.Server.Features.Protocols.OData;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
@@ -49,6 +50,7 @@ internal static class FeatureRegistrationExtensions
 
         services.AddFeatureServer();
         services.AddGeocoding(configuration);
+        services.AddCogServices(configuration);
         services.AddImageServer();
         services.AddMapServer();
         services.AddOgcFeatures(configuration);
@@ -84,6 +86,7 @@ internal static class FeatureRegistrationExtensions
 
         endpoints.MapFeatureServerEndpoints();
         endpoints.MapGeocodingEndpoints();
+        endpoints.MapCogEndpoints();
         endpoints.MapGeoservicesCatalogEndpoints();
         endpoints.MapImageServerEndpoints();
         endpoints.MapMapServerEndpoints();

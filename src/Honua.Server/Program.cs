@@ -23,7 +23,6 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
-using Honua.Server.Features.CloudCog;
 using Honua.Server.Features.Export;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Infrastructure.ControlPlane;
@@ -361,9 +360,6 @@ ConfigureCaching(builder.Services, builder.Configuration);
 
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
-
-// Configure cloud COG services (range readers, metadata parser, tile resolver)
-builder.Services.AddCloudCogServices(builder.Configuration);
 
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(
@@ -778,7 +774,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
         Honua.Server.Features.Export.ExportJsonContext.Default,
         Honua.Server.Features.Protocols.Stac.StacJsonContext.Default,
-        Honua.Server.Features.CloudCog.CloudCogJsonContext.Default,
+        Honua.Server.Features.Protocols.Cog.CogJsonContext.Default,
         Honua.Server.Features.Protocols.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
@@ -1062,9 +1058,6 @@ app.MapFeatureOverviewEndpoints();
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
 
-// Configure cloud COG admin endpoints
-app.MapCloudCogEndpoints();
-
 // Configure control plane IAM endpoints (#511)
 app.MapLicenseEndpoints();
 app.MapOidcProviderEndpoints();
@@ -1089,7 +1082,7 @@ app.MapCspViolationReportEndpoint();
 app.MapServerFeatureEndpoints();
 
 // Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
-app.MapGrpcService<Honua.Server.Features.Grpc.HonuaFeatureService>();
+app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Server.Features.Geoprocessing.HonuaProcessService>();
 app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>();
 app.MapGrpcHealthChecksService();

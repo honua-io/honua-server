@@ -12,7 +12,7 @@ namespace Honua.Architecture.Tests;
 /// <summary>
 /// Enforces dependency injection parameter limits to prevent over-injection anti-patterns.
 /// Endpoints: max 5 parameters | Handlers: max 4 constructor parameters
-/// Reference: CLAUDE.md Architecture Enforcement
+/// Reference: AGENTS.md Architecture Enforcement
 /// </summary>
 [Trait("Category", "Architecture")]
 public sealed class DependencyInjectionLimitsTests

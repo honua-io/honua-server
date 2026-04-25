@@ -101,7 +101,7 @@ See [MCP Certification](../contributor/mcp-certification.md) for contributor gui
 
 ## Operator Surface
 
-The server-owned operator surface lives in `src/Honua.Server/Features/Mcp/`
+The server-owned operator surface lives in `src/Honua.Server/Features/Protocols/Mcp/`
 and implements the geospatial-mcp taxonomy described in the archived
 [AI Operator Contract](../archive/developer/AI_OPERATOR_CONTRACT.md#mcp-contract-families).
 It is a thin adapter over `IGeoprocessingJobService` — the same transport-neutral
@@ -743,7 +743,7 @@ method as the `target` and `authenticated = false`.
 
 ### Source
 
-- Vertical slice: `src/Honua.Server/Features/Mcp/`
-- Tools: `src/Honua.Server/Features/Mcp/Tools/`
-- Resources: `src/Honua.Server/Features/Mcp/Resources/`
-- Tests: `tests/dotnet/Honua.Server.Tests/Features/Mcp/`
+- Vertical slice: `src/Honua.Server/Features/Protocols/Mcp/`
+- Tools: `src/Honua.Server/Features/Protocols/Mcp/Tools/`
+- Resources: `src/Honua.Server/Features/Protocols/Mcp/Resources/`
+- Tests: `tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/`

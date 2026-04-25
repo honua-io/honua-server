@@ -13,12 +13,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="Features\Import\FlatGeobufPreviewTests.cs" />
-    <Compile Remove="Features\Import\GeoParquetPreviewTests.cs" />
-    <Compile Remove="Features\Import\RefactoredStreamingFileImportServiceTests.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="FlatGeobuf" Version="3.26.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
