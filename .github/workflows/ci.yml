@@ -1085,7 +1085,7 @@ jobs:
     if: ${{ success() && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes, test-all, js-integration-tests, core-package-compatibility, postgres-compat]
-    timeout-minutes: 8
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
