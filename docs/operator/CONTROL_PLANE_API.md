@@ -500,8 +500,8 @@ architecture doc, and this contract agree:
 | `/api/v1/admin/marketplace/aws/reconcile` | POST | When `Aws:Marketplace:Enabled=true` | AWS marketplace adapter child ticket |
 | `/api/v1/admin/marketplace/azure/reconcile` | POST | When `Azure:Marketplace:Enabled=true` | Azure marketplace adapter child ticket |
 | `/api/v1/marketplace/azure/webhook` | POST | When `Azure:Marketplace:Enabled=true`. Public — Azure AD JWT bearer | Azure marketplace adapter child ticket |
-| `/api/v1/marketplace/azure/resolve` | POST | When `Azure:Marketplace:Enabled=true`. Public — Azure-supplied marketplace token | Azure marketplace adapter child ticket |
-| `/api/v1/marketplace/azure/activate` | POST | When `Azure:Marketplace:Enabled=true`. Public — Azure-supplied marketplace token | Azure marketplace adapter child ticket |
+| `/api/v1/marketplace/azure/landing` | GET | When `Azure:Marketplace:Enabled=true`. Public — Microsoft redirects the purchaser's browser here with `?token=<marketplace-token>`; handler calls Microsoft's Resolve API server-to-server (`x-ms-marketplace-token` header). | Azure marketplace adapter child ticket |
+| `/api/v1/marketplace/azure/activate` | POST | When `Azure:Marketplace:Enabled=true`. Public — backend POST from the landing page after the purchaser confirms; handler calls Microsoft's Activate API server-to-server. | Azure marketplace adapter child ticket |
 
 The mint-host-only and marketplace routes are not present in the current
 `EndpointRegistry`; they register through their child-ticket PRs along

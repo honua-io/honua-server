@@ -310,8 +310,8 @@ endpoints already in `EndpointRegistry.cs`:
 | `GET /api/v1/admin/license/keys` | Admin | Yes. | Inspects the resolved public-key set (`baked-in` primary + `License:Keys` additions). |
 | `POST /api/v1/admin/marketplace/{cloud}/reconcile` | Admin | Yes (when adapter enabled). | Manual reconciliation trigger; bypasses the timer. `cloud` ∈ `aws`, `azure`. |
 | `POST /api/v1/marketplace/azure/webhook` | Public — Azure AD JWT bearer (publisher audience). | Yes (when Azure adapter enabled). | Azure SaaS Fulfillment v2 lifecycle webhook. Not admin-scoped. |
-| `POST /api/v1/marketplace/azure/resolve` | Public — Azure-supplied marketplace token. | Yes (when Azure adapter enabled). | Landing-page resolve. Not admin-scoped. |
-| `POST /api/v1/marketplace/azure/activate` | Public — Azure-supplied marketplace token. | Yes (when Azure adapter enabled). | Landing-page activate. Not admin-scoped. |
+| `GET /api/v1/marketplace/azure/landing` | Public — browser GET. Microsoft redirects the purchaser to the configured landing page URL with `?token=<marketplace-token>`. The handler exchanges that token for subscription metadata via Microsoft's Resolve API (server-to-server, `x-ms-marketplace-token` header) and renders the activation page. | Yes (when Azure adapter enabled). | Browser-facing landing page. Not admin-scoped. |
+| `POST /api/v1/marketplace/azure/activate` | Public — backend POST from the landing-page form once the purchaser confirms. The handler calls Microsoft's Activate API server-to-server. | Yes (when Azure adapter enabled). | Landing-page activate. Not admin-scoped. |
 
 Signing material loads only when `License:Signing:Enabled=true`. Customer-
 side deployments leave it `false` and the mint-host-only endpoints return
@@ -320,7 +320,16 @@ inspector remains available on every instance for resolver auditing.
 
 Marketplace endpoints register only when the corresponding
 `{Aws,Azure}:Marketplace:Enabled=true`, so air-gapped customers see no
-Azure landing-page or AWS reconcile route in the registry.
+Azure landing page or AWS reconcile route in the registry.
+
+The Azure landing-page URL configured in the publisher's marketplace
+offer must point at `GET /api/v1/marketplace/azure/landing` on a
+public-facing customer host. Microsoft drives the purchaser's browser
+to that URL with the marketplace token in the `?token=` query
+parameter; the handler then calls Microsoft's Resolve API
+server-to-server. Activate is a backend `POST
+/api/v1/marketplace/azure/activate` invoked from the landing page once
+the purchaser confirms.
 
 Future extraction to a `Honua.LicenseMint.*` deployable changes only host
 wiring; the public abstractions in `Honua.Core/Features/Licensing/Abstractions/`
@@ -328,7 +337,8 @@ do not move. After extraction, the mint-host-only routes
 (`/api/v1/admin/license/{mint,refresh,signing/status}`) bind on the
 extracted deployable's address — the operator-facing routes
 (`/api/v1/admin/license/keys`, `/api/v1/admin/marketplace/{cloud}/reconcile`,
-the Azure landing pages) remain on `Honua.Server`.
+and the Azure landing-page surfaces `GET /landing` and `POST /activate`)
+remain on `Honua.Server`.
 
 ### 4.2 BYOL flow
 
@@ -420,14 +430,30 @@ depth, retry count, and dead-letter count.
 ### 4.4 Azure Marketplace adapter
 
 The Azure webhook handler implements the SaaS Fulfillment v2 contract.
-Per Microsoft, the publisher must (a) validate every webhook payload
-against the operations API before acting and (b) `PATCH` the operation
-result for `ChangePlan` and `ChangeQuantity` so Microsoft does not roll
-the change back after 24 hours
-(<https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-webhook>,
-<https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-operations-api>).
-Both calls live in the reconciler so the inline ACK stays at < 1 s p99
-and the 10 s SLA is unconditional.
+Per Microsoft, the publisher must (a) ACK the webhook within the
+10-second window so Microsoft does not retry-then-suspend
+(<https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-webhook>),
+and (b) `PATCH` the operation status against the operations API
+(<https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-operations-api>)
+to record the publisher's accept-or-reject decision. The Honua webhook
+handler is intentionally narrow — JWT verify, payload capture, queue
+write, ACK — so the inline ACK stays at < 1 s p99 and the 10-second
+SLA is unconditional. Validation (`Get Operation`) and the PATCH live
+in the reconciler.
+
+For `ChangePlan` and `ChangeQuantity`, Microsoft drives the change to a
+terminal state on its side regardless of whether the publisher PATCHes
+inside the webhook window: an unpatched two-phase operation is
+auto-completed (Microsoft commits the customer's requested change in
+its billing). Honua's reconciler-deferred PATCH therefore does **not**
+function as a "reject inside 10 s" hook — by the time the reconciler
+runs, Microsoft has typically already auto-completed the change. The
+reconciler PATCHes after `FileLicenseStore` accepts the new file so
+the publisher's audit trail and Microsoft's operation record agree on
+`Success` (or `Failure` if mint or apply fails). Honua does **not**
+support publisher-side rejection of `ChangePlan` / `ChangeQuantity` in
+v1; if a future requirement adds that path, it requires an inline
+pre-flight that runs before the ACK.
 
 ```
 [Azure Marketplace]
@@ -446,45 +472,69 @@ POST /api/v1/marketplace/azure/webhook
 [Background] AzureSubscriptionReconcilerService
         │
         │ 5. drain queue, dedupe by (subscriptionId, operationId)
-        │ 6. Get Operation (publisher credentials) — required
-        │    payload validation; reject 404 / Conflict
+        │ 6. Get Operation (publisher credentials) — payload
+        │    validation. 404 is `operation_rejected` (drop). Conflict
+        │    / already-Succeeded splits two ways: if our local audit
+        │    log already records a terminal PATCH for the same
+        │    operationId, dedupe and exit (a peer replica handled it);
+        │    otherwise Microsoft auto-completed a ChangePlan /
+        │    ChangeQuantity — continue with mint + apply but skip
+        │    step 10 and record `result="auto_completed"`.
         │ 7. Get Subscription (publisher credentials) — only when
         │    the latest entitlement state is needed
         │ 8. POST /api/v1/admin/license/mint  → Ed25519 sign (exp ≤ 90d)
         │ 9. apply via FileLicenseStore → validator cache invalidated
-        │ 10. PATCH operation status (Success | Failure) — required
-        │     for ChangePlan / ChangeQuantity per the operations API;
-        │     sent for the other actions for telemetry parity
+        │ 10. PATCH operation status (Success | Failure) — best-effort
+        │     publisher acknowledgment. Microsoft's auto-completion of
+        │     ChangePlan / ChangeQuantity is independent of this PATCH;
+        │     a `409 Conflict` here means Microsoft already finalized
+        │     the operation and is not a reconciler failure.
         ▼
 [FileLicenseStore]  → invalidates cached snapshot → re-runs validator
 ```
 
-`PATCH operation status` is load-bearing for the two two-phase
-operations: Microsoft holds `ChangePlan` / `ChangeQuantity` in
-`InProgress` until the publisher PATCHes the result, then auto-rolls
-back after 24 h. The reconciler PATCHes immediately after
-`FileLicenseStore` confirms the new file is valid (`Success`) or after
-an unrecoverable fault (`Failure`). For `Unsubscribe`, `Suspend`,
-`Reinstate`, `Renew`, and `Transfer`, Microsoft completes the
-operation regardless; the PATCH is sent for telemetry but is not
-required to keep the customer's billing in sync.
+`PATCH operation status` is the publisher's authoritative write back
+to Microsoft for every action: it confirms the publisher's `Success`
+or `Failure` outcome and keeps the audit trail aligned. For
+`Unsubscribe`, `Suspend`, `Reinstate`, `Renew`, and `Transfer`,
+Microsoft also completes the operation on its side regardless of when
+the publisher PATCHes; the PATCH is recorded for telemetry parity. For
+`ChangePlan` and `ChangeQuantity`, the PATCH is the same write but
+against a Microsoft-side state that may already have auto-completed
+by the time the reconciler runs — the PATCH still records the
+publisher's decision in the operations API and is not a substitute
+for an inline rejection path.
 
 Resolve / Activate landing-page flow:
 
 ```
-POST /api/v1/marketplace/azure/resolve   (Azure-supplied marketplace token)
-   AzureLandingPageEndpoints.ResolveAsync
-        │ Resolve API (server-to-server)
+[Purchaser browser, redirected by Microsoft to the configured landing URL]
+   GET /api/v1/marketplace/azure/landing?token=<marketplace-token>
+        │ AzureLandingPageEndpoints.LandingAsync
+        │   1. validate the token query parameter is present and well-formed
+        │   2. POST <fulfillment-api>/saas/subscriptions/resolve
+        │      (server-to-server; `x-ms-marketplace-token: <marketplace-token>`)
+        │   3. render activation page with subscription metadata
         ▼
-   Render landing page with subscription metadata
+   HTML response (or redirect to the admin UI's activation step)
 
-POST /api/v1/marketplace/azure/activate
-   AzureLandingPageEndpoints.ActivateAsync
-        │ Activate API (server-to-server)
-        │ POST /api/v1/admin/license/mint  → Ed25519 sign  (exp ≤ 90d)
+[Browser POSTs the form on the rendered landing page]
+   POST /api/v1/marketplace/azure/activate
+        │ AzureLandingPageEndpoints.ActivateAsync
+        │   4. POST <fulfillment-api>/saas/subscriptions/{id}/activate
+        │      (server-to-server; publisher access token)
+        │   5. POST /api/v1/admin/license/mint  → Ed25519 sign  (exp ≤ 90d)
         ▼
-   Customer download / auto-deploy
+   Customer download / auto-deploy / "subscription is now active" view
 ```
+
+Per Microsoft's SaaS Fulfillment v2 lifecycle
+(<https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-life-cycle>),
+`Resolve` is a server-to-server API call the publisher backend makes
+with the marketplace token Microsoft handed off in the browser query
+parameter. Our public-facing surface is therefore a browser `GET` for
+the landing page; the actual `Resolve` call to Microsoft never appears
+in the route table.
 
 Metering uses the symmetric `MarketplaceMeteringQueue` with
 `AzureMeteringWorker` calling the Azure Marketplace Metered Billing API.
@@ -543,7 +593,7 @@ cached, and only after signature verification succeeds.
 | `marketplace_metering_records_total` | `cloud`, `result` | `cloud` ∈ `aws`, `azure`; `result` ∈ `enqueued`, `succeeded`, `failed`, `dead_lettered`. |
 | `marketplace_webhook_events_total` | `cloud`, `kind`, `result` | `kind` covers Resolve, Activate, Suspended, Reinstated, Unsubscribed, plan-change, quantity-change. |
 | `marketplace_reconciler_runs_total` | `cloud`, `result` | Background worker outcomes; `result` ∈ `succeeded`, `failed`, `unsubscribed`, `operation_rejected` (Microsoft Get Operation said the event was not real or already processed). |
-| `marketplace_operation_status_patches_total` | `cloud`, `action`, `result` | Azure-only in v1. `action` ∈ `unsubscribe`, `change_plan`, `change_quantity`, `suspend`, `reinstate`, `renew`, `transfer`. `result` ∈ `success_patched`, `failure_patched`, `patch_failed`. Tracks the SaaS Fulfillment v2 PATCH operation status calls. |
+| `marketplace_operation_status_patches_total` | `cloud`, `action`, `result` | Azure-only in v1. `action` ∈ `unsubscribe`, `change_plan`, `change_quantity`, `suspend`, `reinstate`, `renew`, `transfer`. `result` ∈ `success_patched`, `failure_patched`, `patch_failed`, `auto_completed`. `auto_completed` covers the case where Microsoft already auto-completed a `ChangePlan` / `ChangeQuantity` two-phase operation before the reconciler PATCH landed (`409 Conflict` from the operations API). It is a healthy outcome, not a failure; an upward trend is a reconciler-lag signal, not a customer-billing alert. |
 
 ### 6.3 Logging
 

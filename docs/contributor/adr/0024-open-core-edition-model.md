@@ -131,7 +131,8 @@ Runtime license checking at startup:
 
 License checks must be:
 - **Offline-capable**: no phone-home requirement. Keys are self-contained
-  (signed JWT or similar) with edition, node count, and expiry encoded.
+  (signed envelope) with edition, expiry, and any per-edition entitlements
+  encoded; see ADR-0033 for the canonical claim set.
 - **Transparent**: gated endpoints return actionable error messages, not
   silent failures.
 - **Auditable**: license status is visible in the Admin UI health page and
@@ -144,6 +145,14 @@ License checks must be:
 > [`docs/contributor/architecture/unified-license-and-entitlement.md`](../architecture/unified-license-and-entitlement.md);
 > operational procedures live in the
 > [licensing runbooks](../../operator/runbooks/README.md#licensing-runbooks).
+>
+> Per-node enforcement (a node-count claim plus runtime gating) is **not**
+> in the v1 claim set defined by ADR-0033 — Pro and Enterprise are gated
+> by `edition` and `entitlements` only. Per-node accounting is deferred
+> to a follow-up ticket and would be additive to the JWS payload (a
+> `node_count` claim, an `IPerNodeLicenseEnforcer`, and either a heartbeat
+> aggregator or a reconciler that meters distinct hosts). It is **not**
+> required to ship Pro / Enterprise in v1.
 
 ### The Mental Model
 
