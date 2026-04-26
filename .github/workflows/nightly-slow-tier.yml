@@ -1,0 +1,179 @@
+name: Nightly Slow Tier
+
+on:
+  schedule:
+    # Slow-tier tests (scale, external services, emulators, cloud) run nightly.
+    # See ADR-0037 for the tier strategy.
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Test project to run (default: all slow-tier projects)'
+        type: choice
+        required: false
+        default: all
+        options:
+          - all
+          - Honua.Server.Tests
+          - Honua.Postgres.Tests
+          - Honua.Core.Tests
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  HONUA_TEST_CONFIGURATION: Release
+
+concurrency:
+  group: nightly-slow-tier-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  slow-tier:
+    name: Slow Tier (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: Honua.Server.Tests
+            csproj: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+          - project: Honua.Postgres.Tests
+            csproj: tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj
+          - project: Honua.Core.Tests
+            csproj: tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Skip non-selected project (manual dispatch)
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+             && [ "${{ github.event.inputs.project }}" != "all" ] \
+             && [ "${{ github.event.inputs.project }}" != "${{ matrix.project }}" ]; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping ${{ matrix.project }} (selected: ${{ github.event.inputs.project }})"
+          else
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.gate.outputs.skipped != 'true'
+
+      - name: Setup .NET
+        if: steps.gate.outputs.skipped != 'true'
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        if: steps.gate.outputs.skipped != 'true'
+        run: dotnet restore Honua.sln
+
+      - name: Build slow-tier test binaries
+        if: steps.gate.outputs.skipped != 'true'
+        timeout-minutes: 25
+        run: dotnet build ${{ matrix.csproj }} --no-restore --configuration Release
+
+      - name: Pre-pull emulator images
+        if: steps.gate.outputs.skipped != 'true'
+        shell: bash
+        run: |
+          docker pull localstack/localstack:3.6.0 || echo "::warning::could not pre-pull localstack"
+          docker pull mcr.microsoft.com/azure-storage/azurite:3.31.0 || echo "::warning::could not pre-pull azurite"
+
+      - name: Start emulator containers
+        if: steps.gate.outputs.skipped != 'true'
+        run: |
+          docker compose -f docker/docker-compose.emulators.yml up -d --pull never
+          for i in {1..30}; do
+            if (echo > /dev/tcp/localhost/4566) >/dev/null 2>&1 \
+              && (echo > /dev/tcp/localhost/10000) >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Emulators failed to start"
+          docker compose -f docker/docker-compose.emulators.yml ps
+          exit 1
+
+      - name: Verify required slow-tier env vars are set
+        if: steps.gate.outputs.skipped != 'true'
+        env:
+          # Defaults used by [EmulatorTest] are set when missing; just declare
+          # them here so a missing one is loud rather than silently no-op.
+          HONUA_TEST_S3_SERVICE_URL: 'http://localhost:4566'
+          HONUA_TEST_S3_BUCKET: 'honua-test'
+          HONUA_TEST_S3_REGION: 'us-east-1'
+          HONUA_TEST_S3_ACCESS_KEY: 'test'
+          HONUA_TEST_S3_SECRET_KEY: 'test'
+          HONUA_TEST_S3_FORCE_PATH_STYLE: 'true'
+          HONUA_TEST_AZURE_BLOB_CONNECTION_STRING: 'UseDevelopmentStorage=true'
+          HONUA_TEST_AZURE_BLOB_CONTAINER: 'honua-test'
+          HONUA_TEST_DB_URL: 'Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua'
+        run: |
+          required=(
+            HONUA_TEST_S3_SERVICE_URL
+            HONUA_TEST_S3_BUCKET
+            HONUA_TEST_AZURE_BLOB_CONNECTION_STRING
+            HONUA_TEST_AZURE_BLOB_CONTAINER
+            HONUA_TEST_DB_URL
+          )
+          missing=()
+          for v in "${required[@]}"; do
+            if [ -z "${!v:-}" ]; then missing+=("$v"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::missing required nightly env vars: ${missing[*]}"
+            exit 1
+          fi
+          # Persist for subsequent steps.
+          {
+            for v in "${required[@]}"; do
+              echo "${v}=${!v}"
+            done
+          } >> "$GITHUB_ENV"
+
+      - name: Run slow tier
+        if: steps.gate.outputs.skipped != 'true'
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: false
+          TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
+        run: |
+          mkdir -p ./tests/TestResults
+          dotnet test ${{ matrix.csproj }} \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Tier=Slow" \
+            --logger "trx;LogFileName=slow-tier-${{ matrix.project }}.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Upload slow-tier results
+        if: ${{ always() && steps.gate.outputs.skipped != 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: slow-tier-${{ matrix.project }}-results
+          path: tests/TestResults/
+          retention-days: 14
+
+      - name: Stop emulator containers
+        if: ${{ always() && steps.gate.outputs.skipped != 'true' }}
+        run: docker compose -f docker/docker-compose.emulators.yml down -v || true

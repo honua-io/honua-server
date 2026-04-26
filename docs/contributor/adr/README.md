@@ -41,6 +41,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0034](0034-gdal-honua-driver-delivery-strategy.md) | GDAL/OGR honua Driver Delivery Strategy | Accepted | 2026-04 |
 | [0035](0035-provider-ready-data-source-binding.md) | Provider-Ready Data Source Binding | Accepted | 2026-04 |
 | [0036](0036-mobile-sdk-language-strategy.md) | Mobile SDK Language Strategy | Accepted | 2026-04 |
+| [0037](0037-unified-ci-test-tier-strategy.md) | Unified CI Test Tier Strategy | Accepted | 2026-04 |
 
 ## Template
 

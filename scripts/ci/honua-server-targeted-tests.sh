@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# Compute the server-tests shard subset to execute on a pull request based on
+# the changed files in the diff. Owned by ADR-0037.
+#
+# Behaviour:
+#   - When the diff touches shared infrastructure (TestKit, Honua.Core,
+#     Honua.Postgres, .github/, scripts/ci/, Honua.sln, src/Honua.ServiceDefaults),
+#     emit {"run_all": true, "shards": ["<every shard>"]}.
+#   - Otherwise, walk every changed file, match it against shard `paths`
+#     prefixes from .github/ci-shards.json, and emit
+#     {"run_all": false, "shards": [...]} with the union.
+#   - When no source paths match (e.g. the diff is documentation-only), emit
+#     {"run_all": false, "shards": ["Core"]} so the smoke shard still runs.
+#
+# Usage:
+#   honua-server-targeted-tests.sh                    # auto-detect base ref
+#   honua-server-targeted-tests.sh --base origin/trunk
+#   git diff --name-only HEAD~1 HEAD | honua-server-targeted-tests.sh --stdin
+#
+# Exit codes:
+#   0  — JSON descriptor written to stdout.
+#   2  — usage / configuration error (logged to stderr).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+CONFIG_FILE="${REPO_ROOT}/.github/ci-shards.json"
+
+usage() {
+  cat <<USAGE >&2
+Usage: $(basename "$0") [--base <ref>] [--stdin] [--config <path>]
+
+Outputs a JSON descriptor for the Honua.Server.Tests targeted shard subset.
+
+Options:
+  --base <ref>     Compute diff against this ref (default: origin/trunk).
+  --stdin          Read changed files from stdin (one per line) instead of
+                   running git diff. Useful inside CI when the runner has
+                   already computed the file list.
+  --config <path>  Override the path to ci-shards.json (default:
+                   .github/ci-shards.json relative to the repo root).
+USAGE
+}
+
+BASE_REF=""
+READ_STDIN="false"
+CUSTOM_CONFIG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --base)
+      BASE_REF="${2:-}"
+      if [[ -z "${BASE_REF}" ]]; then usage; exit 2; fi
+      shift 2
+      ;;
+    --stdin)
+      READ_STDIN="true"
+      shift
+      ;;
+    --config)
+      CUSTOM_CONFIG="${2:-}"
+      if [[ -z "${CUSTOM_CONFIG}" ]]; then usage; exit 2; fi
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -n "${CUSTOM_CONFIG}" ]]; then
+  CONFIG_FILE="${CUSTOM_CONFIG}"
+fi
+
+if [[ ! -f "${CONFIG_FILE}" ]]; then
+  echo "ci-shards config not found: ${CONFIG_FILE}" >&2
+  exit 2
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required" >&2
+  exit 2
+fi
+
+# Compute the changed-file list.
+if [[ "${READ_STDIN}" == "true" ]]; then
+  CHANGED_FILES="$(cat || true)"
+else
+  if [[ -z "${BASE_REF}" ]]; then
+    BASE_REF="origin/trunk"
+  fi
+  if ! git -C "${REPO_ROOT}" rev-parse --verify "${BASE_REF}" >/dev/null 2>&1; then
+    echo "base ref not found: ${BASE_REF}" >&2
+    exit 2
+  fi
+  CHANGED_FILES="$(git -C "${REPO_ROOT}" diff --name-only "${BASE_REF}"...HEAD || true)"
+fi
+
+# Strip blank lines and trim.
+CHANGED_FILES="$(printf '%s\n' "${CHANGED_FILES}" | sed '/^$/d')"
+
+ALL_SHARD_NAMES_JSON="$(jq -c '[.shards[].name]' "${CONFIG_FILE}")"
+
+# When no files changed (e.g. workflow_dispatch with no diff), be conservative
+# and run the full matrix.
+if [[ -z "${CHANGED_FILES}" ]]; then
+  jq -nc --argjson shards "${ALL_SHARD_NAMES_JSON}" \
+    '{run_all: true, shards: $shards, reason: "no_changed_files"}'
+  exit 0
+fi
+
+# Detect whether any shared-infrastructure path was touched.
+INFRA_HIT="$(
+  printf '%s\n' "${CHANGED_FILES}" \
+    | jq -Rsc --slurpfile cfg "${CONFIG_FILE}" '
+        split("\n")
+        | map(select(length > 0))
+        | . as $files
+        | $cfg[0].infrastructure_paths
+        | any(. as $prefix | $files | any(startswith($prefix)))
+      '
+)"
+
+if [[ "${INFRA_HIT}" == "true" ]]; then
+  jq -nc --argjson shards "${ALL_SHARD_NAMES_JSON}" \
+    '{run_all: true, shards: $shards, reason: "infrastructure_change"}'
+  exit 0
+fi
+
+# Match each changed file against shard prefixes and union the results.
+TARGETED_SHARDS_JSON="$(
+  printf '%s\n' "${CHANGED_FILES}" \
+    | jq -Rsc --slurpfile cfg "${CONFIG_FILE}" '
+        split("\n")
+        | map(select(length > 0)) as $files
+        | $cfg[0].shards
+        | map(
+            . as $shard
+            | $shard
+            | select(
+                ($files | any(. as $f | $shard.paths | any(. as $p | $f | startswith($p))))
+              )
+            | .name
+          )
+        | unique
+      '
+)"
+
+# Apply default-when-no-match.
+SHARDS_LEN="$(printf '%s' "${TARGETED_SHARDS_JSON}" | jq 'length')"
+if [[ "${SHARDS_LEN}" == "0" ]]; then
+  TARGETED_SHARDS_JSON="$(jq -c '.default_shards_when_no_match' "${CONFIG_FILE}")"
+  REASON="no_path_match"
+else
+  REASON="targeted"
+fi
+
+jq -nc \
+  --argjson shards "${TARGETED_SHARDS_JSON}" \
+  --arg reason "${REASON}" \
+  '{run_all: false, shards: $shards, reason: $reason}'

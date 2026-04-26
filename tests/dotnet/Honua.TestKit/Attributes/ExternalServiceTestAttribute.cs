@@ -11,6 +11,7 @@ namespace Honua.TestKit.Attributes;
 /// <summary>
 /// Marks a test as an external service integration test.
 /// Skips execution when required environment variables are not present.
+/// Tier=Slow — included in the nightly slow-tier run. See ADR-0037.
 /// </summary>
 [TraitDiscoverer("Honua.TestKit.Attributes.ExternalServiceTestDiscoverer", "Honua.TestKit")]
 public sealed class ExternalServiceTestAttribute : FactAttribute, ITraitAttribute
@@ -43,7 +44,8 @@ public sealed class ExternalServiceTestDiscoverer : ITraitDiscoverer
         return
         [
             new KeyValuePair<string, string>("Category", "Integration"),
-            new KeyValuePair<string, string>("Category", "External")
+            new KeyValuePair<string, string>("Category", "External"),
+            new KeyValuePair<string, string>("Tier", "Slow")
         ];
     }
 }
