@@ -37,6 +37,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0029](0029-geoprocess-canonical-model-mappings.md) | Geoprocess Canonical Model Mappings | Accepted | 2026-04 |
 | [0031](0031-durable-job-orchestration-substrate.md) | Durable Job Orchestration Substrate | Accepted | 2026-04 |
 | [0032](0032-workflow-orchestration-layer.md) | Workflow Orchestration Layer | Accepted | 2026-04 |
+| [0033](0033-unified-license-format.md) | Unified License Format and Entitlement Architecture | Accepted | 2026-04 |
 
 ## Template
 
