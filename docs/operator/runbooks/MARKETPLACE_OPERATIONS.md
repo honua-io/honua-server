@@ -13,6 +13,38 @@ This runbook does **not** cover:
 
 ---
 
+## Status / Prerequisites
+
+This runbook documents the canonical AWS Marketplace and Azure
+Marketplace adapter contract defined in ADR-0033. **None of the
+marketplace adapter routes, services, or telemetry counters described
+below are present on `feature/804`.** They land with the AWS and Azure
+adapter child tickets per ADR-0033 § "Bounded Child Tickets":
+
+| Surface | Status on `feature/804` | Lands with |
+|---------|-------------------------|------------|
+| `POST /api/v1/admin/marketplace/aws/reconcile` | Route is **not yet registered** in `EndpointRegistry`. The CONTROL_PLANE_API contract lists it under "land with the AWS marketplace adapter child ticket". A current build returns HTTP 404. | AWS marketplace adapter child ticket. |
+| `POST /api/v1/admin/marketplace/azure/reconcile` | Route is **not yet registered**. A current build returns HTTP 404. | Azure marketplace adapter child ticket. |
+| `POST /api/v1/marketplace/azure/webhook` | Public Azure-AD-bearer route is **not yet registered**; the webhook handler (`AzureWebhookEndpoint`) and the durable `MarketplaceWebhookQueue` ship together. | Azure marketplace adapter child ticket. |
+| `GET /api/v1/marketplace/azure/landing` | Public landing-page route is **not yet registered**; `AzureLandingPageEndpoints.LandingAsync` ships with the adapter. | Azure marketplace adapter child ticket. |
+| `POST /api/v1/marketplace/azure/activate` | Public activation route is **not yet registered**; `AzureLandingPageEndpoints.ActivateAsync` ships with the adapter. | Azure marketplace adapter child ticket. |
+| AWS adapter services (`AwsEntitlementPollerService`, `AwsRegisterUsageOnStart`, `AwsMeteringWorker`) | **Not yet implemented.** `Aws:Marketplace:*` configuration keys are reserved by ADR-0033 but no `BackgroundService` registrations exist on this branch. | AWS marketplace adapter child ticket. |
+| Azure adapter services (`AzureSubscriptionReconcilerService`, `AzureMeteringWorker`, `AzureFulfillmentClient`) | **Not yet implemented.** `Azure:Marketplace:*` configuration keys are reserved by ADR-0033 but no service registrations exist on this branch. | Azure marketplace adapter child ticket. |
+| `marketplace_webhook_events_total{cloud,kind,result}`, `marketplace_reconciler_runs_total{cloud,result}`, `marketplace_operation_status_patches_total{cloud,action,result}`, `marketplace_metering_records_total{cloud,result}` Prometheus counters | Counter shapes are reserved by ADR-0033 § Cross-Cutting Reuse and the architecture doc § 6.2, but emit only after the owning adapter child tickets land. `curl https://<host>/metrics \| grep marketplace_` returns no rows on a current build. | AWS / Azure marketplace adapter child tickets (per cloud). |
+| Licensing event-id bands `10300-10499` (AWS adapter) and `10500-10699` (Azure adapter), including specific emitters such as `10310` (`RegisterUsage` failure) and `10320` (metering dead-letter) | Band reservations are documented in ADR-0033, but emitters appear with their owning adapters. | AWS / Azure marketplace adapter child tickets. |
+| Integration tests (`AzureWebhook_AcksWithinTenSeconds`, `AzureReconciler_PatchesOperationStatusOrRecordsAutoCompleted`, `AzureWebhook_Returns5xxWhenDurableQueueUnavailable`, `AzureReconciler_RecordsNoopConflictWhenGetOperationReturnsConflict`) | Test fixtures **not yet authored** on this branch. | Azure marketplace adapter child ticket. |
+| `GET /api/v1/admin/license/status` | Operational. Used by the daily on-call check and reconciliation flow as a cross-check on adapter-issued license freshness. | Already in `LicenseAdminEndpoints`. |
+
+The runbook is published ahead of those child tickets so the adapter
+contract is reviewable in isolation. Treat every surface marked above
+as **prerequisite-bound** and confirm the corresponding child ticket
+has landed before running the command on a customer environment. On a
+current build, `curl` calls against the marketplace routes return
+HTTP 404 and `grep marketplace_` against `/metrics` returns nothing
+because the emitters are not yet wired.
+
+---
+
 ## Quick Reference
 
 | Concern | AWS | Azure |
@@ -33,7 +65,10 @@ deployments that purchased through the corresponding marketplace.
 
 ## Daily / On-Call Telemetry
 
-Verify on every shift:
+Verify on every shift (the `marketplace_*_total` counters and
+adapter-driven `licenses_*` series populate only after the AWS /
+Azure marketplace adapter child tickets land — see § "Status /
+Prerequisites" above):
 
 ```bash
 # Webhook intake (Azure)
@@ -470,7 +505,10 @@ plan change):
      "https://<host>/api/v1/admin/license/status"
    ```
 
-2. Trigger a manual reconciliation:
+2. Trigger a manual reconciliation (the reconcile route is registered
+   only after the corresponding marketplace adapter child ticket lands;
+   see § "Status / Prerequisites" above — a current build returns
+   HTTP 404):
 
    ```bash
    curl -X POST -H "X-API-Key: <admin-key>" \
