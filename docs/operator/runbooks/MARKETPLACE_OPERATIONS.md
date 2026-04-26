@@ -19,7 +19,7 @@ This runbook does **not** cover:
 |---------|-----|-------|
 | Entitlement source of truth | Marketplace Entitlement Service (`GetEntitlements`) and optionally License Manager seller-issued tokens. | Microsoft (no portable token); query via `Get Subscription`. |
 | Activation surface | Container `RegisterUsage` on start (EKS / ECS) plus polling. | Browser landing page (`GET /api/v1/marketplace/azure/landing?token=...`) → server-to-server `Resolve` → backend `POST /activate` → server-to-server `Activate`. |
-| Lifecycle delivery | Polling + entitlement-change events. | Webhook (publisher endpoint) for Suspended / Reinstated / Unsubscribed / plan-change / quantity-change. |
+| Lifecycle delivery | Polling + entitlement-change events. | Webhook (publisher endpoint) for ChangePlan / ChangeQuantity / Reinstate (ack-required via PATCH operation status) and Suspended / Unsubscribed / Renew (notify-only). |
 | Webhook ack budget | n/a (no webhook in v1; ALM seller-issued path is opt-in). | < 1 s p99 on test; **hard 10 s SLA** per Azure SaaS Fulfillment v2. |
 | Metering API | `MeterUsage` / `BatchMeterUsage`. | Marketplace Metered Billing API. |
 | Adapter background services | `AwsEntitlementPollerService`, `AwsMeteringWorker`, `AwsRegisterUsageOnStart`. | `AzureSubscriptionReconcilerService`, `AzureMeteringWorker`. |
@@ -201,24 +201,36 @@ client (`AzureFulfillmentClient`) over the documented v2 endpoints using
        ▼
 [AzureSubscriptionReconcilerService] (background)
      5. drain queue, dedupe by (subscriptionId, operationId)
-     6. Get Operation (publisher credentials) — Microsoft SaaS
-        Fulfillment v2 requires validating the webhook payload
-        against the operations API before acting; rejects events
-        whose state Microsoft cannot confirm (404 / Conflict /
-        wrong subscriptionId)
+     6. Get Operation (publisher credentials) — branch on status:
+          • 404                 → operation_rejected (drop; replay
+                                  or aged out)
+          • status=Conflict     → noop_conflict (Microsoft says the
+                                  requested plan/quantity already
+                                  matches existing — skip mint AND
+                                  PATCH; record on
+                                  marketplace_reconciler_runs_total)
+          • status=Succeeded    → if local audit log already has a
+                                  terminal PATCH for this
+                                  operationId, dedupe; otherwise
+                                  Microsoft auto-Successed (10 s
+                                  timeout for ChangePlan/ChangeQty),
+                                  continue with mint + PATCH (PATCH
+                                  HTTP 409 expected → auto_completed)
+          • NotStarted/InProgress/Failed → continue
      7. Get Subscription (publisher credentials) — fetches the
         latest entitlement state when the operation needs it
      8. POST /api/v1/admin/license/mint  → Honua-signed file (exp ≤ 90d)
      9. apply via FileLicenseStore → validator cache invalidated
-    10. For two-phase actions only (ChangePlan, ChangeQuantity):
-        PATCH operation status (Success after step 9, Failure on
-        mint/apply fault). A 409 Conflict means Microsoft already
-        auto-completed the operation — record
-        `result="auto_completed"` and continue. Single-phase
-        notifications (Unsubscribe, Suspend, Reinstate, Renew,
-        Transfer) skip step 10 entirely; Microsoft does not expose
-        a pending operation requiring publisher acknowledgement for
-        those.
+    10. For ack-required actions (ChangePlan, ChangeQuantity,
+        Reinstate): PATCH operation status (Success after step 9,
+        Failure on mint/apply fault). PATCH HTTP 409 means a newer
+        update is already fulfilled (covers Microsoft's 10-second
+        auto-Success on ChangePlan/ChangeQuantity per the lifecycle
+        doc, or any later operation that has superseded this one) —
+        record `result="auto_completed"` and continue. Notify-only
+        events (Unsubscribe, Suspend, Renew) skip step 10 entirely;
+        Microsoft does not expose a pending operation requiring
+        publisher acknowledgement for those.
 ```
 
 The webhook handler **must** ACK before the 10 s SLA elapses or Azure
@@ -249,45 +261,68 @@ Microsoft's
 [operations API](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-operations-api)
 exposes `PATCH /operations/{operationId}` only for the actions that
 Microsoft surfaces as a pending operation requiring publisher
-acknowledgement. For Honua v1 that is the **two-phase** actions
-only:
+acknowledgement. Per Microsoft, "this only applies to webhook events
+such as `ChangePlan`, `ChangeQuantity`, and `Reinstate` that need an
+ACK." The notify-only events (`Unsubscribe`, `Suspend`, `Renew`)
+expose no pending operation and require no ACK.
 
-- `ChangePlan`
-- `ChangeQuantity`
-
-For those two actions the reconciler PATCHes `Success` after
+For the three ack-required actions (`ChangePlan`, `ChangeQuantity`,
+`Reinstate`) the reconciler PATCHes `Success` after
 `FileLicenseStore` confirms the new file is valid, or `Failure`
-after a mint / apply fault we cannot recover from. Microsoft drives
-both two-phase operations to a terminal state on its side regardless
-of whether the publisher PATCHes inside the webhook window — an
-unpatched two-phase operation is **auto-completed** (Microsoft
-commits the customer's requested change in its billing). The
-reconciler PATCH is the publisher's authoritative entry in the
-operations API audit trail; it is **not** a control over Microsoft's
-state machine. By the time the reconciler runs, Microsoft has
-typically already auto-completed the change, so a `409 Conflict`
-from PATCH is the healthy auto-completion signal and the reconciler
-records
-`marketplace_operation_status_patches_total{cloud="azure",result="auto_completed"}`.
+after a mint / apply fault we cannot recover from.
 
-A deferred `Failure` PATCH does **not** undo Microsoft's
-auto-success: by the time the reconciler PATCHes, Microsoft's
-billing has already moved to the new plan / quantity on its side.
-The Failure record only updates the operations-API audit trail.
-Honua v1 has no inline rejection path; if a future requirement adds
-publisher-side rejection of `ChangePlan` / `ChangeQuantity`, it
-requires a separate inline pre-flight that PATCHes `Failure` before
-the webhook ACK and satisfies the 10-second SLA on its own. That
-path is out of scope here.
+For `ChangePlan` and `ChangeQuantity` initiated from Microsoft
+Marketplace, the
+[lifecycle doc](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-life-cycle)
+states explicitly: "If PATCH of operation status isn't received
+within the 10 seconds, the change plan is automatically patched as
+Success." The reconciler-deferred PATCH therefore typically lands
+after Microsoft has already auto-Successed the change on its own
+side. The reconciler PATCH is the publisher's authoritative entry
+in the operations API audit trail; it is **not** a control over
+Microsoft's state machine.
 
-The single-phase notifications — `Unsubscribe`, `Suspend`,
-`Reinstate`, `Renew`, and `Transfer` — do **not** expose a pending
-operation in Microsoft's operations API. The webhook is a
-notification of a state change Microsoft has already committed on
-its own side. The reconciler still drains those events to update
-the local mirror (re-mint with refreshed entitlements on
-`Reinstate`, mark the local subscription as unsubscribed on
-`Unsubscribe`, no-op on `Renew`, etc.) and emits the relevant
+A deferred `Failure` PATCH on `ChangePlan` / `ChangeQuantity` does
+**not** undo Microsoft's auto-Success: by the time the reconciler
+PATCHes, Microsoft's billing has already moved to the new plan /
+quantity on its side. The Failure record only updates the
+operations-API audit trail. Honua v1 has no inline rejection path;
+if a future requirement adds publisher-side rejection, it requires a
+separate inline pre-flight that PATCHes `Failure` before the webhook
+ACK and satisfies the 10-second SLA on its own. That path is out of
+scope here.
+
+For `Reinstate`, Microsoft's docs do not specify a timeout-driven
+auto-Success path. The reconciler still issues the PATCH from the
+deferred path (so the inline ACK stays at < 1 s), but the publisher's
+PATCH is the authoritative completion signal for that action.
+
+##### Two distinct conflict outcomes — do not conflate
+
+Microsoft's operations API surfaces two different conflict
+conditions that the reconciler must handle separately:
+
+- **`GET operation` returning `status=Conflict`** is documented as
+  "new quantity / plan is the same as existing." It is a no-op
+  terminal status — Microsoft is telling the publisher that nothing
+  needs to change because the requested value already matches. The
+  reconciler skips both mint and PATCH and records the run on
+  `marketplace_reconciler_runs_total{cloud="azure",result="noop_conflict"}`.
+- **`PATCH operation` returning HTTP `409 Conflict`** is documented
+  as "a newer update is already fulfilled." This covers Microsoft's
+  10-second auto-Success on `ChangePlan` / `ChangeQuantity` and any
+  later operation that has superseded this one. The reconciler
+  records
+  `marketplace_operation_status_patches_total{cloud="azure",result="auto_completed"}`
+  and continues.
+
+The notify-only events (`Unsubscribe`, `Suspend`, `Renew`) do not
+expose a pending operation in Microsoft's operations API. The
+webhook is a notification of a state change Microsoft has already
+committed on its own side. The reconciler still drains those events
+to update the local mirror (mark the local subscription as
+unsubscribed on `Unsubscribe`, no-op on `Renew`, etc.) and emits the
+relevant
 `marketplace_webhook_events_total{cloud="azure",kind=...}` and
 `marketplace_reconciler_runs_total{cloud="azure",result=...}`
 telemetry, but it does **not** PATCH the operations API for them.
@@ -337,7 +372,8 @@ purchase-flow failure rather than as a Honua telemetry signal.
 | `marketplace_webhook_events_total{cloud="azure",result="rejected"}` | Zero or near-zero. | Spike = publisher credentials rotated, JWT issuer / audience mismatch, or replay attack. |
 | Webhook handler latency (p99) | < 1 s. | > 5 s = DB / Redis backpressure on the queue write. > 10 s = SLA breach; Azure will retry then suspend. |
 | Reconciler success rate | Equals webhook ack rate. | Backlog growth = reconciler stalled, mint host unreachable, `Get Operation` rejecting events, or `Get Subscription` failing. |
-| `marketplace_operation_status_patches_total{cloud="azure",action="change_plan",result="success_patched"}` and `..."change_quantity"...` plus `result="auto_completed"` | Sum (`success_patched` + `auto_completed`) equals the count of `ChangePlan` / `ChangeQuantity` webhooks ingested over the same window. | Audit gap: drop in the sum means the reconciler is not reaching step 10 — investigate the audit trail. A rising `auto_completed` rate is **not** a customer-billing problem (Microsoft auto-commits the change either way) but indicates the reconciler is consistently lagging Microsoft's auto-completion window; tighten the reconciler tick or scale workers. |
+| `marketplace_operation_status_patches_total{cloud="azure",action ∈ "change_plan"\|"change_quantity"\|"reinstate",result="success_patched"\|"auto_completed"}` | For each `action`, the sum of `success_patched` + `auto_completed` (plus any `noop_conflict` rows recorded on the reconciler counter — see below) equals the count of webhooks ingested for that action over the same window. | Audit gap: drop in the sum means the reconciler is not reaching step 10 — investigate the audit trail. On `change_plan` / `change_quantity`, a rising `auto_completed` rate is **not** a customer-billing problem (Microsoft auto-Successes after 10 s either way) but indicates the reconciler is consistently lagging Microsoft's auto-completion window; tighten the reconciler tick or scale workers. On `reinstate`, an `auto_completed` spike is unusual (Microsoft's Reinstate flow does not document a timeout-driven auto-Success) and warrants investigation of operation supersession or duplicate webhook delivery. |
+| `marketplace_reconciler_runs_total{cloud="azure",result="noop_conflict"}` | Low; tracks `Get Operation` returning `status=Conflict` (Microsoft says the requested plan / quantity already matched existing). | Spike on `change_plan` / `change_quantity` = upstream is producing redundant change requests; coordinate with the customer-side admin UI to suppress no-op submissions. Reconciler is correct to skip mint + PATCH on this status. |
 | `marketplace_operation_status_patches_total{cloud="azure",result="patch_failed"}` | Zero. | Non-zero = publisher credentials lost write scope on the operations API, or a transient outage that the retry-with-backoff loop is not absorbing. |
 
 ### Metering
@@ -362,9 +398,10 @@ worker classes share the durable substrate but address different APIs.
 | Webhook returns 5xx within the 10 s window. | Durable write to `MarketplaceWebhookQueue` failed. | A 5xx is the **correct** behavior here — the handler must not ACK on volatile fallback alone, because losing the event between ACK and reconciler drain would break the at-least-once delivery contract with Microsoft. Restore the durable substrate (Redis health at `/api/v1/metrics/cache`, queue lease coordination, network reachability) so writes succeed; Azure retries on 5xx by design. The in-memory implementation of `MarketplaceWebhookQueue` is reserved for dev/test or single-process deployments where durability is provided externally; production deployments with `Azure:Marketplace:Enabled=true` require Redis-backed persistence. |
 | Webhook does not ack within 10 s; Azure retries flood. | Inline mint, Get Operation, Get Subscription, or PATCH on the webhook path (regression). | Verify the handler matches the documented ack-and-enqueue pattern — only the JWT verify, body capture, and queue write run inline; every operations / fulfillment API call is the reconciler's responsibility. |
 | `Get Operation` returns 404 in the reconciler. | Webhook payload references an operation Microsoft cannot find — replay, spoofed payload, or operation already aged out. | Drop the event; do **not** mint or PATCH. Surface as `marketplace_reconciler_runs_total{cloud="azure",result="operation_rejected"}` and inspect the audit log for replay patterns. |
-| `Get Operation` returns `Conflict` or `status=Succeeded` for the same `operationId`. | Either (a) another reconciler replica already processed the event behind the lease, or (b) Microsoft auto-completed a `ChangePlan` / `ChangeQuantity` operation before our reconciler ran. | Healthy outcomes: for (a) dedupe and skip the event entirely; for (b) the reconciler still mints + applies the new file (so internal state matches Microsoft) but **skips the PATCH** and records `marketplace_operation_status_patches_total{result="auto_completed"}`. The reconciler distinguishes (a) from (b) by checking whether our local audit log already has a Success / Failure record for the same `operationId`. |
-| `PATCH operation` for `ChangePlan` or `ChangeQuantity` never sent. | Reconciler stalled before step 10, or the operations API was unreachable through the retry-with-backoff window. | Microsoft auto-completes `ChangePlan` / `ChangeQuantity` regardless, so the customer's billing has already moved to the new plan/quantity on Microsoft's side. The audit-trail gap is still real — manually trigger reconciliation (`POST /api/v1/admin/marketplace/azure/reconcile`) so `Get Operation` returns the auto-completed state and the reconciler can record `result="auto_completed"`. Investigate why the reconciler stalled. |
-| `PATCH operation` returns `409 Conflict` for `ChangePlan` / `ChangeQuantity`. | Microsoft already auto-completed the operation before the reconciler PATCH landed. | Healthy outcome, not a failure. Reconciler records `marketplace_operation_status_patches_total{cloud="azure",result="auto_completed"}`. No action unless the rate trends upward — see the `auto_completed` row in the webhook health table. |
+| `Get Operation` returns `status=Conflict` (operation status, not HTTP 409). | Microsoft documents this status as "new quantity / plan is the same as existing" — a no-op terminal where the requested change matches the current value. | Healthy outcome. The reconciler **skips both mint and PATCH** and records `marketplace_reconciler_runs_total{cloud="azure",result="noop_conflict"}`. Persistent spikes indicate the upstream change request flow is producing redundant submissions; investigate the customer-side admin UI or the Microsoft Marketplace flow that originated the change. |
+| `Get Operation` returns `status=Succeeded` for the same `operationId`. | Either (a) another reconciler replica already processed the event behind the lease, or (b) Microsoft auto-Successed a `ChangePlan` / `ChangeQuantity` operation via its 10-second timeout before our reconciler ran. | Healthy outcomes: for (a) dedupe and skip the event entirely; for (b) the reconciler still mints + applies the new file (so internal state matches Microsoft) and PATCHes — the PATCH is expected to land as HTTP `409 Conflict`, recorded as `marketplace_operation_status_patches_total{result="auto_completed"}`. The reconciler distinguishes (a) from (b) by checking whether our local audit log already has a Success / Failure record for the same `operationId`. |
+| `PATCH operation` for `ChangePlan` / `ChangeQuantity` / `Reinstate` never sent. | Reconciler stalled before step 10, or the operations API was unreachable through the retry-with-backoff window. | For `change_plan` / `change_quantity`, Microsoft auto-Successes via the 10 s timeout regardless, so the customer's billing has already moved on Microsoft's side; the audit-trail gap is still real — manually trigger reconciliation (`POST /api/v1/admin/marketplace/azure/reconcile`) so `Get Operation` returns the auto-Successed state and the reconciler records `result="auto_completed"`. For `reinstate`, no documented auto-Success applies — the customer's subscription state on Microsoft's side may diverge from local until reconciliation completes; treat as P2 and page the licensing on-call if the manual reconcile fails. Investigate why the reconciler stalled. |
+| `PATCH operation` returns HTTP `409 Conflict` (PATCH-side, not GET status). | Per the operations API: "a newer update is already fulfilled." For `ChangePlan` / `ChangeQuantity` this typically means Microsoft auto-Successed via the 10 s timeout; for any action it can also mean a later operation has superseded this one. | Healthy outcome, not a failure. Reconciler records `marketplace_operation_status_patches_total{cloud="azure",result="auto_completed"}`. No action unless the rate trends upward on `change_plan` / `change_quantity` (reconciler-lag signal — tighten the tick) or appears on `reinstate` (investigate operation supersession or duplicate webhook delivery). |
 | `PATCH operation` returns 401 or 403. | Publisher credentials lost write scope on the operations API. | Rotate `Azure:Marketplace:Publisher:ClientSecretRef`; ensure the publisher app registration retains `SaaSAPI.FullAccess`. |
 | `Get Subscription` returns 404 in the reconciler. | Subscription was unsubscribed before the reconciler drained the event. | Mark the local mirror as unsubscribed; do not re-mint. Surface this as `result="unsubscribed"` on the reconciler counter. |
 | `Get Subscription` returns 401. | Publisher credentials expired or revoked. | Rotate `Azure:Marketplace:Publisher:ClientSecretRef`. The reconciler retries on the next tick. |
@@ -382,17 +419,20 @@ these invariants:
 - **No `Get Operation` inline.** The replay / spoof guard runs in the
   reconciler. The validation is for the publisher's audit trail — it
   does not gate Microsoft's state machine, which moves on its own
-  schedule for two-phase actions.
+  schedule for `ChangePlan` / `ChangeQuantity` (auto-Success on a
+  10 s timeout per the lifecycle doc).
 - **No `Get Subscription` inline.** Same reason.
 - **No `PATCH operation status` inline.** The PATCH ships from the
   reconciler after `FileLicenseStore` confirms the new file. PATCHing
   inline would either (a) extend the inline path past the 10 s SLA or
   (b) ACK `Success` before the change actually applied, which leaves
   the customer in a divergent state if the mint then fails. For
-  `ChangePlan` / `ChangeQuantity`, accept that Microsoft auto-completes
-  the operation independent of the PATCH window — the PATCH is for
-  audit only and a `409 Conflict` (auto-completed) is a healthy
-  outcome, not a failure.
+  `ChangePlan` / `ChangeQuantity`, accept that Microsoft auto-Successes
+  the operation on the 10 s timeout — the PATCH is for audit only and
+  a PATCH HTTP `409 Conflict` (`auto_completed`) is a healthy outcome,
+  not a failure. For `Reinstate`, no documented auto-Success applies;
+  the deferred PATCH is still the publisher's authoritative completion
+  signal.
 - **No synchronous external calls during ACK.** JWT verification uses
   cached JWKS; do not re-fetch the JWKS on the request path more
   frequently than the configured TTL.
