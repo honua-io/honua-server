@@ -215,10 +215,12 @@ internal sealed partial class FeatureQueryBuilder
             parameters.Add(filter.EnvelopeMaxY!.Value);
         }
 
-        return $"{geometryOperand} && {filterGeometry} AND " +
+        return $"{geometryOperand} && {filterGeometry} AND CASE " +
+               $"WHEN GeometryType({geometryOperand}) = 'POINT' THEN " +
                $"ST_X({geometryOperand}) >= ${minXParam} AND " +
                $"ST_Y({geometryOperand}) >= ${minYParam} AND " +
                $"ST_X({geometryOperand}) <= ${maxXParam} AND " +
-               $"ST_Y({geometryOperand}) <= ${maxYParam}";
+               $"ST_Y({geometryOperand}) <= ${maxYParam} " +
+               $"ELSE ST_Intersects({geometryOperand}, {filterGeometry}) END";
     }
 }

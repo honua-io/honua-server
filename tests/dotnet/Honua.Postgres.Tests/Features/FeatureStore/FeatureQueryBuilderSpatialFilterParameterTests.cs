@@ -71,7 +71,8 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
         var result = queryBuilder.BuildSelectGeoServicesPointQuery(layerId: 1, query);
 
         result.Sql.Should().Contain("geometry &&");
-        result.Sql.Should().NotContain("ST_Intersects");
+        result.Sql.Should().Contain("GeometryType(geometry) = 'POINT'");
+        result.Sql.Should().Contain("ST_Intersects");
         result.Sql.Should().Contain("ST_X(geometry) >= ");
         result.Sql.Should().Contain("ST_Y(geometry) >= ");
         result.Sql.Should().Contain("ST_X(geometry) <= ");
