@@ -153,6 +153,48 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             $"(LN(TAN((90.0 + {clampedLatitude}) * PI() / 360.0)) * {WebMercatorEarthRadius.ToString(CultureInfo.InvariantCulture)})");
     }
 
+    public CoreParameterizedQuery BuildSelectGeoServicesPointQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var spatialFilter = query.SpatialFilter;
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+            var pointGeometry = _geometryProcessor.GetGeometryOperand(geometryStorageType, layerSrid: query.SpatialReferenceSrid);
+
+            if (query.OutputSrid.HasValue &&
+                (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
+            {
+                pointGeometry = $"ST_Transform({pointGeometry}, {query.OutputSrid.Value})";
+            }
+
+            var pointX = BuildPointCoordinateExpression(pointGeometry, "X");
+            var pointY = BuildPointCoordinateExpression(pointGeometry, "Y");
+            var (publicIdSelect, attributesSelect) = BuildRawAttributeSelectExpressions(query, ref paramIndex, parameters);
+            sql.Append(CultureInfo.InvariantCulture,
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {publicIdSelect} AS public_id, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, {pointX} AS x, {pointY} AS y FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+            AppendPagination(sql, isKnnQuery: false, query, spatialFilter, ref paramIndex);
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
+    private static string BuildPointCoordinateExpression(string geometryExpression, string axis)
+        => FormattableString.Invariant(
+            $"CASE WHEN GeometryType({geometryExpression}) = 'POINT' THEN ST_{axis}({geometryExpression}) ELSE NULL END");
+
     public CoreParameterizedQuery BuildSelectGmlQuery(
         int layerId,
         FeatureQuery query,
@@ -164,6 +206,12 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
         => BuildFormatSelectQuery(query, geometryStorageType, BuildGeoJsonSelectClause);
+
+    public CoreParameterizedQuery BuildSelectRawGeoJsonQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+        => BuildFormatSelectQuery(query, geometryStorageType, BuildRawGeoJsonSelectClause);
 
     public CoreParameterizedQuery BuildSelectKmlQuery(
         int layerId,

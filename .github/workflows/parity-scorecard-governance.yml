@@ -8,8 +8,8 @@ on:
     paths:
       - 'tests/dotnet/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
       - 'tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
-      - 'scripts/check-parity-scorecard-regression.sh'
-      - 'scripts/check-parity-scorecard-baseline-sync.sh'
+      - 'scripts/ci/check-parity-scorecard-regression.sh'
+      - 'scripts/ci/check-parity-scorecard-baseline-sync.sh'
       - '.github/workflows/geoservices-parity-nightly.yml'
       - '.github/workflows/parity-scorecard-governance.yml'
   push:
@@ -19,8 +19,8 @@ on:
     paths:
       - 'tests/dotnet/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
       - 'tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
-      - 'scripts/check-parity-scorecard-regression.sh'
-      - 'scripts/check-parity-scorecard-baseline-sync.sh'
+      - 'scripts/ci/check-parity-scorecard-regression.sh'
+      - 'scripts/ci/check-parity-scorecard-baseline-sync.sh'
       - '.github/workflows/geoservices-parity-nightly.yml'
       - '.github/workflows/parity-scorecard-governance.yml'
   workflow_dispatch:
@@ -43,10 +43,10 @@ jobs:
 
       - name: Smoke test parity regression gate
         run: |
-          bash scripts/check-parity-scorecard-regression.sh \
+          bash scripts/ci/check-parity-scorecard-regression.sh \
             tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json \
             tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json
 
       - name: Verify parity baseline sync
         run: |
-          bash scripts/check-parity-scorecard-baseline-sync.sh
+          bash scripts/ci/check-parity-scorecard-baseline-sync.sh

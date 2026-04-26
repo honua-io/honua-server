@@ -45,6 +45,15 @@ internal interface IFeatureDataAccess
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Executes a select query and returns raw GeoJSON feature fragments.
+    /// </summary>
+    Task<ImmutableArray<RawGeoJsonFeature>> ExecuteSelectRawGeoJsonQueryAsync(
+        ParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Executes a select query and returns KML features.
     /// </summary>
     Task<ImmutableArray<KmlFeature>> ExecuteSelectKmlQueryAsync(

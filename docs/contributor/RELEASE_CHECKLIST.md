@@ -5,7 +5,7 @@ Use this checklist for every MVP release.
 ## Core Release Gates
 
 - [ ] CI green on `trunk`
-- [ ] Full production audit run completed: `./scripts/run-production-audit.sh --mode full`
+- [ ] Full production audit run completed: `./scripts/conformance/run-production-audit.sh --mode full`
 - [ ] Audit artifacts reviewed and attached from `.audit/runs/<timestamp>/summary.md`
 - [ ] Conformance workflows pass (OGC Features, OGC Tiles, OGC Maps, WMS, WMTS)
 - [ ] MCP certification passes for both transports (`grpc-web`, `rest`) **and** certification artifacts (`mcp-certification-{transport}`) are produced — see [MCP Certification](mcp-certification.md). Skip if SDK-side scripts are not yet landed (CI jobs will show a warning annotation).

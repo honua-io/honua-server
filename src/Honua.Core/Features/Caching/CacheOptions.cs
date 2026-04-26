@@ -24,6 +24,13 @@ public sealed class CacheOptions
     public bool Enabled { get; set; } = true;
 
     /// <summary>
+    /// Whether exact response caching is enabled separately from metadata/catalog caching.
+    /// Disable this for serverless and small-node deployments that should keep Redis metadata caching
+    /// without retaining high-cardinality protocol responses.
+    /// </summary>
+    public bool ResponseCachingEnabled { get; set; }
+
+    /// <summary>
     /// Default time-to-live for cached layer metadata in seconds.
     /// Default is 1800 seconds (30 minutes).
     /// </summary>

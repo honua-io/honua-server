@@ -381,25 +381,35 @@ internal sealed class FeatureServerQueryHandler(
                     ["GeoJSON output does not support returnM=true."]);
             }
 
-            var canCache = ResponseCacheUtilities.ShouldCache(context, _cacheOptions);
+            var canCache = !ShouldBypassQueryResponseCache(validatedParams) &&
+                           ResponseCacheUtilities.ShouldCache(context, _cacheOptions);
             var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
             if (canCache && cacheTtl <= TimeSpan.Zero)
             {
                 canCache = false;
             }
 
-            var cacheKey = canCache
-                ? ResponseCacheUtilities.BuildFeatureServerKey(serviceId, layerId, context.Request)
-                : null;
+            string? cacheKey = null;
 
-            async Task<IResult?> TryGetCachedResponseAsync()
+            string? GetCacheKey()
             {
-                if (!canCache || cacheKey is null)
+                if (!canCache)
                 {
                     return null;
                 }
 
-                var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, cancellationToken);
+                return cacheKey ??= ResponseCacheUtilities.BuildFeatureServerKey(serviceId, layerId, context.Request);
+            }
+
+            async Task<IResult?> TryGetCachedResponseAsync()
+            {
+                var currentCacheKey = GetCacheKey();
+                if (currentCacheKey is null)
+                {
+                    return null;
+                }
+
+                var cached = await _responseCache.GetAsync<CachedResponse>(currentCacheKey, cancellationToken);
                 return cached == null
                     ? null
                     : ResponseCacheUtilities.CreateResultFromCachedResponse(context, cached, _etagService);
@@ -410,26 +420,42 @@ internal sealed class FeatureServerQueryHandler(
                 JsonTypeInfo<T> typeInfo,
                 string contentType)
             {
-                if (!canCache || cacheKey is null)
+                var currentCacheKey = GetCacheKey();
+                if (currentCacheKey is null)
                 {
                     return Results.Json(response, typeInfo, contentType: contentType);
                 }
 
                 var payload = JsonSerializer.SerializeToUtf8Bytes(response, typeInfo);
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
-                await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
+                await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
             async Task<IResult> CreateCachedBytesResultAsync(byte[] payload, string contentType)
             {
-                if (!canCache || cacheKey is null)
+                var currentCacheKey = GetCacheKey();
+                if (currentCacheKey is null)
                 {
                     return Results.Bytes(payload, contentType);
                 }
 
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
-                await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
+                await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
+                return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
+            }
+
+            async Task<IResult> CreateCachedMemoryResultAsync(ReadOnlyMemory<byte> payload, string contentType)
+            {
+                var currentCacheKey = GetCacheKey();
+                if (currentCacheKey is null)
+                {
+                    return Results.Bytes(payload, contentType);
+                }
+
+                var payloadArray = payload.ToArray();
+                var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payloadArray, contentType, _etagService);
+                await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
@@ -451,6 +477,10 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             var query = preparedQuery.Value;
+            if (canCache && ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(query, validatedParams.Where))
+            {
+                canCache = false;
+            }
 
             // Handle statistics queries (outStatistics)
             if (!string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
@@ -666,7 +696,6 @@ internal sealed class FeatureServerQueryHandler(
                     return await CreateCachedBytesResultAsync(payload, "application/geobuf");
                 }
 
-                var queryStopwatch = Stopwatch.StartNew();
                 string[]? outFields;
                 if (string.IsNullOrEmpty(validatedParams.OutFields))
                 {
@@ -684,9 +713,28 @@ internal sealed class FeatureServerQueryHandler(
                     outFields = parsed.Length == 0 ? null : parsed;
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
+                if (CanUseRawGeoServicesPointFastPath(layer, validatedParams, query, outputSrid, format) &&
+                    _queryExecutor.SupportsRawGeoServicesPointOutput)
+                {
+                    var rawStopwatch = Stopwatch.StartNew();
+                    var (payload, featureCount) = await _queryExecutor.QueryRawGeoServicesPointJsonWithValidationAsync(
+                        layerId,
+                        query,
+                        layer,
+                        outputSrid,
+                        cancellationToken).ConfigureAwait(false);
+                    rawStopwatch.Stop();
+                    FeatureServerLog.QueryExecuted(_logger, "query_raw_geoservices", serviceId, layerId, rawStopwatch.Elapsed.TotalMilliseconds);
+                    FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, featureCount, featureCount);
+                    HonuaTelemetry.SetSuccess(featureActivity, featureCount);
+
+                    return await CreateCachedMemoryResultAsync(payload, "application/json");
+                }
+
                 var queryForExecution = shouldApplyDistinct
                     ? query with { Limit = null, Offset = null }
                     : query;
+                var queryStopwatch = Stopwatch.StartNew();
                 QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(layerId, queryForExecution, cancellationToken);
                 queryStopwatch.Stop();
                 var queryOperation = isParquet ? "query_parquet" : isArrow ? "query_arrow" : "query";
@@ -821,6 +869,66 @@ internal sealed class FeatureServerQueryHandler(
             featureActivity?.Dispose();
         }
     }
+
+    private static bool CanUseRawGeoServicesPointFastPath(
+        LayerDefinition layer,
+        QueryParameters parameters,
+        FeatureQuery query,
+        int? outputSrid,
+        string format)
+    {
+        if (!string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!layer.HasGeometry || layer.GeometryType != GeometryType.Point)
+        {
+            return false;
+        }
+
+        if (!parameters.ReturnGeometry ||
+            parameters.ReturnZ ||
+            parameters.ReturnM ||
+            parameters.ReturnCentroid ||
+            parameters.ReturnDistance ||
+            parameters.ReturnDistinctValues ||
+            parameters.ReturnTrueCurves ||
+            parameters.GeometryPrecision.HasValue ||
+            parameters.MaxAllowableOffset.HasValue ||
+            parameters.NearestCount.HasValue)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(parameters.OutFields) &&
+            !parameters.OutFields.Trim().Equals("*", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        var layerSrid = layer.SpatialReference.ToSrid();
+        if (outputSrid.HasValue && outputSrid.Value != layerSrid)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static bool ShouldBypassQueryResponseCache(QueryParameters parameters)
+        => !string.IsNullOrWhiteSpace(parameters.Geometry) ||
+           !string.IsNullOrWhiteSpace(parameters.GeometryType) ||
+           parameters.NearestCount.HasValue ||
+           parameters.Distance.HasValue ||
+           !string.IsNullOrWhiteSpace(parameters.Units) ||
+           parameters.ReturnDistance ||
+           !string.IsNullOrWhiteSpace(parameters.SpatialRel);
 
     private async Task<(FeatureQuery? Query, int? OutputSrid, IResult? Error)> PrepareFeatureQueryAsync(
         HttpContext context,

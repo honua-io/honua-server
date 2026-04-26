@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.Infrastructure;
@@ -57,9 +58,25 @@ internal sealed partial class FeatureQueryBuilder
         switch (filter.SpatialRelationship)
         {
             case SpatialRelationship.Intersects:
-                // PERFORMANCE OPTIMIZATION: Use bbox operator && for fast spatial index filtering
+                // Use bbox operator && for fast spatial index filtering, then exact-check as needed.
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})";
+                if (CanUseEnvelopeOnlyPointIntersects(query, filter))
+                {
+                    clause = $"{geometryOperand} && {filterGeometry}";
+                }
+                else if (CanUseExactPointEnvelopeIntersects(query, filter))
+                {
+                    clause = BuildExactPointEnvelopeIntersectsClause(
+                        geometryOperand,
+                        filterGeometry,
+                        filter,
+                        ref paramIndex,
+                        parameters);
+                }
+                else
+                {
+                    clause = $"{geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})";
+                }
                 break;
 
             case SpatialRelationship.Within:
@@ -158,5 +175,52 @@ internal sealed partial class FeatureQueryBuilder
         {
             sql.Append(CultureInfo.InvariantCulture, $" AND {clause}");
         }
+    }
+
+    private static bool CanUseEnvelopeOnlyPointIntersects(FeatureQuery query, SpatialFilter filter)
+        => filter.IsSimpleEnvelope &&
+           filter.AllowEnvelopeOnly &&
+           query.GeometryType == GeometryType.Point &&
+           !query.IncludeNullGeometry;
+
+    private static bool CanUseExactPointEnvelopeIntersects(FeatureQuery query, SpatialFilter filter)
+        => filter.IsSimpleEnvelope &&
+           query.GeometryType == GeometryType.Point &&
+           !query.IncludeNullGeometry &&
+           filter.EnvelopeMinX.HasValue &&
+           filter.EnvelopeMinY.HasValue &&
+           filter.EnvelopeMaxX.HasValue &&
+           filter.EnvelopeMaxY.HasValue &&
+           (!filter.Srid.HasValue ||
+            !query.SpatialReferenceSrid.HasValue ||
+            filter.Srid.Value == query.SpatialReferenceSrid.Value);
+
+    private static string BuildExactPointEnvelopeIntersectsClause(
+        string geometryOperand,
+        string filterGeometry,
+        SpatialFilter filter,
+        ref int paramIndex,
+        List<object>? parameters)
+    {
+        var minXParam = paramIndex++;
+        var minYParam = paramIndex++;
+        var maxXParam = paramIndex++;
+        var maxYParam = paramIndex++;
+
+        if (parameters != null)
+        {
+            parameters.Add(filter.EnvelopeMinX!.Value);
+            parameters.Add(filter.EnvelopeMinY!.Value);
+            parameters.Add(filter.EnvelopeMaxX!.Value);
+            parameters.Add(filter.EnvelopeMaxY!.Value);
+        }
+
+        return $"{geometryOperand} && {filterGeometry} AND CASE " +
+               $"WHEN GeometryType({geometryOperand}) = 'POINT' THEN " +
+               $"ST_X({geometryOperand}) >= ${minXParam} AND " +
+               $"ST_Y({geometryOperand}) >= ${minYParam} AND " +
+               $"ST_X({geometryOperand}) <= ${maxXParam} AND " +
+               $"ST_Y({geometryOperand}) <= ${maxYParam} " +
+               $"ELSE ST_Intersects({geometryOperand}, {filterGeometry}) END";
     }
 }

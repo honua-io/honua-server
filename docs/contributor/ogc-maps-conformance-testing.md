@@ -17,7 +17,7 @@ Until that is stable, Honua enforces Maps conformance with a dedicated integrati
 Run the dedicated Maps conformance runner:
 
 ```bash
-./scripts/run-ogc-maps-conformance-tests.sh --configuration Release
+./scripts/conformance/ogc/run-ogc-maps-conformance-tests.sh --configuration Release
 ```
 
 Artifacts are written to:
@@ -42,6 +42,6 @@ Failure conditions:
 
 Phase 2 protocol checks include:
 
-- `ogc-maps-conformance-tests` via `scripts/run-production-audit.sh`
+- `ogc-maps-conformance-tests` via `scripts/conformance/run-production-audit.sh`
 
-This means `./scripts/run-production-audit.sh --phase 2 --agents protocol` now blocks on OGC API - Maps conformance regressions the same way it blocks on other required protocol checks.
+This means `./scripts/conformance/run-production-audit.sh --phase 2 --agents protocol` now blocks on OGC API - Maps conformance regressions the same way it blocks on other required protocol checks.

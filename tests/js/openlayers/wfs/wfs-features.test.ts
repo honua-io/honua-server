@@ -11,7 +11,7 @@ import WFS from 'ol/format/WFS.js';
 import { wfsUrl } from '../shared/config.js';
 import { EvidenceCollector } from '../shared/evidence.js';
 
-const evidence = new EvidenceCollector('wfs20');
+const evidence = new EvidenceCollector('wfs');
 const wfsFormat = new WFS({ version: '2.0.0' });
 
 interface DiscoveredType {

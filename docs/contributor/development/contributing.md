@@ -36,7 +36,7 @@ Run these locally before creating a PR:
 
 ```bash
 # 1. Canonical instruction check
-bash scripts/check-instructions-sync.sh
+bash scripts/ci/check-instructions-sync.sh
 
 # 2. Build
 dotnet build Honua.sln --configuration Release /p:TreatWarningsAsErrors=true

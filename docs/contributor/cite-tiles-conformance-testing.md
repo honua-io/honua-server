@@ -26,13 +26,13 @@ The CITE test suite validates that Honua Server correctly implements the OGC API
 
 ```bash
 # Run all conformance tests
-./scripts/run-cite-tiles-tests.sh
+./scripts/conformance/cite/run-cite-tiles-tests.sh
 
 # Run with specific options
-./scripts/run-cite-tiles-tests.sh --verbose --no-cleanup
+./scripts/conformance/cite/run-cite-tiles-tests.sh --verbose --no-cleanup
 
 # Interactive mode (keep services running for manual testing)
-./scripts/run-cite-tiles-tests.sh --interactive
+./scripts/conformance/cite/run-cite-tiles-tests.sh --interactive
 ```
 
 ### Running in CI
@@ -76,7 +76,7 @@ Tests core OGC API Tiles 1.0 conformance classes:
 
 ### Test Parameters
 
-The CITE test suite is configured via `docker/cite-tiles-config/test-params.xml`:
+The CITE test suite is configured via `docker/cite/ogc-api-tiles/config/test-params.xml`:
 
 ```xml
 <values xmlns:parsers="http://www.occamlab.com/te/parsers">
@@ -154,7 +154,7 @@ Timeout waiting for Honua Server to become healthy
 ```
 
 **Solutions**:
-- Check Docker container logs: `docker compose -f docker/cite-tiles-compose.yml logs honua-server`
+- Check Docker container logs: `docker compose -f docker/cite/ogc-api-tiles/compose.yml logs honua-server`
 - Verify database connectivity
 - Ensure ports 8080, 8082, 5434 are available
 - Check disk space and memory availability
@@ -226,13 +226,13 @@ Run tests with detailed logging:
 
 ```bash
 # Enable verbose output
-./scripts/run-cite-tiles-tests.sh --verbose
+./scripts/conformance/cite/run-cite-tiles-tests.sh --verbose
 
 # Keep containers running for investigation
-./scripts/run-cite-tiles-tests.sh --no-cleanup
+./scripts/conformance/cite/run-cite-tiles-tests.sh --no-cleanup
 
 # Interactive mode with manual testing
-./scripts/run-cite-tiles-tests.sh --interactive
+./scripts/conformance/cite/run-cite-tiles-tests.sh --interactive
 ```
 
 In interactive mode, access services directly:
@@ -246,7 +246,7 @@ For detailed investigation:
 
 1. Start services in interactive mode:
    ```bash
-   ./scripts/run-cite-tiles-tests.sh --interactive
+   ./scripts/conformance/cite/run-cite-tiles-tests.sh --interactive
    ```
 
 2. Access CITE Team Engine at http://localhost:8082/teamengine

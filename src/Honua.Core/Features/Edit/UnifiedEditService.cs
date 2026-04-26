@@ -20,6 +20,7 @@ public sealed class UnifiedEditService
     private readonly IFeatureWriter _featureWriter;
     private readonly ILogger<UnifiedEditService> _logger;
     private readonly ConcurrentDictionary<Type, object> _adapters = new();
+    private readonly ConcurrentDictionary<Type, string> _adapterProtocolNames = new();
 
     public UnifiedEditService(
         IEditProcessor editProcessor,
@@ -39,6 +40,7 @@ public sealed class UnifiedEditService
     public void RegisterAdapter<TRequest>(IEditParameterAdapter<TRequest> adapter)
     {
         _adapters[typeof(TRequest)] = adapter ?? throw new ArgumentNullException(nameof(adapter));
+        _adapterProtocolNames[typeof(TRequest)] = adapter.ProtocolName;
         EditLog.RegisteredEditAdapter(_logger, adapter.ProtocolName, typeof(TRequest).Name);
     }
 
@@ -277,9 +279,9 @@ public sealed class UnifiedEditService
     /// <returns>Dictionary of registered adapters</returns>
     public IReadOnlyDictionary<Type, string> GetRegisteredAdapters()
     {
-        return _adapters.ToDictionary(
+        return _adapterProtocolNames.ToDictionary(
             kvp => kvp.Key,
-            kvp => (string)((dynamic)kvp.Value).ProtocolName);
+            kvp => kvp.Value);
     }
 
     private async Task<UnifiedBatchEditResult> ExecuteBatchTransactionAsync(

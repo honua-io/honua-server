@@ -130,10 +130,11 @@ jobs:
           ASPNETCORE_URLS: ${{ env.BASE_URL }}
           ASPNETCORE_ENVIRONMENT: Production
           HONUA_ADMIN_PASSWORD: "load-soak-admin-password"
+          Security__DisableHttpsRedirection: "true"
           Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
           ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=${{ env.DB_NAME }};Username=${{ env.DB_USER }};Password=${{ env.DB_PASSWORD }};Maximum Pool Size=50
         run: |
-          dotnet run --project src/Honua.Server -c Release --no-build > server.log 2>&1 &
+          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile > server.log 2>&1 &
           echo $! > server.pid
 
       - name: Wait for readiness
@@ -159,7 +160,7 @@ jobs:
           if [[ -n "$DURATION" ]]; then
             ARGS+=(--duration "$DURATION")
           fi
-          ./scripts/run-load-soak-tests.sh "${ARGS[@]}"
+          ./scripts/scale/run-load-soak-tests.sh "${ARGS[@]}"
 
       - name: Stop server
         if: always()

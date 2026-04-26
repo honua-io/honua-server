@@ -38,12 +38,4 @@ internal static partial class StaticMapLog
         Message = "StaticMap failed: {ServiceId}: {ErrorMessage}")]
     public static partial void Failed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
 
-    /// <summary>
-    /// Logs when a static map request is served from cache (304).
-    /// </summary>
-    [LoggerMessage(
-        EventId = 5703,
-        Level = LogLevel.Debug,
-        Message = "StaticMap cache hit (304): {ServiceId}")]
-    public static partial void CacheHit(ILogger logger, string serviceId);
 }

@@ -7,7 +7,9 @@ import importlib.util
 from pathlib import Path
 
 
-SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "architecture-review.py"
+SCRIPT_PATH = (
+    Path(__file__).resolve().parents[3] / "scripts" / "ci" / "architecture-review.py"
+)
 SPEC = importlib.util.spec_from_file_location("architecture_review", SCRIPT_PATH)
 assert SPEC is not None
 assert SPEC.loader is not None

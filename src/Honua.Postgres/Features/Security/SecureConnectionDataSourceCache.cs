@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Configuration;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
@@ -17,13 +16,11 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
     private readonly ConnectionLimits _connectionLimits;
     private readonly string? _defaultSchema;
 
-    [RequiresDynamicCode("Calls PostgresDataSourceFactory.ResolveConnectionLimits which binds configuration via ConfigurationBinder.Bind(Object).")]
-    [RequiresUnreferencedCode("Calls Microsoft.Extensions.Configuration.ConfigurationBinder.GetValue<T>(String)")]
     public SecureConnectionDataSourceCache(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        _schemaHeadersEnabled = configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
+        _schemaHeadersEnabled = bool.TryParse(configuration["HONUA_TEST_SCHEMA_HEADERS"], out var schemaHeadersEnabled) && schemaHeadersEnabled;
         _connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
         // Preserve the configured default schema so named secure connections
         // get the same search_path embedded in their Options parameter as the

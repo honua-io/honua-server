@@ -111,26 +111,26 @@ jobs:
         echo "Verifying CITE testing infrastructure..."
 
         # Verify Docker Compose file exists
-        if [ ! -f "docker/cite-wfs20-compose.yml" ]; then
+        if [ ! -f "docker/cite/wfs20/compose.yml" ]; then
           echo "❌ CITE Docker Compose file missing"
           exit 1
         fi
 
         # Verify CITE scripts exist
-        if [ ! -f "docker/cite-scripts/execute-cite-tests.sh" ]; then
+        if [ ! -f "docker/cite/shared/scripts/execute-wfs20-tests.sh" ]; then
           echo "❌ CITE execution script missing"
           exit 1
         fi
 
         # Verify test data exists
-        if [ ! -f "docker/cite-test-data/01-init-cite-test-data.sql" ]; then
+        if [ ! -f "docker/cite/shared/test-data/01-init-cite-test-data.sql" ]; then
           echo "❌ CITE test data missing"
           exit 1
         fi
 
         # Make CITE scripts executable
-        chmod +x scripts/run-cite-wfs20-tests.sh
-        chmod +x docker/cite-scripts/execute-cite-tests.sh
+        chmod +x scripts/conformance/cite/run-cite-wfs20-tests.sh
+        chmod +x docker/cite/shared/scripts/execute-wfs20-tests.sh
 
         echo "✅ CITE infrastructure verified"
 
@@ -144,7 +144,7 @@ jobs:
         export CITE_PROFILE="${{ matrix.profile }}"
 
         # Run CITE tests with verbose output
-        ./scripts/run-cite-wfs20-tests.sh \
+        ./scripts/conformance/cite/run-cite-wfs20-tests.sh \
           --profile "${{ matrix.profile }}" \
           --verbose \
           --no-cleanup
@@ -253,8 +253,8 @@ jobs:
             ;;
           "PARTIAL")
             if [ "${{ env.PASSED_TESTS }}" -gt 0 ]; then
-              echo "⚠️ Partial WFS 2.0 compliance - acceptable for development"
-              exit 0  # Don't fail CI for partial compliance during development
+              echo "❌ Partial WFS 2.0 compliance is not sufficient for this conformance gate"
+              exit 1
             else
               echo "❌ No tests passed - implementation needs work"
               exit 1

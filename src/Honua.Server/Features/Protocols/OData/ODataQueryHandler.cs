@@ -436,6 +436,7 @@ internal sealed partial class ODataQueryHandler(
                            string.IsNullOrWhiteSpace(expand) &&
                            string.IsNullOrWhiteSpace(deltatoken) &&
                            !trackChangesRequested &&
+                           !ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(featureQuery, filter) &&
                            !AcceptRequestsNonDefaultMetadata(context.Request, format);
             var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
             if (canCache && cacheTtl <= TimeSpan.Zero)

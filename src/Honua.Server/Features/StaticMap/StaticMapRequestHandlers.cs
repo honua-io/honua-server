@@ -4,11 +4,9 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
-using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -16,12 +14,10 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
-using Microsoft.Extensions.Options;
 using SkiaSharp;
 
 namespace Honua.Server.Features.StaticMap;
@@ -251,26 +247,6 @@ internal static partial class StaticMapEndpoints
                     $"Effective render size {renderWidth}x{renderHeight} at {parameters.Dpi} DPI exceeds the maximum of {MaxRenderPixels:N0} pixels. Reduce dimensions or DPI.");
             }
 
-            // URL-hash response cache check
-            var etagService = context.RequestServices.GetRequiredService<IETagService>();
-            var responseCache = context.RequestServices.GetRequiredService<IResponseCache>();
-            var cacheOptions = context.RequestServices.GetRequiredService<IOptions<CacheOptions>>().Value;
-            var canCache = ResponseCacheUtilities.ShouldCache(context, cacheOptions);
-            string? cacheKey = null;
-
-            if (canCache)
-            {
-                cacheKey = ResponseCacheUtilities.BuildStaticMapKey(serviceId, context.Request);
-                var cached = await responseCache.GetAsync<CachedResponse>(cacheKey, context.RequestAborted);
-                if (cached is not null)
-                {
-                    stopwatch.Stop();
-                    StaticMapLog.CacheHit(logger, serviceId);
-                    activity?.SetTag("honua.cache.hit", true);
-                    return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cached, etagService);
-                }
-            }
-
             // Resolve layers to render (filtered by per-layer access policy)
             var (renderLayerIds, layerError) = ResolveLayerIds(parameters.Layers, service, context);
             if (layerError is not null)
@@ -385,15 +361,7 @@ internal static partial class StaticMapEndpoints
             HonuaTelemetry.SetSuccess(activity, totalFeatureCount);
             HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
 
-            // Store in response cache and return with ETag support
-            var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(imageBytes, contentType, etagService);
-            if (canCache && cacheKey is not null)
-            {
-                var cacheTtl = cacheOptions.GetQueryTtlWithJitter();
-                await responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, context.RequestAborted);
-            }
-
-            return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, etagService);
+            return Results.Bytes(imageBytes, contentType);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {

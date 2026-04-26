@@ -189,6 +189,7 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
 builder.Host.UseSerilog((context, services, config) =>
 {
     var isDevelopment = context.HostingEnvironment.IsDevelopment();
+    var benchmarkQuietLogs = context.Configuration.GetValue<bool>("HONUA_BENCHMARK_QUIET_LOGS");
 
     config
         .MinimumLevel.Information()
@@ -204,6 +205,17 @@ builder.Host.UseSerilog((context, services, config) =>
         .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
         .Enrich.WithProperty("Application", "Honua")
         .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown");
+
+    if (benchmarkQuietLogs)
+    {
+        config
+            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Serilog.AspNetCore.RequestLoggingMiddleware", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Honua.Server.Features.Infrastructure.Middleware.SecurityHeadersMiddleware", Serilog.Events.LogEventLevel.Error)
+            .MinimumLevel.Override("Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationHandler", Serilog.Events.LogEventLevel.Error)
+            .MinimumLevel.Override("Honua.Server.Features.Protocols.Ogc.Api.Features.OgcFeaturesQueryHandler", Serilog.Events.LogEventLevel.Warning);
+    }
 
     if (isDevelopment)
     {
@@ -234,13 +246,14 @@ builder.Services.AddPerformanceEnhancements(options =>
     options.EnableQueryPerformanceMonitoring = true;
     options.EnableResourceLeakDetection = !builder.Environment.IsProduction();
     options.EnableEnhancedExceptionTelemetry = true;
-    options.EnableQueryResultCaching = true;
+    options.EnableQueryResultCaching = false;
     options.EnableDetailedMetrics = !builder.Environment.IsProduction();
 });
 
 // Add query result caching (Server level - requires IMemoryCache)
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Caching.QueryResultCacheOptions>(options =>
 {
+    options.Enabled = builder.Configuration.GetValue<bool>("Cache:ResponseCachingEnabled");
     options.DefaultExpiration = TimeSpan.FromMinutes(5);
     options.MaxCacheSizeBytes = 50 * 1024 * 1024; // 50 MB
     options.MaxCachedItems = 5000;
@@ -462,13 +475,6 @@ builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Services.
 
 // Register shared validation services
 builder.Services.AddValidationServices();
-
-// UNIFIED ARCHITECTURE: Commented out due to incomplete implementation
-// TODO: Activate once compilation issues are resolved
-// builder.Services.AddCompleteUnifiedQuerySystem();
-// builder.Services.AddUnifiedMetadataWithFormatters();
-// builder.Services.AddUnifiedResponseServices();
-// builder.Services.AddUnifiedEditArchitecture();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);

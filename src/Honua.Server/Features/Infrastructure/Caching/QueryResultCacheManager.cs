@@ -117,6 +117,12 @@ public sealed class QueryCacheOptions
 public sealed class QueryResultCacheOptions
 {
     /// <summary>
+    /// Whether generic query-result caching is enabled. Defaults off so deployments do not
+    /// retain high-cardinality feature query results unless explicitly opted in.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
     /// Default cache expiration time.
     /// </summary>
     public TimeSpan DefaultExpiration { get; set; } = TimeSpan.FromMinutes(10);
@@ -213,6 +219,11 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
         ArgumentNullException.ThrowIfNull(cacheKey);
         ArgumentNullException.ThrowIfNull(queryExecutor);
         ArgumentNullException.ThrowIfNull(context);
+
+        if (!_options.Enabled)
+        {
+            return await queryExecutor(context);
+        }
 
         Interlocked.Increment(ref _totalRequests);
 
@@ -425,7 +436,13 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
         try
         {
             var cacheOptions = CreateMemoryCacheEntryOptions(options);
-            var estimatedSize = EstimateObjectSize(result);
+            var hasEstimatedSize = TryEstimateObjectSize(result, out var estimatedSize);
+
+            if (!hasEstimatedSize && options?.MaxSizeBytes.HasValue == true)
+            {
+                CacheLog.ResultSizeUnknown(_logger, cacheKey, options.MaxSizeBytes.Value);
+                return;
+            }
 
             if (options?.MaxSizeBytes.HasValue == true && estimatedSize > options.MaxSizeBytes.Value)
             {
@@ -494,19 +511,49 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
         return $"{baseKey}:{suffix}";
     }
 
-    private static long EstimateObjectSize<T>(T obj)
+    private static bool TryEstimateObjectSize<T>(T obj, out long sizeBytes)
     {
-        try
+        sizeBytes = 0;
+        if (obj == null)
         {
-            if (obj == null) return 0;
-
-            // Simple heuristic - in production you might want more accurate measurement
-            var json = JsonSerializer.Serialize(obj);
-            return Encoding.UTF8.GetByteCount(json);
+            return true;
         }
-        catch
+
+        switch (obj)
         {
-            return 1024; // Default estimate
+            case string text:
+                sizeBytes = Encoding.UTF8.GetByteCount(text);
+                return true;
+            case byte[] bytes:
+                sizeBytes = bytes.LongLength;
+                return true;
+            case CachedResponse response:
+                sizeBytes = response.Payload.LongLength +
+                    Encoding.UTF8.GetByteCount(response.ContentType) +
+                    (response.ETag == null ? 0 : Encoding.UTF8.GetByteCount(response.ETag));
+                return true;
+            case JsonElement element:
+                sizeBytes = Encoding.UTF8.GetByteCount(element.GetRawText());
+                return true;
+            case bool:
+            case byte:
+            case sbyte:
+            case short:
+            case ushort:
+            case int:
+            case uint:
+            case long:
+            case ulong:
+            case float:
+            case double:
+            case decimal:
+            case DateTime:
+            case DateTimeOffset:
+            case TimeSpan:
+                sizeBytes = Encoding.UTF8.GetByteCount(FormattableString.Invariant($"{obj}"));
+                return true;
+            default:
+                return false;
         }
     }
 
@@ -614,6 +661,12 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
             Level = LogLevel.Warning,
             Message = "Result too large to cache: {CacheKey} ({SizeBytes} bytes > {MaxSizeBytes} limit)")]
         public static partial void ResultTooLarge(ILogger logger, string cacheKey, long sizeBytes, long maxSizeBytes);
+
+        [LoggerMessage(
+            EventId = 9312,
+            Level = LogLevel.Warning,
+            Message = "Result size could not be estimated for cache key: {CacheKey}; skipping cache entry with {MaxSizeBytes} byte limit")]
+        public static partial void ResultSizeUnknown(ILogger logger, string cacheKey, long maxSizeBytes);
 
         [LoggerMessage(
             EventId = 9309,

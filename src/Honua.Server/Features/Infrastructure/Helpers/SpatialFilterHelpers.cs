@@ -29,7 +29,16 @@ internal static class SpatialFilterHelpers
         double minX, double minY, double maxX, double maxY, int srid)
     {
         var wkb = CreateEnvelopeWkb(minX, minY, maxX, maxY);
-        return SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
+        return SpatialFilter.Create(
+            wkb,
+            SpatialRelationship.Intersects,
+            srid,
+            isSimpleEnvelope: minX <= maxX,
+            allowEnvelopeOnly: minX <= maxX,
+            envelopeMinX: minX <= maxX ? minX : null,
+            envelopeMinY: minX <= maxX ? minY : null,
+            envelopeMaxX: minX <= maxX ? maxX : null,
+            envelopeMaxY: minX <= maxX ? maxY : null);
     }
 
     /// <summary>

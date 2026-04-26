@@ -74,6 +74,7 @@ The evidence envelope's `measured_delta` field records the observed deviation in
 |---|---|---|
 | FS | GeoServices REST FeatureServer / MapServer | `featureserver`, `mapserver` |
 | OGC | OGC API Features | `ogc-features` |
+| OGC Maps | OGC API Maps | `ogc-maps` |
 | OData | OData v4 | `odata` |
 | MVT | Vector Tiles (Mapbox Vector Tiles) | `mvt` |
 | WFS | WFS 2.0 | `wfs` |
@@ -100,7 +101,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 
 † **BI lanes (OData-only):** CERT-GEOM-01, CERT-GEOM-02, CERT-SCHM-02, and CERT-QFLT-02 do not apply — these require geometry-capable protocols (FS, OGC). Record as `not-applicable` in the evidence envelope.
 
-‡‡ **JS lane current automated scope:** Vitest (Node.js) covers FeatureServer, OGC API Features, and OGC Tiles protocols via JavaScript/TypeScript client tests (`*.test.ts`). WFS 2.0 tests also run via Vitest, but the JS lane does not yet emit WFS `.cert.json` envelopes. Playwright (headless Chromium) covers CERT-RNDR rendering tests via browser-based OpenLayers map assertions (`*.spec.ts`); currently MVT only. The Python pytest suite (FeatureServer + OGC API Features) provides independent server-side protocol validation; its results may inform certification confidence but are not JS-lane client evidence. JS-lane OData and MapServer protocol automation is planned but not yet implemented; CLI-lane OData automation is now closed via the Microsoft.OData.Client xUnit certification suite (`tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs`). Until automated JS suites are added for those protocols, their CERT-\* results require manual evidence or are recorded as `skip` with a note referencing this gap.
+‡‡ **JS lane current automated scope:** Vitest (Node.js) covers FeatureServer direct JS tests plus OpenLayers protocol-client tests for OGC API Features, OGC API Maps, OGC Tiles/MVT, WFS 2.0, WMS 1.3, and WMTS 1.0 (`*.test.ts`). The OpenLayers lane emits `.cert.json` envelopes for `ogc-features`, `ogc-maps`, `mvt`, `wfs`, `wms`, and `wmts`. Playwright (headless Chromium) covers MapLibre rendering tests for MVT and an OGC API Maps image-source smoke that is skipped when no raster fixture exists. The Python pytest suite (FeatureServer + OGC API Features + GPServer + ImageServer) provides independent server-side protocol validation; its results may inform certification confidence but are not JS-lane client evidence. JS-lane OData automation is planned but not yet implemented; CLI-lane OData automation is now closed via the Microsoft.OData.Client xUnit certification suite (`tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs`). Until automated JS suites are added for those protocols, their CERT-\* results require manual evidence or are recorded as `skip` with a note referencing this gap.
 
 §§ **Esri Leaflet sub-lane scope:** The Playwright suite currently exercises the browser-visible FeatureServer and MapServer subset: connection, metadata, schema, query/filter, paging, geometry fidelity, error handling, rendering, MapServer identify, and refresh. After the visual / style slice lands (ticket #478), the suite also substantiates `CERT-RNDR-SYM-01` and `CERT-RNDR-URL-01` on the FeatureServer surface via drawingInfo metadata and per-category style assertions, and the reporter emits a 24-case common-core envelope (18 base + 6 slice) by recording unexercised CERT-\* IDs as `skip` and the MapServer query-focused IDs as `not-applicable`. On the `mapserver` envelope the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs are also recorded as `not-applicable` because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint.
 
@@ -122,6 +123,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | JS-EXT-TILES-DISC-01 | OGC Tiles landing page | MVT | pass/fail |
 | JS-EXT-TILES-DISC-02 | Collection tilesets listing | MVT | pass/fail |
 | JS-EXT-TILES-SCHM-01 | Tileset metadata introspection | MVT | pass/fail |
+| JS-EXT-OGC-MAPS-01 | OpenLayers ImageStatic targets OGC API Maps collection image endpoint | OGC Maps | pass/fail/skip |
 
 #### Esri Leaflet Browser Sub-Lane
 
@@ -183,3 +185,4 @@ All certification results must follow the standardized evidence specification in
 | 1.1.0 | 2026-04-06 | Add visual / style certification slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) per ticket #478; link slice spec |
 | 1.1.1 | 2026-04-07 | Update the `§§` Esri Leaflet sub-lane footnote to the post-#478 24-case common-core shape; document slice-ID `not-applicable` rationale on the mapserver envelope |
 | 1.1.2 | 2026-04-08 | Add JS — MapLibre (Playwright) lane for automated MapLibre GL JS browser render certification (#464) |
+| 1.1.3 | 2026-04-25 | Add OGC API Maps JS/OpenLayers evidence protocol and MapLibre image-source smoke coverage |

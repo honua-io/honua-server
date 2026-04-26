@@ -63,9 +63,9 @@ jobs:
             }
 
             // 5. Pre-PR check confirmed
-            const prePrChecked = /- \[x\].*scripts\/pre-pr-check\.sh/i.test(body);
+            const prePrChecked = /- \[x\].*scripts\/ci\/pre-pr-check\.sh/i.test(body);
             if (!prePrChecked) {
-              issues.push('**Pre-PR validation not confirmed** — run `scripts/pre-pr-check.sh` and check the box');
+              issues.push('**Pre-PR validation not confirmed** — run `scripts/ci/pre-pr-check.sh` and check the box');
             }
 
             // 6. PR title format (conventional commits)

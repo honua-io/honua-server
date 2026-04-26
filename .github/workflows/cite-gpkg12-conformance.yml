@@ -29,7 +29,7 @@ jobs:
     with:
       suite: gpkg12
       display-name: GeoPackage 1.2
-      runner-script: ./scripts/run-cite-gpkg12-tests.sh
+      runner-script: ./scripts/conformance/cite/run-cite-gpkg12-tests.sh
       results-dir: cite-gpkg12-results
       summary-file: cite-gpkg12-summary.md
       cite-profile: ${{ inputs.profile || 'default' }}

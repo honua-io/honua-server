@@ -16,7 +16,7 @@ helpers.
 ## What Stays Here
 
 - Application code, Dockerfiles, and release artifacts for `Honua.Server`
-- Post-deploy validation via `scripts/run-cloud-post-apply-validation.sh`
+- Post-deploy validation via `scripts/cloud/run-cloud-post-apply-validation.sh`
 - Reusable remote post-apply validation via
   `.github/workflows/cloud-post-apply-validation.yml`
 

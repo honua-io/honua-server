@@ -14,13 +14,13 @@ Unlike service-level conformance suites (WMS, WMTS, etc.), the GML 3.2 suite has
 
 ```bash
 # Default run
-./scripts/run-cite-gml32-tests.sh
+./scripts/conformance/cite/run-cite-gml32-tests.sh
 
 # Keep containers for debugging
-./scripts/run-cite-gml32-tests.sh --no-cleanup --verbose
+./scripts/conformance/cite/run-cite-gml32-tests.sh --no-cleanup --verbose
 
 # Interactive mode (services stay up for manual testing)
-./scripts/run-cite-gml32-tests.sh --interactive
+./scripts/conformance/cite/run-cite-gml32-tests.sh --interactive
 ```
 
 ## CI Execution
@@ -47,9 +47,9 @@ Results are written to `cite-gml32-results/`:
 ## Troubleshooting
 
 - Check app logs:
-  `docker compose -f docker/cite-gml32-compose.yml logs honua-server`
+  `docker compose -f docker/cite/gml32/compose.yml logs honua-server`
 - Check TeamEngine logs:
-  `docker compose -f docker/cite-gml32-compose.yml logs cite-runner`
+  `docker compose -f docker/cite/gml32/compose.yml logs cite-runner`
 - Verify endpoint manually:
   `curl -H 'Accept: application/gml+xml; version=3.2' http://localhost:8080/ogc/features/collections/cite:BasicPolygons/items`
 - If GML content negotiation fails, verify that `OgcFeatures` is in `enabledProtocols` for the cite service in the seed data.

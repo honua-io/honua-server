@@ -1,31 +1,40 @@
-name: Security Scans
+name: Security Nightly
 
 on:
   schedule:
-    # Run nightly to check for new vulnerabilities
-    - cron: '0 6 * * *'
+    # One nightly security lane for dependency, filesystem, and container scans.
+    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       include_transitive:
-        description: 'Include transitive dependencies'
+        description: 'Include transitive NuGet dependencies'
         type: boolean
         default: true
+
+permissions:
+  contents: read
 
 env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 concurrency:
   group: security-nightly-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  security-vulnerability-scan:
-    name: Security Vulnerability Scan
+  nuget-vulnerability-scan:
+    name: NuGet Vulnerability Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -35,40 +44,44 @@ jobs:
       - name: Restore
         run: dotnet restore Honua.sln
 
-      - name: Scan for Vulnerable NuGet Packages
+      - name: Scan for vulnerable NuGet packages
         id: nuget-scan
+        env:
+          INCLUDE_TRANSITIVE: ${{ github.event.inputs.include_transitive || 'true' }}
         run: |
-          echo "Scanning for vulnerable NuGet packages..."
+          set -euo pipefail
 
-          # Run vulnerability scan and capture output
-          if dotnet list package --vulnerable --include-transitive > vulnerability-report.txt 2>&1; then
-            echo "scan_result=success" >> $GITHUB_OUTPUT
-          else
-            echo "scan_result=failure" >> $GITHUB_OUTPUT
+          include_flag=()
+          if [ "$INCLUDE_TRANSITIVE" = "true" ]; then
+            include_flag+=(--include-transitive)
           fi
 
-          # Display the results
+          if dotnet list package --vulnerable "${include_flag[@]}" > vulnerability-report.txt 2>&1; then
+            echo "scan_result=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "scan_result=failure" >> "$GITHUB_OUTPUT"
+          fi
+
           cat vulnerability-report.txt
 
-          # Check if any high or critical vulnerabilities were found
           if grep -E "(High|Critical)" vulnerability-report.txt; then
-            echo "vulnerable_packages=true" >> $GITHUB_OUTPUT
+            echo "vulnerable_packages=true" >> "$GITHUB_OUTPUT"
             echo "::error::High or Critical vulnerabilities found in NuGet packages"
             exit 1
-          else
-            echo "vulnerable_packages=false" >> $GITHUB_OUTPUT
-            echo "No high or critical vulnerabilities found"
           fi
 
-      - name: Upload Vulnerability Report
+          echo "vulnerable_packages=false" >> "$GITHUB_OUTPUT"
+          echo "No high or critical NuGet vulnerabilities found"
+
+      - name: Upload vulnerability report
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: vulnerability-report-${{ github.run_number }}
+          name: nuget-vulnerability-report-${{ github.run_number }}
           path: vulnerability-report.txt
           retention-days: 30
 
-      - name: Create Issue on Vulnerabilities
+      - name: Create issue on vulnerabilities
         if: steps.nuget-scan.outputs.vulnerable_packages == 'true'
         uses: actions/github-script@v9
         with:
@@ -76,21 +89,20 @@ jobs:
             const title = 'Security Alert: High/Critical vulnerabilities detected';
             const body = `## Security Vulnerability Alert
 
-            The nightly security scan detected high or critical vulnerabilities in project dependencies.
+            The nightly NuGet vulnerability scan detected high or critical vulnerabilities in project dependencies.
 
-            **Scan Date**: ${{ github.run_id }}
+            **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             **Report**: Available in workflow artifacts
 
-            ### Next Steps
-            1. Review the vulnerability report in the workflow artifacts
-            2. Update affected packages to patched versions
-            3. Test updated dependencies
-            4. Monitor for additional security updates
+            ## Acceptance Criteria
+
+            - Affected packages are upgraded, removed, or explicitly risk-accepted.
+            - Security scan artifacts show no unresolved high or critical NuGet vulnerabilities.
+            - Updated dependencies pass the normal CI gate.
 
             This issue was created automatically by the nightly security scan.
             `;
 
-            // Check if similar issue already exists
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -107,8 +119,253 @@ jobs:
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: title,
-                body: body,
+                title,
+                body,
                 labels: ['security', 'automated', 'high-priority']
               });
             }
+
+  trivy-filesystem-scan:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Run Trivy SARIF scan
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-filesystem-results.sarif
+
+      - name: Upload filesystem SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-filesystem-results.sarif') != ''
+        with:
+          sarif_file: trivy-filesystem-results.sarif
+
+      - name: Upload filesystem Trivy results
+        uses: actions/upload-artifact@v7
+        if: always() && hashFiles('trivy-filesystem-results.sarif') != ''
+        with:
+          name: trivy-filesystem-results-${{ github.run_number }}
+          path: trivy-filesystem-results.sarif
+          retention-days: 30
+
+      - name: Fail on high or critical filesystem vulnerabilities
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
+  container-security-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Run Hadolint
+        id: hadolint
+        uses: hadolint/hadolint-action@v3.3.0
+        with:
+          dockerfile: Dockerfile
+          format: sarif
+          output-file: hadolint-results.sarif
+          no-color: true
+          failure-threshold: error
+
+      - name: Upload Hadolint SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('hadolint-results.sarif') != ''
+        with:
+          sarif_file: hadolint-results.sarif
+
+      - name: Build container image for security testing
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:security-test
+          cache-from: type=gha,scope=security-jit
+          cache-to: type=gha,mode=max,scope=security-jit
+
+      - name: Run container Trivy SARIF scan
+        id: trivy-sarif
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:security-test
+          format: sarif
+          output: trivy-container-results.sarif
+
+      - name: Upload container Trivy SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-container-results.sarif') != ''
+        with:
+          sarif_file: trivy-container-results.sarif
+
+      - name: Fail on high or critical container vulnerabilities
+        id: trivy-vulnerabilities
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:security-test
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+      - name: Install container-structure-test
+        run: |
+          set -euo pipefail
+          curl -LO https://storage.googleapis.com/container-structure-test/latest/container-structure-test-linux-amd64
+          chmod +x container-structure-test-linux-amd64
+          sudo mv container-structure-test-linux-amd64 /usr/local/bin/container-structure-test
+
+      - name: Create structure test config
+        run: |
+          cat > container-structure-test.yaml <<'EOF'
+          schemaVersion: 2.0.0
+
+          commandTests:
+            - name: "Check binary exists and is executable"
+              command: "ls"
+              args: ["-la", "/app/Honua.Server"]
+              expectedOutput: [".*-rwxr-xr-x.*Honua.Server"]
+
+            - name: "Check non-root user"
+              command: "whoami"
+              expectedOutput: ["honua"]
+
+            - name: "Check log directory"
+              command: "test"
+              args: ["-d", "/tmp/honua-logs"]
+
+            - name: "Check cache directory"
+              command: "test"
+              args: ["-d", "/tmp/honua-cache"]
+
+          fileExistenceTests:
+            - name: "Application binary"
+              path: "/app/Honua.Server"
+              shouldExist: true
+              permissions: "-rwxr-xr-x"
+
+          metadataTest:
+            exposedPorts: ["8080"]
+            user: "1001:1001"
+            workdir: "/app"
+          EOF
+
+      - name: Run container structure tests
+        id: structure-tests
+        run: |
+          container-structure-test test \
+            --image ${{ env.IMAGE_NAME }}:security-test \
+            --config container-structure-test.yaml
+
+      - name: Start container for runtime security analysis
+        run: |
+          docker run -d \
+            --name honua-runtime-test \
+            --read-only \
+            --tmpfs /tmp \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            -e HONUA_SKIP_MIGRATIONS=true \
+            -e ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=honua;Username=honua;Password=honua_password" \
+            -p 8080:8080 \
+            ${{ env.IMAGE_NAME }}:security-test
+
+          sleep 10
+
+      - name: Test runtime security constraints
+        id: runtime-security
+        run: |
+          set -euo pipefail
+
+          if ! docker ps --filter "name=^/honua-runtime-test$" --format '{{.Names}}' | grep -q '^honua-runtime-test$'; then
+            echo "Container exited before runtime checks."
+            docker logs honua-runtime-test || true
+            exit 1
+          fi
+
+          if docker exec honua-runtime-test touch /test-write 2>/dev/null; then
+            echo "Container filesystem is writable; expected read-only."
+            exit 1
+          fi
+
+          user="$(docker exec honua-runtime-test whoami)"
+          if [ "$user" != "honua" ]; then
+            echo "Container not running as expected user: $user"
+            exit 1
+          fi
+
+          curl -f http://localhost:8080/healthz/live
+
+      - name: Cleanup runtime test
+        if: always()
+        run: |
+          docker stop honua-runtime-test || true
+          docker rm honua-runtime-test || true
+
+      - name: Generate container security summary
+        if: always()
+        run: |
+          status_line() {
+            name="$1"
+            status="$2"
+            case "$status" in
+              success) echo "- ${name}: passed" ;;
+              failure) echo "- ${name}: failed" ;;
+              cancelled) echo "- ${name}: cancelled" ;;
+              skipped) echo "- ${name}: skipped" ;;
+              *) echo "- ${name}: ${status}" ;;
+            esac
+          }
+
+          {
+            echo "# Container Security Report"
+            echo
+            echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "**Commit**: ${{ github.sha }}"
+            echo "**Image**: ${{ env.IMAGE_NAME }}:security-test"
+            echo
+            echo "## Checks"
+            status_line "Dockerfile security analysis (Hadolint)" "${{ steps.hadolint.outcome }}"
+            status_line "Container vulnerability scan (Trivy)" "${{ steps.trivy-vulnerabilities.outcome }}"
+            status_line "Container structure tests" "${{ steps.structure-tests.outcome }}"
+            status_line "Runtime security analysis" "${{ steps.runtime-security.outcome }}"
+            echo
+            echo "## Runtime features checked"
+            echo "- Non-root user execution"
+            echo "- Read-only filesystem"
+            echo "- Minimal Linux capabilities"
+            echo "- No privilege escalation"
+            echo "- Liveness endpoint under constrained runtime"
+          } > container-security-report.md
+
+      - name: Upload container security artifacts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: container-security-results-${{ github.run_number }}
+          path: |
+            container-security-report.md
+            hadolint-results.sarif
+            trivy-container-results.sarif
+          retention-days: 30

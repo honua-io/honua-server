@@ -16,7 +16,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
   "server_version": "<honua-server version/commit>",
   "client_lane": "<js|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel|ci-desktop|ci-bi>",
   "client_version": "<client tool version>",
-  "protocol": "<featureserver|mapserver|ogc-features|odata|mvt|wms|wmts|admin-api>",
+  "protocol": "<featureserver|mapserver|ogc-features|odata|mvt|wfs|wms|wmts|admin-api>",
   "environment": "<local|ci|staging>",
   "results": [
     {
@@ -127,7 +127,7 @@ docs/gis/certification-evidence/20260316T1430Z/
 └── 20260316T1430Z-bi-excel-odata.cert.json
 ```
 
-The JS lane covers FeatureServer, OGC API Features, and OGC Tiles protocols via Vitest, plus CERT-RNDR rendering via Playwright (MVT only). WFS 2.0 tests also run via Vitest, but the JS lane does not yet emit WFS `.cert.json` evidence files. The Esri Leaflet sub-lane adds Playwright-generated `*-js-featureserver.cert.json` and `*-js-mapserver.cert.json` evidence (written to `tests/js-browser/evidence/`, not this curated directory). Additional protocols (OData) will produce evidence files once automated suites are added.
+The JS lane covers FeatureServer direct JS tests and OpenLayers protocol-client tests for OGC API Features, OGC API Maps, OGC Tiles/MVT, WFS 2.0, WMS 1.3, and WMTS 1.0 via Vitest, plus browser rendering via Playwright for MVT and an OGC API Maps image-source smoke. The OpenLayers lane emits `*-js-ogc-features.cert.json`, `*-js-ogc-maps.cert.json`, `*-js-mvt.cert.json`, `*-js-wfs.cert.json`, `*-js-wms.cert.json`, and `*-js-wmts.cert.json` evidence files. The Esri Leaflet sub-lane adds Playwright-generated `*-js-featureserver.cert.json` and `*-js-mapserver.cert.json` evidence (written to `tests/js-browser/evidence/`, not this curated directory). Additional protocols (OData) will produce evidence files once automated suites are added.
 
 The CLI lane lists FeatureServer, OGC API Features, OData, and Admin API evidence files. The OData envelope (`*-cli-odata.cert.json`) is produced automatically by `tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs` (Microsoft.OData.Client 8.4.3) on every `test-all` run; FeatureServer and OGC API Features files will follow once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added to those suites; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
 
@@ -182,6 +182,7 @@ This section describes how each evidence source will map to the evidence envelop
 |---|---|---|
 | Vitest JSON reporter | JS | Automated: map `describe`/`it` blocks to CERT-\* IDs via test name convention |
 | Playwright browser test | JS (MVT) | Automated: headless Chromium renders OGC Tiles via OpenLayers, records CERT-RNDR-01 and JS-EXT-02 |
+| OpenLayers OGC API Maps test | JS (OGC Maps) | Automated: `tests/js/openlayers/maps/` configures `ol/source/ImageStatic` against `/ogc/maps`, records discovery/error handling, and records render as `skip` when the live collection has no raster fixture |
 | Playwright cert reporter | JS (Esri Leaflet) | Automated: custom Playwright reporter extracts `[CERT-*]` and `[EL-EXT-*]` annotations from test titles and writes per-protocol envelopes for `featureserver` and `mapserver`. Uses `client_lane: "js"`. See [Esri Leaflet evidence note](#esri-leaflet-evidence-note) below. |
 | pytest markers | CLI | Planned: add `@pytest.mark.cert("CERT-CONN-01")` markers and map to result entries |
 | xUnit attributes | CLI | Live (OData lane): each test in `tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs` carries `[Trait("CertId", "CERT-…")]` alongside `[Protocol]`, and the class fixture flushes a `<run-id>-cli-odata.cert.json` envelope to `tests/TestResults/`. Filter the lane in isolation with `dotnet test --filter "CertId~CERT-"` |
@@ -316,3 +317,4 @@ This manual workflow predates the automated suite above and remains as a fallbac
 | 1.0.13 | 2026-04-06 | Document the visual / style certification slice append-only IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) and update the example envelope template to the new 24-case core total |
 | 1.0.14 | 2026-04-07 | Update the Esri Leaflet evidence note to reference the 24-case common-core total and document slice-ID `not-applicable` on the mapserver envelope |
 | 1.0.15 | 2026-04-08 | Add MapLibre MVT automated workflow section for the Playwright suite landed by ticket `#464`; retarget the version-matrix footnote and integration-mapping row at the new anchor |
+| 1.0.16 | 2026-04-25 | Add OGC API Maps OpenLayers evidence envelope and MapLibre image-source smoke coverage note |

@@ -64,7 +64,7 @@ jobs:
 
       - name: Baseline regression gate
         run: |
-          bash scripts/check-parity-scorecard-regression.sh \
+          bash scripts/ci/check-parity-scorecard-regression.sh \
             artifacts/parity/current-scorecard.json \
             tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json
 

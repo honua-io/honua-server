@@ -31,10 +31,10 @@ jobs:
     with:
       suite: wmts
       display-name: WMTS
-      runner-script: ./scripts/run-cite-wmts-tests.sh
+      runner-script: ./scripts/conformance/cite/run-cite-wmts-tests.sh
       results-dir: cite-wmts-results
       summary-file: cite-wmts-summary.md
       timeout-seconds: 2400
       job-timeout-minutes: 45
       cite-profile: ${{ inputs.profile || 'default' }}
-      extra-artifact-paths: docker/cite-wmts-config/
+      extra-artifact-paths: docker/cite/wmts10/config/

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Buffers;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -37,6 +38,8 @@ internal sealed partial class OgcFeaturesGeometryServices
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _logger = logger;
     }
+
+    public bool CanUsePreformattedGeoJson => _geometryLimits.SimplifyTolerance is not > 0;
 
     /// <summary>
     /// Result of geometry WKB creation operation.
@@ -86,6 +89,32 @@ internal sealed partial class OgcFeaturesGeometryServices
 
         try
         {
+            using var document = JsonDocument.Parse(geoJson);
+            var root = document.RootElement;
+
+            if (root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("type", out var typeElement) &&
+                typeElement.ValueKind == JsonValueKind.String)
+            {
+                var type = typeElement.GetString();
+                if (string.IsNullOrWhiteSpace(type))
+                {
+                    return null;
+                }
+
+                var validationResult = OgcGeoJsonGeometryShapeValidator.GetValidationResult(root, type);
+                if (validationResult == GeometryShapeValidationResult.Invalid)
+                {
+                    return null;
+                }
+
+                if (validationResult == GeometryShapeValidationResult.Valid &&
+                    TryConvertGeoJsonWithoutNts(root, type, axisOrder, out var fastPathGeometry))
+                {
+                    return fastPathGeometry;
+                }
+            }
+
             var reader = new GeoJsonReader();
             var geometry = reader.Read<Geometry>(geoJson);
             if (geometry == null)
@@ -95,10 +124,178 @@ internal sealed partial class OgcFeaturesGeometryServices
 
             return ConvertGeometryToSimpleGeometry(geometry, axisOrder);
         }
-        catch (Exception ex) when (ex is ParseException or FormatException or JsonException or Newtonsoft.Json.JsonException)
+        catch (Exception ex) when (ex is ParseException or FormatException or InvalidOperationException or JsonException or Newtonsoft.Json.JsonException)
         {
             return null;
         }
+    }
+
+    private bool TryConvertGeoJsonWithoutNts(
+        JsonElement root,
+        string type,
+        AxisOrder axisOrder,
+        out SimpleGeoJsonGeometry? geometry)
+    {
+        geometry = null;
+
+        if (_geometryLimits.SimplifyTolerance is > 0)
+        {
+            return false;
+        }
+
+        var precision = Math.Clamp(_geometryLimits.MaxCoordinatePrecision, 0, 15);
+        string? coordinatesJson = null;
+        string? geometriesJson = null;
+
+        if (root.TryGetProperty("coordinates", out var coordinatesElement))
+        {
+            coordinatesJson = RewriteCoordinatesJson(coordinatesElement, axisOrder, precision);
+        }
+
+        if (root.TryGetProperty("geometries", out var geometriesElement))
+        {
+            geometriesJson = RewriteGeometriesJson(geometriesElement, axisOrder, precision);
+        }
+
+        geometry = new SimpleGeoJsonGeometry
+        {
+            Type = type,
+            CoordinatesJson = coordinatesJson,
+            GeometriesJson = geometriesJson
+        };
+        return true;
+    }
+
+    private static string RewriteCoordinatesJson(
+        JsonElement coordinatesElement,
+        AxisOrder axisOrder,
+        int precision)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using var writer = new Utf8JsonWriter(buffer);
+        WriteCoordinateNode(writer, coordinatesElement, axisOrder, precision);
+        writer.Flush();
+        return System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
+    private static string RewriteGeometriesJson(
+        JsonElement geometriesElement,
+        AxisOrder axisOrder,
+        int precision)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using var writer = new Utf8JsonWriter(buffer);
+        writer.WriteStartArray();
+        foreach (var geometryElement in geometriesElement.EnumerateArray())
+        {
+            WriteGeometryElement(writer, geometryElement, axisOrder, precision);
+        }
+        writer.WriteEndArray();
+        writer.Flush();
+        return System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
+    private static void WriteGeometryElement(
+        Utf8JsonWriter writer,
+        JsonElement geometryElement,
+        AxisOrder axisOrder,
+        int precision)
+    {
+        writer.WriteStartObject();
+
+        foreach (var property in geometryElement.EnumerateObject())
+        {
+            writer.WritePropertyName(property.Name);
+            if (property.NameEquals("coordinates"))
+            {
+                WriteCoordinateNode(writer, property.Value, axisOrder, precision);
+            }
+            else if (property.NameEquals("geometries"))
+            {
+                writer.WriteStartArray();
+                foreach (var childGeometry in property.Value.EnumerateArray())
+                {
+                    WriteGeometryElement(writer, childGeometry, axisOrder, precision);
+                }
+                writer.WriteEndArray();
+            }
+            else
+            {
+                property.Value.WriteTo(writer);
+            }
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteCoordinateNode(
+        Utf8JsonWriter writer,
+        JsonElement node,
+        AxisOrder axisOrder,
+        int precision)
+    {
+        if (node.ValueKind != JsonValueKind.Array)
+        {
+            node.WriteTo(writer);
+            return;
+        }
+
+        if (IsPositionArray(node))
+        {
+            WritePosition(writer, node, axisOrder, precision);
+            return;
+        }
+
+        writer.WriteStartArray();
+        foreach (var child in node.EnumerateArray())
+        {
+            WriteCoordinateNode(writer, child, axisOrder, precision);
+        }
+        writer.WriteEndArray();
+    }
+
+    private static bool IsPositionArray(JsonElement node)
+    {
+        using var enumerator = node.EnumerateArray();
+        if (!enumerator.MoveNext())
+        {
+            return false;
+        }
+
+        return enumerator.Current.ValueKind == JsonValueKind.Number;
+    }
+
+    private static void WritePosition(
+        Utf8JsonWriter writer,
+        JsonElement positionElement,
+        AxisOrder axisOrder,
+        int precision)
+    {
+        var ordinates = new List<double>(4);
+        foreach (var ordinate in positionElement.EnumerateArray())
+        {
+            if (ordinate.ValueKind != JsonValueKind.Number)
+            {
+                continue;
+            }
+
+            ordinates.Add(Math.Round(ordinate.GetDouble(), precision, MidpointRounding.AwayFromZero));
+        }
+
+        writer.WriteStartArray();
+        for (var i = 0; i < ordinates.Count; i++)
+        {
+            var sourceIndex = axisOrder == AxisOrder.NorthEast && ordinates.Count >= 2
+                ? i switch
+                {
+                    0 => 1,
+                    1 => 0,
+                    _ => i
+                }
+                : i;
+            writer.WriteNumberValue(ordinates[sourceIndex]);
+        }
+        writer.WriteEndArray();
     }
 
     private SimpleGeoJsonGeometry ConvertGeometryToSimpleGeometry(Geometry geometry, AxisOrder axisOrder)

@@ -23,13 +23,13 @@ The CITE test suite validates that Honua Server correctly implements the OGC API
 
 ```bash
 # Run all conformance tests
-./scripts/run-cite-tests.sh
+./scripts/conformance/cite/run-cite-tests.sh
 
 # Run with specific options
-./scripts/run-cite-tests.sh --verbose --no-cleanup
+./scripts/conformance/cite/run-cite-tests.sh --verbose --no-cleanup
 
 # Interactive mode (keep services running for manual testing)
-./scripts/run-cite-tests.sh --interactive
+./scripts/conformance/cite/run-cite-tests.sh --interactive
 ```
 
 ### Running in CI
@@ -64,7 +64,7 @@ Tests core OGC API Features 1.0 conformance classes:
 
 ### Test Parameters
 
-The CITE test suite is configured via `docker/cite-config/test-params.xml`:
+The CITE test suite is configured via `docker/cite/ogc-api-features/config/test-params.xml`:
 
 ```xml
 <values xmlns:parsers="http://www.occamlab.com/te/parsers">
@@ -140,7 +140,7 @@ For conformance runs:
 ```
 
 **Solutions**:
-- Check Docker container logs: `docker compose -f docker/cite-compose.yml logs honua-server`
+- Check Docker container logs: `docker compose -f docker/cite/ogc-api-features/compose.yml logs honua-server`
 - Verify database connectivity
 - Ensure ports 8080-8081 are available
 - Check disk space and memory availability
@@ -212,13 +212,13 @@ Run tests with detailed logging:
 
 ```bash
 # Enable verbose output
-./scripts/run-cite-tests.sh --verbose
+./scripts/conformance/cite/run-cite-tests.sh --verbose
 
 # Keep containers running for investigation
-./scripts/run-cite-tests.sh --no-cleanup
+./scripts/conformance/cite/run-cite-tests.sh --no-cleanup
 
 # Interactive mode with manual testing
-./scripts/run-cite-tests.sh --interactive
+./scripts/conformance/cite/run-cite-tests.sh --interactive
 ```
 
 In interactive mode, access services directly:
@@ -232,7 +232,7 @@ For detailed investigation:
 
 1. Start services in interactive mode:
    ```bash
-   ./scripts/run-cite-tests.sh --interactive
+   ./scripts/conformance/cite/run-cite-tests.sh --interactive
    ```
 
 2. Access CITE Team Engine at http://localhost:8081/teamengine
@@ -279,7 +279,7 @@ Consider adding CITE validation to pre-commit hooks:
 # .git/hooks/pre-push
 
 # Quick conformance check before push
-if ! ./scripts/run-cite-tests.sh --profile minimal --no-cleanup; then
+if ! ./scripts/conformance/cite/run-cite-tests.sh --profile minimal --no-cleanup; then
     echo "❌ CITE conformance tests failed"
     echo "Fix conformance issues before pushing"
     exit 1
@@ -292,10 +292,10 @@ Before releases, run comprehensive testing:
 
 ```bash
 # Full conformance validation
-./scripts/run-cite-tests.sh --profile full --verbose
+./scripts/conformance/cite/run-cite-tests.sh --profile full --verbose
 
 # Security scanning
-./scripts/run-security-scan.sh
+./scripts/security/verify-security-fixes.sh
 ```
 
 ## Conformance Classes Reference

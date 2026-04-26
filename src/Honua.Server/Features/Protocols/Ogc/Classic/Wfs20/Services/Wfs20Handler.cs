@@ -1238,7 +1238,13 @@ internal sealed partial class Wfs20Handler
         {
             Geometry = BboxWkbWriter.Write(geometry),
             Srid = crsDefinition.Srid,
-            SpatialRelationship = SpatialRelationship.Intersects
+            SpatialRelationship = SpatialRelationship.Intersects,
+            IsSimpleEnvelope = minX <= maxX,
+            AllowEnvelopeOnly = minX <= maxX,
+            EnvelopeMinX = minX <= maxX ? minX : null,
+            EnvelopeMinY = minX <= maxX ? minY : null,
+            EnvelopeMaxX = minX <= maxX ? maxX : null,
+            EnvelopeMaxY = minX <= maxX ? maxY : null
         };
     }
 

@@ -201,5 +201,5 @@ jobs:
           HONUA_SCALE_TEST_SERVICE_ID: ${{ inputs.scale_test_service_id }}
           HONUA_SCALE_TEST_REDIS: ${{ inputs.scale_test_redis }}
         run: |
-          chmod +x scripts/run-cloud-post-apply-validation.sh
-          ./scripts/run-cloud-post-apply-validation.sh
+          chmod +x scripts/cloud/run-cloud-post-apply-validation.sh
+          ./scripts/cloud/run-cloud-post-apply-validation.sh

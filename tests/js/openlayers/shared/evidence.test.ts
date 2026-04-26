@@ -7,6 +7,10 @@
 import { describe, it, expect } from 'vitest';
 import { EvidenceCollector } from './evidence';
 
+function createIsolatedCollector(protocol: string): EvidenceCollector {
+  return new EvidenceCollector(protocol, { mergeExisting: false });
+}
+
 describe('EvidenceCollector', () => {
   // -----------------------------------------------------------------------
   // Core CERT: pending-attempt guard
@@ -14,7 +18,7 @@ describe('EvidenceCollector', () => {
 
   describe('core attempt guard with duplicate IDs', () => {
     it('emits fail when second attempt for same ID is not recorded', () => {
-      const c = new EvidenceCollector('ogc-features');
+      const c = createIsolatedCollector('ogc-features');
 
       // Test A: attempt + record pass → matched
       c.attempt('CERT-CONN-01');
@@ -32,7 +36,7 @@ describe('EvidenceCollector', () => {
     });
 
     it('preserves pass when all attempts are matched by records', () => {
-      const c = new EvidenceCollector('ogc-features');
+      const c = createIsolatedCollector('ogc-features');
 
       c.attempt('CERT-CONN-01');
       c.record('CERT-CONN-01', 'pass', { notes: 'test A' });
@@ -47,7 +51,7 @@ describe('EvidenceCollector', () => {
     });
 
     it('single unmatched attempt without any record emits fail', () => {
-      const c = new EvidenceCollector('ogc-features');
+      const c = createIsolatedCollector('ogc-features');
 
       c.attempt('CERT-DISC-01');
       // (test throws)
@@ -59,7 +63,7 @@ describe('EvidenceCollector', () => {
     });
 
     it('unattempted applicable ID emits skip', () => {
-      const c = new EvidenceCollector('ogc-features');
+      const c = createIsolatedCollector('ogc-features');
 
       const envelope = c.build();
       const result = envelope.results.find(r => r.test_case_id === 'CERT-DISC-01');
@@ -74,7 +78,7 @@ describe('EvidenceCollector', () => {
 
   describe('extension attempt guard with duplicate IDs', () => {
     it('emits fail when second extension attempt is not recorded', () => {
-      const c = new EvidenceCollector('mvt');
+      const c = createIsolatedCollector('mvt');
 
       // Test A: attempt + record pass → matched
       c.attemptExtension('JS-EXT-01');
@@ -92,7 +96,7 @@ describe('EvidenceCollector', () => {
     });
 
     it('preserves pass when all extension attempts are matched', () => {
-      const c = new EvidenceCollector('mvt');
+      const c = createIsolatedCollector('mvt');
 
       c.attemptExtension('JS-EXT-01');
       c.recordExtension('JS-EXT-01', 'pass', { notes: 'test A' });
@@ -107,7 +111,7 @@ describe('EvidenceCollector', () => {
     });
 
     it('fail-wins: record(fail) followed by unmatched attempt still fails', () => {
-      const c = new EvidenceCollector('mvt');
+      const c = createIsolatedCollector('mvt');
 
       c.attemptExtension('JS-EXT-01');
       c.recordExtension('JS-EXT-01', 'fail', { notes: 'test A failed' });
@@ -128,7 +132,7 @@ describe('EvidenceCollector', () => {
 
   describe('fail-wins precedence', () => {
     it('core: fail is not overwritten by later pass', () => {
-      const c = new EvidenceCollector('ogc-features');
+      const c = createIsolatedCollector('ogc-features');
 
       c.attempt('CERT-CONN-01');
       c.record('CERT-CONN-01', 'fail', { notes: 'first: fail' });
@@ -143,7 +147,7 @@ describe('EvidenceCollector', () => {
     });
 
     it('extension: fail is not overwritten by later pass', () => {
-      const c = new EvidenceCollector('mvt');
+      const c = createIsolatedCollector('mvt');
 
       c.attemptExtension('JS-EXT-01');
       c.recordExtension('JS-EXT-01', 'fail', { notes: 'first: fail' });

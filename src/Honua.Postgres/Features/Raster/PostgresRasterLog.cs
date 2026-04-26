@@ -124,4 +124,10 @@ internal static partial class PostgresRasterLog
         Level = LogLevel.Debug,
         Message = "Computed surface raster ({Operation}) from layer {LayerId}, source raster {SourceRasterId} → output raster {OutputRasterId} in layer {OutputLayerId}")]
     public static partial void SurfaceRasterComputed(ILogger logger, string operation, int layerId, long sourceRasterId, int outputLayerId, long outputRasterId);
+
+    [LoggerMessage(
+        EventId = 7819,
+        Level = LogLevel.Debug,
+        Message = "Raster storage table {TableName} is unavailable; returning an empty raster result.")]
+    public static partial void RasterStorageUnavailable(ILogger logger, Exception ex, string tableName);
 }

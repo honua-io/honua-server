@@ -5,6 +5,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Features.Metadata;
 
@@ -33,7 +34,7 @@ public static class MetadataServiceCollectionExtensions
     /// <typeparam name="TFormatter">The formatter implementation</typeparam>
     /// <param name="services">The service collection to add services to</param>
     /// <returns>The service collection for method chaining</returns>
-    public static IServiceCollection AddCapabilitiesFormatter<TCapabilities, TFormatter>(
+    public static IServiceCollection AddCapabilitiesFormatter<TCapabilities, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TFormatter>(
         this IServiceCollection services)
         where TFormatter : class, ICapabilitiesFormatter<TCapabilities>
     {
@@ -48,7 +49,7 @@ public static class MetadataServiceCollectionExtensions
     /// <typeparam name="TFormatter">The formatter implementation</typeparam>
     /// <param name="services">The service collection to add services to</param>
     /// <returns>The service collection for method chaining</returns>
-    public static IServiceCollection AddGlobalCapabilitiesFormatter<TCapabilities, TFormatter>(
+    public static IServiceCollection AddGlobalCapabilitiesFormatter<TCapabilities, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TFormatter>(
         this IServiceCollection services)
         where TFormatter : class, IGlobalCapabilitiesFormatter<TCapabilities>
     {
@@ -63,7 +64,7 @@ public static class MetadataServiceCollectionExtensions
     /// <typeparam name="TFormatter">The formatter implementation</typeparam>
     /// <param name="services">The service collection to add services to</param>
     /// <returns>The service collection for method chaining</returns>
-    public static IServiceCollection AddMultiFormatCapabilitiesFormatter<TCapabilities, TFormatter>(
+    public static IServiceCollection AddMultiFormatCapabilitiesFormatter<TCapabilities, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TFormatter>(
         this IServiceCollection services)
         where TFormatter : class, IMultiFormatCapabilitiesFormatter<TCapabilities>
     {

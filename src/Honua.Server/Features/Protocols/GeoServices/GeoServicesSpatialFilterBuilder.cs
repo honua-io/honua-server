@@ -41,11 +41,25 @@ internal static class GeoServicesSpatialFilterBuilder
                 inputSrid);
         }
 
+        var isSimpleEnvelope = geometry is
+        {
+            Xmin: not null,
+            Ymin: not null,
+            Xmax: not null,
+            Ymax: not null
+        } && geometry.Xmin.Value <= geometry.Xmax.Value;
+
         return new SpatialFilter
         {
             Geometry = wkbBytes,
             SpatialRelationship = relationship,
-            Srid = inputSrid
+            Srid = inputSrid,
+            IsSimpleEnvelope = isSimpleEnvelope,
+            AllowEnvelopeOnly = relationship == SpatialRelationship.EnvelopeIntersects && isSimpleEnvelope,
+            EnvelopeMinX = isSimpleEnvelope ? geometry.Xmin : null,
+            EnvelopeMinY = isSimpleEnvelope ? geometry.Ymin : null,
+            EnvelopeMaxX = isSimpleEnvelope ? geometry.Xmax : null,
+            EnvelopeMaxY = isSimpleEnvelope ? geometry.Ymax : null
         };
     }
 

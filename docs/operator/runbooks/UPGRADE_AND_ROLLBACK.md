@@ -51,7 +51,7 @@ Single-instance deployments are not zero-downtime. Use a maintenance window or s
 5. Run post-deploy verification:
 
 ```bash
-BASE_URL=https://<host> ADMIN_API_KEY=<admin-key> ./scripts/post-deployment-verification.sh
+BASE_URL=https://<host> ADMIN_API_KEY=<admin-key> ./scripts/cloud/post-deployment-verification.sh
 ```
 
 If the deployment uses OIDC rather than API keys, pass a full auth header instead:
@@ -59,7 +59,7 @@ If the deployment uses OIDC rather than API keys, pass a full auth header instea
 ```bash
 BASE_URL=https://<host> \
   ADMIN_AUTH_HEADER="Authorization: Bearer <token>" \
-  ./scripts/post-deployment-verification.sh
+  ./scripts/cloud/post-deployment-verification.sh
 ```
 
 If the new container does not become ready, restart the previous image immediately.
@@ -96,20 +96,20 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 Optional scripted path:
 
 ```bash
-ADMIN_API_KEY=<admin-key> ./scripts/deploy-rolling.sh ghcr.io/honua-io/honua-server:<tag>
+ADMIN_API_KEY=<admin-key> ./scripts/cloud/deploy-rolling.sh ghcr.io/honua-io/honua-server:<tag>
 ```
 
 After rollout:
 - verify `/healthz/live` and `/healthz/ready`
 - check `/api/v1/admin/deploy/preflight`
-- run `./scripts/post-deployment-verification.sh`
+- run `./scripts/cloud/post-deployment-verification.sh`
 
 `deploy-rolling.sh` port-forwards the upgraded deployment and runs the same verification suite against the instance-local control-plane APIs. Use `ADMIN_AUTH_HEADER` instead of `ADMIN_API_KEY` when Bearer auth is enabled.
 
 For a validated canary rehearsal, use the scale-test Nginx edge:
 
 ```bash
-./scripts/scale-test.sh --test canary
+./scripts/scale/scale-test.sh --test canary
 ```
 
 That rehearsal:
@@ -119,7 +119,7 @@ That rehearsal:
 - triggers rollback automatically when the canary lane degrades
 - can use a configured Prometheus-compatible telemetry connection as the real rollback signal source in non-local environments
 
-`./scripts/deploy-canary.sh` remains a cluster-specific helper for environments that already have an external traffic-splitting substrate, but the scale-test path above is the canary flow validated in-repo for `#388`.
+`./scripts/cloud/deploy-canary.sh` remains a cluster-specific helper for environments that already have an external traffic-splitting substrate, but the scale-test path above is the canary flow validated in-repo for `#388`.
 
 ---
 
@@ -262,10 +262,10 @@ Use application rollback whenever:
 Kubernetes rollback:
 
 ```bash
-ADMIN_API_KEY=<admin-key> ./scripts/rollback-deployment.sh
+ADMIN_API_KEY=<admin-key> ./scripts/cloud/rollback-deployment.sh
 
 # Or target a specific revision
-ADMIN_API_KEY=<admin-key> ./scripts/rollback-deployment.sh <revision>
+ADMIN_API_KEY=<admin-key> ./scripts/cloud/rollback-deployment.sh <revision>
 ```
 
 `rollback-deployment.sh` verifies health and reruns post-deploy checks through a local port-forward before declaring recovery complete.
@@ -296,8 +296,8 @@ If database restore is required:
 Use the scale-test environment to rehearse multi-instance behavior before production changes:
 
 ```bash
-./scripts/scale-test.sh --test rollback
-./scripts/scale-test.sh --test canary
+./scripts/scale/scale-test.sh --test rollback
+./scripts/scale/scale-test.sh --test canary
 ```
 
 This environment is the right place to validate:

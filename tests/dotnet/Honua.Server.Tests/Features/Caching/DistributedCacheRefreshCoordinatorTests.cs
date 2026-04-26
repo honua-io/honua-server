@@ -329,8 +329,14 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         var completed = await Task.WhenAny(refreshed.Task, Task.Delay(TimeSpan.FromSeconds(5)));
         completed.Should().Be(refreshed.Task);
 
-        // Wait for error processing
-        await Task.Delay(100);
+        // Poll for the failure bookkeeping to settle instead of a fixed wait.
+        // The refresh callback signals before the background task reaches its
+        // exception handler, and that gap can exceed 100ms under CI load.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTime.UtcNow < deadline && coordinator.FailureCount == 0)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
 
         coordinator.FailureCount.Should().Be(1);
         coordinator.SuccessCount.Should().Be(0);

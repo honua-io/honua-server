@@ -232,7 +232,6 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/generateKml")]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/generateKml")]
     public async Task MapServer_GenerateKml_ReturnsValidKml_ForPointLineAndPolygonLayers()
     {
         var serviceName = await SeedGenerateKmlGeometryServiceAsync();
@@ -250,6 +249,30 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         document.Descendants(kml + "Point").Should().NotBeEmpty();
         document.Descendants(kml + "LineString").Should().NotBeEmpty();
         document.Descendants(kml + "Polygon").Should().NotBeEmpty();
+        document.Descendants(kml + "Placemark").Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/generateKml")]
+    public async Task MapServer_GenerateKml_Post_ReturnsValidKml()
+    {
+        var serviceName = await SeedGenerateKmlGeometryServiceAsync();
+
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "kml"
+        });
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{serviceName}/MapServer/generateKml",
+            form);
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.google-earth.kml+xml");
+
+        var document = XDocument.Parse(content);
+        XNamespace kml = "http://www.opengis.net/kml/2.2";
         document.Descendants(kml + "Placemark").Should().NotBeEmpty();
     }
 

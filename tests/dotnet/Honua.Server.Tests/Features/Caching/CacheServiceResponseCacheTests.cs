@@ -99,24 +99,6 @@ public sealed class CacheServiceResponseCacheTests
                     "response-version:query:odata:layer:42"
                 ])];
 
-        yield return [
-            new CacheNamespaceCase(
-                Name: "static-map",
-                CacheKey: "response:render:staticmap:service:alpha:abc123",
-                Pattern: "response:render:staticmap:service:alpha:*",
-                VersionValues: new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["response-version:render:staticmap"] = "g",
-                    ["response-version:render:staticmap:service:alpha"] = "s1"
-                },
-                ExpectedStorageKey: "response:render:staticmap:service:alpha:abc123:v:g:s1",
-                ExpectedVersionLookups: [
-                    "response-version:render:staticmap",
-                    "response-version:render:staticmap:service:alpha"
-                ],
-                ExpectedVersionWrites: [
-                    "response-version:render:staticmap:service:alpha"
-                ])];
     }
 
     public sealed record CacheNamespaceCase(

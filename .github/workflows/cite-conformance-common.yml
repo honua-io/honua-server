@@ -1,10 +1,10 @@
 # Reusable workflow for single-suite OGC CITE conformance runs.
 #
-# The KML 2.2 / GeoPackage 1.2 / GML 3.2 / WMS 1.3 / WMTS 1.0 suites all shared
+# The CITE suites all shared
 # the same ~100-line skeleton — this workflow consolidates them so each dispatcher
 # file only has to declare its schedule, display name, and a handful of suite-
-# specific paths. OGC API Features, OGC API Tiles, and WFS 2.0 diverge enough
-# that they keep their own standalone workflows.
+# specific paths. WFS 2.0 still keeps a standalone workflow because it has a
+# profile matrix, extra Team Engine setup, and custom check-summary publishing.
 
 name: CITE Conformance (reusable)
 
@@ -48,6 +48,11 @@ on:
         default: 'default'
       extra-artifact-paths:
         description: 'Additional newline-separated paths to include in the results artifact'
+        required: false
+        type: string
+        default: ''
+      validation-command:
+        description: 'Optional shell command to run after the suite completes and before result parsing'
         required: false
         type: string
         default: ''
@@ -97,6 +102,10 @@ jobs:
             echo "CITE tests failed with exit code: ${cite_exit_code:-0}"
             exit 1
           fi
+
+      - name: Run suite validation command
+        if: inputs.validation-command != ''
+        run: ${{ inputs.validation-command }}
 
       - name: Parse CITE results
         id: parse-results

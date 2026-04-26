@@ -84,7 +84,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WithValidRequest_AppliesEditsAndReturnsResponse()
     {
@@ -143,7 +143,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WhenEventPublishFails_ReturnsResponse()
     {
@@ -189,7 +189,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WithMissingUpdateObjectId_ThrowsInvalidArgument()
     {
@@ -214,7 +214,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_GrpcDisabled_ThrowsNotFoundRpcException()
     {
@@ -244,7 +244,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WithoutAuthentication_ThrowsUnauthenticatedRpcException()
     {
@@ -265,7 +265,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WithoutDataEditorRole_ThrowsPermissionDeniedRpcException()
     {
@@ -287,7 +287,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_AnonymousWritePolicyWithoutAuthentication_AllowsWrite()
     {
@@ -331,7 +331,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_AnonymousWriteLayerPolicyWithoutAuthentication_AllowsWrite()
     {
@@ -379,7 +379,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_LayerWriteRolePolicyWithoutDataEditorRole_AllowsWrite()
     {
@@ -427,7 +427,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithWhereClause_ReturnsFeatures()
     {
         var features = ImmutableArray.Create(
@@ -452,7 +452,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_CountOnly_ReturnsCountWithNoFeatures()
     {
         _featureReader.CountAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -473,7 +473,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_IdsOnly_ReturnsObjectIds()
     {
         _featureReader.QueryObjectIdsAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -495,7 +495,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ExtentOnly_ReturnsExtent()
     {
         _featureReader.GetExtentAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -519,7 +519,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_InvalidService_ThrowsNotFoundRpcException()
     {
         _resourceValidator
@@ -540,7 +540,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_GrpcDisabled_ThrowsNotFoundRpcException()
     {
         var grpcDisabledService = _testService with
@@ -569,7 +569,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_AnonymousUserOnProtectedService_ThrowsUnauthenticatedRpcException()
     {
         var protectedService = _testService with
@@ -598,7 +598,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_UserWithoutRequiredRole_ThrowsPermissionDeniedRpcException()
     {
         var protectedService = _testService with
@@ -630,7 +630,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ExceededTransferLimit_SetsFlag()
     {
         var features = ImmutableArray.Create(Feature.Create(1, null));
@@ -650,7 +650,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ReturnGeometryFalse_OmitsGeometryFromResponse()
     {
         var geometry = new WKBWriter().Write(new Point(10, 20));
@@ -672,7 +672,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithOutSr_UsesRequestedSpatialReference()
     {
         var features = ImmutableArray.Create(Feature.Create(1, null));
@@ -698,7 +698,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithWktOutSr_ResolvesSridViaCrsDetection()
     {
         _crsDetectionService.DetectFromWktAsync(Arg.Any<string>())
@@ -725,7 +725,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithInvalidOutSr_ThrowsInvalidArgument()
     {
         var request = new Proto.QueryFeaturesRequest
@@ -743,7 +743,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithUnsupportedWkidOutSr_ThrowsInvalidArgument()
     {
 #pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
@@ -767,7 +767,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithoutResultRecordCount_AppliesConfiguredDefaultLimit()
     {
         var features = ImmutableArray.Create(Feature.Create(1, null));
@@ -789,7 +789,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_LimitAboveConfiguredMaximum_ThrowsInvalidArgument()
     {
         var request = new Proto.QueryFeaturesRequest
@@ -807,7 +807,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_StreamsPages()
     {
         var features = Enumerable.Range(1, 5)
@@ -841,7 +841,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithUnsupportedSpatialFilterWkid_ThrowsInvalidArgument()
     {
 #pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
@@ -873,7 +873,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithSpatialFilterLatestWkid_PrefersLatestWkidOverWkid()
     {
         var features = ImmutableArray.Create(Feature.Create(1, null));
@@ -914,7 +914,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_ExactBatchSize_DoesNotEmitEmptyTerminalPage()
     {
         var features = Enumerable.Range(1, 1000)
@@ -940,7 +940,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_WithBatchSizeOne_WritesOneFeaturePerPage()
     {
         var streamBatchSizeOneSut = new HonuaFeatureService(
@@ -978,7 +978,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_WithCountOnlyFlag_ThrowsInvalidArgument()
     {
         var request = new Proto.QueryFeaturesRequest
@@ -997,7 +997,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_AnonymousUserOnProtectedService_ThrowsUnauthenticatedRpcException()
     {
         var protectedService = _testService with
@@ -1072,7 +1072,7 @@ public sealed class GrpcFeatureServiceTests
     {
         private readonly CancellationTokenSource _cts = new();
         public void Dispose() => _cts.Dispose();
-        protected override string MethodCore => "/honua.v1.FeatureService/QueryFeatures";
+        protected override string MethodCore => "/geospatial.v1.FeatureService/QueryFeatures";
         protected override string HostCore => "localhost";
         protected override string PeerCore => "127.0.0.1";
         protected override DateTime DeadlineCore => DateTime.UtcNow.AddMinutes(5);

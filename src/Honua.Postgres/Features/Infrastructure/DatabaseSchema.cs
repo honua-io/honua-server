@@ -191,7 +191,17 @@ internal static class DatabaseSchema
     /// <returns>Fully qualified table name</returns>
     public static string GetQualifiedTableName(string tableName, string? schemaName = null)
     {
-        return string.IsNullOrEmpty(schemaName) ? $"\"{tableName}\"" : $"\"{schemaName}\".\"{tableName}\"";
+        if (!SchemaSearchPath.IsValidIdentifier(tableName))
+        {
+            throw new InvalidOperationException($"Invalid table name '{tableName}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(schemaName))
+        {
+            return $"\"{tableName}\"";
+        }
+
+        return $"{SchemaSearchPath.ValidateAndQuote(schemaName)}.\"{tableName}\"";
     }
 
     /// <summary>

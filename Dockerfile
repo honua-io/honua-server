@@ -87,7 +87,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 
 # Security: Install runtime dependencies
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache && \
+    apk add --no-cache \
     icu-libs \
     krb5-libs \
     tzdata \

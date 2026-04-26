@@ -2791,9 +2791,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         string tableName,
         CancellationToken cancellationToken)
     {
-        var sql = $"ANALYZE {QuoteIdentifier(tableName)}";
-        // codeql[cs/sql-injection] tableName is validated and quoted as an identifier.
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = PostgresSqlSafety.CreateAnalyzeCommand(connection, tableName);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

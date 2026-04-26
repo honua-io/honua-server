@@ -4,7 +4,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -388,7 +387,7 @@ internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTel
             properties["ExceptionId"] = recordId;
             properties["CorrelationId"] = correlationId;
             properties["OperationType"] = operationType;
-            properties["Classification"] = JsonSerializer.Serialize(classification);
+            properties["Classification"] = FormatClassification(classification);
 
             // Create exception record
             var record = new ExceptionRecord
@@ -568,6 +567,17 @@ internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTel
             ShouldAlert = false,
             RateLimitKey = exceptionType.Name
         };
+    }
+
+    private static string FormatClassification(ExceptionClassification classification)
+    {
+        return string.Concat(
+            "Severity=", classification.Severity,
+            ";Category=", classification.Category,
+            ";Subcategory=", classification.Subcategory ?? string.Empty,
+            ";IsRecoverable=", classification.IsRecoverable,
+            ";ShouldAlert=", classification.ShouldAlert,
+            ";RateLimitKey=", classification.RateLimitKey ?? string.Empty);
     }
 
     private bool ShouldRateLimit(ExceptionClassification classification, Exception exception)

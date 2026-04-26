@@ -45,6 +45,17 @@ public readonly record struct FeatureQuery
     public SpatialFilter? SpatialFilter { get; init; }
 
     /// <summary>
+    /// Geometry type of the target layer when known.
+    /// </summary>
+    public GeometryType? GeometryType { get; init; }
+
+    /// <summary>
+    /// Attribute field that should be promoted to the GeoJSON feature id when raw JSON
+    /// fast paths can project it directly.
+    /// </summary>
+    public string? PublicIdAttributeName { get; init; }
+
+    /// <summary>
     /// SRID of the stored layer geometry (used for spatial filter transforms and output CRS handling)
     /// </summary>
     public int? SpatialReferenceSrid { get; init; }
@@ -236,6 +247,37 @@ public readonly record struct SpatialFilter
     public DistanceUnit DistanceUnit { get; init; }
 
     /// <summary>
+    /// Whether the filter geometry is a simple axis-aligned envelope.
+    /// </summary>
+    public bool IsSimpleEnvelope { get; init; }
+
+    /// <summary>
+    /// Whether point envelope filters may use an envelope-only predicate. This is intended
+    /// for viewport/display bbox requests where tiny edge candidates are acceptable.
+    /// </summary>
+    public bool AllowEnvelopeOnly { get; init; }
+
+    /// <summary>
+    /// Minimum X coordinate when the filter is a simple envelope.
+    /// </summary>
+    public double? EnvelopeMinX { get; init; }
+
+    /// <summary>
+    /// Minimum Y coordinate when the filter is a simple envelope.
+    /// </summary>
+    public double? EnvelopeMinY { get; init; }
+
+    /// <summary>
+    /// Maximum X coordinate when the filter is a simple envelope.
+    /// </summary>
+    public double? EnvelopeMaxX { get; init; }
+
+    /// <summary>
+    /// Maximum Y coordinate when the filter is a simple envelope.
+    /// </summary>
+    public double? EnvelopeMaxY { get; init; }
+
+    /// <summary>
     /// Number of nearest neighbors to return for KNN queries.
     /// Only applicable when SpatialRelationship is NearestNeighbor.
     /// </summary>
@@ -252,9 +294,35 @@ public readonly record struct SpatialFilter
     /// <param name="geometry">Filter geometry in WKB format</param>
     /// <param name="spatialRelationship">Type of spatial relationship</param>
     /// <param name="srid">SRID of the filter geometry</param>
+    /// <param name="isSimpleEnvelope">Whether the filter geometry is a simple axis-aligned envelope</param>
+    /// <param name="allowEnvelopeOnly">Whether point envelope filters may use an envelope-only predicate</param>
+    /// <param name="envelopeMinX">Minimum X coordinate when the filter is a simple envelope</param>
+    /// <param name="envelopeMinY">Minimum Y coordinate when the filter is a simple envelope</param>
+    /// <param name="envelopeMaxX">Maximum X coordinate when the filter is a simple envelope</param>
+    /// <param name="envelopeMaxY">Maximum Y coordinate when the filter is a simple envelope</param>
     /// <returns>Spatial filter instance</returns>
-    public static SpatialFilter Create(byte[] geometry, SpatialRelationship spatialRelationship, int? srid = null)
-        => new() { Geometry = geometry, SpatialRelationship = spatialRelationship, Srid = srid };
+    public static SpatialFilter Create(
+        byte[] geometry,
+        SpatialRelationship spatialRelationship,
+        int? srid = null,
+        bool isSimpleEnvelope = false,
+        bool allowEnvelopeOnly = false,
+        double? envelopeMinX = null,
+        double? envelopeMinY = null,
+        double? envelopeMaxX = null,
+        double? envelopeMaxY = null)
+        => new()
+        {
+            Geometry = geometry,
+            SpatialRelationship = spatialRelationship,
+            Srid = srid,
+            IsSimpleEnvelope = isSimpleEnvelope,
+            AllowEnvelopeOnly = allowEnvelopeOnly,
+            EnvelopeMinX = envelopeMinX,
+            EnvelopeMinY = envelopeMinY,
+            EnvelopeMaxX = envelopeMaxX,
+            EnvelopeMaxY = envelopeMaxY
+        };
 
     /// <summary>
     /// Creates a distance-based spatial filter

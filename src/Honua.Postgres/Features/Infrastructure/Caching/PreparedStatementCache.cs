@@ -2,13 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -257,6 +257,9 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         if (!_options.EnableAutomaticCaching || string.IsNullOrEmpty(sql))
             return null;
 
+        if (!PostgresSqlSafety.IsReadOnlySingleStatement(sql))
+            return null;
+
         if (!IsPreparationSupported(connection))
             return null;
 
@@ -338,10 +341,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                     Command = preparedCommand
                 };
 
-                // Parameterized statements require concrete runtime values, so
-                // opportunistic EXPLAIN can invalidate the live request connection.
-                await AnalyzeQueryPlan(cachedStatement, connection, cancellationToken);
-
                 var added = TryAddCachedStatement(cacheKey, cachedStatement);
 
                 if (added && _options.EnablePerformanceLogging)
@@ -413,6 +412,11 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         CancellationToken cancellationToken = default)
     {
         if (!IsPreparationSupported(connection))
+        {
+            return null;
+        }
+
+        if (!PostgresSqlSafety.IsReadOnlySingleStatement(sql))
         {
             return null;
         }
@@ -550,8 +554,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         Action<NpgsqlCommand>? configureParameters,
         CancellationToken cancellationToken)
     {
-        // codeql[cs/sql-injection] SQL is produced by validated query builders and prepared with parameters.
-        var command = new NpgsqlCommand(sql, connection);
+        var command = PostgresSqlSafety.CreateReadCommand(connection, sql);
         configureParameters?.Invoke(command);
 
         // Prepare the statement
@@ -562,11 +565,9 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
     private static NpgsqlCommand CloneCommand(NpgsqlCommand original, NpgsqlConnection connection)
     {
-        var cloned = new NpgsqlCommand(original.CommandText, connection)
-        {
-            CommandType = original.CommandType,
-            CommandTimeout = original.CommandTimeout
-        };
+        var cloned = PostgresSqlSafety.CreateReadCommand(connection, original.CommandText);
+        cloned.CommandType = original.CommandType;
+        cloned.CommandTimeout = original.CommandTimeout;
 
         // Clone parameters structure but not values (will be set by caller)
         foreach (NpgsqlParameter param in original.Parameters)
@@ -831,54 +832,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             {
                 PreparedStatementCacheLog.EvictedStatement(_logger, removed.StatementName);
             }
-        }
-    }
-
-    /// <summary>
-    /// WEEK 5 FIX: Analyze query execution plan for plan stability tracking
-    /// </summary>
-    private async Task AnalyzeQueryPlan(CachedStatement statement, NpgsqlConnection connection, CancellationToken cancellationToken)
-    {
-        if (connection.State != ConnectionState.Open || statement.Command.Parameters.Count > 0)
-        {
-            return;
-        }
-
-        try
-        {
-            var explainSql = $"EXPLAIN (FORMAT JSON) {statement.Command.CommandText}";
-            await using var explainCommand = new NpgsqlCommand(explainSql, connection);
-
-            // Copy parameters for EXPLAIN
-            foreach (NpgsqlParameter param in statement.Command.Parameters)
-            {
-                explainCommand.Parameters.Add(new NpgsqlParameter(param.ParameterName, param.NpgsqlDbType) { Value = DBNull.Value });
-            }
-
-            var planJson = await explainCommand.ExecuteScalarAsync(cancellationToken) as string;
-
-            if (!string.IsNullOrEmpty(planJson))
-            {
-                // Compare with previous plan if available
-                if (!string.IsNullOrEmpty(statement.LastExplainPlan) && statement.LastExplainPlan != planJson)
-                {
-                    statement.PlanChangeCount++;
-                    statement.PlanStabilityScore = Math.Max(0.1, statement.PlanStabilityScore - 0.1);
-                    PreparedStatementCacheLog.QueryPlanChanged(_logger, statement.StatementName);
-                }
-                else if (!string.IsNullOrEmpty(statement.LastExplainPlan))
-                {
-                    // Plan is stable, improve stability score
-                    statement.PlanStabilityScore = Math.Min(1.0, statement.PlanStabilityScore + 0.05);
-                }
-
-                statement.LastExplainPlan = planJson;
-            }
-        }
-        catch (Exception ex)
-        {
-            // Plan analysis is non-critical, log and continue
-            PreparedStatementCacheLog.PlanAnalysisFailed(_logger, statement.StatementName, ex);
         }
     }
 

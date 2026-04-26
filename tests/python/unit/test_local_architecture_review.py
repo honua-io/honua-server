@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 SCRIPT_PATH = (
-    Path(__file__).resolve().parents[3] / "scripts" / "local-architecture-review.py"
+    Path(__file__).resolve().parents[3] / "scripts" / "ci" / "local-architecture-review.py"
 )
 SPEC = importlib.util.spec_from_file_location("local_architecture_review", SCRIPT_PATH)
 assert SPEC is not None

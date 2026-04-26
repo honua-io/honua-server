@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using Honua.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
@@ -10,8 +10,6 @@ namespace Honua.Postgres.Features.Infrastructure;
 
 internal static class PostgresDataSourceFactory
 {
-    [RequiresDynamicCode("Calls ResolveConnectionLimits which binds configuration via ConfigurationBinder.Bind(Object).")]
-    [RequiresUnreferencedCode("Calls ResolveConnectionLimits which binds configuration via ConfigurationBinder.Bind(Object).")]
     public static NpgsqlDataSource Create(string connectionString, IConfiguration configuration, bool schemaHeadersEnabled)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -24,9 +22,24 @@ internal static class PostgresDataSourceFactory
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var limits = new LimitsOptions();
-        configuration.GetSection(LimitsOptions.SectionName).Bind(limits);
-        return limits.Connections;
+        var limits = new ConnectionLimits();
+        var section = configuration.GetSection($"{LimitsOptions.SectionName}:Connections");
+
+        limits.MaxConcurrentQueries = ReadInt(section, nameof(ConnectionLimits.MaxConcurrentQueries), limits.MaxConcurrentQueries);
+        limits.MaxConnectionPoolSize = ReadInt(section, nameof(ConnectionLimits.MaxConnectionPoolSize), limits.MaxConnectionPoolSize);
+        limits.MinConnectionPoolSize = ReadInt(section, nameof(ConnectionLimits.MinConnectionPoolSize), limits.MinConnectionPoolSize);
+        limits.ConnectionIdleLifetimeSeconds = ReadInt(section, nameof(ConnectionLimits.ConnectionIdleLifetimeSeconds), limits.ConnectionIdleLifetimeSeconds);
+        limits.ConnectionPruningIntervalSeconds = ReadInt(section, nameof(ConnectionLimits.ConnectionPruningIntervalSeconds), limits.ConnectionPruningIntervalSeconds);
+        limits.CommandTimeoutSeconds = ReadInt(section, nameof(ConnectionLimits.CommandTimeoutSeconds), limits.CommandTimeoutSeconds);
+        limits.BufferSizeBytes = ReadInt(section, nameof(ConnectionLimits.BufferSizeBytes), limits.BufferSizeBytes);
+        limits.RequestTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.RequestTimeout), limits.RequestTimeout);
+        limits.Multiplexing = section[nameof(ConnectionLimits.Multiplexing)] ?? limits.Multiplexing;
+        limits.ConnectionAcquisitionTimeoutSeconds = ReadInt(section, nameof(ConnectionLimits.ConnectionAcquisitionTimeoutSeconds), limits.ConnectionAcquisitionTimeoutSeconds);
+        limits.LockTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.LockTimeout), limits.LockTimeout);
+        limits.StatementTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.StatementTimeout), limits.StatementTimeout);
+        limits.IdleInTransactionTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.IdleInTransactionTimeout), limits.IdleInTransactionTimeout);
+
+        return limits;
     }
 
     public static NpgsqlDataSource Create(string connectionString, bool schemaHeadersEnabled, ConnectionLimits limits, string? defaultSchema = null)
@@ -133,4 +146,10 @@ internal static class PostgresDataSourceFactory
         // behavior so typos cannot silently flip the runtime contract.
         return false;
     }
+
+    private static int ReadInt(IConfiguration section, string key, int fallback)
+        => int.TryParse(section[key], NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : fallback;
+
+    private static TimeSpan ReadTimeSpan(IConfiguration section, string key, TimeSpan fallback)
+        => TimeSpan.TryParse(section[key], CultureInfo.InvariantCulture, out var value) ? value : fallback;
 }

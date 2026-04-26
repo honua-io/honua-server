@@ -22,7 +22,7 @@ internal sealed partial class FeatureDataAccess
         try
         {
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = new NpgsqlCommand(query.Sql, connection);
+            await using var command = CreateSafeCommand(connection, query.Sql);
 
             command.Parameters.AddWithValue(layerId);
             foreach (var param in query.WhereParameters)

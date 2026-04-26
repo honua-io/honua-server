@@ -12,7 +12,7 @@ All deployment options require a PostGIS-enabled PostgreSQL database. Redis is o
 
 If you just want to try Honua locally, the root `docker-compose.yml` in the repo root is the fastest option — see the Quick Start in the main README.
 
-The repo keeps the default web image and local compose entrypoints at the root (`Dockerfile`, `docker-compose.yml`, `docker-compose.scale-test.yml`). Specialized container variants and supporting assets live under `docker/`.
+The repo keeps the default web image and local compose entrypoints at the root (`Dockerfile`, `docker-compose.yml`). Specialized container variants and supporting assets live under `docker/`, including the scale-test stack at `docker/scale-test/compose.yml`.
 
 ## Control plane and GitOps direction
 
@@ -125,8 +125,8 @@ This separation is intentional: infrastructure provisioning can live outside `ho
 
 Real cloud validation should run immediately after `terraform apply`, but the checks themselves should remain close to the application code.
 
-- Use `scripts/run-cloud-post-apply-validation.sh` from this repository to run:
-  - `scripts/post-deployment-verification.sh`
+- Use `scripts/cloud/run-cloud-post-apply-validation.sh` from this repository to run:
+  - `scripts/cloud/post-deployment-verification.sh`
   - `Category=Cloud` deployed-environment integration tests
   - optional `Category=Scale` tests when the target environment exposes the extra scale-test signals and inputs
 - Use the reusable GitHub Actions workflow `.github/workflows/cloud-post-apply-validation.yml` when `honua-terraform` needs a remote post-apply hook back into `honua-server`

@@ -20,8 +20,44 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
         var result = queryBuilder.BuildSelectGeoJsonQuery(layerId: 1, query: new FeatureQuery());
 
         result.Sql.Should().Contain("ST_AsGeoJSON(");
+        result.Sql.Should().Contain("ST_AsGeoJSON(").And.Contain(", 8, 0)");
         result.Sql.Should().Contain("AS geometry");
         result.Sql.Should().NotContain("ST_AsBinary(");
+    }
+
+    [Fact]
+    public void BuildSelectRawGeoJsonQuery_WithPublicIdAttribute_ProjectsIdAndStrippedAttributes()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            PublicIdAttributeName = "id"
+        };
+
+        var result = queryBuilder.BuildSelectRawGeoJsonQuery(layerId: 1, query: query);
+
+        result.Sql.Should().Contain("attributes -> $2 AS public_id");
+        result.Sql.Should().Contain("(attributes - $2)::text AS attributes");
+        result.Sql.Should().Contain("ST_AsGeoJSON(");
+        result.WhereParameters.Should().Equal("id");
+    }
+
+    [Fact]
+    public void BuildSelectGeoServicesPointQuery_WithPublicIdAttribute_ProjectsIdAndStrippedAttributes()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            PublicIdAttributeName = "id"
+        };
+
+        var result = queryBuilder.BuildSelectGeoServicesPointQuery(layerId: 1, query: query);
+
+        result.Sql.Should().Contain("attributes -> $2 AS public_id");
+        result.Sql.Should().Contain("(attributes - $2)::text AS attributes");
+        result.Sql.Should().Contain("CASE WHEN GeometryType(geometry) = 'POINT' THEN ST_X(geometry) ELSE NULL END AS x");
+        result.Sql.Should().Contain("CASE WHEN GeometryType(geometry) = 'POINT' THEN ST_Y(geometry) ELSE NULL END AS y");
+        result.WhereParameters.Should().Equal("id");
     }
 
     [Fact]
@@ -76,7 +112,7 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
     {
         var poolProvider = new DefaultObjectPoolProvider();
         var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
-        var geometryProcessor = new GeometryProcessor();
+        var geometryProcessor = new GeometryProcessor(geoJsonTextPrecision: 8);
         return new FeatureQueryBuilder(stringBuilderPool, geometryProcessor);
     }
 

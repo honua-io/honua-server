@@ -68,10 +68,10 @@ No remaining `api/v1/admin/services...` hardcoded paths were found under `src/Ho
 
 | Implemented Standard | CITE/ETS Suite | Local Runner Script | CI Workflow |
 |---|---|---|---|
-| OGC API Features 1.0 | `ets-ogcapi-features10` | `scripts/run-cite-tests.sh` | `.github/workflows/cite-conformance.yml` |
-| OGC API Tiles 1.0 | `ets-ogcapi-tiles10` | `scripts/run-cite-tiles-tests.sh` | `.github/workflows/cite-tiles-conformance.yml` |
-| OGC WMS 1.3 | `ets-wms13` | `scripts/run-cite-wms-tests.sh` | `.github/workflows/cite-wms-conformance.yml` |
-| OGC WMTS 1.0 | `ets-wmts10` | `scripts/run-cite-wmts-tests.sh` | `.github/workflows/cite-wmts-conformance.yml` |
+| OGC API Features 1.0 | `ets-ogcapi-features10` | `scripts/conformance/cite/run-cite-tests.sh` | `.github/workflows/cite-conformance.yml` |
+| OGC API Tiles 1.0 | `ets-ogcapi-tiles10` | `scripts/conformance/cite/run-cite-tiles-tests.sh` | `.github/workflows/cite-tiles-conformance.yml` |
+| OGC WMS 1.3 | `ets-wms13` | `scripts/conformance/cite/run-cite-wms-tests.sh` | `.github/workflows/cite-wms-conformance.yml` |
+| OGC WMTS 1.0 | `ets-wmts10` | `scripts/conformance/cite/run-cite-wmts-tests.sh` | `.github/workflows/cite-wmts-conformance.yml` |
 
 ### Coverage conclusion
 

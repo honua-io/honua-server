@@ -111,7 +111,7 @@ public sealed class GrpcExceptionInterceptorTests
 
         public void Dispose() => _cancellationTokenSource.Dispose();
 
-        protected override string MethodCore => "/honua.v1.FeatureService/QueryFeatures";
+        protected override string MethodCore => "/geospatial.v1.FeatureService/QueryFeatures";
         protected override string HostCore => "localhost";
         protected override string PeerCore => "127.0.0.1";
         protected override DateTime DeadlineCore => DateTime.UtcNow.AddMinutes(5);

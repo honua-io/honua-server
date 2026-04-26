@@ -52,7 +52,7 @@ None
 ---
 
 ## Pre-PR Checklist
-- [ ] Ran `scripts/pre-pr-check.sh` and all checks passed
+- [ ] Ran `scripts/ci/pre-pr-check.sh` and all checks passed
 - [ ] Commit messages follow conventional format: `type: description (#issue)`
 - [ ] PR title matches main commit message
 - [ ] Issue number linked above

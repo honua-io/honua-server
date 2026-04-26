@@ -22,8 +22,8 @@ Before regenerating or upgrading SDK artifacts:
 Validate contract and generate SDK artifacts from the curated admin OpenAPI spec:
 
 ```bash
-./scripts/validate-openapi-contracts.sh
-./scripts/generate-control-plane-sdks.sh
+./scripts/ci/validate-openapi-contracts.sh
+./scripts/sdk/generate-control-plane-sdks.sh
 ```
 
 Artifacts are written to `artifacts/control-plane-sdks/`:
@@ -89,7 +89,7 @@ Console.WriteLine(connections);
 1. Detect breakage early:
 
 ```bash
-OPENAPI_BASE_REF=origin/trunk ./scripts/validate-openapi-contracts.sh
+OPENAPI_BASE_REF=origin/trunk ./scripts/ci/validate-openapi-contracts.sh
 ```
 
 2. If breakage is intentional, update:

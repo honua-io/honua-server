@@ -7,7 +7,7 @@
 
 | Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
 |---|---|---|---|---|---|
-| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate; includes the merge-blocking operator eval harness lane (`Features.Eval|Features.Geoprocessing|Features.OgcProcesses|Features.Grpc`) and uploads `operator-eval-report` plus STAC and Esri Leaflet client-compat artifacts |
+| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate; includes the merge-blocking operator eval harness lane (`Features.Eval|Features.Geoprocessing|Features.Protocols.Ogc.Api.Processes|Features.Protocols.Grpc|Features.Protocols.Mcp|Features.Protocols.GeoServices.GPServer`) and uploads `operator-eval-report` plus STAC and Esri Leaflet client-compat artifacts |
 | `pr-validation.yml` | PR Validation | PR | `pull_request` | Yes | Template compliance check |
 | `openapi-contract-governance.yml` | OpenAPI Contract Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to API surface |
 | `control-plane-sdk-governance.yml` | Control Plane SDK Governance | PR + release | `pull_request`, `push`, `workflow_dispatch`, `release` | Yes (PR jobs) | PR governance separate from release publishing |
@@ -25,9 +25,7 @@
 | `windows-client-compat-nightly.yml` | Windows Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:15am UTC; full CERT-\* matrix (18 test cases × 4 protocol lanes: FeatureServer, OGC Features, MapServer, OData) with per-protocol `.cert.json` envelopes under `certification/`, plus `overall-summary.json`, per-lane transcripts, and `pack/`; supports `--profile smoke` (11-check MVP) and `--profile full` (default) |
 | `pyqgis-client-compat-nightly.yml` | PyQGIS Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:30am UTC; PyQGIS desktop client compatibility using real QGIS providers against `client-compat-v1.sql`; produces `desktop-qgis-ogc-features.cert.json` and `desktop-qgis-wfs.cert.json` envelopes |
 | `load-soak-nightly.yml` | Load/Soak Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled load/soak tests |
-| `container-security.yml` | Container Security | nightly | `schedule`, `workflow_dispatch` | No | Scheduled container scan |
-| `security-nightly.yml` | Security Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled security analysis |
-| `trivy-nightly.yml` | Trivy Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled Trivy scan |
+| `security-nightly.yml` | Security Nightly | nightly | `schedule`, `workflow_dispatch` | No | Consolidated NuGet vulnerability scan, Trivy filesystem scan, and container security scan (Hadolint, Trivy, structure tests, runtime constraints) |
 | `codeql.yml` | CodeQL | nightly | `push` (trunk), `schedule` | No | Default-branch + weekly schedule |
 | `nightly-container-build.yml` | Nightly Container Build | nightly | `schedule`, `workflow_dispatch` | No | Scheduled container build |
 | `nuget-publish.yml` | NuGet Publish | release | `push`, `workflow_dispatch` | No | Release-only publishing |
@@ -94,3 +92,17 @@ Five composite actions were added to `.github/actions/` for shared CI setup and 
 - `setup-python-ci` — Python setup, pip cache *(future: conformance/script workflows)*
 - `upload-ci-evidence` — artifact upload with standard naming and tier-based retention *(active)*
 - `run-conformance-stack` — Docker bootstrap/teardown for CITE workflows *(future: conformance workflows)*
+
+## Changes Made in Workflow Refactor (2026-04-25)
+
+### Security workflows consolidated
+
+`container-security.yml` and `trivy-nightly.yml` were folded into `security-nightly.yml`. The consolidated nightly now owns NuGet vulnerability scanning, Trivy filesystem scanning, and container security validation in one security lane.
+
+**Rationale**: The previous split created three scheduled security workflows with overlapping vulnerability-scan responsibilities and separate artifact conventions. One workflow keeps the security lane easier to monitor while preserving separate jobs for dependency, filesystem, and container concerns.
+
+### CITE wrappers normalized
+
+`cite-conformance.yml` and `cite-tiles-conformance.yml` now call `cite-conformance-common.yml`, matching the single-suite CITE wrappers for GML, GeoPackage, KML, WMS, and WMTS.
+
+**Rationale**: Features and Tiles used the same checkout/build/run/parse/upload/fail skeleton as the reusable CITE workflow. Keeping only suite-specific inputs in the dispatcher files reduces drift in cache scopes, artifact upload behavior, and failure handling.

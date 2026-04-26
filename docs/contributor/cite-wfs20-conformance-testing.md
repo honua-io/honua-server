@@ -24,13 +24,13 @@ The CITE test suite validates that Honua Server correctly implements the OGC WFS
 
 ```bash
 # Run all WFS 2.0 conformance tests
-./scripts/run-cite-wfs20-tests.sh
+./scripts/conformance/cite/run-cite-wfs20-tests.sh
 
 # Run with specific options
-./scripts/run-cite-wfs20-tests.sh --verbose --no-cleanup
+./scripts/conformance/cite/run-cite-wfs20-tests.sh --verbose --no-cleanup
 
 # Interactive mode (keep services running for manual testing)
-./scripts/run-cite-wfs20-tests.sh --interactive
+./scripts/conformance/cite/run-cite-wfs20-tests.sh --interactive
 ```
 
 ### Running in CI
@@ -68,19 +68,7 @@ Comprehensive testing including optional features:
 
 ### Test Parameters
 
-The WFS 2.0 CITE test suite is configured via `docker/cite-wfs20-config/test-params.xml`:
-
-```xml
-<values xmlns:parsers="http://www.occamlab.com/te/parsers">
-  <parsers:session>
-    <parsers:test>ets-wfs20</parsers:test>
-    <parsers:profile>basic</parsers:profile>
-  </parsers:session>
-  <value key="wfs-uri">http://honua-server:8080/wfs</value>
-  <value key="gmlsf">0</value>
-  <value key="conformanceClass">basic</value>
-</values>
-```
+WFS 2.0 suite metadata lives in `docker/cite/wfs20/config/wfs20-test-config.xml`. The runner generates the effective TeamEngine `test-params.xml` for the selected profile inside `cite-wfs20-results/` during each run, using the container endpoint `http://honua-server:8080/wfs`.
 
 ### Docker Compose Services
 
@@ -88,8 +76,8 @@ The test environment includes:
 
 1. **honua-server**: The main application under test
 2. **postgres**: PostGIS database backend
-3. **cite-wfs20-engine**: CITE Team Engine web interface
-4. **cite-wfs20-runner**: Automated test execution
+3. **cite-teamengine**: CITE Team Engine web interface
+4. **cite-runner**: Automated test execution
 
 ## Understanding Results
 
@@ -145,7 +133,7 @@ For WFS 2.0 conformance runs:
 ```
 
 **Solutions**:
-- Check Docker container logs: `docker compose -f docker/cite-wfs20-compose.yml logs honua-server`
+- Check Docker container logs: `docker compose -f docker/cite/wfs20/compose.yml logs honua-server`
 - Verify database connectivity
 - Ensure port 8080 is available
 - Check that WFS 2.0 endpoints are enabled
@@ -212,13 +200,13 @@ Run tests with detailed logging:
 
 ```bash
 # Enable verbose output
-./scripts/run-cite-wfs20-tests.sh --verbose
+./scripts/conformance/cite/run-cite-wfs20-tests.sh --verbose
 
 # Keep containers running for investigation
-./scripts/run-cite-wfs20-tests.sh --no-cleanup
+./scripts/conformance/cite/run-cite-wfs20-tests.sh --no-cleanup
 
 # Interactive mode with manual testing
-./scripts/run-cite-wfs20-tests.sh --interactive
+./scripts/conformance/cite/run-cite-wfs20-tests.sh --interactive
 ```
 
 In interactive mode, access services directly:
@@ -233,7 +221,7 @@ For detailed investigation:
 
 1. Start services in interactive mode:
    ```bash
-   ./scripts/run-cite-wfs20-tests.sh --interactive
+   ./scripts/conformance/cite/run-cite-wfs20-tests.sh --interactive
    ```
 
 2. Access CITE Team Engine at http://localhost:8081/teamengine

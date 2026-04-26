@@ -1,0 +1,272 @@
+# Scale-out testing environment with multiple Honua instances, Redis, and load balancer
+# Usage: docker compose -f docker/scale-test/compose.yml up --scale honua=3
+name: honua-scale-test
+
+services:
+  # PostgreSQL with PostGIS (shared by all Honua instances)
+  postgres:
+    image: postgis/postgis:17-3.5-alpine
+    environment:
+      POSTGRES_DB: honua_scale_test
+      POSTGRES_USER: honua_user
+      POSTGRES_PASSWORD: honua_password
+      # Enable encryption at rest and security features
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
+      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256"
+      POSTGRESQL_CONF_ssl: "on"
+      POSTGRESQL_CONF_password_encryption: "scram-sha-256"
+      POSTGRESQL_CONF_log_connections: "on"
+      POSTGRESQL_CONF_log_disconnections: "on"
+      # Scale-out specific optimizations
+      POSTGRESQL_CONF_max_connections: "200"
+      POSTGRESQL_CONF_shared_buffers: "256MB"
+      POSTGRESQL_CONF_effective_cache_size: "1GB"
+    ports:
+      - "${HONUA_SCALE_TEST_POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - postgres_scale_data:/var/lib/postgresql/data
+      - ../init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honua_user -d honua_scale_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis for distributed caching (shared by all Honua instances)
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${HONUA_SCALE_TEST_REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Honua Server instances (scalable)
+  honua:
+    build: ../..
+    image: honua-scale-test-honua:latest
+    environment:
+      ASPNETCORE_ENVIRONMENT: ScaleTest
+      ASPNETCORE_URLS: "http://+:8080"
+      # Database connection (shared)
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_scale_test;Username=honua_user;Password=honua_password"
+      # Redis connection (shared)
+      ConnectionStrings__Redis: "redis:6379"
+      # Scale-out specific configuration
+      HONUA_INSTANCE_ID: "${HOSTNAME:-scale-test}"
+      HONUA_ENABLE_METRICS: "true"
+      HONUA_ENABLE_TRACING: "true"
+      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-scale-test-admin-password}"
+      HostValidation__AllowedHosts__0: "localhost"
+      HostValidation__AllowedHosts__1: "127.0.0.1"
+      HostValidation__AllowedHosts__2: "[::1]"
+      Security__ConnectionEncryption__MasterKey: "${HONUA_SCALE_TEST_ENCRYPTION_KEY:-scale-test-master-key-that-is-at-least-32-characters-long}"
+      Security__ConnectionEncryption__Salt: "${HONUA_SCALE_TEST_ENCRYPTION_SALT:-c2NhbGUtdGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3Rpbmc=}"
+      # Caching configuration
+      Cache__Enabled: "true"
+      Cache__EnableFallback: "true"
+      Cache__KeyPrefix: "honua:"
+      Cache__DefaultTtlSeconds: "300"
+      # Performance settings for scale testing
+      Limits__Query__MaxRecordCount: "10000"
+      Limits__Concurrent__MaxQueriesPerUser: "20"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    # Security hardening
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Writable volumes for runtime data
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - honua_logs:/tmp/honua-logs
+      - honua_cache:/tmp/honua-cache
+      - dotnet_diagnostics:/tmp/dotnet-diagnostics
+
+  # Canary Honua Server instance (started only for canary rehearsals)
+  honua_canary:
+    build: ../..
+    image: honua-scale-test-honua:latest
+    profiles:
+      - canary
+    environment:
+      ASPNETCORE_ENVIRONMENT: ScaleTest
+      ASPNETCORE_URLS: "http://+:8080"
+      # Database connection (shared unless overridden for negative canary rehearsal)
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_scale_test;Username=honua_user;Password=honua_password"
+      # Redis connection (shared)
+      ConnectionStrings__Redis: "redis:6379"
+      # Scale-out specific configuration
+      HONUA_INSTANCE_ID: "${HOSTNAME:-scale-test-canary}"
+      HONUA_ENABLE_METRICS: "true"
+      HONUA_ENABLE_TRACING: "true"
+      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-scale-test-admin-password}"
+      HostValidation__AllowedHosts__0: "localhost"
+      HostValidation__AllowedHosts__1: "127.0.0.1"
+      HostValidation__AllowedHosts__2: "[::1]"
+      Security__ConnectionEncryption__MasterKey: "${HONUA_SCALE_TEST_ENCRYPTION_KEY:-scale-test-master-key-that-is-at-least-32-characters-long}"
+      Security__ConnectionEncryption__Salt: "${HONUA_SCALE_TEST_ENCRYPTION_SALT:-c2NhbGUtdGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3Rpbmc=}"
+      Cache__Enabled: "true"
+      Cache__EnableFallback: "true"
+      Cache__KeyPrefix: "honua:"
+      Cache__DefaultTtlSeconds: "300"
+      Limits__Query__MaxRecordCount: "10000"
+      Limits__Concurrent__MaxQueriesPerUser: "20"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - honua_logs:/tmp/honua-logs
+      - honua_cache:/tmp/honua-cache
+      - dotnet_diagnostics:/tmp/dotnet-diagnostics
+
+  # Nginx load balancer
+  nginx:
+    image: nginx:1.25-alpine
+    environment:
+      HONUA_SCALE_TEST_CANARY_ENABLED: "${HONUA_SCALE_TEST_CANARY_ENABLED:-false}"
+      HONUA_SCALE_TEST_CANARY_WEIGHT: "${HONUA_SCALE_TEST_CANARY_WEIGHT:-0}"
+    ports:
+      - "${HONUA_SCALE_TEST_HTTP_PORT:-8080}:80"
+    volumes:
+      - ./nginx/scale-test.conf:/etc/nginx/scale-test.conf.template:ro
+      - ./nginx/render-scale-test-conf.sh:/docker-entrypoint.d/40-render-scale-test-conf.sh:ro
+    depends_on:
+      - honua
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/healthz/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Postgres exporter for scale-test monitoring
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
+    profiles:
+      - monitoring
+    environment:
+      DATA_SOURCE_NAME: "postgresql://honua_user:honua_password@postgres:5432/honua_scale_test?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Redis exporter for scale-test monitoring
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    profiles:
+      - monitoring
+    command:
+      - "--redis.addr=redis://redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Nginx exporter for scale-test monitoring
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.2
+    profiles:
+      - monitoring
+    command:
+      - "--nginx.scrape-uri=http://nginx/nginx_status"
+    depends_on:
+      - nginx
+    restart: unless-stopped
+
+  # Redis Insight for monitoring Redis
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    ports:
+      - "8001:8001"
+    environment:
+      RIPORT: 8001
+      RIHOST: "0.0.0.0"
+    depends_on:
+      - redis
+    profiles:
+      - monitoring
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/scale-test.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus/alerts.yml:/etc/prometheus/alerts/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    profiles:
+      - monitoring
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_scale_data:
+  redis_data:
+  honua_logs:
+  honua_cache:
+  dotnet_diagnostics:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: "${HONUA_SCALE_TEST_NETWORK:-honua-scale-test}"
+    driver: bridge

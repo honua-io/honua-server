@@ -162,6 +162,8 @@ public sealed class ConfigurationDocumentationService
                     "Redis connection string for metadata/output caching", null, isSensitive: true),
                 BuildPropertyWithCurrent("Cache:Enabled", "Cache__Enabled", "boolean",
                     "Whether caching is enabled", true, opts.Enabled),
+                BuildPropertyWithCurrent("Cache:ResponseCachingEnabled", "Cache__ResponseCachingEnabled", "boolean",
+                    "Whether exact response caching is enabled separately from metadata/catalog caching", false, opts.ResponseCachingEnabled),
                 BuildPropertyWithCurrent("Cache:DefaultTtlSeconds", "Cache__DefaultTtlSeconds", "integer",
                     "Default cache TTL in seconds", 1800, opts.DefaultTtlSeconds, "Range: 1-86400"),
                 BuildPropertyWithCurrent("Cache:ServiceTtlSeconds", "Cache__ServiceTtlSeconds", "integer",
@@ -840,6 +842,7 @@ public sealed class ConfigurationDocumentationService
             // Cache
             new() { Name = "ConnectionStrings__redis", ConfigPath = "Cache", Description = "Redis connection string for metadata/output caching", Required = false, Example = "localhost:6379" },
             new() { Name = "Cache__Enabled", ConfigPath = "Cache", Description = "Enable caching", Default = "true", Example = "false" },
+            new() { Name = "Cache__ResponseCachingEnabled", ConfigPath = "Cache", Description = "Enable exact response caching separately from metadata/catalog caching", Default = "false", Example = "true" },
             new() { Name = "Cache__DefaultTtlSeconds", ConfigPath = "Cache", Description = "Default cache TTL", Default = "1800", Example = "600" },
             new() { Name = "Cache__ServiceTtlSeconds", ConfigPath = "Cache", Description = "Service metadata cache TTL", Default = "3600", Example = "1800" },
             new() { Name = "Cache__LayerTtlSeconds", ConfigPath = "Cache", Description = "Layer metadata cache TTL", Default = "1800", Example = "900" },

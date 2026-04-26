@@ -19,6 +19,7 @@ public sealed class UnifiedQueryService
     private readonly IFeatureReader _featureReader;
     private readonly ILogger<UnifiedQueryService> _logger;
     private readonly ConcurrentDictionary<Type, object> _adapters = new();
+    private readonly ConcurrentDictionary<Type, string> _adapterProtocolNames = new();
 
     public UnifiedQueryService(
         IQueryProcessor queryProcessor,
@@ -38,6 +39,7 @@ public sealed class UnifiedQueryService
     public void RegisterAdapter<TParams>(IQueryParameterAdapter<TParams> adapter)
     {
         _adapters[typeof(TParams)] = adapter ?? throw new ArgumentNullException(nameof(adapter));
+        _adapterProtocolNames[typeof(TParams)] = adapter.ProtocolName;
         QueryLog.RegisteredQueryAdapter(_logger, adapter.ProtocolName, typeof(TParams).Name);
     }
 
@@ -252,9 +254,9 @@ public sealed class UnifiedQueryService
     /// <returns>Dictionary of registered adapters</returns>
     public IReadOnlyDictionary<Type, string> GetRegisteredAdapters()
     {
-        return _adapters.ToDictionary(
+        return _adapterProtocolNames.ToDictionary(
             kvp => kvp.Key,
-            kvp => (string)((dynamic)kvp.Value).ProtocolName);
+            kvp => kvp.Value);
     }
 }
 

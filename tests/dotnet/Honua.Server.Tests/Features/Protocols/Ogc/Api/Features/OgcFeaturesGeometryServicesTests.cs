@@ -46,6 +46,81 @@ public sealed class OgcFeaturesGeometryServicesTests
     }
 
     [Fact]
+    public void ConvertGeoJsonToSimpleGeometry_WithMissingCoordinates_ReturnsNull()
+    {
+        var sut = CreateSut();
+
+        var result = sut.ConvertGeoJsonToSimpleGeometry("""{"type":"Point"}""", AxisOrder.EastNorth);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ConvertGeoJsonToSimpleGeometry_WithMalformedCoordinates_ReturnsNull()
+    {
+        var sut = CreateSut();
+
+        var result = sut.ConvertGeoJsonToSimpleGeometry(
+            """{"type":"Point","coordinates":"invalid"}""",
+            AxisOrder.EastNorth);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ConvertGeoJsonToSimpleGeometry_WithMalformedGeometryCollection_ReturnsNull()
+    {
+        var sut = CreateSut();
+
+        var result = sut.ConvertGeoJsonToSimpleGeometry(
+            """{"type":"GeometryCollection","geometries":[{"type":"Point"}]}""",
+            AxisOrder.EastNorth);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ConvertGeoJsonToSimpleGeometry_WithEmptyGeometryCollection_ReturnsGeometryCollection()
+    {
+        var sut = CreateSut();
+
+        var result = sut.ConvertGeoJsonToSimpleGeometry(
+            """{"type":"GeometryCollection","geometries":[]}""",
+            AxisOrder.EastNorth);
+
+        result.Should().NotBeNull();
+        result!.Type.Should().Be("GeometryCollection");
+        result.GeometriesJson.Should().Be("[]");
+    }
+
+    [Theory]
+    [InlineData("""{"type":"LineString","coordinates":[[0,0]]}""")]
+    [InlineData("""{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1]]]}""")]
+    [InlineData("""{"type":"Polygon","coordinates":[[[0,0],[1,0],[0,0]]]}""")]
+    public void ConvertGeoJsonToSimpleGeometry_WithInvalidTopology_ReturnsNull(string geoJson)
+    {
+        var sut = CreateSut();
+
+        var result = sut.ConvertGeoJsonToSimpleGeometry(geoJson, AxisOrder.EastNorth);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ConvertGeoJsonToSimpleGeometry_WithEastNorthAxis_ReusesRoundedCoordinates()
+    {
+        var sut = CreateSut();
+
+        var result = sut.ConvertGeoJsonToSimpleGeometry(
+            """{"type":"Point","coordinates":[-122.123456789,37.987654321]}""",
+            AxisOrder.EastNorth);
+
+        result.Should().NotBeNull();
+        result!.Type.Should().Be("Point");
+        result.CoordinatesJson.Should().Be("[-122.12345679,37.98765432]");
+    }
+
+    [Fact]
     public void TryCreateWkbFromGeoJson_WithTooManyVertices_ReturnsFailure()
     {
         var sut = CreateSut();

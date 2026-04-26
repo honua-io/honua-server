@@ -504,15 +504,15 @@ includes:
 
 The harness runs in the **.NET Tests (Server - Operator Eval Harness)** CI
 lane (`ci.yml`), which filters on
-`Features.Eval|Features.Geoprocessing|Features.OgcProcesses|Features.Grpc` and
-uploads the report as the `operator-eval-report` workflow artifact.
+`Features.Eval|Features.Geoprocessing|Features.Protocols.Ogc.Api.Processes|Features.Protocols.Grpc|Features.Protocols.Mcp|Features.Protocols.GeoServices.GPServer`
+and uploads the report as the `operator-eval-report` workflow artifact.
 
 Locally:
 
 ```bash
 # Run the full operator eval harness lane
 dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-  --filter "FullyQualifiedName~Honua.Server.Tests.Features.Eval"
+  --filter "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer"
 
 # Filter by the OperatorEval protocol trait
 dotnet test --filter "Protocol=OperatorEval"

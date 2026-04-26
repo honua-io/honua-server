@@ -8,19 +8,19 @@ Current WMTS support in Honua targets:
 - `GetCapabilities`
 - `GetTile` (KVP)
 
-Test parameters are configured in `docker/cite-wmts-config/test-params.xml`.
+Test parameters are configured in `docker/cite/wmts10/config/test-params.xml`.
 
 ## Run Locally
 
 ```bash
 # Default profile label
-./scripts/run-cite-wmts-tests.sh
+./scripts/conformance/cite/run-cite-wmts-tests.sh
 
 # Override profile label
-./scripts/run-cite-wmts-tests.sh --profile minimal
+./scripts/conformance/cite/run-cite-wmts-tests.sh --profile minimal
 
 # Keep containers for debugging
-./scripts/run-cite-wmts-tests.sh --no-cleanup --verbose
+./scripts/conformance/cite/run-cite-wmts-tests.sh --no-cleanup --verbose
 ```
 
 ## CI Execution
@@ -47,8 +47,8 @@ Results are written to `cite-wmts-results/`:
 ## Troubleshooting
 
 - Check app logs:
-  `docker compose -f docker/cite-wmts-compose.yml logs honua-server`
+  `docker compose -f docker/cite/wmts10/compose.yml logs honua-server`
 - Check TeamEngine logs:
-  `docker compose -f docker/cite-wmts-compose.yml logs cite-runner`
+  `docker compose -f docker/cite/wmts10/compose.yml logs cite-runner`
 - Verify endpoint manually:
   `http://localhost:8080/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0`

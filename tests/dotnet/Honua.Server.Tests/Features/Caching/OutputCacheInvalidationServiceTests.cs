@@ -54,7 +54,6 @@ public sealed class OutputCacheInvalidationServiceTests
         await metadataCache.DidNotReceive().RemoveByPatternAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
 
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:*", Arg.Any<CancellationToken>());
-        await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:testservice:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:layer:1:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:layer:2:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:odata:layer:1:*", Arg.Any<CancellationToken>());
@@ -75,12 +74,11 @@ public sealed class OutputCacheInvalidationServiceTests
         await sut.InvalidateServiceCatalogAsync("TestService", null, CancellationToken.None);
 
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:*", Arg.Any<CancellationToken>());
-        await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:testservice:*", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task InvalidateServiceCatalogAsync_BlanketEviction_IncludesStaticMapPattern()
+    public async Task InvalidateServiceCatalogAsync_BlanketEviction_RemovesQueryResponsePatterns()
     {
         var responseCache = Substitute.For<IResponseCache>();
         var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
@@ -89,13 +87,14 @@ public sealed class OutputCacheInvalidationServiceTests
 
         await sut.InvalidateServiceCatalogAsync(null, null, CancellationToken.None);
 
-        await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:odata:layer:*", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task InvalidateLayerAsync_WithServiceId_EvictsStaticMapCache()
+    public async Task InvalidateLayerAsync_WithServiceId_EvictsQueryResponseCache()
     {
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
@@ -109,12 +108,11 @@ public sealed class OutputCacheInvalidationServiceTests
         await outputCacheStore.Received().EvictByTagAsync("tiles", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:layer:1:*", Arg.Any<CancellationToken>());
-        await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:testservice:*", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task InvalidateLayerAsync_WithoutServiceId_EvictsAllStaticMapCaches()
+    public async Task InvalidateLayerAsync_WithoutServiceId_EvictsLayerQueryResponseCaches()
     {
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
@@ -124,12 +122,14 @@ public sealed class OutputCacheInvalidationServiceTests
 
         await sut.InvalidateLayerAsync(null, 5, CancellationToken.None);
 
-        await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:*:layer:5:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:odata:layer:5:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:5:*", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task InvalidateServiceCatalogAsync_LayerIdsWithoutServiceId_EvictsAllStaticMapCaches()
+    public async Task InvalidateServiceCatalogAsync_LayerIdsWithoutServiceId_EvictsLayerQueryResponseCaches()
     {
         var responseCache = Substitute.For<IResponseCache>();
         var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
@@ -138,7 +138,6 @@ public sealed class OutputCacheInvalidationServiceTests
 
         await sut.InvalidateServiceCatalogAsync(null, [1, 2], CancellationToken.None);
 
-        await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:*:layer:1:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:*:layer:2:*", Arg.Any<CancellationToken>());
     }
@@ -188,11 +187,6 @@ public sealed class OutputCacheInvalidationServiceTests
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:alpha:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:beta:layer:7:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:beta:*", Arg.Any<CancellationToken>());
-
-        // With resolved owners, static-map eviction should be targeted, not global.
-        await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:alpha:*", Arg.Any<CancellationToken>());
-        await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:beta:*", Arg.Any<CancellationToken>());
-        await responseCache.DidNotReceive().RemoveByPatternAsync("response:render:staticmap:service:*", Arg.Any<CancellationToken>());
     }
 
     private static ServiceDefinition CreateService(string name, params int[] layerIds)

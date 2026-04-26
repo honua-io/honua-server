@@ -23,9 +23,6 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private static readonly Regex OgcKeyPattern = new("^(?:response:)?query:ogc:collection:(?<collection>[^:]+):", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex OgcCollectionPattern = new("^(?:response:)?query:ogc:collection:(?<collection>[^:]+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex OgcPattern = new("^(?:response:)?query:ogc:collection:\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex StaticMapKeyPattern = new("^(?:response:)?render:staticmap:service:(?<service>[^:]+):", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex StaticMapServicePattern = new("^(?:response:)?render:staticmap:service:(?<service>[^:]+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex StaticMapPattern = new("^(?:response:)?render:staticmap:service:\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly ICacheService _cacheService;
 
@@ -162,13 +159,6 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             return namespaces;
         }
 
-        var staticMapMatch = StaticMapKeyPattern.Match(key);
-        if (staticMapMatch.Success)
-        {
-            namespaces.Add("render:staticmap");
-            namespaces.Add($"render:staticmap:service:{staticMapMatch.Groups["service"].Value}");
-        }
-
         return namespaces;
     }
 
@@ -220,18 +210,6 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         if (ogcMatch.Success)
         {
             return ["query:ogc"];
-        }
-
-        var staticMapPattern = StaticMapPattern.Match(pattern);
-        if (staticMapPattern.Success)
-        {
-            return ["render:staticmap"];
-        }
-
-        var staticMapServiceMatch = StaticMapServicePattern.Match(pattern);
-        if (staticMapServiceMatch.Success)
-        {
-            return [$"render:staticmap:service:{staticMapServiceMatch.Groups["service"].Value}"];
         }
 
         return Array.Empty<string>();
