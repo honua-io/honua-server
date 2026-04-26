@@ -89,5 +89,6 @@ public sealed class AnalysisReportResourceTests
     private static AnalysisReport BuildFakeReport() => ReportingFixtures.CreateBuilder()
         .BuildAsync("job-xyz", ReportingFixtures.BufferAggregatePackage(), CancellationToken.None)
         .GetAwaiter()
-        .GetResult() with { JobId = "job-xyz", ResultPackageId = "pkg-1" };
+        .GetResult() with
+    { JobId = "job-xyz", ResultPackageId = "pkg-1" };
 }
