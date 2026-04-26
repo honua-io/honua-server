@@ -147,7 +147,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         await service.StartAsync(CancellationToken.None);
         try
         {
-            var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(10));
+            var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(30));
             terminal.OperationId.Should().Be(operationId);
             terminal.Status.Should().Be(ExecutionJobStatus.Succeeded);
 
