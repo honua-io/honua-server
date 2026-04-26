@@ -912,13 +912,6 @@ internal sealed class FeatureServerQueryHandler(
             return false;
         }
 
-        // The raw path writes stored attributes without per-row object-id injection.
-        // Use it only for layers whose public object id is already part of the JSON payload.
-        if (layer.ObjectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
         var layerSrid = layer.SpatialReference.ToSrid();
         if (outputSrid.HasValue && outputSrid.Value != layerSrid)
         {

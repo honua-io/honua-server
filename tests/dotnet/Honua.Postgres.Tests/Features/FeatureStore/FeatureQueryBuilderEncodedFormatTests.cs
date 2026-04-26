@@ -55,7 +55,8 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
 
         result.Sql.Should().Contain("attributes -> $2 AS public_id");
         result.Sql.Should().Contain("(attributes - $2)::text AS attributes");
-        result.Sql.Should().Contain("ST_X(");
+        result.Sql.Should().Contain("CASE WHEN GeometryType(geometry) = 'POINT' THEN ST_X(geometry) ELSE NULL END AS x");
+        result.Sql.Should().Contain("CASE WHEN GeometryType(geometry) = 'POINT' THEN ST_Y(geometry) ELSE NULL END AS y");
         result.WhereParameters.Should().Equal("id");
     }
 

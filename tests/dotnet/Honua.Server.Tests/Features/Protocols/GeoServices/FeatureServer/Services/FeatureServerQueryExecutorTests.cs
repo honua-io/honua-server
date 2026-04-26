@@ -197,6 +197,68 @@ public sealed class FeatureServerQueryExecutorTests
     }
 
     [Fact]
+    public async Task QueryRawGeoServicesPointJsonWithValidationAsync_SanitizesStoredAttributesAndInjectsObjectId()
+    {
+        var featureReader = Substitute.For<IFeatureReader, IPagedRawGeoServicesFeatureStore>();
+        var rawStore = (IPagedRawGeoServicesFeatureStore)featureReader;
+        var rawFeatures = ImmutableArray.Create(
+            RawGeoServicesFeature.Create(
+                42,
+                "123",
+                """{"id":999,"name":"alpha","extra":"leak","__internal":"secret"}""",
+                1.5,
+                2.5));
+        rawStore.QueryGeoServicesRawPointPageAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PagedQueryResult<RawGeoServicesFeature>.Create(rawFeatures)));
+
+        var sut = CreateSut(featureReader);
+
+        var (payload, count) = await sut.QueryRawGeoServicesPointJsonWithValidationAsync(
+            7,
+            new FeatureQuery { Limit = 1 },
+            CreatePointLayerWithCustomObjectId(),
+            outputSrid: null,
+            CancellationToken.None);
+
+        count.Should().Be(1);
+        using var document = JsonDocument.Parse(payload);
+        var feature = document.RootElement.GetProperty("features")[0];
+        var attributes = feature.GetProperty("attributes");
+        attributes.GetProperty("id").GetInt64().Should().Be(123);
+        attributes.GetProperty("name").GetString().Should().Be("alpha");
+        attributes.TryGetProperty("extra", out _).Should().BeFalse();
+        attributes.TryGetProperty("__internal", out _).Should().BeFalse();
+        feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(1.5);
+        feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(2.5);
+    }
+
+    [Fact]
+    public async Task QueryRawGeoServicesPointJsonWithValidationAsync_WithNoStoredAttributes_InjectsInternalObjectId()
+    {
+        var featureReader = Substitute.For<IFeatureReader, IPagedRawGeoServicesFeatureStore>();
+        var rawStore = (IPagedRawGeoServicesFeatureStore)featureReader;
+        var rawFeatures = ImmutableArray.Create(RawGeoServicesFeature.Create(42, attributesJson: null, x: 1.5, y: 2.5));
+        rawStore.QueryGeoServicesRawPointPageAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PagedQueryResult<RawGeoServicesFeature>.Create(rawFeatures)));
+
+        var sut = CreateSut(featureReader);
+
+        var (payload, count) = await sut.QueryRawGeoServicesPointJsonWithValidationAsync(
+            7,
+            new FeatureQuery { Limit = 1 },
+            CreatePointLayer(),
+            outputSrid: null,
+            CancellationToken.None);
+
+        count.Should().Be(1);
+        using var document = JsonDocument.Parse(payload);
+        var attributes = document.RootElement
+            .GetProperty("features")[0]
+            .GetProperty("attributes");
+        attributes.GetProperty(FieldNames.ObjectId).GetInt64().Should().Be(42);
+    }
+
+    [Fact]
     public async Task StreamQueryAsync_WithPagedQuery_UsesLimitProbeInsteadOfCount()
     {
         var featureReader = Substitute.For<IFeatureReader>();
@@ -442,6 +504,18 @@ public sealed class FeatureServerQueryExecutorTests
             SpatialReference.WGS84,
             [
                 new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
+                new FieldDefinition("name", FieldType.String, Length: 128)
+            ]);
+
+    private static LayerDefinition CreatePointLayerWithCustomObjectId()
+        => new(
+            7,
+            "test-layer",
+            null,
+            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
+            SpatialReference.WGS84,
+            [
+                new FieldDefinition("id", FieldType.Integer, Nullable: false),
                 new FieldDefinition("name", FieldType.String, Length: 128)
             ]);
 

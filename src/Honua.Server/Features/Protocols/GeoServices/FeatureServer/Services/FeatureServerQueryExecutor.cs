@@ -8,6 +8,7 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Npgsql;
 
@@ -130,6 +131,7 @@ internal sealed class FeatureServerQueryExecutor
     {
         var objectIdFieldName = layer.ObjectIdFieldName;
         var queryFields = QueryFormatter.BuildQueryFields(layer, outFields: null, objectIdFieldName);
+        var allowedAttributeNames = queryFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var displayFieldName = QueryFormatter.ResolveDisplayFieldName(queryFields, objectIdFieldName);
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
         var buffer = new ArrayBufferWriter<byte>(EstimateRawGeoServicesPointPayloadCapacity(result, queryFields));
@@ -152,16 +154,7 @@ internal sealed class FeatureServerQueryExecutor
         {
             writer.WriteStartObject();
             writer.WritePropertyName("attributes");
-            if (string.IsNullOrWhiteSpace(feature.AttributesJson))
-            {
-                writer.WriteStartObject();
-                writer.WriteNumber(objectIdFieldName, feature.Id);
-                writer.WriteEndObject();
-            }
-            else
-            {
-                writer.WriteRawValue(feature.AttributesJson, skipInputValidation: true);
-            }
+            WriteRawGeoServicesAttributes(writer, feature, allowedAttributeNames, objectIdFieldName);
 
             writer.WritePropertyName("geometry");
             if (feature.X.HasValue && feature.Y.HasValue)
@@ -188,6 +181,74 @@ internal sealed class FeatureServerQueryExecutor
         writer.WriteEndObject();
         writer.Flush();
         return buffer.WrittenMemory;
+    }
+
+    private static void WriteRawGeoServicesAttributes(
+        Utf8JsonWriter writer,
+        RawGeoServicesFeature feature,
+        IReadOnlySet<string> allowedAttributeNames,
+        string objectIdFieldName)
+    {
+        writer.WriteStartObject();
+        if (!string.IsNullOrWhiteSpace(feature.AttributesJson))
+        {
+            WriteDeclaredRawAttributes(writer, feature.AttributesJson, allowedAttributeNames, objectIdFieldName);
+        }
+
+        writer.WritePropertyName(objectIdFieldName);
+        WriteRawGeoServicesObjectIdValue(writer, feature);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteDeclaredRawAttributes(
+        Utf8JsonWriter writer,
+        string attributesJson,
+        IReadOnlySet<string> allowedAttributeNames,
+        string objectIdFieldName)
+    {
+        using var document = JsonDocument.Parse(attributesJson);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            if (!ShouldIncludeRawGeoServicesAttribute(property.Name, allowedAttributeNames, objectIdFieldName))
+            {
+                continue;
+            }
+
+            writer.WritePropertyName(property.Name);
+            property.Value.WriteTo(writer);
+        }
+    }
+
+    private static bool ShouldIncludeRawGeoServicesAttribute(
+        string fieldName,
+        IReadOnlySet<string> allowedAttributeNames,
+        string objectIdFieldName)
+        => !fieldName.StartsWith("__", StringComparison.Ordinal) &&
+           !fieldName.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase) &&
+           allowedAttributeNames.Contains(fieldName);
+
+    private static void WriteRawGeoServicesObjectIdValue(Utf8JsonWriter writer, RawGeoServicesFeature feature)
+    {
+        if (string.IsNullOrWhiteSpace(feature.PublicIdJson))
+        {
+            writer.WriteNumberValue(feature.Id);
+            return;
+        }
+
+        using var document = JsonDocument.Parse(feature.PublicIdJson);
+        var root = document.RootElement;
+        if (root.ValueKind is JsonValueKind.Number or JsonValueKind.String)
+        {
+            root.WriteTo(writer);
+            return;
+        }
+
+        writer.WriteNumberValue(feature.Id);
     }
 
     private static int EstimateRawGeoServicesPointPayloadCapacity(

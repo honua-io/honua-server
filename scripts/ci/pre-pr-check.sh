@@ -117,6 +117,15 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
     --no-build \
     --no-restore \
     --configuration Release \
+    --filter "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData" \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
     --filter "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Tiles" \
     --logger "console;verbosity=minimal" \
     --results-directory ./tests/TestResults \
