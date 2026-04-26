@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
@@ -144,7 +145,13 @@ public static class OidcAuthenticationExtensions
                 var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
                 if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                 {
-                    return JwtBearerScheme;
+                    var currentOptions = context.RequestServices
+                        .GetRequiredService<IOptions<OidcAuthenticationOptions>>()
+                        .Value;
+                    if (currentOptions.Enabled && HasAnyProviderEnabled(currentOptions))
+                    {
+                        return JwtBearerScheme;
+                    }
                 }
 
                 if (context.Request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName))
