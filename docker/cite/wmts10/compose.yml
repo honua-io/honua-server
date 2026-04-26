@@ -1,0 +1,154 @@
+services:
+  honua-server:
+    image: honua-server:latest
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - PUBLIC_BASE_URL=http://honua-server:8080
+      - HostValidation__AllowedHosts__0=honua-server
+      - HostValidation__AllowedHosts__1=localhost
+      - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
+      - ConnectionStrings__DefaultConnection=Server=postgres;Port=5432;Database=honua_cite_wmts;User Id=postgres;Password=cite_password;
+      - ConnectionStrings__honua=Server=postgres;Port=5432;Database=honua_cite_wmts;User Id=postgres;Password=cite_password;
+      - ConnectionStrings__Redis=redis:6379
+      - Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security
+      - Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cite-wmts-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/healthz/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      - POSTGRES_DB=honua_cite_wmts
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=cite_password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    ports:
+      - "5436:5432"
+    networks:
+      - cite-wmts-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly no
+    networks:
+      - cite-wmts-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cite-engine:
+    image: ogccite/ets-wmts10:1.11-teamengine-6.0.0-RC2
+    ports:
+      - "8084:8080"
+    environment:
+      - JAVA_OPTS=-Xmx2g -DTE_BASE=/root/te_base
+      - TEAMENGINE_BASE_URL=http://cite-engine:8080/teamengine
+    volumes:
+      - cite-wmts-logs:/root/te_base/users/cite/logs
+      - ./config:/cite-config:ro
+    networks:
+      - cite-wmts-network
+    depends_on:
+      honua-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/teamengine"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  cite-runner:
+    image: ogccite/ets-wmts10:1.11-teamengine-6.0.0-RC2
+    environment:
+      - WMTS_CAPABILITIES_URL
+      - WMTS_FAIL_EARLY
+      - WMTS_INCLUDE_COMMON_OPERATIONS_TESTS
+      - WMTS_INCLUDE_GETCAPABILITIES_TESTS
+      - WMTS_INCLUDE_GETTILE_TESTS
+      - WMTS_INCLUDE_GETFEATUREINFO_TESTS
+      - WMTS_INCLUDE_KVP_GET_ENCODING
+      - WMTS_INCLUDE_RESTFUL_ENCODING
+    command:
+      - bash
+      - -lc
+      - |
+          set -euo pipefail
+          WMTS_CAPABILITIES_URL="$${WMTS_CAPABILITIES_URL:-http://honua-server:8080/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0}"
+          WMTS_FAIL_EARLY="$${WMTS_FAIL_EARLY:-off}"
+          WMTS_INCLUDE_COMMON_OPERATIONS_TESTS="$${WMTS_INCLUDE_COMMON_OPERATIONS_TESTS:-on}"
+          WMTS_INCLUDE_GETCAPABILITIES_TESTS="$${WMTS_INCLUDE_GETCAPABILITIES_TESTS:-on}"
+          WMTS_INCLUDE_GETTILE_TESTS="$${WMTS_INCLUDE_GETTILE_TESTS:-on}"
+          WMTS_INCLUDE_GETFEATUREINFO_TESTS="$${WMTS_INCLUDE_GETFEATUREINFO_TESTS:-off}"
+          WMTS_INCLUDE_KVP_GET_ENCODING="$${WMTS_INCLUDE_KVP_GET_ENCODING:-on}"
+          WMTS_INCLUDE_RESTFUL_ENCODING="$${WMTS_INCLUDE_RESTFUL_ENCODING:-off}"
+          echo 'Waiting for services to be ready...'
+          sleep 30
+          echo 'Preparing TeamEngine console...'
+          curl -sS --fail --retry 5 --retry-delay 2 --retry-all-errors -L -o /tmp/teamengine-console-6.0.0-RC2-bin.zip https://repo1.maven.org/maven2/org/opengis/cite/teamengine/teamengine-console/6.0.0-RC2/teamengine-console-6.0.0-RC2-bin.zip
+          unzip -q /tmp/teamengine-console-6.0.0-RC2-bin.zip -d /tmp/te-console
+          mkdir -p /root/te_base/resources/lib /root/te_base/scripts
+          mkdir -p /root/te_base/users/cite/logs
+          rm -rf /root/te_base/scripts/wmts
+          unzip -qo -j /root/ets-wmts10-*-deps.zip -d /root/te_base/resources/lib || true
+          unzip -qo /root/ets-wmts10-*-ctl.zip -d /root/te_base/scripts || true
+          export TE_BASE=/root/te_base
+          echo 'Starting WMTS 1.0 CITE conformance tests...'
+          /tmp/te-console/bin/unix/test.sh \
+            -source=/root/te_base/scripts/wmts/1.0.0/ctl/wmts-auto.xml \
+            -test=wmts:main \
+            "@capabilities-url=$${WMTS_CAPABILITIES_URL}" \
+            "@fail-early=$${WMTS_FAIL_EARLY}" \
+            "@include-CommonOperations-tests=$${WMTS_INCLUDE_COMMON_OPERATIONS_TESTS}" \
+            "@include-GetCapabilities-tests=$${WMTS_INCLUDE_GETCAPABILITIES_TESTS}" \
+            "@include-GetTile-tests=$${WMTS_INCLUDE_GETTILE_TESTS}" \
+            "@include-GetFeatureInfo-tests=$${WMTS_INCLUDE_GETFEATUREINFO_TESTS}" \
+            "@include-kvp-get-encoding=$${WMTS_INCLUDE_KVP_GET_ENCODING}" \
+            "@include-restful-encoding=$${WMTS_INCLUDE_RESTFUL_ENCODING}" \
+            -logdir=users/cite/logs \
+            -session=cite-wmts-session-$(date +%Y%m%d-%H%M%S)
+          echo 'CITE tests completed. Check results in logdir.'
+    volumes:
+      - cite-wmts-results:/root/te_base/users/cite/logs
+      - ./config:/cite-config:ro
+    networks:
+      - cite-wmts-network
+    depends_on:
+      cite-engine:
+        condition: service_healthy
+    profiles:
+      - test
+
+volumes:
+  cite-wmts-logs:
+    driver: local
+  cite-wmts-results:
+    driver: local
+
+networks:
+  cite-wmts-network:
+    driver: bridge

@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
@@ -206,20 +207,35 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IRasterPo
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        if (_queryBuilder is not FeatureQueryBuilder postgresQueryBuilder ||
+            _dataAccess is not FeatureDataAccess postgresDataAccess)
+        {
+            var fallback = await QueryGeoJsonPageAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            var fallbackItems = fallback.Items
+                .Select(feature => RawGeoJsonFeature.Create(
+                    feature.Id,
+                    feature.GeometryGeoJson,
+                    JsonSerializer.Serialize(
+                        feature.Attributes,
+                        FeatureAttributesJsonContext.Default.ImmutableDictionaryStringObject)))
+                .ToImmutableArray();
+            return PagedQueryResult<RawGeoJsonFeature>.Create(fallbackItems, fallback.HasMoreResults, fallback.TotalCount);
+        }
+
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
 
         if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
         {
-            var unpagedSelectQuery = _queryBuilder.BuildSelectGeoJsonQuery(layerId, query, geometryStorageType);
-            var rawFeatures = await _dataAccess.ExecuteSelectRawGeoJsonQueryAsync(unpagedSelectQuery, query, layerId, cancellationToken).ConfigureAwait(false);
+            var unpagedSelectQuery = postgresQueryBuilder.BuildSelectRawGeoJsonQuery(layerId, query, geometryStorageType);
+            var rawFeatures = await postgresDataAccess.ExecuteSelectRawGeoJsonQueryAsync(unpagedSelectQuery, query, layerId, cancellationToken).ConfigureAwait(false);
             return rawFeatures.Length == 0
                 ? PagedQueryResult<RawGeoJsonFeature>.Empty()
                 : PagedQueryResult<RawGeoJsonFeature>.Create(rawFeatures);
         }
 
         var pageQuery = query with { Limit = query.Limit.Value + 1 };
-        var selectQuery = _queryBuilder.BuildSelectGeoJsonQuery(layerId, pageQuery, geometryStorageType);
-        var features = await _dataAccess.ExecuteSelectRawGeoJsonQueryAsync(selectQuery, pageQuery, layerId, cancellationToken).ConfigureAwait(false);
+        var selectQuery = postgresQueryBuilder.BuildSelectRawGeoJsonQuery(layerId, pageQuery, geometryStorageType);
+        var features = await postgresDataAccess.ExecuteSelectRawGeoJsonQueryAsync(selectQuery, pageQuery, layerId, cancellationToken).ConfigureAwait(false);
 
         if (features.Length == 0)
         {

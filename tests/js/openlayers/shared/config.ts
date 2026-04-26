@@ -14,8 +14,17 @@ export const config = {
 /** OGC API Features base path */
 export const ogcFeaturesUrl = `${config.baseUrl}/ogc/features`;
 
+/** OGC API Maps base path */
+export const ogcMapsUrl = `${config.baseUrl}/ogc/maps`;
+
 /** WFS 2.0 endpoint */
 export const wfsUrl = `${config.baseUrl}/wfs`;
+
+/** WMS 1.3.0 endpoint */
+export const wmsUrl = `${config.baseUrl}/ogc/services/${encodeURIComponent(config.serviceId)}/wms`;
+
+/** WMTS 1.0.0 endpoint */
+export const wmtsUrl = `${config.baseUrl}/ogc/services/${encodeURIComponent(config.serviceId)}/wmts`;
 
 /** OGC API Tiles base path */
 export const ogcTilesUrl = `${config.baseUrl}/ogc/tiles`;

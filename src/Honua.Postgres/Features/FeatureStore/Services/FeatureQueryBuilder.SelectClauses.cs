@@ -89,6 +89,32 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
+    private void BuildRawGeoJsonSelectClause(
+        StringBuilder sql,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
+        bool isKnnQuery,
+        SpatialFilter? spatialFilter,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        var geometrySelect = _geometryProcessor.GetGeometryGeoJsonExpression(geometryStorageType, query);
+        var (publicIdSelect, attributesSelect) = BuildRawAttributeSelectExpressions(query, ref paramIndex, parameters);
+
+        if (isKnnQuery && spatialFilter!.Value.ReturnDistance)
+        {
+            var geographyOperand = _geometryProcessor.GetGeographyOperand(geometryStorageType, query.SpatialReferenceSrid);
+            var distanceParamExpression = BuildGeographyFilterExpression(spatialFilter.Value, query, ref paramIndex);
+            sql.Append(CultureInfo.InvariantCulture,
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS {FeatureQueryEncoding.GeometryColumn}, {publicIdSelect} AS public_id, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, ST_Distance({geographyOperand}, {distanceParamExpression}) as {FeatureQueryEncoding.InternalDistanceColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+        }
+        else
+        {
+            sql.Append(CultureInfo.InvariantCulture,
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {publicIdSelect} AS public_id, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+        }
+    }
+
     private void BuildKmlSelectClause(
         StringBuilder sql,
         FeatureQuery query,
@@ -163,5 +189,29 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         return $"jsonb_build_object({string.Join(", ", projectedFields)})::text";
+    }
+
+    private static (string PublicIdSelect, string AttributesSelect) BuildRawAttributeSelectExpressions(
+        FeatureQuery query,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        if (query.ExcludeAttributes)
+        {
+            return ("NULL", "NULL");
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.PublicIdAttributeName) &&
+            IsValidFieldName(query.PublicIdAttributeName))
+        {
+            var fieldParamIndex = paramIndex++;
+            parameters.Add(query.PublicIdAttributeName);
+            var fieldParam = $"${fieldParamIndex}";
+            return (
+                $"{DatabaseSchema.AttributesColumn} -> {fieldParam}",
+                $"({DatabaseSchema.AttributesColumn} - {fieldParam})::text");
+        }
+
+        return ("NULL", $"{DatabaseSchema.AttributesColumn}::text");
     }
 }

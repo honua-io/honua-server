@@ -69,15 +69,15 @@ Each conformance workflow must publish:
 
 ## Local Conformance Runs
 
-- OGC API Features: `./scripts/run-cite-tests.sh`
-- WFS 2.0: `./scripts/run-cite-wfs20-tests.sh`
-- OGC API Tiles: `./scripts/run-cite-tiles-tests.sh`
-- OGC API Maps: `./scripts/run-ogc-maps-conformance-tests.sh`
-- WMS 1.3: `./scripts/run-cite-wms-tests.sh`
-- WMTS 1.0: `./scripts/run-cite-wmts-tests.sh`
-- KML 2.2: `./scripts/run-cite-kml22-tests.sh`
-- GML 3.2: `./scripts/run-cite-gml32-tests.sh`
-- GeoPackage 1.2: `./scripts/run-cite-gpkg12-tests.sh`
+- OGC API Features: `./scripts/conformance/cite/run-cite-tests.sh`
+- WFS 2.0: `./scripts/conformance/cite/run-cite-wfs20-tests.sh`
+- OGC API Tiles: `./scripts/conformance/cite/run-cite-tiles-tests.sh`
+- OGC API Maps: `./scripts/conformance/ogc/run-ogc-maps-conformance-tests.sh`
+- WMS 1.3: `./scripts/conformance/cite/run-cite-wms-tests.sh`
+- WMTS 1.0: `./scripts/conformance/cite/run-cite-wmts-tests.sh`
+- KML 2.2: `./scripts/conformance/cite/run-cite-kml22-tests.sh`
+- GML 3.2: `./scripts/conformance/cite/run-cite-gml32-tests.sh`
+- GeoPackage 1.2: `./scripts/conformance/cite/run-cite-gpkg12-tests.sh`
 
 Detailed setup and troubleshooting:
 - `docs/contributor/cite-conformance-testing.md`

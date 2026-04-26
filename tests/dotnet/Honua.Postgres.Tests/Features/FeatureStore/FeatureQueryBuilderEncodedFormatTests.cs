@@ -26,6 +26,40 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
     }
 
     [Fact]
+    public void BuildSelectRawGeoJsonQuery_WithPublicIdAttribute_ProjectsIdAndStrippedAttributes()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            PublicIdAttributeName = "id"
+        };
+
+        var result = queryBuilder.BuildSelectRawGeoJsonQuery(layerId: 1, query: query);
+
+        result.Sql.Should().Contain("attributes -> $2 AS public_id");
+        result.Sql.Should().Contain("(attributes - $2)::text AS attributes");
+        result.Sql.Should().Contain("ST_AsGeoJSON(");
+        result.WhereParameters.Should().Equal("id");
+    }
+
+    [Fact]
+    public void BuildSelectGeoServicesPointQuery_WithPublicIdAttribute_ProjectsIdAndStrippedAttributes()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            PublicIdAttributeName = "id"
+        };
+
+        var result = queryBuilder.BuildSelectGeoServicesPointQuery(layerId: 1, query: query);
+
+        result.Sql.Should().Contain("attributes -> $2 AS public_id");
+        result.Sql.Should().Contain("(attributes - $2)::text AS attributes");
+        result.Sql.Should().Contain("ST_X(");
+        result.WhereParameters.Should().Equal("id");
+    }
+
+    [Fact]
     public void BuildSelectKmlQuery_UsesPostGisEncoder()
     {
         var queryBuilder = CreateQueryBuilder();

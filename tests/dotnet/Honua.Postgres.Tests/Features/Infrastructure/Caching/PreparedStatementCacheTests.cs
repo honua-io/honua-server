@@ -163,6 +163,33 @@ public class PreparedStatementCacheTests : IDisposable
         command.CommandText.Should().Be(sql);
     }
 
+    [Theory]
+    [InlineData("SELECT 1; DROP TABLE features")]
+    [InlineData("SELECT 1 -- comment")]
+    [InlineData("WITH deleted AS (DELETE FROM features RETURNING *) SELECT * FROM deleted")]
+    [InlineData("UPDATE features SET attributes = '{}'")]
+    public async Task GetOrCreatePreparedCommandAsync_UnsafeSql_ReturnsNull(string sql)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        var command = await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql);
+
+        command.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PreparePriorityStatementAsync_UnsafeSql_ReturnsNull()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        var command = await _cache.PreparePriorityStatementAsync(
+            (NpgsqlConnection)connection,
+            "SELECT 1; DROP TABLE features",
+            "unsafe_statement");
+
+        command.Should().BeNull();
+    }
+
     [Fact]
     public void GetStatistics_InitialState_ReturnsZeroStatistics()
     {

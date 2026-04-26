@@ -358,8 +358,8 @@ Recommended approach:
 
 - Deploy `kube-prometheus-stack` (Prometheus + Grafana) via Helm.
 - Configure a scrape target for Honua `GET /metrics`.
-- Import dashboard JSON from `docker/grafana/dashboards/honua-overview.json`.
-- Apply alert rules from `docker/prometheus/alerts.yml`.
+- Import dashboard JSON from `docker/monitoring/grafana/dashboards/honua-overview.json`.
+- Apply alert rules from `docker/monitoring/prometheus/alerts.yml`.
 - Use `docs/operator/examples/production-monitoring.json` as a baseline app
   configuration for monitoring, resilience, and rate-limiting thresholds.
 - Use `docs/operator/examples/prometheus-alerts.yml` as a broader standalone

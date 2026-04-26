@@ -29,7 +29,7 @@ jobs:
     with:
       suite: kml22
       display-name: KML 2.2
-      runner-script: ./scripts/run-cite-kml22-tests.sh
+      runner-script: ./scripts/conformance/cite/run-cite-kml22-tests.sh
       results-dir: cite-kml22-results
       summary-file: cite-kml22-summary.md
       cite-profile: ${{ inputs.profile || 'default' }}

@@ -7,7 +7,7 @@ on:
       - main
     paths:
       - 'docs/developer/api-specs/admin-api.json'
-      - 'scripts/generate-control-plane-sdks.sh'
+      - 'scripts/sdk/generate-control-plane-sdks.sh'
       - '.github/workflows/control-plane-sdk-governance.yml'
   push:
     branches:
@@ -15,7 +15,7 @@ on:
       - main
     paths:
       - 'docs/developer/api-specs/admin-api.json'
-      - 'scripts/generate-control-plane-sdks.sh'
+      - 'scripts/sdk/generate-control-plane-sdks.sh'
       - '.github/workflows/control-plane-sdk-governance.yml'
   workflow_dispatch:
     inputs:
@@ -59,8 +59,8 @@ jobs:
         env:
           SDK_VERSION: ${{ steps.sdk-version.outputs.value }}
         run: |
-          chmod +x scripts/generate-control-plane-sdks.sh
-          ./scripts/generate-control-plane-sdks.sh artifacts/control-plane-sdks
+          chmod +x scripts/sdk/generate-control-plane-sdks.sh
+          ./scripts/sdk/generate-control-plane-sdks.sh artifacts/control-plane-sdks
 
       - name: Upload SDK artifacts
         uses: actions/upload-artifact@v7

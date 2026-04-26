@@ -22,25 +22,25 @@ It implements a five-agent model:
 Full production run:
 
 ```bash
-./scripts/run-production-audit.sh --mode full
+./scripts/conformance/run-production-audit.sh --mode full
 ```
 
 Phase-focused run:
 
 ```bash
-./scripts/run-production-audit.sh --phase 1 --agents architecture,security,geodesy
+./scripts/conformance/run-production-audit.sh --phase 1 --agents architecture,security,geodesy
 ```
 
 Quick preflight run:
 
 ```bash
-./scripts/run-production-audit.sh --mode quick
+./scripts/conformance/run-production-audit.sh --mode quick
 ```
 
 Dry-run (planned checks only):
 
 ```bash
-./scripts/run-production-audit.sh --mode full --dry-run
+./scripts/conformance/run-production-audit.sh --mode full --dry-run
 ```
 
 ## Artifacts
@@ -81,7 +81,7 @@ Automated checks are necessary but not sufficient for production sign-off. Compl
 
 A release candidate is production-audit ready only when all criteria below hold:
 
-1. `./scripts/run-production-audit.sh --mode full` reports zero required check failures.
+1. `./scripts/conformance/run-production-audit.sh --mode full` reports zero required check failures.
 2. CITE suites used in phase 2 report zero failed conformance tests.
 3. OGC API - Maps conformance integration suite reports zero failed tests.
 4. Coverage and architecture gates remain green in CI (`TreatWarningsAsErrors`, API surface coverage, coverage thresholds).

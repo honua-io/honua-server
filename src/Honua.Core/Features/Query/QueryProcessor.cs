@@ -287,6 +287,8 @@ public sealed class QueryProcessor : IQueryProcessor
             Limit = query.Limit,
             OrderBy = query.OrderBy,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
+            GeometryType = layer.GeometryType,
+            PublicIdAttributeName = ResolvePublicIdAttributeName(layer),
             OutputSrid = outputSrid,
             OutputAxisOrder = outputAxisOrder,
             SpatialFilter = query.SpatialFilter,
@@ -312,6 +314,14 @@ public sealed class QueryProcessor : IQueryProcessor
         }
 
         return featureQuery;
+    }
+
+    private static string? ResolvePublicIdAttributeName(LayerDefinition layer)
+    {
+        var objectIdFieldName = layer.ObjectIdFieldName;
+        return layer.AttributeFields.Any(field => field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            ? objectIdFieldName
+            : null;
     }
 
     /// <inheritdoc />

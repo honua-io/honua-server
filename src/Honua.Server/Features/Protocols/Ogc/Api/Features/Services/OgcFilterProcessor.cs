@@ -576,7 +576,13 @@ internal sealed partial class OgcFilterProcessor
         {
             Geometry = wkb,
             Srid = srid,
-            SpatialRelationship = SpatialRelationship.Intersects
+            SpatialRelationship = SpatialRelationship.Intersects,
+            IsSimpleEnvelope = bbox.MinX <= bbox.MaxX,
+            AllowEnvelopeOnly = bbox.MinX <= bbox.MaxX,
+            EnvelopeMinX = bbox.MinX <= bbox.MaxX ? bbox.MinX : null,
+            EnvelopeMinY = bbox.MinX <= bbox.MaxX ? bbox.MinY : null,
+            EnvelopeMaxX = bbox.MinX <= bbox.MaxX ? bbox.MaxX : null,
+            EnvelopeMaxY = bbox.MinX <= bbox.MaxX ? bbox.MaxY : null
         };
     }
 

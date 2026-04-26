@@ -56,9 +56,7 @@ These workflows run on schedule and can be dispatched manually:
 | `windows-client-compat-nightly.yml` | Daily 7:15am UTC | Full CERT-\* matrix certification (18 test cases × 4 protocol lanes) with `.cert.json` envelopes + reusable evidence pack |
 | `pyqgis-client-compat-nightly.yml` | Daily 7:30am UTC | PyQGIS desktop client compatibility (OGC Features + WFS) with per-protocol `.cert.json` envelopes |
 | `load-soak-nightly.yml` | Scheduled | Load and soak testing |
-| `container-security.yml` | Scheduled | Container security scan |
-| `security-nightly.yml` | Scheduled | Security analysis |
-| `trivy-nightly.yml` | Scheduled | Trivy vulnerability scan |
+| `security-nightly.yml` | Daily 2am UTC | NuGet vulnerability scan, Trivy filesystem scan, and container security validation |
 | `nightly-container-build.yml` | Scheduled | Container build validation |
 | `codeql.yml` | Mon 0am UTC | CodeQL security analysis |
 

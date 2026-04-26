@@ -1,5 +1,5 @@
 # Reference Prometheus alerting rules for Honua server production monitoring.
-# Use this as a standalone example; the bundled self-hosted stack uses docker/prometheus/alerts.yml.
+# Use this as a standalone example; the bundled self-hosted stack uses docker/monitoring/prometheus/alerts.yml.
 
 groups:
   - name: honua.server.alerts

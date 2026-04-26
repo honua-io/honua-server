@@ -8,22 +8,22 @@ Current WMS support in Honua targets:
 - `GetCapabilities`
 - `GetMap`
 
-The CITE suite is executed with a profile-oriented parameter set (`minimal`, `default`, `full`) from `docker/cite-wms-config/test-params.xml`.
+The CITE suite is executed with a profile-oriented parameter set (`minimal`, `default`, `full`) from `docker/cite/wms13/config/test-params.xml`.
 
 ## Run Locally
 
 ```bash
 # Default profile
-./scripts/run-cite-wms-tests.sh
+./scripts/conformance/cite/run-cite-wms-tests.sh
 
 # Minimal profile
-./scripts/run-cite-wms-tests.sh --profile minimal
+./scripts/conformance/cite/run-cite-wms-tests.sh --profile minimal
 
 # Full profile
-./scripts/run-cite-wms-tests.sh --profile full
+./scripts/conformance/cite/run-cite-wms-tests.sh --profile full
 
 # Keep containers for debugging
-./scripts/run-cite-wms-tests.sh --no-cleanup --verbose
+./scripts/conformance/cite/run-cite-wms-tests.sh --no-cleanup --verbose
 ```
 
 ## CI Execution
@@ -50,8 +50,8 @@ Results are written to `cite-wms-results/`:
 ## Troubleshooting
 
 - Check app logs:
-  `docker compose -f docker/cite-wms-compose.yml logs honua-server`
+  `docker compose -f docker/cite/wms13/compose.yml logs honua-server`
 - Check TeamEngine logs:
-  `docker compose -f docker/cite-wms-compose.yml logs cite-runner`
+  `docker compose -f docker/cite/wms13/compose.yml logs cite-runner`
 - Verify endpoint manually:
   `http://localhost:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0`

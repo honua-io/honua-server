@@ -160,7 +160,7 @@ jobs:
           if [[ -n "$DURATION" ]]; then
             ARGS+=(--duration "$DURATION")
           fi
-          ./scripts/run-load-soak-tests.sh "${ARGS[@]}"
+          ./scripts/scale/run-load-soak-tests.sh "${ARGS[@]}"
 
       - name: Stop server
         if: always()

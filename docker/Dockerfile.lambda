@@ -60,7 +60,7 @@ COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt
 
 WORKDIR /var/task
 COPY --from=build /app /var/task
-COPY docker/lambda/bootstrap.sh /var/runtime/bootstrap
+COPY docker/cloud/lambda/bootstrap.sh /var/runtime/bootstrap
 
 RUN dnf install -y krb5-libs && \
     dnf clean all && \

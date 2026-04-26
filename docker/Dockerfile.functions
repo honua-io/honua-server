@@ -65,7 +65,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /out/app /home/site/wwwroot/app
-COPY docker/azure-functions/ /home/site/wwwroot/
+COPY docker/cloud/azure-functions/ /home/site/wwwroot/
 
 RUN chmod +x /home/site/wwwroot/handler.sh /home/site/wwwroot/app/Honua.Server
 

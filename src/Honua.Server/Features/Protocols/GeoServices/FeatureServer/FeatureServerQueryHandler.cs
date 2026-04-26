@@ -477,6 +477,10 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             var query = preparedQuery.Value;
+            if (canCache && ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(query, validatedParams.Where))
+            {
+                canCache = false;
+            }
 
             // Handle statistics queries (outStatistics)
             if (!string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
@@ -926,7 +930,11 @@ internal sealed class FeatureServerQueryHandler(
 
     internal static bool ShouldBypassQueryResponseCache(QueryParameters parameters)
         => !string.IsNullOrWhiteSpace(parameters.Geometry) ||
+           !string.IsNullOrWhiteSpace(parameters.GeometryType) ||
            parameters.NearestCount.HasValue ||
+           parameters.Distance.HasValue ||
+           !string.IsNullOrWhiteSpace(parameters.Units) ||
+           parameters.ReturnDistance ||
            !string.IsNullOrWhiteSpace(parameters.SpatialRel);
 
     private async Task<(FeatureQuery? Query, int? OutputSrid, IResult? Error)> PrepareFeatureQueryAsync(

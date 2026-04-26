@@ -131,7 +131,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Canonical Instruction Check
-        run: bash scripts/check-instructions-sync.sh
+        run: bash scripts/ci/check-instructions-sync.sh
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci

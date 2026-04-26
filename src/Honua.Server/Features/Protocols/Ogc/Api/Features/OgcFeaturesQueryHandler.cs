@@ -174,7 +174,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                                   string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase);
             var canCache = !useStreaming &&
                            cacheableFormat &&
-                           !ShouldBypassItemsResponseCache(query) &&
+                           !ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(query, filter) &&
                            ResponseCacheUtilities.ShouldCache(context, _cacheOptions);
             var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
             if (canCache && cacheTtl <= TimeSpan.Zero)
@@ -263,16 +263,24 @@ internal sealed partial class OgcFeaturesQueryHandler(
             PagedQueryResult<Feature>? pagedFeatureResult = null;
             PagedQueryResult<EncodedGeoJsonFeature>? pagedEncodedResult = null;
             PagedQueryResult<RawGeoJsonFeature>? pagedRawResult = null;
+            PagedQueryResult<RawGeoServicesFeature>? pagedRawPointResult = null;
             GeoJsonFeature[] features = [];
             var canUseRawGeoJsonFastPath = omitExactNumberMatched &&
                                            useNativeGeoJson &&
                                            outputAxisOrder == AxisOrder.EastNorth &&
                                            projectedProperties == null &&
                                            !includeFeatureLinks &&
-                                           _geometryServices.CanUsePreformattedGeoJson &&
-                                           CanUseObjectIdAsPublicId(layer);
+                                           _geometryServices.CanUsePreformattedGeoJson;
+            var canUseRawPointGeoJsonFastPath = canUseRawGeoJsonFastPath &&
+                                                layer.GeometryType == GeometryType.Point &&
+                                                query.SpatialFilter?.IsSimpleEnvelope == true;
 
-            if (canUseRawGeoJsonFastPath &&
+            if (canUseRawPointGeoJsonFastPath &&
+                _featureReader is IPagedRawGeoServicesFeatureStore rawPointFeatureStore)
+            {
+                pagedRawPointResult = await rawPointFeatureStore.QueryGeoServicesRawPointPageAsync(layerId, query, cancellationToken);
+            }
+            else if (canUseRawGeoJsonFastPath &&
                 _featureReader is IPagedRawGeoJsonFeatureStore rawGeoJsonFeatureStore)
             {
                 pagedRawResult = await rawGeoJsonFeatureStore.QueryGeoJsonRawPageAsync(layerId, query, cancellationToken);
@@ -375,18 +383,20 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     .ToArray();
             }
             stopwatch.Stop();
-            var queryTotalCount = pagedRawResult?.TotalCount
+            var queryTotalCount = pagedRawPointResult?.TotalCount
+                                  ?? pagedRawResult?.TotalCount
                                   ?? pagedEncodedResult?.TotalCount
                                   ?? pagedFeatureResult?.TotalCount
                                   ?? encodedResult?.TotalCount
                                   ?? featureResult?.TotalCount;
-            var queryHasMoreResults = pagedRawResult?.HasMoreResults
+            var queryHasMoreResults = pagedRawPointResult?.HasMoreResults
+                                      ?? pagedRawResult?.HasMoreResults
                                       ?? pagedEncodedResult?.HasMoreResults
                                       ?? pagedFeatureResult?.HasMoreResults
                                       ?? encodedResult?.HasMoreResults
                                       ?? featureResult?.HasMoreResults
                                       ?? false;
-            var numberReturned = pagedRawResult?.Items.Length ?? gmlResult?.Items.Length ?? features.Length;
+            var numberReturned = pagedRawPointResult?.Items.Length ?? pagedRawResult?.Items.Length ?? gmlResult?.Items.Length ?? features.Length;
             if (gmlResult.HasValue)
             {
                 queryTotalCount = gmlResult.Value.TotalCount;
@@ -410,6 +420,22 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 queryHasMoreResults);
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(outputCrsUri);
+
+            if (pagedRawPointResult.HasValue)
+            {
+                var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
+                    ? MediaTypes.GeoJson
+                    : MediaTypes.Json;
+                var payload = CreateRawPointFeatureCollectionPayload(pagedRawPointResult.Value.Items, layer, links, queryTotalCount);
+                if (canCache && cacheKey != null)
+                {
+                    var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload.ToArray(), contentType, _etagService);
+                    await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
+                    return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
+                }
+
+                return Results.Bytes(payload, contentType);
+            }
 
             if (pagedRawResult.HasValue)
             {
@@ -831,20 +857,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static string FormatContentCrs(string crsUri) => $"<{crsUri}>";
 
-    private static bool ShouldBypassItemsResponseCache(FeatureQuery query)
-        => query.SpatialFilter.HasValue;
-
-    private static bool CanUseObjectIdAsPublicId(LayerDefinition layer)
-    {
-        if (!layer.ObjectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return !layer.AttributeFields.Any(field => field.Name.Equals("id", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static ReadOnlyMemory<byte> CreateRawFeatureCollectionPayload(
+    internal static ReadOnlyMemory<byte> CreateRawFeatureCollectionPayload(
         ImmutableArray<RawGeoJsonFeature> features,
         LayerDefinition layer,
         ImmutableArray<Link> links,
@@ -854,6 +867,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             .Where(field => !field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase))
             .Select(field => field.Name)
             .ToArray();
+        var publicIdPropertyName = ResolveRawPublicIdPropertyName(layer);
         var buffer = new ArrayBufferWriter<byte>(EstimateRawFeatureCollectionPayloadCapacity(features, propertyFields, links));
         using var writer = new Utf8JsonWriter(buffer);
 
@@ -863,14 +877,23 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         foreach (var feature in features)
         {
+            var canWriteRawProperties = string.IsNullOrWhiteSpace(publicIdPropertyName) ||
+                                        !string.IsNullOrWhiteSpace(feature.PublicIdJson);
+            using var propertiesDocument = canWriteRawProperties ? null : TryParseJsonObject(feature.PropertiesJson);
+            var propertiesElement = propertiesDocument?.RootElement;
+
             writer.WriteStartObject();
             writer.WriteString("type", "Feature");
-            writer.WriteNumber("id", feature.Id);
+            writer.WritePropertyName("id");
+            WriteRawFeatureId(writer, feature.Id, feature.PublicIdJson, propertiesElement, publicIdPropertyName);
             writer.WritePropertyName("geometry");
             WriteValidatedRawGeometry(writer, feature.GeometryGeoJson);
 
             writer.WritePropertyName("properties");
-            WriteSchemaProperties(writer, feature.PropertiesJson, propertyFields);
+            if (!canWriteRawProperties || !TryWriteRawJsonObject(writer, feature.PropertiesJson))
+            {
+                WriteSchemaProperties(writer, propertiesElement, propertyFields);
+            }
 
             writer.WriteEndObject();
         }
@@ -890,6 +913,86 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.Flush();
 
         return buffer.WrittenMemory;
+    }
+
+    internal static ReadOnlyMemory<byte> CreateRawPointFeatureCollectionPayload(
+        ImmutableArray<RawGeoServicesFeature> features,
+        LayerDefinition layer,
+        ImmutableArray<Link> links,
+        long? numberMatched)
+    {
+        var propertyFields = layer.AttributeFields
+            .Where(field => !field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            .Select(field => field.Name)
+            .ToArray();
+        var publicIdPropertyName = ResolveRawPublicIdPropertyName(layer);
+        var buffer = new ArrayBufferWriter<byte>(EstimateRawPointFeatureCollectionPayloadCapacity(features, propertyFields, links));
+        using var writer = new Utf8JsonWriter(buffer);
+
+        writer.WriteStartObject();
+        writer.WriteString("type", "FeatureCollection");
+        writer.WriteStartArray("features");
+
+        foreach (var feature in features)
+        {
+            var canWriteRawProperties = string.IsNullOrWhiteSpace(publicIdPropertyName) ||
+                                        !string.IsNullOrWhiteSpace(feature.PublicIdJson);
+            using var propertiesDocument = canWriteRawProperties ? null : TryParseJsonObject(feature.AttributesJson);
+            var propertiesElement = propertiesDocument?.RootElement;
+
+            writer.WriteStartObject();
+            writer.WriteString("type", "Feature");
+            writer.WritePropertyName("id");
+            WriteRawFeatureId(writer, feature.Id, feature.PublicIdJson, propertiesElement, publicIdPropertyName);
+            writer.WritePropertyName("geometry");
+            WriteRawPointGeometry(writer, feature);
+
+            writer.WritePropertyName("properties");
+            if (!canWriteRawProperties || !TryWriteRawJsonObject(writer, feature.AttributesJson))
+            {
+                WriteSchemaProperties(writer, propertiesElement, propertyFields);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+
+        if (numberMatched.HasValue)
+        {
+            writer.WriteNumber("numberMatched", numberMatched.Value);
+        }
+
+        writer.WriteNumber("numberReturned", features.Length);
+        writer.WritePropertyName("links");
+        JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
+        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteEndObject();
+        writer.Flush();
+
+        return buffer.WrittenMemory;
+    }
+
+    private static string? ResolveRawPublicIdPropertyName(LayerDefinition layer)
+    {
+        var configuredField = layer.AttributeFields.FirstOrDefault(
+            field => field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase));
+        if (configuredField?.Name is { Length: > 0 })
+        {
+            return configuredField.Name;
+        }
+
+        if (!layer.ObjectIdFieldName.Equals("id", StringComparison.OrdinalIgnoreCase))
+        {
+            var idField = layer.AttributeFields.FirstOrDefault(
+                field => field.Name.Equals("id", StringComparison.OrdinalIgnoreCase));
+            if (idField?.Name is { Length: > 0 })
+            {
+                return idField.Name;
+            }
+        }
+
+        return null;
     }
 
     private static int EstimateRawFeatureCollectionPayloadCapacity(
@@ -918,6 +1021,47 @@ internal sealed partial class OgcFeaturesQueryHandler(
             : Math.Max(MinimumCapacity, (int)estimated);
     }
 
+    private static int EstimateRawPointFeatureCollectionPayloadCapacity(
+        ImmutableArray<RawGeoServicesFeature> features,
+        string[] propertyFields,
+        ImmutableArray<Link> links)
+    {
+        const int MinimumCapacity = 8 * 1024;
+        const int FixedPayloadOverhead = 512;
+        const int PropertyFieldOverhead = 48;
+        const int LinkOverhead = 256;
+        const int FeatureOverhead = 128;
+
+        long estimated = FixedPayloadOverhead +
+                         (propertyFields.Length * PropertyFieldOverhead) +
+                         (links.Length * LinkOverhead);
+        foreach (var feature in features)
+        {
+            estimated += (feature.AttributesJson?.Length ?? 2) + FeatureOverhead;
+        }
+
+        return estimated >= int.MaxValue
+            ? int.MaxValue
+            : Math.Max(MinimumCapacity, (int)estimated);
+    }
+
+    private static void WriteRawPointGeometry(Utf8JsonWriter writer, RawGeoServicesFeature feature)
+    {
+        if (!feature.X.HasValue || !feature.Y.HasValue)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString("type", "Point");
+        writer.WriteStartArray("coordinates");
+        writer.WriteNumberValue(feature.X.Value);
+        writer.WriteNumberValue(feature.Y.Value);
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+
     private static void WriteValidatedRawGeometry(Utf8JsonWriter writer, string? geometryGeoJson)
     {
         if (string.IsNullOrWhiteSpace(geometryGeoJson))
@@ -942,35 +1086,140 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNullValue();
     }
 
-    private static void WriteSchemaProperties(Utf8JsonWriter writer, string? propertiesJson, string[] propertyFields)
+    private static JsonDocument? TryParseJsonObject(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                return document;
+            }
+
+            document.Dispose();
+        }
+        catch (JsonException)
+        {
+        }
+
+        return null;
+    }
+
+    private static void WriteRawFeatureId(
+        Utf8JsonWriter writer,
+        long objectId,
+        string? publicIdJson,
+        JsonElement? propertiesElement,
+        string? publicIdPropertyName)
+    {
+        if (TryWriteRawJsonId(writer, publicIdJson))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(publicIdPropertyName) &&
+            propertiesElement.HasValue &&
+            TryGetJsonPropertyIgnoreCase(propertiesElement.Value, publicIdPropertyName, out var property) &&
+            TryWriteJsonElementId(writer, property.Value))
+        {
+            return;
+        }
+
+        writer.WriteNumberValue(objectId);
+    }
+
+    private static bool TryWriteRawJsonId(Utf8JsonWriter writer, string? publicIdJson)
+    {
+        if (string.IsNullOrWhiteSpace(publicIdJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(publicIdJson);
+            return TryWriteJsonElementId(writer, document.RootElement);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryWriteRawJsonObject(Utf8JsonWriter writer, string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
+        var trimmed = json.AsSpan().Trim();
+        if (trimmed.Length < 2 || trimmed[0] != '{' || trimmed[^1] != '}')
+        {
+            return false;
+        }
+
+        writer.WriteRawValue(json, skipInputValidation: true);
+        return true;
+    }
+
+    private static bool TryWriteJsonElementId(Utf8JsonWriter writer, JsonElement value)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.Number:
+                if (value.TryGetInt64(out var longValue))
+                {
+                    writer.WriteNumberValue(longValue);
+                    return true;
+                }
+
+                if (value.TryGetDouble(out var doubleValue))
+                {
+                    writer.WriteNumberValue(doubleValue);
+                    return true;
+                }
+
+                return false;
+
+            case JsonValueKind.String:
+                writer.WriteStringValue(value.GetString());
+                return true;
+
+            case JsonValueKind.True:
+                writer.WriteBooleanValue(true);
+                return true;
+
+            case JsonValueKind.False:
+                writer.WriteBooleanValue(false);
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    private static void WriteSchemaProperties(Utf8JsonWriter writer, JsonElement? propertiesElement, string[] propertyFields)
     {
         writer.WriteStartObject();
-        if (string.IsNullOrWhiteSpace(propertiesJson) || propertyFields.Length == 0)
+        if (!propertiesElement.HasValue || propertyFields.Length == 0)
         {
             writer.WriteEndObject();
             return;
         }
 
-        try
+        foreach (var fieldName in propertyFields)
         {
-            using var document = JsonDocument.Parse(propertiesJson!);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            if (TryGetJsonPropertyIgnoreCase(propertiesElement.Value, fieldName, out var property))
             {
-                writer.WriteEndObject();
-                return;
+                writer.WritePropertyName(fieldName);
+                property.Value.WriteTo(writer);
             }
-
-            foreach (var fieldName in propertyFields)
-            {
-                if (TryGetJsonPropertyIgnoreCase(document.RootElement, fieldName, out var property))
-                {
-                    writer.WritePropertyName(fieldName);
-                    property.Value.WriteTo(writer);
-                }
-            }
-        }
-        catch (JsonException)
-        {
         }
 
         writer.WriteEndObject();

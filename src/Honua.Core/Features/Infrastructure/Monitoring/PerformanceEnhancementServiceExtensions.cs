@@ -192,7 +192,7 @@ public sealed class PerformanceEnhancementOptions
     /// <summary>
     /// Whether to enable query result caching (configured at Server level).
     /// </summary>
-    public bool EnableQueryResultCaching { get; set; } = true;
+    public bool EnableQueryResultCaching { get; set; }
 
     /// <summary>
     /// Whether to enable performance optimizations in development.

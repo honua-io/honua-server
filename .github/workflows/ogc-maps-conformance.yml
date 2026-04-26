@@ -42,7 +42,7 @@ jobs:
         id: run-tests
         run: |
           set +e
-          timeout 1800 ./scripts/run-ogc-maps-conformance-tests.sh --configuration Release --verbose
+          timeout 1800 ./scripts/conformance/ogc/run-ogc-maps-conformance-tests.sh --configuration Release --verbose
           test_exit_code=$?
           set -e
           echo "exit_code=$test_exit_code" >> "$GITHUB_OUTPUT"

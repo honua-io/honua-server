@@ -33,6 +33,7 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
             ObjectIds = hasObjectIds ? context.QueryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = context.QueryParams.ResultOffset,
             Limit = context.QueryParams.ResultRecordCount,
+            GeometryType = context.Layer.GeometryType,
             SpatialReferenceSrid = context.Layer.SpatialReference.ToSrid(),
             OutputSrid = context.OutputSrid,
             OrderBy = OrderByParsing.ParseFeatureServerOrderBy(
@@ -92,7 +93,11 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
 
             if (CanUsePointEnvelopeIntersectsFastPath(context, spatialFilter))
             {
-                spatialFilter = spatialFilter with { SpatialRelationship = SpatialRelationship.EnvelopeIntersects };
+                spatialFilter = spatialFilter with
+                {
+                    SpatialRelationship = SpatialRelationship.EnvelopeIntersects,
+                    AllowEnvelopeOnly = true
+                };
             }
 
             return query with { SpatialFilter = spatialFilter };

@@ -129,10 +129,10 @@ Description of the issue...
 ## Customization
 
 ### Modify Review Criteria
-Edit `scripts/architecture-review.py` in the `get_honua_architecture_rules()` function.
+Edit `scripts/ci/architecture-review.py` in the `get_honua_architecture_rules()` function.
 
 ### Change LLM Model
-In `scripts/architecture-review.py`:
+In `scripts/ci/architecture-review.py`:
 ```python
 model="gpt-4-turbo",  # More cost-effective
 # or
@@ -168,7 +168,7 @@ Set `ANTHROPIC_API_KEY` instead of `OPENAI_API_KEY` and implement the `analyze_w
 ### False Positives/Negatives
 - LLM reviews are educational aids, not perfect
 - Human architectural review still recommended for complex changes
-- Update prompt in `scripts/architecture-review.py` to improve accuracy
+- Update prompt in `scripts/ci/architecture-review.py` to improve accuracy
 
 ## Integration with Existing CI
 

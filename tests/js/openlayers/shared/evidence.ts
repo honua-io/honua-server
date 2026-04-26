@@ -54,6 +54,10 @@ interface CertEnvelope {
   extensions: CertResult[];
 }
 
+interface EvidenceCollectorOptions {
+  mergeExisting?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -103,6 +107,11 @@ const PROTOCOL_APPLICABILITY: Record<string, ReadonlySet<string>> = {
     'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
     'CERT-RNDR-LBL-01',
   ]),
+  'ogc-maps': new Set([
+    'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-DISC-01', 'CERT-DISC-02',
+    'CERT-ERRH-01', 'CERT-RNDR-01',
+  ]),
   mvt: new Set([
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
     'CERT-ERRH-01', 'CERT-RNDR-01',
@@ -132,18 +141,19 @@ const PROTOCOL_APPLICABILITY: Record<string, ReadonlySet<string>> = {
   ]),
   wms: new Set([
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-DISC-01', 'CERT-DISC-02',
     'CERT-ERRH-01', 'CERT-RNDR-01',
   ]),
   wmts: new Set([
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-DISC-01', 'CERT-DISC-02',
     'CERT-ERRH-01', 'CERT-RNDR-01',
   ]),
   'admin-api': new Set([
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
     'CERT-ERRH-01',
   ]),
-  // Pending formal addition to CROSS_CLIENT_CERTIFICATION_MATRIX.md
-  wfs20: new Set([
+  wfs: new Set([
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
     'CERT-DISC-01', 'CERT-DISC-02', 'CERT-SCHM-01',
     'CERT-QFLT-01', 'CERT-GEOM-01',
@@ -153,13 +163,10 @@ const PROTOCOL_APPLICABILITY: Record<string, ReadonlySet<string>> = {
 
 /**
  * Protocols defined in the certification evidence spec.
- * wfs20 is NOT yet in the spec — excluded until formally added to
- * CROSS_CLIENT_CERTIFICATION_MATRIX.md. WFS tests still run but
- * write() returns null for non-spec protocols.
  */
 const VALID_PROTOCOLS = new Set([
   'featureserver', 'mapserver', 'ogc-features', 'odata',
-  'mvt', 'wms', 'wmts', 'admin-api',
+  'ogc-maps', 'mvt', 'wfs', 'wms', 'wmts', 'admin-api',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -245,10 +252,12 @@ export class EvidenceCollector {
   private readonly extensionMap = new Map<string, CertResult>();
   private readonly pendingAttempts = new Map<string, number>();
   private readonly pendingExtAttempts = new Map<string, number>();
+  private readonly mergeExisting: boolean;
   readonly protocol: string;
 
-  constructor(protocol: string) {
+  constructor(protocol: string, options: EvidenceCollectorOptions = {}) {
     this.protocol = protocol;
+    this.mergeExisting = options.mergeExisting ?? true;
   }
 
   /**
@@ -355,19 +364,21 @@ export class EvidenceCollector {
     // Read existing file from a sibling suite that ran in an earlier fork
     const priorResults = new Map<string, CertResult>();
     const priorExtensions = new Map<string, CertResult>();
-    try {
-      const filepath = resolve(certOutputDir(), mergeFilename(this.protocol));
-      const existing: CertEnvelope = JSON.parse(readFileSync(filepath, 'utf-8'));
-      for (const r of existing.results) {
-        if (r.status === 'pass' || r.status === 'fail') {
-          priorResults.set(r.test_case_id, r);
+    if (this.mergeExisting) {
+      try {
+        const filepath = resolve(certOutputDir(), mergeFilename(this.protocol));
+        const existing: CertEnvelope = JSON.parse(readFileSync(filepath, 'utf-8'));
+        for (const r of existing.results) {
+          if (r.status === 'pass' || r.status === 'fail') {
+            priorResults.set(r.test_case_id, r);
+          }
         }
+        for (const e of existing.extensions) {
+          priorExtensions.set(e.test_case_id, e);
+        }
+      } catch {
+        // No existing file yet
       }
-      for (const e of existing.extensions) {
-        priorExtensions.set(e.test_case_id, e);
-      }
-    } catch {
-      // No existing file yet
     }
 
     const merged = new Map(priorResults);

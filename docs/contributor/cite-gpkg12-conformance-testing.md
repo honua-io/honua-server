@@ -14,13 +14,13 @@ Unlike service-level conformance suites (WMS, WMTS, etc.), the GeoPackage 1.2 su
 
 ```bash
 # Default run
-./scripts/run-cite-gpkg12-tests.sh
+./scripts/conformance/cite/run-cite-gpkg12-tests.sh
 
 # Keep containers for debugging
-./scripts/run-cite-gpkg12-tests.sh --no-cleanup --verbose
+./scripts/conformance/cite/run-cite-gpkg12-tests.sh --no-cleanup --verbose
 
 # Interactive mode (services stay up for manual testing)
-./scripts/run-cite-gpkg12-tests.sh --interactive
+./scripts/conformance/cite/run-cite-gpkg12-tests.sh --interactive
 ```
 
 ## CI Execution
@@ -47,9 +47,9 @@ Results are written to `cite-gpkg12-results/`:
 ## Troubleshooting
 
 - Check app logs:
-  `docker compose -f docker/cite-gpkg12-compose.yml logs honua-server`
+  `docker compose -f docker/cite/gpkg12/compose.yml logs honua-server`
 - Check TeamEngine logs:
-  `docker compose -f docker/cite-gpkg12-compose.yml logs cite-runner`
+  `docker compose -f docker/cite/gpkg12/compose.yml logs cite-runner`
 - Verify endpoint manually:
   `curl -H 'X-API-Key: cite-admin-password' 'http://localhost:8080/api/v1/admin/services/cite/layers/0/export?format=gpkg' -o export.gpkg`
 - The admin password in the CITE environment is hardcoded to `cite-admin-password`. No secrets management is needed for this test infrastructure.

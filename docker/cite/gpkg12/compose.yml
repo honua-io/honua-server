@@ -1,0 +1,136 @@
+services:
+  honua-server:
+    image: honua-server:latest
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - PUBLIC_BASE_URL=http://honua-server:8080
+      - HostValidation__AllowedHosts__0=honua-server
+      - HostValidation__AllowedHosts__1=localhost
+      - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
+      - ConnectionStrings__DefaultConnection=Server=postgres;Port=5432;Database=honua_cite_gpkg;User Id=postgres;Password=cite_password;
+      - ConnectionStrings__honua=Server=postgres;Port=5432;Database=honua_cite_gpkg;User Id=postgres;Password=cite_password;
+      - ConnectionStrings__Redis=redis:6379
+      - Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security
+      - Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cite-gpkg12-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/healthz/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      - POSTGRES_DB=honua_cite_gpkg
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=cite_password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    ports:
+      - "5439:5432"
+    networks:
+      - cite-gpkg12-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly no
+    networks:
+      - cite-gpkg12-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cite-engine:
+    # :latest — no versioned TeamEngine-bundled tag is published for this suite yet.
+    # Pin when one becomes available. See cite-gpkg12-conformance-testing.md troubleshooting.
+    image: ogccite/ets-gpkg12:latest
+    ports:
+      - "8087:8080"
+    environment:
+      - JAVA_OPTS=-Xmx2g -DTE_BASE=/root/te_base
+      - TEAMENGINE_BASE_URL=http://cite-engine:8080/teamengine
+    volumes:
+      - cite-gpkg12-logs:/root/te_base/users/cite/logs
+    networks:
+      - cite-gpkg12-network
+    depends_on:
+      honua-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/teamengine"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  cite-runner:
+    image: ogccite/ets-gpkg12:latest
+    command:
+      - bash
+      - -lc
+      - |
+          set -euo pipefail
+          echo 'Waiting for services to be ready...'
+          sleep 30
+          echo 'Fetching GeoPackage from server...'
+          mkdir -p /data
+          curl -sS --fail --retry 5 --retry-delay 2 --retry-all-errors \
+            -H 'X-API-Key: CiteAdminPassword123!' \
+            'http://honua-server:8080/api/v1/admin/services/cite/layers/0/export?format=gpkg' \
+            -o /data/export.gpkg
+          echo 'GeoPackage fetched successfully'
+          echo 'Preparing TeamEngine console...'
+          curl -sS --fail --retry 5 --retry-delay 2 --retry-all-errors -L -o /tmp/teamengine-console-6.0.0-RC2-bin.zip https://repo1.maven.org/maven2/org/opengis/cite/teamengine/teamengine-console/6.0.0-RC2/teamengine-console-6.0.0-RC2-bin.zip
+          unzip -q /tmp/teamengine-console-6.0.0-RC2-bin.zip -d /tmp/te-console
+          mkdir -p /root/te_base/resources/lib /root/te_base/scripts
+          mkdir -p /root/te_base/users/cite/logs
+          rm -rf /root/te_base/scripts/gpkg12
+          unzip -qo -j /root/ets-gpkg12-*-deps.zip -d /root/te_base/resources/lib || true
+          unzip -qo /root/ets-gpkg12-*-ctl.zip -d /root/te_base/scripts || true
+          export TE_BASE=/root/te_base
+          echo 'Starting GeoPackage 1.2 CITE conformance tests...'
+          /tmp/te-console/bin/unix/test.sh \
+            -source=/root/te_base/scripts/gpkg12/1.2/ctl/gpkg12-suite.ctl \
+            @iut=file:///data/export.gpkg \
+            -logdir=users/cite/logs \
+            -session=cite-gpkg12-session-$(date +%Y%m%d-%H%M%S)
+          echo 'CITE tests completed. Check results in logdir.'
+    volumes:
+      - cite-gpkg12-results:/root/te_base/users/cite/logs
+    networks:
+      - cite-gpkg12-network
+    depends_on:
+      cite-engine:
+        condition: service_healthy
+    profiles:
+      - test
+
+volumes:
+  cite-gpkg12-logs:
+    driver: local
+  cite-gpkg12-results:
+    driver: local
+
+networks:
+  cite-gpkg12-network:
+    driver: bridge

@@ -117,6 +117,12 @@ public sealed class QueryCacheOptions
 public sealed class QueryResultCacheOptions
 {
     /// <summary>
+    /// Whether generic query-result caching is enabled. Defaults off so deployments do not
+    /// retain high-cardinality feature query results unless explicitly opted in.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
     /// Default cache expiration time.
     /// </summary>
     public TimeSpan DefaultExpiration { get; set; } = TimeSpan.FromMinutes(10);
@@ -213,6 +219,11 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
         ArgumentNullException.ThrowIfNull(cacheKey);
         ArgumentNullException.ThrowIfNull(queryExecutor);
         ArgumentNullException.ThrowIfNull(context);
+
+        if (!_options.Enabled)
+        {
+            return await queryExecutor(context);
+        }
 
         Interlocked.Increment(ref _totalRequests);
 

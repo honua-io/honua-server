@@ -5,7 +5,7 @@ on:
   # Run on schedule and manual dispatch only. See docs/ci/gate-model.md.
   schedule:
     # Run weekly to catch conformance regressions
-    - cron: '0 6 * * 2'  # Tuesday at 6am UTC (different from Features on Monday)
+    - cron: '0 6 * * 2'
   workflow_dispatch:
     inputs:
       profile:
@@ -26,113 +26,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cite-tiles-conformance:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build Honua Server image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          tags: honua-server:latest
-          cache-from: type=gha,scope=cite-tiles
-          cache-to: type=gha,mode=max,scope=cite-tiles
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y curl jq
-
-      - name: Run OGC API Tiles CITE conformance tests
-        env:
-          CITE_PROFILE: ${{ github.event.inputs.profile || 'default' }}
-        run: |
-          # Run CITE tests with appropriate timeout
-          timeout 2400 ./scripts/run-cite-tiles-tests.sh --profile "$CITE_PROFILE" --verbose || cite_exit_code=$?
-
-          # Check if timeout occurred (exit code 124)
-          if [[ ${cite_exit_code:-0} -eq 124 ]]; then
-            echo "CITE tests timed out after 40 minutes"
-            exit 1
-          elif [[ ${cite_exit_code:-0} -ne 0 ]]; then
-            echo "CITE tests failed with exit code: ${cite_exit_code:-0}"
-            exit 1
-          fi
-
-      - name: Parse CITE results
-        id: parse-results
-        run: |
-          if [ -f cite-tiles-results/cite-tiles-summary.md ]; then
-            # Extract key metrics from summary
-            TOTAL_TESTS=$(grep "Total Tests" cite-tiles-results/cite-tiles-summary.md | grep -o '[0-9]\+' || echo "0")
-            PASSED_TESTS=$(grep "Passed" cite-tiles-results/cite-tiles-summary.md | grep -o '[0-9]\+' | head -1 || echo "0")
-            FAILED_TESTS=$(grep "Failed" cite-tiles-results/cite-tiles-summary.md | grep -o '[0-9]\+' | head -1 || echo "0")
-            SUCCESS_RATE=$(grep "Success Rate" cite-tiles-results/cite-tiles-summary.md | grep -o '[0-9]\+' || echo "0")
-
-            echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
-            echo "passed_tests=$PASSED_TESTS" >> $GITHUB_OUTPUT
-            echo "failed_tests=$FAILED_TESTS" >> $GITHUB_OUTPUT
-            echo "success_rate=$SUCCESS_RATE" >> $GITHUB_OUTPUT
-            echo "results_available=true" >> $GITHUB_OUTPUT
-
-            # Check for specific conformance classes
-            CORE_PASSED="false"
-            TILESET_PASSED="false"
-            MVT_PASSED="false"
-            OPENAPI_PASSED="false"
-
-            if grep -q "Core.*PASSED\|core.*passed" cite-tiles-results/*.xml cite-tiles-results/*.html 2>/dev/null; then
-              CORE_PASSED="true"
-            fi
-
-            if grep -q "Tileset.*PASSED\|tileset.*passed" cite-tiles-results/*.xml cite-tiles-results/*.html 2>/dev/null; then
-              TILESET_PASSED="true"
-            fi
-
-            if grep -q "MVT.*PASSED\|mvt.*passed" cite-tiles-results/*.xml cite-tiles-results/*.html 2>/dev/null; then
-              MVT_PASSED="true"
-            fi
-
-            if grep -q "OpenAPI.*PASSED\|openapi.*passed" cite-tiles-results/*.xml cite-tiles-results/*.html 2>/dev/null; then
-              OPENAPI_PASSED="true"
-            fi
-
-            echo "core_passed=$CORE_PASSED" >> $GITHUB_OUTPUT
-            echo "tileset_passed=$TILESET_PASSED" >> $GITHUB_OUTPUT
-            echo "mvt_passed=$MVT_PASSED" >> $GITHUB_OUTPUT
-            echo "openapi_passed=$OPENAPI_PASSED" >> $GITHUB_OUTPUT
-          else
-            echo "results_available=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload CITE test results
-        uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: cite-tiles-conformance-results-${{ github.run_number }}
-          path: |
-            cite-tiles-results/
-            docker/cite-tiles-config/
-          retention-days: 30
-
-      - name: Fail on conformance issues
-        if: steps.parse-results.outputs.results_available != 'true' || steps.parse-results.outputs.failed_tests != '0'
-        run: |
-          if [[ "${{ steps.parse-results.outputs.results_available }}" != "true" ]]; then
-            echo "OGC API Tiles CITE conformance results were not produced"
-            exit 1
-          fi
-
-          echo "OGC API Tiles CITE conformance tests failed"
-          echo "Failed tests: ${{ steps.parse-results.outputs.failed_tests }}"
-          echo "Review the test results and fix conformance issues"
-          exit 1
+  cite:
+    uses: ./.github/workflows/cite-conformance-common.yml
+    with:
+      suite: tiles
+      display-name: OGC API Tiles
+      runner-script: ./scripts/conformance/cite/run-cite-tiles-tests.sh
+      results-dir: cite-tiles-results
+      summary-file: cite-tiles-summary.md
+      timeout-seconds: 2400
+      job-timeout-minutes: 45
+      cite-profile: ${{ inputs.profile || 'default' }}
+      extra-artifact-paths: docker/cite/ogc-api-tiles/config/

@@ -14,13 +14,13 @@ Unlike service-level conformance suites (WMS, WMTS, etc.), the KML 2.2 suite has
 
 ```bash
 # Default run
-./scripts/run-cite-kml22-tests.sh
+./scripts/conformance/cite/run-cite-kml22-tests.sh
 
 # Keep containers for debugging
-./scripts/run-cite-kml22-tests.sh --no-cleanup --verbose
+./scripts/conformance/cite/run-cite-kml22-tests.sh --no-cleanup --verbose
 
 # Interactive mode (services stay up for manual testing)
-./scripts/run-cite-kml22-tests.sh --interactive
+./scripts/conformance/cite/run-cite-kml22-tests.sh --interactive
 ```
 
 ## CI Execution
@@ -47,9 +47,9 @@ Results are written to `cite-kml22-results/`:
 ## Troubleshooting
 
 - Check app logs:
-  `docker compose -f docker/cite-kml22-compose.yml logs honua-server`
+  `docker compose -f docker/cite/kml22/compose.yml logs honua-server`
 - Check TeamEngine logs:
-  `docker compose -f docker/cite-kml22-compose.yml logs cite-runner`
+  `docker compose -f docker/cite/kml22/compose.yml logs cite-runner`
 - Verify endpoint manually:
   `curl http://localhost:8080/rest/services/cite/MapServer/generateKml`
 - The ETS Docker image (`ogccite/ets-kml22:latest`) uses `:latest` tag. If validation behavior changes unexpectedly, check for upstream image updates.

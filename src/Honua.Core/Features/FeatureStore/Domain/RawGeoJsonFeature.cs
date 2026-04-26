@@ -19,6 +19,11 @@ public readonly record struct RawGeoJsonFeature
     public required string? GeometryGeoJson { get; init; }
 
     /// <summary>
+    /// Feature id encoded as a raw JSON scalar, or null when the object id should be used.
+    /// </summary>
+    public string? PublicIdJson { get; init; }
+
+    /// <summary>
     /// Properties encoded as a raw JSON object, or null when no properties are present.
     /// </summary>
     public required string? PropertiesJson { get; init; }
@@ -31,4 +36,20 @@ public readonly record struct RawGeoJsonFeature
         string? geometryGeoJson,
         string? propertiesJson)
         => new() { Id = id, GeometryGeoJson = geometryGeoJson, PropertiesJson = propertiesJson };
+
+    /// <summary>
+    /// Creates a new raw GeoJSON feature with the specified raw public id and properties.
+    /// </summary>
+    public static RawGeoJsonFeature Create(
+        long id,
+        string? geometryGeoJson,
+        string? publicIdJson,
+        string? propertiesJson)
+        => new()
+        {
+            Id = id,
+            GeometryGeoJson = geometryGeoJson,
+            PublicIdJson = publicIdJson,
+            PropertiesJson = propertiesJson
+        };
 }

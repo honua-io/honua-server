@@ -80,6 +80,7 @@ class PostGISFixture:
             with self.get_connection() as conn:
                 conn.execute(
                     "CREATE EXTENSION IF NOT EXISTS postgis; "
+                    "CREATE EXTENSION IF NOT EXISTS postgis_raster; "
                     "CREATE EXTENSION IF NOT EXISTS unaccent;"
                 )
                 conn.commit()
@@ -100,6 +101,7 @@ class PostGISFixture:
         with self.get_connection() as conn:
             conn.execute(
                 "CREATE EXTENSION IF NOT EXISTS postgis; "
+                "CREATE EXTENSION IF NOT EXISTS postgis_raster; "
                 "CREATE EXTENSION IF NOT EXISTS unaccent;"
             )
             conn.commit()
@@ -437,6 +439,59 @@ class PostGISFixture:
                     """
                 )
 
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS honua.raster_data (
+                        id BIGSERIAL PRIMARY KEY,
+                        layer_id INTEGER NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
+                        name VARCHAR(255) NOT NULL,
+                        description TEXT,
+                        raster raster NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ,
+                        width INTEGER GENERATED ALWAYS AS (ST_Width(raster)) STORED,
+                        height INTEGER GENERATED ALWAYS AS (ST_Height(raster)) STORED,
+                        band_count INTEGER GENERATED ALWAYS AS (ST_NumBands(raster)) STORED,
+                        pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
+                        srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
+                    );
+                    """
+                )
+
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS honua.raster_statistics (
+                        id BIGSERIAL PRIMARY KEY,
+                        raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+                        band_number INTEGER NOT NULL,
+                        min_value DOUBLE PRECISION,
+                        max_value DOUBLE PRECISION,
+                        mean_value DOUBLE PRECISION,
+                        std_dev DOUBLE PRECISION,
+                        valid_pixel_count BIGINT,
+                        nodata_pixel_count BIGINT,
+                        computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        CONSTRAINT raster_statistics_unique_band UNIQUE (raster_data_id, band_number)
+                    );
+                    """
+                )
+
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS honua.raster_tiles (
+                        id BIGSERIAL PRIMARY KEY,
+                        raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+                        zoom_level INTEGER NOT NULL,
+                        tile_x INTEGER NOT NULL,
+                        tile_y INTEGER NOT NULL,
+                        tile_data BYTEA NOT NULL,
+                        content_type VARCHAR(50) NOT NULL DEFAULT 'image/png',
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        CONSTRAINT raster_tiles_unique_tile UNIQUE (raster_data_id, zoom_level, tile_x, tile_y)
+                    );
+                    """
+                )
+
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_service_layers_service_name ON honua.service_layers(service_name);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(layer_id);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);")
@@ -445,6 +500,10 @@ class PostGISFixture:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id ON honua.raster_data(layer_id);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id_id ON honua.raster_data(layer_id, id);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_statistics_raster_data_id ON honua.raster_statistics(raster_data_id);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_tiles_lookup ON honua.raster_tiles(raster_data_id, zoom_level, tile_x, tile_y);")
 
                 conn.execute(
                     """

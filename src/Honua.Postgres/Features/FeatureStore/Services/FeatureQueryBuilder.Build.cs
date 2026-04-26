@@ -172,8 +172,9 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 pointGeometry = $"ST_Transform({pointGeometry}, {query.OutputSrid.Value})";
             }
 
+            var (publicIdSelect, attributesSelect) = BuildRawAttributeSelectExpressions(query, ref paramIndex, parameters);
             sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT {DatabaseSchema.ObjectIdColumn}, {DatabaseSchema.AttributesColumn}::text AS {DatabaseSchema.AttributesColumn}, ST_X({pointGeometry}) AS x, ST_Y({pointGeometry}) AS y FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                $"SELECT {DatabaseSchema.ObjectIdColumn}, {publicIdSelect} AS public_id, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, ST_X({pointGeometry}) AS x, ST_Y({pointGeometry}) AS y FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
@@ -199,6 +200,12 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
         => BuildFormatSelectQuery(query, geometryStorageType, BuildGeoJsonSelectClause);
+
+    public CoreParameterizedQuery BuildSelectRawGeoJsonQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+        => BuildFormatSelectQuery(query, geometryStorageType, BuildRawGeoJsonSelectClause);
 
     public CoreParameterizedQuery BuildSelectKmlQuery(
         int layerId,

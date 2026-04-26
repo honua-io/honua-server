@@ -39,6 +39,31 @@ public sealed class FeatureServerQueryHandlerExtentFallbackTests
         FeatureServerQueryHandler.CanFallbackToLayerExtent(queryParams).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("geometry")]
+    [InlineData("geometryType")]
+    [InlineData("spatialRel")]
+    [InlineData("distance")]
+    [InlineData("units")]
+    [InlineData("nearestCount")]
+    [InlineData("returnDistance")]
+    public void ShouldBypassQueryResponseCache_WithSpatialParameter_ReturnsTrue(string parameterName)
+    {
+        var queryParams = parameterName switch
+        {
+            "geometry" => new QueryParameters { Geometry = "-122,37,-121,38" },
+            "geometryType" => new QueryParameters { GeometryType = "esriGeometryEnvelope" },
+            "spatialRel" => new QueryParameters { SpatialRel = "esriSpatialRelIntersects" },
+            "distance" => new QueryParameters { Distance = 100 },
+            "units" => new QueryParameters { Units = "esriSRUnit_Meter" },
+            "nearestCount" => new QueryParameters { NearestCount = 5 },
+            "returnDistance" => new QueryParameters { ReturnDistance = true },
+            _ => new QueryParameters()
+        };
+
+        FeatureServerQueryHandler.ShouldBypassQueryResponseCache(queryParams).Should().BeTrue();
+    }
+
     [Fact]
     public async Task ResolveExtentFallbackAsync_WithWholeLayerQuery_ReturnsLayerExtent()
     {

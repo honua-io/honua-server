@@ -46,7 +46,7 @@ while read local_ref local_sha remote_ref remote_sha; do
     echo "   This ensures your code passes CI checks"
     echo
 
-    if ! bash scripts/pre-pr-check.sh; then
+    if ! bash scripts/ci/pre-pr-check.sh; then
         echo
         echo -e "${RED}❌ Pre-push validation failed!${NC}"
         echo "   Your push has been rejected to prevent CI failures."

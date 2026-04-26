@@ -5,6 +5,8 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Caching;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
@@ -16,11 +18,10 @@ internal static class ResponseCacheUtilities
     private const string FeatureServerPrefix = "response:query:featureserver:service:";
     private const string OgcPrefix = "response:query:ogc:collection:";
     private const string ODataPrefix = "response:query:odata:layer:";
-    private const string StaticMapPrefix = "response:render:staticmap:service:";
 
     internal static bool ShouldCache(HttpContext context, CacheOptions options)
     {
-        if (!options.Enabled)
+        if (!options.Enabled || !options.ResponseCachingEnabled)
         {
             return false;
         }
@@ -51,6 +52,11 @@ internal static class ResponseCacheUtilities
         return true;
     }
 
+    internal static bool ShouldBypassAdHocSpatialResponseCache(FeatureQuery query, string? filterText = null)
+        => query.SpatialFilter.HasValue ||
+           SqlFilterContainsSpatialOperation(query.SqlFilter) ||
+           FilterTextContainsSpatialOperation(filterText);
+
     internal static string BuildFeatureServerKey(string serviceId, int layerId, HttpRequest request)
         => BuildKey($"{FeatureServerPrefix}{NormalizeKeyPart(serviceId)}:layer:{layerId}:", request);
 
@@ -74,15 +80,6 @@ internal static class ResponseCacheUtilities
 
     internal static string BuildODataLayerPattern(int layerId)
         => $"{ODataPrefix}{layerId}:*";
-
-    internal static string BuildStaticMapKey(string serviceId, HttpRequest request)
-        => BuildKey($"{StaticMapPrefix}{NormalizeKeyPart(serviceId)}:", request);
-
-    internal static string BuildStaticMapServicePattern(string serviceId)
-        => $"{StaticMapPrefix}{NormalizeKeyPart(serviceId)}:*";
-
-    internal static string BuildStaticMapPattern()
-        => $"{StaticMapPrefix}*";
 
     internal static string BuildFeatureServerPattern()
         => $"{FeatureServerPrefix}*";
@@ -173,6 +170,35 @@ internal static class ResponseCacheUtilities
         }
 
         return string.Join('&', parts);
+    }
+
+    private static bool SqlFilterContainsSpatialOperation(SqlFragment? sqlFilter)
+        => sqlFilter?.Sql?.Contains("ST_", StringComparison.OrdinalIgnoreCase) == true ||
+           sqlFilter?.Sql?.Contains(" && ", StringComparison.Ordinal) == true;
+
+    private static bool FilterTextContainsSpatialOperation(string? filterText)
+    {
+        if (string.IsNullOrWhiteSpace(filterText))
+        {
+            return false;
+        }
+
+        return filterText.Contains("geo.", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("geography'", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("geometry'", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("Geometry", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("BBOX", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("S_INTERSECTS", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("INTERSECTS", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("S_CONTAINS", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("S_WITHIN", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("S_CROSSES", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("S_TOUCHES", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("S_OVERLAPS", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("S_DISJOINT", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("S_EQUALS", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("S_DWITHIN", StringComparison.OrdinalIgnoreCase) ||
+               filterText.Contains("S_BEYOND", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeKeyPart(string value)

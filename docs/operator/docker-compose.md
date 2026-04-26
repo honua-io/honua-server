@@ -4,8 +4,12 @@ The supported local compose entrypoint is the repo-root [`docker-compose.yml`](.
 
 Container layout is intentional:
 
-- Repo root holds the canonical web runtime entrypoints: [`Dockerfile`](../../Dockerfile), [`docker-compose.yml`](../../docker-compose.yml), and [`docker-compose.scale-test.yml`](../../docker-compose.scale-test.yml).
-- [`docker/`](../../docker/) holds specialized variants and support assets such as AOT/Lambda/Functions Dockerfiles, emulator compose, CITE stacks, nginx, and Prometheus files.
+- Repo root holds the canonical web runtime entrypoints: [`Dockerfile`](../../Dockerfile) and [`docker-compose.yml`](../../docker-compose.yml).
+- [`docker/`](../../docker/) holds specialized variants and support assets such as AOT/Lambda/Functions Dockerfiles, emulator compose, CITE stacks, the scale-test stack, nginx, and Prometheus files.
+- [`docker/cloud/`](../../docker/cloud/) contains cloud-provider host shims copied into Lambda and Azure Functions images.
+- [`docker/cite/`](../../docker/cite/) contains CITE compose files, suite configs, seed data, and shared CITE runner assets.
+- [`docker/scale-test/`](../../docker/scale-test/) contains the multi-node scale-test compose stack and scale-test-specific Nginx/Prometheus assets.
+- [`docker/monitoring/`](../../docker/monitoring/) contains reusable self-hosted Prometheus/Grafana assets used by the scale-test stack and operator docs.
 
 ## Requirements
 

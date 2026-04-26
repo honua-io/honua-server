@@ -9,7 +9,7 @@ on:
       - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/Features/Admin/**'
       - 'src/Honua.Server/Features/Infrastructure/Authentication/**'
-      - 'scripts/validate-openapi-contracts.sh'
+      - 'scripts/ci/validate-openapi-contracts.sh'
       - '.github/workflows/openapi-contract-governance.yml'
   push:
     branches:
@@ -19,7 +19,7 @@ on:
       - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/Features/Admin/**'
       - 'src/Honua.Server/Features/Infrastructure/Authentication/**'
-      - 'scripts/validate-openapi-contracts.sh'
+      - 'scripts/ci/validate-openapi-contracts.sh'
       - '.github/workflows/openapi-contract-governance.yml'
   workflow_dispatch:
 
@@ -55,5 +55,5 @@ jobs:
           OPENAPI_BASE_REF: ${{ steps.baseline.outputs.ref }}
           OPENAPI_ALLOW_BREAKING_CHANGES: ${{ vars.OPENAPI_ALLOW_BREAKING_CHANGES || 'false' }}
         run: |
-          chmod +x scripts/validate-openapi-contracts.sh
-          ./scripts/validate-openapi-contracts.sh
+          chmod +x scripts/ci/validate-openapi-contracts.sh
+          ./scripts/ci/validate-openapi-contracts.sh

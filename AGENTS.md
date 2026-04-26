@@ -6,6 +6,41 @@
 
 Honua Server is a greenfield implementation of a geospatial server that exposes one shared geospatial capability set through multiple protocol adapters: GeoServices REST, OGC API, classic OGC services (WFS/WMS/WMTS), OData v4, STAC, MVT/TileJSON, COG/raster routes, MCP, and gRPC. This is a **clean rewrite** — the legacy codebase exists as reference only.
 
+## Honua Repository Map
+
+Use this map when deciding where code, issues, PRs, and cross-repo coordination belong.
+
+| Repository | Visibility | Purpose |
+|---|---|---|
+| `honua-server` | Public | Server runtime, protocol adapters, canonical pipelines, API governance, conformance/test infrastructure. |
+| `Honua.Server` | Private | Archived legacy server/reference implementation only. It is not an active development target; do not open issues or PRs there and do not copy code from it. Use it only to understand historical behavior. |
+| `honua-server-admin` | Public | Web administration UI for Honua Server, built with Blazor WebAssembly and MudBlazor. |
+| `honua-sdk-js` | Public | JavaScript/TypeScript SDKs for Honua, including the MCP server package. |
+| `honua-sdk-dotnet` | Public | .NET SDKs for Honua. |
+| `honua-sdk-python` | Public | Python SDK for Honua. |
+| `honua-mobile` | Public | MAUI-first mobile SDK and GeoPackage/offline field-collection foundation. |
+| `honua-site` | Public | Honua public website. |
+| `honua-site-preview` | Public | Preview deployment repo for honua.io site changes. |
+| `honua-helm` | Public | Helm chart for deploying Honua. |
+| `honua-terraform` | Public | Terraform modules, environments, and validation CI for Honua. |
+| `honua-agentflow` | Private | CLI workflow for multi-agent ticket execution and state tracking. |
+| `honua-devops` | Private | AI DevOps operations agent for Honua. |
+| `honua-marketplace` | Private | AWS/Azure Marketplace seller packaging, listing assets, and fulfillment automation. |
+| `honua-sales` | Private | Sales and marketing operating docs. |
+| `honua-support` | Private | Customer-facing support ticket management and telemetry ingestion API. |
+| `geospatial-mcp` | Public | Open geospatial MCP standard for analyst, map, and app-builder workflows. |
+| `geospatial-grpc` | Public | Open geospatial gRPC protocol definitions for feature services, spatial types, and forms. |
+| `geobench` | Public | Benchmark suite for Honua. |
+
+## GitHub Issue Policy
+
+When the user asks to create a ticket, issue, or GitHub issue:
+- Create it with `gh issue create` in the owning repo; do not only draft issue text in chat unless the user explicitly asks for a draft.
+- Use the target repo's issue template or issue-form fields. For `honua-server`, select the closest template from `.github/ISSUE_TEMPLATE/` (`bug.yml`, `feature.yml`, or `tech-debt.yml`) and fill the required sections in the issue body: problem/summary, why it matters now, acceptance criteria, affected repos, gate-tier impact, release/deploy impact, and non-goals where applicable.
+- If the work spans repos, create an umbrella issue in the coordinating repo and child issues in each implementation repo. Cross-link all issues.
+- Before filing, search the target repo for existing issues to avoid duplicates. If a close match exists, comment on it or ask whether to reuse it instead of filing a duplicate.
+- For SDK integration work, default ownership is SDK-side implementation in `honua-sdk-js`, `honua-sdk-dotnet`, or `honua-sdk-python`, with `honua-server` owning shared seed/bootstrap contracts and release-proof integration.
+
 ## MVP Deferrals (Operational Simplicity)
 
 The MVP intentionally defers enterprise/operational features to reduce complexity:
@@ -17,7 +52,7 @@ The MVP intentionally defers enterprise/operational features to reduce complexit
 
 ### Legacy Code Reference Policy
 
-There is a legacy project at `../Honua.Server/` which serves as **reference documentation only**.
+There is an archived legacy project at `../Honua.Server/` which serves as **reference documentation only**. Treat it as archive-only historical context, not as an active repo or implementation source.
 
 **DO:**
 - Read legacy code to understand behavior and edge cases
@@ -71,7 +106,8 @@ Cross-cutting behavior must be consistent across protocol families and should be
 - **Exception handling**: Map failures through shared problem/error helpers. Do not leak raw exception messages, SQL, stack traces, filesystem paths, connection strings, or provider internals to clients.
 - **Logging**: Use structured, source-generated logging where practical. Include stable identifiers needed for diagnosis (`serviceName`, `layerId`, `collectionId`, `jobId`, `operation`, `protocol`) and avoid duplicate/noisy logs.
 - **Telemetry**: Important query, edit, metadata, raster/render/export, import, batch, and job execution paths need activities/spans with protocol, operation, service/layer identifiers, result size/count, cache hit/miss, and exception status where relevant.
-- **Caching**: Use shared cache helpers and vary cache keys by every behavior-changing input: auth/tenant, service/layer, operation, query/filter, CRS/SRID, bbox/geometry, style, format/content negotiation, language, host/scheme when links are emitted, and protocol preferences.
+- **Caching**: Use shared cache helpers and vary cache keys by every behavior-changing input: auth/tenant, service/layer, operation, query/filter, CRS/SRID, style, format/content negotiation, language, host/scheme when links are emitted, and protocol preferences. Exact response and generic query-result caching are opt-in and default off (`Cache:ResponseCachingEnabled=false`) while Redis metadata/catalog caching can remain enabled. Do not add exact response caching for ad hoc spatial feature/query/render requests such as arbitrary `bbox`, geometry, distance, nearest, CQL2 spatial predicates, OData `geo.*` filters, or static map/map export bboxes; those keys are too high-cardinality to be useful in the baseline path. Apply the ad hoc spatial response-cache guard after protocol parameters have been translated into the canonical `FeatureQuery`. Cache tile-matrix and cache-hinted paths instead, where requests snap to finite gridset/tile/style/format keys and can be seeded, metatiled, expired, and quota-managed like GeoWebCache. For small-node and serverless profiles, prefer bounded DB admission/pool sizing over exact spatial response caches as the pressure-control mechanism.
+- **Spatial bbox semantics**: Treat protocol `bbox`/viewport envelope requests as windowing/display paths that may use envelope-only point predicates when the adapter explicitly marks them as such. Keep explicit spatial predicates (`Intersects`, `Contains`, distance/nearest, CQL2 spatial functions, and non-envelope geometries) on exact spatial relationships unless the protocol itself asks for envelope-intersects semantics.
 - **Security/RBAC**: Authorization must be enforced in the shared pipeline or a common policy service, not by caller discipline. Check service, layer, field, task/job, import/export, and mutation permissions consistently across equivalent protocols.
 - **Validation**: Route/query/body validation must use shared validators and protocol adapters. Validate identifiers, formats, CRS, filters, geometry, paging limits, output formats, URLs, file paths, headers, and upload sizes before reaching provider code.
 - **Performance**: Avoid sync-over-async, repeated parsing/serialization, per-feature catalog lookups, unbounded buffering, and protocol-local duplicate expensive computation. Use streaming/paging/shared format readers where available.
@@ -152,12 +188,12 @@ Query_InvalidSyntax_Returns400WithErrorDetails()
 ```
 
 **Scale Tests (Multi-Node + Redis)**:
-- Start the scale stack: `docker compose -f docker-compose.scale-test.yml up --build --scale honua=3`
+- Start the scale stack: `docker compose -f docker/scale-test/compose.yml up --build --scale honua=3`
 - Set env vars (inside the devcontainer): `HONUA_SCALE_TEST_BASE_URL=http://localhost:8080`, `HONUA_SCALE_TEST_REDIS=localhost:6379`, `HONUA_SCALE_TEST_ADMIN_API_KEY=scale-test-admin-password`
 - Set `HONUA_SCALE_TEST_SERVICE_ID=<service-name>` to run replica-state scale tests (create/extract/sync/unregister).
 - Optional host-port overrides when defaults are busy: `HONUA_SCALE_TEST_HTTP_PORT=18080`, `HONUA_SCALE_TEST_REDIS_PORT=6380`, `HONUA_SCALE_TEST_POSTGRES_PORT=55434`
 - Run scale tests only: `dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter Category=Scale`
-- Scale tests expect `docker/nginx/scale-test.conf` to emit `X-Instance-ID` for `/rest/`, `/ogc/`, and `/odata/`
+- Scale tests expect `docker/scale-test/nginx/scale-test.conf` to emit `X-Instance-ID` for `/rest/`, `/ogc/`, and `/odata/`
 
 ### Architecture Enforcement
 

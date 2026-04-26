@@ -464,7 +464,7 @@ internal sealed partial class FeatureDataAccess
             FROM {_tableName}
             WHERE layer_id = $1 AND objectid = $2";
 
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = CreateSafeCommand(connection, sql);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
         ApplyCommandTimeout(command, _queryTimeoutSeconds);
@@ -491,7 +491,7 @@ internal sealed partial class FeatureDataAccess
         }
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(query.Sql, connection);
+        await using var command = CreateSafeCommand(connection, query.Sql);
 
         command.Parameters.AddWithValue(layerId);
         foreach (var param in query.WhereParameters)
@@ -530,7 +530,7 @@ internal sealed partial class FeatureDataAccess
         }
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(query.Sql, connection);
+        await using var command = CreateSafeCommand(connection, query.Sql);
 
         command.Parameters.AddWithValue(layerId);
         foreach (var param in query.WhereParameters)
@@ -560,7 +560,7 @@ internal sealed partial class FeatureDataAccess
     public async Task<byte[]?> GetMvtTileAsync(int layerId, CoreParameterizedQuery query, CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(query.Sql, connection);
+        await using var command = CreateSafeCommand(connection, query.Sql);
 
         foreach (var param in query.WhereParameters)
         {

@@ -78,7 +78,7 @@ Review any custom database queries or field names to ensure they comply with the
 1. Deploy to staging environment first
 2. Run verification script:
    ```bash
-   ./scripts/verify-security-fixes.sh https://staging.yourdomain.com
+   ./scripts/security/verify-security-fixes.sh https://staging.yourdomain.com
    ```
 3. Test critical user flows
 4. Monitor logs for security events
@@ -158,7 +158,7 @@ dotnet test tests/dotnet/Honua.Server.Tests/Features/Security/CriticalSecurityFi
 dotnet test tests/dotnet/Honua.Server.Tests/ --filter="Category=Security"
 
 # Run verification script
-./scripts/verify-security-fixes.sh
+./scripts/security/verify-security-fixes.sh
 ```
 
 ### Manual Testing

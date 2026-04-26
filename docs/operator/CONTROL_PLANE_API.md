@@ -87,8 +87,8 @@ Additional metrics endpoints:
 - Generate control-plane SDK artifacts locally:
 
 ```bash
-./scripts/validate-openapi-contracts.sh
-./scripts/generate-control-plane-sdks.sh
+./scripts/ci/validate-openapi-contracts.sh
+./scripts/sdk/generate-control-plane-sdks.sh
 ```
 
 - CI contract governance and SDK generation:

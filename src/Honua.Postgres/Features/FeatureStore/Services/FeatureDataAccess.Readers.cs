@@ -48,17 +48,33 @@ internal sealed partial class FeatureDataAccess
     {
         var id = reader.GetInt64(0);
         var geometryGeoJson = reader.IsDBNull(1) ? null : reader.GetString(1);
-        var propertiesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
-        return Task.FromResult(RawGeoJsonFeature.Create(id, geometryGeoJson, propertiesJson));
+        if (reader.FieldCount >= 4)
+        {
+            var publicIdJson = reader.IsDBNull(2) ? null : reader.GetString(2);
+            var propertiesJson = reader.IsDBNull(3) ? null : reader.GetString(3);
+            return Task.FromResult(RawGeoJsonFeature.Create(id, geometryGeoJson, publicIdJson, propertiesJson));
+        }
+
+        var legacyPropertiesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
+        return Task.FromResult(RawGeoJsonFeature.Create(id, geometryGeoJson, legacyPropertiesJson));
     }
 
     private static RawGeoServicesFeature ReadRawGeoServicesFeature(NpgsqlDataReader reader)
     {
         var id = reader.GetInt64(0);
-        var attributesJson = reader.IsDBNull(1) ? null : reader.GetString(1);
-        double? x = reader.IsDBNull(2) ? null : reader.GetDouble(2);
-        double? y = reader.IsDBNull(3) ? null : reader.GetDouble(3);
-        return RawGeoServicesFeature.Create(id, attributesJson, x, y);
+        if (reader.FieldCount >= 5)
+        {
+            var publicIdJson = reader.IsDBNull(1) ? null : reader.GetString(1);
+            var attributesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
+            double? x = reader.IsDBNull(3) ? null : reader.GetDouble(3);
+            double? y = reader.IsDBNull(4) ? null : reader.GetDouble(4);
+            return RawGeoServicesFeature.Create(id, publicIdJson, attributesJson, x, y);
+        }
+
+        var legacyAttributesJson = reader.IsDBNull(1) ? null : reader.GetString(1);
+        double? legacyX = reader.IsDBNull(2) ? null : reader.GetDouble(2);
+        double? legacyY = reader.IsDBNull(3) ? null : reader.GetDouble(3);
+        return RawGeoServicesFeature.Create(id, legacyAttributesJson, legacyX, legacyY);
     }
 
     private Task<KmlFeature> ReadKmlFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)

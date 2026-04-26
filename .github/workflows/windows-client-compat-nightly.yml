@@ -65,7 +65,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          bash scripts/run-client-compat-smoke.sh \
+          bash scripts/client-compat/run-client-compat-smoke.sh \
             --base-url "http://localhost:5000" \
             --service-id "${CLIENT_COMPAT_SERVICE_ID}" \
             --layer-id "${CLIENT_COMPAT_LAYER_ID}" \

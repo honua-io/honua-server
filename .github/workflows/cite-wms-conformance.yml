@@ -31,10 +31,10 @@ jobs:
     with:
       suite: wms
       display-name: WMS
-      runner-script: ./scripts/run-cite-wms-tests.sh
+      runner-script: ./scripts/conformance/cite/run-cite-wms-tests.sh
       results-dir: cite-wms-results
       summary-file: cite-wms-summary.md
       timeout-seconds: 2400
       job-timeout-minutes: 45
       cite-profile: ${{ inputs.profile || 'default' }}
-      extra-artifact-paths: docker/cite-wms-config/
+      extra-artifact-paths: docker/cite/wms13/config/
