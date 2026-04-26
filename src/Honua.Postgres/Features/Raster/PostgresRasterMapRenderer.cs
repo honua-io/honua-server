@@ -9,6 +9,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Honua.Postgres.Features.Raster;
 
@@ -150,35 +151,51 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             AddParameter(command, name, value);
         }
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return CreateEmptyResult(request, contentType, requestedOutputSrid);
+            }
+
+            var dataOrd = reader.GetOrdinal("data");
+            var sridOrd = reader.GetOrdinal("srid");
+            var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+            var srid = reader.IsDBNull(sridOrd)
+                ? requestedOutputSrid
+                : reader.GetInt32(sridOrd);
+
             return new RasterResult
             {
-                Data = Array.Empty<byte>(),
+                Data = data,
                 ContentType = contentType,
                 Width = request.Width,
                 Height = request.Height,
-                Srid = requestedOutputSrid
+                Srid = srid
             };
         }
-
-        var dataOrd = reader.GetOrdinal("data");
-        var sridOrd = reader.GetOrdinal("srid");
-        var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
-        var srid = reader.IsDBNull(sridOrd)
-            ? requestedOutputSrid
-            : reader.GetInt32(sridOrd);
-
-        return new RasterResult
+        catch (PostgresException ex) when (IsRasterStorageUnavailable(ex))
         {
-            Data = data,
+            PostgresRasterLog.RasterStorageUnavailable(_logger, ex, _rasterDataTable);
+            return CreateEmptyResult(request, contentType, requestedOutputSrid);
+        }
+    }
+
+    private static RasterResult CreateEmptyResult(MapRenderRequest request, string contentType, int? srid)
+        => new()
+        {
+            Data = Array.Empty<byte>(),
             ContentType = contentType,
             Width = request.Width,
             Height = request.Height,
             Srid = srid
         };
-    }
+
+    private static bool IsRasterStorageUnavailable(PostgresException exception)
+        => exception.SqlState == PostgresErrorCodes.UndefinedTable &&
+            (string.Equals(exception.TableName, "raster_data", StringComparison.OrdinalIgnoreCase) ||
+             exception.MessageText.Contains("raster_data", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Builds GDAL creation option strings for the given output format and request parameters.

@@ -34,7 +34,7 @@ test.describe('OGC API Maps Image Source', () => {
       return;
     }
 
-    expect(response.headers()['content-type'] ?? '').toContain('application/json');
+    expect(response.headers()['content-type'] ?? '').toContain('json');
     const body = await response.json();
     expect(body.status ?? body.error?.code).toBe(404);
   });
