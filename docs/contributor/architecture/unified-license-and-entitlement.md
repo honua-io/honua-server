@@ -419,6 +419,16 @@ depth, retry count, and dead-letter count.
 
 ### 4.4 Azure Marketplace adapter
 
+The Azure webhook handler implements the SaaS Fulfillment v2 contract.
+Per Microsoft, the publisher must (a) validate every webhook payload
+against the operations API before acting and (b) `PATCH` the operation
+result for `ChangePlan` and `ChangeQuantity` so Microsoft does not roll
+the change back after 24 hours
+(<https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-webhook>,
+<https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-operations-api>).
+Both calls live in the reconciler so the inline ACK stays at < 1 s p99
+and the 10 s SLA is unconditional.
+
 ```
 [Azure Marketplace]
         │  Azure AD JWT bearer
@@ -427,16 +437,37 @@ POST /api/v1/marketplace/azure/webhook
         │
         │ AzureWebhookEndpoint
         │   1. verify JWT (issuer + audience + signature)
-        │   2. persist event to MarketplaceWebhookQueue
-        │   3. ACK 200  (target < 1 s p99, hard SLA 10 s)
+        │   2. capture (operationId, subscriptionId, action, status,
+        │      planId?, quantity?); reject bodies above
+        │      Azure:Marketplace:Webhook:MaxBodyKiB before parsing
+        │   3. persist event to MarketplaceWebhookQueue
+        │   4. ACK 200  (target < 1 s p99, hard SLA 10 s)
         ▼
 [Background] AzureSubscriptionReconcilerService
         │
-        │ Get Subscription (publisher credentials)
-        │ POST /api/v1/admin/license/mint  → Ed25519 sign  (exp ≤ 90d)
+        │ 5. drain queue, dedupe by (subscriptionId, operationId)
+        │ 6. Get Operation (publisher credentials) — required
+        │    payload validation; reject 404 / Conflict
+        │ 7. Get Subscription (publisher credentials) — only when
+        │    the latest entitlement state is needed
+        │ 8. POST /api/v1/admin/license/mint  → Ed25519 sign (exp ≤ 90d)
+        │ 9. apply via FileLicenseStore → validator cache invalidated
+        │ 10. PATCH operation status (Success | Failure) — required
+        │     for ChangePlan / ChangeQuantity per the operations API;
+        │     sent for the other actions for telemetry parity
         ▼
 [FileLicenseStore]  → invalidates cached snapshot → re-runs validator
 ```
+
+`PATCH operation status` is load-bearing for the two two-phase
+operations: Microsoft holds `ChangePlan` / `ChangeQuantity` in
+`InProgress` until the publisher PATCHes the result, then auto-rolls
+back after 24 h. The reconciler PATCHes immediately after
+`FileLicenseStore` confirms the new file is valid (`Success`) or after
+an unrecoverable fault (`Failure`). For `Unsubscribe`, `Suspend`,
+`Reinstate`, `Renew`, and `Transfer`, Microsoft completes the
+operation regardless; the PATCH is sent for telemetry but is not
+required to keep the customer's billing in sync.
 
 Resolve / Activate landing-page flow:
 
@@ -500,7 +531,7 @@ cached, and only after signature verification succeeds.
 | `Honua.Licensing.Validator` | `validate_license`, `parse_jws`, `verify_signature`, `resolve_kid` |
 | `Honua.Licensing.Mint` | `mint_license`, `refresh_license`, `verify_marketplace_evidence` |
 | `Honua.Licensing.Aws` | `poll_entitlements`, `register_usage`, `meter_usage`, `submit_mint_request` |
-| `Honua.Licensing.Azure` | `webhook_receive`, `webhook_ack`, `resolve_subscription`, `activate_subscription`, `reconcile_subscription`, `meter_usage`, `submit_mint_request` |
+| `Honua.Licensing.Azure` | `webhook_receive`, `webhook_ack`, `resolve_subscription`, `activate_subscription`, `reconcile_subscription`, `get_operation`, `patch_operation_status`, `meter_usage`, `submit_mint_request` |
 
 ### 6.2 Meter counters
 
@@ -511,7 +542,8 @@ cached, and only after signature verification succeeds.
 | `licenses_active` | `edition` | Gauge; updated on hot reload. |
 | `marketplace_metering_records_total` | `cloud`, `result` | `cloud` ∈ `aws`, `azure`; `result` ∈ `enqueued`, `succeeded`, `failed`, `dead_lettered`. |
 | `marketplace_webhook_events_total` | `cloud`, `kind`, `result` | `kind` covers Resolve, Activate, Suspended, Reinstated, Unsubscribed, plan-change, quantity-change. |
-| `marketplace_reconciler_runs_total` | `cloud`, `result` | Background worker outcomes. |
+| `marketplace_reconciler_runs_total` | `cloud`, `result` | Background worker outcomes; `result` ∈ `succeeded`, `failed`, `unsubscribed`, `operation_rejected` (Microsoft Get Operation said the event was not real or already processed). |
+| `marketplace_operation_status_patches_total` | `cloud`, `action`, `result` | Azure-only in v1. `action` ∈ `unsubscribe`, `change_plan`, `change_quantity`, `suspend`, `reinstate`, `renew`, `transfer`. `result` ∈ `success_patched`, `failure_patched`, `patch_failed`. Tracks the SaaS Fulfillment v2 PATCH operation status calls. |
 
 ### 6.3 Logging
 

@@ -192,21 +192,62 @@ client (`AzureFulfillmentClient`) over the documented v2 endpoints using
        ▼
    AzureWebhookEndpoint
      1. verify JWT (issuer + audience + signature)
-     2. persist event to MarketplaceWebhookQueue (durable)
-     3. ACK 200   (target < 1 s p99)
+     2. capture (operationId, subscriptionId, action, status,
+        planId?, quantity?) from the body; reject bodies above
+        Azure:Marketplace:Webhook:MaxBodyKiB before parsing
+     3. persist event to MarketplaceWebhookQueue (durable)
+     4. ACK 200   (target < 1 s p99)
        │
        ▼
 [AzureSubscriptionReconcilerService] (background)
-     4. drain queue, dedupe by (subscriptionId, operationId)
-     5. Get Subscription (publisher credentials)
-     6. POST /api/v1/admin/license/mint  → Honua-signed file (exp ≤ 90d)
-     7. apply via FileLicenseStore → validator cache invalidated
+     5. drain queue, dedupe by (subscriptionId, operationId)
+     6. Get Operation (publisher credentials) — Microsoft SaaS
+        Fulfillment v2 requires validating the webhook payload
+        against the operations API before acting; rejects events
+        whose state Microsoft cannot confirm (404 / Conflict /
+        wrong subscriptionId)
+     7. Get Subscription (publisher credentials) — fetches the
+        latest entitlement state when the operation needs it
+     8. POST /api/v1/admin/license/mint  → Honua-signed file (exp ≤ 90d)
+     9. apply via FileLicenseStore → validator cache invalidated
+    10. PATCH operation status (Success | Failure) — required for
+        ChangePlan and ChangeQuantity per the operations API; sent
+        for the other actions for telemetry only
 ```
 
 The webhook handler **must** ACK before the 10 s SLA elapses or Azure
 will retry — and on persistent failure, suspend the subscription. The
-ack-and-enqueue pattern keeps the inline path predictable; mint and Get
-Subscription latency lives entirely in the reconciler.
+ack-and-enqueue pattern keeps the inline path predictable; Get
+Operation, Get Subscription, mint, and the PATCH operation status call
+all live in the reconciler.
+
+#### Why Get Operation runs in the reconciler, not on ACK
+
+Microsoft SaaS Fulfillment v2 requires the publisher to validate every
+webhook payload against the operations API before acting on it
+(<https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-webhook>).
+Webhook payloads alone are not authoritative — only Get Operation
+returning `status=NotStarted` (or `InProgress`) for the same
+`operationId`/`subscriptionId` confirms the event is real. We push that
+call into the reconciler so the inline ACK stays at < 1 s p99 and the
+10 s SLA is unconditional. Microsoft accepts a delayed validation: the
+specification gives publishers up to 24 hours to complete the
+operation, so the reconciler has plenty of headroom.
+
+#### Why PATCH operation status is mandatory for ChangePlan and ChangeQuantity
+
+The operations API
+(<https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-operations-api>)
+treats `ChangePlan` and `ChangeQuantity` as two-phase changes: the
+webhook delivers the **request**, and Microsoft holds the change in
+`InProgress` until the publisher PATCHes the operation with `Success`
+or `Failure`. Without the PATCH, Microsoft rolls the change back after
+24 hours and the customer sees a billing surprise. The reconciler
+PATCHes immediately after `FileLicenseStore` confirms the new file is
+valid (`Success`) or after a fault that we cannot recover from
+(`Failure`). For `Unsubscribe`, `Suspend`, `Reinstate`, `Renew`, and
+`Transfer`, Microsoft completes the operation on its side regardless;
+the PATCH is sent anyway for telemetry parity but is not load-bearing.
 
 ### Resolve / Activate landing-page flow
 
@@ -236,7 +277,9 @@ under M2M auth and is not invoked from the customer side.
 | `marketplace_webhook_events_total{cloud="azure",result="ack"}` | Equals delivered events. | Drop = JWT verification failing or queue write blocked. |
 | `marketplace_webhook_events_total{cloud="azure",result="rejected"}` | Zero or near-zero. | Spike = publisher credentials rotated, JWT issuer / audience mismatch, or replay attack. |
 | Webhook handler latency (p99) | < 1 s. | > 5 s = DB / Redis backpressure on the queue write. > 10 s = SLA breach; Azure will retry then suspend. |
-| Reconciler success rate | Equals webhook ack rate. | Backlog growth = reconciler stalled, mint host unreachable, or `Get Subscription` failing. |
+| Reconciler success rate | Equals webhook ack rate. | Backlog growth = reconciler stalled, mint host unreachable, `Get Operation` rejecting events, or `Get Subscription` failing. |
+| `marketplace_operation_status_patches_total{cloud="azure",action="change_plan",result="success_patched"}` and `..."change_quantity"...` | Equals the count of `ChangePlan`/`ChangeQuantity` webhooks ingested over the same window. | Drop = PATCH operation calls failing or the reconciler is not reaching step 10. **Microsoft rolls back unpatched ChangePlan / ChangeQuantity operations after 24 hours**, so anything other than zero gap on a rolling 12 h window is a paging event. |
+| `marketplace_operation_status_patches_total{cloud="azure",result="patch_failed"}` | Zero. | Non-zero = publisher credentials lost write scope on the operations API, or a transient outage that the retry-with-backoff loop is not absorbing. |
 
 ### Metering
 
@@ -258,7 +301,11 @@ worker classes share the durable substrate but address different APIs.
 |---------|--------------|--------|
 | Webhook returns 401. | JWT issuer/audience mismatch or stale `Azure:Marketplace:Publisher:*` credentials. | Rotate publisher client secret; verify `AllowedAudiences` matches the configured publisher app registration. |
 | Webhook returns 5xx within the 10 s window. | Queue substrate (`MarketplaceWebhookQueue`) write failed. | Check Redis health (`/api/v1/metrics/cache`); the in-memory fallback should keep ACKs flowing — investigate why the fallback is also failing. |
-| Webhook does not ack within 10 s; Azure retries flood. | Inline mint or Get Subscription on the webhook path (regression). | Verify the handler matches the documented ack-and-enqueue pattern — the reconciler must be the only path that calls the mint or Get Subscription. |
+| Webhook does not ack within 10 s; Azure retries flood. | Inline mint, Get Operation, Get Subscription, or PATCH on the webhook path (regression). | Verify the handler matches the documented ack-and-enqueue pattern — only the JWT verify, body capture, and queue write run inline; every operations / fulfillment API call is the reconciler's responsibility. |
+| `Get Operation` returns 404 in the reconciler. | Webhook payload references an operation Microsoft cannot find — replay, spoofed payload, or operation already aged out. | Drop the event; do **not** mint or PATCH. Surface as `marketplace_reconciler_runs_total{cloud="azure",result="operation_rejected"}` and inspect the audit log for replay patterns. |
+| `Get Operation` returns `Conflict` or `status=Succeeded` for the same `operationId`. | Another reconciler instance already processed the event, or Microsoft already completed the operation. | Dedupe and skip the event. This is healthy when running multiple reconciler replicas behind the lease. |
+| `PATCH operation` for `ChangePlan` or `ChangeQuantity` never sent. | Reconciler stalled before step 10, or the operations API was unreachable through the retry-with-backoff window. | Page on the `marketplace_operation_status_patches_total` gap signal in the health table; **Microsoft rolls back unpatched ChangePlan / ChangeQuantity operations after 24 hours**. Manually trigger reconciliation (`POST /api/v1/admin/marketplace/azure/reconcile`) before the 24 h budget lapses. |
+| `PATCH operation` returns 401 or 403. | Publisher credentials lost write scope on the operations API. | Rotate `Azure:Marketplace:Publisher:ClientSecretRef`; ensure the publisher app registration retains `SaaSAPI.FullAccess`. |
 | `Get Subscription` returns 404 in the reconciler. | Subscription was unsubscribed before the reconciler drained the event. | Mark the local mirror as unsubscribed; do not re-mint. Surface this as `result="unsubscribed"` on the reconciler counter. |
 | `Get Subscription` returns 401. | Publisher credentials expired or revoked. | Rotate `Azure:Marketplace:Publisher:ClientSecretRef`. The reconciler retries on the next tick. |
 | `licenses_validated_total{result="expired"}` for an adapter-issued file. | Reconciler has been failing for at least `RefreshLeadTime` days. | Inspect Azure logs (event-id band `10500-10699`); confirm publisher credentials and mint reachability. |
@@ -272,7 +319,16 @@ these invariants:
 
 - **No mint call inline.** The webhook handler persists and ACKs; the
   reconciler is the only path that calls mint.
+- **No `Get Operation` inline.** The validation step Microsoft requires
+  before acting on the payload runs in the reconciler. The 24 h
+  operation-completion budget gives the reconciler ample headroom to
+  validate, mint, and PATCH after the inline ACK.
 - **No `Get Subscription` inline.** Same reason.
+- **No `PATCH operation status` inline.** The PATCH ships from the
+  reconciler after `FileLicenseStore` confirms the new file. PATCHing
+  inline would either (a) extend the inline path past the 10 s SLA or
+  (b) ACK `Success` before the change actually applied, which leaves
+  the customer in a divergent state if the mint then fails.
 - **No synchronous external calls during ACK.** JWT verification uses
   cached JWKS; do not re-fetch the JWKS on the request path more
   frequently than the configured TTL.
@@ -281,7 +337,9 @@ these invariants:
   rejected before any work happens.
 - **Run the SLA assertion test before every release.** The integration
   test (`AzureWebhook_AcksWithinTenSeconds`) must pass — it asserts
-  p99 < 1 s under simulated load.
+  p99 < 1 s under simulated load with `Get Operation`,
+  `Get Subscription`, mint, and PATCH operation status all stubbed off
+  the inline path.
 
 ---
 
