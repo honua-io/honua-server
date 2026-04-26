@@ -395,12 +395,12 @@ credentials before signing.
 
 The `RegisterUsage` call runs once on container start
 (`AwsRegisterUsageOnStart` `IHostedService`) for EKS / ECS deployments; failures
-are logged but do not block startup unless `Aws:RegisterUsage:RequiredOnStart`
+are logged but do not block startup unless `Aws:Marketplace:RegisterUsage:RequiredOnStart`
 is `true`.
 
 #### ALM seller-issued path (optional, deferred to a follow-up)
 
-When `Aws:UseSellerIssuedLicenses=true`, the adapter fetches the seller-issued
+When `Aws:Marketplace:UseSellerIssuedLicenses=true`, the adapter fetches the seller-issued
 token via AWS License Manager and validates it locally against the ISV-owned
 KMS public key. This skips the mint round-trip but introduces a second token
 format. The path is feature-flagged off in v1; the validator's hot path
