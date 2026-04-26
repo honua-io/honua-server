@@ -37,9 +37,20 @@ a key set that combines:
    `IOptionsMonitor<LicenseKeysOptions>`.
 
 A key is active when `now ∈ [NotBefore, NotAfter ?? +∞)`. Adding a new key
-takes effect on the next configuration reload. Retiring a key requires
-setting `NotAfter` to a past instant (or removing it from configuration);
-the resolver returns `null` for any `kid` outside its window.
+takes effect on the next configuration reload. Retiring a key has two
+distinct paths depending on where the key is sourced:
+
+- **Configuration-additive keys** (`License:Keys:N`) retire by setting
+  their `NotAfter` to a past instant or removing the entry from
+  configuration. `IOptionsMonitor` propagates the change without a
+  restart and the resolver returns `null` for any `kid` outside its
+  window.
+- **The baked-in primary key** (compiled into `Honua.Core` as an
+  embedded resource) **cannot be retired by configuration alone.**
+  Configuration cannot redefine or delete a baked-in `kid`; retiring it
+  requires a release that updates the embedded resource — either with a
+  new `NotAfter` window or by replacing the resource entry — followed
+  by a fleet rollout. See "Retiring the baked-in primary key" below.
 
 The mint host signs with **one** active private key at a time, identified
 in configuration by `License:Signing:KeyId`. Switching the signing key is
@@ -133,7 +144,10 @@ indicates customer follow-up is needed.
 ### Step 4 — Retire the old key
 
 Once the longest-lived in-flight file signed by the old `kid` has expired
-plus a margin (default: 30 days past the latest known `exp`):
+plus a margin (default: 30 days past the latest known `exp`), follow the
+path that matches the old key's source.
+
+**Configuration-additive key (most common):**
 
 1. Set `NotAfter` on the old key to a past instant (or remove it from
    configuration entirely):
@@ -148,9 +162,23 @@ plus a margin (default: 30 days past the latest known `exp`):
 3. After 14 consecutive days at zero rate, remove the retired entry from
    configuration in a follow-up change.
 
-The baked-in primary key remains in code until the next release
-(`Honua.Core` compile-time resource). It is **not** removed mid-cycle;
-removal requires a release.
+**Baked-in primary key:**
+
+The baked-in primary cannot be retired by `License:Keys` configuration —
+the resolver fails fast at startup if configuration tries to redefine a
+baked-in `kid`. Retiring it requires a release:
+
+1. Open a `Honua.Core` change that updates the embedded key resource —
+   either tightening the baked-in entry's `NotAfter` to a past instant
+   or replacing the resource entry with the new primary's bytes. Land
+   the change behind the normal review process.
+2. Cut a patched release that ships the updated baked-in resource.
+3. Roll the release across the fleet on the standard cadence. Until
+   every host is on the new release, the retired baked-in `kid` keeps
+   verifying on hosts still running the previous build.
+4. After the rollout completes, confirm
+   `licenses_validated_total{result="unknown_key_id"}` is zero across
+   the fleet for 14 consecutive days, then close the rotation.
 
 ---
 
@@ -172,12 +200,20 @@ If a private signing key is suspected compromised:
    - BYOL: portal sweep within hours, not weeks.
    - AWS / Azure: the adapters auto-re-mint within `RefreshLeadTime`; if
      the lead time is too long for the incident, manually trigger
-     `POST /admin/license/refresh` for each affected customer or shorten
-     the lead time temporarily.
-7. **Retire the compromised `kid`** by setting its `NotAfter` to a past
-   instant. The retired `kid` is **not** trusted again, even if the
-   private key is later believed safe — we treat compromise as
-   irreversible.
+     `POST /api/v1/admin/license/refresh` for each affected customer or
+     shorten the lead time temporarily.
+7. **Retire the compromised `kid`.** If the compromised key is
+   configuration-additive (`License:Keys:N`), set its `NotAfter` to a
+   past instant — the change propagates without a restart. If the
+   compromised key is the **baked-in primary**, configuration cannot
+   retire it; cut an emergency hot-fix release that updates the
+   embedded `Honua.Core` resource (tighten `NotAfter` or replace the
+   entry) and roll the release across the fleet as fast as the change
+   process allows. Until the fleet is fully rolled, the compromised
+   `kid` keeps verifying on hosts still running the previous build —
+   prioritize the rollout accordingly. The retired `kid` is **not**
+   trusted again, even if the private key is later believed safe — we
+   treat compromise as irreversible.
 8. **File a public security advisory** if any compromised file may have
    reached customers and could not be re-issued before its `exp`.
 
@@ -203,7 +239,9 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
 ```
 
 The smoke test (`tests/dotnet/Honua.Server.Tests/Features/Licensing/
-LicenseKeyRotationSmokeTests.cs`, child ticket #TBD-10) exercises:
+LicenseKeyRotationSmokeTests.cs`, lands with the key-rotation runbook
+child ticket per the ADR-0033 § "Bounded Child Tickets" decomposition)
+exercises:
 
 | Step | Assertion |
 |------|-----------|

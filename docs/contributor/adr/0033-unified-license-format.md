@@ -64,11 +64,11 @@ Adapter-issued files keep blast radius bounded if entitlement state changes; BYO
 
 ### Mint Topology and Trust Model
 
-The mint host lives in `Honua.Server` for v1 behind admin-scoped Minimal API endpoints (`POST /admin/license/mint`, `POST /admin/license/refresh`). Signing material loads only when `License:Signing:Enabled=true`; customer-side deployments leave it `false`. Honua's hosted mint instance turns it on. Future extraction to a dedicated `Honua.LicenseMint.*` deployable is a clean seam — no public-API change.
+The mint host lives in `Honua.Server` for v1 behind admin-scoped Minimal API endpoints (`POST /api/v1/admin/license/mint`, `POST /api/v1/admin/license/refresh`, `GET /api/v1/admin/license/signing/status`). Signing material loads only when `License:Signing:Enabled=true`; customer-side deployments leave it `false` and these endpoints return `404`. Honua's hosted mint instance turns it on. The route prefix matches the existing `/api/v1/admin/license/*` operator surface registered in `EndpointRegistry.cs`; the companion design doc § 4.1 enumerates the full route set (operator inspector `GET /api/v1/admin/license/keys`, marketplace reconciler `POST /api/v1/admin/marketplace/{cloud}/reconcile`, Azure landing-page surfaces `POST /api/v1/marketplace/azure/{webhook,resolve,activate}`). Future extraction to a dedicated `Honua.LicenseMint.*` deployable is a clean seam — no public-API change.
 
 | Track | Mint flow |
 |-------|-----------|
-| BYOL | Honua portal → `POST /admin/license/mint` (hosted mint) → signed file → customer download. |
+| BYOL | Honua portal → `POST /api/v1/admin/license/mint` (hosted mint) → signed file → customer download. |
 | AWS (mint path, default) | Customer's `AwsEntitlementPollerService` sends `(customer_identifier, account_id, product_code, dimensions/observed entitlements)` to the hosted mint. `GetEntitlements` does not return a portable signature, so the mint host **independently re-queries `GetEntitlements` with publisher AWS credentials** as the authoritative source and issues a Honua-signed file with `exp ≤ 90d`. Adapters never hold the Honua signing key. |
 | AWS (ALM path, optional) | When `Aws:UseSellerIssuedLicenses=true`, the adapter fetches the seller-issued ALM token and validates it locally against the ISV-owned KMS public key. Behind feature flag, default `false` in v1 to keep the first AWS landing bounded. |
 | Azure | Webhook persists the event and enqueues a reconciliation job, ACKs in well under 10 s. The reconciler calls `Get Subscription` (server-to-server with publisher credentials), POSTs to the hosted mint, receives the signed file. The customer-side webhook never blocks on mint. |

@@ -60,12 +60,14 @@ curl -H "X-API-Key: <admin-key>" \
 ```
 
 A flat reconciler success rate or rising metering-buffer depth is the
-earliest sign of trouble. Page the licensing on-call when:
+earliest sign of trouble. Page the licensing on-call when any of these
+PromQL expressions match (the `cloud` label is preserved by the `sum
+by (cloud)` aggregation so the alert fires per cloud):
 
-- `marketplace_reconciler_runs_total{cloud,result="failed"}` exceeds 5%
-  of the cadence over a 30-minute window.
-- `marketplace_metering_records_total{cloud,result="dead_lettered"}` is
-  non-zero.
+- `sum by (cloud)(rate(marketplace_reconciler_runs_total{result="failed"}[30m]))`
+  exceeds 5% of the cadence over a 30-minute window.
+- `sum by (cloud)(marketplace_metering_records_total{result="dead_lettered"})`
+  is non-zero.
 - Adapter-issued license `ExpiresAt` is within 24 hours of now (the
   refresh path has been failing for at least `RefreshLeadTime - 1` days).
 
@@ -96,12 +98,19 @@ runs.
 `PeriodicTimer` at `Aws:Marketplace:PollIntervalSeconds`. On each tick:
 
 1. Calls `GetEntitlements` for the configured customer identifier.
+   The AWS response carries `Entitlements + NextToken` only — there is
+   **no portable signature** to forward.
 2. Diffs against the cached entitlement state
    (`marketplace:aws:entitlements:{customer_id}`).
-3. On divergence (or within `RefreshLeadTime`), POSTs the entitlement
-   payload + AWS-side signature + customer identity to the mint host.
-4. Mint host re-verifies via publisher AWS credentials and returns a
-   Honua-signed file with `exp ≤ 90 days`.
+3. On divergence (or within `RefreshLeadTime`), POSTs the customer
+   identity and observed entitlements as a hint to the mint host —
+   `(customer_identifier, account_id, product_code, dimensions /
+   observed entitlements)`. Adapter-supplied state is a trigger, not
+   evidence.
+4. Mint host independently re-queries `GetEntitlements` with publisher
+   AWS credentials as the authoritative source and returns a Honua-
+   signed file with `exp ≤ 90 days`. Signed-token language only
+   applies to the optional ALM seller-issued path below.
 5. Adapter persists the file via `FileLicenseStore`, which invalidates
    the validator snapshot cache.
 
@@ -178,7 +187,7 @@ client (`AzureFulfillmentClient`) over the documented v2 endpoints using
 
 ```
 [Azure Marketplace]
-  POST /marketplace/azure/webhook   (Azure AD JWT bearer)
+  POST /api/v1/marketplace/azure/webhook   (Azure AD JWT bearer)
        │
        ▼
    AzureWebhookEndpoint
@@ -190,7 +199,7 @@ client (`AzureFulfillmentClient`) over the documented v2 endpoints using
 [AzureSubscriptionReconcilerService] (background)
      4. drain queue, dedupe by (subscriptionId, operationId)
      5. Get Subscription (publisher credentials)
-     6. POST /mint  → Honua-signed file (exp ≤ 90d)
+     6. POST /api/v1/admin/license/mint  → Honua-signed file (exp ≤ 90d)
      7. apply via FileLicenseStore → validator cache invalidated
 ```
 
@@ -202,21 +211,23 @@ Subscription latency lives entirely in the reconciler.
 ### Resolve / Activate landing-page flow
 
 ```
-POST /marketplace/azure/resolve   (Azure-supplied marketplace token)
+POST /api/v1/marketplace/azure/resolve   (Azure-supplied marketplace token)
    AzureLandingPageEndpoints.ResolveAsync
      → Resolve API call (server-to-server)
      → renders landing page with subscription metadata for the customer
 
-POST /marketplace/azure/activate
+POST /api/v1/marketplace/azure/activate
    AzureLandingPageEndpoints.ActivateAsync
      → Activate API call (server-to-server)
-     → POST /mint → Honua-signed file (exp ≤ 90d)
+     → POST /api/v1/admin/license/mint → Honua-signed file (exp ≤ 90d)
      → customer download / auto-deploy
 ```
 
-`/marketplace/azure/resolve` and `/marketplace/azure/activate` are
-public landing-page surfaces; they require Azure-supplied marketplace
-tokens but are not admin-scoped.
+`/api/v1/marketplace/azure/resolve` and `/api/v1/marketplace/azure/activate`
+are public landing-page surfaces; they require Azure-supplied
+marketplace tokens but are not admin-scoped. The mint round-trip
+(`POST /api/v1/admin/license/mint`) targets the hosted Honua mint host
+under M2M auth and is not invoked from the customer side.
 
 ### Webhook health
 

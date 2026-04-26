@@ -298,27 +298,44 @@ licenses signed by the old `kid` remain valid through retirement.
 ### 4.1 Mint host placement
 
 The mint host lives in `Honua.Server` for v1 behind admin-scoped Minimal API
-endpoints:
+endpoints. All licensing routes follow the existing
+`/api/v1/admin/license/...` convention used by the platform-admin license
+endpoints already in `EndpointRegistry.cs`:
 
-| Endpoint | Scope | Purpose |
-|----------|-------|---------|
-| `POST /admin/license/mint` | M2M (admin scope) | Issue a new license from supplied claims. |
-| `POST /admin/license/refresh` | M2M (admin scope) | Re-sign an existing license whose claims have not changed (refresh-only path). |
+| Endpoint | Scope | Visible on customer instances? | Purpose |
+|----------|-------|-------------------------------|---------|
+| `POST /api/v1/admin/license/mint` | M2M (admin scope) | No — mint host only. | Issue a new license from supplied claims. |
+| `POST /api/v1/admin/license/refresh` | M2M (admin scope) | No — mint host only. | Re-sign an existing license whose claims have not changed (refresh-only path). |
+| `GET /api/v1/admin/license/signing/status` | M2M (admin scope) | No — mint host only. | Reports current `License:Signing:KeyId` and signer health. |
+| `GET /api/v1/admin/license/keys` | Admin | Yes. | Inspects the resolved public-key set (`baked-in` primary + `License:Keys` additions). |
+| `POST /api/v1/admin/marketplace/{cloud}/reconcile` | Admin | Yes (when adapter enabled). | Manual reconciliation trigger; bypasses the timer. `cloud` ∈ `aws`, `azure`. |
+| `POST /api/v1/marketplace/azure/webhook` | Public — Azure AD JWT bearer (publisher audience). | Yes (when Azure adapter enabled). | Azure SaaS Fulfillment v2 lifecycle webhook. Not admin-scoped. |
+| `POST /api/v1/marketplace/azure/resolve` | Public — Azure-supplied marketplace token. | Yes (when Azure adapter enabled). | Landing-page resolve. Not admin-scoped. |
+| `POST /api/v1/marketplace/azure/activate` | Public — Azure-supplied marketplace token. | Yes (when Azure adapter enabled). | Landing-page activate. Not admin-scoped. |
 
-Signing material loads only when `License:Signing:Enabled=true`. Customer-side
-deployments leave it `false` and these endpoints return `404` to keep the
-signing surface invisible.
+Signing material loads only when `License:Signing:Enabled=true`. Customer-
+side deployments leave it `false` and the mint-host-only endpoints return
+`404` to keep the signing surface invisible. The `GET /api/v1/admin/license/keys`
+inspector remains available on every instance for resolver auditing.
+
+Marketplace endpoints register only when the corresponding
+`{Aws,Azure}:Marketplace:Enabled=true`, so air-gapped customers see no
+Azure landing-page or AWS reconcile route in the registry.
 
 Future extraction to a `Honua.LicenseMint.*` deployable changes only host
 wiring; the public abstractions in `Honua.Core/Features/Licensing/Abstractions/`
-do not move.
+do not move. After extraction, the mint-host-only routes
+(`/api/v1/admin/license/{mint,refresh,signing/status}`) bind on the
+extracted deployable's address — the operator-facing routes
+(`/api/v1/admin/license/keys`, `/api/v1/admin/marketplace/{cloud}/reconcile`,
+the Azure landing pages) remain on `Honua.Server`.
 
 ### 4.2 BYOL flow
 
 ```
 [Honua portal (separate repo)]
         │
-        │ POST /admin/license/mint  (M2M bearer)
+        │ POST /api/v1/admin/license/mint  (M2M bearer)
         ▼
 [Hosted mint host]
         │
@@ -345,8 +362,9 @@ against the local public-key set. No network call.
         ▼
    AwsMarketplaceLicenseAdapter
         │
-        │ POST /mint  with (customer_identifier, account_id,
-        │                   product_code, dimensions/observed entitlements)
+        │ POST /api/v1/admin/license/mint
+        │   with (customer_identifier, account_id,
+        │         product_code, dimensions/observed entitlements)
         ▼
 [Honua hosted mint]
         │ re-queries GetEntitlements with publisher AWS credentials
@@ -405,7 +423,7 @@ depth, retry count, and dead-letter count.
 [Azure Marketplace]
         │  Azure AD JWT bearer
         ▼
-POST /marketplace/azure/webhook
+POST /api/v1/marketplace/azure/webhook
         │
         │ AzureWebhookEndpoint
         │   1. verify JWT (issuer + audience + signature)
@@ -415,7 +433,7 @@ POST /marketplace/azure/webhook
 [Background] AzureSubscriptionReconcilerService
         │
         │ Get Subscription (publisher credentials)
-        │ POST /mint  → Ed25519 sign  (exp ≤ 90d)
+        │ POST /api/v1/admin/license/mint  → Ed25519 sign  (exp ≤ 90d)
         ▼
 [FileLicenseStore]  → invalidates cached snapshot → re-runs validator
 ```
@@ -423,16 +441,16 @@ POST /marketplace/azure/webhook
 Resolve / Activate landing-page flow:
 
 ```
-POST /marketplace/azure/resolve   (Azure-supplied marketplace token)
+POST /api/v1/marketplace/azure/resolve   (Azure-supplied marketplace token)
    AzureLandingPageEndpoints.ResolveAsync
         │ Resolve API (server-to-server)
         ▼
    Render landing page with subscription metadata
 
-POST /marketplace/azure/activate
+POST /api/v1/marketplace/azure/activate
    AzureLandingPageEndpoints.ActivateAsync
         │ Activate API (server-to-server)
-        │ POST /mint  → Ed25519 sign  (exp ≤ 90d)
+        │ POST /api/v1/admin/license/mint  → Ed25519 sign  (exp ≤ 90d)
         ▼
    Customer download / auto-deploy
 ```
@@ -608,7 +626,7 @@ default 6 months from ADR landing). Behavior:
 - Both formats parse → canonical wins; legacy parse is logged as
   `licenses_validated_total{result="legacy_format_accepted"}`.
 - Only legacy parses → accepted with a deprecation warning at INFO
-  (`6010` event-id).
+  (`10010` event-id, in the licensing band reserved in § 6.3).
 - Neither parses → `MalformedEnvelope`.
 
 Operators can monitor un-migrated installs via the deprecation counter and

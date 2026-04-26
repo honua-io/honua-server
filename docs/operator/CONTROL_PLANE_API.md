@@ -486,6 +486,27 @@ Operational procedures live in the licensing runbooks:
 [License Key Rotation](runbooks/LICENSE_KEY_ROTATION.md), and
 [Marketplace Operations](runbooks/MARKETPLACE_OPERATIONS.md).
 
+The licensing slice introduces additional routes that land with their
+child tickets per the ADR-0033 § "Bounded Child Tickets" decomposition.
+They are listed here so the canonical route set in the ADR, the
+architecture doc, and this contract agree:
+
+| Endpoint | Method | Visibility | Land with |
+|----------|--------|------------|-----------|
+| `/api/v1/admin/license/mint` | POST | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
+| `/api/v1/admin/license/refresh` | POST | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
+| `/api/v1/admin/license/signing/status` | GET | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
+| `/api/v1/admin/license/keys` | GET | Every instance | License store + bootstrap child ticket |
+| `/api/v1/admin/marketplace/aws/reconcile` | POST | When `Aws:Marketplace:Enabled=true` | AWS marketplace adapter child ticket |
+| `/api/v1/admin/marketplace/azure/reconcile` | POST | When `Azure:Marketplace:Enabled=true` | Azure marketplace adapter child ticket |
+| `/api/v1/marketplace/azure/webhook` | POST | When `Azure:Marketplace:Enabled=true`. Public — Azure AD JWT bearer | Azure marketplace adapter child ticket |
+| `/api/v1/marketplace/azure/resolve` | POST | When `Azure:Marketplace:Enabled=true`. Public — Azure-supplied marketplace token | Azure marketplace adapter child ticket |
+| `/api/v1/marketplace/azure/activate` | POST | When `Azure:Marketplace:Enabled=true`. Public — Azure-supplied marketplace token | Azure marketplace adapter child ticket |
+
+The mint-host-only and marketplace routes are not present in the current
+`EndpointRegistry`; they register through their child-ticket PRs along
+with the corresponding architecture-test rows.
+
 ### **Role Management Endpoints**
 
 | Endpoint | Method | Purpose |
