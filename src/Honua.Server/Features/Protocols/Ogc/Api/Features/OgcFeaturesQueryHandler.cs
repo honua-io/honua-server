@@ -877,9 +877,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         foreach (var feature in features)
         {
-            var canWriteRawProperties = string.IsNullOrWhiteSpace(publicIdPropertyName) ||
-                                        !string.IsNullOrWhiteSpace(feature.PublicIdJson);
-            using var propertiesDocument = canWriteRawProperties ? null : TryParseJsonObject(feature.PropertiesJson);
+            using var propertiesDocument = TryParseJsonObject(feature.PropertiesJson);
             var propertiesElement = propertiesDocument?.RootElement;
 
             writer.WriteStartObject();
@@ -890,10 +888,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             WriteValidatedRawGeometry(writer, feature.GeometryGeoJson);
 
             writer.WritePropertyName("properties");
-            if (!canWriteRawProperties || !TryWriteRawJsonObject(writer, feature.PropertiesJson))
-            {
-                WriteSchemaProperties(writer, propertiesElement, propertyFields);
-            }
+            WriteSchemaProperties(writer, propertiesElement, propertyFields);
 
             writer.WriteEndObject();
         }
@@ -935,9 +930,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         foreach (var feature in features)
         {
-            var canWriteRawProperties = string.IsNullOrWhiteSpace(publicIdPropertyName) ||
-                                        !string.IsNullOrWhiteSpace(feature.PublicIdJson);
-            using var propertiesDocument = canWriteRawProperties ? null : TryParseJsonObject(feature.AttributesJson);
+            using var propertiesDocument = TryParseJsonObject(feature.AttributesJson);
             var propertiesElement = propertiesDocument?.RootElement;
 
             writer.WriteStartObject();
@@ -948,10 +941,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             WriteRawPointGeometry(writer, feature);
 
             writer.WritePropertyName("properties");
-            if (!canWriteRawProperties || !TryWriteRawJsonObject(writer, feature.AttributesJson))
-            {
-                WriteSchemaProperties(writer, propertiesElement, propertyFields);
-            }
+            WriteSchemaProperties(writer, propertiesElement, propertyFields);
 
             writer.WriteEndObject();
         }
@@ -1149,23 +1139,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             return false;
         }
-    }
-
-    private static bool TryWriteRawJsonObject(Utf8JsonWriter writer, string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return false;
-        }
-
-        var trimmed = json.AsSpan().Trim();
-        if (trimmed.Length < 2 || trimmed[0] != '{' || trimmed[^1] != '}')
-        {
-            return false;
-        }
-
-        writer.WriteRawValue(json, skipInputValidation: true);
-        return true;
     }
 
     private static bool TryWriteJsonElementId(Utf8JsonWriter writer, JsonElement value)

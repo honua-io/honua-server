@@ -38,14 +38,14 @@ public sealed class OgcFeaturesRawGeoJsonTests
     }
 
     [Fact]
-    public void CreateRawFeatureCollectionPayload_UsesProjectedRawPublicIdWithoutParsingProperties()
+    public void CreateRawFeatureCollectionPayload_UsesProjectedRawPublicIdAndFiltersProperties()
     {
         var layer = CreateLayer(new FieldDefinition("id", FieldType.Integer, Nullable: false));
         var feature = RawGeoJsonFeature.Create(
             id: 987,
             geometryGeoJson: "{\"type\":\"Point\",\"coordinates\":[1,2]}",
             publicIdJson: "123",
-            propertiesJson: "{\"category\":\"park\"}");
+            propertiesJson: "{\"category\":\"park\",\"internal_secret\":\"hidden\"}");
 
         var payload = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayload(
             [feature],
@@ -58,6 +58,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
         rawFeature.GetProperty("id").GetInt64().Should().Be(123);
         rawFeature.GetProperty("properties").TryGetProperty("id", out _).Should().BeFalse();
         rawFeature.GetProperty("properties").GetProperty("category").GetString().Should().Be("park");
+        rawFeature.GetProperty("properties").TryGetProperty("internal_secret", out _).Should().BeFalse();
     }
 
     [Fact]
@@ -108,13 +109,13 @@ public sealed class OgcFeaturesRawGeoJsonTests
     }
 
     [Fact]
-    public void CreateRawPointFeatureCollectionPayload_UsesProjectedRawPublicIdWithoutParsingAttributes()
+    public void CreateRawPointFeatureCollectionPayload_UsesProjectedRawPublicIdAndFiltersAttributes()
     {
         var layer = CreateLayer(new FieldDefinition("id", FieldType.Integer, Nullable: false));
         var feature = RawGeoServicesFeature.Create(
             id: 987,
             publicIdJson: "123",
-            attributesJson: "{\"category\":\"park\"}",
+            attributesJson: "{\"category\":\"park\",\"internal_secret\":\"hidden\"}",
             x: 1.25,
             y: 2.5);
 
@@ -129,6 +130,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
         rawFeature.GetProperty("id").GetInt64().Should().Be(123);
         rawFeature.GetProperty("properties").TryGetProperty("id", out _).Should().BeFalse();
         rawFeature.GetProperty("properties").GetProperty("category").GetString().Should().Be("park");
+        rawFeature.GetProperty("properties").TryGetProperty("internal_secret", out _).Should().BeFalse();
     }
 
     private static LayerDefinition CreateLayer(params FieldDefinition[] fields)
