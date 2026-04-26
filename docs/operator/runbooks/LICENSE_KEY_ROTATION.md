@@ -27,6 +27,29 @@ This runbook does **not** cover:
 
 ---
 
+## Status / Prerequisites
+
+This runbook documents the canonical multi-key rotation contract
+defined in ADR-0033. Several runtime commands below depend on child
+tickets that have **not yet landed on this branch** per ADR-0033 §
+"Bounded Child Tickets":
+
+| Command surface | Status on `feature/804` | Lands with |
+|-----------------|-------------------------|------------|
+| `GET /api/v1/admin/license/keys` | Route is **not yet registered** in `EndpointRegistry`. The CONTROL_PLANE_API contract lists it under "land with the License store + bootstrap child ticket". | License store + bootstrap child ticket. |
+| `POST /api/v1/admin/license/upload` | Endpoint registered; placeholder returns HTTP `501 Not Implemented` until the validator + license store child tickets land. | License store + bootstrap child ticket. |
+| `GET /api/v1/admin/license/signing/status` | Mint-host-only route. Not registered on customer instances. **Not yet registered** on the mint host either. | Mint host endpoints child ticket. |
+| `POST /api/v1/admin/license/refresh` | Mint-host-only route. **Not yet registered.** | Mint host endpoints child ticket. |
+| `tests/dotnet/Honua.Server.Tests/Features/Licensing/LicenseKeyRotationSmokeTests.cs` | Test fixture **not yet authored** on this branch. | Key-rotation runbook + smoke test child ticket. |
+| `licenses_issued_total{source=...}`, `licenses_validated_total{result=...}`, validator log emitter `10020` | Counter / event-id shapes are reserved by ADR-0033 but emit only after the validator + mint child tickets land. | Validator + JSON context, Mint library, Mint host endpoints child tickets. |
+
+The runbook is published ahead of those child tickets so the rotation
+contract is reviewable in isolation. Treat every command marked above
+as **prerequisite-bound** and confirm the corresponding child ticket
+has landed before running it on a customer or mint-host environment.
+
+---
+
 ## Concept
 
 Honua's license validator resolves the signing key by `kid` (RFC 7517) from
@@ -150,10 +173,12 @@ path that matches the old key's source.
 **Configuration-additive key (most common):**
 
 1. Set `NotAfter` on the old key to a past instant (or remove it from
-   configuration entirely):
+   configuration entirely). Use any RFC 3339 timestamp earlier than
+   "now" — for example, with this runbook authored on
+   `2026-04-26`, an unambiguously past placeholder is:
 
    ```
-   License:Keys:0:NotAfter = 2027-07-01T00:00:00Z   # already in the past
+   License:Keys:0:NotAfter = 2026-04-01T00:00:00Z   # any instant before "now"
    ```
 
 2. Confirm via `licenses_validated_total{result="unknown_key_id"}` that no

@@ -26,6 +26,27 @@ This runbook does **not** cover:
 
 ---
 
+## Status / Prerequisites
+
+This runbook documents the canonical Ed25519 / JWS migration contract
+defined in ADR-0033. Several runtime commands below depend on child
+tickets that have **not yet landed on this branch** per ADR-0033 §
+"Bounded Child Tickets":
+
+| Command surface | Status on `feature/804` | Lands with |
+|-----------------|-------------------------|------------|
+| `POST /api/v1/admin/license/upload` | Endpoint registered; the placeholder `ConfigurationLicenseStatusProvider.UploadLicenseAsync` returns HTTP `501 Not Implemented` with `"License upload is not yet supported"`. The canonical Ed25519 / JWS upload path is **not yet operational** — running the migration command on a current build will return 501. | License store + bootstrap child ticket (ADR-0033 § "Bounded Child Tickets" item 3). |
+| `GET /api/v1/admin/license/status` | Operational. Returns the current edition, validity, expiry, and licensed-to fields. | Already in `LicenseAdminEndpoints`. |
+| `GET /api/v1/admin/observability/errors?eventIdMin=10000&eventIdMax=10299` | The endpoint is operational; the licensing event-id band is reserved by ADR-0033 but emitters in the `10000-10299` range only start populating once the validator + license store child tickets land. | Validator + JSON context and License store + bootstrap child tickets. |
+| `licenses_validated_total{result=...}` and `licenses_active{edition=...}` Prometheus counters | Counter shapes are documented in the ADR-0033 § Cross-Cutting Reuse telemetry bullet, but emit only after the validator child ticket lands. | Validator + JSON context child ticket. |
+
+The runbook is published ahead of those child tickets so the migration
+contract is reviewable in isolation. Treat every command marked above
+as **prerequisite-bound** and confirm the corresponding child ticket has
+landed before running it on a customer environment.
+
+---
+
 ## Core Policy
 
 1. **No forced re-issuance.** Existing BYOL customers must not be required to
@@ -44,10 +65,12 @@ This runbook does **not** cover:
 ## Pre-Migration Checklist
 
 Before enabling the dual-format verifier in production, verify on a non-
-production environment:
+production environment (requires the License store + bootstrap child
+ticket — see § "Status / Prerequisites" above):
 
 ```bash
 # Confirm canonical format validates end-to-end
+# (returns HTTP 501 until the License store + bootstrap child ticket lands)
 curl -X POST -H "X-API-Key: <admin-key>" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @canonical.honua-license \
