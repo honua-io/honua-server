@@ -99,17 +99,19 @@ future audit can trace each closure back to a written justification.
 
 ## SARIF upload changes
 
-- `.github/workflows/container-security.yml` — Trivy SARIF step now uses
-  `severity: 'HIGH,CRITICAL'`. The existing fail-on-HIGH/CRITICAL gate is
-  unchanged; full table output is still captured by the structure-test artifact.
+- `.github/workflows/security-nightly.yml` — both Trivy SARIF generation steps
+  (filesystem and container) now set `severity: HIGH,CRITICAL`. The existing
+  fail-on-HIGH/CRITICAL gates are unchanged; full SARIF + report artifacts are
+  still uploaded for ops triage. (The previous `container-security.yml` and
+  `trivy-nightly.yml` workflows were consolidated into `security-nightly.yml`
+  on `trunk` as part of PR #805 — this filter lives in their successor.)
 - `.github/workflows/deploy-platform-images.yml` — Trivy CLI invocation in the
   per-image scan adds `--severity HIGH,CRITICAL`. SARIF categories per matrix
   entry are unchanged so the dashboard still attributes findings per image.
 
-`trivy-nightly.yml` (filesystem scan) is intentionally **not** filtered yet —
-its findings are checked separately and the change here is bounded to the named
-scope. Re-introduce MEDIUM severity by removing the new flags if a stakeholder
-wants MEDIUM back on the dashboard.
+Re-introduce MEDIUM severity on the Security tab by removing the new
+`severity` inputs / `--severity` flag if a stakeholder wants MEDIUM back; the
+gating Trivy steps will continue to fail on HIGH/CRITICAL regardless.
 
 ## Inherited findings deferred upstream
 
