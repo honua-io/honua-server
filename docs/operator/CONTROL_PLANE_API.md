@@ -473,6 +473,18 @@ for run lifecycle, scheduler semantics, and tuning details.
 | `/api/v1/admin/license` | GET | Get license status |
 | `/api/v1/admin/license` | POST | Upload license |
 | `/api/v1/admin/license/entitlements` | GET | Get entitlements |
+| `/api/v1/admin/license/status` | GET | Platform-admin license status (mirrors `GET /api/v1/admin/license`) |
+| `/api/v1/admin/license/features` | GET | Platform-admin entitlements / feature view |
+| `/api/v1/admin/license/upload` | POST | Platform-admin upload (used by the licensing runbooks) |
+
+The unified license envelope (compact JWS / EdDSA / Ed25519), BYOL and
+marketplace issuance flows, multi-key rotation, and the AWS/Azure marketplace
+adapter contracts are defined in [ADR-0033](../contributor/adr/0033-unified-license-format.md)
+and the companion [unified license and entitlement architecture](../contributor/architecture/unified-license-and-entitlement.md).
+Operational procedures live in the licensing runbooks:
+[License Migration](runbooks/LICENSE_MIGRATION.md),
+[License Key Rotation](runbooks/LICENSE_KEY_ROTATION.md), and
+[Marketplace Operations](runbooks/MARKETPLACE_OPERATIONS.md).
 
 ### **Role Management Endpoints**
 

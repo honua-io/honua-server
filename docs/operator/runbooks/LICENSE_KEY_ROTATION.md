@@ -102,7 +102,7 @@ curl -H "X-API-Key: <admin-key>" \
 The response must list both the old `kid` and the new `kid` with their
 windows. If the new key does not appear, inspect the configuration
 provider precedence (env var > file > defaults) and the resilience event
-log (`6100-6199` band).
+log (`10100-10199` band).
 
 ### Step 2 — Switch the mint host signing key
 
@@ -278,7 +278,7 @@ rotation complete.
 | `licenses_validated_total{result="unknown_key_id"}` | Zero. | Non-zero after adding a new `kid` = new key not loaded on a server in the fleet; re-check configuration roll. |
 | `licenses_validated_total{result="signature_invalid"}` | Zero. | Non-zero after rotation = mint signed with one private key, fleet trusts a different public key for that `kid`; halt rotation, verify `kid` collision. |
 | `marketplace_reconciler_runs_total{cloud="aws",result="succeeded"}` and `..."azure"...` | Steady. | Drop after rotation = adapters cannot reach the mint host with new credentials. |
-| Validator log emitter `6020` (`license_validation_kid_resolved`). | One emission per `kid` per warm cache window. | Multiple `kid` resolutions for the same `license_id` within a short window = unstable resolver / configuration churn. |
+| Validator log emitter `10020` (`license_validation_kid_resolved`). | One emission per `kid` per warm cache window. | Multiple `kid` resolutions for the same `license_id` within a short window = unstable resolver / configuration churn. |
 
 ---
 

@@ -127,7 +127,7 @@ skip directly to Phase 4.
    ```
 
    Any non-zero rate indicates legacy files still in play. Per-deployment
-   visibility comes from the structured log emitter (event-id `6010`) which
+   visibility comes from the structured log emitter (event-id `10010`) which
    records the `license_id` (full only at DEBUG, hashed at INFO).
 2. Coordinate with the portal team to re-issue legacy files in canonical
    format on the customer's next renewal touchpoint. **Do not** force an
@@ -147,7 +147,7 @@ deadline has passed:
      options binding.
    - The `licenses_validated_total{result="legacy_format_accepted"}`
      metric label literal (the label is now unreachable).
-   - The deprecation log emitter (`6010`).
+   - The deprecation log emitter (`10010`).
 2. Land the cutover PR. After release, attempts to parse a legacy file
    return `MalformedEnvelope` (the same code path as a corrupt canonical
    file).
@@ -170,7 +170,7 @@ curl https://<host>/metrics | grep licenses_active
 
 # Recent license-related logs (admin observability)
 curl -H "X-API-Key: <admin-key>" \
-  "https://<host>/api/v1/admin/observability/errors?eventIdMin=6000&eventIdMax=6299"
+  "https://<host>/api/v1/admin/observability/errors?eventIdMin=10000&eventIdMax=10299"
 ```
 
 Expected after Phase 1: `licenses_validated_total{result="valid"}`

@@ -340,14 +340,17 @@ against the local public-key set. No network call.
    AwsEntitlementPollerService (BackgroundService, PeriodicTimer)
         │
         │ AWS Marketplace Entitlement Service: GetEntitlements
+        │   (response carries Entitlements + NextToken; no portable signature)
         │
         ▼
    AwsMarketplaceLicenseAdapter
         │
-        │ POST /mint  with (entitlement payload, AWS signature, identity)
+        │ POST /mint  with (customer_identifier, account_id,
+        │                   product_code, dimensions/observed entitlements)
         ▼
 [Honua hosted mint]
-        │ verifies via publisher AWS credentials
+        │ re-queries GetEntitlements with publisher AWS credentials
+        │ (authoritative — adapter-supplied state is treated as a hint, not evidence)
         │ Ed25519 sign  (exp ≤ 90d)
         ▼
 [Signed file]
@@ -355,6 +358,12 @@ against the local public-key set. No network call.
         ▼
 [FileLicenseStore]  → invalidates cached snapshot → re-runs validator
 ```
+
+The AWS Marketplace Entitlement Service does not return a portable signed
+token — that's what the optional ALM seller-issued path below is for.
+The default mint path therefore treats the adapter's payload as a
+trigger and re-verifies entitlement state against AWS using publisher
+credentials before signing.
 
 The `RegisterUsage` call runs once on container start
 (`AwsRegisterUsageOnStart` `IHostedService`) for EKS / ECS deployments; failures
@@ -438,9 +447,13 @@ live in the configured secret store: env vars for local; Kubernetes Secrets;
 AWS Secrets Manager; Azure Key Vault. The mint host enforces:
 
 - Audience claim (`mint:client:<customer-id>`).
-- Per-customer rate limit (config-driven; defaults conservative).
 - Independent re-verification of marketplace evidence (AWS publisher
   credentials, Azure publisher credentials).
+
+Per [ADR-0004](../adr/0004-proxy-rate-limiting.md), rate limiting is
+enforced at the edge (nginx / ALB / API gateway) — the mint host does not
+implement an in-app rate limiter. Per-customer abuse controls live in the
+edge configuration alongside the mint host's public ingress.
 
 ---
 
@@ -485,15 +498,17 @@ cached, and only after signature verification succeeds.
 ### 6.3 Logging
 
 `Honua.Server/Features/Infrastructure/Logging/Log.cs` extends with a license
-event-id band:
+event-id band. The 6000-band is already reserved (Log.cs Tracing Operations
+6000-6999) and populated by `PerformanceMonitoringLog`, `LayerStyleLog`, and
+`NlQueryLog`; licensing claims the unused 10000-band:
 
 | Range | Domain |
 |-------|--------|
-| `6000-6099` | Validator (parse, verify, expiry, resolution). |
-| `6100-6199` | License store / file watcher / hot reload. |
-| `6200-6299` | Mint endpoints and signing pipeline. |
-| `6300-6499` | AWS adapter (poller, RegisterUsage, metering, mint submit). |
-| `6500-6699` | Azure adapter (webhook, reconciler, landing page, metering, mint submit). |
+| `10000-10099` | Validator (parse, verify, expiry, resolution). |
+| `10100-10199` | License store / file watcher / hot reload. |
+| `10200-10299` | Mint endpoints and signing pipeline. |
+| `10300-10499` | AWS adapter (poller, RegisterUsage, metering, mint submit). |
+| `10500-10699` | Azure adapter (webhook, reconciler, landing page, metering, mint submit). |
 
 All emitters are `[LoggerMessage]` source-generated. INFO logs redact
 emails, subscription IDs, and account IDs to stable hashes (truncated SHA-256

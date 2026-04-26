@@ -112,7 +112,7 @@ calls `RegisterUsage` exactly once during startup. Behavior:
 
 - Success → license adapter proceeds normally.
 - Failure with `Aws:Marketplace:RegisterUsage:RequiredOnStart=true` →
-  startup aborts with event-id `6310`. This is correct for paid SaaS
+  startup aborts with event-id `10310`. This is correct for paid SaaS
   containers because AWS denies revenue without a successful registration.
 - Failure with `RequiredOnStart=false` → adapter logs and continues; the
   poller picks up entitlements on the next tick.
@@ -129,7 +129,7 @@ calls `RegisterUsage` exactly once during startup. Behavior:
 The metering write path **never** runs inline on the request path. If
 Redis is unavailable, the in-memory buffer keeps records up to its
 configured ceiling; spillover triggers `result="dead_lettered"` and
-emits event-id `6320`.
+emits event-id `10320`.
 
 ### Common AWS Failure Modes
 
@@ -137,7 +137,7 @@ emits event-id `6320`.
 |---------|--------------|--------|
 | Poller succeeds but no re-mint occurs. | Entitlement state has not diverged and `exp` is beyond `RefreshLeadTime`. | This is healthy. No action. |
 | `marketplace_reconciler_runs_total{cloud="aws",result="failed"}` rising. | Hosted mint unreachable, expired adapter credentials, or AWS Marketplace IAM scope mismatch. | Check `Aws:Marketplace:Mint:CredentialRef` resolves to a valid token; check AWS IAM allows `aws-marketplace:GetEntitlements` for the customer identifier. |
-| Validator reports `Expired` for an adapter-issued file. | Adapter has been failing to re-mint for at least `RefreshLeadTime`. | Inspect adapter and reconciler logs (event-id band `6300-6499`). The poller cadence may need shortening. |
+| Validator reports `Expired` for an adapter-issued file. | Adapter has been failing to re-mint for at least `RefreshLeadTime`. | Inspect adapter and reconciler logs (event-id band `10300-10499`). The poller cadence may need shortening. |
 | `RegisterUsage` fails on container start. | Container is not a marketplace-purchased SKU, or task role lacks `aws-marketplace:RegisterUsage`. | Verify the deployment was launched from a marketplace AMI / EKS marketplace add-on. Check the task IAM policy. |
 | Metering buffer depth not draining. | AWS API throttling or transient outage; or worker stalled. | Inspect `marketplace_metering_records_total` by `result`. Restart the metering worker if needed; AWS API outages resolve themselves through the retry-with-backoff loop. |
 | `licenses_validated_total{result="signature_invalid"}` after deploy. | Adapter credentials point at the wrong mint host; mint host signed with a key the customer fleet does not trust. | Confirm `Aws:Marketplace:Mint:BaseUrl` and the public-key set (`License:Keys`). |
@@ -250,7 +250,7 @@ worker classes share the durable substrate but address different APIs.
 | Webhook does not ack within 10 s; Azure retries flood. | Inline mint or Get Subscription on the webhook path (regression). | Verify the handler matches the documented ack-and-enqueue pattern — the reconciler must be the only path that calls the mint or Get Subscription. |
 | `Get Subscription` returns 404 in the reconciler. | Subscription was unsubscribed before the reconciler drained the event. | Mark the local mirror as unsubscribed; do not re-mint. Surface this as `result="unsubscribed"` on the reconciler counter. |
 | `Get Subscription` returns 401. | Publisher credentials expired or revoked. | Rotate `Azure:Marketplace:Publisher:ClientSecretRef`. The reconciler retries on the next tick. |
-| `licenses_validated_total{result="expired"}` for an adapter-issued file. | Reconciler has been failing for at least `RefreshLeadTime` days. | Inspect Azure logs (event-id band `6500-6699`); confirm publisher credentials and mint reachability. |
+| `licenses_validated_total{result="expired"}` for an adapter-issued file. | Reconciler has been failing for at least `RefreshLeadTime` days. | Inspect Azure logs (event-id band `10500-10699`); confirm publisher credentials and mint reachability. |
 | Metering API returns 429. | Throttling. | The retry-with-backoff loop absorbs throttling; only escalate if records dead-letter. |
 | Webhook ack latency p99 climbs near 10 s under load. | Body size pressure or queue contention. | Confirm `Azure:Marketplace:Webhook:MaxBodyKiB=8` is enforced; investigate the queue substrate. **Never** address this by skipping the durable persistence — that re-introduces the SLA risk. |
 

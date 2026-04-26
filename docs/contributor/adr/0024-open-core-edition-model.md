@@ -137,6 +137,14 @@ License checks must be:
 - **Auditable**: license status is visible in the Admin UI health page and
   the `/health` endpoint.
 
+> The canonical envelope (compact JWS / EdDSA / Ed25519), the BYOL and
+> marketplace issuance flows, and the multi-key rotation contract are
+> defined in [ADR-0033](0033-unified-license-format.md). The companion design
+> doc lives at
+> [`docs/contributor/architecture/unified-license-and-entitlement.md`](../architecture/unified-license-and-entitlement.md);
+> operational procedures live in the
+> [licensing runbooks](../../operator/runbooks/README.md#licensing-runbooks).
+
 ### The Mental Model
 
 ```
