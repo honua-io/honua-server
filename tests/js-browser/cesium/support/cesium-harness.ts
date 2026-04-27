@@ -31,6 +31,13 @@ export interface TileRequest {
   contentType: string;
 }
 
+/** Captures image requests made by a Cesium imagery provider. */
+export interface ImageryRequestObserver {
+  requests: TileRequest[];
+  failures: string[];
+  dispose: () => Promise<void>;
+}
+
 /** Return type from `createViewer`. Provides helpers for assertions. */
 export interface ViewerHandle {
   /** Wait until the globe reports tilesLoaded === true. */
@@ -41,6 +48,46 @@ export interface ViewerHandle {
   screenshot: () => Promise<Buffer>;
   /** The same-origin proxy origin (e.g. http://127.0.0.1:43117). */
   proxyOrigin: string;
+}
+
+export async function observeImageryRequests(
+  page: Page,
+  urlPattern: Parameters<Page['route']>[0],
+): Promise<ImageryRequestObserver> {
+  const requests: TileRequest[] = [];
+  const failures: string[] = [];
+  const routeHandler: Parameters<Page['route']>[1] = async (route) => {
+    const url = route.request().url();
+    try {
+      const response = await route.fetch();
+      requests.push({
+        url,
+        status: response.status(),
+        contentType: response.headers()['content-type'] ?? '',
+      });
+      await route.fulfill({ response });
+    } catch (error) {
+      failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
+      await route.abort();
+    }
+  };
+
+  await page.route(urlPattern, routeHandler);
+
+  return {
+    requests,
+    failures,
+    async dispose() {
+      await page.unroute(urlPattern, routeHandler);
+    },
+  };
+}
+
+export function successfulImageResponses(observer: ImageryRequestObserver): TileRequest[] {
+  return observer.requests.filter((request) =>
+    request.status >= 200
+    && request.status < 300
+    && request.contentType.toLowerCase().includes('image/'));
 }
 
 async function getProxyOrigin(upstreamOrigin: string): Promise<string> {
@@ -88,6 +135,7 @@ async function getProxyOrigin(upstreamOrigin: string): Promise<string> {
   <meta charset="utf-8">
   <style>
     html, body, #cesiumContainer { width: 512px; height: 512px; margin: 0; padding: 0; }
+    .cesium-widget-credits { display: none !important; }
   </style>
 </head>
 <body><div id="cesiumContainer"></div></body>
