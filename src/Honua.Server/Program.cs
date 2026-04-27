@@ -1169,6 +1169,7 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
             serviceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
             serviceProvider.GetRequiredService<IFeatureDataProviderRegistry>(),
             DataProviderNames.Normalize(provider)));
+    services.TryAddScoped<FeatureProviderQueryRouter>();
 
     // Add centralized configuration management and secret services
     services.AddConfigurationManagement(configuration);
