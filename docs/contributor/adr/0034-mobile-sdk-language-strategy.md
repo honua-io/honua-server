@@ -23,7 +23,7 @@ before scoping the rest.
 
 The candidates considered:
 
-1. **C# / .NET MAUI** — single codebase, `net8.0-ios` + `net8.0-android` target
+1. **C# / .NET MAUI** — single codebase, `net10.0-ios` + `net10.0-android` target
    frameworks. Shares the existing `Honua.Sdk.Grpc` and `Honua.Sdk.OgcFeatures`
    stubs without an FFI boundary.
 2. **Swift / Kotlin native** — separate iOS and Android SDKs, hand-rolled
@@ -34,7 +34,7 @@ The candidates considered:
 4. **React Native / Flutter** — JavaScript or Dart bridge with native
    platform UI shells.
 
-Honua's server-side infrastructure is already deeply invested in .NET 8: AOT
+Honua's server-side infrastructure is already deeply invested in .NET 10: AOT
 compatibility (ADR-0018), source-generated JSON and logging, the .NET-first
 SDK ecosystem (`honua-sdk-dotnet` is the canonical client SDK), and the
 licensing infrastructure (ADR-0033). The reference app validates that this
@@ -45,14 +45,16 @@ operate on a settled foundation.
 ## Decision
 
 Honua ships the mobile SDK as **C# / .NET MAUI**, a single codebase targeting
-`net8.0-ios` and `net8.0-android`, published as the NuGet package
+`net10.0-ios` and `net10.0-android`, published as the NuGet package
 `Honua.Sdk.Mobile` parallel to `Honua.Sdk.Grpc` and `Honua.Sdk.OgcFeatures`.
 
 Concrete consequences:
 
 - The mobile SDK shares `Honua.Sdk.Grpc` proto stubs and `Honua.Sdk.OgcFeatures`
   contracts directly. No FFI boundary, no duplicated client code.
-- Build matrix pins to .NET 8 LTS until the next LTS lands. Upgrades are
+- Build matrix pins to .NET 10 LTS, matching the rest of the Honua server and
+  SDK ecosystem (`Honua.Sdk.Grpc`, `Honua.Sdk.OgcFeatures`, and the
+  `FieldDataCollection` reference app all target `net10.0`). Upgrades are
   evaluated through a CI matrix entry, not a runtime decision.
 - Storage uses SQLite-PCL-raw with a bundled SpatiaLite native binary for
   GeoPackage, the same combination already exercised by the
@@ -65,9 +67,9 @@ Concrete consequences:
 
 ### AOT and trimming
 
-iOS publish requires NativeAOT / ILC; .NET 8 supports this for MAUI iOS apps
-since .NET 8 Preview 6. The SDK keeps to the same constraints as the rest of
-the codebase:
+iOS publish requires NativeAOT / ILC; .NET 10 supports this for MAUI iOS apps,
+continuing the NativeAOT publish path that .NET 8 first enabled. The SDK keeps
+to the same constraints as the rest of the codebase:
 
 - Source-generated JSON contexts (per ADR-0018). No
   `JsonSerializer.Serialize(object)` reflection paths.
@@ -77,7 +79,7 @@ the codebase:
   in CI on every PR.
 
 Android does not require AOT, but the same trim mode applies. Android uses
-.NET 8's r2r / interpreter mix; the SDK is trim-clean either way.
+.NET 10's r2r / interpreter mix; the SDK is trim-clean either way.
 
 ### Package and namespace
 
@@ -165,7 +167,7 @@ production-ready form. Neither choice aligns with the existing
   of the SDK. This is consistent with the SDK / app split documented in the
   roadmap.
 - **One bad runtime upgrade can block iOS releases.** Mitigated by the
-  .NET 8 LTS pin and the explicit upgrade-evaluation step in the CI matrix.
+  .NET 10 LTS pin and the explicit upgrade-evaluation step in the CI matrix.
 
 ### Supersedes
 
@@ -181,7 +183,7 @@ prior ADR proposed an alternative.
 - [Honua Mobile SDK Roadmap](../../developer/mobile-sdk-roadmap.md)
 - `honua-sdk-dotnet/examples/FieldDataCollection/` — MAUI reference app
 - `AGENTS.md` § Honua Repository Map (`honua-mobile` row)
-- .NET 8 Mobile NativeAOT documentation:
+- .NET 10 Mobile NativeAOT documentation:
   https://learn.microsoft.com/en-us/dotnet/maui/
 - OGC GeoPackage Encoding Standard 1.3
 - Kotlin Multiplatform status (decision-date snapshot, 2026-04)

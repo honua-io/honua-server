@@ -68,7 +68,7 @@ Out of scope:
   gRPC status codes, SQLite exceptions, or filesystem paths must not surface to
   SDK consumers (`AGENTS.md § Cross-Cutting Concerns`).
 - AOT and trimming compatibility are required: source-generated JSON and
-  logging, no reflection in hot paths, NativeAOT-publishable on iOS via .NET 8
+  logging, no reflection in hot paths, NativeAOT-publishable on iOS via .NET 10
   ILC.
 - CRS metadata must be preserved per OGC GeoPackage. Default storage CRS is
   EPSG:4326; CRS104 (WGS84-2D) is supported per spec.
@@ -185,7 +185,7 @@ divergence is platform tooling.
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|-----------|
-| .NET MAUI iOS AOT publish regressions on a future runtime upgrade | Medium | High (CI breaks on iOS target) | Pin to .NET 8 LTS in Phase 0; upgrade path tracked in Phase 1. |
+| .NET MAUI iOS AOT publish regressions on a future runtime upgrade | Medium | High (CI breaks on iOS target) | Pin to .NET 10 LTS in Phase 0; upgrade path tracked in Phase 1. |
 | GeoPackage SpatiaLite extension availability on Android emulator images | Medium | Medium (offline tests fail in CI) | Use SQLite-PCL-raw with bundled SpatiaLite; documented in Phase 3. |
 | KMP ecosystem catching up before implementation starts | Low | Low (decision can be revisited) | ADR-0034 records explicit re-evaluation triggers. |
 | Reference app patterns not extractable as clean SDK surfaces | Medium | Medium (scope creep on Phases 3 and 4) | Each phase scopes the interface-first extraction explicitly. |
