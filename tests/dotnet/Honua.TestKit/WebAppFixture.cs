@@ -601,6 +601,8 @@ public sealed class WebAppFixture : IAsyncLifetime
             return;
         }
 
+        await EnsureSecureConnectionProviderColumnAsync(connectionProvider).ConfigureAwait(false);
+
         var registry = services.GetRequiredService<ISecureConnectionRegistry>();
         var encryptionService = services.GetRequiredService<IConnectionEncryptionService>();
         var configuration = services.GetRequiredService<IConfiguration>();
@@ -697,6 +699,20 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         Console.Error.WriteLine($"WARNING: Could not verify secure-connection table after {maxAttempts} attempts. Proceeding without it.");
         return false;
+    }
+
+    private static async Task EnsureSecureConnectionProviderColumnAsync(IDatabaseConnectionProvider connectionProvider)
+    {
+        const string sql = """
+            ALTER TABLE IF EXISTS honua.data_connections
+                ADD COLUMN IF NOT EXISTS provider_name TEXT NOT NULL DEFAULT 'postgis';
+            """;
+
+        await using var connection = await connectionProvider.OpenConnectionAsync().ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = 10;
+        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
     private static bool IsTransientSecureConnectionCheckFailure(Exception ex)

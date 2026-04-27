@@ -98,6 +98,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<DuckDBFeatureStore>();
 
         // Register segregated interfaces
+        services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IFeatureReader>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IFeatureWriter>(_ => new ReadOnlyFeatureWriter());
         services.AddScoped<IReplicaRepository>(_ => new ReadOnlyReplicaRepository());
@@ -231,7 +232,12 @@ internal static class ServiceCollectionExtensions
                 geometryType,
                 srs,
                 fields.ToArray(),
-                SupportsAttachments: false);
+                SupportsAttachments: false,
+                StorageMapping: new LayerStorageMapping(
+                    layerOpt.Table,
+                    PrimaryKeyColumn: layerOpt.ObjectIdColumn,
+                    GeometryColumn: geometryType == GeometryType.None ? null : layerOpt.GeometryColumn,
+                    StorageSrid: layerOpt.Srid));
 
             layers.Add(layer);
             layerMap[layerOpt.Id] = layer;

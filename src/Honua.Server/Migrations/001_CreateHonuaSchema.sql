@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS honua.layers (
     description TEXT,
     table_schema TEXT NOT NULL DEFAULT current_schema(),
     table_name TEXT NOT NULL,
+    primary_key_column TEXT NOT NULL DEFAULT 'objectid',
+    geometry_column TEXT DEFAULT 'geometry',
+    storage_srid INT,
+    temporal_column TEXT,
+    storage_options JSONB NOT NULL DEFAULT '{}'::jsonb,
     geometry_type TEXT NOT NULL,
     srid INT NOT NULL DEFAULT 4326,
     extent GEOMETRY(POLYGON, 4326),
@@ -91,5 +96,10 @@ COMMENT ON TABLE features IS 'Feature data with geometry and attributes stored a
 
 COMMENT ON COLUMN honua.layers.geometry_type IS 'PostGIS geometry type: Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon';
 COMMENT ON COLUMN honua.layers.srid IS 'Spatial reference system identifier (e.g., 4326 for WGS84)';
+COMMENT ON COLUMN honua.layers.primary_key_column IS 'Physical primary key or object identifier column for provider-backed execution';
+COMMENT ON COLUMN honua.layers.geometry_column IS 'Physical geometry column for provider-backed execution';
+COMMENT ON COLUMN honua.layers.storage_srid IS 'SRID/CRS used by the stored geometry';
+COMMENT ON COLUMN honua.layers.temporal_column IS 'Optional physical temporal column used by time-aware layers';
+COMMENT ON COLUMN honua.layers.storage_options IS 'Provider-specific storage binding options when neutral layer fields are not sufficient';
 COMMENT ON COLUMN honua.layer_fields.field_type IS 'Field data type: text, integer, double, boolean, date, timestamp';
 COMMENT ON COLUMN features.attributes IS 'Feature properties stored as JSONB for flexible schema';

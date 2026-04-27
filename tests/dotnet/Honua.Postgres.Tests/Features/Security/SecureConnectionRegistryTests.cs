@@ -110,6 +110,30 @@ public class SecureConnectionRegistryTests : IClassFixture<WebAppFixture>
     }
 
     [Fact]
+    public async Task CreateConnectionAsync_CustomProvider_RoundTripsProviderName()
+    {
+        // Arrange
+        var connection = DataConnection.CreateWithSecretReference(
+            name: $"test-provider-{Guid.NewGuid():N}",
+            host: "localhost",
+            port: 5432,
+            databaseName: "testdb",
+            username: "testuser",
+            secretRef: "env:TEST_DB_CONNECTION",
+            secretType: "environment",
+            createdBy: "test-user");
+        connection.Provider = "PostgreSQL";
+
+        // Act
+        var created = await _registry.CreateConnectionAsync(connection);
+        var retrieved = await _registry.GetConnectionAsync(created.ConnectionId);
+
+        // Assert
+        Assert.NotNull(retrieved);
+        Assert.Equal("postgresql", retrieved!.NormalizedProvider);
+    }
+
+    [Fact]
     public async Task CreateConnectionAsync_DuplicateName_ThrowsInvalidOperationException()
     {
         // Arrange

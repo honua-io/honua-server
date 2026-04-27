@@ -23,6 +23,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="Relationships">Relationships defined for this layer (optional)</param>
 /// <param name="SupportsAttachments">Whether this layer supports file attachments (default true)</param>
 /// <param name="Metadata">Optional catalog metadata for access policy and extensions</param>
+/// <param name="StorageMapping">Optional runtime binding to physical feature storage</param>
 public record LayerDefinition(
     int Id,
     string Name,
@@ -36,7 +37,8 @@ public record LayerDefinition(
     bool DefaultVisibility = true,
     Relationship[]? Relationships = null,
     bool SupportsAttachments = true,
-    CatalogMetadata? Metadata = null)
+    CatalogMetadata? Metadata = null,
+    LayerStorageMapping? StorageMapping = null)
 {
     /// <summary>
     /// The geometry field definition (if layer has geometry)
@@ -132,6 +134,14 @@ public record LayerDefinition(
 
         if (PrimaryKeyField == null)
             errors.Add($"Layer must have a primary key field (integer field named 'id', '{FieldNames.ObjectId}', or 'fid')");
+
+        if (StorageMapping != null)
+        {
+            foreach (var storageError in StorageMapping.Validate())
+            {
+                errors.Add($"Storage mapping: {storageError}");
+            }
+        }
 
         // Validate each field
         foreach (var field in Fields)

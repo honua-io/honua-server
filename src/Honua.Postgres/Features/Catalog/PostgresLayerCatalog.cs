@@ -44,6 +44,13 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 l.layer_id,
                 l.layer_name,
                 l.description,
+                l.table_schema,
+                l.table_name,
+                l.primary_key_column,
+                l.geometry_column,
+                l.storage_srid,
+                l.temporal_column,
+                l.storage_options,
                 l.geometry_type,
                 l.srid,
                 l.min_scale,
@@ -77,7 +84,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         // Get relationships for this layer
         Relationship[] relationships = await ListRelationshipsAsync(layerId, cancellationToken);
 
-        return layer with { Fields = fields, Relationships = relationships };
+        return PopulateLayerDetails(layer, fields, relationships);
     }
 
     /// <inheritdoc />
@@ -88,6 +95,13 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 l.layer_id,
                 l.layer_name,
                 l.description,
+                l.table_schema,
+                l.table_name,
+                l.primary_key_column,
+                l.geometry_column,
+                l.storage_srid,
+                l.temporal_column,
+                l.storage_options,
                 l.geometry_type,
                 l.srid,
                 l.min_scale,
@@ -126,11 +140,10 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         Dictionary<int, Relationship[]> relationshipsMap = await GetLayerRelationshipsBatchAsync([.. layerIds], cancellationToken);
 
         // Combine layers with their fields and relationships
-        return [.. layers.Select(layer => layer with
-        {
-            Fields = fieldsMap.TryGetValue(layer.Id, out FieldDefinition[]? fields) ? fields : [],
-            Relationships = relationshipsMap.TryGetValue(layer.Id, out Relationship[]? relationships) ? relationships : []
-        })];
+        return [.. layers.Select(layer => PopulateLayerDetails(
+            layer,
+            fieldsMap.TryGetValue(layer.Id, out FieldDefinition[]? fields) ? fields : [],
+            relationshipsMap.TryGetValue(layer.Id, out Relationship[]? relationships) ? relationships : []))];
     }
 
     /// <inheritdoc />
@@ -264,6 +277,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         var spatialReference = SpatialReference.Create(srid);
 
         var metadata = ReadMetadata(reader, "metadata");
+        var storageMapping = ReadStorageMapping(reader, srid);
 
         return new LayerDefinition(
             id,
@@ -276,7 +290,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             minScale,
             maxScale,
             defaultVisibility,
-            Metadata: metadata);
+            Metadata: metadata,
+            StorageMapping: storageMapping);
     }
 
     private static ServiceDefinition ReadServiceDefinition(NpgsqlDataReader reader)
@@ -386,6 +401,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         string sql = $"""
             SELECT
                 l.layer_id, l.layer_name, l.description, l.geometry_type, l.srid,
+                l.table_schema, l.table_name, l.primary_key_column, l.geometry_column,
+                l.storage_srid, l.temporal_column, l.storage_options,
                 l.min_scale, l.max_scale, l.default_visibility, l.metadata,
                 ST_XMin(l.extent) as xmin, ST_YMin(l.extent) as ymin,
                 ST_XMax(l.extent) as xmax, ST_YMax(l.extent) as ymax,
@@ -419,11 +436,10 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         Dictionary<int, FieldDefinition[]> fieldsMap = await GetLayerFieldsBatchAsync([.. layerIds], cancellationToken);
         Dictionary<int, Relationship[]> relationshipsMap = await GetLayerRelationshipsBatchAsync([.. layerIds], cancellationToken);
 
-        return [.. layers.Select(layer => layer with
-        {
-            Fields = fieldsMap.TryGetValue(layer.Id, out FieldDefinition[]? fields) ? fields : [],
-            Relationships = relationshipsMap.TryGetValue(layer.Id, out Relationship[]? relationships) ? relationships : []
-        })];
+        return [.. layers.Select(layer => PopulateLayerDetails(
+            layer,
+            fieldsMap.TryGetValue(layer.Id, out FieldDefinition[]? fields) ? fields : [],
+            relationshipsMap.TryGetValue(layer.Id, out Relationship[]? relationships) ? relationships : []))];
     }
 
     private async Task<Dictionary<string, LayerDefinition[]>> GetServiceLayersBatchAsync(string[] serviceNames, CancellationToken cancellationToken)
@@ -435,6 +451,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             SELECT
                 sl.service_name,
                 l.layer_id, l.layer_name, l.description, l.geometry_type, l.srid,
+                l.table_schema, l.table_name, l.primary_key_column, l.geometry_column,
+                l.storage_srid, l.temporal_column, l.storage_options,
                 l.min_scale, l.max_scale, l.default_visibility, l.metadata,
                 ST_XMin(l.extent) as xmin, ST_YMin(l.extent) as ymin,
                 ST_XMax(l.extent) as xmax, ST_YMax(l.extent) as ymax,
@@ -480,11 +498,10 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         return layersMap.ToDictionary(
             kvp => kvp.Key,
-            kvp => kvp.Value.Select(layer => layer with
-            {
-                Fields = fieldsMap.TryGetValue(layer.Id, out FieldDefinition[]? fields) ? fields : [],
-                Relationships = relationshipsMap.TryGetValue(layer.Id, out Relationship[]? relationships) ? relationships : []
-            }).ToArray());
+            kvp => kvp.Value.Select(layer => PopulateLayerDetails(
+                layer,
+                fieldsMap.TryGetValue(layer.Id, out FieldDefinition[]? fields) ? fields : [],
+                relationshipsMap.TryGetValue(layer.Id, out Relationship[]? relationships) ? relationships : [])).ToArray());
     }
 
     /// <inheritdoc />
@@ -651,6 +668,101 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         string? description = reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal);
 
         return new FieldDefinition(fieldName, fieldType, maxLength, nullable, defaultValue, description);
+    }
+
+    private static LayerDefinition PopulateLayerDetails(
+        LayerDefinition layer,
+        FieldDefinition[] fields,
+        Relationship[] relationships)
+    {
+        var storageMapping = layer.StorageMapping;
+        if (storageMapping != null)
+        {
+            var primaryKeyColumn = storageMapping.PrimaryKeyColumn;
+            if (string.Equals(primaryKeyColumn, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+                !fields.Any(field => field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)))
+            {
+                primaryKeyColumn = ResolvePrimaryKeyColumn(fields);
+            }
+
+            var geometryColumn = storageMapping.GeometryColumn;
+            if (layer.GeometryType != GeometryType.None)
+            {
+                geometryColumn = fields.FirstOrDefault(field => field.IsGeometry)?.Name ?? geometryColumn;
+            }
+
+            storageMapping = storageMapping with
+            {
+                PrimaryKeyColumn = primaryKeyColumn,
+                GeometryColumn = geometryColumn,
+                StorageSrid = storageMapping.StorageSrid ?? layer.SpatialReference.Wkid
+            };
+        }
+
+        return layer with
+        {
+            Fields = fields,
+            Relationships = relationships,
+            StorageMapping = storageMapping
+        };
+    }
+
+    private static string ResolvePrimaryKeyColumn(FieldDefinition[] fields)
+    {
+        var primaryKey = fields.FirstOrDefault(field =>
+            field.Name.Equals("id", StringComparison.OrdinalIgnoreCase) ||
+            field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) ||
+            field.Name.Equals("fid", StringComparison.OrdinalIgnoreCase)) ??
+            fields.FirstOrDefault(field => field.Type is FieldType.Integer or FieldType.BigInteger);
+
+        return primaryKey?.Name ?? FieldNames.ObjectId;
+    }
+
+    private static LayerStorageMapping ReadStorageMapping(NpgsqlDataReader reader, int defaultSrid)
+    {
+        var tableName = reader.GetString(reader.GetOrdinal("table_name"));
+        var schemaName = ReadNullableString(reader, "table_schema");
+        var primaryKeyColumn = ReadNullableString(reader, "primary_key_column") ?? FieldNames.ObjectId;
+        var geometryColumn = ReadNullableString(reader, "geometry_column");
+        var temporalColumn = ReadNullableString(reader, "temporal_column");
+
+        var storageSridOrdinal = reader.GetOrdinal("storage_srid");
+        var storageSrid = reader.IsDBNull(storageSridOrdinal)
+            ? defaultSrid
+            : reader.GetInt32(storageSridOrdinal);
+
+        return new LayerStorageMapping(
+            tableName,
+            SchemaName: schemaName,
+            PrimaryKeyColumn: primaryKeyColumn,
+            GeometryColumn: geometryColumn,
+            StorageSrid: storageSrid,
+            TemporalColumn: temporalColumn,
+            ProviderOptions: ReadStorageOptions(reader));
+    }
+
+    private static string? ReadNullableString(NpgsqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static Dictionary<string, string> ReadStorageOptions(NpgsqlDataReader reader)
+    {
+        var ordinal = reader.GetOrdinal("storage_options");
+        if (reader.IsDBNull(ordinal))
+        {
+            return new Dictionary<string, string>();
+        }
+
+        var json = reader.GetString(ordinal);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new Dictionary<string, string>();
+        }
+
+        return JsonSerializer.Deserialize(json, CatalogJsonContext.Default.DictionaryStringString)
+            ?? new Dictionary<string, string>();
     }
 
     private static CatalogMetadata? ReadMetadata(NpgsqlDataReader reader, string columnName)
