@@ -1,0 +1,140 @@
+# Real-client interop test matrix orchestrator.
+#
+# `honua` and `postgres` always start (depends_on healthy). Each client lane
+# is a separate service with profile `matrix` so:
+#   - `docker compose run --rm <lane>` brings up infra + that single lane.
+#   - `docker compose --profile matrix up --abort-on-container-exit` runs all.
+#
+# Output `.cert.json` envelopes are written to ./output/<lane>/ on the host so
+# the baseline-diff step can compare them against tests/baselines/client-compat.
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: honua_compat
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: compat_password
+    networks:
+      - compat
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  honua:
+    image: honua-server:client-compat
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5000
+      PUBLIC_BASE_URL: http://honua:5000
+      HostValidation__AllowedHosts__0: honua
+      HostValidation__AllowedHosts__1: localhost
+      HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
+      ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
+      Security__ConnectionEncryption__MasterKey: test-master-key-that-is-at-least-32-characters-long-for-security
+      Security__ConnectionEncryption__Salt: dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
+      CLIENT_COMPAT_SEED_SOURCE: tests/seed/client-compat-v1.sql
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - compat
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:5000/healthz/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  gdal:
+    profiles: ["matrix", "gdal"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/gdal/Dockerfile
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+    depends_on:
+      honua:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ../../tests:/workspace/tests:ro
+      - ./output/gdal:/output
+
+  pyqgis:
+    profiles: ["matrix", "pyqgis"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/pyqgis/Dockerfile
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+      HONUA_PYQGIS_SERVICE_ID: test_service
+      HONUA_PYQGIS_COLLECTION_ID: "0"
+    depends_on:
+      honua:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ../../tests:/workspace/tests:ro
+      - ./output/pyqgis:/output
+
+  openlayers:
+    profiles: ["matrix", "openlayers"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/openlayers/Dockerfile
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+    depends_on:
+      honua:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ../../tests:/workspace/tests:rw
+      - ./output/openlayers:/output
+
+  cesium:
+    profiles: ["matrix", "cesium"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/cesium/Dockerfile
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+    depends_on:
+      honua:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ../../tests:/workspace/tests:rw
+      - ./output/cesium:/output
+
+  arcgis-stub:
+    profiles: ["matrix", "arcgis-stub"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/arcgis-stub/Dockerfile
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+      ARCGIS_STUB_SERVICE_NAME: browser_compat
+      ARCGIS_STUB_LAYER_ID: "2000"
+    depends_on:
+      honua:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ./output/arcgis-stub:/output
+
+networks:
+  compat:
+    driver: bridge

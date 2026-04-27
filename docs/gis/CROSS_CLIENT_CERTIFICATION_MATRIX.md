@@ -75,6 +75,7 @@ The evidence envelope's `measured_delta` field records the observed deviation in
 | FS | GeoServices REST FeatureServer / MapServer | `featureserver`, `mapserver` |
 | OGC | OGC API Features | `ogc-features` |
 | OGC Maps | OGC API Maps | `ogc-maps` |
+| OGC Tiles | OGC API Tiles | `ogc-tiles` |
 | OData | OData v4 | `odata` |
 | MVT | Vector Tiles (Mapbox Vector Tiles) | `mvt` |
 | WFS | WFS 2.0 | `wfs` |
@@ -92,7 +93,8 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | **JS** (Vitest + Playwright) | Automated ‡‡ | All CERT-\* | JS-EXT-01, JS-EXT-02, JS-EXT-OL-\*, JS-EXT-TILES-\* |
 | **JS — MapLibre** (Playwright) | Automated | CERT-CONN-01, CERT-RNDR-01 (browser render) | JS-EXT-01, JS-EXT-02 |
 | **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
-| **Desktop — ArcGIS Pro** | Manual per runbook | All CERT-\* (visual RNDR) | DSK-EXT-01, DSK-EXT-02 |
+| **JS — Cesium** (Playwright) | Automated ¶¶ | WMS, WMTS, OGC API Tiles, OGC API Maps imagery subset | JS-CES-IMG-01, JS-CES-TILE-01 |
+| **Desktop — ArcGIS Pro** | Stub (REST) + manual per runbook | All CERT-\* via stub; visual RNDR pending licensed runner | DSK-EXT-01, DSK-EXT-02 |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | All CERT-\* (OGC Features + WFS via PyQGIS; visual RNDR headless) | DSK-EXT-01, DSK-EXT-02 |
 | **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite) | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
@@ -104,6 +106,8 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 ‡‡ **JS lane current automated scope:** Vitest (Node.js) covers FeatureServer direct JS tests plus OpenLayers protocol-client tests for OGC API Features, OGC API Maps, OGC Tiles/MVT, WFS 2.0, WMS 1.3, and WMTS 1.0 (`*.test.ts`). The OpenLayers lane emits `.cert.json` envelopes for `ogc-features`, `ogc-maps`, `mvt`, `wfs`, `wms`, and `wmts`. Playwright (headless Chromium) covers MapLibre rendering tests for MVT and an OGC API Maps image-source smoke that is skipped when no raster fixture exists. The Python pytest suite (FeatureServer + OGC API Features + GPServer + ImageServer) provides independent server-side protocol validation; its results may inform certification confidence but are not JS-lane client evidence. JS-lane OData automation is planned but not yet implemented; CLI-lane OData automation is now closed via the Microsoft.OData.Client xUnit certification suite (`tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs`). Until automated JS suites are added for those protocols, their CERT-\* results require manual evidence or are recorded as `skip` with a note referencing this gap.
 
 §§ **Esri Leaflet sub-lane scope:** The Playwright suite currently exercises the browser-visible FeatureServer and MapServer subset: connection, metadata, schema, query/filter, paging, geometry fidelity, error handling, rendering, MapServer identify, and refresh. After the visual / style slice lands (ticket #478), the suite also substantiates `CERT-RNDR-SYM-01` and `CERT-RNDR-URL-01` on the FeatureServer surface via drawingInfo metadata and per-category style assertions, and the reporter emits a 24-case common-core envelope (18 base + 6 slice) by recording unexercised CERT-\* IDs as `skip` and the MapServer query-focused IDs as `not-applicable`. On the `mapserver` envelope the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs are also recorded as `not-applicable` because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint.
+
+¶¶ **Cesium sub-lane scope:** The Playwright suite (`tests/js-browser/cesium/`, run via `docker/client-compat/cesium/`) exercises CesiumJS imagery providers — `WebMapServiceImageryProvider` (WMS), `WebMapTileServiceImageryProvider` (WMTS), `UrlTemplateImageryProvider` (OGC API Tiles), and `SingleTileImageryProvider` (OGC API Maps). Cesium does not consume vector-feature endpoints (FeatureServer, OGC API Features, WFS, OData) so the query/filter, schema, pagination, and geometry-fidelity categories are recorded as `not-applicable` in the `wms`, `wmts`, `ogc-tiles`, and `ogc-maps` envelopes. Per the contract for ticket #806, only CERT-CONN-01, CERT-CONN-02, CERT-AUTH-01, CERT-AUTH-02, CERT-DISC-01, CERT-DISC-02, CERT-ERRH-01, and CERT-RNDR-01 are applicable; the visual / style slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) are `not-applicable` because Cesium imagery providers consume server-rendered raster output rather than per-feature drawing info.
 
 ### Lane-Specific Extensions
 
@@ -133,6 +137,13 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | EL-EXT-02 | DynamicMapLayer export image renders | FS (mapserver) | pass/fail |
 | EL-EXT-03 | Feature attributes accessible via eachFeature | FS | pass/fail |
 | EL-EXT-04 | MapServer identify returns attributes at point | FS (mapserver) | pass/fail |
+
+#### Cesium Browser Sub-Lane
+
+| Extension ID | Description | Protocol(s) | Evidence |
+|---|---|---|---|
+| JS-CES-IMG-01 | WMS GetMap request parameters spec-compliant (CRS, BBOX, WIDTH, HEIGHT) | WMS | pass/fail |
+| JS-CES-TILE-01 | OGC API Tiles URL template `{z}/{y}/{x}` substitution correct | OGC Tiles | pass/fail |
 
 #### Desktop Lane
 
@@ -186,3 +197,4 @@ All certification results must follow the standardized evidence specification in
 | 1.1.1 | 2026-04-07 | Update the `§§` Esri Leaflet sub-lane footnote to the post-#478 24-case common-core shape; document slice-ID `not-applicable` rationale on the mapserver envelope |
 | 1.1.2 | 2026-04-08 | Add JS — MapLibre (Playwright) lane for automated MapLibre GL JS browser render certification (#464) |
 | 1.1.3 | 2026-04-25 | Add OGC API Maps JS/OpenLayers evidence protocol and MapLibre image-source smoke coverage |
+| 1.2.0 | 2026-04-26 | Add JS — Cesium (Playwright) lane and JS-CES-IMG-01 / JS-CES-TILE-01 extensions; add `ogc-tiles` protocol abbreviation; document ArcGIS Pro stub lane via `docker/client-compat/arcgis-stub` (#806) |
