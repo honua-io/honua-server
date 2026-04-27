@@ -59,7 +59,7 @@ test.describe('Cesium OGC API Tiles', () => {
         viewer.scene.globe.baseColor = Cesium.Color.BLACK;
         viewer.scene.globe.showGroundAtmosphere = false;
         const provider = new Cesium.UrlTemplateImageryProvider({
-          url: `${proxyOrigin}/ogc/tiles/collections/${layerId}/tiles/WebMercatorQuad/{z}/{y}/{x}.png`,
+          url: `${proxyOrigin}/ogc/tiles/collections/${layerId}/tiles/WebMercatorQuad/{z}/{y}/{x}?f=png`,
           maximumLevel: 5,
         });
         viewer.imageryLayers.addImageryProvider(provider);
