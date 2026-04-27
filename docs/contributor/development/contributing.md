@@ -13,6 +13,7 @@ These are enforced by architecture tests — PRs will fail if violated.
 - **Minimal APIs only**: no controllers (no `ControllerBase`)
 - **Max 5 dependencies per endpoint, max 4 per handler**
 - **AOT compatible**: source-generated JSON, `[LoggerMessage]` for logging, no reflection
+- **Log redaction**: when logging tokens, session ids, cache keys, IPs, schema header values, or unbounded user input, route the value through `Honua.Core.Features.Infrastructure.Logging.LogValueRedactor` (`Hash` for an 8-char SHA-256 correlation token, `SanitizeForLog` for CR/LF stripping with bounded length). Keeps CodeQL `cs/log-injection` clean while preserving event correlation.
 
 ---
 

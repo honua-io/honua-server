@@ -86,16 +86,24 @@ offending line with the rationale recorded in the surrounding comment block.
 
 | File:line | Rule | Disposition | Rationale |
 | --- | --- | --- | --- |
-| `src/Honua.Postgres/Features/Infrastructure/SchemaSearchPath.cs:39` | `cs/sql-injection` | dismiss | Identifier is allow-list validated against `^[A-Za-z_][A-Za-z0-9_]*$`; `SET search_path` does not accept identifier parameter binding. |
-| `src/Honua.Postgres/Features/FeatureStore/Services/FeatureDataAccess.Core.cs` | `cs/sql-injection` | dismiss | All commands are built by vetted query builders that bind user-controlled values via `NpgsqlParameter`; the existing `// codeql[cs/sql-injection]` annotation in `CreateSafeCommand` covers the wrapper. |
-| `src/Honua.Postgres/Features/Infrastructure/Caching/PreparedStatementCache.cs:840` | `cs/sql-injection` | dismiss | The wrapped `CommandText` is the previously prepared, parameterized query owned by this cache; never raw user input. EXPLAIN cannot accept the inner statement via parameter binding. |
-| `src/Honua.DuckDB/Features/FeatureStore/Services/DuckDBFeatureDataAccess.cs:432` | `cs/sql-injection` | dismiss | `ParameterizedQuery.Sql` is built from a fixed template plus positional `?` placeholders; user values bind as parameters in the loop below. |
-| `src/Honua.Server/Features/Infrastructure/Helpers/SecureXmlDocumentParser.cs` | `cs/xml/insecure-dtd-handling` | dismiss | `DtdProcessing = Prohibit`, `XmlResolver = null`, and `MaxCharactersFromEntities = 0` together block both XXE and entity-expansion attacks; this is the recommended secure XML reader configuration. |
+| `src/Honua.Postgres/Features/Infrastructure/SchemaSearchPath.cs:39` | `cs/sql-injection` | dismiss | Identifier is allow-list validated against `^[A-Za-z_][A-Za-z0-9_]*$`; `SET search_path` does not accept identifier parameter binding. In-source `// codeql[cs/sql-injection]` annotation present. |
+| `src/Honua.Postgres/Features/FeatureStore/Services/FeatureDataAccess.Core.cs:134` | `cs/sql-injection` | dismiss | `CreateSafeCommand` delegates to `PostgresSqlSafety.CreateReadCommand`, which calls `ValidateReadOnlySingleStatement` to reject anything but a single `SELECT` / `WITH` (no comments, no statement separator, no mutating tokens). User values bind via `NpgsqlParameter` in the surrounding callers. No per-call-site annotation — the wrapper is the dismissal anchor. |
+| `src/Honua.Postgres/Features/Infrastructure/Caching/PreparedStatementCache.cs:568` | `cs/sql-injection` | dismiss | `CloneCommand` rebuilds a previously-validated command via the same `PostgresSqlSafety.CreateReadCommand` wrapper; the `CommandText` being cloned is the parameterized query the cache already owns, never raw user input. No per-call-site annotation — the wrapper is the dismissal anchor. |
+| `src/Honua.DuckDB/Features/FeatureStore/Services/DuckDBFeatureDataAccess.cs:448` | `cs/sql-injection` | dismiss | `ParameterizedQuery.Sql` is built from a fixed template plus positional `?` placeholders; user values bind as parameters in the loop below. In-source `// codeql[cs/sql-injection]` annotation present. |
+| `src/Honua.Server/Features/Infrastructure/Helpers/SecureXmlDocumentParser.cs:14` | `cs/xml/insecure-dtd-handling`, `cs/xml/missing-validation` | dismiss | `DtdProcessing = Prohibit`, `XmlResolver = null`, and `MaxCharactersFromEntities = 0` together block both XXE and entity-expansion attacks; this is the recommended secure XML reader configuration. In-source `// codeql[...]` annotation present. |
 
-Each dismissal carries an in-source `// codeql[<rule-id>]: <rationale>` comment
-so the reasoning is reviewable in the diff. The corresponding GitHub-UI
-dismissals must be filed with the same rationale text after this PR lands so a
-future audit can trace each closure back to a written justification.
+Three dismissals (`SchemaSearchPath.cs`, `DuckDBFeatureDataAccess.cs`,
+`SecureXmlDocumentParser.cs`) carry an in-source
+`// codeql[<rule-id>]: <rationale>` comment so the reasoning is reviewable in
+the diff. The two Postgres call-sites that go through the
+`PostgresSqlSafety.CreateReadCommand` wrapper rely on the wrapper itself
+(`PostgresSqlSafety.ValidateReadOnlySingleStatement`) as the audit trail —
+that helper is the central allow-list and rejects anything but a single
+`SELECT` / `WITH` with no comments, statement separators, or mutating tokens.
+The corresponding GitHub-UI dismissals must be filed with the same rationale
+text after this PR lands so a future audit can trace each closure back to a
+written justification (in-source comment for the three annotated sites,
+remediation-table row + wrapper for the two Postgres sites).
 
 ## SARIF upload changes
 
