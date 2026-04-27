@@ -28,6 +28,6 @@ blocking-tier failures are expected during this bootstrap window.
 
 | Lane | Gap | Tracking |
 |------|-----|----------|
-| `arcgis-stub` | Cannot exercise ArcGIS Pro desktop GUI without a licensed Windows runner. | Stub covers REST surface; CERT-RNDR-* recorded as `skip` with `pending: licensed-arcgis-runner` until a runner is provisioned. |
+| `arcgis-stub` | Cannot exercise ArcGIS Pro desktop GUI without a licensed Windows runner. | Stub covers REST surface; the FeatureServer-applicable render IDs (`CERT-RNDR-01`, `CERT-RNDR-02`, `CERT-RNDR-{SYM,LIN,FIL,LBL,URL}-01`) are recorded as `skip` with `pending: licensed-arcgis-runner` until a runner is provisioned. `CERT-RNDR-SPR-01` is MVT-only per the matrix and is emitted as `not-applicable` for this lane. |
 | `cesium` | Cesium imagery providers do not consume FeatureServer / OGC API Features / OData; the lane's CERT-QFLT, CERT-PAGE, CERT-GEOM IDs are `not-applicable` for that reason. | Documented in `CROSS_CLIENT_CERTIFICATION_MATRIX.md`. |
 | `pyqgis` | QGIS Docker image is large (>2 GB); CI cache pulls add ~30 s per run. | Acceptable tradeoff per ticket #806 design. Revisit if `qgis/qgis:ltr-ubuntu-noble-headless` becomes available. |

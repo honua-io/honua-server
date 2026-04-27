@@ -2,7 +2,8 @@
 # Applies the canonical client-compat seed bundle to a freshly-started
 # postgres so honua + lane services see the expected services and layers:
 #   - tests/seed/client-compat-v1.sql → schema + `test_service` (layer 0)
-#     used by the pyqgis lane
+#     used by both the pyqgis and gdal lanes (the gdal lane points at the
+#     same pair via HONUA_GDAL_SERVICE_ID / HONUA_GDAL_COLLECTION_ID)
 #   - tests/seed/browser-compat.yaml  → `browser_compat` (layers 2000-2002)
 #     used by the cesium and openlayers lanes
 # Connection parameters arrive via PGHOST/PGUSER/PGPASSWORD/PGDATABASE env.

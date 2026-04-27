@@ -33,7 +33,9 @@ services:
 
   seed:
     # One-shot job: applies tests/seed/client-compat-v1.sql (schema +
-    # test_service/layer 0 used by pyqgis) and tests/seed/browser-compat.yaml
+    # test_service/layer 0 used by both the pyqgis and gdal lanes — the gdal
+    # lane points at the same pair via HONUA_GDAL_SERVICE_ID /
+    # HONUA_GDAL_COLLECTION_ID below) and tests/seed/browser-compat.yaml
     # (browser_compat/layers 2000-2002 used by cesium and openlayers) so the
     # lane services see the data their specs reference.
     build:
