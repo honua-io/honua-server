@@ -16,8 +16,10 @@ env:
   GDAL_E2E_SERVICE_ID: test_service
   GDAL_E2E_COLLECTION_ID: '0'
   GDAL_E2E_SEED_SOURCE: tests/seed/client-compat-v1.sql
+  # GDAL_E2E_BASE_URL is the future HONUA: swap target (see ADR-0034 and
+  # tests/seed/README-gdal-driver-e2e.md). GDAL_E2E_OAPIF_LANDING is derived
+  # from it at the job level so the two URLs cannot drift.
   GDAL_E2E_BASE_URL: http://localhost:5000
-  GDAL_E2E_OAPIF_LANDING: http://localhost:5000/ogc/features
   # Bumping pins the GDAL major.minor used by the workflow. ADR-0034 targets
   # GDAL 3.6+ as the support floor; the osgeo/gdal:ubuntu-small tag pulls a
   # current LTS image that satisfies that floor.
@@ -35,6 +37,8 @@ jobs:
     name: GDAL OAPIF Read + GeoPackage Round-Trip
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    env:
+      GDAL_E2E_OAPIF_LANDING: ${{ env.GDAL_E2E_BASE_URL }}/ogc/features
 
     services:
       postgres:
@@ -130,11 +134,14 @@ jobs:
           set -euo pipefail
           # Use the same GDAL image to count features in the produced GPKG so
           # we are comparing apples to apples (same OGR semantics on both ends).
+          # `+0` coerces the field to an integer so trailing whitespace or
+          # carriage returns in ogrinfo output cannot cause the string
+          # comparison below to false-fail.
           gpkg_count=$(docker run --rm \
             -v "${PWD}/tests/TestResults/gdal:/out" \
             "$GDAL_IMAGE" \
             ogrinfo -ro -al -so /out/out.gpkg \
-            | awk -F': *' '/^Feature Count/ {print $2; exit}')
+            | awk -F': *' '/^Feature Count/ {print $2+0; exit}')
           echo "GeoPackage feature count: $gpkg_count"
           source_count="${{ steps.source-count.outputs.count }}"
           if [ -z "$gpkg_count" ] || [ "$gpkg_count" != "$source_count" ]; then
