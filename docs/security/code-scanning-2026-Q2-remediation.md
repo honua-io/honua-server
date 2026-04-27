@@ -26,14 +26,16 @@ so the dashboard only carries actionable findings going forward.
 | `docker/Dockerfile.lambda.aot` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:8a90a473da5205a16979de99d2fc20975e922c68304f5c79d564e666dc3982fc` |
 | `docker/Dockerfile.lambda.aot` | runtime | `mcr.microsoft.com/dotnet/runtime-deps:10.0` | `@sha256:962ef681468320cc5ef25fa18259cf3200247cec2ee96c2574174d4824272151` |
 
-The Functions images were previously the only Dockerfiles in the repo without a
-manifest digest; the unpinned `:4-appservice` tag is what produced the dominant
-`trivy-functions-aot-amd64` SARIF category. The pin (a) makes the upstream
-contents deterministic so nightly Trivy stops re-uploading the same advisories
-under shifting layers and (b) brings the Functions image in line with the
-existing Dockerfile pattern (`Dockerfile`, `docker/Dockerfile.aot`,
-`docker/Dockerfile.lambda{,.aot}`). Refresh cadence: explicit PR per image,
-matching every other Dockerfile in the repo.
+The Functions images were previously the only platform-published Dockerfiles
+without a manifest digest; the unpinned `:4-appservice` tag is what produced the
+dominant `trivy-functions-aot-amd64` SARIF category. The pin (a) makes the
+upstream contents deterministic so nightly Trivy stops re-uploading the same
+advisories under shifting layers and (b) brings the Functions image in line with
+the existing platform Dockerfile pattern (`Dockerfile`,
+`docker/Dockerfile.aot`, `docker/Dockerfile.lambda{,.aot}`). Refresh cadence:
+explicit PR per published image. Auxiliary developer/simple Dockerfiles
+(`docker/Dockerfile.dev`, `docker/Dockerfile.lambda.aot.simple`) are outside
+this platform publish matrix and retain their existing image references.
 
 ## Logging redactions (CodeQL)
 

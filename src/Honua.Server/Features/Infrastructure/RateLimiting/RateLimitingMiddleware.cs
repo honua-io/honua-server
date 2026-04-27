@@ -380,23 +380,6 @@ internal sealed partial class RateLimitingMiddleware
             _ => (UnknownKeyFamily, LogValueRedactor.Hash(value))
         };
     }
-
-    private static partial class Log
-    {
-        [LoggerMessage(
-            EventId = 8901,
-            Level = LogLevel.Warning,
-            Message = "Failed to check rate limit for {KeyFamily} {KeyHash}; allowing request.")]
-        public static partial void RateLimitCheckFailed(
-            ILogger logger, string keyFamily, string keyHash, Exception exception);
-
-        [LoggerMessage(
-            EventId = 8902,
-            Level = LogLevel.Warning,
-            Message = "Rate limit exceeded for {KeyFamily} {KeyHash}. Requests: {RequestCount}/{Limit}.")]
-        public static partial void RateLimitExceeded(
-            ILogger logger, string keyFamily, string keyHash, int requestCount, int limit);
-    }
 }
 
 /// <summary>
