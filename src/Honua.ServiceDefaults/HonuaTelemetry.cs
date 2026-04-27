@@ -419,9 +419,12 @@ public static class HonuaTelemetry
             return;
         }
 
-        var sanitizedMessage = SanitizeTelemetryText(exception.Message, _maxExceptionDetailLength);
+        var exportExceptionDetails = _exportExceptionDetails;
+        var includeExceptionStackTraces = _includeExceptionStackTraces;
+        var maxExceptionDetailLength = _maxExceptionDetailLength;
+        var sanitizedMessage = SanitizeTelemetryText(exception.Message, maxExceptionDetailLength);
 
-        if (_exportExceptionDetails && !string.IsNullOrWhiteSpace(sanitizedMessage))
+        if (exportExceptionDetails && !string.IsNullOrWhiteSpace(sanitizedMessage))
         {
             activity.SetStatus(ActivityStatusCode.Error, sanitizedMessage);
             activity.SetTag(Tags.ErrorMessage, sanitizedMessage);
@@ -438,16 +441,16 @@ public static class HonuaTelemetry
             { "exception.type", exception.GetType().FullName }
         };
 
-        if (_exportExceptionDetails && !string.IsNullOrWhiteSpace(sanitizedMessage))
+        if (exportExceptionDetails && !string.IsNullOrWhiteSpace(sanitizedMessage))
         {
             tags.Add("exception.message", sanitizedMessage);
         }
 
-        if (_exportExceptionDetails &&
-            _includeExceptionStackTraces &&
+        if (exportExceptionDetails &&
+            includeExceptionStackTraces &&
             !string.IsNullOrWhiteSpace(exception.StackTrace))
         {
-            tags.Add("exception.stacktrace", SanitizeTelemetryText(exception.StackTrace, Math.Max(_maxExceptionDetailLength, MinStackTraceDetailLength)));
+            tags.Add("exception.stacktrace", SanitizeTelemetryText(exception.StackTrace, Math.Max(maxExceptionDetailLength, MinStackTraceDetailLength)));
         }
 
         activity.AddEvent(new ActivityEvent("exception", tags: tags));
