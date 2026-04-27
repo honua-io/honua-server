@@ -18,7 +18,8 @@ namespace Honua.Server.Features.Reporting;
 internal static class ReportingServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the analysis-reporting feature.
+    /// Registers the analysis-reporting feature when
+    /// <see cref="ReportingConfiguration.Enabled"/> is true (the default).
     /// </summary>
     public static IServiceCollection AddAnalysisReporting(
         this IServiceCollection services,
@@ -26,6 +27,12 @@ internal static class ReportingServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+
+        var section = configuration.GetSection(ReportingConfiguration.SectionName);
+        if (!IsReportingEnabled(section))
+        {
+            return services;
+        }
 
         services.AddAnalysisReportingCore(configuration);
         services.AddMemoryCache();
@@ -35,7 +42,6 @@ internal static class ReportingServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IMcpResource, AnalysisReportResource>());
 
-        var section = configuration.GetSection(ReportingConfiguration.SectionName);
         var narrativeEnabled = section.GetValue("Narrative:Enabled", defaultValue: false);
         if (narrativeEnabled)
         {
@@ -50,13 +56,26 @@ internal static class ReportingServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Maps the analysis-report HTTP endpoints. Mirrors the convention used by
-    /// other feature slices (a separate map call from the registration).
+    /// Maps the analysis-report HTTP endpoints when
+    /// <see cref="ReportingConfiguration.Enabled"/> is true. Mirrors the
+    /// convention used by other feature slices (a separate map call from the
+    /// registration).
     /// </summary>
     public static IEndpointRouteBuilder MapAnalysisReporting(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
+
+        var configuration = endpoints.ServiceProvider.GetRequiredService<IConfiguration>();
+        var section = configuration.GetSection(ReportingConfiguration.SectionName);
+        if (!IsReportingEnabled(section))
+        {
+            return endpoints;
+        }
+
         endpoints.MapAnalysisReportEndpoints();
         return endpoints;
     }
+
+    private static bool IsReportingEnabled(IConfigurationSection section)
+        => section.GetValue("Enabled", defaultValue: true);
 }

@@ -1,20 +1,47 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting.Domain;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Reporting.Services;
 
 /// <summary>
-/// In-memory <see cref="IAnalysisReportStore"/>. Keys reports by
-/// <c>(jobId, contractVersion, resultPackageId)</c> so a re-run that produces
-/// a new result-package id transparently invalidates stale entries.
+/// In-memory <see cref="IAnalysisReportStore"/> backed by a bounded
+/// <see cref="MemoryCache"/>. Entries are keyed by
+/// <c>(jobId, contractVersion)</c> for O(1) lookup and are evicted under
+/// configurable size and TTL caps so a long-lived server cannot grow
+/// unbounded as new job ids accumulate.
 /// </summary>
-internal sealed class InMemoryAnalysisReportStore : IAnalysisReportStore
+internal sealed class InMemoryAnalysisReportStore : IAnalysisReportStore, IDisposable
 {
-    private readonly ConcurrentDictionary<string, AnalysisReport> _store = new(StringComparer.Ordinal);
+    /// <summary>
+    /// Contract versions <see cref="RemoveAsync"/> must scan when invalidating
+    /// a job. Extend when a new <c>ReportingConstants.ContractVersionVN</c> is
+    /// introduced so RemoveAsync stays semantically "remove all reports for
+    /// this jobId".
+    /// </summary>
+    private static readonly string[] _knownContractVersions =
+    [
+        ReportingConstants.ContractVersionV1,
+    ];
+
+    private readonly MemoryCache _cache;
+    private readonly TimeSpan _entryTtl;
+
+    public InMemoryAnalysisReportStore(IOptions<ReportingConfiguration> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var cacheOptions = options.Value.Cache;
+        _cache = new MemoryCache(new MemoryCacheOptions
+        {
+            SizeLimit = Math.Max(1, cacheOptions.MaxEntries),
+        });
+        _entryTtl = TimeSpan.FromMinutes(Math.Max(1, cacheOptions.TtlMinutes));
+    }
 
     /// <inheritdoc />
     public Task<AnalysisReport?> TryGetAsync(
@@ -25,20 +52,21 @@ internal sealed class InMemoryAnalysisReportStore : IAnalysisReportStore
         ArgumentException.ThrowIfNullOrEmpty(jobId);
         ArgumentException.ThrowIfNullOrEmpty(contractVersion);
 
-        var report = _store
-            .Where(kvp => kvp.Value.JobId == jobId
-                          && kvp.Value.ReportContractVersion == contractVersion)
-            .Select(kvp => kvp.Value)
-            .FirstOrDefault();
-        return Task.FromResult<AnalysisReport?>(report);
+        _cache.TryGetValue<AnalysisReport>(BuildKey(jobId, contractVersion), out var report);
+        return Task.FromResult(report);
     }
 
     /// <inheritdoc />
     public Task StoreAsync(AnalysisReport report, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(report);
-        var key = BuildKey(report.JobId, report.ReportContractVersion, report.ResultPackageId);
-        _store[key] = report;
+
+        var entryOptions = new MemoryCacheEntryOptions
+        {
+            Size = 1,
+            AbsoluteExpirationRelativeToNow = _entryTtl,
+        };
+        _cache.Set(BuildKey(report.JobId, report.ReportContractVersion), report, entryOptions);
         return Task.CompletedTask;
     }
 
@@ -46,13 +74,15 @@ internal sealed class InMemoryAnalysisReportStore : IAnalysisReportStore
     public Task RemoveAsync(string jobId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
-        foreach (var key in _store.Keys.Where(k => k.StartsWith(jobId + "|", StringComparison.Ordinal)).ToArray())
+        foreach (var version in _knownContractVersions)
         {
-            _store.TryRemove(key, out _);
+            _cache.Remove(BuildKey(jobId, version));
         }
         return Task.CompletedTask;
     }
 
-    private static string BuildKey(string jobId, string contractVersion, string resultPackageId)
-        => string.Concat(jobId, "|", contractVersion, "|", resultPackageId);
+    public void Dispose() => _cache.Dispose();
+
+    private static string BuildKey(string jobId, string contractVersion)
+        => string.Concat(jobId, "|", contractVersion);
 }

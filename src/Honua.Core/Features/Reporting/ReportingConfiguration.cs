@@ -44,6 +44,15 @@ public sealed class ReportingCacheConfiguration
     /// outlive their source. Default: 60 minutes.
     /// </summary>
     public int TtlMinutes { get; set; } = 60;
+
+    /// <summary>
+    /// Maximum number of <see cref="Domain.AnalysisReport"/> envelopes kept in
+    /// the in-memory store. Excess entries are evicted by the underlying
+    /// <see cref="Microsoft.Extensions.Caching.Memory.MemoryCache"/> so a
+    /// long-lived server cannot grow unbounded as new job ids accumulate.
+    /// Default: 1024.
+    /// </summary>
+    public int MaxEntries { get; set; } = 1024;
 }
 
 /// <summary>LLM narrative provider configuration.</summary>
@@ -96,6 +105,7 @@ public sealed class ReportingConfigurationValidator : ConfigurationValidator<Rep
     {
         ValidateRange(options.MaxTableRows, 1, 100_000, "Reporting:MaxTableRows", errors);
         ValidateRange(options.Cache.TtlMinutes, 1, 24 * 60, "Reporting:Cache:TtlMinutes", errors);
+        ValidateRange(options.Cache.MaxEntries, 1, 100_000, "Reporting:Cache:MaxEntries", errors);
 
         if (!options.Narrative.Enabled)
         {

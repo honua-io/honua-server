@@ -132,7 +132,8 @@ public sealed class AnalysisReportServiceTests
     {
         var templates = ReportingFixtures.CreateBuilder();
         var builder = templates;
-        var storeImpl = new InMemoryAnalysisReportStore();
+        var options = Options.Create(new ReportingConfiguration());
+        var storeImpl = new InMemoryAnalysisReportStore(options);
         store = storeImpl;
 
         IAnalysisReportRenderer[] renderers =
@@ -142,7 +143,6 @@ public sealed class AnalysisReportServiceTests
         ];
 
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var options = Options.Create(new ReportingConfiguration());
 
         return new AnalysisReportService(
             jobService,
