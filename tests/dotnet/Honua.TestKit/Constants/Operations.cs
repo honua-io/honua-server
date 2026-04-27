@@ -11,6 +11,7 @@ public static class Operations
 {
     // Common Operations
     public const string Query = "Query";
+    public const string Consume = "Consume";
     public const string GetById = "GetById";
     public const string Create = "Create";
     public const string Update = "Update";
