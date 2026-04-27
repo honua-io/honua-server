@@ -4,34 +4,57 @@ This document scopes the `honua-mobile-sdk` deliverable: a MAUI-first cross-plat
 mobile SDK that gives field-collection apps a shippable read / write / edit / sync /
 offline-cache cycle on top of the canonical Honua server pipelines.
 
-The roadmap is the source of truth for first-tier child tickets while the
-`honua-mobile` GitHub repo does not yet exist. Sub-tickets live in
-`honua-server` under the `area/sdk` label and migrate into the new repo once it
-is created (see [Phase 0 — Scaffolding](#phase-0--scaffolding-and-bring-up)).
+The roadmap is the source of truth for first-tier child tickets that
+coordinate ongoing SDK work. The `honua-mobile` GitHub repo already exists at
+[honua-io/honua-mobile](https://github.com/honua-io/honua-mobile) with a
+Phase-0 baseline in place (see [Why this roadmap exists now](#why-this-roadmap-exists-now)).
+Child tickets live in `honua-server` under the `area/sdk` label for cross-repo
+tracking — server-side requirement coordination keeps them adjacent to this
+roadmap and to the parent `#811`. Implementation lands in the
+`honua-io/honua-mobile` repo.
 
 Companion ADR: [ADR-0034 Mobile SDK Language Strategy](../contributor/adr/0034-mobile-sdk-language-strategy.md).
 
 ## Why this roadmap exists now
 
-`AGENTS.md` lists `honua-mobile` as a sibling repo to `honua-sdk-dotnet`, but the
-repo and roadmap have not been created. A working MAUI reference application
-already exists at `honua-sdk-dotnet/examples/FieldDataCollection`, demonstrating
-the offline cycle end to end (auth, GeoPackage local storage, OpenRosa / XForms
-form ingestion, `OfflineSyncManager`, and gRPC submission). The SDK pulls those
-patterns out of the example and into a shippable, versioned NuGet package.
+`AGENTS.md` lists `honua-mobile` as a sibling repo to `honua-sdk-dotnet`, and
+the repo now exists with a working baseline: `Honua.Mobile.Sdk` (transport,
+auth, gRPC-first client with REST fallback), `Honua.Mobile.Field` (dynamic
+forms, validation, calculated fields, record workflow), `Honua.Mobile.Offline`
+(GeoPackage storage, sync queue, map-area download, conflict resolution), and
+`Honua.Mobile.Maui` (DI extensions). Phase 0 in the repo's own terminology —
+parity baseline (`docs/phase-0/PARITY_SPEC.md`), gRPC contract freeze
+(`proto/honua/v1/`), reference MAUI app shell (`apps/Honua.Mobile.App/`),
+offline sync engine, and quality gates with 74 tests across 4 test projects —
+is complete. A reference field-collection MAUI application also exists at
+`honua-sdk-dotnet/examples/FieldDataCollection`, demonstrating the offline
+cycle end to end (auth, GeoPackage local storage, OpenRosa / XForms form
+ingestion, `OfflineSyncManager`, and gRPC submission); the new
+`Honua.Mobile.Field` and `Honua.Mobile.Offline` packages generalise those
+patterns into shippable, versioned NuGet packages.
 
-This pass scopes the SDK only. Implementation lands in the child tickets below.
+This pass scopes the server-side view of the next-phase SDK work — the
+read / write / edit / sync / offline-cache cycle the server must continue to
+support — and enumerates first-tier child tickets that coordinate
+implementation in `honua-io/honua-mobile`.
 
 ### Naming convention
 
-Three names are used distinctly throughout this roadmap and ADR-0034:
+Three name spaces are used distinctly throughout this roadmap and ADR-0034:
 
-- **GitHub repo**: `honua-mobile` (per `AGENTS.md` repository map). All
-  `honua-io/honua-mobile` URLs below resolve to this repo once it is created.
+- **GitHub repo**: `honua-mobile`, hosted at
+  [honua-io/honua-mobile](https://github.com/honua-io/honua-mobile) (per
+  `AGENTS.md` repository map).
 - **SDK deliverable**: `honua-mobile-sdk` (the ticket-level product name used
   in `#811` and child tickets).
-- **NuGet package**: `Honua.Sdk.Mobile` (parallel to `Honua.Sdk.Grpc` and
-  `Honua.Sdk.OgcFeatures`; see ADR-0034).
+- **NuGet packages**: the `Honua.Mobile.*` family —
+  `Honua.Mobile.Sdk` (transport / gRPC / auth), `Honua.Mobile.Field` (dynamic
+  forms), `Honua.Mobile.Offline` (GeoPackage sync), `Honua.Mobile.Maui`
+  (MAUI DI extensions), and the future `Honua.Mobile.IoT` (interface stubs).
+  These names are independent from the `Honua.Sdk.*` packages in
+  `honua-sdk-dotnet` (`Honua.Sdk.Grpc`, `Honua.Sdk.OgcFeatures`); the mobile
+  SDK consumes those contracts through their generated client code rather
+  than re-publishing them under a `Honua.Sdk.Mobile` umbrella.
 
 ## Scope
 
@@ -93,42 +116,56 @@ sync / offline-cache cycle named in the ticket acceptance criteria.
 
 ### Phase 0 — Scaffolding and bring-up
 
-Repository creation is the gate. Until `honua-io/honua-mobile` exists,
-sub-tickets are filed under `honua-server` and labelled with `area/sdk`. Each
-sub-ticket body links back to this roadmap and includes the migration note
-("move to honua-mobile once created"). Scaffolding deliverables:
+Most Phase-0 deliverables are already in place in `honua-io/honua-mobile`.
+Child ticket A tracks the remaining gaps:
 
-- GitHub repo with branch protection, dependabot, and Trivy scanning aligned
-  with the rest of the org.
-- NuGet publish workflow gated on signed releases.
-- CI matrix covering iOS 17+ and Android API 33+ on simulator and emulator.
-- Trim-compatibility check (`PublishTrimmed=true; TrimMode=full`) and AOT
-  smoke (`PublishAot=true` for iOS) wired into the matrix.
-- Apache 2.0 license header (per project licensing strategy: client SDKs are
-  Apache 2.0).
+- ✅ GitHub repo with branch protection, Apache 2.0 license, and the
+  `Honua.Mobile.Sdk` / `Honua.Mobile.Field` / `Honua.Mobile.Offline` /
+  `Honua.Mobile.Maui` projects building on `net10.0` (see the repo
+  solution `Honua.Mobile.sln`).
+- ✅ Existing test suites: `Honua.Mobile.Sdk.Tests`, `Honua.Mobile.Field.Tests`,
+  `Honua.Mobile.Offline.Tests`, plus a separate `Honua.Mobile.Smoke.Tests`
+  project (74 tests across 4 projects per the repo README).
+- ❓ NuGet publish workflow gated on signed releases — verify and close
+  any gaps in child ticket A.
+- ❓ CI matrix covering iOS 17+ and Android API 33+ on simulator and
+  emulator with the MAUI workload — `apps/Honua.Mobile.App` exercises the
+  MAUI surface; remaining work is the MAUI-workload CI runner.
+- ❓ Trim-compatibility check (`PublishTrimmed=true; TrimMode=full`) and AOT
+  smoke (`PublishAot=true` for iOS) wired into the matrix — confirm in
+  Phase 0 and add if absent.
 
 ### Phase 1 — Read
 
 The read path proves the platform targets work end to end with a live server.
-Both child tickets B and C land identical smoke tests and CI runners; the
-divergence is platform tooling.
+The `Honua.Mobile.Sdk` package already provides gRPC-first feature query
+with REST fallback (`QueryFeaturesAsync`, `QueryFeaturesStreamAsync`); child
+tickets B and C extend the matrix to MAUI iOS / Android targets with the
+MAUI workload installed and add platform-specific smoke runners.
 
-- `IFeatureClient` wraps `Honua.Sdk.Grpc` query stubs. No new proto.
+- The existing transport client (`Honua.Mobile.Sdk`) consumes generated stubs
+  from `proto/honua/v1/feature_service.proto` (mobile-owned proto kept in
+  step with the canonical server contract). No new proto.
 - Layer inspection uses the shared metadata catalog already exposed via gRPC.
 - CRS-aware geometry conversion uses the existing geodesy helpers in
-  `Honua.Core` rather than a mobile-local copy.
+  `Honua.Core` (server) and equivalent client-side helpers; do not duplicate
+  the projection math in mobile code.
 - Smoke test asserts the SDK can query a public layer from a live Honua
   server in under one second on simulator and emulator.
 
 ### Phase 2 — Auth and write
 
-- `IAuthTokenProvider` follows the bearer-token convention established in
-  `FieldDataCollection/Services/HonuaMobileClient.cs` (`CreateAuthHeaders`).
-  No shared gRPC auth handler exists in `honua-sdk-dotnet` today; the mobile
-  SDK defines the interface fresh and aligns with the admin-side
-  `HonuaAdminAuthHandler` token semantics. No new authorization model.
-- Platform-native secure storage: Keychain on iOS, Keystore on Android. The
-  SDK does not roll its own crypto; it adapts to the platform APIs.
+- The `Honua.Mobile.Sdk` package already exposes `HonuaMobileClientOptions`
+  with `ApiKey` and bearer-token modes (per the repo README quick-start).
+  Phase 2 lifts the token-lifecycle abstraction (refresh, secure persistence)
+  out of the client options and into a first-class `IAuthTokenProvider` that
+  matches the bearer-token convention already used in
+  `FieldDataCollection/Services/HonuaMobileClient.cs` (`CreateAuthHeaders`)
+  and aligns with the admin-side `HonuaAdminAuthHandler` token semantics.
+  No new authorization model.
+- Platform-native secure storage: Keychain on iOS, Keystore on Android, via
+  the MAUI essentials surface in `Honua.Mobile.Maui`. The SDK does not roll
+  its own crypto; it adapts to the platform APIs.
 - API-key and bearer-token modes are supported. OAuth device flow is deferred
   to a follow-on once the server-side OAuth surface stabilises.
 - Write paths exercise the canonical edit/transaction pipeline through the
@@ -136,14 +173,15 @@ divergence is platform tooling.
 
 ### Phase 3 — Offline-first storage
 
-- `ILocalStorageService` is extracted from
-  `honua-sdk-dotnet/examples/FieldDataCollection/Services/GeoPackageLocalStorageService.cs`
-  into a first-class SDK service, behind an interface.
-- Backend: GeoPackage + SpatiaLite via SQLite-PCL-raw, already proven on iOS
-  and Android in the reference app. SpatiaLite ships as a bundled native
-  binary; documented in child ticket E.
-- TTL-based eviction and a background prefetch scheduler (cooperatively
-  cancellable with platform lifecycle) keep the cache bounded.
+- `Honua.Mobile.Offline` already ships GeoPackage-backed offline storage
+  (`GeoPackageSyncStoreOptions`, `AddHonuaGeoPackageOfflineSync`) plus
+  map-area download with path-traversal protection. Phase 3 hardens the
+  TTL-based eviction policy and a background prefetch scheduler (cooperatively
+  cancellable with platform lifecycle) so the cache stays bounded.
+- Backend: GeoPackage + SQLite, already exercised on iOS and Android.
+  SpatiaLite is not currently bundled with `Honua.Mobile.Offline`; if the
+  spatial-index work in this phase requires it, child ticket E documents the
+  bundling plan (SQLite-PCL-raw with SpatiaLite native binary).
 - Spatial indexes target sub-second feature queries for layers up to
   100,000 features.
 - CRS metadata is preserved per OGC GeoPackage; default EPSG:4326, CRS104 for
@@ -151,10 +189,14 @@ divergence is platform tooling.
 
 ### Phase 4 — Sync
 
-- `OfflineSyncManager` is extracted from the reference app into a first-class
-  SDK service. The reference app continues to consume it through DI.
-- Three conflict resolution strategies, all in v1: user-choice (default),
-  last-write-wins, merge / server-wins.
+- `Honua.Mobile.Offline` already ships an `OfflineSyncEngineOptions` with
+  three `SyncConflictStrategy` values (`ClientWins`, `ServerWins`,
+  `ManualReview`) and queue-based sync with claim/lease semantics
+  (per the repo README). Phase 4 graduates this engine to long-term
+  durability guarantees and rounds out telemetry.
+- Three conflict resolution strategies, all in v1: `ManualReview`
+  (corresponds to user-choice default), `ClientWins` (last-write-wins from
+  the mobile side), `ServerWins` (canonical merge).
 - Durable retry survives process restart by persisting pending operations to
   a local state table; the queue is opened on app start and drained when the
   connectivity service reports online.
@@ -186,28 +228,31 @@ divergence is platform tooling.
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|-----------|
 | .NET MAUI iOS AOT publish regressions on a future runtime upgrade | Medium | High (CI breaks on iOS target) | Pin to .NET 10 LTS in Phase 0; upgrade path tracked in Phase 1. |
-| GeoPackage SpatiaLite extension availability on Android emulator images | Medium | Medium (offline tests fail in CI) | Use SQLite-PCL-raw with bundled SpatiaLite; documented in Phase 3. |
+| GeoPackage SpatiaLite extension availability on Android emulator images | Medium | Medium (offline tests fail in CI) | Use SQLite-PCL-raw with bundled SpatiaLite when spatial-index work in Phase 3 requires it; documented in child ticket E. |
 | KMP ecosystem catching up before implementation starts | Low | Low (decision can be revisited) | ADR-0034 records explicit re-evaluation triggers. |
 | Reference app patterns not extractable as clean SDK surfaces | Medium | Medium (scope creep on Phases 3 and 4) | Each phase scopes the interface-first extraction explicitly. |
-| Sub-tickets filed in wrong repo become orphaned before move | Low | Low | `area/sdk` label and roadmap cross-links make migration traceable. |
+| Cross-repo coordination friction (server-tracked tickets vs `honua-mobile` implementation) | Low | Low | `area/sdk` label and roadmap cross-links keep tickets traceable; migrate to `honua-mobile` if friction surfaces. |
 
 ## Child tickets
 
-Six first-tier sub-tickets are filed in `honua-server` and link back to this
-roadmap. Each migrates into `honua-io/honua-mobile` once the repo exists.
+Six first-tier sub-tickets are filed in `honua-server` (issues #826–#831) for
+cross-repo coordination so they remain adjacent to the parent `#811` and to
+this roadmap. Implementation lands in `honua-io/honua-mobile`.
 
 | ID | Issue | Title | Phase |
 |----|-------|-------|-------|
-| A | [#826](https://github.com/honua-io/honua-server/issues/826) | `honua-mobile-sdk: repo creation and CI scaffolding` | 0 |
+| A | [#826](https://github.com/honua-io/honua-server/issues/826) | `honua-mobile-sdk: repo scaffolding gap closure (NuGet publish, MAUI-workload CI, AOT/trim smoke)` | 0 |
 | B | [#827](https://github.com/honua-io/honua-server/issues/827) | `honua-mobile-sdk: iOS MAUI target bring-up` | 1 |
 | C | [#828](https://github.com/honua-io/honua-server/issues/828) | `honua-mobile-sdk: Android MAUI target bring-up` | 1 |
 | D | [#829](https://github.com/honua-io/honua-server/issues/829) | `honua-mobile-sdk: auth module` | 2 |
 | E | [#830](https://github.com/honua-io/honua-server/issues/830) | `honua-mobile-sdk: offline-first storage layer` | 3 |
 | F | [#831](https://github.com/honua-io/honua-server/issues/831) | `honua-mobile-sdk: sync conflict resolution policy` | 4 |
 
-Repo creation (ticket #826) is the migration gate: once
-`honua-io/honua-mobile` exists, child tickets B–F migrate into the new
-repo and the parent (#811) is updated with the new issue numbers.
+Tickets stay in `honua-server` so they remain attached to the parent `#811`
+and to this server-side roadmap. Each child ticket links into the
+corresponding implementation work in `honua-io/honua-mobile` (PRs, milestones,
+or sub-issues there). When a child ticket completes, close it in
+`honua-server` with a back-link to the merged PR in `honua-mobile`.
 
 ## Out-of-scope follow-ons
 
@@ -228,8 +273,16 @@ These are explicitly deferred and tracked separately:
 - ADR-0018: Source-Generated JSON Serialization for AOT Compatibility
 - `AGENTS.md`: Honua repository map, protocol adapter architecture,
   cross-cutting concerns
-- `honua-sdk-dotnet/examples/FieldDataCollection/`: reference MAUI app
-  implementing the full read / write / edit / sync / offline-cache cycle
+- [`honua-io/honua-mobile`](https://github.com/honua-io/honua-mobile): the
+  mobile SDK repo itself — `Honua.Mobile.Sdk` / `Honua.Mobile.Field` /
+  `Honua.Mobile.Offline` / `Honua.Mobile.Maui` packages, gRPC contracts under
+  `proto/honua/v1/`, reference app at `apps/Honua.Mobile.App/`, and the
+  Phase-0 baseline docs at `docs/phase-0/` (PARITY_SPEC, INNOVATION_SPEC,
+  PHASE_0_SUMMARY, TEST_STRATEGY).
+- `honua-sdk-dotnet/examples/FieldDataCollection/`: legacy reference MAUI app
+  illustrating the full read / write / edit / sync / offline-cache cycle
+  before the patterns were lifted into `Honua.Mobile.Field` and
+  `Honua.Mobile.Offline`.
 - [SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md)
 - [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md)
 - OGC GeoPackage Encoding Standard 1.3 (CRS104 / WGS84-2D)

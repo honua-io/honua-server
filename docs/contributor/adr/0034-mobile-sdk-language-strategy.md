@@ -45,23 +45,35 @@ operate on a settled foundation.
 ## Decision
 
 Honua ships the mobile SDK as **C# / .NET MAUI**, a single codebase targeting
-`net10.0-ios` and `net10.0-android`, published as the NuGet package
-`Honua.Sdk.Mobile` parallel to `Honua.Sdk.Grpc` and `Honua.Sdk.OgcFeatures`.
+`net10.0` library projects with MAUI workload-specific TFMs on the platform
+heads, published as the `Honua.Mobile.*` NuGet family —
+`Honua.Mobile.Sdk` (transport, gRPC client with REST fallback, auth),
+`Honua.Mobile.Field` (forms, validation, calculated fields, record
+workflow), `Honua.Mobile.Offline` (GeoPackage storage, sync queue, map-area
+download, conflict resolution), and `Honua.Mobile.Maui` (DI extensions for
+the MAUI host) — independent from the `Honua.Sdk.*` packages in
+`honua-sdk-dotnet`.
 
 Concrete consequences:
 
-- The mobile SDK shares `Honua.Sdk.Grpc` proto stubs and `Honua.Sdk.OgcFeatures`
-  contracts directly. No FFI boundary, no duplicated client code.
+- The mobile SDK consumes server contracts through generated gRPC stubs from
+  the mobile-owned `proto/honua/v1/` definitions in `honua-mobile`, kept in
+  step with the canonical server proto. There is no FFI boundary, no client
+  code duplicated between repos, but the mobile proto packaging is
+  independent from `Honua.Sdk.Grpc` (which is tuned for desktop/server
+  consumers).
 - Build matrix pins to .NET 10 LTS, matching the rest of the Honua server and
-  SDK ecosystem (`Honua.Sdk.Grpc`, `Honua.Sdk.OgcFeatures`, and the
-  `FieldDataCollection` reference app all target `net10.0`). Upgrades are
-  evaluated through a CI matrix entry, not a runtime decision.
-- Storage uses SQLite-PCL-raw with a bundled SpatiaLite native binary for
-  GeoPackage, the same combination already exercised by the
-  `FieldDataCollection` reference app.
+  SDK ecosystem (`Honua.Sdk.Grpc`, `Honua.Sdk.OgcFeatures`, the
+  `FieldDataCollection` reference app, and the `Honua.Mobile.*` library
+  projects all target `net10.0`). Upgrades are evaluated through a CI matrix
+  entry, not a runtime decision.
+- Storage uses SQLite-PCL-raw via `Honua.Mobile.Offline`'s GeoPackage layer,
+  the same combination already exercised in production by the existing
+  `Honua.Mobile.Offline.Tests` suite. SpatiaLite is bundled only when the
+  spatial-index work in Phase 3 of the roadmap requires it.
 - Platform-native secure storage (Keychain on iOS, Keystore on Android) is
-  reached through the MAUI essentials surface, not a third-party crypto
-  library.
+  reached through the MAUI essentials surface in `Honua.Mobile.Maui`, not a
+  third-party crypto library.
 - Hiring and community contribution targets the .NET mobile segment. Sample
   apps and tutorials assume C#.
 
@@ -83,14 +95,20 @@ Android does not require AOT, but the same trim mode applies. Android uses
 
 ### Package and namespace
 
-| Package | Namespace |
-|---------|-----------|
-| `Honua.Sdk.Mobile` | `Honua.Sdk.Mobile.*` |
-| `Honua.Sdk.Mobile.Forms` (optional) | `Honua.Sdk.Mobile.Forms.*` |
+| Package | Namespace | Purpose |
+|---------|-----------|---------|
+| `Honua.Mobile.Sdk` | `Honua.Mobile.Sdk.*` | Transport, gRPC-first client with REST fallback, auth |
+| `Honua.Mobile.Field` | `Honua.Mobile.Field.*` | Dynamic forms, validation, calculated fields, record workflow |
+| `Honua.Mobile.Offline` | `Honua.Mobile.Offline.*` | GeoPackage storage, sync queue, map-area download, conflict resolution |
+| `Honua.Mobile.Maui` | `Honua.Mobile.Maui.*` | MAUI service registration and DI extensions |
+| `Honua.Mobile.IoT` (future) | `Honua.Mobile.IoT.*` | Sensor abstractions (interface stubs only at decision date) |
 
-`Honua.Sdk.Mobile.Forms` is reserved for the OpenRosa / XForms hybrid surface
-already prototyped in the reference app. Splitting it lets non-form consumers
-avoid the form parser dependency.
+The split keeps form parsing, GeoPackage storage, and MAUI DI off the
+critical path for clients that only need transport. Each package targets
+`net10.0`; `Honua.Mobile.Maui` adds the MAUI workload TFMs on the platform
+heads. The `Honua.Mobile.*` family is independent from the `Honua.Sdk.*`
+packages in `honua-sdk-dotnet` — the mobile SDK has its own gRPC client
+packaging tuned for mobile constraints (no `Honua.Sdk.Mobile` umbrella).
 
 ### Re-evaluation triggers
 
@@ -143,15 +161,21 @@ production-ready form. Neither choice aligns with the existing
 ### Positive
 
 - **Single codebase across iOS and Android.** Conflict-resolution policy,
-  auth lifecycle, sync semantics, and storage logic live in one place.
-- **Direct reuse of `honua-sdk-dotnet` contracts.** No FFI, no second proto
-  build, no duplicated DTOs.
+  auth lifecycle, sync semantics, and storage logic live in one place across
+  the `Honua.Mobile.*` package family.
+- **Shared contract surface across `honua-sdk-dotnet` and `honua-mobile`.**
+  The mobile SDK has its own gRPC client packaging in `Honua.Mobile.Sdk`
+  tuned for mobile, but it consumes the same canonical proto contracts
+  (server-defined under `proto/honua/v1/` and mirrored mobile-side); no
+  hand-written DTOs or FFI shims.
 - **AOT and trim story already proven.** ADR-0018 and the existing server
   publish pipeline cover the constraints; the SDK adopts them rather than
   re-deriving them.
-- **Reference app validates the platform.** `FieldDataCollection` already
-  exercises iOS, Android, gRPC submission, GeoPackage offline storage,
-  OpenRosa form ingestion, and the `OfflineSyncManager` end to end.
+- **Production baseline already validates the platform.** `Honua.Mobile.Sdk`,
+  `Honua.Mobile.Field`, and `Honua.Mobile.Offline` ship with 74 tests across
+  4 test projects and a working reference app at `apps/Honua.Mobile.App/`,
+  exercising gRPC transport, GeoPackage offline storage, sync queue, and
+  conflict resolution end to end.
 - **Bounded learning curve for contributors.** Anyone fluent in
   `honua-sdk-dotnet` can contribute to the mobile SDK without learning a
   new toolchain.
@@ -181,7 +205,11 @@ prior ADR proposed an alternative.
   gating)
 - ADR-0033: Unified License Format and Entitlement Architecture
 - [Honua Mobile SDK Roadmap](../../developer/mobile-sdk-roadmap.md)
-- `honua-sdk-dotnet/examples/FieldDataCollection/` — MAUI reference app
+- [`honua-io/honua-mobile`](https://github.com/honua-io/honua-mobile) — the mobile
+  SDK repo with the `Honua.Mobile.*` package family and Phase-0 baseline
+- `honua-sdk-dotnet/examples/FieldDataCollection/` — legacy MAUI reference
+  app illustrating the patterns lifted into `Honua.Mobile.Field` and
+  `Honua.Mobile.Offline`
 - `AGENTS.md` § Honua Repository Map (`honua-mobile` row)
 - .NET 10 Mobile NativeAOT documentation:
   https://learn.microsoft.com/en-us/dotnet/maui/
