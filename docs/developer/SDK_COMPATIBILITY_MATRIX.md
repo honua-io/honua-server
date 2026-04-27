@@ -1,8 +1,10 @@
 # Server + SDK Compatibility Matrix
 
-This page is the canonical compatibility contract for Honua Server control-plane
-SDKs. It applies to the generated JavaScript/TypeScript, Python, and .NET
-admin clients backed by `/api/v*/admin/*`.
+This page is the canonical compatibility contract for Honua Server SDKs. The
+versioning contract applies to the generated JavaScript/TypeScript, Python, and
+.NET admin clients backed by `/api/v*/admin/*`; the CI gate also runs basic
+live smoke coverage for seeded FeatureServer and OGC API Features surfaces so
+SDK regressions that break common read paths are visible before release.
 
 Use this page first when you need to:
 - choose an SDK artifact for a server release
@@ -18,8 +20,10 @@ Use it together with:
 
 ## Scope and Invariants
 
-- This matrix applies only to the control-plane/admin API. It does not cover
-  FeatureServer, OGC, OData, WMS, WMTS, or other standards APIs.
+- This matrix versions the control-plane/admin API contract and gates basic SDK
+  smoke coverage for seeded FeatureServer and OGC API Features routes. It is
+  not a comprehensive standards-conformance matrix for FeatureServer, OGC,
+  OData, WMS, WMTS, or other protocol adapters.
 - Current admin API major in this repo: `v1`.
 - JavaScript/TypeScript, Python, and .NET SDK artifacts are generated from the
   same curated admin OpenAPI contract and should be treated as one versioned
