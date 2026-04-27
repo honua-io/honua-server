@@ -275,12 +275,32 @@ await postgres.CreateTestData(schema)
 
 ## Custom Attributes
 
-### Test Categories
+### Test Categories And Tiers
+
+Each attribute emits both a `Category` trait and a `Tier` trait. The tier
+maps to the CI schedule defined in ADR-0034 (`docs/contributor/adr/0034-unified-ci-test-tier-strategy.md`).
+
+| Attribute | Category | Tier | When it runs |
+|-----------|----------|------|--------------|
+| `[UnitTest]` | `Unit` | `Fast` | Every PR (no DB, no HTTP, no Testcontainers). |
+| `[IntegrationTest]` | `Integration` | `Integration` | Targeted shards on PRs; full matrix on merge-to-trunk. |
+| `[ScaleTest]` | `Integration,Scale` | `Slow` | Nightly slow-tier workflow. |
+| `[ExternalServiceTest]` | `Integration,External` | `Slow` | Nightly slow-tier workflow (env vars required). |
+| `[EmulatorTest]` | `Integration,Emulator` | `Slow` | Nightly slow-tier workflow. |
+| `[CloudTest]` | `Integration,Cloud` | `Slow` | Nightly slow-tier workflow against deployed environments. |
+| `[FlakyTest("reason")]` | (additive) | (inherits sibling tier) | Always runs; surfaced separately by `flaky-detection.yml`. |
 
 ```csharp
-[UnitTest]  // Fast, isolated tests
-[IntegrationTest]  // Uses real dependencies
+[UnitTest]              // Fast, isolated tests
+[IntegrationTest]       // Uses real dependencies
+[ScaleTest]             // Multi-node scale, runs nightly
+[ExternalServiceTest]   // External services, runs nightly
+[EmulatorTest]          // Emulator-backed integration, runs nightly
+[CloudTest]             // Deployed-environment validation, runs nightly
+[FlakyTest("reason — tracked in #N")]  // Quarantine reporting, never auto-skips
 ```
+
+Filter on tier directly: `dotnet test --filter "Tier=Fast"` (or `Integration` / `Slow`).
 
 ### Protocol Tracking
 
