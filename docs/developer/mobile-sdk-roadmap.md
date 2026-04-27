@@ -108,7 +108,7 @@ sync / offline-cache cycle named in the ticket acceptance criteria.
 
 | Phase | Capability | Cycle slice | Child ticket |
 |-------|-----------|-------------|--------------|
-| 0 | Repo, CI, NuGet publish pipeline, platform targets (iOS + Android) | (foundation) | A — repo creation and CI scaffolding |
+| 0 | NuGet publish pipeline, MAUI-workload CI matrix, AOT/trim smoke (iOS + Android) | (foundation) | A — repo scaffolding gap closure |
 | 1 | Read: feature query via gRPC, layer inspection, CRS-aware geometry | Read | B (iOS bring-up), C (Android bring-up) |
 | 2 | Auth and write: token lifecycle, ApplyEdits, OData CRUD | Write / edit | D — auth module |
 | 3 | Offline-first storage: GeoPackage + SpatiaLite, TTL eviction, prefetch | Offline cache | E — offline-first storage |

@@ -7,19 +7,26 @@ Accepted
 ## Context
 
 `AGENTS.md` lists `honua-mobile` as the "MAUI-first mobile SDK and GeoPackage /
-offline field-collection foundation," but the repo and SDK package do not yet
-exist. A working MAUI reference app at
-`honua-sdk-dotnet/examples/FieldDataCollection` demonstrates the full read /
-write / edit / sync / offline-cache cycle on iOS and Android, including
-GeoPackage / SpatiaLite, `OfflineSyncManager`, OpenRosa / XForms hybrid form
-ingestion, and gRPC submission against the canonical server pipelines. The
-reference app is shipped, but it is an _example_, not a versioned SDK package.
+offline field-collection foundation." The repo now exists at
+[honua-io/honua-mobile](https://github.com/honua-io/honua-mobile) with a
+Phase-0 baseline already on .NET MAUI — `Honua.Mobile.Sdk`,
+`Honua.Mobile.Field`, `Honua.Mobile.Offline`, and `Honua.Mobile.Maui` packages
+build on `net10.0`, with 74 tests across 4 test projects and a working MAUI
+reference app at `apps/Honua.Mobile.App/`. A separate legacy reference app at
+`honua-sdk-dotnet/examples/FieldDataCollection` first demonstrated the full
+read / write / edit / sync / offline-cache cycle on iOS and Android (GeoPackage
+/ SpatiaLite, `OfflineSyncManager`, OpenRosa / XForms hybrid form ingestion,
+gRPC submission against the canonical server pipelines); those patterns have
+since been lifted into the `Honua.Mobile.Field` and `Honua.Mobile.Offline`
+packages.
 
 The roadmap doc at [`docs/developer/mobile-sdk-roadmap.md`](../../developer/mobile-sdk-roadmap.md)
-sequences the SDK into six first-tier child tickets. Every one of those
-tickets — repo creation, iOS bring-up, Android bring-up, auth, offline storage,
-sync — is constrained by the language choice. We need to lock the language(s)
-before scoping the rest.
+sequences the next-phase SDK work into six first-tier child tickets. Every one
+of those tickets — Phase-0 scaffolding gap closure, iOS bring-up, Android
+bring-up, auth, offline storage, sync — is constrained by the language
+choice. This ADR codifies the C# / .NET MAUI direction already in production
+in `honua-mobile` so the child tickets operate on a settled, written-down
+foundation rather than an inferred one.
 
 The candidates considered:
 
@@ -37,10 +44,9 @@ The candidates considered:
 Honua's server-side infrastructure is already deeply invested in .NET 10: AOT
 compatibility (ADR-0018), source-generated JSON and logging, the .NET-first
 SDK ecosystem (`honua-sdk-dotnet` is the canonical client SDK), and the
-licensing infrastructure (ADR-0033). The reference app validates that this
-stack reaches iOS and Android in production form. The ADR codifies the
-existing MAUI-first intent with explicit reasoning so the child tickets
-operate on a settled foundation.
+licensing infrastructure (ADR-0033). Both the legacy `FieldDataCollection`
+example and the in-repo `apps/Honua.Mobile.App` validate that this stack
+reaches iOS and Android in production form.
 
 ## Decision
 
