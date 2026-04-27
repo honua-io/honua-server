@@ -19,6 +19,12 @@ Use this checklist for every MVP release.
 - [ ] Validate [Public Interface Quality Model](public-interface-quality-model.md) and [public-interface-proof.json](../gis/data/public-interface-proof.json) against the shipped runtime surface
 - [ ] Refresh [GeoServices REST Parity](../gis/geoservices-rest-parity.md), the service drill-down matrices, and [data/geoservices-rest-parity.json](../gis/data/geoservices-rest-parity.json) when GeoServices routes, parameters, or response shapes changed in the release
 - [ ] Execute [Client Templates + Manual Smoke Runbook](../gis/CLIENT_TEMPLATE_RUNBOOK.md)
+- [ ] Bump [`docs/developer/sdk-compatibility-versions.json`](../developer/sdk-compatibility-versions.json)
+  per the [Server + SDK Compatibility Matrix](../developer/SDK_COMPATIBILITY_MATRIX.md#machine-readable-ci-manifest)
+  procedure: add the new server ref and SDK set at the top, keep
+  `matrixDepth` entries, refresh `matrix.supported` / `matrix.evaluation`,
+  and confirm a manual `sdk-server-compatibility.yml` dispatch produced a
+  green `sdk-compatibility-matrix-<run-id>` artifact for the release commit
 - [ ] Confirm supported/partial/unsupported protocol notes are current
 - [ ] Confirm newly added or removed public query/output formats are reflected in API examples and coverage matrices
 - [ ] Confirm replication limitations section reflects runtime behavior

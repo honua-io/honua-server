@@ -1,20 +1,12 @@
+---
+# yamllint disable rule:line-length
 name: SDK Server Compatibility
 
-on:
+'on':
   workflow_dispatch:
-    inputs:
-      sdk-js-ref:
-        description: 'honua-sdk-js ref'
-        required: false
-        default: 'trunk'
-      sdk-python-ref:
-        description: 'honua-sdk-python ref'
-        required: false
-        default: 'trunk'
-      sdk-dotnet-ref:
-        description: 'honua-sdk-dotnet ref'
-        required: false
-        default: 'trunk'
+  push:
+    branches:
+      - trunk
   schedule:
     - cron: '35 8 * * 1'
 
@@ -33,12 +25,95 @@ env:
   HONUA_ADMIN_API_KEY: 'ci-admin-password'
   HONUA_SDK_SERVICE_ID: 'test_service'
   HONUA_SDK_LAYER_ID: '0'
+  SDK_COMPATIBILITY_MANIFEST: docs/developer/sdk-compatibility-versions.json
 
 jobs:
-  sdk-server-compatibility:
-    name: SDK Server Compatibility
+  load-matrix:
+    name: Load SDK Compatibility Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout honua-server
+        uses: actions/checkout@v5
+
+      - name: Build matrix from manifest
+        id: matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          manifest="$SDK_COMPATIBILITY_MANIFEST"
+          jq -e '
+            . as $manifest
+            | ($manifest.schemaVersion == 1)
+            and ($manifest.adminApiMajor | type == "string" and length > 0)
+            and ($manifest.matrixDepth == 3)
+            and ($manifest.serverRefs | type == "array" and length == $manifest.matrixDepth)
+            and ($manifest.sdkSetVersions | type == "array" and length == $manifest.matrixDepth)
+            and all($manifest.serverRefs[]; (.label | type == "string" and length > 0) and (.ref | type == "string" and length > 0))
+            and all($manifest.sdkSetVersions[]; (.label | type == "string" and length > 0) and (.refs.js | type == "string" and length > 0) and (.refs.python | type == "string" and length > 0) and (.refs.dotnet | type == "string" and length > 0))
+          ' "$manifest" >/dev/null
+
+          matrix="$(
+            jq -c --arg head "$GITHUB_SHA" '
+              def serverByLabel($manifest; $name):
+                ($manifest.serverRefs[] | select(.label == $name)) // error("Unknown server label: " + $name);
+              def sdkByLabel($manifest; $name):
+                ($manifest.sdkSetVersions[] | select(.label == $name)) // error("Unknown SDK set label: " + $name);
+              def checkoutRef($ref):
+                  if $ref == "HEAD" then $head else $ref end;
+              def cell($manifest; $status; $expectedSupported):
+                  . as $cell
+                  | (serverByLabel($manifest; $cell.server)) as $server
+                  | (sdkByLabel($manifest; $cell.sdk)) as $sdk
+                  | {
+                      server_label: $server.label,
+                      server_ref: $server.ref,
+                      server_checkout_ref: checkoutRef($server.ref),
+                      server_channel: $server.channel,
+                      sdk_label: $sdk.label,
+                      sdk_channel: $sdk.channel,
+                      sdk_js_ref: $sdk.refs.js,
+                      sdk_python_ref: $sdk.refs.python,
+                      sdk_dotnet_ref: $sdk.refs.dotnet,
+                      cell_status: $status,
+                      expected_supported: $expectedSupported
+                    };
+              . as $manifest
+              |
+              {
+                include: (
+                  (($manifest.matrix.supported // []) | map(cell($manifest; "supported"; true)))
+                  + (($manifest.matrix.evaluation // []) | map(cell($manifest; "evaluation"; false)))
+                )
+              }
+            ' "$manifest"
+          )"
+
+          cell_count="$(jq '.include | length' <<<"$matrix")"
+          if [ "$cell_count" -eq 0 ]; then
+            echo "::error::SDK compatibility manifest produced no matrix cells."
+            exit 1
+          fi
+
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          {
+            echo "## SDK Compatibility Matrix"
+            echo
+            echo "- Manifest: \`$manifest\`"
+            echo "- Matrix cells: $cell_count"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  sdk-compat-matrix:
+    name: ${{ matrix.server_label }} x ${{ matrix.sdk_label }} (${{ matrix.cell_status }})
+    needs: load-matrix
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    continue-on-error: ${{ matrix.expected_supported == false }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.load-matrix.outputs.matrix) }}
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -56,8 +131,24 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Checkout honua-server
+      - name: Checkout compatibility workflow source
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: compatibility-source
+
+      - name: Preserve current compatibility runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp compatibility-source/scripts/ci/run-sdk-server-compatibility.sh "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
+          chmod +x "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
+
+      - name: Checkout honua-server target
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.server_checkout_ref }}
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -69,28 +160,28 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           base-seed-path: tests/seed/base-schema.sql
-          log-path: logs/honua-server-sdk-compat.log
+          log-path: logs/honua-server-sdk-compat-${{ matrix.server_label }}-${{ matrix.sdk_label }}.log
 
       - name: Checkout honua-sdk-js
         uses: actions/checkout@v5
         with:
           repository: honua-io/honua-sdk-js
           path: sdk/honua-sdk-js
-          ref: ${{ inputs['sdk-js-ref'] || 'trunk' }}
+          ref: ${{ matrix.sdk_js_ref }}
 
       - name: Checkout honua-sdk-python
         uses: actions/checkout@v5
         with:
           repository: honua-io/honua-sdk-python
           path: sdk/honua-sdk-python
-          ref: ${{ inputs['sdk-python-ref'] || 'trunk' }}
+          ref: ${{ matrix.sdk_python_ref }}
 
       - name: Checkout honua-sdk-dotnet
         uses: actions/checkout@v5
         with:
           repository: honua-io/honua-sdk-dotnet
           path: sdk/honua-sdk-dotnet
-          ref: ${{ inputs['sdk-dotnet-ref'] || 'trunk' }}
+          ref: ${{ matrix.sdk_dotnet_ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -105,17 +196,145 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Run SDK live compatibility smoke tests
-        run: bash scripts/ci/run-sdk-server-compatibility.sh
+        id: compatibility
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          bash "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
+          exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
 
-      - name: Upload SDK compatibility evidence
+      - name: Write compatibility result
+        if: always()
+        shell: bash
+        env:
+          SERVER_LABEL: ${{ matrix.server_label }}
+          SERVER_REF: ${{ matrix.server_ref }}
+          SERVER_CHECKOUT_REF: ${{ matrix.server_checkout_ref }}
+          SERVER_CHANNEL: ${{ matrix.server_channel }}
+          SDK_LABEL: ${{ matrix.sdk_label }}
+          SDK_CHANNEL: ${{ matrix.sdk_channel }}
+          SDK_JS_REF: ${{ matrix.sdk_js_ref }}
+          SDK_PYTHON_REF: ${{ matrix.sdk_python_ref }}
+          SDK_DOTNET_REF: ${{ matrix.sdk_dotnet_ref }}
+          CELL_STATUS: ${{ matrix.cell_status }}
+          EXPECTED_SUPPORTED: ${{ matrix.expected_supported }}
+          COMPATIBILITY_OUTCOME: ${{ steps.compatibility.outcome }}
+          COMPATIBILITY_EXIT_CODE: ${{ steps.compatibility.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+
+          passed=false
+          if [ "$COMPATIBILITY_OUTCOME" = "success" ]; then
+            passed=true
+          fi
+
+          exit_code="${COMPATIBILITY_EXIT_CODE:-}"
+          if [ -z "$exit_code" ]; then
+            exit_code="null"
+          fi
+
+          jq -n \
+            --arg serverLabel "$SERVER_LABEL" \
+            --arg serverRef "$SERVER_REF" \
+            --arg serverCheckoutRef "$SERVER_CHECKOUT_REF" \
+            --arg serverChannel "$SERVER_CHANNEL" \
+            --arg sdkLabel "$SDK_LABEL" \
+            --arg sdkChannel "$SDK_CHANNEL" \
+            --arg sdkJsRef "$SDK_JS_REF" \
+            --arg sdkPythonRef "$SDK_PYTHON_REF" \
+            --arg sdkDotnetRef "$SDK_DOTNET_REF" \
+            --arg cellStatus "$CELL_STATUS" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg sha "$GITHUB_SHA" \
+            --argjson expectedSupported "$EXPECTED_SUPPORTED" \
+            --argjson passed "$passed" \
+            --argjson exitCode "$exit_code" \
+            '{
+              server_label: $serverLabel,
+              server_ref: $serverRef,
+              server_checkout_ref: $serverCheckoutRef,
+              server_channel: $serverChannel,
+              sdk_label: $sdkLabel,
+              sdk_channel: $sdkChannel,
+              sdk_refs: {
+                js: $sdkJsRef,
+                python: $sdkPythonRef,
+                dotnet: $sdkDotnetRef
+              },
+              cell_status: $cellStatus,
+              expected_supported: $expectedSupported,
+              passed: $passed,
+              exit_code: $exitCode,
+              run_id: $runId,
+              run_attempt: $runAttempt,
+              workflow_sha: $sha
+            }' > results/compat-result.json
+
+      - name: Upload SDK compatibility cell evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: sdk-server-compatibility-${{ github.run_id }}
+          name: sdk-compat-result-${{ matrix.server_label }}-${{ matrix.sdk_label }}-${{ github.run_id }}
           path: |
-            logs/honua-server-sdk-compat.log
+            results/compat-result.json
+            logs/honua-server-sdk-compat-${{ matrix.server_label }}-${{ matrix.sdk_label }}.log
             sdk/honua-sdk-js/test-results/
             sdk/honua-sdk-python/.pytest_cache/
             sdk/honua-sdk-dotnet/**/TestResults/
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Fail supported compatibility regression
+        if: ${{ always() && matrix.expected_supported == true && steps.compatibility.outcome != 'success' }}
+        shell: bash
+        run: |
+          echo "::error::Supported SDK/server compatibility cell failed: ${{ matrix.server_label }} x ${{ matrix.sdk_label }}"
+          exit 1
+
+  compatibility-report:
+    name: Publish SDK Compatibility Table
+    needs:
+      - load-matrix
+      - sdk-compat-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout honua-server
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download compatibility results
+        uses: actions/download-artifact@v8
+        with:
+          pattern: sdk-compat-result-*-${{ github.run_id }}
+          path: sdk-compat-results
+
+      - name: Generate compatibility table
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/generate-sdk-compatibility-table.sh \
+            "$SDK_COMPATIBILITY_MANIFEST" \
+            sdk-compat-results \
+            sdk-compat-report
+          cat sdk-compat-report/sdk-compatibility-matrix.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SDK compatibility table
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdk-compatibility-matrix-${{ github.run_id }}
+          path: |
+            sdk-compat-report/sdk-compatibility-matrix.md
+            sdk-compat-report/sdk-compatibility-summary.json
+          retention-days: 30
+
+      - name: Fail on supported compatibility regressions
+        shell: bash
+        run: jq -e '.passed == true' sdk-compat-report/sdk-compatibility-summary.json >/dev/null
