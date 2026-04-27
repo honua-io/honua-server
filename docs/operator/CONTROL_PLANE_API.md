@@ -608,6 +608,41 @@ When `approvalRequired` is `true`, detected changes create a pending approval re
 | `/api/v1/admin/tile-operations/jobs/{jobId}/cancel` | POST | Cancel tile operation job |
 | `/api/v1/admin/tile-operations/jobs/{jobId}/retry` | POST | Retry tile operation job |
 
+### **Analysis Report Endpoints**
+
+These routes live alongside the management API at `/api/v1/analysis/...` and
+require admin authorization. They render the canonical `AnalysisReport`
+envelope and the rendered Markdown / HTML body for a completed geoprocessing
+job; the same envelope is mirrored on the MCP resource
+`honua://jobs/{jobId}/report` (see [MCP Server](../developer/MCP_SERVER.md)).
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/analysis/reports/{jobId}` | GET | Retrieve the structured `AnalysisReport` JSON envelope. Auth and terminal-state semantics are inherited from the underlying job-results path. |
+| `/api/v1/analysis/reports/{jobId}/render?format=md\|html` | GET | Render the report body. `format=md` returns `text/markdown; charset=utf-8`; `format=html` returns `text/html; charset=utf-8` as a self-contained document with inline CSS and inline SVG charts (no external CDN). Unsupported formats return `400 Bad Request`. |
+
+Notes:
+
+- Routes are gated by `Reporting:Enabled` (default `true`). When disabled
+  the endpoints (and the paired MCP resource) are not registered.
+- Reports are versioned via `reportContractVersion` (`honua.report.v1`).
+  Render requests against an unsupported contract version return
+  `409 Conflict` with the stable `report.contract.unsupported` error code.
+- Rendered bodies are cached server-side keyed by
+  `(jobId, contractVersion, format, resultPackageId)` for `Reporting:Cache:TtlMinutes`
+  (default `60`, capped at 24 h) so repeat renders for the same package
+  do not re-run the renderer.
+- Narrative blocks degrade cleanly: when the LLM provider is disabled or
+  fails, the response carries `narrativeMode = "deterministic"` or
+  `"fallback-from-llm-error"` and the deterministic provider authors the
+  prose. HTML output is fully offline (no external script or font
+  references) so on-prem operators can serve reports without internet
+  egress.
+- 401 / 403 / 404 / 409 / 503 responses use `application/problem+json` and
+  match the geoprocessing job-service exception taxonomy
+  (`unauthenticated`, `permission_denied`, `not_found`, `failed_precondition`,
+  `unavailable`).
+
 ---
 
 ## **Health Checks**

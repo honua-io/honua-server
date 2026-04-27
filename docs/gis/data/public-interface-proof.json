@@ -1546,6 +1546,52 @@
           "versionCaptureRule": null
         }
       ]
+    },
+    {
+      "surfaceId": "analysis-reporting",
+      "displayName": "Analysis report HTTP surface",
+      "surfaceKind": "http-route-family",
+      "protocol": "Analysis Reporting",
+      "canonicalIdentifier": "/api/v1/analysis/reports/{jobId} + /api/v1/analysis/reports/{jobId}/render",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/analysis/reports/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus analysis report endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Reporting/AnalysisReportEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#801",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Authorization parity, narrative-mode caching, render format negotiation, and contract-version refusal exercised through the report orchestrator and renderers",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Reporting/AnalysisReportServiceTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Reporting/AnalysisReportResourceTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Reporting/RenderGoldenTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Reporting/AnalysisReportBuilderTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Reporting/InMemoryAnalysisReportStoreTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#801",
+          "versionCaptureRule": null
+        }
+      ]
     }
   ]
 }

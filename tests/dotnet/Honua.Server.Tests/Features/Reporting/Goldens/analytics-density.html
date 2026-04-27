@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en" data-report-contract="honua.report.v1">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Density bins</title>
+<style>:root {
+    color-scheme: light dark;
+    --report-bg: #fdfdfd;
+    --report-fg: #1f2933;
+    --report-accent: #1a4980;
+    --report-muted: #6b7280;
+    --report-border: #d1d5db;
+    --report-table-header-bg: #eef2f7;
+    --report-narrative-bg: #f8fafc;
+}
+
+body.honua-report {
+    background-color: var(--report-bg);
+    color: var(--report-fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0 auto;
+    max-width: 960px;
+    padding: 32px 24px;
+}
+
+body.honua-report h1,
+body.honua-report h2,
+body.honua-report h3,
+body.honua-report h4,
+body.honua-report h5,
+body.honua-report h6 {
+    color: var(--report-accent);
+    font-weight: 600;
+    margin-top: 1.4em;
+    margin-bottom: 0.5em;
+}
+
+body.honua-report h1 {
+    border-bottom: 2px solid var(--report-accent);
+    padding-bottom: 0.2em;
+    margin-top: 0;
+}
+
+body.honua-report p {
+    margin: 0.5em 0;
+}
+
+body.honua-report table.report-table,
+body.honua-report table.report-chart {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.75em 0;
+    font-size: 13px;
+}
+
+body.honua-report table.report-table th,
+body.honua-report table.report-chart th {
+    background-color: var(--report-table-header-bg);
+    border: 1px solid var(--report-border);
+    padding: 6px 8px;
+    text-align: left;
+}
+
+body.honua-report table.report-table td,
+body.honua-report table.report-chart td {
+    border: 1px solid var(--report-border);
+    padding: 6px 8px;
+    vertical-align: top;
+}
+
+body.honua-report .report-caption {
+    color: var(--report-muted);
+    font-size: 12px;
+    margin-bottom: 0.25em;
+}
+
+body.honua-report .report-truncated {
+    color: var(--report-muted);
+    font-size: 12px;
+    font-style: italic;
+}
+
+body.honua-report .report-key-metric {
+    border-left: 3px solid var(--report-accent);
+    padding: 4px 12px;
+    margin: 0.4em 0;
+}
+
+body.honua-report .report-key-metric .report-key-metric-label {
+    color: var(--report-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+body.honua-report .report-key-metric .report-key-metric-value {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+body.honua-report .report-narrative {
+    background-color: var(--report-narrative-bg);
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin: 0.75em 0;
+}
+
+body.honua-report .report-narrative .report-narrative-source {
+    color: var(--report-muted);
+    font-size: 11px;
+    margin-top: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+body.honua-report .report-map {
+    margin: 0.75em 0;
+}
+
+body.honua-report .report-footer {
+    border-top: 1px solid var(--report-border);
+    color: var(--report-muted);
+    font-size: 12px;
+    margin-top: 2em;
+    padding-top: 1em;
+}
+
+body.honua-report .report-footer dl {
+    display: grid;
+    grid-template-columns: max-content auto;
+    column-gap: 12px;
+    row-gap: 4px;
+    margin: 0;
+}
+
+body.honua-report .report-footer dt {
+    font-weight: 600;
+}
+
+body.honua-report svg.report-svg {
+    border: 1px solid var(--report-border);
+    border-radius: 4px;
+    background-color: var(--report-bg);
+}
+
+body.honua-report svg.report-svg .axis {
+    stroke: var(--report-fg);
+    stroke-width: 1;
+}
+
+body.honua-report svg.report-svg .gridline {
+    stroke: var(--report-border);
+    stroke-width: 1;
+    stroke-dasharray: 2,2;
+}
+
+body.honua-report svg.report-svg .bar {
+    fill: var(--report-accent);
+}
+
+body.honua-report svg.report-svg .line {
+    fill: none;
+    stroke: var(--report-accent);
+    stroke-width: 2;
+}
+
+body.honua-report svg.report-svg .label {
+    fill: var(--report-fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 11px;
+}
+</style>
+</head>
+<body class="honua-report" data-report-id="report-job-golden-4779535cdb283d38" data-template-id="analysis-report.analytics-density" data-template-version="1.0.0" data-narrative-mode="deterministic">
+<h1>Density bins</h1>
+<p>Hex-bin density over the places layer.</p>
+<h2>Density Parameters</h2>
+<div class="report-key-metric">
+<div class="report-key-metric-label">Bin mode</div>
+<div class="report-key-metric-value">hex</div>
+</div>
+<div class="report-key-metric">
+<div class="report-key-metric-label">Cell size</div>
+<div class="report-key-metric-value">500 m</div>
+</div>
+<div class="report-key-metric">
+<div class="report-key-metric-label">Bin count</div>
+<div class="report-key-metric-value">128</div>
+</div>
+<div class="report-key-metric">
+<div class="report-key-metric-label">Max bin value</div>
+<div class="report-key-metric-value">17</div>
+</div>
+<div class="report-key-metric">
+<div class="report-key-metric-label">Total binned value</div>
+<div class="report-key-metric-value">420</div>
+</div>
+<h2>Top Bins</h2>
+<p class="report-caption">Top 3 bins by value.</p>
+<svg class="report-svg" viewBox="0 0 480 220" width="480" height="220" role="img" aria-label="Top 3 bins by value.">
+<line class="axis" x1="48" y1="16" x2="48" y2="184" />
+<line class="axis" x1="48" y1="184" x2="464" y2="184" />
+<line class="gridline" x1="48" y1="142" x2="464" y2="142" />
+<text class="label" x="42" y="146" text-anchor="end">4.25</text>
+<line class="gridline" x1="48" y1="100" x2="464" y2="100" />
+<text class="label" x="42" y="104" text-anchor="end">8.5</text>
+<line class="gridline" x1="48" y1="58" x2="464" y2="58" />
+<text class="label" x="42" y="62" text-anchor="end">12.75</text>
+<line class="gridline" x1="48" y1="16" x2="464" y2="16" />
+<text class="label" x="42" y="20" text-anchor="end">17</text>
+<rect class="bar" x="49.00" y="16.00" width="136.67" height="168.00"><title>Value: 17</title></rect>
+<rect class="bar" x="187.67" y="35.76" width="136.67" height="148.24"><title>Value: 15</title></rect>
+<rect class="bar" x="326.33" y="65.41" width="136.67" height="118.59"><title>Value: 12</title></rect>
+<text class="label" x="117.33" y="198" text-anchor="middle">H-01</text>
+<text class="label" x="256.00" y="198" text-anchor="middle">H-02</text>
+<text class="label" x="394.67" y="198" text-anchor="middle">H-03</text>
+<text class="label" x="12" y="100" text-anchor="middle" transform="rotate(-90 12 100)">Value</text>
+<text class="label" x="256" y="216" text-anchor="middle">Bin</text>
+</svg>
+<h2>Artifacts</h2>
+<p class="report-caption">Outputs produced by the workflow.</p>
+<table class="report-table">
+<thead><tr>
+<th>Artifact ID</th>
+<th>Kind</th>
+<th>Label</th>
+<th>URI</th>
+<th>Content Type</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>density-layer</td>
+<td>FeatureLayer</td>
+<td>Density bins</td>
+<td>honua://artifacts/density-layer</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<h2>Summary</h2>
+<div class="report-narrative">
+<p>Density binning ran in hex mode with cell size 500 m, producing 128 bin(s). The peak bin holds 17.</p>
+<div class="report-narrative-source">Source: deterministic</div>
+</div>
+<footer class="report-footer">
+<dl>
+<dt>Job</dt>
+<dd>job-golden</dd>
+<dt>Result package</dt>
+<dd>pkg-density</dd>
+<dt>Processes</dt>
+<dd>analytics.density</dd>
+<dt>Sources</dt>
+<dd>places</dd>
+<dt>Executed at</dt>
+<dd>2026-04-24 09:55:00Z</dd>
+<dt>Generated at</dt>
+<dd>2026-04-24 10:00:00Z</dd>
+</dl>
+</footer>
+</body>
+</html>

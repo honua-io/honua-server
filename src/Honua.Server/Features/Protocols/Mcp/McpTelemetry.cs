@@ -98,6 +98,7 @@ internal static class McpTelemetry
     {
         public const string Jobs = "jobs";
         public const string JobResults = "job-results";
+        public const string JobReports = "job-reports";
         public const string Workspaces = "workspaces";
         public const string Catalog = "catalog";
         public const string PublishedServices = "published-services";
