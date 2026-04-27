@@ -172,7 +172,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields)
     {
-        var objectIdFieldName = layer.ObjectIdFieldName;
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         var declaredAttributeFields = layer.Fields
             .Where(field => !field.IsGeometry)
             .Select(field => field.Name)
@@ -279,8 +279,8 @@ internal sealed class QueryFormatter : IQueryFormatter
             outFields,
             declaredAttributeFields,
             runtimeAttributeFields,
-            objectIdFieldName,
-            feature.Id);
+                objectIdFieldName,
+                GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
 
         return new GeoServicesFeature
         {
@@ -422,7 +422,8 @@ internal sealed class QueryFormatter : IQueryFormatter
             ProjectedProperties: projectedProperties,
             IncludeObjectIdProperty: true,
             IncludeObjectIdAlias: projectedProperties is null &&
-                                  layer.ObjectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase),
+                                  GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer)
+                                      .Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase),
             IncludeAdditionalAttributes: true,
             ResolveIdFromProperties: true);
 
@@ -483,7 +484,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         return mappedFields.ToArray();
     }
 
-    private static List<GeoServicesFieldInfo> DetectRuntimeFields(
+    internal static List<GeoServicesFieldInfo> DetectRuntimeFields(
         ImmutableArray<Feature> features,
         HashSet<string> declaredAttributeFields,
         string objectIdFieldName)
@@ -831,7 +832,7 @@ internal sealed class StreamingQueryFormatter
             SkipValidation = false
         });
 
-        var objectIdFieldName = layer.ObjectIdFieldName;
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         var outFieldLookup = CreateFieldLookup(outFields);
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
         var queryFields = QueryFormatter.BuildQueryFields(layer, outFields, objectIdFieldName);
@@ -1029,7 +1030,7 @@ internal sealed class StreamingQueryFormatter
 
         if (!objectIdWritten)
         {
-            writer.WriteNumber(objectIdFieldName, feature.Id);
+            writer.WriteNumber(objectIdFieldName, GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
         }
 
         writer.WriteEndObject(); // End attributes

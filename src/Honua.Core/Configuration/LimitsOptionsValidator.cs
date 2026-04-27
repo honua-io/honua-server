@@ -95,6 +95,46 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
 
     internal static void ValidateConnectionLimits(ConnectionLimits limits, List<string> failures)
     {
+        if (limits.MaxConcurrentQueries > limits.MaxConnectionPoolSize)
+        {
+            failures.Add("Connections.MaxConcurrentQueries must be less than or equal to Connections.MaxConnectionPoolSize.");
+        }
+
+        if (limits.AdaptiveConcurrencyEnabled)
+        {
+            var ceiling = Math.Min(limits.MaxConcurrentQueries, limits.MaxConnectionPoolSize);
+            if (limits.AdaptiveConcurrencyMinQueries > ceiling)
+            {
+                failures.Add("Connections.AdaptiveConcurrencyMinQueries must be less than or equal to the effective connection ceiling.");
+            }
+
+            if (limits.AdaptiveConcurrencyMaxQueries > 0 &&
+                limits.AdaptiveConcurrencyMaxQueries > ceiling)
+            {
+                failures.Add("Connections.AdaptiveConcurrencyMaxQueries must be 0 or less than or equal to the effective connection ceiling.");
+            }
+
+            if (limits.AdaptiveConcurrencyMaxQueries > 0 &&
+                limits.AdaptiveConcurrencyMaxQueries < limits.AdaptiveConcurrencyMinQueries)
+            {
+                failures.Add("Connections.AdaptiveConcurrencyMaxQueries must be 0 or greater than or equal to Connections.AdaptiveConcurrencyMinQueries.");
+            }
+
+            if (limits.AdaptiveConcurrencyInitialQueries > 0 &&
+                limits.AdaptiveConcurrencyInitialQueries < limits.AdaptiveConcurrencyMinQueries)
+            {
+                failures.Add("Connections.AdaptiveConcurrencyInitialQueries must be 0 or greater than or equal to Connections.AdaptiveConcurrencyMinQueries.");
+            }
+
+            var adaptiveCeiling = limits.AdaptiveConcurrencyMaxQueries > 0
+                ? limits.AdaptiveConcurrencyMaxQueries
+                : ceiling;
+            if (limits.AdaptiveConcurrencyInitialQueries > adaptiveCeiling)
+            {
+                failures.Add("Connections.AdaptiveConcurrencyInitialQueries must be less than or equal to the adaptive connection ceiling.");
+            }
+        }
+
         if (limits.RequestTimeout < TimeSpan.FromSeconds(10) || limits.RequestTimeout > TimeSpan.FromMinutes(10))
         {
             failures.Add("Connections.RequestTimeout must be between 10 seconds and 10 minutes.");

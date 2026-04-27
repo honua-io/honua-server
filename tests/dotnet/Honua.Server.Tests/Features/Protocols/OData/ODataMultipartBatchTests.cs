@@ -228,4 +228,39 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
         responseBody.Should().Contain("OData-Version: 4.01",
             "each part in multipart response should include OData-Version header");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task MultipartBatch_WithODataMaxVersion40_Returns401Headers()
+    {
+        const string boundary = "batch_maxversion";
+        var payload = string.Join("\r\n",
+        [
+            $"--{boundary}",
+            "Content-Type: application/http",
+            "Content-Transfer-Encoding: binary",
+            string.Empty,
+            "GET /odata/Features(0,1) HTTP/1.1",
+            "Accept: application/json",
+            string.Empty,
+            $"--{boundary}--",
+            string.Empty
+        ]);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/odata/$batch")
+        {
+            Content = new StringContent(payload, Encoding.UTF8)
+        };
+        request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
+        request.Headers.TryAddWithoutValidation("OData-MaxVersion", "4.0");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
+        values.Should().Contain("4.0");
+        var responseBody = await response.Content.ReadAsStringAsync();
+        responseBody.Should().Contain("OData-Version: 4.0");
+    }
 }

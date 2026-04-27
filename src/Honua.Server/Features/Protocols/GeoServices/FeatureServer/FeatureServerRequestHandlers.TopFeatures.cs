@@ -120,7 +120,6 @@ internal static partial class FeatureServerEndpoints
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var result = await featureReader.QueryTopFeaturesAsync(layer.Id, query, cancellationToken);
 
-        var objectIdField = layer.PrimaryKeyField?.Name ?? "objectid";
         var responseFeatures = result.Items.Select(feature => new GeoServicesFeature
         {
             Attributes = feature.Attributes

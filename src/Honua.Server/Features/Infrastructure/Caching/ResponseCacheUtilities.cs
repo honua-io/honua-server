@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -165,7 +166,16 @@ internal static class ResponseCacheUtilities
         {
             foreach (var value in entry.Value.OrderBy(v => v, StringComparer.Ordinal))
             {
-                parts.Add(string.Concat(entry.Key, '=', value));
+                var valueText = value ?? string.Empty;
+                parts.Add(string.Concat(
+                    "k",
+                    entry.Key.Length.ToString(CultureInfo.InvariantCulture),
+                    ":",
+                    entry.Key,
+                    "v",
+                    valueText.Length.ToString(CultureInfo.InvariantCulture),
+                    ":",
+                    valueText));
             }
         }
 

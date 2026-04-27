@@ -63,7 +63,7 @@ internal sealed class PbfQueryFormatter
             maxAllowableOffset,
             forceSimplify: maxAllowableOffset is > 0);
 
-        var objectIdFieldName = layer.ObjectIdFieldName;
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
 
         // Build the FeatureResult sub-message
@@ -166,7 +166,12 @@ internal sealed class PbfQueryFormatter
         }
 
         // field 13: fields (repeated)
-        var queryFields = QueryFormatter.BuildQueryFields(layer, outFields, objectIdFieldName);
+        var declaredAttributeFields = layer.Fields
+            .Where(field => !field.IsGeometry)
+            .Select(field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var runtimeFields = QueryFormatter.DetectRuntimeFields(result.Items, declaredAttributeFields, objectIdFieldName);
+        var queryFields = QueryFormatter.BuildQueryFields(layer, outFields, objectIdFieldName, runtimeFields);
         foreach (var field in queryFields)
         {
             var fieldMsg = new ProtobufWriter(64);

@@ -534,21 +534,21 @@ internal sealed partial class Wfs20Handler
                     CreateBooleanFesConstraint("ImplementsVersionNav", false),
                     CreateBooleanFesConstraint("ImplementsSorting", true),
                     CreateBooleanFesConstraint("ImplementsExtendedOperators", true),
-                    CreateBooleanFesConstraint("ImplementsFunctions", true),
-                    CreateBooleanFesConstraint("ImplementsArithmeticOperators", true),
+                    CreateBooleanFesConstraint("ImplementsFunctions", false),
+                    CreateBooleanFesConstraint("ImplementsArithmeticOperators", false),
                     CreateBooleanFesConstraint("ImplementsLogicalOperators", true),
                     CreateBooleanFesConstraint("ImplementsComparisonOperators", true),
 
                     // CQL2 support
-                    CreateBooleanFesConstraint("ImplementsCQL2Text", true),
-                    CreateBooleanFesConstraint("ImplementsCQL2JSON", true),
-                    CreateBooleanFesConstraint("ImplementsCQL2BasicCQL", true),
-                    CreateBooleanFesConstraint("ImplementsCQL2AdvancedComparison", true),
-                    CreateBooleanFesConstraint("ImplementsCQL2BasicSpatial", true),
-                    CreateBooleanFesConstraint("ImplementsCQL2SpatialOperators", true),
-                    CreateBooleanFesConstraint("ImplementsCQL2TemporalOperators", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2Text", false),
+                    CreateBooleanFesConstraint("ImplementsCQL2JSON", false),
+                    CreateBooleanFesConstraint("ImplementsCQL2BasicCQL", false),
+                    CreateBooleanFesConstraint("ImplementsCQL2AdvancedComparison", false),
+                    CreateBooleanFesConstraint("ImplementsCQL2BasicSpatial", false),
+                    CreateBooleanFesConstraint("ImplementsCQL2SpatialOperators", false),
+                    CreateBooleanFesConstraint("ImplementsCQL2TemporalOperators", false),
                     CreateBooleanFesConstraint("ImplementsCQL2ArrayOperators", false),
-                    CreateBooleanFesConstraint("ImplementsCQL2Functions", true)
+                    CreateBooleanFesConstraint("ImplementsCQL2Functions", false)
                 ]
             },
             IdCapabilities = new IdCapabilities
@@ -666,65 +666,10 @@ internal sealed partial class Wfs20Handler
             },
             Functions = new FunctionList
             {
-                Functions =
-                [
-                    CreateFunction("ST_Area", "xsd:double"),
-                    CreateFunction("ST_Length", "xsd:double"),
-                    CreateFunction("ST_Perimeter", "xsd:double"),
-                    CreateFunction("ST_Distance", "xsd:double"),
-                    CreateFunction("ST_Buffer", "gml:AbstractGeometryType"),
-                    CreateFunction("ST_Centroid", "gml:PointPropertyType"),
-                    CreateFunction("ST_Envelope", "gml:EnvelopeType"),
-                    CreateFunction("ST_ConvexHull", "gml:AbstractGeometryType"),
-                    CreateFunction("ST_Boundary", "gml:AbstractGeometryType"),
-                    CreateFunction("ST_IsValid", "xsd:boolean"),
-                    CreateFunction("ST_IsSimple", "xsd:boolean"),
-                    CreateFunction("ST_IsClosed", "xsd:boolean"),
-                    CreateFunction("ST_IsEmpty", "xsd:boolean"),
-                    CreateFunction("ST_GeometryType", "xsd:string"),
-                    CreateFunction("ST_NumGeometries", "xsd:integer"),
-                    CreateFunction("ST_SRID", "xsd:integer"),
-                    CreateFunction("UPPER", "xsd:string"),
-                    CreateFunction("LOWER", "xsd:string"),
-                    CreateFunction("CONCAT", "xsd:string"),
-                    CreateFunction("LENGTH", "xsd:integer"),
-                    CreateFunction("CHAR_LENGTH", "xsd:integer"),
-                    CreateFunction("SUBSTRING", "xsd:string"),
-                    CreateFunction("TRIM", "xsd:string"),
-                    CreateFunction("REPLACE", "xsd:string"),
-                    CreateFunction("POSITION", "xsd:integer"),
-                    CreateFunction("ABS", "xsd:double"),
-                    CreateFunction("CEIL", "xsd:double"),
-                    CreateFunction("CEILING", "xsd:double"),
-                    CreateFunction("FLOOR", "xsd:double"),
-                    CreateFunction("ROUND", "xsd:double"),
-                    CreateFunction("SQRT", "xsd:double"),
-                    CreateFunction("POWER", "xsd:double"),
-                    CreateFunction("MOD", "xsd:double"),
-                    CreateFunction("SIN", "xsd:double"),
-                    CreateFunction("COS", "xsd:double"),
-                    CreateFunction("TAN", "xsd:double"),
-                    CreateFunction("LOG", "xsd:double"),
-                    CreateFunction("EXP", "xsd:double"),
-                    CreateFunction("YEAR", "xsd:integer"),
-                    CreateFunction("MONTH", "xsd:integer"),
-                    CreateFunction("DAY", "xsd:integer"),
-                    CreateFunction("HOUR", "xsd:integer"),
-                    CreateFunction("MINUTE", "xsd:integer"),
-                    CreateFunction("SECOND", "xsd:integer"),
-                    CreateFunction("NOW", "xsd:dateTime"),
-                    CreateFunction("CURRENT_DATE", "xsd:date"),
-                    CreateFunction("CURRENT_TIMESTAMP", "xsd:dateTime"),
-                    CreateFunction("COUNT", "xsd:integer"),
-                    CreateFunction("SUM", "xsd:double"),
-                    CreateFunction("AVG", "xsd:double"),
-                    CreateFunction("MIN", "xsd:anyType"),
-                    CreateFunction("MAX", "xsd:anyType")
-                ]
+                Functions = []
             }
         };
     }
-
 
     private static FesConstraint CreateBooleanFesConstraint(string name, bool defaultValue)
     {
@@ -733,16 +678,6 @@ internal sealed partial class Wfs20Handler
             Name = name,
             AllowedValues = new AllowedValues { Values = ["TRUE", "FALSE"] },
             DefaultValue = defaultValue ? "TRUE" : "FALSE"
-        };
-    }
-
-
-    private static FunctionDefinition CreateFunction(string name, string returnType)
-    {
-        return new FunctionDefinition
-        {
-            Name = name,
-            Returns = new FunctionReturn { Type = returnType }
         };
     }
 

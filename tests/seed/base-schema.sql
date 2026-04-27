@@ -15,6 +15,7 @@
 -- existing CI seed data remains compatible.
 
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_raster;
 
 CREATE SCHEMA IF NOT EXISTS honua;
 
@@ -87,6 +88,47 @@ CREATE TABLE IF NOT EXISTS honua.layer_fields (
     default_value TEXT,
     description TEXT,
     PRIMARY KEY (layer_id, field_name)
+);
+
+CREATE TABLE IF NOT EXISTS honua.raster_data (
+    id BIGSERIAL PRIMARY KEY,
+    layer_id INTEGER NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    raster raster NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ,
+    width INTEGER GENERATED ALWAYS AS (ST_Width(raster)) STORED,
+    height INTEGER GENERATED ALWAYS AS (ST_Height(raster)) STORED,
+    band_count INTEGER GENERATED ALWAYS AS (ST_NumBands(raster)) STORED,
+    pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
+    srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
+);
+
+CREATE TABLE IF NOT EXISTS honua.raster_statistics (
+    id BIGSERIAL PRIMARY KEY,
+    raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+    band_number INTEGER NOT NULL,
+    min_value DOUBLE PRECISION,
+    max_value DOUBLE PRECISION,
+    mean_value DOUBLE PRECISION,
+    std_dev DOUBLE PRECISION,
+    valid_pixel_count BIGINT,
+    nodata_pixel_count BIGINT,
+    computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT raster_statistics_unique_band UNIQUE (raster_data_id, band_number)
+);
+
+CREATE TABLE IF NOT EXISTS honua.raster_tiles (
+    id BIGSERIAL PRIMARY KEY,
+    raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+    zoom_level INTEGER NOT NULL,
+    tile_x INTEGER NOT NULL,
+    tile_y INTEGER NOT NULL,
+    tile_data BYTEA NOT NULL,
+    content_type VARCHAR(50) NOT NULL DEFAULT 'image/png',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT raster_tiles_unique_tile UNIQUE (raster_data_id, zoom_level, tile_x, tile_y)
 );
 
 CREATE TABLE IF NOT EXISTS honua.cloud_raster_catalog (
@@ -189,6 +231,10 @@ CREATE INDEX IF NOT EXISTS idx_relationships_related_layer_id ON honua.relations
 CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
 CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
 CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
+CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id ON honua.raster_data(layer_id);
+CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id_id ON honua.raster_data(layer_id, id);
+CREATE INDEX IF NOT EXISTS idx_raster_statistics_raster_data_id ON honua.raster_statistics(raster_data_id);
+CREATE INDEX IF NOT EXISTS idx_raster_tiles_lookup ON honua.raster_tiles(raster_data_id, zoom_level, tile_x, tile_y);
 
 -- Base test service
 INSERT INTO honua.services (
@@ -332,3 +378,51 @@ WHERE NOT EXISTS (
     FROM features
     WHERE layer_id = 0
 );
+
+-- Deterministic one-band raster for OGC API Maps and ImageServer client lanes.
+WITH inserted_raster AS (
+    INSERT INTO honua.raster_data (layer_id, name, description, raster)
+    SELECT
+        0,
+        'Test Raster',
+        'Deterministic raster for client compatibility tests',
+        ST_AddBand(
+            ST_MakeEmptyRaster(64, 64, -122.5, 37.84, 0.00234375, -0.0021875, 0, 0, 4326),
+            '8BUI'::text,
+            128,
+            0)
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM honua.raster_data
+        WHERE layer_id = 0 AND name = 'Test Raster'
+    )
+    RETURNING id
+),
+target_raster AS (
+    SELECT id FROM inserted_raster
+    UNION ALL
+    SELECT id
+    FROM honua.raster_data
+    WHERE layer_id = 0 AND name = 'Test Raster'
+    LIMIT 1
+)
+INSERT INTO honua.raster_statistics (
+    raster_data_id,
+    band_number,
+    min_value,
+    max_value,
+    mean_value,
+    std_dev,
+    valid_pixel_count,
+    nodata_pixel_count
+)
+SELECT id, 1, 128, 128, 128, 0, 4096, 0
+FROM target_raster
+ON CONFLICT (raster_data_id, band_number) DO UPDATE SET
+    min_value = EXCLUDED.min_value,
+    max_value = EXCLUDED.max_value,
+    mean_value = EXCLUDED.mean_value,
+    std_dev = EXCLUDED.std_dev,
+    valid_pixel_count = EXCLUDED.valid_pixel_count,
+    nodata_pixel_count = EXCLUDED.nodata_pixel_count,
+    computed_at = NOW();

@@ -89,6 +89,7 @@ class PostGISFixture:
         self._container = PostgresContainer(
             **self._build_postgres_container_kwargs()
         )
+        self._container.with_env("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
         # Set max connections for parallel tests
         self._container.with_command("-c max_connections=200")
         self._container.start()
@@ -627,6 +628,58 @@ class PostGISFixture:
                     ON CONFLICT (service_name, layer_id) DO NOTHING;
                     """,
                     (service_name, layer_id),
+                )
+
+                conn.execute(
+                    """
+                    WITH inserted_raster AS (
+                        INSERT INTO honua.raster_data (layer_id, name, description, raster)
+                        SELECT
+                            %s,
+                            'Test Raster',
+                            'Deterministic raster for client compatibility tests',
+                            ST_AddBand(
+                                ST_MakeEmptyRaster(64, 64, -122.5, 37.84, 0.00234375, -0.0021875, 0, 0, 4326),
+                                '8BUI'::text,
+                                128,
+                                0)
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM honua.raster_data
+                            WHERE layer_id = %s AND name = 'Test Raster'
+                        )
+                        RETURNING id
+                    ),
+                    target_raster AS (
+                        SELECT id FROM inserted_raster
+                        UNION ALL
+                        SELECT id
+                        FROM honua.raster_data
+                        WHERE layer_id = %s AND name = 'Test Raster'
+                        LIMIT 1
+                    )
+                    INSERT INTO honua.raster_statistics (
+                        raster_data_id,
+                        band_number,
+                        min_value,
+                        max_value,
+                        mean_value,
+                        std_dev,
+                        valid_pixel_count,
+                        nodata_pixel_count
+                    )
+                    SELECT id, 1, 128, 128, 128, 0, 4096, 0
+                    FROM target_raster
+                    ON CONFLICT (raster_data_id, band_number) DO UPDATE SET
+                        min_value = EXCLUDED.min_value,
+                        max_value = EXCLUDED.max_value,
+                        mean_value = EXCLUDED.mean_value,
+                        std_dev = EXCLUDED.std_dev,
+                        valid_pixel_count = EXCLUDED.valid_pixel_count,
+                        nodata_pixel_count = EXCLUDED.nodata_pixel_count,
+                        computed_at = NOW();
+                    """,
+                    (layer_id, layer_id, layer_id),
                 )
 
                 conn.commit()

@@ -27,11 +27,12 @@ jobs:
       contents: read
     services:
       postgres:
-        image: postgis/postgis:16-3.4-alpine
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-

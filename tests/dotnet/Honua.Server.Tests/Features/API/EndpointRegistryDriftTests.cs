@@ -1,13 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Server;
 using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
 using Honua.TestKit;
-using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,6 +21,12 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 {
     private static readonly Regex _routeConstraintRegex =
         new(@"\{([^{}:]+):[^{}]+\}", RegexOptions.Compiled);
+    private static readonly Regex _integrationTestAttributeRegex =
+        new(@"^\s*\[IntegrationTest\]", RegexOptions.Compiled);
+    private static readonly Regex _methodDeclarationRegex =
+        new(@"^\s*(?:public|private|internal|protected)\s+(?:async\s+)?(?:Task|ValueTask|void)\s+\w+\s*\(", RegexOptions.Compiled);
+    private static readonly Regex _endpointAttributeRegex =
+        new(@"\[Endpoint\(""([^""]+)""\)\]", RegexOptions.Compiled);
 
     private readonly WebAppFixture _fixture = new();
 
@@ -153,16 +158,39 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "Architecture")]
-    public void MetadataOpaqueRegistryEntries_AreCoveredByIntegrationTests()
+    public void MetadataOpaqueRegistryEntries_AreCoveredByEndpointLevelIntegrationTests()
     {
-        var testedEndpoints = CollectIntegrationTestEndpoints();
+        var testedEndpoints = CollectEndpointLevelIntegrationTestEndpoints(_conditionallyMappedRegistryPatterns);
         var missing = _conditionallyMappedRegistryPatterns
             .Where(endpoint => !testedEndpoints.Contains(endpoint))
             .OrderBy(endpoint => endpoint)
             .ToArray();
 
         missing.Should().BeEmpty(
-            "EndpointRegistry entries excluded from EndpointDataSource stale checks must still have direct integration coverage");
+            "EndpointRegistry entries excluded from EndpointDataSource stale checks must still have an endpoint-level integration test " +
+            "that sends an HTTP request to the route instead of only declaring [Endpoint] metadata");
+    }
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void EndpointCoverageSuite_EndpointAttributesAreBackedByHttpRequests()
+    {
+        var sourceRoot = FindServerTestSourceRoot();
+        var sourcePath = Path.Combine(sourceRoot, "Features", "API", "EndpointCoverageTests.cs");
+        var source = File.ReadAllText(sourcePath);
+        var declaredEndpoints = _endpointAttributeRegex
+            .Matches(source)
+            .Select(match => NormalizeEndpointKey(match.Groups[1].Value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var endpointLevelTests = CollectEndpointLevelIntegrationTestEndpoints(declaredEndpoints, sourcePath);
+        var metadataOnly = declaredEndpoints
+            .Where(endpoint => !endpointLevelTests.Contains(endpoint))
+            .OrderBy(endpoint => endpoint)
+            .ToArray();
+
+        metadataOnly.Should().BeEmpty(
+            "EndpointCoverageTests is the broad API-surface smoke suite, so each [Endpoint] there must be backed by a same-method HTTP request");
     }
 
     [Fact]
@@ -336,32 +364,154 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                path.StartsWith("/tiles/", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static HashSet<string> CollectIntegrationTestEndpoints()
+    private static HashSet<string> CollectEndpointLevelIntegrationTestEndpoints(
+        IEnumerable<string> targetEndpointKeys,
+        string? sourcePath = null)
     {
-        var testAssembly = typeof(EndpointRegistryDriftTests).Assembly;
+        var targets = targetEndpointKeys
+            .Select(NormalizeEndpointKey)
+            .ToArray();
         var endpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var sourceFiles = sourcePath is null
+            ? Directory.EnumerateFiles(FindServerTestSourceRoot(), "*.cs", SearchOption.AllDirectories)
+            : new[] { sourcePath };
 
-        foreach (var type in testAssembly.GetTypes())
+        foreach (var block in EnumerateIntegrationTestMethodBodies(sourceFiles))
         {
-            var classHasIntegration = type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-
-            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
+            foreach (var endpoint in targets)
             {
-                var methodHasIntegration = classHasIntegration ||
-                    method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-                if (!methodHasIntegration)
+                if (endpoints.Contains(endpoint))
                 {
                     continue;
                 }
 
-                foreach (var endpointAttribute in method.GetCustomAttributes(typeof(EndpointAttribute), inherit: true).Cast<EndpointAttribute>())
+                if (EndpointIsExercisedByMethodBody(endpoint, block.Body))
                 {
-                    endpoints.Add(NormalizeEndpointKey(endpointAttribute.Endpoint));
+                    endpoints.Add(endpoint);
                 }
             }
         }
 
         return endpoints;
+    }
+
+    private static IEnumerable<TestSourceBlock> EnumerateIntegrationTestMethodBodies(IEnumerable<string> sourceFiles)
+    {
+        foreach (var sourceFile in sourceFiles)
+        {
+            var lines = File.ReadAllLines(sourceFile);
+            for (var index = 0; index < lines.Length; index++)
+            {
+                if (!_integrationTestAttributeRegex.IsMatch(lines[index]))
+                {
+                    continue;
+                }
+
+                var methodStart = -1;
+                for (var cursor = index + 1; cursor < lines.Length; cursor++)
+                {
+                    if (_methodDeclarationRegex.IsMatch(lines[cursor]))
+                    {
+                        methodStart = cursor;
+                        break;
+                    }
+                }
+
+                if (methodStart < 0)
+                {
+                    continue;
+                }
+
+                var methodEnd = lines.Length;
+                for (var cursor = methodStart + 1; cursor < lines.Length; cursor++)
+                {
+                    if (_integrationTestAttributeRegex.IsMatch(lines[cursor]))
+                    {
+                        methodEnd = cursor;
+                        break;
+                    }
+                }
+
+                var body = string.Join('\n', lines.Skip(methodStart).Take(methodEnd - methodStart));
+                yield return new TestSourceBlock(body);
+                index = methodEnd - 1;
+            }
+        }
+    }
+
+    private static bool EndpointIsExercisedByMethodBody(string endpointKey, string methodBody)
+    {
+        var separatorIndex = endpointKey.IndexOf(' ');
+        if (separatorIndex < 1 || separatorIndex == endpointKey.Length - 1)
+        {
+            return false;
+        }
+
+        var method = endpointKey[..separatorIndex];
+        var path = endpointKey[(separatorIndex + 1)..];
+
+        return HasHttpVerbInvocation(methodBody, method) &&
+            Regex.IsMatch(methodBody, BuildSourcePathRegex(path), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static bool HasHttpVerbInvocation(string methodBody, string method)
+    {
+        var pattern = method.ToUpperInvariant() switch
+        {
+            "GET" => @"(?:\.Get(?:FromJson)?|Get\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Get\s*,",
+            "POST" => @"(?:\.Post(?:AsJson)?|Post\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Post\s*,",
+            "PUT" => @"(?:\.Put(?:AsJson)?|Put\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Put\s*,",
+            "PATCH" => @"(?:\.Patch(?:AsJson)?|Patch\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Patch\s*,",
+            "DELETE" => @"(?:\.Delete|Delete\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Delete\s*,",
+            _ => null
+        };
+
+        return pattern is not null &&
+            Regex.IsMatch(methodBody, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static string BuildSourcePathRegex(string routePath)
+    {
+        var builder = new StringBuilder();
+        for (var index = 0; index < routePath.Length; index++)
+        {
+            if (routePath[index] == '{')
+            {
+                var tokenEnd = routePath.IndexOf('}', index);
+                if (tokenEnd > index)
+                {
+                    // Match either a C# interpolation hole (e.g. {id}) or a concrete path value.
+                    builder.Append(@"(?:\{[^{}""'\r\n]+\}|[^/""'\s?,)]+)");
+                    index = tokenEnd;
+                    continue;
+                }
+            }
+
+            builder.Append(Regex.Escape(routePath[index].ToString()));
+        }
+
+        builder.Append(@"(?:\?[^""'\s)]*)?");
+        return builder.ToString();
+    }
+
+    private static string FindServerTestSourceRoot()
+    {
+        foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            var directory = new DirectoryInfo(start);
+            while (directory is not null)
+            {
+                var candidate = Path.Combine(directory.FullName, "tests", "dotnet", "Honua.Server.Tests");
+                if (Directory.Exists(candidate))
+                {
+                    return candidate;
+                }
+
+                directory = directory.Parent;
+            }
+        }
+
+        throw new DirectoryNotFoundException("Could not locate tests/dotnet/Honua.Server.Tests from the test execution directory.");
     }
 
     private static string NormalizeEndpointKey(string endpoint)
@@ -372,4 +522,6 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
             ? $"{parts[0].ToUpperInvariant()} {NormalizePath(parts[1])}"
             : trimmed;
     }
+
+    private sealed record TestSourceBlock(string Body);
 }

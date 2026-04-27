@@ -31,6 +31,7 @@ jobs:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-

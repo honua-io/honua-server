@@ -126,7 +126,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
     }
 
     [Fact]
-    public void BuildFilterCapabilities_ShouldAdvertiseRuntimeSupportedFunctions()
+    public void BuildFilterCapabilities_ShouldNotAdvertiseUnsupportedFunctions()
     {
         // Act
         var filterCapabilities = InvokeBuildFilterCapabilities();
@@ -134,14 +134,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         // Assert
         filterCapabilities.Should().NotBeNull();
         filterCapabilities.Functions.Should().NotBeNull();
-
-        var functionNames = filterCapabilities.Functions!.Functions.Select(function => function.Name).ToArray();
-        functionNames.Should().Contain("ST_NumGeometries");
-        functionNames.Should().Contain("UPPER");
-        functionNames.Should().Contain("SQRT");
-        functionNames.Should().Contain("NOW");
-        functionNames.Should().Contain("COUNT");
-        functionNames.Should().HaveCountGreaterOrEqualTo(35);
+        filterCapabilities.Functions!.Functions.Should().BeEmpty();
     }
 
     [Fact]
@@ -177,16 +170,16 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         constraintNames.Should().Contain("ImplementsLogicalOperators");
         constraintNames.Should().Contain("ImplementsComparisonOperators");
 
-        constraints.Should().Contain(c => c.Name == "ImplementsFunctions" && c.DefaultValue == "TRUE");
-        constraints.Should().Contain(c => c.Name == "ImplementsArithmeticOperators" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsFunctions" && c.DefaultValue == "FALSE");
+        constraints.Should().Contain(c => c.Name == "ImplementsArithmeticOperators" && c.DefaultValue == "FALSE");
         constraints.Should().Contain(c => c.Name == "ImplementsExtendedOperators" && c.DefaultValue == "TRUE");
-        constraints.Should().Contain(c => c.Name == "ImplementsCQL2Text" && c.DefaultValue == "TRUE");
-        constraints.Should().Contain(c => c.Name == "ImplementsCQL2JSON" && c.DefaultValue == "TRUE");
-        constraints.Should().Contain(c => c.Name == "ImplementsCQL2BasicCQL" && c.DefaultValue == "TRUE");
-        constraints.Should().Contain(c => c.Name == "ImplementsCQL2SpatialOperators" && c.DefaultValue == "TRUE");
-        constraints.Should().Contain(c => c.Name == "ImplementsCQL2TemporalOperators" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2Text" && c.DefaultValue == "FALSE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2JSON" && c.DefaultValue == "FALSE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2BasicCQL" && c.DefaultValue == "FALSE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2SpatialOperators" && c.DefaultValue == "FALSE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2TemporalOperators" && c.DefaultValue == "FALSE");
         constraints.Should().Contain(c => c.Name == "ImplementsCQL2ArrayOperators" && c.DefaultValue == "FALSE");
-        constraints.Should().Contain(c => c.Name == "ImplementsCQL2Functions" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsCQL2Functions" && c.DefaultValue == "FALSE");
     }
 
     [Fact]
@@ -211,7 +204,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         xml.Should().Contain("SpatialOperators");
         xml.Should().Contain("ComparisonOperators");
         xml.Should().Contain("<Functions");
-        xml.Should().Contain("ST_NumGeometries");
+        xml.Should().NotContain("ST_NumGeometries");
     }
 
     /// <summary>

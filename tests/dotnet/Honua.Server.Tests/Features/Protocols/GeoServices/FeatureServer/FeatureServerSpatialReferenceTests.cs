@@ -101,7 +101,9 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
         response.Be200Ok();
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
-        Assert.True(response.Headers.TransferEncodingChunked ?? false, "Response should use chunked transfer encoding for streaming");
+        Assert.False(
+            response.Headers.TransferEncodingChunked ?? false,
+            "FeatureServer streaming should not set Transfer-Encoding manually; the server transport owns response framing.");
 
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);

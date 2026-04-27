@@ -47,6 +47,23 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetCapabilities_WithUnsupportedAcceptAndWildcardFallback_ReturnsXml()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities");
+        request.Headers.TryAddWithoutValidation("Accept", "application/json, */*;q=0.1");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_GetCapabilities_WithWmsEnabledAndMapServerDisabled_ReturnsXml()
     {
@@ -150,6 +167,21 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             HttpMethod.Get,
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities");
         request.Headers.TryAddWithoutValidation("Accept", "application/json;q=1, application/xml;q=0");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetCapabilities_WithTextXmlRejectedAndWildcardAllowed_ReturnsNotAcceptable()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities");
+        request.Headers.TryAddWithoutValidation("Accept", "text/xml;q=0, */*;q=1");
 
         var response = await _fixture.Client.SendAsync(request);
 

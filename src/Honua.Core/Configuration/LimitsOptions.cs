@@ -309,6 +309,41 @@ public class ConnectionLimits
     public int ConnectionAcquisitionTimeoutSeconds { get; set; } = 5;
 
     /// <summary>
+    /// Enable adaptive database query admission under the configured maximum concurrency ceiling.
+    /// </summary>
+    public bool AdaptiveConcurrencyEnabled { get; set; }
+
+    /// <summary>
+    /// Minimum adaptive concurrent query limit.
+    /// </summary>
+    [Range(1, 1000)]
+    public int AdaptiveConcurrencyMinQueries { get; set; } = 1;
+
+    /// <summary>
+    /// Initial adaptive concurrent query limit. A value of 0 starts at MaxConcurrentQueries.
+    /// </summary>
+    [Range(0, 1000)]
+    public int AdaptiveConcurrencyInitialQueries { get; set; } = 0;
+
+    /// <summary>
+    /// Maximum adaptive concurrent query limit. A value of 0 uses MaxConcurrentQueries.
+    /// </summary>
+    [Range(0, 1000)]
+    public int AdaptiveConcurrencyMaxQueries { get; set; } = 0;
+
+    /// <summary>
+    /// Target database lease duration in milliseconds for adaptive admission.
+    /// </summary>
+    [Range(1, 60000)]
+    public int AdaptiveConcurrencyTargetDurationMs { get; set; } = 100;
+
+    /// <summary>
+    /// Minimum interval between adaptive concurrency adjustments in milliseconds.
+    /// </summary>
+    [Range(0, 60000)]
+    public int AdaptiveConcurrencyUpdateIntervalMs { get; set; } = 1000;
+
+    /// <summary>
     /// Lock timeout.
     /// </summary>
     public TimeSpan LockTimeout { get; set; } = TimeSpan.FromSeconds(30);

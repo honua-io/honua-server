@@ -4,9 +4,11 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.Protocols.OData.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
@@ -153,6 +155,112 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         document.RootElement.TryGetProperty("@odata.nextLink", out _).Should().BeTrue();
         document.RootElement.TryGetProperty("@odata.deltaLink", out _).Should().BeFalse(
             "delta links should only appear on the final page");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task Query_WithTrackChangesPaging_PreservesInitialSnapshotInFinalDeltaLink()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=2");
+        request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var nextLink = document.RootElement.GetProperty("@odata.nextLink").GetString();
+        nextLink.Should().NotBeNullOrWhiteSpace();
+        nextLink.Should().Contain(ODataUtilityService.TrackChangesSnapshotParameter);
+
+        var nextQuery = QueryHelpers.ParseQuery(new Uri(nextLink!).Query);
+        var snapshotToken = nextQuery[ODataUtilityService.TrackChangesSnapshotParameter].ToString();
+        snapshotToken.Should().NotBeNullOrWhiteSpace();
+        ODataDeltaService.TryDecode(snapshotToken, out var snapshotState, out var snapshotError)
+            .Should().BeTrue(snapshotError);
+
+        string? deltaLink = null;
+        var currentPathAndQuery = new Uri(nextLink!).PathAndQuery;
+        for (var page = 0; page < 10; page++)
+        {
+            var pageResponse = await _fixture.Client.GetAsync(currentPathAndQuery);
+            pageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var pageContent = await pageResponse.Content.ReadAsStringAsync();
+            using var pageDocument = JsonDocument.Parse(pageContent);
+
+            if (pageDocument.RootElement.TryGetProperty("@odata.nextLink", out var pageNextLinkElement))
+            {
+                currentPathAndQuery = new Uri(pageNextLinkElement.GetString()!).PathAndQuery;
+                continue;
+            }
+
+            pageDocument.RootElement.TryGetProperty("@odata.deltaLink", out var deltaLinkElement).Should().BeTrue();
+            deltaLink = deltaLinkElement.GetString();
+            break;
+        }
+
+        deltaLink.Should().NotBeNullOrWhiteSpace();
+        var deltaQuery = QueryHelpers.ParseQuery(new Uri(deltaLink!).Query);
+        var deltaToken = deltaQuery["$deltatoken"].ToString();
+        deltaToken.Should().NotBeNullOrWhiteSpace();
+        ODataDeltaService.TryDecode(deltaToken, out var finalState, out var finalError).Should().BeTrue(finalError);
+        finalState.Timestamp.Should().Be(snapshotState.Timestamp);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task Query_WithDeltaTokenPaging_CarriesStableUpperBoundUntilFinalDeltaLink()
+    {
+        var token = ODataDeltaService.Encode(new ODataDeltaService.DeltaQueryState
+        {
+            Timestamp = DateTimeOffset.UnixEpoch,
+            LayerId = TestLayerId
+        });
+
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$deltatoken={token}&$top=2");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var nextLink = document.RootElement.GetProperty("@odata.nextLink").GetString();
+        nextLink.Should().NotBeNullOrWhiteSpace();
+        var nextQuery = QueryHelpers.ParseQuery(new Uri(nextLink!).Query);
+        ODataDeltaService.TryDecode(nextQuery["$deltatoken"].ToString(), out var nextState, out var nextError)
+            .Should().BeTrue(nextError);
+        nextState.UpperBoundTimestamp.Should().NotBeNull();
+
+        string currentPathAndQuery = new Uri(nextLink!).PathAndQuery;
+        string? deltaLink = null;
+        for (var page = 0; page < 10; page++)
+        {
+            var pageResponse = await _fixture.Client.GetAsync(currentPathAndQuery);
+            pageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var pageContent = await pageResponse.Content.ReadAsStringAsync();
+            using var pageDocument = JsonDocument.Parse(pageContent);
+            if (pageDocument.RootElement.TryGetProperty("@odata.nextLink", out var pageNextLinkElement))
+            {
+                currentPathAndQuery = new Uri(pageNextLinkElement.GetString()!).PathAndQuery;
+                continue;
+            }
+
+            pageDocument.RootElement.TryGetProperty("@odata.deltaLink", out var deltaLinkElement).Should().BeTrue();
+            deltaLink = deltaLinkElement.GetString();
+            break;
+        }
+
+        deltaLink.Should().NotBeNullOrWhiteSpace();
+        var deltaQuery = QueryHelpers.ParseQuery(new Uri(deltaLink!).Query);
+        ODataDeltaService.TryDecode(deltaQuery["$deltatoken"].ToString(), out var finalState, out var finalError)
+            .Should().BeTrue(finalError);
+        finalState.Timestamp.Should().Be(nextState.UpperBoundTimestamp);
+        finalState.UpperBoundTimestamp.Should().BeNull();
     }
 
     [IntegrationTest]

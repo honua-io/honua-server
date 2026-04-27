@@ -112,6 +112,33 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /odata/$metadata")]
+    public async Task Metadata_WithXmlRejectedAndWildcardAllowed_ReturnsNotAcceptable()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
+        request.Headers.TryAddWithoutValidation("Accept", "application/xml;q=0, */*;q=1");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /odata/$metadata")]
+    public async Task Metadata_WithUnsupportedAcceptAndWildcardFallback_ReturnsXml()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
+        request.Headers.TryAddWithoutValidation("Accept", "application/json, */*;q=0.1");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Features_ReturnsODataVersionHeader()
@@ -298,6 +325,26 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         content.Should().NotContain("http://docs.oasis-open.org/odata/odata/v4.0/csdl/vocabularies");
         response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
         values.Should().Contain("4.01");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.ODataV4, "Metadata")]
+    [Endpoint("GET /odata/$metadata")]
+    public async Task Metadata_WithODataMaxVersion40_ReturnsV4CompatibleVersionHeader()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
+        request.Headers.TryAddWithoutValidation("OData-MaxVersion", "4.0");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
+        values.Should().Contain("4.0");
+        response.Headers.Vary.Should().Contain("OData-MaxVersion");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("""<edmx:Edmx Version="4.01" """);
     }
 
     [IntegrationTest]

@@ -35,6 +35,50 @@ public sealed class OgcFeaturesBatchOperationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.BulkCreate)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
+    public async Task Batch_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/batch",
+            new StringContent("""{"operations":[]}""", Encoding.UTF8, "text/plain"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkCreate)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
+    public async Task Batch_WithNullOperations_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/batch",
+            new StringContent("""{"operations":null}""", Encoding.UTF8, MediaTypes.Json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkCreate)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
+    public async Task Batch_WithNullOperationType_ReturnsPerOperationBadRequest()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/batch",
+            new StringContent("""{"operations":[{"id":"missing-type","type":null}]}""", Encoding.UTF8, MediaTypes.Json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var batchResponse = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.BatchOperationResponse);
+
+        batchResponse.Should().NotBeNull();
+        batchResponse!.HasErrors.Should().BeTrue();
+        batchResponse.Results.Should().ContainSingle();
+        batchResponse.Results[0].OperationId.Should().Be("missing-type");
+        batchResponse.Results[0].StatusCode.Should().Be(400);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.BulkCreate, Operations.BulkUpdate)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
     public async Task Batch_WithCreateAndUpdate_ReturnsSuccess()

@@ -19,6 +19,8 @@ internal static class ODataDeltaService
     {
         public required DateTimeOffset Timestamp { get; init; }
 
+        public DateTimeOffset? UpperBoundTimestamp { get; init; }
+
         public required int LayerId { get; init; }
 
         public string? Filter { get; init; }
@@ -54,7 +56,8 @@ internal static class ODataDeltaService
             EncodeSegment(state.Expand),
             EncodeSegment(state.Compute),
             EncodeSegment(state.Format),
-            EncodeSegment(state.Count?.ToString().ToLowerInvariant()));
+            EncodeSegment(state.Count?.ToString().ToLowerInvariant()),
+            state.UpperBoundTimestamp?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
         return Base64UrlEncode(payload);
     }
 
@@ -116,10 +119,15 @@ internal static class ODataDeltaService
     /// <summary>
     /// Builds the defining OData filter used by a delta request.
     /// </summary>
-    public static string BuildDeltaFilter(string? filter, DateTimeOffset timestamp)
+    public static string BuildDeltaFilter(string? filter, DateTimeOffset timestamp, DateTimeOffset? upperBoundTimestamp = null)
     {
         var encodedTimestamp = timestamp.ToString("O", CultureInfo.InvariantCulture);
         var deltaPredicate = $"updated_at gt datetimeoffset'{encodedTimestamp}'";
+        if (upperBoundTimestamp.HasValue)
+        {
+            var encodedUpperBound = upperBoundTimestamp.Value.ToString("O", CultureInfo.InvariantCulture);
+            deltaPredicate = $"{deltaPredicate} and updated_at le datetimeoffset'{encodedUpperBound}'";
+        }
 
         return string.IsNullOrWhiteSpace(filter)
             ? deltaPredicate
@@ -140,7 +148,7 @@ internal static class ODataDeltaService
             return TryParseLegacyPayload(parts, out state, out errorMessage);
         }
 
-        if (parts.Length != 10 || !string.Equals(parts[0], VersionPrefix, StringComparison.Ordinal))
+        if ((parts.Length != 10 && parts.Length != 11) || !string.Equals(parts[0], VersionPrefix, StringComparison.Ordinal))
         {
             errorMessage = "$deltatoken is invalid or malformed.";
             return false;
@@ -180,9 +188,30 @@ internal static class ODataDeltaService
             return false;
         }
 
+        DateTimeOffset? upperBoundTimestamp = null;
+        if (parts.Length == 11 && !string.IsNullOrWhiteSpace(parts[10]))
+        {
+            if (!long.TryParse(parts[10], NumberStyles.Integer, CultureInfo.InvariantCulture, out var upperBoundTicks))
+            {
+                errorMessage = "$deltatoken is invalid or malformed.";
+                return false;
+            }
+
+            try
+            {
+                upperBoundTimestamp = new DateTimeOffset(upperBoundTicks, TimeSpan.Zero);
+            }
+            catch (ArgumentException)
+            {
+                errorMessage = "$deltatoken is invalid or malformed.";
+                return false;
+            }
+        }
+
         state = new DeltaQueryState
         {
             Timestamp = timestamp,
+            UpperBoundTimestamp = upperBoundTimestamp,
             LayerId = layerId,
             Filter = filter,
             Select = select,

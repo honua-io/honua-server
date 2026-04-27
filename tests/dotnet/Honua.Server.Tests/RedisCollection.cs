@@ -7,8 +7,11 @@ namespace Honua.Server.Tests;
 
 /// <summary>
 /// Collection definition for Server tests that share a Redis container.
+/// Some Redis-backed tests also create database-backed web app fixtures, so
+/// this collection is isolated from other collections to avoid shared seed
+/// setup contention.
 /// </summary>
-[CollectionDefinition("Redis")]
+[CollectionDefinition("Redis", DisableParallelization = true)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class RedisCollection : ICollectionFixture<RedisFixture>
 {

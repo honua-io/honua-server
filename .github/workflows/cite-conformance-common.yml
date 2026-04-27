@@ -91,6 +91,7 @@ jobs:
       - name: Run ${{ inputs.display-name }} CITE conformance tests
         env:
           CITE_PROFILE: ${{ inputs.cite-profile }}
+          HONUA_CITE_SKIP_BUILD: 'true'
         run: |
           timeout ${{ inputs.timeout-seconds }} ${{ inputs.runner-script }} \
             --profile "$CITE_PROFILE" --verbose || cite_exit_code=$?

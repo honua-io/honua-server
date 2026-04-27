@@ -89,7 +89,9 @@ internal sealed class ODataMetadataHandler(
             return queryValidation;
         }
 
-        if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
+        if (!XmlContentNegotiation.IsXmlAccepted(
+                context.Request.Headers.Accept.ToString(),
+                ["application/xml"]))
         {
             return ODataUtilityService.CreateODataError(
                 context,

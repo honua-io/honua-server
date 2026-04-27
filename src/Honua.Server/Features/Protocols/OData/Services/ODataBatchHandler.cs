@@ -1287,6 +1287,8 @@ internal sealed partial class ODataBatchHandler
             context.Items[item.Key] = item.Value;
         }
 
+        ODataBatchContext.SuppressMutationSideEffects(context);
+
         context.Request.Method = request.Method.ToUpperInvariant();
         context.Request.Scheme = parent.Request.Scheme;
         context.Request.Host = parent.Request.Host;

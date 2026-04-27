@@ -963,6 +963,46 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/find")]
+    public async Task MapServer_Find_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var response = await PostTextPlainJsonAsync("/find");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var response = await PostTextPlainJsonAsync("/export");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var response = await PostTextPlainJsonAsync("/identify");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/generateKml")]
+    public async Task MapServer_GenerateKml_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var response = await PostTextPlainJsonAsync("/generateKml");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
     public async Task MapServer_Query_Post_WithInvalidJson_ReturnsBadRequest()
     {
@@ -1068,6 +1108,11 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    private Task<HttpResponseMessage> PostTextPlainJsonAsync(string operationPath)
+        => _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer{operationPath}",
+            new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain"));
 
     private async Task<string> SeedGenerateKmlGeometryServiceAsync()
     {

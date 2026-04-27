@@ -1,81 +1,36 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
+using Honua.Server.Features.Infrastructure.Helpers;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Infrastructure.Validation;
 
 internal static class XmlContentNegotiation
 {
+    private static readonly string[] DefaultXmlMediaTypes =
+    [
+        "application/xml",
+        "text/xml",
+        "application/gml+xml"
+    ];
+
     public static bool IsXmlAccepted(string? acceptHeader)
+        => IsXmlAccepted(acceptHeader, DefaultXmlMediaTypes);
+
+    public static bool IsXmlAccepted(string? acceptHeader, IReadOnlyList<string> supportedXmlMediaTypes)
     {
+        ArgumentNullException.ThrowIfNull(supportedXmlMediaTypes);
+
         if (string.IsNullOrWhiteSpace(acceptHeader))
         {
             return true;
         }
 
-        var hasExplicitType = false;
-        var hasSupportedExplicitType = false;
-        var hasWildcardType = false;
-
-        var mediaTypes = acceptHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        foreach (var mediaTypeWithParameters in mediaTypes)
-        {
-            if (IsRejectedByQuality(mediaTypeWithParameters))
-            {
-                continue;
-            }
-
-            var mediaType = mediaTypeWithParameters.Split(';', 2, StringSplitOptions.TrimEntries)[0];
-            if (mediaType.Length == 0)
-            {
-                continue;
-            }
-
-            if (string.Equals(mediaType, "*/*", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mediaType, "application/*", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mediaType, "text/*", StringComparison.OrdinalIgnoreCase))
-            {
-                hasWildcardType = true;
-                continue;
-            }
-
-            hasExplicitType = true;
-            if (string.Equals(mediaType, "application/xml", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mediaType, "text/xml", StringComparison.OrdinalIgnoreCase) ||
-                mediaType.EndsWith("+xml", StringComparison.OrdinalIgnoreCase))
-            {
-                hasSupportedExplicitType = true;
-            }
-        }
-
-        if (hasSupportedExplicitType)
-        {
-            return true;
-        }
-
-        if (hasExplicitType)
-        {
-            return false;
-        }
-
-        return hasWildcardType;
-    }
-
-    private static bool IsRejectedByQuality(string mediaTypeWithParameters)
-    {
-        foreach (var parameter in mediaTypeWithParameters.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Skip(1))
-        {
-            var parts = parameter.Split('=', 2, StringSplitOptions.TrimEntries);
-            if (parts.Length == 2 &&
-                string.Equals(parts[0], "q", StringComparison.OrdinalIgnoreCase) &&
-                double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var quality) &&
-                quality <= 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        var acceptValues = new StringValues(acceptHeader);
+        return ContentNegotiationHelpers.TrySelectBestMediaType(
+            supportedXmlMediaTypes,
+            acceptValues,
+            out _);
     }
 }

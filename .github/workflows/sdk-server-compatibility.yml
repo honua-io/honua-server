@@ -1,0 +1,121 @@
+name: SDK Server Compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      sdk-js-ref:
+        description: 'honua-sdk-js ref'
+        required: false
+        default: 'trunk'
+      sdk-python-ref:
+        description: 'honua-sdk-python ref'
+        required: false
+        default: 'trunk'
+      sdk-dotnet-ref:
+        description: 'honua-sdk-dotnet ref'
+        required: false
+        default: 'trunk'
+  schedule:
+    - cron: '35 8 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-server-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.11'
+  HONUA_SERVER_BASE_URL: 'http://localhost:5000'
+  HONUA_ADMIN_API_KEY: 'ci-admin-password'
+  HONUA_SDK_SERVICE_ID: 'test_service'
+  HONUA_SDK_LAYER_ID: '0'
+
+jobs:
+  sdk-server-compatibility:
+    name: SDK Server Compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout honua-server
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup Honua Server
+        uses: ./.github/actions/setup-honua-server
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          base-seed-path: tests/seed/base-schema.sql
+          log-path: logs/honua-server-sdk-compat.log
+
+      - name: Checkout honua-sdk-js
+        uses: actions/checkout@v5
+        with:
+          repository: honua-io/honua-sdk-js
+          path: sdk/honua-sdk-js
+          ref: ${{ inputs['sdk-js-ref'] || 'trunk' }}
+
+      - name: Checkout honua-sdk-python
+        uses: actions/checkout@v5
+        with:
+          repository: honua-io/honua-sdk-python
+          path: sdk/honua-sdk-python
+          ref: ${{ inputs['sdk-python-ref'] || 'trunk' }}
+
+      - name: Checkout honua-sdk-dotnet
+        uses: actions/checkout@v5
+        with:
+          repository: honua-io/honua-sdk-dotnet
+          path: sdk/honua-sdk-dotnet
+          ref: ${{ inputs['sdk-dotnet-ref'] || 'trunk' }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: sdk/honua-sdk-js/package-lock.json
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Run SDK live compatibility smoke tests
+        run: bash scripts/ci/run-sdk-server-compatibility.sh
+
+      - name: Upload SDK compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdk-server-compatibility-${{ github.run_id }}
+          path: |
+            logs/honua-server-sdk-compat.log
+            sdk/honua-sdk-js/test-results/
+            sdk/honua-sdk-python/.pytest_cache/
+            sdk/honua-sdk-dotnet/**/TestResults/
+          retention-days: 7
+          if-no-files-found: ignore

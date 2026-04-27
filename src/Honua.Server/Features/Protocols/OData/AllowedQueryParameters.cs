@@ -56,7 +56,8 @@ internal static class AllowedQueryParameters
         "$search",
         "$deltatoken",
         "$format",
-        "honua_track_changes");
+        "honua_track_changes",
+        "honua_track_changes_snapshot");
 
     public static readonly FrozenSet<string> Apply = ODataSystemOptions(
         "$apply",

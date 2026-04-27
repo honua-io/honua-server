@@ -92,9 +92,19 @@ internal static class OgcFeatureMutationHelpers
         }
         geometryWkb = geometryValidation.Geometry;
 
+        var effectiveProperties = BuildEffectiveProperties(layer, requestFeature, out var publicIdError);
+        if (publicIdError is not null)
+        {
+            return new FeatureBuildResult(
+                false,
+                null,
+                inputCrs,
+                publicIdError);
+        }
+
         var attributesResult = mutationValidator.ValidateAttributes(
             layer,
-            requestFeature.Properties,
+            effectiveProperties,
             ValidationExtensions.AttributeValidationMode.Strict);
         if (!attributesResult.IsValid)
         {
@@ -107,5 +117,40 @@ internal static class OgcFeatureMutationHelpers
 
         var feature = Feature.Create(objectId, geometryWkb, attributesResult.Value!);
         return new FeatureBuildResult(true, feature, inputCrs, null);
+    }
+
+    private static Dictionary<string, object?> BuildEffectiveProperties(
+        LayerDefinition layer,
+        GeoJsonFeature requestFeature,
+        out string? error)
+    {
+        error = null;
+        var properties = new Dictionary<string, object?>(requestFeature.Properties, StringComparer.OrdinalIgnoreCase);
+        var publicIdField = OgcFeatureIdentifierResolver.ResolveWritablePublicIdField(layer);
+        if (publicIdField is null || requestFeature.Id is null)
+        {
+            return properties;
+        }
+
+        var topLevelId = OgcFeatureIdentifierResolver.FormatPayloadId(requestFeature.Id);
+        if (topLevelId is null)
+        {
+            return properties;
+        }
+
+        if (properties.TryGetValue(publicIdField.Name, out var propertyIdValue))
+        {
+            var propertyId = OgcFeatureIdentifierResolver.FormatPayloadId(propertyIdValue);
+            if (propertyId is not null &&
+                !string.Equals(propertyId, topLevelId, StringComparison.Ordinal))
+            {
+                error = $"GeoJSON top-level id '{topLevelId}' does not match properties.{publicIdField.Name} '{propertyId}'.";
+            }
+
+            return properties;
+        }
+
+        properties[publicIdField.Name] = requestFeature.Id;
+        return properties;
     }
 }

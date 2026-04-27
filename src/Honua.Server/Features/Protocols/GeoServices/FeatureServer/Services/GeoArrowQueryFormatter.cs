@@ -39,7 +39,7 @@ internal sealed class GeoArrowQueryFormatter
         CancellationToken cancellationToken = default)
     {
         var selectedFields = GeoParquetQueryFormatter.ResolveSelectedFields(layer, outFields);
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         var includeGeometry = returnGeometry && layer.HasGeometry;
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry, srid, "GeoArrow");

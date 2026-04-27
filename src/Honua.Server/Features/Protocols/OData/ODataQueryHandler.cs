@@ -410,7 +410,7 @@ internal sealed partial class ODataQueryHandler(
                 context.TraceIdentifier);
 
             var effectiveFilter = deltaSince.HasValue
-                ? ODataDeltaService.BuildDeltaFilter(filter, deltaSince.Value)
+                ? ODataDeltaService.BuildDeltaFilter(filter, deltaSince.Value, deltaState?.UpperBoundTimestamp)
                 : filter;
 
             // Build feature query using query service
@@ -521,7 +521,7 @@ internal sealed partial class ODataQueryHandler(
                 nextLink = !string.IsNullOrWhiteSpace(deltatoken)
                     ? ODataUtilityService.GenerateDeltaNextLink(
                         context.Request,
-                        deltatoken,
+                        deltaState ?? throw new InvalidOperationException("Delta state is required for delta paging."),
                         nextSkip,
                         pagination.Limit,
                         useSkipToken,
@@ -539,31 +539,39 @@ internal sealed partial class ODataQueryHandler(
                         useSkipToken,
                         compute,
                         format,
-                        trackChangesRequested);
+                        trackChangesRequested,
+                        trackChangesRequested ? deltaState : null);
             }
 
             string? deltaLink = null;
             if (nextLink == null && trackChangesRequested)
             {
-                deltaLink = ODataUtilityService.GenerateDeltaLink(
-                    context.Request,
-                    (deltaState ?? new ODataDeltaService.DeltaQueryState
+                var baseDeltaState = deltaState ?? new ODataDeltaService.DeltaQueryState
+                {
+                    Timestamp = DateTimeOffset.UtcNow,
+                    LayerId = layerId,
+                    Filter = filter,
+                    Select = select,
+                    OrderBy = orderby,
+                    Expand = expand,
+                    Compute = compute,
+                    Format = format,
+                    Count = count
+                };
+                var finalDeltaState = !string.IsNullOrWhiteSpace(deltatoken)
+                    ? baseDeltaState with
                     {
-                        Timestamp = DateTimeOffset.UtcNow,
+                        Timestamp = baseDeltaState.UpperBoundTimestamp ?? DateTimeOffset.UtcNow,
+                        UpperBoundTimestamp = null,
                         LayerId = layerId,
-                        Filter = filter,
-                        Select = select,
-                        OrderBy = orderby,
-                        Expand = expand,
-                        Compute = compute,
-                        Format = format,
                         Count = count
-                    }) with
+                    }
+                    : baseDeltaState with
                     {
-                        Timestamp = DateTimeOffset.UtcNow,
                         LayerId = layerId,
                         Count = count
-                    });
+                    };
+                deltaLink = ODataUtilityService.GenerateDeltaLink(context.Request, finalDeltaState);
             }
 
             var response = new ODataResponse

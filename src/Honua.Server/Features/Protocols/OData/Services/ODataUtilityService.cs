@@ -19,6 +19,7 @@ namespace Honua.Server.Features.Protocols.OData.Services;
 internal static class ODataUtilityService
 {
     internal const string TrackChangesContinuationParameter = "honua_track_changes";
+    internal const string TrackChangesSnapshotParameter = "honua_track_changes_snapshot";
     internal const string TrackChangesPreferenceValue = "odata.track-changes";
 
     /// <summary>
@@ -80,7 +81,7 @@ internal static class ODataUtilityService
 
     /// <summary>
     /// Creates an OData v4 compliant error response using standardized error handling.
-    /// See: https://docs.oasis-open.org/odata/odata-json-format/v4.0/odata-json-format-v4.0.html#sec_ErrorResponseBody
+    /// See: https://docs.oasis-open.org/odata/odata-json-format/v4.01/odata-json-format-v4.01.html#sec_ErrorResponseBody
     /// </summary>
     public static IResult CreateODataError(
         HttpContext context,
@@ -155,7 +156,8 @@ internal static class ODataUtilityService
         bool useSkipToken = false,
         string? compute = null,
         string? format = null,
-        bool trackChanges = false)
+        bool trackChanges = false,
+        ODataDeltaService.DeltaQueryState? trackChangesState = null)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         var queryParams = new List<string>();
@@ -210,6 +212,10 @@ internal static class ODataUtilityService
         if (trackChanges)
         {
             queryParams.Add($"{TrackChangesContinuationParameter}=true");
+            if (trackChangesState != null)
+            {
+                queryParams.Add($"{TrackChangesSnapshotParameter}={Uri.EscapeDataString(ODataDeltaService.Encode(trackChangesState))}");
+            }
         }
 
         return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";
@@ -233,7 +239,7 @@ internal static class ODataUtilityService
     /// </summary>
     public static string GenerateDeltaNextLink(
         HttpRequest request,
-        string deltaToken,
+        ODataDeltaService.DeltaQueryState deltaState,
         int nextSkip,
         int top,
         bool useSkipToken,
@@ -243,7 +249,7 @@ internal static class ODataUtilityService
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         var queryParams = new List<string>
         {
-            $"$deltatoken={Uri.EscapeDataString(deltaToken)}",
+            $"$deltatoken={Uri.EscapeDataString(ODataDeltaService.Encode(deltaState))}",
             $"$top={top}"
         };
 

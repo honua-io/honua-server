@@ -321,7 +321,7 @@ internal static partial class MapServerEndpoints
         int maxRecordCount,
         JsonElement? drawingInfo = null)
     {
-        var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         var displayField = ResolveDisplayField(layer, objectIdField);
         var layerCapabilities = BuildMapServerLayerCapabilities(service, layer);
 

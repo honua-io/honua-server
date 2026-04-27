@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Middleware;
@@ -41,6 +42,9 @@ internal sealed partial class OutputCacheInvalidationService
     public async Task InvalidateLayerAsync(string? serviceId, int? layerId, CancellationToken cancellationToken)
     {
         var normalizedServiceIds = await ResolveLayerServiceIdsAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
+        var ogcCollectionIds = layerId.HasValue
+            ? await ResolveLayerCollectionIdsAsync(layerId.Value, cancellationToken).ConfigureAwait(false)
+            : [];
         var tags = new List<string>();
         var responsePatterns = new List<string>();
 
@@ -52,7 +56,6 @@ internal sealed partial class OutputCacheInvalidationService
         if (layerId.HasValue)
         {
             tags.Add($"layer:{layerId.Value}");
-            tags.Add($"collection:{layerId.Value}");
             tags.Add("service-metadata");
             tags.Add("tiles");
             tags.Add("layer-metadata");
@@ -60,8 +63,11 @@ internal sealed partial class OutputCacheInvalidationService
             tags.Add("ogc-maps");
             responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(layerId.Value));
             responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(layerId.Value));
-            responsePatterns.Add(ResponseCacheUtilities.BuildOgcCollectionPattern(
-                layerId.Value.ToString(CultureInfo.InvariantCulture)));
+            foreach (var ogcCollectionId in ogcCollectionIds)
+            {
+                tags.Add($"collection:{ogcCollectionId.Trim().ToLowerInvariant()}");
+                responsePatterns.Add(ResponseCacheUtilities.BuildOgcCollectionPattern(ogcCollectionId));
+            }
         }
 
         if (layerId.HasValue)
@@ -83,25 +89,28 @@ internal sealed partial class OutputCacheInvalidationService
             EvictResponseCacheAsync(responsePatterns, cancellationToken)).ConfigureAwait(false);
     }
 
-    public Task InvalidateCollectionAsync(string collectionId, CancellationToken cancellationToken)
+    public async Task InvalidateCollectionAsync(string collectionId, CancellationToken cancellationToken)
     {
+        var collectionIds = await ResolveCollectionIdsAsync(collectionId, cancellationToken).ConfigureAwait(false);
         var tags = new List<string>
         {
-            $"collection:{collectionId.Trim().ToLowerInvariant()}",
             "ogc-metadata",
             "ogc-tiles",
             "ogc-maps",
             "mvt-tiles"
         };
-
-        var responsePatterns = new List<string>
+        foreach (var resolvedCollectionId in collectionIds)
         {
-            ResponseCacheUtilities.BuildOgcCollectionPattern(collectionId)
-        };
+            tags.Add($"collection:{resolvedCollectionId.Trim().ToLowerInvariant()}");
+        }
 
-        return Task.WhenAll(
+        var responsePatterns = collectionIds
+            .Select(ResponseCacheUtilities.BuildOgcCollectionPattern)
+            .ToList();
+
+        await Task.WhenAll(
             EvictTagsAsync(tags, cancellationToken),
-            EvictResponseCacheAsync(responsePatterns, cancellationToken));
+            EvictResponseCacheAsync(responsePatterns, cancellationToken)).ConfigureAwait(false);
     }
 
     public Task InvalidateOgcMetadataAsync(CancellationToken cancellationToken)
@@ -109,7 +118,7 @@ internal sealed partial class OutputCacheInvalidationService
         return EvictTagsAsync(["ogc-metadata", "ogc-tiles", "ogc-maps"], cancellationToken);
     }
 
-    public Task InvalidateServiceCatalogAsync(
+    public async Task InvalidateServiceCatalogAsync(
         string? serviceId,
         IEnumerable<int>? layerIds,
         CancellationToken cancellationToken)
@@ -150,12 +159,15 @@ internal sealed partial class OutputCacheInvalidationService
         foreach (var layerId in layerIdList)
         {
             tags.Add($"layer:{layerId}");
-            tags.Add($"collection:{layerId}");
 
             responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(layerId));
             responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(layerId));
-            responsePatterns.Add(ResponseCacheUtilities.BuildOgcCollectionPattern(
-                layerId.ToString(CultureInfo.InvariantCulture)));
+            var ogcCollectionIds = await ResolveLayerCollectionIdsAsync(layerId, cancellationToken).ConfigureAwait(false);
+            foreach (var ogcCollectionId in ogcCollectionIds)
+            {
+                tags.Add($"collection:{ogcCollectionId.Trim().ToLowerInvariant()}");
+                responsePatterns.Add(ResponseCacheUtilities.BuildOgcCollectionPattern(ogcCollectionId));
+            }
 
             if (!string.IsNullOrWhiteSpace(normalizedServiceId))
             {
@@ -170,10 +182,10 @@ internal sealed partial class OutputCacheInvalidationService
             responsePatterns.Add(ResponseCacheUtilities.BuildODataPattern());
         }
 
-        return Task.WhenAll(
+        await Task.WhenAll(
             EvictTagsAsync(tags, cancellationToken),
             EvictResponseCacheAsync(responsePatterns, cancellationToken),
-            EvictCatalogMetadataCacheAsync(normalizedServiceId, layerIdList, cancellationToken));
+            EvictCatalogMetadataCacheAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
     }
 
     private async Task EvictTagsAsync(IEnumerable<string> tags, CancellationToken cancellationToken)
@@ -315,6 +327,87 @@ internal sealed partial class OutputCacheInvalidationService
         }
     }
 
+    private async Task<string[]> ResolveLayerCollectionIdsAsync(
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var collectionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            layerId.ToString(CultureInfo.InvariantCulture)
+        };
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var layerCatalog = scope.ServiceProvider.GetService<ILayerCatalog>();
+            if (layerCatalog == null)
+            {
+                return collectionIds.ToArray();
+            }
+
+            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(layer?.Name))
+            {
+                collectionIds.Add(layer.Name);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogResolveLayerCollectionIdsFailed(_logger, layerId, ex);
+        }
+
+        return collectionIds.ToArray();
+    }
+
+    private async Task<string[]> ResolveCollectionIdsAsync(
+        string collectionId,
+        CancellationToken cancellationToken)
+    {
+        var collectionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            collectionId
+        };
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var layerCatalog = scope.ServiceProvider.GetService<ILayerCatalog>();
+            if (layerCatalog == null)
+            {
+                return collectionIds.ToArray();
+            }
+
+            LayerDefinition? layer = null;
+            if (int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+            {
+                layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (layer is null)
+            {
+                var layers = await layerCatalog.ListLayersAsync(cancellationToken).ConfigureAwait(false);
+                layer = layers
+                    .OrderBy(candidate => candidate.Id)
+                    .FirstOrDefault(candidate => string.Equals(candidate.Name, collectionId, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (layer is not null)
+            {
+                collectionIds.Add(layer.Id.ToString(CultureInfo.InvariantCulture));
+                if (!string.IsNullOrWhiteSpace(layer.Name))
+                {
+                    collectionIds.Add(layer.Name);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogResolveCollectionIdsFailed(_logger, collectionId, ex);
+        }
+
+        return collectionIds.ToArray();
+    }
+
     private static string NormalizeServiceId(string serviceId)
         => serviceId.Trim().ToLowerInvariant();
 
@@ -337,4 +430,12 @@ internal sealed partial class OutputCacheInvalidationService
     [LoggerMessage(EventId = 4515, Level = LogLevel.Warning,
         Message = "Failed to resolve owning services for layer {LayerId} during cache invalidation")]
     private static partial void LogResolveLayerServicesFailed(ILogger logger, int layerId, Exception exception);
+
+    [LoggerMessage(EventId = 4516, Level = LogLevel.Warning,
+        Message = "Failed to resolve OGC collection identifiers for layer {LayerId} during cache invalidation")]
+    private static partial void LogResolveLayerCollectionIdsFailed(ILogger logger, int layerId, Exception exception);
+
+    [LoggerMessage(EventId = 4517, Level = LogLevel.Warning,
+        Message = "Failed to resolve OGC collection identifiers for collection {CollectionId} during cache invalidation")]
+    private static partial void LogResolveCollectionIdsFailed(ILogger logger, string collectionId, Exception exception);
 }

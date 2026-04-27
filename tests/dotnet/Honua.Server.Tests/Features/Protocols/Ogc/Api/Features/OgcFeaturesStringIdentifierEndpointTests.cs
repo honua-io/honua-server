@@ -8,14 +8,17 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
+using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
@@ -199,17 +202,357 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
         document.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("String ID Alpha Updated");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Create, Operations.GetById)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task CreateItem_WithTopLevelStringFeatureId_StoresPublicIdentifier()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        const string publicId = "top-level-created";
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = publicId,
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.7, 37.7]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Top Level ID Created"
+            }
+        };
+
+        using var content = new StringContent(JsonSerializer.Serialize(feature), Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse(MediaTypes.GeoJson);
+
+        var response = await client.PostAsync(
+            $"/ogc/features/collections/{StringIdLayerId}/items",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createDocument = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        createDocument.RootElement.GetProperty("id").GetString().Should().Be(publicId);
+        createDocument.RootElement.GetProperty("properties").GetProperty("id").GetString().Should().Be(publicId);
+
+        var getResponse = await client.GetAsync(
+            $"/ogc/features/collections/{StringIdLayerId}/items/{publicId}");
+
+        getResponse.Be200Ok();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task CreateItem_WithConflictingTopLevelAndPropertyIds_ReturnsBadRequest()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = "top-level-id",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.7, 37.7]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["id"] = "property-id",
+                ["name"] = "Conflicting IDs"
+            }
+        };
+
+        using var content = new StringContent(JsonSerializer.Serialize(feature), Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse(MediaTypes.GeoJson);
+
+        var response = await client.PostAsync(
+            $"/ogc/features/collections/{StringIdLayerId}/items",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task PutItem_WithTopLevelOnlyStringFeatureId_PreservesPublicIdentifier()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = "alpha-1",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.1, 37.1]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Top Level Only Updated"
+            }
+        };
+
+        using var content = new StringContent(JsonSerializer.Serialize(feature), Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse(MediaTypes.GeoJson);
+
+        var response = await client.PutAsync(
+            $"/ogc/features/collections/{StringIdLayerId}/items/alpha-1",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("id").GetString().Should().Be("alpha-1");
+        document.RootElement.GetProperty("properties").GetProperty("id").GetString().Should().Be("alpha-1");
+        document.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Top Level Only Updated");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task PutItem_WithInternalObjectIdPayloadId_ReturnsBadRequest()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = 1,
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.1, 37.1]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["id"] = "alpha-1",
+                ["name"] = "Should Not Update"
+            }
+        };
+
+        using var content = new StringContent(JsonSerializer.Serialize(feature), Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse(MediaTypes.GeoJson);
+
+        var response = await client.PutAsync(
+            $"/ogc/features/collections/{StringIdLayerId}/items/alpha-1",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task PutItem_WithMismatchedPublicIdProperty_ReturnsBadRequest()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = "alpha-1",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.1, 37.1]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["id"] = "beta-2",
+                ["name"] = "Should Not Update"
+            }
+        };
+
+        using var content = new StringContent(JsonSerializer.Serialize(feature), Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse(MediaTypes.GeoJson);
+
+        var response = await client.PutAsync(
+            $"/ogc/features/collections/{StringIdLayerId}/items/alpha-1",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task PatchItem_WithMismatchedPublicIdProperty_ReturnsBadRequest()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"/ogc/features/collections/{StringIdLayerId}/items/alpha-1")
+        {
+            Content = new StringContent(
+                """
+                {
+                  "properties": {
+                    "id": "beta-2",
+                    "name": "Should Not Update"
+                  }
+                }
+                """,
+                Encoding.UTF8,
+                "application/merge-patch+json")
+        };
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkUpdate)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
+    public async Task BatchUpdate_WithMismatchedPayloadPublicId_ReturnsMultiStatus()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var batchRequest = new BatchRequest
+        {
+            Operations =
+            [
+                new BatchOperation
+                {
+                    Id = "update-mismatched-id",
+                    Type = "UPDATE",
+                    FeatureId = "alpha-1",
+                    Feature = new GeoJsonFeature
+                    {
+                        Type = "Feature",
+                        Id = "beta-2",
+                        Geometry = new SimpleGeoJsonGeometry
+                        {
+                            Type = "Point",
+                            CoordinatesJson = "[-122.6, 37.6]"
+                        },
+                        Properties = new Dictionary<string, object?>
+                        {
+                            ["id"] = "beta-2",
+                            ["name"] = "Should Not Update"
+                        }
+                    }
+                }
+            ]
+        };
+
+        using var content = new StringContent(
+            JsonSerializer.Serialize(batchRequest, OgcJsonContext.Default.BatchRequest),
+            Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse(MediaTypes.Json);
+
+        var response = await client.PostAsync(
+            $"/ogc/features/collections/{StringIdLayerId}/items/batch",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var batchResponse = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.BatchOperationResponse);
+        batchResponse.Should().NotBeNull();
+        batchResponse!.HasErrors.Should().BeTrue();
+        batchResponse.Results.Should().ContainSingle(result =>
+            result.OperationId == "update-mismatched-id" &&
+            !result.IsSuccess &&
+            result.StatusCode == 400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkCreate, Operations.GetById)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task BatchCreate_WithStringFeatureId_ReturnsPublicIdentifierUsableForGet()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        const string publicId = "created-public-1";
+        var batchRequest = new BatchRequest
+        {
+            Operations =
+            [
+                new BatchOperation
+                {
+                    Id = "create-string-id",
+                    Type = "CREATE",
+                    Feature = new GeoJsonFeature
+                    {
+                        Type = "Feature",
+                        Id = publicId,
+                        Geometry = new SimpleGeoJsonGeometry
+                        {
+                            Type = "Point",
+                            CoordinatesJson = "[-122.6, 37.6]"
+                        },
+                        Properties = new Dictionary<string, object?>
+                        {
+                            ["id"] = publicId,
+                            ["name"] = "String ID Batch Created"
+                        }
+                    }
+                }
+            ]
+        };
+
+        using var content = new StringContent(
+            JsonSerializer.Serialize(batchRequest, OgcJsonContext.Default.BatchRequest),
+            Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse(MediaTypes.Json);
+
+        var response = await client.PostAsync(
+            $"/ogc/features/collections/{StringIdLayerId}/items/batch",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var batchResponse = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.BatchOperationResponse);
+        batchResponse.Should().NotBeNull();
+        batchResponse!.HasErrors.Should().BeFalse();
+        batchResponse.Results.Should().ContainSingle();
+
+        var result = batchResponse.Results.Single();
+        result.OperationId.Should().Be("create-string-id");
+        result.IsSuccess.Should().BeTrue();
+        result.StatusCode.Should().Be(201);
+        result.FeatureId.Should().Be(publicId);
+
+        var getResponse = await client.GetAsync(
+            $"/ogc/features/collections/{StringIdLayerId}/items/{Uri.EscapeDataString(result.FeatureId!)}");
+
+        getResponse.Be200Ok();
+        using var document = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("id").GetString().Should().Be(publicId);
+        document.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("String ID Batch Created");
+    }
+
     private static WebApplicationFactory<Program> CreateFactory()
     {
         return new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
             builder.ConfigureTestServices(services =>
             {
+                services.RemoveAll<TestFeatureStore>();
+                services.RemoveAll<IFeatureReader>();
+                services.RemoveAll<IFeatureWriter>();
+                services.RemoveAll<ITileProvider>();
+                services.RemoveAll<IRelationshipStore>();
+                services.RemoveAll<IStreamingFeatureStore>();
                 services.RemoveAll<ILayerCatalog>();
                 services.RemoveAll<ICrsRegistry>();
                 services.RemoveAll<ICoordinateTransformService>();
                 services.RemoveAll<IGeometryTopologyValidator>();
                 services.RemoveAll<ISqlFilterTranslator>();
+                services.AddSingleton<TestFeatureStore>();
+                services.AddSingleton<IFeatureReader>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddSingleton<IFeatureWriter>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddSingleton<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddSingleton<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+                services.AddSingleton<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
                 services.AddScoped<ILayerCatalog, StringIdLayerCatalog>();
                 services.AddSingleton<ICrsRegistry, StringIdCrsRegistry>();
                 services.AddSingleton<ICoordinateTransformService, IdentityCoordinateTransformService>();

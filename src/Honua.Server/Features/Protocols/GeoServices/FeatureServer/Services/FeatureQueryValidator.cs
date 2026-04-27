@@ -25,7 +25,9 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
     public QueryValidationResult ValidateQueryLimits(QueryParameters queryParams)
     {
         var effectiveResultRecordCount = queryParams.ResultRecordCount;
-        if (!effectiveResultRecordCount.HasValue && queryParams.ObjectIds is { Length: > 0 })
+        if (!queryParams.ReturnIdsOnly &&
+            !effectiveResultRecordCount.HasValue &&
+            queryParams.ObjectIds is { Length: > 0 })
         {
             // ObjectIds queries should not be truncated by the default record-count limit.
             effectiveResultRecordCount = queryParams.ObjectIds.Length;
@@ -60,8 +62,8 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             ReturnExceededLimitFeatures = queryParams.ReturnExceededLimitFeatures,
             F = queryParams.F,
             FormatSpecified = queryParams.FormatSpecified,
-            ResultOffset = pagination.Offset,
-            ResultRecordCount = pagination.Limit,
+            ResultOffset = queryParams.ReturnIdsOnly ? null : pagination.Offset,
+            ResultRecordCount = queryParams.ReturnIdsOnly ? null : pagination.Limit,
             Geometry = queryParams.Geometry,
             InSr = queryParams.InSr,
             InSrSpecified = queryParams.InSrSpecified,

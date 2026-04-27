@@ -155,11 +155,12 @@ jobs:
     timeout-minutes: 35
     services:
       postgres:
-        image: postgis/postgis:16-3.4-alpine
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-
@@ -337,11 +338,12 @@ jobs:
       HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
     services:
       postgres:
-        image: postgis/postgis:16-3.4-alpine
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-
@@ -391,7 +393,7 @@ jobs:
             done
           }
 
-          pull_with_retry postgis/postgis:16-3.4-alpine false
+          pull_with_retry postgis/postgis:16-3.4 false
           pull_with_retry postgis/postgis:18-3.6 false
           pull_with_retry localstack/localstack:3.6.0
           pull_with_retry mcr.microsoft.com/azure-storage/azurite:3.31.0
@@ -570,10 +572,17 @@ jobs:
         working-directory: tests/js
 
   test-all:
-    name: Test Suite (.NET + Python + JS)
+    name: Test Suite (.NET + Python + JS + Browser Clients)
     if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
     runs-on: ubuntu-latest
-    needs: [dotnet-foundation-tests, server-tests, python-integration-tests, js-typecheck]
+    needs:
+      - dotnet-foundation-tests
+      - server-tests
+      - python-integration-tests
+      - js-typecheck
+      - js-integration-tests
+      - esri-leaflet-browser-tests
+      - maplibre-compat
     steps:
       - name: Check required test job results
         run: |
@@ -595,11 +604,12 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgis/postgis:16-3.4-alpine
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-
@@ -673,11 +683,12 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgis/postgis:16-3.4-alpine
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-
@@ -741,11 +752,12 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgis/postgis:16-3.4-alpine
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-
@@ -813,7 +825,7 @@ jobs:
     name: MCP Certification (${{ matrix.transport }})
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
     runs-on: ubuntu-latest
-    needs: [build, test-all, js-integration-tests, core-package-compatibility, postgres-compat]
+    needs: [build, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
     outputs:
       # Matrix job: GHA keeps the last-finishing leg's output.
@@ -825,11 +837,12 @@ jobs:
         transport: [grpc-web, rest]
     services:
       postgres:
-        image: postgis/postgis:16-3.4-alpine
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-
@@ -924,11 +937,12 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgis/postgis:16-3.4-alpine
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-
@@ -996,8 +1010,8 @@ jobs:
       fail-fast: false
       matrix:
         pg_image:
-          - "postgis/postgis:16-3.4-alpine"   # Aurora PG 16.x baseline
-          - "postgis/postgis:17-3.5-alpine"   # Azure Flex PG 17.x
+          - "postgis/postgis:16-3.4"   # Aurora PG 16.x baseline
+          - "postgis/postgis:17-3.5"   # Azure Flex PG 17.x
           - "postgis/postgis:18-3.6"          # Latest self-hosted
     services:
       postgres:
@@ -1006,6 +1020,7 @@ jobs:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-
@@ -1084,7 +1099,7 @@ jobs:
     name: AOT Build Verification
     if: ${{ success() && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, changes, test-all, js-integration-tests, core-package-compatibility, postgres-compat]
+    needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
@@ -1130,11 +1145,12 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgis/postgis:16-3.4-alpine
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: honua
           POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432
         options: >-

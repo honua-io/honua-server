@@ -135,25 +135,19 @@ internal sealed class OgcFeaturesEditParameterAdapter(
             throw new InvalidOperationException("Batch edit request cannot be empty.");
         }
 
-        var creates = batchOperations
-            .Where(static operation => operation.Operation == OgcFeaturesEditOperation.Create)
-            .Select(static operation => ToCreateEditFeature(operation.Feature))
-            .ToImmutableArray();
-        var updates = batchOperations
-            .Where(static operation => operation.Operation is OgcFeaturesEditOperation.Replace or OgcFeaturesEditOperation.Patch)
-            .Select(static operation => ToUpdateEditFeature(operation.ObjectId, operation.Feature))
-            .ToImmutableArray();
-        var deletes = batchOperations
-            .Where(static operation => operation.Operation == OgcFeaturesEditOperation.Delete)
-            .Select(static operation => operation.ObjectId ?? throw new InvalidOperationException("Batch delete operation is missing an object ID."))
+        var operations = batchOperations
+            .Select(static operation => operation.Operation switch
+            {
+                OgcFeaturesEditOperation.Create => UnifiedEditOperation.Create(ToCreateEditFeature(operation.Feature)),
+                OgcFeaturesEditOperation.Replace or OgcFeaturesEditOperation.Patch =>
+                    UnifiedEditOperation.Update(ToUpdateEditFeature(operation.ObjectId, operation.Feature)),
+                OgcFeaturesEditOperation.Delete => UnifiedEditOperation.Delete(
+                    operation.ObjectId ?? throw new InvalidOperationException("Batch delete operation is missing an object ID.")),
+                _ => throw new InvalidOperationException($"Unsupported OGC batch edit operation '{operation.Operation}'.")
+            })
             .ToImmutableArray();
 
-        return new UnifiedEditRequest
-        {
-            Creates = creates.IsDefaultOrEmpty ? null : creates,
-            Updates = updates.IsDefaultOrEmpty ? null : updates,
-            Deletes = deletes.IsDefaultOrEmpty ? null : deletes
-        };
+        return UnifiedEditRequest.WithOperations(operations);
     }
 
     private static EditFeature ToCreateEditFeature(Feature? feature)

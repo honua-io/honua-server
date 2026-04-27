@@ -107,6 +107,60 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task CreateFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/ogc/features/collections/{TestLayerId}/items",
+            new StringContent("""{"type":"Feature","properties":{"name":"bad type"},"geometry":null}""", Encoding.UTF8, "text/plain"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task UpdateFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Original");
+
+        var response = await _fixture.Client.PutAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}",
+            new StringContent("""{"type":"Feature","properties":{"name":"bad type"},"geometry":null}""", Encoding.UTF8, "text/plain"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task UpdateFeature_WithMismatchedPayloadId_ReturnsBadRequest()
+    {
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Original");
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = existingId + 1,
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.4194, 37.7749]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Mismatched ID"
+            }
+        };
+
+        var response = await _fixture.Client.PutAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}",
+            new StringContent(JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature), Encoding.UTF8, MediaTypes.GeoJson));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
@@ -209,6 +263,24 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
         patched!.Id.Should().Be(created.Id);
         patched.Properties["name"]!.ToString().Should().Be("Patch Updated");
         patched.Geometry.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task PatchFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Original");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}")
+        {
+            Content = new StringContent("""{"properties":{"name":"bad type"}}""", Encoding.UTF8, "text/plain")
+        };
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
     }
 
     [IntegrationTest]

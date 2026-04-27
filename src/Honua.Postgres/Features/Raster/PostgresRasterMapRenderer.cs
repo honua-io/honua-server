@@ -201,19 +201,21 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
     /// Builds GDAL creation option strings for the given output format and request parameters.
     /// See https://gdal.org/drivers/raster/ for driver-specific options.
     /// </summary>
-    private static string[] BuildGdalCreationOptions(string formatName, MapRenderRequest request)
+    internal static string[] BuildGdalCreationOptions(string formatName, MapRenderRequest request)
     {
         var options = new List<string>();
 
         if (formatName == "JPEG" && request.Quality.HasValue)
         {
-            options.Add(string.Create(CultureInfo.InvariantCulture, $"QUALITY={request.Quality.Value}"));
+            var quality = PostgresRasterGdalOptions.ClampJpegQuality(request.Quality.Value);
+            options.Add(string.Create(CultureInfo.InvariantCulture, $"QUALITY={quality}"));
         }
         else if (formatName == "GTiff" && request.Quality.HasValue)
         {
             // GTiff uses JPEG compression with JPEG_QUALITY for lossy output
             options.Add("COMPRESS=JPEG");
-            options.Add(string.Create(CultureInfo.InvariantCulture, $"JPEG_QUALITY={request.Quality.Value}"));
+            var quality = PostgresRasterGdalOptions.ClampJpegQuality(request.Quality.Value);
+            options.Add(string.Create(CultureInfo.InvariantCulture, $"JPEG_QUALITY={quality}"));
         }
 
         return options.ToArray();

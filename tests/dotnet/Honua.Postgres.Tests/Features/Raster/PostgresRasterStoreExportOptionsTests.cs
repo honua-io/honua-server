@@ -21,6 +21,22 @@ public sealed class PostgresRasterStoreExportOptionsTests
         options.Should().Equal("QUALITY=82");
     }
 
+    [Theory]
+    [InlineData(0, "QUALITY=10")]
+    [InlineData(1, "QUALITY=10")]
+    [InlineData(10, "QUALITY=10")]
+    [InlineData(100, "QUALITY=100")]
+    public void BuildExportCreationOptions_JpegFormat_ClampsQualityToGdalRange(
+        int quality,
+        string expectedOption)
+    {
+        var options = PostgresRasterStore.BuildExportCreationOptions(
+            new RasterQuery { Quality = quality },
+            "JPEG");
+
+        options.Should().Equal(expectedOption);
+    }
+
     [UnitTest]
     public void BuildExportCreationOptions_TiffJpegCompression_UsesCompressionAndQuality()
     {
@@ -33,6 +49,20 @@ public sealed class PostgresRasterStoreExportOptionsTests
             "GTiff");
 
         options.Should().Equal("COMPRESS=JPEG", "JPEG_QUALITY=67");
+    }
+
+    [Fact]
+    public void BuildExportCreationOptions_TiffJpegCompression_ClampsQualityToGdalRange()
+    {
+        var options = PostgresRasterStore.BuildExportCreationOptions(
+            new RasterQuery
+            {
+                TiffCompression = TiffCompression.JPEG,
+                Quality = 1
+            },
+            "GTiff");
+
+        options.Should().Equal("COMPRESS=JPEG", "JPEG_QUALITY=10");
     }
 
     [UnitTest]

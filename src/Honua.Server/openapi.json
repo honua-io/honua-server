@@ -381,12 +381,35 @@
               "schema": {
                 "$ref": "#/components/schemas/GeoJsonFeature"
               }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeoJsonFeature"
+              }
             }
           }
         },
         "responses": {
           "201": {
             "description": "Feature created",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Crs": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/geo+json": {
                 "schema": {
@@ -571,11 +594,13 @@
             "name": "f",
             "in": "query",
             "required": false,
-            "description": "Output format (json or html)",
+            "description": "Output format (json, schemajson, schema+json, or html)",
             "schema": {
               "type": "string",
               "enum": [
                 "json",
+                "schemajson",
+                "schema+json",
                 "html"
               ]
             }
@@ -586,6 +611,11 @@
             "description": "Queryables schema",
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryablesSchema"
+                }
+              },
+              "application/schema+json": {
                 "schema": {
                   "$ref": "#/components/schemas/QueryablesSchema"
                 }
@@ -754,12 +784,29 @@
               "schema": {
                 "$ref": "#/components/schemas/GeoJsonFeature"
               }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeoJsonFeature"
+              }
             }
           }
         },
         "responses": {
           "200": {
             "description": "Feature updated",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Crs": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/geo+json": {
                 "schema": {
@@ -767,9 +814,6 @@
                 }
               }
             }
-          },
-          "201": {
-            "description": "Feature created"
           },
           "400": {
             "description": "Invalid request"
@@ -845,6 +889,16 @@
         "requestBody": {
           "required": true,
           "content": {
+            "application/geo+json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeoJsonFeature"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeoJsonFeature"
+              }
+            },
             "application/merge-patch+json": {
               "schema": {
                 "$ref": "#/components/schemas/GeoJsonFeatureMergePatch"
@@ -855,6 +909,18 @@
         "responses": {
           "200": {
             "description": "Feature updated",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Crs": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/geo+json": {
                 "schema": {

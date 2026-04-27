@@ -28,6 +28,11 @@ internal sealed class ODataCrudHandler(
     Honua.Server.Features.Infrastructure.Caching.IETagService etagService,
     FeatureMutationEventService mutationEventService)
 {
+    private static readonly HashSet<string> FeatureRequestContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/json"
+    };
+
     private readonly ODataCrudService _crudService = crudService ?? throw new ArgumentNullException(nameof(crudService));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly Honua.Server.Features.Infrastructure.Caching.IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
@@ -354,18 +359,21 @@ internal sealed class ODataCrudHandler(
                 result = result with { StatusCode = StatusCodes.Status204NoContent, Data = null };
             }
 
-            await _mutationEventService.InvalidateLayerAsync(null, resolvedLayerId.Value, CancellationToken.None);
-            if (hasCreatedObjectId)
+            if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
             {
-                await _mutationEventService.PublishAsync(
-                    context,
-                    resolvedLayerId.Value,
-                    createdObjectId,
-                    "create",
-                    HonuaTelemetry.Protocols.OData,
-                    CancellationToken.None,
-                    mutationFeature: result.MutationFeature,
-                    serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+                await _mutationEventService.InvalidateLayerAsync(null, resolvedLayerId.Value, CancellationToken.None);
+                if (hasCreatedObjectId)
+                {
+                    await _mutationEventService.PublishAsync(
+                        context,
+                        resolvedLayerId.Value,
+                        createdObjectId,
+                        "create",
+                        HonuaTelemetry.Protocols.OData,
+                        CancellationToken.None,
+                        mutationFeature: result.MutationFeature,
+                        serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+                }
             }
             HonuaTelemetry.SetSuccess(activity);
         }
@@ -557,16 +565,19 @@ internal sealed class ODataCrudHandler(
                 result = result with { StatusCode = StatusCodes.Status204NoContent, Data = null };
             }
 
-            await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
-            await _mutationEventService.PublishAsync(
-                context,
-                layerId,
+            if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
+            {
+                await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                await _mutationEventService.PublishAsync(
+                    context,
+                    layerId,
                     objectId,
                     replace ? "replace" : "update",
                     HonuaTelemetry.Protocols.OData,
-                CancellationToken.None,
-                mutationFeature: result.MutationFeature,
-                serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+                    CancellationToken.None,
+                    mutationFeature: result.MutationFeature,
+                    serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+            }
             HonuaTelemetry.SetSuccess(activity);
         }
         else
@@ -615,16 +626,19 @@ internal sealed class ODataCrudHandler(
         var result = await _crudService.DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, effectiveToken);
         if (result.IsSuccess)
         {
-            await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
-            await _mutationEventService.PublishAsync(
-                context,
-                layerId,
-                objectId,
-                "delete",
-                HonuaTelemetry.Protocols.OData,
-                CancellationToken.None,
-                mutationFeature: result.MutationFeature,
-                serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+            if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
+            {
+                await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                await _mutationEventService.PublishAsync(
+                    context,
+                    layerId,
+                    objectId,
+                    "delete",
+                    HonuaTelemetry.Protocols.OData,
+                    CancellationToken.None,
+                    mutationFeature: result.MutationFeature,
+                    serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+            }
             HonuaTelemetry.SetSuccess(activity);
         }
         else
@@ -641,6 +655,12 @@ internal sealed class ODataCrudHandler(
     {
         try
         {
+            var contentTypeError = ValidateFeatureRequestContentType(context);
+            if (contentTypeError is not null)
+            {
+                return (null, contentTypeError);
+            }
+
             var request = await JsonSerializer.DeserializeAsync(
                 context.Request.Body,
                 ODataJsonContext.Default.ODataFeatureRequest,
@@ -669,6 +689,30 @@ internal sealed class ODataCrudHandler(
                 "InvalidRequest",
                 "Request body must be valid JSON."));
         }
+    }
+
+    private static IResult? ValidateFeatureRequestContentType(HttpContext context)
+    {
+        if (context.Request.ContentLength is 0)
+        {
+            return null;
+        }
+
+        var contentType = context.Request.ContentType;
+        var mediaType = string.IsNullOrWhiteSpace(contentType)
+            ? null
+            : contentType.Split(';', 2)[0].Trim();
+
+        if (!string.IsNullOrWhiteSpace(mediaType) &&
+            FeatureRequestContentTypes.Contains(mediaType))
+        {
+            return null;
+        }
+
+        return ValidationErrorHelpers.CreateUnsupportedMediaType(
+            context,
+            string.IsNullOrWhiteSpace(mediaType) ? "(missing)" : mediaType,
+            FeatureRequestContentTypes);
     }
 
     private static async Task<IResult?> RequireAnyODataWriteAccessBeforeBodyAsync(

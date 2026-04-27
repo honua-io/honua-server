@@ -129,7 +129,7 @@ internal sealed class FeatureServerQueryExecutor
         LayerDefinition layer,
         int? outputSrid)
     {
-        var objectIdFieldName = layer.ObjectIdFieldName;
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         var queryFields = QueryFormatter.BuildQueryFields(layer, outFields: null, objectIdFieldName);
         var allowedAttributeNames = queryFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var displayFieldName = QueryFormatter.ResolveDisplayFieldName(queryFields, objectIdFieldName);
@@ -354,7 +354,6 @@ internal sealed class FeatureServerQueryExecutor
 
         context.Response.ContentType = contentType;
         context.Response.StatusCode = StatusCodes.Status200OK;
-        EnableChunkedEncodingIfHttp1(context);
 
         if (string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase))
         {
@@ -449,7 +448,6 @@ internal sealed class FeatureServerQueryExecutor
     {
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = StatusCodes.Status200OK;
-        EnableChunkedEncodingIfHttp1(context);
 
         await using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
         {
@@ -465,7 +463,7 @@ internal sealed class FeatureServerQueryExecutor
         var idsSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
-            writer.WriteNumberValue(feature.Id);
+            writer.WriteNumberValue(GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
             if (++idsSinceFlush >= FlushInterval)
             {
                 await writer.FlushAsync(cancellationToken);
@@ -478,15 +476,6 @@ internal sealed class FeatureServerQueryExecutor
 
         await writer.FlushAsync(cancellationToken);
         await context.Response.CompleteAsync();
-    }
-
-    private static void EnableChunkedEncodingIfHttp1(HttpContext context)
-    {
-        if (context.Request.Protocol.StartsWith("HTTP/1.", StringComparison.OrdinalIgnoreCase))
-        {
-            context.Response.Headers.ContentLength = null;
-            context.Response.Headers.TransferEncoding = "chunked";
-        }
     }
 
     private static bool ShouldUsePagedQuery(FeatureQuery query)

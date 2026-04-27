@@ -112,6 +112,10 @@ internal sealed partial class ODataStreamingQueryHandler(
                     return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", deltaError!);
                 }
 
+                deltaState = deltaState.UpperBoundTimestamp.HasValue
+                    ? deltaState
+                    : deltaState with { UpperBoundTimestamp = DateTimeOffset.UtcNow };
+
                 deltaSince = deltaState.Timestamp;
                 deltaLayerId = deltaState.LayerId;
                 filter = deltaState.Filter;
@@ -122,6 +126,17 @@ internal sealed partial class ODataStreamingQueryHandler(
                 format = deltaState.Format;
                 count = deltaState.Count?.ToString()?.ToLowerInvariant();
                 trackChangesRequested = true;
+            }
+            else if (trackChangesRequested &&
+                     context.Request.Query.TryGetValue(ODataUtilityService.TrackChangesSnapshotParameter, out var snapshotValues) &&
+                     !string.IsNullOrWhiteSpace(snapshotValues.ToString()))
+            {
+                if (!ODataDeltaService.TryDecode(snapshotValues.ToString(), out deltaState, out var snapshotError))
+                {
+                    return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", snapshotError!);
+                }
+
+                deltaLayerId = deltaState.LayerId;
             }
 
             if (trackChangesRequested &&
@@ -342,7 +357,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 Count = countValue
             };
             var effectiveFilter = deltaSince.HasValue
-                ? ODataDeltaService.BuildDeltaFilter(filter, deltaSince.Value)
+                ? ODataDeltaService.BuildDeltaFilter(filter, deltaSince.Value, deltaDefinition.UpperBoundTimestamp)
                 : filter;
 
             var requestActivity = Activity.Current;
@@ -592,7 +607,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             var nextLink = !string.IsNullOrWhiteSpace(deltatoken)
                 ? ODataUtilityService.GenerateDeltaNextLink(
                     context.Request,
-                    deltatoken,
+                    deltaState ?? throw new InvalidOperationException("Delta state is required for delta paging."),
                     nextSkip,
                     pagination.Limit,
                     useSkipToken,
@@ -610,19 +625,28 @@ internal sealed partial class ODataStreamingQueryHandler(
                     useSkipToken,
                     compute,
                     format,
-                    trackChangesRequested);
+                    trackChangesRequested,
+                    trackChangesRequested ? deltaState : null);
             writer.WriteString("@odata.nextLink", nextLink);
         }
         else if (trackChangesRequested)
         {
-            var deltaLink = ODataUtilityService.GenerateDeltaLink(
-                context.Request,
-                deltaState with
+            var finalDeltaState = !string.IsNullOrWhiteSpace(deltatoken)
+                ? deltaState with
                 {
-                    Timestamp = DateTimeOffset.UtcNow,
+                    Timestamp = deltaState.UpperBoundTimestamp ?? DateTimeOffset.UtcNow,
+                    UpperBoundTimestamp = null,
                     LayerId = layerId,
                     Count = count
-                });
+                }
+                : deltaState with
+                {
+                    LayerId = layerId,
+                    Count = count
+                };
+            var deltaLink = ODataUtilityService.GenerateDeltaLink(
+                context.Request,
+                finalDeltaState);
             writer.WriteString("@odata.deltaLink", deltaLink);
         }
 

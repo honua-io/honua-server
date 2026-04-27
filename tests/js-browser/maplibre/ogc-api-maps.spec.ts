@@ -23,25 +23,16 @@ function ogcMapUrl(): string {
 }
 
 test.describe('OGC API Maps Image Source', () => {
-  test('collection map endpoint returns image bytes or a no-raster problem response', async ({ request }) => {
+  test('collection map endpoint returns image bytes', async ({ request }) => {
     const response = await request.get(ogcMapUrl());
-    expect([200, 404]).toContain(response.status());
-
-    if (response.status() === 200) {
-      expect(response.headers()['content-type'] ?? '').toContain('image/png');
-      const body = await response.body();
-      expect([...body.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
-      return;
-    }
-
-    expect(response.headers()['content-type'] ?? '').toContain('json');
-    const body = await response.json();
-    expect(body.status ?? body.error?.code).toBe(404);
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type'] ?? '').toContain('image/png');
+    const body = await response.body();
+    expect([...body.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   });
 
-  test('MapLibre can mount /ogc/maps output as an image source when raster data exists', async ({ page, request }) => {
+  test('MapLibre can mount /ogc/maps output as an image source', async ({ page, request }) => {
     const response = await request.get(ogcMapUrl());
-    test.skip(response.status() === 404, 'OGC API Maps raster fixture is not available for the browser seed layer.');
     expect(response.status()).toBe(200);
 
     const map = await createMap(page, {

@@ -62,6 +62,11 @@ internal static partial class MapServerEndpoints
             var (values, readError) = await TryReadMapServerRequestValuesAsync(context);
             if (values == null)
             {
+                if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+                {
+                    return GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                }
+
                 return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
             }
 

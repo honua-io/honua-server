@@ -50,6 +50,7 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 [JsonSerializable(typeof(StreamingMetrics))]
 [JsonSerializable(typeof(ProductionHealthResponse))]
 [JsonSerializable(typeof(ConnectionPoolMetricsResponse))]
+[JsonSerializable(typeof(QueryAdmissionMetricsResponse))]
 [JsonSerializable(typeof(CacheMetricsResponse))]
 [JsonSerializable(typeof(ResourceMetricsResponse))]
 [JsonSerializable(typeof(ResourceGcInfoResponse))]

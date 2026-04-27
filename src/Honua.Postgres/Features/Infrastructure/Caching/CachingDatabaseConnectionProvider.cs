@@ -89,6 +89,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             Interlocked.Increment(ref _acquiredSlots);
         }
 
+        var slotAcquiredAt = Stopwatch.GetTimestamp();
         NpgsqlConnection? connection = null;
         try
         {
@@ -102,7 +103,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
 
             return _concurrencyGate is null
                 ? connection
-                : new SemaphoreReleasingConnection(connection, ReleaseOneSlot);
+                : new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt));
         }
         catch
         {
@@ -111,7 +112,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
                 await connection.DisposeAsync().ConfigureAwait(false);
             }
 
-            ReleaseOneSlot();
+            ReleaseOneSlot(slotAcquiredAt);
             throw;
         }
     }
@@ -225,11 +226,21 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         }
     }
 
-    private void ReleaseOneSlot()
+    private void ReleaseOneSlot(long slotAcquiredAt = 0)
     {
         if (Interlocked.Decrement(ref _acquiredSlots) >= 0)
         {
-            _concurrencyGate?.Release();
+            if (_concurrencyGate is not null)
+            {
+                if (slotAcquiredAt > 0)
+                {
+                    _concurrencyGate.Release(Stopwatch.GetElapsedTime(slotAcquiredAt));
+                }
+                else
+                {
+                    _concurrencyGate.Release();
+                }
+            }
         }
         else
         {
