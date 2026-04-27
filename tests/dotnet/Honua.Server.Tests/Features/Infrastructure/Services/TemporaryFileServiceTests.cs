@@ -475,6 +475,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
     public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageCountsBytesBeyondFirstThousandObjects()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var redis = CreateRedisLeaseMultiplexer();
         for (var i = 0; i < 1001; i++)
         {
             await cloudStorage.UploadAsync(new ByteArrayUploadRequest
@@ -496,11 +497,13 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 MaxTotalStorageBytes = 2025,
                 DefaultExpiration = TimeSpan.FromMinutes(5)
             },
-            cloudStorage);
+            cloudStorage,
+            redis: redis);
 
         Func<Task> act = async () => await service.StoreTemporaryFileAsync([2], "application/octet-stream");
 
-        await act.Should().ThrowAsync<TemporaryStorageLimitExceededException>();
+        var ex = await act.Should().ThrowAsync<TemporaryStorageLimitExceededException>();
+        ex.Which.Message.Should().Contain("maximum capacity");
     }
 
     [Fact]
