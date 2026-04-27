@@ -277,9 +277,10 @@ jobs:
           docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
           echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
 
-      # Restrict SARIF upload to HIGH/CRITICAL so the per-image category in the GitHub
-      # Security tab only carries actionable findings. Lower severities remain in the
-      # workflow logs and can be re-introduced by removing `--severity` if needed.
+      # Restrict SARIF generation to HIGH/CRITICAL so the per-image category in the
+      # GitHub Security tab only carries actionable findings. The SARIF uploaded below
+      # is produced by this filtered run, so lower severities are intentionally not
+      # retained by this workflow; re-introduce them by removing `--severity` here.
       - name: Run Trivy vulnerability scanner
         shell: bash
         env:

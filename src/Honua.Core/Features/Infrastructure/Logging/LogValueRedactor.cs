@@ -66,7 +66,10 @@ public static class LogValueRedactor
         {
             if (rented is not null)
             {
-                ArrayPool<byte>.Shared.Return(rented);
+                // Clear before returning: the rented buffer just held a UTF-8 copy of a
+                // sensitive value (bearer token, api key, session id) and would otherwise
+                // remain readable by the next consumer of the shared ArrayPool.
+                ArrayPool<byte>.Shared.Return(rented, clearArray: true);
             }
         }
     }
@@ -106,7 +109,10 @@ public static class LogValueRedactor
         {
             if (rented is not null)
             {
-                ArrayPool<char>.Shared.Return(rented);
+                // Clear before returning: the rented buffer just held a copy of a
+                // user-controlled (potentially sensitive) value and would otherwise
+                // remain readable by the next consumer of the shared ArrayPool.
+                ArrayPool<char>.Shared.Return(rented, clearArray: true);
             }
         }
     }

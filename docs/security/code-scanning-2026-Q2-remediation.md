@@ -100,18 +100,26 @@ future audit can trace each closure back to a written justification.
 ## SARIF upload changes
 
 - `.github/workflows/security-nightly.yml` — both Trivy SARIF generation steps
-  (filesystem and container) now set `severity: HIGH,CRITICAL`. The existing
-  fail-on-HIGH/CRITICAL gates are unchanged; full SARIF + report artifacts are
-  still uploaded for ops triage. (The previous `container-security.yml` and
-  `trivy-nightly.yml` workflows were consolidated into `security-nightly.yml`
-  on `trunk` as part of PR #805 — this filter lives in their successor.)
-- `.github/workflows/deploy-platform-images.yml` — Trivy CLI invocation in the
-  per-image scan adds `--severity HIGH,CRITICAL`. SARIF categories per matrix
+  (filesystem and container) now set `severity: HIGH,CRITICAL`. The same
+  filtered SARIF is what gets uploaded both to GitHub Code Scanning and to the
+  workflow's `actions/upload-artifact` artifact, so lower severities are
+  **intentionally not retained** by this workflow — Trivy is not invoked a
+  second time at MEDIUM/LOW. The existing fail-on-HIGH/CRITICAL gates are
+  unchanged. (The previous `container-security.yml` and `trivy-nightly.yml`
+  workflows were consolidated into `security-nightly.yml` on `trunk` as part
+  of PR #805 — this filter lives in their successor.)
+- `.github/workflows/deploy-platform-images.yml` — the per-image Trivy CLI
+  invocation adds `--severity HIGH,CRITICAL`. The single per-image SARIF that
+  gets uploaded to GitHub Code Scanning is produced by this filtered run, so
+  here too lower severities are not retained. SARIF categories per matrix
   entry are unchanged so the dashboard still attributes findings per image.
 
 Re-introduce MEDIUM severity on the Security tab by removing the new
-`severity` inputs / `--severity` flag if a stakeholder wants MEDIUM back; the
-gating Trivy steps will continue to fail on HIGH/CRITICAL regardless.
+`severity` inputs / `--severity` flag; the gating Trivy steps will continue
+to fail on HIGH/CRITICAL regardless. If MEDIUM/LOW retention for ops triage
+becomes a hard requirement, add a separate unfiltered Trivy step whose output
+is uploaded only as an `actions/upload-artifact` artifact (not to Code
+Scanning) — that is intentionally out of scope for this remediation pass.
 
 ## Inherited findings deferred upstream
 
