@@ -4,13 +4,14 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
 
-internal sealed class AdminAuthSessionStore(
+internal sealed partial class AdminAuthSessionStore(
     IMemoryCache memoryCache,
     ILogger<AdminAuthSessionStore> logger,
     IDistributedCache? distributedCache = null)
@@ -136,7 +137,7 @@ internal sealed class AdminAuthSessionStore(
         catch (Exception ex)
         {
             _memoryCache.Remove(key);
-            AdminAuthSessionLog.DistributedCachePersistFailed(_logger, key, ex);
+            AdminAuthSessionLog.DistributedCachePersistFailed(_logger, GetKeyFamily(key), LogValueRedactor.Hash(key), ex);
             // Surface the failure to the caller so the client retries instead of
             // continuing with a single-instance-only session that breaks the moment
             // another replica serves the next request.
@@ -173,7 +174,7 @@ internal sealed class AdminAuthSessionStore(
             catch (Exception ex)
             {
                 _memoryCache.Remove(key);
-                AdminAuthSessionLog.DistributedCacheReadFailed(_logger, key, ex);
+                AdminAuthSessionLog.DistributedCacheReadFailed(_logger, GetKeyFamily(key), LogValueRedactor.Hash(key), ex);
                 return null;
             }
         }
@@ -221,14 +222,27 @@ internal sealed class AdminAuthSessionStore(
         }
         catch (Exception ex)
         {
-            AdminAuthSessionLog.DistributedCacheRemoveFailed(_logger, key, ex);
+            AdminAuthSessionLog.DistributedCacheRemoveFailed(_logger, GetKeyFamily(key), LogValueRedactor.Hash(key), ex);
         }
+    }
+
+    private static string GetKeyFamily(string key)
+    {
+        if (key.StartsWith(PendingSessionKeyPrefix, StringComparison.Ordinal))
+        {
+            return "admin-auth:pending";
+        }
+
+        return key.StartsWith(AuthSessionKeyPrefix, StringComparison.Ordinal)
+            ? "admin-auth:session"
+            : "admin-auth:unknown";
     }
 
     private static string CreateSessionId()
     {
         return Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
     }
+
 }
 
 internal abstract class AdminAuthSessionState

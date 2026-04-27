@@ -445,6 +445,9 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     private static DbCommand CreateCommand(DbConnection connection, ParameterizedQuery query)
     {
         var cmd = connection.CreateCommand();
+        // codeql[cs/sql-injection]: `query.Sql` is built by internal query builders from a
+        // fixed template plus positional `?` parameter placeholders; user-supplied values
+        // flow through `WhereParameters` and are bound below as parameters.
         cmd.CommandText = query.Sql;
 
         for (var i = 0; i < query.WhereParameters.Count; i++)

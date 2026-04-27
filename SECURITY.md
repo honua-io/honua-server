@@ -62,3 +62,9 @@ Honua's current operator-facing security guidance lives in:
 - `docs/operator/infrastructure.md`
 
 These documents define the shared-responsibility model for TLS termination, WAF/rate limiting, identity configuration, managed database usage, and production deployment expectations.
+
+## Code-scanning Remediation Notes
+
+Periodic remediation passes against the GitHub Code Scanning backlog (Trivy / CodeQL / Hadolint) are documented under `docs/security/`. Each note records refreshed image digests, dismissed findings with rationale, and findings inherited from upstream base images.
+
+- [`docs/security/code-scanning-2026-Q2-remediation.md`](docs/security/code-scanning-2026-Q2-remediation.md) — 2026 Q2 backlog reduction (issue [#757](https://github.com/honua-io/honua-server/issues/757))

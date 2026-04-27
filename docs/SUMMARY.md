@@ -69,6 +69,11 @@
 - [Public Interface Quality Model](contributor/public-interface-quality-model.md)
 - [Release Checklist](contributor/RELEASE_CHECKLIST.md)
 
+## Security
+
+- [Security Policy](../SECURITY.md)
+- [Code-scanning Remediation — 2026 Q2](security/code-scanning-2026-Q2-remediation.md)
+
 ## Archive
 
 - [Historical Archive](archive/README.md)

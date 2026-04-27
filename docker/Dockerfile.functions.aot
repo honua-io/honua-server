@@ -2,7 +2,11 @@
 # Azure Functions-targeted Honua image (AOT).
 # Packages Honua as a custom-handler container behind the Azure Functions host.
 
-FROM mcr.microsoft.com/azure-functions/base:4-appservice AS build
+# Pin manifest digests to avoid mutable-tag noise in Trivy nightly scans.
+# Refresh cadence + remediation rationale: docs/security/code-scanning-2026-Q2-remediation.md.
+ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/base:4-appservice@sha256:e15f9ae39a777d8ff1da4f1e74e2847f21cff6e44b10867fd0b9ee2eb23ebdb9
+
+FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS build
 WORKDIR /src
 
 ENV DOTNET_ROOT=/usr/share/dotnet
@@ -61,7 +65,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     rm -rf /out/app/BlazorDebugProxy /out/app/wwwroot && \
     find /out/app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
-FROM mcr.microsoft.com/azure-functions/base:4-appservice AS runtime
+FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS runtime
 WORKDIR /home/site/wwwroot
 
 RUN apt-get update && \

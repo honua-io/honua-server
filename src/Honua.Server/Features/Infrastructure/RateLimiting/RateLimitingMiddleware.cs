@@ -5,6 +5,8 @@ using System.Net;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.RateLimiting.Abstractions;
 
 namespace Honua.Server.Features.Infrastructure.RateLimiting;
@@ -12,8 +14,11 @@ namespace Honua.Server.Features.Infrastructure.RateLimiting;
 /// <summary>
 /// Middleware for enforcing rate limits on incoming requests.
 /// </summary>
-internal sealed class RateLimitingMiddleware
+internal sealed partial class RateLimitingMiddleware
 {
+    private const string ApiKeyKeyFamily = "api_key";
+    private const string IpKeyFamily = "ip";
+    private const string UnknownKeyFamily = "unknown";
     private readonly RequestDelegate _next;
     private readonly IRateLimitPolicyStore _policyStore;
     private readonly IDistributedCache _distributedCache;
@@ -137,7 +142,8 @@ internal sealed class RateLimitingMiddleware
         }
         catch (Exception ex)
         {
-            RateLimitingLog.RateLimitCheckFailed(_logger, rateLimitKey, ex);
+            var (keyFamily, keyHash) = SplitRateLimitKey(rateLimitKey);
+            RateLimitingLog.RateLimitCheckFailed(_logger, keyFamily, keyHash, ex);
 
             // Allow request if rate limiting fails to avoid blocking legitimate traffic
             return new RateLimitResult
@@ -281,8 +287,8 @@ internal sealed class RateLimitingMiddleware
     /// <returns>A task representing the async operation.</returns>
     private async Task HandleRateLimitExceededAsync(HttpContext context, RateLimitResult result)
     {
-        var rateLimitKey = DetermineRateLimitKey(context);
-        RateLimitingLog.RateLimitExceeded(_logger, rateLimitKey, result.RequestCount, result.Limit);
+        var (keyFamily, keyHash) = SplitRateLimitKey(DetermineRateLimitKey(context));
+        RateLimitingLog.RateLimitExceeded(_logger, keyFamily, keyHash, result.RequestCount, result.Limit);
 
         AddRateLimitHeaders(context, result);
         context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
@@ -345,6 +351,34 @@ internal sealed class RateLimitingMiddleware
 
         // Check for API key in query parameters
         return context.Request.Query["api_key"].FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Splits a rate-limit key (<c>family:value</c>) into a fixed family label and a short
+    /// correlation hash so neither the bearer token nor the raw IP appears in log output.
+    /// </summary>
+    private static (string Family, string Hash) SplitRateLimitKey(string? rateLimitKey)
+    {
+        if (string.IsNullOrEmpty(rateLimitKey))
+        {
+            return (UnknownKeyFamily, LogValueRedactor.Hash(null));
+        }
+
+        var separatorIndex = rateLimitKey.IndexOf(':', StringComparison.Ordinal);
+        if (separatorIndex <= 0)
+        {
+            return (UnknownKeyFamily, LogValueRedactor.Hash(rateLimitKey));
+        }
+
+        var family = rateLimitKey[..separatorIndex];
+        var value = rateLimitKey[(separatorIndex + 1)..];
+
+        return family switch
+        {
+            ApiKeyKeyFamily => (ApiKeyKeyFamily, LogValueRedactor.Hash(value)),
+            IpKeyFamily => (IpKeyFamily, LogValueRedactor.Hash(value)),
+            _ => (UnknownKeyFamily, LogValueRedactor.Hash(value))
+        };
     }
 }
 

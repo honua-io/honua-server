@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Infrastructure.Middleware;
@@ -30,11 +31,14 @@ internal sealed partial class TestSchemaMiddleware
             var schemaName = headerValue.Trim();
             if (!_schemaNameRegex.IsMatch(schemaName))
             {
-                Log.InvalidSchemaHeader(_logger, schemaName);
+                // The header value failed identifier validation, so it may carry control chars
+                // (CR/LF) used for log forging. Log only a short hash for correlation across
+                // repeat offenders without exposing the raw bytes.
+                Log.InvalidSchemaHeader(_logger, LogValueRedactor.Hash(schemaName));
                 var errorResponse = new StandardErrorResponse(
                     StatusCodes.Status400BadRequest,
                     "Invalid test schema header.",
-                    $"Schema '{schemaName}' is not a valid identifier.");
+                    "The supplied schema header is not a valid identifier.");
                 await StandardErrorResponseFormatter
                     .FormatError(context, errorResponse)
                     .ExecuteAsync(context);
@@ -62,8 +66,8 @@ internal sealed partial class TestSchemaMiddleware
         [LoggerMessage(
             EventId = 8701,
             Level = LogLevel.Warning,
-            Message = "Invalid test schema header value: {SchemaName}")]
-        public static partial void InvalidSchemaHeader(ILogger logger, string schemaName);
+            Message = "Invalid test schema header rejected; correlation hash {SchemaHash}.")]
+        public static partial void InvalidSchemaHeader(ILogger logger, string schemaHash);
     }
 }
 
