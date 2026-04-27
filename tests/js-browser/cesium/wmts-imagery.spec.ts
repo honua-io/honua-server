@@ -55,10 +55,10 @@ test.describe('Cesium WMTS imagery', () => {
         viewer.scene.globe.baseColor = Cesium.Color.BLACK;
         viewer.scene.globe.showGroundAtmosphere = false;
         const provider = new Cesium.WebMapTileServiceImageryProvider({
-          url: `${wmtsUrl}/tile/1.0.0/2000/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png`,
+          url: `${wmtsUrl}/2000/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png`,
           layer: '2000',
           style: 'default',
-          tileMatrixSetID: 'GoogleMapsCompatible',
+          tileMatrixSetID: 'WebMercatorQuad',
           format: 'image/png',
           maximumLevel: 5,
         });
