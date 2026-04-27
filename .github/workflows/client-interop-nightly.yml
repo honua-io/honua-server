@@ -27,14 +27,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare:
+    name: Resolve lane matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      lanes: ${{ steps.resolve.outputs.lanes }}
+    steps:
+      - name: Resolve lanes input
+        id: resolve
+        shell: bash
+        env:
+          LANES_INPUT: ${{ github.event.inputs.lanes }}
+        run: |
+          set -euo pipefail
+          # Schedule and dispatch-with-empty-input default to the full matrix.
+          default='gdal,pyqgis,openlayers,cesium,arcgis-stub'
+          raw="${LANES_INPUT:-}"
+          # Strip whitespace and trailing/leading commas.
+          raw="${raw// /}"
+          raw="${raw#,}"
+          raw="${raw%,}"
+          if [[ -z "$raw" ]]; then
+            raw="$default"
+          fi
+          # Reject anything not in the known lane set so a typo can't silently
+          # produce an empty matrix that "passes".
+          allowed=$'gdal\npyqgis\nopenlayers\ncesium\narcgis-stub'
+          IFS=',' read -ra requested <<<"$raw"
+          for lane in "${requested[@]}"; do
+            if ! grep -Fxq "$lane" <<<"$allowed"; then
+              echo "::error::Unknown lane '$lane'; allowed: $(tr '\n' ',' <<<"$allowed" | sed 's/,$//')" >&2
+              exit 1
+            fi
+          done
+          json=$(jq -cn --arg lanes "$raw" '$lanes | split(",")')
+          echo "lanes=$json" >> "$GITHUB_OUTPUT"
+          echo "Resolved lane matrix: $json"
+
   matrix:
     name: ${{ matrix.lane }}
+    needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        lane: [gdal, pyqgis, openlayers, cesium, arcgis-stub]
+        lane: ${{ fromJSON(needs.prepare.outputs.lanes) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5

@@ -25,9 +25,11 @@ shared (lane, protocol, test_case_id) tuple it classifies the change:
   * recovery: baseline non-pass non-fail → current ``pass``
   * still-failing: baseline ``fail`` → current ``fail``
   * gap: present in baseline, absent from current run
-  * new-fail: absent from baseline, current ``fail`` (a brand-new failing
-    test in an unbaselined lane must block strict mode so a never-baselined
-    lane cannot be reduced to a passing nightly by emitting all-fail evidence)
+  * new-fail: current ``fail`` against either no baseline or a non-fail
+    baseline (skip / not-applicable / placeholder). Treats ``skip``→``fail``
+    and ``not-applicable``→``fail`` the same as no-baseline → fail because
+    the test was never certified passing — a fail must block strict mode
+    rather than fall through to the noise-bucket ``transition``.
   * new: absent from baseline, current non-fail
 
 The report sorts regressions to the top so reviewers see the actionable diffs
@@ -44,11 +46,15 @@ In ``--strict`` mode the script exits non-zero when **any** of these hold:
   4. The current-run directory contained no envelopes at all.
   5. An ``expected-pairs.json`` entry is absent from both baseline and current
      run (lane never produced the contractually-required evidence).
-  6. A current envelope reports ``fail`` for a test case with no baseline
-     entry (a new failure in an unbaselined lane).
+  6. A current envelope reports ``fail`` for a test case with no baseline,
+     or with a non-fail baseline (``skip``/``not-applicable``/placeholder).
+  7. An ``expected-pairs.json`` entry has no committed baseline, even if the
+     current run produced evidence — a never-baselined lane cannot pass the
+     gate by emitting unreviewed pass/skip evidence.
 
-Without those checks a crashed lane (lane-job exit 0 ⊕ no envelope written)
-or an all-fail brand-new lane would silently pass the nightly gate.
+Without those checks a crashed lane (lane-job exit 0 ⊕ no envelope written),
+an all-fail brand-new lane, or a never-baselined lane that quietly emits
+passing-looking evidence would silently pass the nightly gate.
 """
 from __future__ import annotations
 
@@ -122,6 +128,12 @@ def classify(baseline: str | None, current: str | None) -> str:
         return "recovery"
     if baseline == "fail" and current == "fail":
         return "still-failing"
+    # Any non-pass baseline (skip / not-applicable / placeholder) becoming
+    # current `fail` is a new failure — the test wasn't certified passing,
+    # so a fail in it must block strict mode rather than fall through to
+    # the noise-bucket "transition" classification.
+    if current == "fail":
+        return "new-fail"
     if baseline == current:
         return "stable"
     return "transition"
@@ -250,7 +262,7 @@ def write_gap_report(
         ]
         unbaselined_no_baseline = [
             (lane, protocol) for lane, protocol in expected_pairs
-            if (lane, protocol) not in baselines and (lane, protocol) in current
+            if (lane, protocol) not in baselines
         ]
         if unbaselined_missing:
             lines.append(f"## Expected pairs absent from this run ({len(unbaselined_missing)})")
@@ -266,15 +278,18 @@ def write_gap_report(
             )
             lines.append("")
             lines.append(
-                "These lanes ran but no baseline has been committed yet. "
-                "Run `scripts/client-compat/refresh-baselines.sh` after reviewing "
-                "the current envelope content."
+                "These pairs are listed in `expected-pairs.json` but have no "
+                "committed `.cert.json` baseline. Strict mode fails until a "
+                "reviewed baseline is committed. Run "
+                "`scripts/client-compat/refresh-baselines.sh` and open a "
+                "baseline-bump PR after reviewing the captured envelopes."
             )
             lines.append("")
-            lines.append("| Lane | Protocol |")
-            lines.append("|------|----------|")
+            lines.append("| Lane | Protocol | Has current run? |")
+            lines.append("|------|----------|------------------|")
             for lane, protocol in unbaselined_no_baseline:
-                lines.append(f"| {lane} | {protocol} |")
+                has_current = "yes" if (lane, protocol) in current else "no"
+                lines.append(f"| {lane} | {protocol} | {has_current} |")
             lines.append("")
 
     if not any(by_classification.get(k) for k, _ in SECTION_ORDER):
@@ -296,9 +311,10 @@ def main() -> int:
         "--expected-pairs",
         default="tests/baselines/client-compat/expected-pairs.json",
         help=(
-            "Path to the expected (client_lane, protocol) manifest. Pairs in "
-            "this file must produce evidence on every run; strict mode fails "
-            "if any are missing from both baseline and current run."
+            "Path to the expected (client_lane, protocol) manifest. Strict "
+            "mode fails if any listed pair is missing from both baseline "
+            "and current run, and also if any listed pair has no committed "
+            "baseline at all (even when the current run produced evidence)."
         ),
     )
     parser.add_argument(
@@ -330,6 +346,10 @@ def main() -> int:
     expected_set = set(expected_pairs)
     present_set = set(baselines.keys()) | set(current.keys())
     expected_missing = sorted(expected_set - present_set)
+    # Stronger gate: expected pair MUST have a committed baseline. Until a
+    # reviewed baseline lands, strict mode fails loudly so a never-baselined
+    # lane cannot silently produce uncertified evidence.
+    expected_without_baseline = sorted(expected_set - set(baselines.keys()))
 
     if no_current_evidence:
         print(
@@ -352,6 +372,16 @@ def main() -> int:
             file=sys.stderr,
         )
         for lane, protocol in expected_missing:
+            print(f"  - {lane}/{protocol}", file=sys.stderr)
+
+    if expected_without_baseline:
+        print(
+            f"::error::{len(expected_without_baseline)} expected (lane, protocol) "
+            "pair(s) have no committed baseline; bootstrap via "
+            "scripts/client-compat/refresh-baselines.sh:",
+            file=sys.stderr,
+        )
+        for lane, protocol in expected_without_baseline:
             print(f"  - {lane}/{protocol}", file=sys.stderr)
 
     changes = diff(baselines, current)
@@ -396,6 +426,7 @@ def main() -> int:
         or missing_envelopes
         or no_current_evidence
         or expected_missing
+        or expected_without_baseline
     ):
         return 1
 

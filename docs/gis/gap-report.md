@@ -12,17 +12,17 @@ Baseline envelopes live under
 ## Bootstrap state
 
 This file is a placeholder until the first nightly run produces a real
-gap report. The committed Cesium baseline (`tests/baselines/client-compat/cesium/`)
-marks the new lane's IDs as `skip` with `pending: first-baseline run` notes;
-the first nightly run will replace those with the actual `pass`/`fail`/`skip`
-status as observed by the docker harness.
+gap report. No `.cert.json` baselines have been committed yet — every
+lane (cesium, gdal, pyqgis, openlayers, arcgis-stub) is bootstrapped on
+the first run via `scripts/client-compat/refresh-baselines.sh`, after
+which a baseline-bump PR commits the captured envelopes under
+`tests/baselines/client-compat/`.
 
-The other lanes (gdal, pyqgis, openlayers, arcgis-stub) are bootstrapped on
-the first run via `scripts/client-compat/refresh-baselines.sh`. The
-[`expected-pairs.json`](../../tests/baselines/client-compat/expected-pairs.json)
-manifest still gates strict mode while baselines catch up: a missing
-`(client_lane, protocol)` envelope from both baseline and current run
-fails the workflow even when no baseline exists yet.
+The [`expected-pairs.json`](../../tests/baselines/client-compat/expected-pairs.json)
+manifest gates strict mode loudly while baselines catch up: every listed
+`(client_lane, protocol)` pair must have a committed baseline, so until
+all 16 baselines land the nightly workflow fails strict mode. Non-PR-
+blocking-tier failures are expected during this bootstrap window.
 
 ## Permanent gaps (tracked separately)
 
