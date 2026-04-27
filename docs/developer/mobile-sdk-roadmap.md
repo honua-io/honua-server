@@ -60,8 +60,10 @@ Three name spaces are used distinctly throughout this roadmap and ADR-0034:
 
 In scope:
 
-- gRPC + OGC API Features read paths against the canonical `Honua.Sdk.Grpc`
-  and `Honua.Sdk.OgcFeatures` contracts (matching the
+- gRPC read paths against the canonical server `FeatureService` (currently
+  `geospatial.v1.FeatureService`; mobile bring-up aligns the proto package
+  per [Phase 1 — Read](#phase-1--read)) and OGC API Features read paths
+  against the `Honua.Sdk.OgcFeatures` contract (matching the
   `/ogc/features/collections/.../items` REST surface that
   `Honua.Mobile.Sdk` already calls as a gRPC fallback).
 - Authenticated writes through the canonical edit/transaction pipeline.
@@ -145,15 +147,32 @@ with REST fallback (`QueryFeaturesAsync`, `QueryFeaturesStreamAsync`); child
 tickets B and C extend the matrix to MAUI iOS / Android targets with the
 MAUI workload installed and add platform-specific smoke runners.
 
-- The existing transport client (`Honua.Mobile.Sdk`) consumes generated stubs
-  from `proto/honua/v1/feature_service.proto` (mobile-owned proto kept in
-  step with the canonical server contract). No new proto.
+- **gRPC proto-package alignment is a Phase 1 prerequisite.** The mobile-owned
+  `proto/honua/v1/feature_service.proto` (package `honua.v1`,
+  `csharp_namespace = "Honua.Server.Features.Grpc.Proto"`) is a parallel copy
+  of the canonical server proto at
+  `src/Honua.Core/Transport/Proto/geospatial/v1/feature_service.proto`
+  (package `geospatial.v1`, `csharp_namespace = "Geospatial.V1"`). The message
+  schemas match field-for-field today, but the gRPC method paths differ —
+  the server registers handlers for `geospatial.v1.FeatureService/*`
+  (`OperationRegistry.cs`), while `Honua.Mobile.Sdk` (and `Honua.Sdk.Grpc`)
+  call `honua.v1.FeatureService/*`. Smoke tests in child tickets B and C
+  must close this gap before claiming gRPC interop, by either re-packaging
+  the mobile proto to `geospatial.v1` or registering a `honua.v1` alias on
+  the server. Until that lands, the mobile gRPC path falls back to the OGC
+  API Features REST surface (which is already wired end-to-end).
+- The transport client (`Honua.Mobile.Sdk`) consumes generated stubs from
+  `proto/honua/v1/feature_service.proto`. No new proto file is added in this
+  phase; the alignment work is a package/registration fix on top of the
+  existing schema.
 - Layer inspection uses the shared metadata catalog already exposed via gRPC.
 - CRS-aware geometry conversion uses the existing geodesy helpers in
   `Honua.Core` (server) and equivalent client-side helpers; do not duplicate
   the projection math in mobile code.
 - Smoke test asserts the SDK can query a public layer from a live Honua
-  server in under one second on simulator and emulator.
+  server in under one second on simulator and emulator. The smoke runner
+  also asserts that the gRPC method path resolves end-to-end, gating on the
+  package alignment above.
 
 ### Phase 2 — Auth and write
 
@@ -218,15 +237,20 @@ MAUI workload installed and add platform-specific smoke runners.
   JS/TS, Python, and .NET admin clients only. A mobile SDK release that
   consumes the admin surface stays on the same admin API major as the
   matched server release.
-- Feature contracts are not covered by that matrix. The gRPC stubs
-  (`Honua.Sdk.Grpc`, mirrored by the mobile-owned `proto/honua/v1/`) follow
+- Feature contracts are not covered by that matrix. The gRPC stubs follow
   proto backward-compatibility conventions: additive changes only within a
-  major, breaking changes ride a new proto package version. The OGC API
-  Features REST surface (`Honua.Sdk.OgcFeatures`, used as the gRPC fallback)
-  follows the OGC API Features specification's stable resource model and
-  OpenAPI compatibility — additive query parameters and response fields only
-  within a major. Concrete version-by-version tracking is scoped into child
-  ticket F (sync) when the SDK surface stabilises.
+  major, breaking changes ride a new proto package version. Today the
+  canonical server proto is `geospatial.v1` (under
+  `src/Honua.Core/Transport/Proto/geospatial/v1/`) while both `Honua.Sdk.Grpc`
+  and the mobile-owned `proto/honua/v1/` consume a parallel `honua.v1`
+  package; the message schemas match but the package paths diverge, and
+  closing that gap is scoped into Phase 1 (see the proto-alignment
+  prerequisite above). The OGC API Features REST surface
+  (`Honua.Sdk.OgcFeatures`, used as the gRPC fallback) follows the OGC API
+  Features specification's stable resource model and OpenAPI compatibility —
+  additive query parameters and response fields only within a major.
+  Concrete version-by-version tracking is scoped into child ticket F (sync)
+  when the SDK surface stabilises.
 - Mobile SDK semver follows the .NET SDK family. Backwards-incompatible
   mobile changes follow the migration-guide policy in
   [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md).
@@ -281,12 +305,17 @@ These are explicitly deferred and tracked separately:
 - ADR-0018: Source-Generated JSON Serialization for AOT Compatibility
 - `AGENTS.md`: Honua repository map, protocol adapter architecture,
   cross-cutting concerns
+- Canonical server proto: `src/Honua.Core/Transport/Proto/geospatial/v1/feature_service.proto`
+  (package `geospatial.v1`); registered handlers enumerated in
+  `src/Honua.Server/OperationRegistry.cs`.
 - [`honua-io/honua-mobile`](https://github.com/honua-io/honua-mobile): the
   mobile SDK repo itself — `Honua.Mobile.Sdk` / `Honua.Mobile.Field` /
-  `Honua.Mobile.Offline` / `Honua.Mobile.Maui` packages, gRPC contracts under
-  `proto/honua/v1/`, reference app at `apps/Honua.Mobile.App/`, and the
-  Phase-0 baseline docs at `docs/phase-0/` (PARITY_SPEC, INNOVATION_SPEC,
-  PHASE_0_SUMMARY, TEST_STRATEGY).
+  `Honua.Mobile.Offline` / `Honua.Mobile.Maui` packages, mobile-owned proto
+  copy at `proto/honua/v1/feature_service.proto` (package `honua.v1`,
+  pending Phase-1 alignment with the canonical `geospatial.v1`), reference
+  app at `apps/Honua.Mobile.App/`, and the Phase-0 baseline docs at
+  `docs/phase-0/` (PARITY_SPEC, INNOVATION_SPEC, PHASE_0_SUMMARY,
+  TEST_STRATEGY).
 - `honua-sdk-dotnet/examples/FieldDataCollection/`: legacy reference MAUI app
   illustrating the full read / write / edit / sync / offline-cache cycle
   before the patterns were lifted into `Honua.Mobile.Field` and
