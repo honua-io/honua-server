@@ -37,6 +37,8 @@ internal static class ServiceCollectionExtensions
         var options = new DuckDBOptions();
         configuration.GetSection("DuckDB").Bind(options);
 
+        DuckDBOptionsValidator.ThrowIfInvalid(options);
+
         // Validate and strip unsupported capabilities at startup. The DuckDB provider is
         // read-only in V1, so editing (Create/Update/Delete) and replica extract workflows
         // are removed before they reach the catalog. Extract is dropped because there is
@@ -61,6 +63,9 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<DuckDBSpatialBootstrap>(sp =>
             new DuckDBSpatialBootstrap(
                 options.SpatialExtensionPath,
+                DuckDBExternalSourceSql.GetRequiredExtensions(options),
+                DuckDBExternalSourceSql.BuildConnectionSettingCommands(options),
+                DuckDBExternalSourceSql.BuildExternalSourcePlans(options.Layers),
                 sp.GetRequiredService<ILogger<DuckDBSpatialBootstrap>>()));
 
         services.AddSingleton<DuckDBLayerRegistry>(sp =>
@@ -129,7 +134,7 @@ internal static class ServiceCollectionExtensions
         {
             var (attributeColumns, attributeColumnTypes) = layerOpt.Attributes is { Length: > 0 }
                 ? (layerOpt.Attributes.ToList(), new Dictionary<string, string>())
-                : DiscoverAttributeColumns(connectionString, layerOpt, logger);
+                : DiscoverAttributeColumns(connectionString, options, layerOpt, logger);
 
             DuckDbLog.LayerRegistered(
                 logger,
@@ -155,15 +160,16 @@ internal static class ServiceCollectionExtensions
     }
 
     private static (List<string> Names, Dictionary<string, string> Types) DiscoverAttributeColumns(
-        string connectionString, DuckDBLayerOptions layerOpt, ILogger logger)
+        string connectionString, DuckDBOptions options, DuckDBLayerOptions layerOpt, ILogger logger)
     {
         try
         {
             using var connection = new DuckDBConnection(connectionString);
             connection.Open();
+            PrepareSchemaDiscoveryConnection(connection, options, layerOpt);
 
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = $"PRAGMA table_info('{layerOpt.Table}')";
+            cmd.CommandText = $"PRAGMA table_info({DuckDBExternalSourceSql.QuoteLiteral(layerOpt.Table)})";
             using var reader = cmd.ExecuteReader();
 
             var columns = new List<string>();
@@ -186,6 +192,47 @@ internal static class ServiceCollectionExtensions
             DuckDbLog.AttributeDiscoveryFailed(logger, layerOpt.Id, layerOpt.Table, ex);
             return ([], new Dictionary<string, string>());
         }
+    }
+
+    private static void PrepareSchemaDiscoveryConnection(
+        DuckDBConnection connection,
+        DuckDBOptions options,
+        DuckDBLayerOptions layerOpt)
+    {
+        if (layerOpt.ExternalSource is null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.SpatialExtensionPath))
+        {
+            ExecuteNonQuery(
+                connection,
+                $"SET extension_directory={DuckDBExternalSourceSql.QuoteLiteral(options.SpatialExtensionPath)}");
+        }
+
+        foreach (var extension in DuckDBExternalSourceSql.GetRequiredExtensions(options))
+        {
+            ExecuteNonQuery(connection, $"INSTALL {extension}");
+            ExecuteNonQuery(connection, $"LOAD {extension}");
+        }
+
+        ExecuteNonQuery(connection, "INSTALL spatial");
+        ExecuteNonQuery(connection, "LOAD spatial");
+
+        foreach (var command in DuckDBExternalSourceSql.BuildConnectionSettingCommands(options))
+        {
+            ExecuteNonQuery(connection, command.Sql);
+        }
+
+        ExecuteNonQuery(connection, DuckDBExternalSourceSql.BuildCreateTempViewSql(layerOpt));
+    }
+
+    private static void ExecuteNonQuery(DuckDBConnection connection, string sql)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
     }
 
     private static (List<LayerDefinition> Layers, List<ServiceDefinition> Services) BuildCatalogEntries(
