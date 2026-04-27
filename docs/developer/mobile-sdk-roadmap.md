@@ -60,8 +60,10 @@ Three name spaces are used distinctly throughout this roadmap and ADR-0034:
 
 In scope:
 
-- gRPC + OData read paths against the canonical `Honua.Sdk.Grpc` and
-  `Honua.Sdk.OgcFeatures` contracts.
+- gRPC + OGC API Features read paths against the canonical `Honua.Sdk.Grpc`
+  and `Honua.Sdk.OgcFeatures` contracts (matching the
+  `/ogc/features/collections/.../items` REST surface that
+  `Honua.Mobile.Sdk` already calls as a gRPC fallback).
 - Authenticated writes through the canonical edit/transaction pipeline.
 - Local feature edits with conflict-aware re-sync.
 - Bidirectional sync with three resolution strategies (user-choice,
@@ -94,7 +96,7 @@ Out of scope:
   logging, no reflection in hot paths, NativeAOT-publishable on iOS via .NET 10
   ILC.
 - CRS metadata must be preserved per OGC GeoPackage. Default storage CRS is
-  EPSG:4326; CRS104 (WGS84-2D) is supported per spec.
+  EPSG:4326 (WGS-84) per the spec's built-in SRS records.
 - Telemetry counters and `ActivitySource`s mirror the server convention
   (`Honua.Mobile.<area>`).
 - Dependency budget: max 5 per service, max 4 per handler, matching the server
@@ -110,7 +112,7 @@ sync / offline-cache cycle named in the ticket acceptance criteria.
 |-------|-----------|-------------|--------------|
 | 0 | NuGet publish pipeline, MAUI-workload CI matrix, AOT/trim smoke (iOS + Android) | (foundation) | A — repo scaffolding gap closure |
 | 1 | Read: feature query via gRPC, layer inspection, CRS-aware geometry | Read | B (iOS bring-up), C (Android bring-up) |
-| 2 | Auth and write: token lifecycle, ApplyEdits, OData CRUD | Write / edit | D — auth module |
+| 2 | Auth and write: token lifecycle, ApplyEdits, OGC API Features CRUD | Write / edit | D — auth module |
 | 3 | Offline-first storage: GeoPackage + SpatiaLite, TTL eviction, prefetch | Offline cache | E — offline-first storage |
 | 4 | Sync: conflict detection, resolution strategies, durable retry | Sync / edit | F — sync conflict resolution |
 
@@ -169,7 +171,9 @@ MAUI workload installed and add platform-specific smoke runners.
 - API-key and bearer-token modes are supported. OAuth device flow is deferred
   to a follow-on once the server-side OAuth surface stabilises.
 - Write paths exercise the canonical edit/transaction pipeline through the
-  existing gRPC and OData CRUD endpoints.
+  existing gRPC and OGC API Features CRUD endpoints (the same
+  `/ogc/features/collections/.../items` surface the SDK already uses for
+  REST fallback).
 
 ### Phase 3 — Offline-first storage
 
@@ -184,8 +188,8 @@ MAUI workload installed and add platform-specific smoke runners.
   bundling plan (SQLite-PCL-raw with SpatiaLite native binary).
 - Spatial indexes target sub-second feature queries for layers up to
   100,000 features.
-- CRS metadata is preserved per OGC GeoPackage; default EPSG:4326, CRS104 for
-  WGS84-2D.
+- CRS metadata is preserved per OGC GeoPackage; default EPSG:4326 (WGS-84) per
+  the spec's built-in SRS records.
 
 ### Phase 4 — Sync
 
@@ -214,11 +218,15 @@ MAUI workload installed and add platform-specific smoke runners.
   JS/TS, Python, and .NET admin clients only. A mobile SDK release that
   consumes the admin surface stays on the same admin API major as the
   matched server release.
-- Feature contracts (gRPC `Honua.Sdk.Grpc` stubs and OData `Honua.Sdk.OgcFeatures`)
-  are not covered by that matrix. Their compatibility follows proto
-  backward-compatibility conventions (additive changes only within a major;
-  breaking changes ride a new proto package version). Concrete tracking is
-  scoped into child ticket F (sync) when the SDK surface stabilises.
+- Feature contracts are not covered by that matrix. The gRPC stubs
+  (`Honua.Sdk.Grpc`, mirrored by the mobile-owned `proto/honua/v1/`) follow
+  proto backward-compatibility conventions: additive changes only within a
+  major, breaking changes ride a new proto package version. The OGC API
+  Features REST surface (`Honua.Sdk.OgcFeatures`, used as the gRPC fallback)
+  follows the OGC API Features specification's stable resource model and
+  OpenAPI compatibility — additive query parameters and response fields only
+  within a major. Concrete version-by-version tracking is scoped into child
+  ticket F (sync) when the SDK surface stabilises.
 - Mobile SDK semver follows the .NET SDK family. Backwards-incompatible
   mobile changes follow the migration-guide policy in
   [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md).
@@ -285,4 +293,4 @@ These are explicitly deferred and tracked separately:
   `Honua.Mobile.Offline`.
 - [SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md)
 - [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md)
-- OGC GeoPackage Encoding Standard 1.3 (CRS104 / WGS84-2D)
+- OGC GeoPackage Encoding Standard 1.3 (built-in EPSG:4326 / WGS-84 SRS records)
