@@ -10,6 +10,7 @@ Use this page first when you need to:
 - decide whether release notes require SDK regeneration
 
 Use it together with:
+- [Machine-readable SDK compatibility version manifest](sdk-compatibility-versions.json)
 - [Control Plane API](../operator/CONTROL_PLANE_API.md)
 - [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
 - [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
@@ -25,6 +26,42 @@ Use it together with:
   release set.
 - Server and SDK must stay on the same admin API major.
 - Production deployments should stay on `stable` or a designated `LTS` line.
+
+## Machine-Readable CI Manifest
+
+The CI source of truth for tested SDK/server refs is
+[`sdk-compatibility-versions.json`](sdk-compatibility-versions.json). The
+manifest defines:
+
+- `matrixDepth`: the supported last-N depth. The initial value is `3`.
+- `serverRefs`: the last three server refs to exercise. `HEAD` means the
+  workflow trigger commit and is resolved to `github.sha` by CI.
+- `sdkSetVersions`: the last three generated SDK sets. Each set pins the
+  JavaScript/TypeScript, Python, and .NET refs independently because release
+  tags do not always share the same name.
+- `matrix.supported`: blocking compatibility cells. Any failing supported cell
+  is a CI regression.
+- `matrix.evaluation`: non-blocking cells that still run and appear in the
+  report.
+- `matrix.unsupported`: intentionally excluded cells.
+
+When a server release or SDK set ships, update the manifest first: add the new
+ref at the top of the relevant list, keep exactly `matrixDepth` entries, move
+or remove cells under `matrix.supported` / `matrix.evaluation` to match the
+support policy, then run the SDK compatibility workflow manually. Replace the
+temporary trunk-lineage commit refs with release tags as soon as the release
+process publishes them.
+
+The `sdk-server-compatibility.yml` workflow flattens this manifest into a
+`fail-fast: false` GitHub Actions matrix on `push` to `trunk`, manual dispatch,
+and the weekly schedule. It publishes per-cell JSON evidence plus a
+`sdk-compatibility-matrix-<run-id>` artifact containing a Markdown table and
+machine-readable summary.
+
+The per-SDK `#4` work can now use this manifest as the server-side compatibility
+contract and call `.github/workflows/reusable-sdk-pr-gate.yml` from each SDK
+repository for PR-local checks. The cross-version gate remains owned here so SDK
+repos do not need to duplicate the server ref policy.
 
 ## SDK Families
 
