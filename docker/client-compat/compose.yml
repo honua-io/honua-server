@@ -1,9 +1,17 @@
 # Real-client interop test matrix orchestrator.
 #
 # `honua` and `postgres` always start (depends_on healthy). Each client lane
-# is a separate service with profile `matrix` so:
-#   - `docker compose run --rm <lane>` brings up infra + that single lane.
-#   - `docker compose --profile matrix up --abort-on-container-exit` runs all.
+# is a separate service tagged with both a per-lane profile and the shared
+# `matrix` profile:
+#   - `docker compose --profile <lane> up --abort-on-container-exit
+#     --exit-code-from <lane> <lane>` runs one lane (the shape CI uses).
+#   - `docker compose run --rm <lane>` works locally for an ad-hoc single
+#     lane invocation.
+#   - The `matrix` profile is **not** suitable for parallel execution under
+#     `--abort-on-container-exit`: the first lane to exit terminates every
+#     other container before it can write evidence. Use
+#     scripts/client-compat/refresh-baselines.sh, which iterates the lanes
+#     sequentially, when you need every envelope captured.
 #
 # Output `.cert.json` envelopes are written to ./output/<lane>/ on the host so
 # the baseline-diff step can compare them against tests/baselines/client-compat.

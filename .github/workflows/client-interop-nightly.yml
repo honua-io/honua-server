@@ -33,6 +33,7 @@ jobs:
     timeout-minutes: 2
     outputs:
       lanes: ${{ steps.resolve.outputs.lanes }}
+      client_lanes: ${{ steps.resolve.outputs.client_lanes }}
     steps:
       - name: Resolve lanes input
         id: resolve
@@ -64,6 +65,30 @@ jobs:
           json=$(jq -cn --arg lanes "$raw" '$lanes | split(",")')
           echo "lanes=$json" >> "$GITHUB_OUTPUT"
           echo "Resolved lane matrix: $json"
+
+          # Map each requested lane to its client_lane value (the field on
+          # .cert.json envelopes that the diff script keys on). The mapping
+          # mirrors docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md and the
+          # docker compose service names.
+          declare -A LANE_TO_CLIENT_LANE=(
+            [gdal]="cli"
+            [pyqgis]="desktop-qgis"
+            [openlayers]="js"
+            [cesium]="js-cesium"
+            [arcgis-stub]="arcgis-stub"
+          )
+          client_lanes=""
+          for lane in "${requested[@]}"; do
+            mapped="${LANE_TO_CLIENT_LANE[$lane]:-}"
+            if [[ -z "$mapped" ]]; then
+              echo "::error::No client_lane mapping for '$lane'; update LANE_TO_CLIENT_LANE in the prepare job." >&2
+              exit 1
+            fi
+            if [[ -n "$client_lanes" ]]; then client_lanes+=","; fi
+            client_lanes+="$mapped"
+          done
+          echo "client_lanes=$client_lanes" >> "$GITHUB_OUTPUT"
+          echo "Resolved client_lanes filter: $client_lanes"
 
   matrix:
     name: ${{ matrix.lane }}
@@ -124,7 +149,7 @@ jobs:
 
   baseline-diff:
     name: Baseline diff and gap report
-    needs: matrix
+    needs: [prepare, matrix]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -165,12 +190,22 @@ jobs:
       - name: Compare against baselines and refresh gap report
         id: diff
         shell: bash
+        env:
+          CLIENT_LANES: ${{ needs.prepare.outputs.client_lanes }}
         run: |
           set +e
+          # CLIENT_LANES carries the client_lane filter for the lanes that
+          # actually ran; on a scheduled (full-matrix) run this equals every
+          # client_lane in expected-pairs.json so the filter is a no-op.
+          # On workflow_dispatch with a lane subset it scopes strict mode to
+          # just the requested lanes — without it, diff-baselines.py would
+          # treat every other baseline/expected-pair as a missing-envelope
+          # failure.
           python3 scripts/client-compat/diff-baselines.py \
             --baselines tests/baselines/client-compat \
             --current docker/client-compat/output \
             --gap-report docs/gis/gap-report.md \
+            --client-lanes "$CLIENT_LANES" \
             --strict
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
           exit 0

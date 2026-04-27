@@ -36,11 +36,22 @@ to the host for the baseline-diff step.
 
 ## Run the entire matrix
 
+Run lanes sequentially via the refresh script — it mirrors the CI matrix
+shape and captures every lane's evidence even when one of them fails:
+
 ```bash
-docker compose -f docker/client-compat/compose.yml --profile matrix up --abort-on-container-exit
+./scripts/client-compat/refresh-baselines.sh
 ```
 
-`--abort-on-container-exit` propagates a non-zero exit if any lane fails.
+A subset can be passed positionally (`./scripts/client-compat/refresh-baselines.sh
+cesium gdal`).
+
+The previous `--profile matrix up --abort-on-container-exit` shortcut is
+**not** safe for refresh use: `--abort-on-container-exit` terminates every
+container the moment any one of them exits, so the first lane to finish
+kills the rest before they can write evidence. Use a single
+`--profile <lane>` invocation per lane (with `--exit-code-from <lane>`)
+when you need to drive compose by hand.
 
 ## Output layout
 
@@ -88,12 +99,35 @@ database.
 
 ## Adding a new client lane
 
-1. Add `docker/client-compat/<lane>/Dockerfile`
+1. Add `docker/client-compat/<lane>/Dockerfile`.
 2. Add a service block to `compose.yml`:
+   - `profiles: ["matrix", "<lane>"]` — the per-lane profile is what the
+     CI workflow targets via `docker compose --profile <lane> ... <lane>`,
+     and the `matrix` profile is what `--profile matrix up` selects to run
+     the full set.
    - `depends_on: { honua: { condition: service_healthy } }`
    - `HONUA_BASE_URL=http://honua:5000`
    - `volumes: [ ../../tests:/workspace/tests:ro, ./output/<lane>:/output ]`
-3. Add the lane name to the matrix in `.github/workflows/client-interop-nightly.yml`.
+3. Wire the lane into `.github/workflows/client-interop-nightly.yml` — three
+   places in the `prepare` job must stay in sync or the workflow will
+   reject the matrix at dispatch time:
+   - the `workflow_dispatch.inputs.lanes` default value,
+   - the `allowed` lane list in the resolver step (an unknown lane fails
+     the run with `::error::Unknown lane '<lane>'` rather than silently
+     producing an empty matrix), and
+   - the `LANE_TO_CLIENT_LANE` associative array, which maps the lane
+     name to the `client_lane` value the lane writes into its
+     `.cert.json` envelopes (a missing entry fails the run with
+     `::error::No client_lane mapping for '<lane>'`).
+4. Add the lane to `scripts/client-compat/refresh-baselines.sh` (its
+   `DEFAULT_LANES` and `ALLOWED_LANES` arrays mirror the workflow matrix).
+5. Add the `(client_lane, protocol)` pair(s) the lane will emit to
+   [`tests/baselines/client-compat/expected-pairs.json`](../../tests/baselines/client-compat/expected-pairs.json)
+   and seed real baselines via
+   `scripts/client-compat/refresh-baselines.sh` — strict mode fails
+   when any expected pair has no committed baseline at all, so the
+   workflow will start failing the moment the manifest entry lands
+   without a paired baseline file.
 
 The lane's command must produce one or more `.cert.json` envelopes under
 `/output` so the baseline diff can compare deterministically.

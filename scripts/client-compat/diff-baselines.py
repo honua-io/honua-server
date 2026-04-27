@@ -12,6 +12,13 @@ Inputs:
                           pairs that the nightly matrix must produce evidence
                           for, even when no baseline has been committed yet
                           (default: tests/baselines/client-compat/expected-pairs.json).
+  --client-lanes LIST   Optional comma-separated client_lane filter. When set,
+                        baseline envelopes, current-run envelopes, and
+                        expected-pair entries whose client_lane is not in the
+                        set are dropped before the diff runs. Used by
+                        workflow_dispatch subset runs so a partial lane
+                        selection does not fail strict mode against the
+                        full-matrix baselines/expected-pairs manifest.
   --strict          Exit non-zero if the current run fails the regression gate.
 
 The script identifies envelopes by ``(client_lane, protocol)`` rather than by
@@ -318,6 +325,18 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--client-lanes",
+        default=None,
+        help=(
+            "Optional comma-separated client_lane filter (e.g. 'js,js-cesium'). "
+            "When set, baseline, current, and expected-pairs entries whose "
+            "client_lane is not in this set are dropped before the diff runs. "
+            "workflow_dispatch subset runs use this so a partial lane "
+            "selection does not fail strict mode against full-matrix "
+            "baselines/expected-pairs."
+        ),
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="Exit non-zero if any regressions are detected.",
@@ -332,6 +351,20 @@ def main() -> int:
     baselines = index_envelopes(baselines_dir)
     current = index_envelopes(current_dir)
     expected_pairs = load_expected_pairs(expected_pairs_path)
+
+    if args.client_lanes:
+        wanted = {lane.strip() for lane in args.client_lanes.split(",") if lane.strip()}
+        if wanted:
+            baselines = {k: v for k, v in baselines.items() if k[0] in wanted}
+            current = {k: v for k, v in current.items() if k[0] in wanted}
+            expected_pairs = [(lane, protocol) for lane, protocol in expected_pairs if lane in wanted]
+            print(
+                f"Filtering to client_lanes={sorted(wanted)}: "
+                f"{len(baselines)} baseline envelope(s), "
+                f"{len(current)} current envelope(s), "
+                f"{len(expected_pairs)} expected pair(s).",
+                file=sys.stderr,
+            )
 
     if not baselines:
         print(

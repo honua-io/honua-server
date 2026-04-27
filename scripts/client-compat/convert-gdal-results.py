@@ -9,10 +9,15 @@ test category mapped to a CERT-* test_case_id.
 Mapping rules:
   protocol "oapif" → cert protocol "ogc-features"
   protocol "wfs"   → cert protocol "wfs"
-  category "discovery" → CERT-DISC-01
-  category "read"      → CERT-CONN-01
-  category "query"     → CERT-QFLT-01
-  category "export"    → CERT-RNDR-01
+
+Category → CERT-* mapping is many-to-one because the GDAL test suite emits
+fine-grained category labels (e.g. ``feature_read``, ``attribute_query``,
+``spatial_query``, ``export_geojson``, ``export_gpkg``, ``export_csv``)
+rather than the coarse ``read``/``query``/``export`` buckets. When several
+categories roll up into one CERT-* ID their statuses are aggregated with
+``fail > pass > skip > not-applicable`` so a single failing sub-category
+cannot be hidden behind passing siblings, and a single passing sub-category
+cannot upgrade an otherwise-failing roll-up.
 
 Categories not exercised in the input are seeded as ``not-applicable``;
 known-applicable IDs the suite does not exercise are seeded as ``skip`` so
@@ -28,12 +33,44 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PROTOCOL_MAP = {"oapif": "ogc-features", "wfs": "wfs"}
+
+# Maps the category labels emitted by tests/python/gdal_ogr/test_*.py (via
+# ``evidence_collector.record(..., category, ...)``) onto the common-core
+# CERT-* IDs. Many-to-one is intentional — see module docstring for the
+# aggregation rule. The legacy short labels (``read`` / ``query`` /
+# ``export``) are kept as aliases so any historical or hand-curated GDAL
+# report still maps cleanly.
 CATEGORY_MAP = {
+    # Discovery family (test_*_discovery.py)
     "discovery": "CERT-DISC-01",
+    "schema_introspection": "CERT-DISC-01",
+    "feature_count": "CERT-DISC-01",
+    # Read family (test_*_read.py)
+    "feature_read": "CERT-CONN-01",
     "read": "CERT-CONN-01",
+    # Query family (test_*_query.py)
+    "attribute_query": "CERT-QFLT-01",
+    "spatial_query": "CERT-QFLT-01",
     "query": "CERT-QFLT-01",
+    # Export family (test_*_export.py)
+    "export_geojson": "CERT-RNDR-01",
+    "export_gpkg": "CERT-RNDR-01",
+    "export_csv": "CERT-RNDR-01",
     "export": "CERT-RNDR-01",
 }
+
+# Higher number wins when several categories roll up to one CERT-* ID.
+# Mirrors the aggregation rule the conftest already applies per-category
+# inside a single test module.
+_STATUS_PRIORITY = {"fail": 3, "pass": 2, "skip": 1, "not-applicable": 0}
+
+
+def _worst(current: str | None, candidate: str) -> str:
+    if current is None:
+        return candidate
+    if _STATUS_PRIORITY.get(candidate, -1) > _STATUS_PRIORITY.get(current, -1):
+        return candidate
+    return current
 
 # 24-ID common-core matrix (18 base + 6 visual / style slice IDs) — kept in
 # sync with tests/js-browser/cesium/support/cert-reporter.ts.
@@ -77,12 +114,26 @@ def build_envelope(
     server_version: str,
     environment: str,
 ) -> dict:
+    # Roll up every recognised category in `categories` onto its CERT-* ID,
+    # aggregating with worst-status-wins. Categories the converter does not
+    # know about are emitted as a stderr warning so newly-added tests do not
+    # silently disappear from the envelope.
+    cid_status: dict[str, str] = {}
+    for category, status in categories.items():
+        cid = CATEGORY_MAP.get(category)
+        if cid is None:
+            print(
+                f"::warning::Unknown GDAL category '{category}' (status={status}); "
+                "add it to CATEGORY_MAP in convert-gdal-results.py.",
+                file=sys.stderr,
+            )
+            continue
+        cid_status[cid] = _worst(cid_status.get(cid), status)
+
     results: list[dict] = []
     for cid in COMMON_CORE_IDS:
         if cid in APPLICABLE_TO_GDAL:
-            # Find matching category (reverse-lookup) and use its status.
-            category = next(c for c, mapped in CATEGORY_MAP.items() if mapped == cid)
-            status = categories.get(category)
+            status = cid_status.get(cid)
             if status is None:
                 results.append(_result(cid, "skip", "Not exercised by GDAL/OGR suite in this run."))
             else:
