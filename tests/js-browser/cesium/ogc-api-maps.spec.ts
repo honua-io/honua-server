@@ -16,17 +16,17 @@ function ogcMapUrl(): string {
 }
 
 test.describe('Cesium OGC API Maps', () => {
-  test('[CERT-CONN-01] OGC API Maps endpoint returns image bytes or a structured no-raster response', async ({ request }) => {
+  test('[CERT-CONN-01] OGC API Maps endpoint returns PNG image bytes', async ({ request }) => {
     const response = await request.get(ogcMapUrl());
-    expect([200, 404]).toContain(response.status());
-    if (response.status() === 200) {
-      expect(response.headers()['content-type'] ?? '').toContain('image/png');
-      const body = await response.body();
-      // PNG signature: 89 50 4E 47 0D 0A 1A 0A
-      expect([...body.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
-      return;
-    }
-    expect(response.headers()['content-type'] ?? '').toContain('json');
+    test.skip(
+      response.status() === 404,
+      'OGC API Maps endpoint not configured for browser_compat layer; CONN cannot be substantiated.',
+    );
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type'] ?? '').toContain('image/png');
+    const body = await response.body();
+    // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+    expect([...body.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   });
 
   test('[CERT-RNDR-01] SingleTileImageryProvider mounts an OGC Maps image when raster data is available', async ({ page, request }) => {

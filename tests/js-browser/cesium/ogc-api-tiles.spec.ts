@@ -9,11 +9,13 @@ import { BASE_URL, POINT_LAYER_ID } from './support/constants.js';
 test.describe('Cesium OGC API Tiles', () => {
   test('[CERT-CONN-01][CERT-DISC-01] OGC API Tiles landing page is reachable', async ({ request }) => {
     const response = await request.get(`${BASE_URL}/ogc/tiles`);
-    expect([200, 404]).toContain(response.status());
-    if (response.status() === 200) {
-      const body = await response.json();
-      expect(body).toBeTruthy();
-    }
+    test.skip(
+      response.status() === 404,
+      'OGC API Tiles landing page not configured for this server; CONN/DISC cannot be substantiated.',
+    );
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body).toBeTruthy();
   });
 
   test('[CERT-RNDR-01][JS-CES-TILE-01] UrlTemplateImageryProvider substitutes {z}/{x}/{y} correctly', async ({ page, request }) => {

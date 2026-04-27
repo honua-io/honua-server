@@ -18,7 +18,11 @@ the first nightly run will replace those with the actual `pass`/`fail`/`skip`
 status as observed by the docker harness.
 
 The other lanes (gdal, pyqgis, openlayers, arcgis-stub) are bootstrapped on
-the first run via `scripts/client-compat/refresh-baselines.sh`.
+the first run via `scripts/client-compat/refresh-baselines.sh`. The
+[`expected-pairs.json`](../../tests/baselines/client-compat/expected-pairs.json)
+manifest still gates strict mode while baselines catch up: a missing
+`(client_lane, protocol)` envelope from both baseline and current run
+fails the workflow even when no baseline exists yet.
 
 ## Permanent gaps (tracked separately)
 

@@ -8,18 +8,27 @@ Inputs:
                     (default: docker/client-compat/output, recursed).
   --gap-report PATH Where to write the Markdown gap report
                     (default: docs/gis/gap-report.md).
+  --expected-pairs PATH   JSON manifest of expected (client_lane, protocol)
+                          pairs that the nightly matrix must produce evidence
+                          for, even when no baseline has been committed yet
+                          (default: tests/baselines/client-compat/expected-pairs.json).
   --strict          Exit non-zero if the current run fails the regression gate.
 
 The script identifies envelopes by ``(client_lane, protocol)`` rather than by
 filename so that ``run_id`` differences do not cause spurious diffs. For each
 shared (lane, protocol, test_case_id) tuple it classifies the change:
 
-  * regression: baseline ``pass`` → current ``fail``
+  * regression: baseline ``pass`` → current ``fail``/``skip``/``not-applicable``
+    (any drop from pass to non-pass is a regression — baseline bumps must be
+    explicit, not silent)
   * improvement: baseline ``fail`` → current ``pass``
-  * recovery: baseline non-pass → current ``pass``
+  * recovery: baseline non-pass non-fail → current ``pass``
   * still-failing: baseline ``fail`` → current ``fail``
   * gap: present in baseline, absent from current run
-  * new: present in current run, absent from baseline
+  * new-fail: absent from baseline, current ``fail`` (a brand-new failing
+    test in an unbaselined lane must block strict mode so a never-baselined
+    lane cannot be reduced to a passing nightly by emitting all-fail evidence)
+  * new: absent from baseline, current non-fail
 
 The report sorts regressions to the top so reviewers see the actionable diffs
 first. The ``--strict`` flag is what the CI workflow uses; non-strict mode is
@@ -31,11 +40,15 @@ In ``--strict`` mode the script exits non-zero when **any** of these hold:
      current run (lane crashed without producing evidence).
   2. A baseline test_case_id is missing from a current-run envelope (lane ran
      but truncated its output).
-  3. A baseline ``pass`` regressed to current ``fail``.
+  3. A baseline ``pass`` regressed to current ``fail``/``skip``/``not-applicable``.
   4. The current-run directory contained no envelopes at all.
+  5. An ``expected-pairs.json`` entry is absent from both baseline and current
+     run (lane never produced the contractually-required evidence).
+  6. A current envelope reports ``fail`` for a test case with no baseline
+     entry (a new failure in an unbaselined lane).
 
 Without those checks a crashed lane (lane-job exit 0 ⊕ no envelope written)
-would silently pass the nightly gate.
+or an all-fail brand-new lane would silently pass the nightly gate.
 """
 from __future__ import annotations
 
@@ -92,11 +105,16 @@ def index_results(envelope: dict) -> dict[str, dict]:
 
 
 def classify(baseline: str | None, current: str | None) -> str:
+    # 'gap'/'new*' branches handle one-sided absence; otherwise both are present.
     if baseline is None and current is not None:
-        return "new"
+        return "new-fail" if current == "fail" else "new"
     if baseline is not None and current is None:
         return "gap"
-    if baseline == "pass" and current == "fail":
+    # Any baseline pass that does not stay pass in the current run is a
+    # regression — including pass→skip and pass→not-applicable, which would
+    # otherwise hide an endpoint that became unavailable (e.g. a Playwright
+    # test calling test.skip() because the endpoint now 404s).
+    if baseline == "pass" and current != "pass":
         return "regression"
     if baseline == "fail" and current == "pass":
         return "improvement"
@@ -143,7 +161,8 @@ def diff(
 
 
 SECTION_ORDER = [
-    ("regression", "Regressions (baseline pass → current fail)"),
+    ("regression", "Regressions (baseline pass → current non-pass)"),
+    ("new-fail", "New failures (no baseline → current fail)"),
     ("still-failing", "Still failing (baseline fail → current fail)"),
     ("gap", "Missing from current run"),
     ("new", "New IDs not in baseline"),
@@ -152,11 +171,30 @@ SECTION_ORDER = [
 ]
 
 
+def load_expected_pairs(path: Path) -> list[tuple[str, str]]:
+    """Read the expected-pairs manifest. Missing manifest -> empty list (no gate)."""
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"::warning::Could not read expected-pairs manifest {path}: {exc}", file=sys.stderr)
+        return []
+    pairs: list[tuple[str, str]] = []
+    for entry in payload.get("expected_pairs", []):
+        lane = entry.get("client_lane")
+        protocol = entry.get("protocol")
+        if lane and protocol:
+            pairs.append((lane, protocol))
+    return pairs
+
+
 def write_gap_report(
     changes: Iterable[CaseChange],
     baselines: dict[tuple[str, str], dict],
     current: dict[tuple[str, str], dict],
     path: Path,
+    expected_pairs: list[tuple[str, str]] | None = None,
 ) -> None:
     by_classification: dict[str, list[CaseChange]] = defaultdict(list)
     for c in changes:
@@ -204,6 +242,41 @@ def write_gap_report(
             )
         lines.append("")
 
+    if expected_pairs:
+        present_pairs = set(baselines.keys()) | set(current.keys())
+        unbaselined_missing = [
+            (lane, protocol) for lane, protocol in expected_pairs
+            if (lane, protocol) not in present_pairs
+        ]
+        unbaselined_no_baseline = [
+            (lane, protocol) for lane, protocol in expected_pairs
+            if (lane, protocol) not in baselines and (lane, protocol) in current
+        ]
+        if unbaselined_missing:
+            lines.append(f"## Expected pairs absent from this run ({len(unbaselined_missing)})")
+            lines.append("")
+            lines.append("| Lane | Protocol |")
+            lines.append("|------|----------|")
+            for lane, protocol in unbaselined_missing:
+                lines.append(f"| {lane} | {protocol} |")
+            lines.append("")
+        if unbaselined_no_baseline:
+            lines.append(
+                f"## Expected pairs without committed baselines ({len(unbaselined_no_baseline)})"
+            )
+            lines.append("")
+            lines.append(
+                "These lanes ran but no baseline has been committed yet. "
+                "Run `scripts/client-compat/refresh-baselines.sh` after reviewing "
+                "the current envelope content."
+            )
+            lines.append("")
+            lines.append("| Lane | Protocol |")
+            lines.append("|------|----------|")
+            for lane, protocol in unbaselined_no_baseline:
+                lines.append(f"| {lane} | {protocol} |")
+            lines.append("")
+
     if not any(by_classification.get(k) for k, _ in SECTION_ORDER):
         lines.append("## No deviations from baseline")
         lines.append("")
@@ -220,6 +293,15 @@ def main() -> int:
     parser.add_argument("--current", default="docker/client-compat/output")
     parser.add_argument("--gap-report", default="docs/gis/gap-report.md")
     parser.add_argument(
+        "--expected-pairs",
+        default="tests/baselines/client-compat/expected-pairs.json",
+        help=(
+            "Path to the expected (client_lane, protocol) manifest. Pairs in "
+            "this file must produce evidence on every run; strict mode fails "
+            "if any are missing from both baseline and current run."
+        ),
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="Exit non-zero if any regressions are detected.",
@@ -229,9 +311,11 @@ def main() -> int:
     baselines_dir = Path(args.baselines)
     current_dir = Path(args.current)
     gap_report_path = Path(args.gap_report)
+    expected_pairs_path = Path(args.expected_pairs)
 
     baselines = index_envelopes(baselines_dir)
     current = index_envelopes(current_dir)
+    expected_pairs = load_expected_pairs(expected_pairs_path)
 
     if not baselines:
         print(
@@ -242,6 +326,10 @@ def main() -> int:
 
     missing_envelopes = sorted(set(baselines.keys()) - set(current.keys()))
     no_current_evidence = bool(baselines) and not current
+
+    expected_set = set(expected_pairs)
+    present_set = set(baselines.keys()) | set(current.keys())
+    expected_missing = sorted(expected_set - present_set)
 
     if no_current_evidence:
         print(
@@ -257,17 +345,37 @@ def main() -> int:
         for lane, protocol in missing_envelopes:
             print(f"  - {lane}/{protocol}", file=sys.stderr)
 
+    if expected_missing:
+        print(
+            f"::error::{len(expected_missing)} expected (lane, protocol) pair(s) "
+            "absent from both baseline and current run:",
+            file=sys.stderr,
+        )
+        for lane, protocol in expected_missing:
+            print(f"  - {lane}/{protocol}", file=sys.stderr)
+
     changes = diff(baselines, current)
-    write_gap_report(changes, baselines, current, gap_report_path)
+    write_gap_report(changes, baselines, current, gap_report_path, expected_pairs)
     print(f"Wrote {gap_report_path}")
 
     regressions = [c for c in changes if c.classification == "regression"]
+    new_fails = [c for c in changes if c.classification == "new-fail"]
     gaps = [c for c in changes if c.classification == "gap"]
     if regressions:
         print(f"::error::{len(regressions)} regression(s) detected:", file=sys.stderr)
         for r in regressions:
             print(
-                f"  - {r.lane}/{r.protocol}: {r.test_case_id} pass → fail",
+                f"  - {r.lane}/{r.protocol}: {r.test_case_id} {r.baseline_status} → {r.current_status}",
+                file=sys.stderr,
+            )
+    if new_fails:
+        print(
+            f"::error::{len(new_fails)} new failure(s) in unbaselined test case(s):",
+            file=sys.stderr,
+        )
+        for n in new_fails:
+            print(
+                f"  - {n.lane}/{n.protocol}: {n.test_case_id} → fail (no baseline)",
                 file=sys.stderr,
             )
     if gaps:
@@ -281,7 +389,14 @@ def main() -> int:
                 file=sys.stderr,
             )
 
-    if args.strict and (regressions or gaps or missing_envelopes or no_current_evidence):
+    if args.strict and (
+        regressions
+        or new_fails
+        or gaps
+        or missing_envelopes
+        or no_current_evidence
+        or expected_missing
+    ):
         return 1
 
     return 0
