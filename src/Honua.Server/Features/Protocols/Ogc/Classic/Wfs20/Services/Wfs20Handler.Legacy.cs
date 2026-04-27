@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Xml;
+using System.Xml.Linq;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -114,11 +115,11 @@ internal sealed partial class Wfs20Handler
         }
 
         var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
-        var normalizedFilter = NormalizeLegacyFilterXml(filter);
         var isHitsRequest = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase);
 
         try
         {
+            var normalizedFilter = NormalizeLegacyFilterXml(filter);
             var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
             var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (unknownTypes.Length > 0)
@@ -420,6 +421,10 @@ internal sealed partial class Wfs20Handler
         {
             writer.WriteAttributeString("fid", BuildFeatureId(plan.Descriptor, feature.Id));
         }
+        else
+        {
+            writer.WriteAttributeString("gml", "id", GmlLegacyNamespace, BuildFeatureId(plan.Descriptor, feature.Id));
+        }
 
         if (plan.Descriptor.Layer.GeometryField is not null && feature.Geometry is not null)
         {
@@ -623,13 +628,344 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
-        return filter
-            .Replace(OgcFilterNamespace, Wfs20Utilities.FesNamespace, StringComparison.Ordinal)
-            .Replace("<ogc:PropertyName", "<ogc:ValueReference", StringComparison.Ordinal)
-            .Replace("</ogc:PropertyName>", "</ogc:ValueReference>", StringComparison.Ordinal)
-            .Replace("<PropertyName", "<ValueReference", StringComparison.Ordinal)
-            .Replace("</PropertyName>", "</ValueReference>", StringComparison.Ordinal);
+        try
+        {
+            var document = SecureXmlDocumentParser.Parse(filter, LoadOptions.PreserveWhitespace);
+            var root = document.Root ?? throw new Fes20ParseException("FILTER must contain a root element.");
+            return NormalizeLegacyFilterElement(root).ToString(SaveOptions.DisableFormatting);
+        }
+        catch (XmlException ex)
+        {
+            throw new Fes20ParseException("Invalid legacy WFS FILTER XML.", ex);
+        }
     }
+
+    private static XElement NormalizeLegacyFilterElement(XElement element)
+    {
+        if (TryCreateLegacyCoordinateGeometry(element, out var normalizedGeometry))
+        {
+            return normalizedGeometry;
+        }
+
+        var normalized = new XElement(GetNormalizedLegacyElementName(element));
+        CopyNormalizedLegacyAttributes(element, normalized);
+
+        foreach (var node in element.Nodes())
+        {
+            switch (node)
+            {
+                case XElement child:
+                    normalized.Add(NormalizeLegacyFilterElement(child));
+                    break;
+                case XCData cdata:
+                    normalized.Add(new XCData(cdata.Value));
+                    break;
+                case XText text:
+                    normalized.Add(new XText(text.Value));
+                    break;
+            }
+        }
+
+        return normalized;
+    }
+
+    private static XName GetNormalizedLegacyElementName(XElement element)
+    {
+        var localName = element.Name.LocalName switch
+        {
+            "PropertyName" => "ValueReference",
+            "FeatureId" => "ResourceId",
+            "outerBoundaryIs" => "exterior",
+            "innerBoundaryIs" => "interior",
+            _ => element.Name.LocalName
+        };
+
+        if (IsLegacyGmlElement(element) || IsKnownGmlElement(localName))
+        {
+            return XName.Get(localName, Wfs20Utilities.GmlNamespace);
+        }
+
+        if (IsLegacyFilterElement(element) || IsKnownFilterElement(localName))
+        {
+            return XName.Get(localName, Wfs20Utilities.FesNamespace);
+        }
+
+        return element.Name;
+    }
+
+    private static void CopyNormalizedLegacyAttributes(XElement source, XElement target)
+    {
+        foreach (var attribute in source.Attributes())
+        {
+            if (attribute.IsNamespaceDeclaration)
+            {
+                continue;
+            }
+
+            var attributeName = attribute.Name;
+            if (string.Equals(source.Name.LocalName, "FeatureId", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(attribute.Name.LocalName, "fid", StringComparison.OrdinalIgnoreCase))
+            {
+                attributeName = "rid";
+            }
+            else if (string.Equals(attribute.Name.NamespaceName, GmlLegacyNamespace, StringComparison.Ordinal))
+            {
+                attributeName = XName.Get(attribute.Name.LocalName, Wfs20Utilities.GmlNamespace);
+            }
+
+            target.SetAttributeValue(attributeName, attribute.Value);
+        }
+    }
+
+    private static bool TryCreateLegacyCoordinateGeometry(XElement element, out XElement normalizedGeometry)
+    {
+        normalizedGeometry = null!;
+        if (!IsLegacyGmlElement(element) && !IsKnownGmlElement(element.Name.LocalName))
+        {
+            return false;
+        }
+
+        if (string.Equals(element.Name.LocalName, "Box", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedGeometry = CreateEnvelopeFromLegacyBox(element);
+            return true;
+        }
+
+        if (!TryReadLegacyCoordinateTuples(element, out var coordinates))
+        {
+            return false;
+        }
+
+        if (string.Equals(element.Name.LocalName, "Point", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedGeometry = CreateNormalizedGmlElement(element, "Point");
+            normalizedGeometry.Add(new XElement(
+                XName.Get("pos", Wfs20Utilities.GmlNamespace),
+                FormatLegacyCoordinate(coordinates[0])));
+            return true;
+        }
+
+        if (string.Equals(element.Name.LocalName, "LineString", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(element.Name.LocalName, "LinearRing", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedGeometry = CreateNormalizedGmlElement(element, element.Name.LocalName);
+            normalizedGeometry.Add(new XElement(
+                XName.Get("posList", Wfs20Utilities.GmlNamespace),
+                FormatLegacyCoordinateSequence(coordinates)));
+            return true;
+        }
+
+        return false;
+    }
+
+    private static XElement CreateEnvelopeFromLegacyBox(XElement box)
+    {
+        if (!TryReadLegacyCoordinateTuples(box, out var coordinates) || coordinates.Length < 2)
+        {
+            throw new Fes20ParseException("GML Box must contain at least two coordinate tuples.");
+        }
+
+        var envelope = CreateNormalizedGmlElement(box, "Envelope");
+        envelope.Add(new XElement(
+            XName.Get("lowerCorner", Wfs20Utilities.GmlNamespace),
+            FormatLegacyCoordinate(coordinates[0])));
+        envelope.Add(new XElement(
+            XName.Get("upperCorner", Wfs20Utilities.GmlNamespace),
+            FormatLegacyCoordinate(coordinates[^1])));
+        return envelope;
+    }
+
+    private static XElement CreateNormalizedGmlElement(XElement source, string localName)
+    {
+        var element = new XElement(XName.Get(localName, Wfs20Utilities.GmlNamespace));
+        CopyNormalizedLegacyAttributes(source, element);
+        return element;
+    }
+
+    private static bool TryReadLegacyCoordinateTuples(XElement element, out Coordinate[] coordinates)
+    {
+        var coordinatesElement = element.Elements()
+            .FirstOrDefault(child => string.Equals(child.Name.LocalName, "coordinates", StringComparison.OrdinalIgnoreCase));
+        if (coordinatesElement is not null)
+        {
+            coordinates = ParseLegacyCoordinatesElement(coordinatesElement);
+            return true;
+        }
+
+        var coordElements = element.Elements()
+            .Where(child => string.Equals(child.Name.LocalName, "coord", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (coordElements.Length > 0)
+        {
+            coordinates = coordElements.Select(ParseLegacyCoordElement).ToArray();
+            return true;
+        }
+
+        coordinates = [];
+        return false;
+    }
+
+    private static Coordinate[] ParseLegacyCoordinatesElement(XElement coordinatesElement)
+    {
+        var coordinateSeparator = coordinatesElement.Attribute("cs")?.Value ?? ",";
+        var tupleSeparator = coordinatesElement.Attribute("ts")?.Value ?? " ";
+        var decimalSeparator = coordinatesElement.Attribute("decimal")?.Value ?? ".";
+        var tuples = SplitLegacyCoordinateTuples(coordinatesElement.Value, tupleSeparator);
+        if (tuples.Length == 0)
+        {
+            throw new Fes20ParseException("GML coordinates must contain at least one coordinate tuple.");
+        }
+
+        var coordinates = new Coordinate[tuples.Length];
+        for (var index = 0; index < tuples.Length; index++)
+        {
+            var ordinates = tuples[index].Split(
+                coordinateSeparator,
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (ordinates.Length < 2)
+            {
+                throw new Fes20ParseException("GML coordinate tuple must contain at least two ordinates.");
+            }
+
+            coordinates[index] = new Coordinate(
+                ParseLegacyOrdinate(ordinates[0], decimalSeparator),
+                ParseLegacyOrdinate(ordinates[1], decimalSeparator));
+        }
+
+        return coordinates;
+    }
+
+    private static string[] SplitLegacyCoordinateTuples(string value, string tupleSeparator)
+    {
+        if (string.IsNullOrWhiteSpace(tupleSeparator))
+        {
+            return value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+
+        return string.Equals(tupleSeparator, " ", StringComparison.Ordinal)
+            ? value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            : value.Split(tupleSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static Coordinate ParseLegacyCoordElement(XElement coordElement)
+    {
+        var x = coordElement.Elements()
+            .FirstOrDefault(child => string.Equals(child.Name.LocalName, "X", StringComparison.OrdinalIgnoreCase))
+            ?.Value;
+        var y = coordElement.Elements()
+            .FirstOrDefault(child => string.Equals(child.Name.LocalName, "Y", StringComparison.OrdinalIgnoreCase))
+            ?.Value;
+        if (string.IsNullOrWhiteSpace(x) || string.IsNullOrWhiteSpace(y))
+        {
+            throw new Fes20ParseException("GML coord must contain X and Y ordinates.");
+        }
+
+        return new Coordinate(ParseLegacyOrdinate(x, "."), ParseLegacyOrdinate(y, "."));
+    }
+
+    private static double ParseLegacyOrdinate(string value, string decimalSeparator)
+    {
+        if (!string.Equals(decimalSeparator, ".", StringComparison.Ordinal))
+        {
+            value = value.Replace(decimalSeparator, ".", StringComparison.Ordinal);
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate) ||
+            !double.IsFinite(ordinate))
+        {
+            throw new Fes20ParseException("GML coordinate ordinate must be a finite number.");
+        }
+
+        return ordinate;
+    }
+
+    private static string FormatLegacyCoordinate(Coordinate coordinate)
+        => string.Create(
+            CultureInfo.InvariantCulture,
+            $"{coordinate.X:R} {coordinate.Y:R}");
+
+    private static string FormatLegacyCoordinateSequence(Coordinate[] coordinates)
+    {
+        var builder = new StringBuilder(coordinates.Length * 24);
+        for (var index = 0; index < coordinates.Length; index++)
+        {
+            if (index > 0)
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(coordinates[index].X.ToString("R", CultureInfo.InvariantCulture));
+            builder.Append(' ');
+            builder.Append(coordinates[index].Y.ToString("R", CultureInfo.InvariantCulture));
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool IsLegacyFilterElement(XElement element)
+        => string.Equals(element.Name.NamespaceName, OgcFilterNamespace, StringComparison.Ordinal) ||
+           string.Equals(element.Name.NamespaceName, Wfs20Utilities.FesNamespace, StringComparison.Ordinal);
+
+    private static bool IsLegacyGmlElement(XElement element)
+        => string.Equals(element.Name.NamespaceName, GmlLegacyNamespace, StringComparison.Ordinal) ||
+           string.Equals(element.Name.NamespaceName, Wfs20Utilities.GmlNamespace, StringComparison.Ordinal);
+
+    private static bool IsKnownFilterElement(string localName)
+        => localName is
+            "Filter" or
+            "And" or
+            "Or" or
+            "Not" or
+            "PropertyIsEqualTo" or
+            "PropertyIsNotEqualTo" or
+            "PropertyIsLessThan" or
+            "PropertyIsGreaterThan" or
+            "PropertyIsLessThanOrEqualTo" or
+            "PropertyIsGreaterThanOrEqualTo" or
+            "PropertyIsLike" or
+            "PropertyIsNil" or
+            "PropertyIsNull" or
+            "PropertyIsBetween" or
+            "LowerBoundary" or
+            "UpperBoundary" or
+            "BBOX" or
+            "Intersects" or
+            "Contains" or
+            "Within" or
+            "Crosses" or
+            "Touches" or
+            "Overlaps" or
+            "Disjoint" or
+            "Equals" or
+            "DWithin" or
+            "Beyond" or
+            "Distance" or
+            "ValueReference" or
+            "Literal" or
+            "ResourceId";
+
+    private static bool IsKnownGmlElement(string localName)
+        => localName is
+            "Envelope" or
+            "Box" or
+            "lowerCorner" or
+            "upperCorner" or
+            "Point" or
+            "LineString" or
+            "Curve" or
+            "Polygon" or
+            "Surface" or
+            "exterior" or
+            "interior" or
+            "outerBoundaryIs" or
+            "innerBoundaryIs" or
+            "LinearRing" or
+            "pos" or
+            "posList" or
+            "coordinates" or
+            "coord" or
+            "X" or
+            "Y";
 
     private static bool IsLegacyXmlOutputFormat(string version, string? outputFormat)
     {

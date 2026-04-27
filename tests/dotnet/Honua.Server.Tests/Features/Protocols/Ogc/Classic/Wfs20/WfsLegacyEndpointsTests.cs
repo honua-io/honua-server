@@ -43,6 +43,22 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
     [Protocol(TestProtocols.Wfs11)]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs11, "GetCapabilities")]
+    public async Task Wfs11_GetCapabilities_AcceptVersionsClientOrder_ReturnsWfs11()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&ACCEPTVERSIONS=1.1.0,2.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<wfs:WFS_Capabilities");
+        content.Should().Contain("version=\"1.1.0\"");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs11)]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs11, "DescribeFeatureType")]
     public async Task Wfs11_DescribeFeatureType_ReturnsGml31Schema()
     {
@@ -73,6 +89,7 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         content.Should().Contain("version=\"1.1.0\"");
         content.Should().Contain("xmlns:gml=\"http://www.opengis.net/gml\"");
         content.Should().Contain("<gml:featureMember>");
+        content.Should().Contain("gml:id=\"test_layer.");
     }
 
     [IntegrationTest]
@@ -96,6 +113,39 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
         responseBody.Should().Contain("<wfs:FeatureCollection");
         responseBody.Should().Contain("version=\"1.1.0\"");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs11)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs11, "GetFeature")]
+    public async Task Wfs11_GetFeature_LegacySpatialFilters_ReturnMatchingFeature()
+    {
+        const string bboxFilter = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc" xmlns:gml="http://www.opengis.net/gml">
+              <ogc:BBOX>
+                <ogc:PropertyName>shape</ogc:PropertyName>
+                <gml:Envelope srsName="CRS84">
+                  <gml:lowerCorner>-122.35 37.75</gml:lowerCorner>
+                  <gml:upperCorner>-122.25 37.85</gml:upperCorner>
+                </gml:Envelope>
+              </ogc:BBOX>
+            </ogc:Filter>
+            """;
+        const string intersectsFilter = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc" xmlns:gml="http://www.opengis.net/gml">
+              <ogc:Intersects>
+                <ogc:PropertyName>shape</ogc:PropertyName>
+                <gml:Point srsName="CRS84">
+                  <gml:pos>-122.3 37.8</gml:pos>
+                </gml:Point>
+              </ogc:Intersects>
+            </ogc:Filter>
+            """;
+
+        await AssertLegacyFilterReturnsFifthFeatureAsync("1.1.0", bboxFilter);
+        await AssertLegacyFilterReturnsFifthFeatureAsync("1.1.0", intersectsFilter);
     }
 
     [IntegrationTest]
@@ -150,6 +200,22 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
     [Protocol(TestProtocols.Wfs10)]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs10, "GetCapabilities")]
+    public async Task Wfs10_GetCapabilities_AcceptVersionsClientOrder_ReturnsWfs10()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&ACCEPTVERSIONS=1.0.0,1.1.0,2.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<WFS_Capabilities");
+        content.Should().Contain("version=\"1.0.0\"");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs10)]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs10, "DescribeFeatureType")]
     public async Task Wfs10_DescribeFeatureType_ReturnsGml2Schema()
     {
@@ -184,6 +250,38 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(TestProtocols.Wfs10)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs10, "GetFeature")]
+    public async Task Wfs10_GetFeature_LegacySpatialFilters_ReturnMatchingFeature()
+    {
+        const string bboxFilter = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc" xmlns:gml="http://www.opengis.net/gml">
+              <ogc:BBOX>
+                <ogc:PropertyName>shape</ogc:PropertyName>
+                <gml:Box srsName="CRS84">
+                  <gml:coordinates>-122.35,37.75 -122.25,37.85</gml:coordinates>
+                </gml:Box>
+              </ogc:BBOX>
+            </ogc:Filter>
+            """;
+        const string intersectsFilter = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc" xmlns:gml="http://www.opengis.net/gml">
+              <ogc:Intersects>
+                <ogc:PropertyName>shape</ogc:PropertyName>
+                <gml:Point srsName="CRS84">
+                  <gml:coordinates>-122.3,37.8</gml:coordinates>
+                </gml:Point>
+              </ogc:Intersects>
+            </ogc:Filter>
+            """;
+
+        await AssertLegacyFilterReturnsFifthFeatureAsync("1.0.0", bboxFilter);
+        await AssertLegacyFilterReturnsFifthFeatureAsync("1.0.0", intersectsFilter);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs10)]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     public async Task Wfs10_GetCapabilities_InvalidVersion_ReturnsServiceExceptionReport()
@@ -210,5 +308,16 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("<ServiceExceptionReport version=\"1.0.0\">");
         content.Should().Contain("Unknown feature type");
+    }
+
+    private async Task AssertLegacyFilterReturnsFifthFeatureAsync(string version, string filter)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION={version}&TYPENAME=test_layer&MAXFEATURES=5&FILTER={Uri.EscapeDataString(filter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("Fifth Feature");
+        content.Should().NotContain("Another Feature");
     }
 }

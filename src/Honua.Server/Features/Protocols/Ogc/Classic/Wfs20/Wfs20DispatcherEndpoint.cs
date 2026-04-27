@@ -842,19 +842,25 @@ internal static class Wfs20DispatcherEndpoint
         }
 
         var acceptedVersions = acceptVersions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (acceptedVersions.Contains(Wfs20Utilities.Version, StringComparer.OrdinalIgnoreCase))
+        foreach (var acceptedVersion in acceptedVersions)
         {
-            return null;
+            if (string.Equals(acceptedVersion, Wfs20Utilities.Version, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            if (string.Equals(acceptedVersion, Wfs11Version, StringComparison.OrdinalIgnoreCase))
+            {
+                return Wfs11Version;
+            }
+
+            if (string.Equals(acceptedVersion, Wfs10Version, StringComparison.OrdinalIgnoreCase))
+            {
+                return Wfs10Version;
+            }
         }
 
-        if (acceptedVersions.Contains(Wfs11Version, StringComparer.OrdinalIgnoreCase))
-        {
-            return Wfs11Version;
-        }
-
-        return acceptedVersions.Contains(Wfs10Version, StringComparer.OrdinalIgnoreCase)
-            ? Wfs10Version
-            : null;
+        return null;
     }
 
     private static bool IsLegacyWfsVersion(string? version)
