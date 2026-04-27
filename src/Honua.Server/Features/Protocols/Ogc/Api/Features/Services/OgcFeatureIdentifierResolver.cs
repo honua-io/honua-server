@@ -51,6 +51,55 @@ internal static class OgcFeatureIdentifierResolver
         => Convert.ToString(GetPublicId(feature, layer), CultureInfo.InvariantCulture)
            ?? feature.Id.ToString(CultureInfo.InvariantCulture);
 
+    public static string? FormatPayloadId(object? payloadId)
+    {
+        var normalized = NormalizePublicId(payloadId);
+        return normalized switch
+        {
+            null => null,
+            string text => string.IsNullOrWhiteSpace(text) ? null : text,
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => Convert.ToString(normalized, CultureInfo.InvariantCulture)
+        };
+    }
+
+    public static string? FormatPayloadPublicId(
+        IReadOnlyDictionary<string, object?>? properties,
+        LayerDefinition layer)
+    {
+        if (properties is null)
+        {
+            return null;
+        }
+
+        if (TryGetAttributeValue(properties, layer.ObjectIdFieldName, out var configuredId))
+        {
+            return FormatPayloadId(configuredId);
+        }
+
+        if (!layer.ObjectIdFieldName.Equals("id", StringComparison.OrdinalIgnoreCase) &&
+            TryGetAttributeValue(properties, "id", out var idValue))
+        {
+            return FormatPayloadId(idValue);
+        }
+
+        return null;
+    }
+
+    public static FieldDefinition? ResolveWritablePublicIdField(LayerDefinition layer)
+    {
+        var field = layer.Fields.FirstOrDefault(field =>
+                        field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase))
+                    ?? layer.Fields.FirstOrDefault(field =>
+                        field.Name.Equals("id", StringComparison.OrdinalIgnoreCase));
+
+        return field is null ||
+               field.IsGeometry ||
+               field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : field;
+    }
+
     public static bool TryCreateIdsFilter(
         string? rawIds,
         LayerDefinition layer,

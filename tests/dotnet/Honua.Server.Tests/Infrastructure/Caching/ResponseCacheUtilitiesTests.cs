@@ -59,6 +59,28 @@ public sealed class ResponseCacheUtilitiesTests
     }
 
     [Fact]
+    public void BuildODataLayerKey_QueryValuesWithDelimiters_DoNotCollide()
+    {
+        var encodedValue = CreateRequest(
+            scheme: "https",
+            host: "api.example.test",
+            pathBase: string.Empty,
+            path: "/odata/Features(0)",
+            queryString: "?a=1%26b%3D2");
+        var separateParameters = CreateRequest(
+            scheme: "https",
+            host: "api.example.test",
+            pathBase: string.Empty,
+            path: "/odata/Features(0)",
+            queryString: "?a=1&b=2");
+
+        var encodedValueKey = ResponseCacheUtilities.BuildODataLayerKey(0, encodedValue.Request);
+        var separateParametersKey = ResponseCacheUtilities.BuildODataLayerKey(0, separateParameters.Request);
+
+        encodedValueKey.Should().NotBe(separateParametersKey);
+    }
+
+    [Fact]
     public void ShouldCache_ByDefault_ReturnsFalse()
     {
         var context = CreateRequest(

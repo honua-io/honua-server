@@ -747,6 +747,10 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
             .BeTrue();
         postOperation.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
         postOperation.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
+        var postCreatedResponse = postOperation.GetProperty("responses").GetProperty("201");
+        postCreatedResponse.GetProperty("headers").TryGetProperty("Location", out _).Should().BeTrue();
+        postCreatedResponse.GetProperty("headers").TryGetProperty("ETag", out _).Should().BeTrue();
+        postCreatedResponse.GetProperty("headers").TryGetProperty("Content-Crs", out _).Should().BeTrue();
 
         var featureItemPath = json.RootElement.GetProperty("paths").GetProperty("/collections/{collectionId}/items/{featureId}");
         var putOperation = featureItemPath.GetProperty("put");
@@ -762,6 +766,9 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         putOperation.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
         putOperation.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
         putOperation.GetProperty("responses").TryGetProperty("412", out _).Should().BeTrue();
+        var putOkResponse = putOperation.GetProperty("responses").GetProperty("200");
+        putOkResponse.GetProperty("headers").TryGetProperty("ETag", out _).Should().BeTrue();
+        putOkResponse.GetProperty("headers").TryGetProperty("Content-Crs", out _).Should().BeTrue();
 
         var patchOperation = featureItemPath.GetProperty("patch");
         patchOperation.GetProperty("security").EnumerateArray().Should().NotBeEmpty();
@@ -773,14 +780,57 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
             .Any(parameter => parameter.GetProperty("name").GetString() == "If-Match")
             .Should()
             .BeTrue();
+        var patchContent = patchOperation.GetProperty("requestBody").GetProperty("content");
+        patchContent.TryGetProperty("application/geo+json", out _).Should().BeTrue();
+        patchContent.TryGetProperty("application/json", out _).Should().BeTrue();
+        patchContent.TryGetProperty("application/merge-patch+json", out _).Should().BeTrue();
         patchOperation.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
         patchOperation.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
         patchOperation.GetProperty("responses").TryGetProperty("412", out _).Should().BeTrue();
+        var patchOkResponse = patchOperation.GetProperty("responses").GetProperty("200");
+        patchOkResponse.GetProperty("headers").TryGetProperty("ETag", out _).Should().BeTrue();
+        patchOkResponse.GetProperty("headers").TryGetProperty("Content-Crs", out _).Should().BeTrue();
 
         var deleteOperation = featureItemPath.GetProperty("delete");
         deleteOperation.GetProperty("security").EnumerateArray().Should().NotBeEmpty();
         deleteOperation.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
         deleteOperation.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /openapi.json")]
+    public async Task GetOpenApiSpec_DocumentsQueryablesSchemaJsonNegotiation()
+    {
+        var response = await _fixture.Client.GetAsync("/openapi.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        var queryablesOperation = json.RootElement
+            .GetProperty("paths")
+            .GetProperty("/collections/{collectionId}/queryables")
+            .GetProperty("get");
+
+        queryablesOperation.GetProperty("responses")
+            .GetProperty("200")
+            .GetProperty("content")
+            .TryGetProperty("application/schema+json", out _)
+            .Should()
+            .BeTrue();
+
+        var fParameter = queryablesOperation.GetProperty("parameters")
+            .EnumerateArray()
+            .Single(parameter => parameter.GetProperty("name").GetString() == "f");
+
+        fParameter.GetProperty("schema")
+            .GetProperty("enum")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .Should()
+            .Contain(["schemajson", "schema+json"]);
     }
 
     [IntegrationTest]
@@ -911,6 +961,21 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithGeoJsonRejectedAndWildcardAllowed_UsesAlternateFeatureFormat()
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/ogc/features/collections/{TestCollectionId}/items?limit=1");
+        request.Headers.TryAddWithoutValidation("Accept", "application/geo+json;q=0, */*;q=1");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().NotBe("application/geo+json");
     }
 
     [IntegrationTest]

@@ -52,18 +52,14 @@ def _assert_esri_error(response: httpx.Response, expected_code: int) -> dict[str
 
 @pytest.mark.integration
 @pytest.mark.imageserver
-def test_imageserver_python_client_metadata_or_no_raster_problem(
+def test_imageserver_python_client_metadata(
     http_client: httpx.Client, test_layer_id: int
 ):
     client = ImageServerClient(http_client, test_layer_id)
 
     response = client.service_info()
 
-    assert response.status_code in (200, 404)
-    if response.status_code == 404:
-        _assert_esri_error(response, 404)
-        return
-
+    assert response.status_code == 200, response.text
     data = response.json()
     assert data["currentVersion"] == 10.81
     assert "Image" in data["capabilities"]
@@ -72,18 +68,14 @@ def test_imageserver_python_client_metadata_or_no_raster_problem(
 
 @pytest.mark.integration
 @pytest.mark.imageserver
-def test_imageserver_python_client_export_metadata_or_no_raster_problem(
+def test_imageserver_python_client_export_metadata(
     http_client: httpx.Client, test_layer_id: int
 ):
     client = ImageServerClient(http_client, test_layer_id)
 
     response = client.export_image(f="json")
 
-    assert response.status_code in (200, 404)
-    if response.status_code == 404:
-        _assert_esri_error(response, 404)
-        return
-
+    assert response.status_code == 200, response.text
     data = response.json()
     assert data["width"] == 64
     assert data["height"] == 64

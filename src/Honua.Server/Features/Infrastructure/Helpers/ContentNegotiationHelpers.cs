@@ -44,7 +44,7 @@ internal static class ContentNegotiationHelpers
             }
 
             candidateSelection = candidateSelection with { SupportedOrder = i };
-            if (!hasMatch || candidateSelection.IsPreferredTo(best))
+            if (!hasMatch || candidateSelection.IsPreferredCandidateTo(best))
             {
                 best = candidateSelection;
                 hasMatch = true;
@@ -108,12 +108,6 @@ internal static class ContentNegotiationHelpers
                     break;
                 }
 
-                if (quality <= 0.0)
-                {
-                    order++;
-                    continue;
-                }
-
                 builder.Add(new AcceptMediaRange(type, subtype, quality, order));
                 order++;
             }
@@ -140,7 +134,12 @@ internal static class ContentNegotiationHelpers
             }
 
             candidateSelection = candidateSelection with { SupportedOrder = i };
-            if (!hasMatch || candidateSelection.IsPreferredTo(best))
+            if (candidateSelection.Quality <= 0)
+            {
+                continue;
+            }
+
+            if (!hasMatch || candidateSelection.IsPreferredCandidateTo(best))
             {
                 best = candidateSelection;
                 selectedMediaType = candidate;
@@ -168,7 +167,7 @@ internal static class ContentNegotiationHelpers
             }
 
             var selection = new AcceptSelection(range.Quality, specificity, range.Order, int.MaxValue);
-            if (!hasMatch || selection.IsPreferredTo(bestSelection))
+            if (!hasMatch || selection.IsPreferredRangeMatchTo(bestSelection))
             {
                 bestSelection = selection;
                 hasMatch = true;
@@ -265,7 +264,7 @@ internal static class ContentNegotiationHelpers
 
     private readonly record struct AcceptSelection(double Quality, int Specificity, int AcceptOrder, int SupportedOrder)
     {
-        public bool IsPreferredTo(AcceptSelection other)
+        public bool IsPreferredCandidateTo(AcceptSelection other)
         {
             if (Quality != other.Quality)
             {
@@ -283,6 +282,21 @@ internal static class ContentNegotiationHelpers
             }
 
             return SupportedOrder < other.SupportedOrder;
+        }
+
+        public bool IsPreferredRangeMatchTo(AcceptSelection other)
+        {
+            if (Specificity != other.Specificity)
+            {
+                return Specificity > other.Specificity;
+            }
+
+            if (Quality != other.Quality)
+            {
+                return Quality > other.Quality;
+            }
+
+            return AcceptOrder < other.AcceptOrder;
         }
     }
 }

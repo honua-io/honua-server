@@ -11,6 +11,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.GeoServices.GPServer.Models;
 using Honua.ServiceDefaults;
 
@@ -23,6 +24,11 @@ namespace Honua.Server.Features.Protocols.GeoServices.GPServer;
 internal static class GPServerEndpoints
 {
     private const string RouteBase = "/rest/services/{serviceId}/GPServer";
+    private static readonly HashSet<string> FormContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/x-www-form-urlencoded",
+        "multipart/form-data"
+    };
 
     /// <summary>
     /// Maps GPServer endpoints.
@@ -129,6 +135,12 @@ internal static class GPServerEndpoints
         EnrichActivity("ServiceInfo", serviceId);
         var logger = ResolveLogger(context);
         GPServerLog.ServiceInfoRequested(logger, serviceId);
+        var formatError = await ValidateMetadataJsonFormatAsync(context, ct);
+        if (formatError != null)
+        {
+            return formatError;
+        }
+
         var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
         if (!serviceValidation.IsValid)
         {
@@ -159,6 +171,12 @@ internal static class GPServerEndpoints
         EnrichActivity("TaskInfo", serviceId, taskName);
         var logger = ResolveLogger(context);
         GPServerLog.TaskInfoRequested(logger, serviceId, taskName);
+        var formatError = await ValidateMetadataJsonFormatAsync(context, ct);
+        if (formatError != null)
+        {
+            return formatError;
+        }
+
         var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
         if (!serviceValidation.IsValid)
         {
@@ -208,7 +226,18 @@ internal static class GPServerEndpoints
                 OperatorResourceType.Process,
                 OperatorOperation.Execute);
 
+            var contentTypeError = ValidateFormPostContentType(context);
+            if (contentTypeError is not null)
+            {
+                return contentTypeError;
+            }
+
             var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+            var formatError = ValidateJsonFormat(context, parameters);
+            if (formatError != null)
+            {
+                return formatError;
+            }
 
             // Reject unsupported GP environment controls (env:outSR, env:processSR, context)
             // with a clear 400 instead of silently stripping them.
@@ -270,6 +299,12 @@ internal static class GPServerEndpoints
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(context, "Missing jobId."),
                 "Missing jobId");
+        }
+
+        var formatError = ValidateJsonFormat(context);
+        if (formatError != null)
+        {
+            return formatError;
         }
 
         var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
@@ -387,6 +422,11 @@ internal static class GPServerEndpoints
         }
 
         GPServerLog.JobResultRequested(logger, jobId, paramName);
+        var formatError = ValidateJsonFormat(context);
+        if (formatError != null)
+        {
+            return formatError;
+        }
 
         var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
 
@@ -450,6 +490,11 @@ internal static class GPServerEndpoints
         }
 
         GPServerLog.JobCancelRequested(logger, jobId);
+        var formatError = ValidateJsonFormat(context);
+        if (formatError != null)
+        {
+            return formatError;
+        }
 
         var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
 
@@ -601,6 +646,40 @@ internal static class GPServerEndpoints
             $"Unsupported GP env controls: {names}");
     }
 
+    private static IResult? ValidateFormPostContentType(HttpContext context)
+    {
+        if (!HttpMethods.IsPost(context.Request.Method) ||
+            context.Request.ContentLength is null or 0 ||
+            context.Request.HasFormContentType)
+        {
+            return null;
+        }
+
+        var mediaType = string.IsNullOrWhiteSpace(context.Request.ContentType)
+            ? "(missing)"
+            : context.Request.ContentType.Split(';', 2)[0].Trim();
+
+        return ValidationErrorHelpers.CreateUnsupportedMediaType(context, mediaType, FormContentTypes);
+    }
+
+    private static async Task<IResult?> ValidateMetadataJsonFormatAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        var contentTypeError = ValidateFormPostContentType(context);
+        if (contentTypeError is not null)
+        {
+            return contentTypeError;
+        }
+
+        if (HttpMethods.IsPost(context.Request.Method) &&
+            context.Request.ContentLength is > 0)
+        {
+            var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, cancellationToken);
+            return ValidateJsonFormat(context, parameters);
+        }
+
+        return ValidateJsonFormat(context);
+    }
+
     private static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
         => string.IsNullOrWhiteSpace(taskName) ? null : processCatalog.GetProcess(taskName);
 
@@ -729,6 +808,36 @@ internal static class GPServerEndpoints
             || string.Equals(key, "token", StringComparison.OrdinalIgnoreCase)
             || string.Equals(key, "context", StringComparison.OrdinalIgnoreCase)
             || key.StartsWith("env:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IResult? ValidateJsonFormat(
+        HttpContext context,
+        IReadOnlyDictionary<string, string>? parameters = null)
+    {
+        string? format = null;
+        if (parameters?.TryGetValue("f", out var parameterFormat) == true)
+        {
+            format = parameterFormat;
+        }
+        else if (context.Request.Query.TryGetValue("f", out var queryFormat))
+        {
+            format = queryFormat.ToString();
+        }
+
+        if (string.IsNullOrWhiteSpace(format) ||
+            format.Equals("json", StringComparison.OrdinalIgnoreCase) ||
+            format.Equals("pjson", StringComparison.OrdinalIgnoreCase) ||
+            format.Equals("application/json", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return SetSpanErrorAndReturn(
+            StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Unsupported output format",
+                [$"Format '{format}' is not supported. Use f=json."]),
+            "Unsupported GPServer output format");
     }
 
     private static string BuildOutputParameterName(

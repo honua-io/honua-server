@@ -127,7 +127,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     [Operation(Operations.Render)]
-    public async Task GetCollectionMap_WithValidParameters_ReturnsMapOrNotFound()
+    public async Task GetCollectionMap_WithValidParameters_ReturnsMap()
     {
         // Arrange
         var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=png";
@@ -136,30 +136,21 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}/map{queryParams}");
 
         // Assert
-        // Note: This test might fail until raster data is available in the test database
-        // For now, we expect either success or a 404 (no rasters found)
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     [Operation(Operations.Render)]
-    public async Task GetCollectionMap_WithStringCollectionId_ReturnsMapOrNotFound()
+    public async Task GetCollectionMap_WithStringCollectionId_ReturnsMap()
     {
         var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=png";
 
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/Test%20Layer/map{queryParams}");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
     [IntegrationTest]
@@ -170,17 +161,13 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Headers.Contains("Content-Bbox").Should().BeTrue();
-            response.Headers.TryGetValues("Content-Bbox", out var bboxValues).Should().BeTrue();
-            bboxValues.Should().NotBeNull();
-            using var enumerator = bboxValues!.GetEnumerator();
-            enumerator.MoveNext().Should().BeTrue();
-            enumerator.Current.Should().NotBeNullOrWhiteSpace();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Contains("Content-Bbox").Should().BeTrue();
+        response.Headers.TryGetValues("Content-Bbox", out var bboxValues).Should().BeTrue();
+        bboxValues.Should().NotBeNull();
+        using var enumerator = bboxValues!.GetEnumerator();
+        enumerator.MoveNext().Should().BeTrue();
+        enumerator.Current.Should().NotBeNullOrWhiteSpace();
     }
 
     [IntegrationTest]
@@ -201,7 +188,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/map")]
     [Operation(Operations.Render)]
-    public async Task GetDatasetMap_WithCollections_ReturnsMapOrError()
+    public async Task GetDatasetMap_WithCollections_ReturnsMap()
     {
         // Arrange
         var queryParams = $"?collections={TestLayerId}&bbox=-180,-90,180,90&width=256&height=256&f=png";
@@ -210,23 +197,14 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/maps/map{queryParams}");
 
         // Assert
-        // Note: This test might fail until raster data is available in the test database
-        // For now, we expect either success or a 404 (no rasters found)
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK,
-            HttpStatusCode.NotFound,
-            HttpStatusCode.MethodNotAllowed);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/map")]
     [Operation(Operations.Render)]
-    public async Task GetDatasetMap_WithoutCollections_ReturnsMapOrError()
+    public async Task GetDatasetMap_WithoutCollections_ReturnsMap()
     {
         // Arrange
         var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=png";
@@ -235,11 +213,8 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/maps/map{queryParams}");
 
         // Assert
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK,
-            HttpStatusCode.NotFound,
-            HttpStatusCode.Unauthorized,
-            HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
     [IntegrationTest]
@@ -272,30 +247,21 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}/map/tiles");
 
         // Assert
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK,
-            HttpStatusCode.NotFound,
-            HttpStatusCode.MethodNotAllowed);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
 
-            var content = await response.Content.ReadAsStringAsync();
-            var json = JsonDocument.Parse(content);
+        json.RootElement.TryGetProperty("tilesets", out var tilesets).Should().BeTrue();
+        tilesets.ValueKind.Should().Be(JsonValueKind.Array);
+        json.RootElement.TryGetProperty("links", out _).Should().BeTrue();
+        tilesets.GetArrayLength().Should().BeGreaterThan(0);
 
-            json.RootElement.TryGetProperty("tilesets", out var tilesets).Should().BeTrue();
-            tilesets.ValueKind.Should().Be(JsonValueKind.Array);
-            json.RootElement.TryGetProperty("links", out _).Should().BeTrue();
-
-            if (tilesets.GetArrayLength() > 0)
-            {
-                var firstTileSet = tilesets.EnumerateArray().First();
-                firstTileSet.TryGetProperty("crs", out _).Should().BeTrue();
-                firstTileSet.TryGetProperty("tileMatrixSetURI", out _).Should().BeTrue();
-                firstTileSet.TryGetProperty("links", out _).Should().BeTrue();
-            }
-        }
+        var firstTileSet = tilesets.EnumerateArray().First();
+        firstTileSet.TryGetProperty("crs", out _).Should().BeTrue();
+        firstTileSet.TryGetProperty("tileMatrixSetURI", out _).Should().BeTrue();
+        firstTileSet.TryGetProperty("links", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -305,12 +271,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}/map/tiles");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.MethodNotAllowed, HttpStatusCode.NotFound);
-
-        if (response.StatusCode != HttpStatusCode.OK)
-        {
-            return;
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
@@ -338,15 +299,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map/tiles/WebMercatorQuad");
 
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK,
-            HttpStatusCode.NotFound,
-            HttpStatusCode.MethodNotAllowed);
-
-        if (response.StatusCode != HttpStatusCode.OK)
-        {
-            return;
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);

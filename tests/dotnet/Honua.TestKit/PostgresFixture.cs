@@ -57,6 +57,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                             .WithDatabase("honua_test")
                             .WithUsername("test")
                             .WithPassword("test")
+                            .WithEnvironment("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
                             .WithCommand("-c", "max_connections=200")
                             .Build();
                         await _sharedContainer.StartAsync();

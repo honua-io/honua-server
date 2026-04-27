@@ -541,7 +541,7 @@ internal sealed class FeatureServerQueryHandler(
                 return await CreateCachedResultAsync(statisticsResponse, FeatureServerJsonContext.Default.QueryResponse, "application/json");
             }
 
-            var objectIdFieldName = layer.ObjectIdFieldName;
+            var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
 
             if (validatedParams.ReturnCountOnly)
             {
@@ -592,7 +592,7 @@ internal sealed class FeatureServerQueryHandler(
             if (validatedParams.ReturnIdsOnly)
             {
                 var idsEffectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
-                var idsUseStreaming = idsEffectiveLimit > StreamingThreshold;
+                var idsUseStreaming = !query.Limit.HasValue || idsEffectiveLimit > StreamingThreshold;
                 if (idsUseStreaming)
                 {
                     await _queryExecutor.StreamIdsAsync(
@@ -615,7 +615,9 @@ internal sealed class FeatureServerQueryHandler(
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
-                var objectIds = result.Items.Select(feature => feature.Id).ToArray();
+                var objectIds = result.Items
+                    .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
+                    .ToArray();
                 HonuaTelemetry.SetSuccess(featureActivity, objectIds.Length);
 
                 var response = new QueryResponse
@@ -1086,6 +1088,16 @@ internal sealed class FeatureServerQueryHandler(
             filterExpression ??= temporalExpression;
         }
 
+        var useObjectIdsFastPath = ShouldUseInternalObjectIdsFastPath(layer);
+        if (!useObjectIdsFastPath &&
+            validatedParams.ObjectIds is { Length: > 0 } objectIds &&
+            TryCreateObjectIdsExpression(layer, objectIds, out var objectIdsExpression))
+        {
+            filterExpression = filterExpression is null
+                ? objectIdsExpression
+                : new BinaryExpression(filterExpression, BinaryOperator.And, objectIdsExpression);
+        }
+
         SqlFragment? sqlFilter = null;
         if (filterExpression != null)
         {
@@ -1108,7 +1120,8 @@ internal sealed class FeatureServerQueryHandler(
                 InputSrid = inputSrid,
                 OutputSrid = outputSrid,
                 QueryLimits = queryLimits,
-                SqlFilter = sqlFilter
+                SqlFilter = sqlFilter,
+                UseObjectIdsFastPath = useObjectIdsFastPath
             },
             layer,
             cancellationToken).ConfigureAwait(false);
@@ -1130,9 +1143,37 @@ internal sealed class FeatureServerQueryHandler(
 
         var query = _queryProcessor.ToFeatureQuery(unifiedQuery, layer) with
         {
-            Where = validatedParams.Where
+            Where = validatedParams.Where,
+            PublicIdAttributeName = GeoServicesObjectIdFieldResolver.ResolveObjectIdAttributeName(layer)
         };
         return (query, outputSrid, null);
+    }
+
+    private static bool ShouldUseInternalObjectIdsFastPath(LayerDefinition layer)
+        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(layer)?.Name.Equals(
+            FieldNames.ObjectId,
+            StringComparison.OrdinalIgnoreCase) != false;
+
+    private static bool TryCreateObjectIdsExpression(
+        LayerDefinition layer,
+        IReadOnlyCollection<long> objectIds,
+        out FilterExpression expression)
+    {
+        expression = null!;
+        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(layer);
+        if (objectIdField is null)
+        {
+            return false;
+        }
+
+        expression = new BinaryExpression(
+            new PropertyReference(objectIdField.Name),
+            BinaryOperator.In,
+            new ValueList(objectIds
+                .Distinct()
+                .Select(static objectId => new Literal(objectId, LiteralType.Number))
+                .ToArray()));
+        return true;
     }
 
     private async Task<QueryResponse> ExecuteJsonQueryResponseAsync(
@@ -1191,7 +1232,7 @@ internal sealed class FeatureServerQueryHandler(
             return new QueryResponse { Features = statisticsFeatures };
         }
 
-        var objectIdFieldName = layer.ObjectIdFieldName;
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
 
         if (validatedParams.ReturnCountOnly)
         {
@@ -1230,7 +1271,9 @@ internal sealed class FeatureServerQueryHandler(
             return new QueryResponse
             {
                 ObjectIdFieldName = objectIdFieldName,
-                ObjectIds = result.Items.Select(feature => feature.Id).ToArray(),
+                ObjectIds = result.Items
+                        .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
+                        .ToArray(),
                 Features = null
             };
         }

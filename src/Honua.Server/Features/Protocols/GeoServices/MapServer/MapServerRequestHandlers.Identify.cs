@@ -99,6 +99,11 @@ internal static partial class MapServerEndpoints
             var (values, readError) = await TryReadMapServerRequestValuesAsync(context);
             if (values == null)
             {
+                if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+                {
+                    return GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+                }
+
                 return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
             }
 
@@ -356,7 +361,7 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+                var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
                 var displayField = ResolveDisplayField(layer, objectIdField);
 
                 foreach (var feature in queryResult.Items)

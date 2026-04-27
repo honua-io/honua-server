@@ -3,6 +3,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -146,6 +147,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
         // The slot is released when the caller disposes the returned
         // SemaphoreReleasingConnection wrapper.
         var gateAcquired = false;
+        var slotAcquiredAt = 0L;
         if (_concurrencyGate is not null)
         {
             if (!await _concurrencyGate.WaitAsync(cancellationToken).ConfigureAwait(false))
@@ -158,6 +160,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
 
             Interlocked.Increment(ref _acquiredSlots);
             gateAcquired = true;
+            slotAcquiredAt = Stopwatch.GetTimestamp();
         }
 
         NpgsqlConnection? connection = null;
@@ -172,7 +175,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
 
             return _concurrencyGate is null
                 ? connection
-                : new SemaphoreReleasingConnection(connection, ReleaseOneSlot);
+                : new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt));
         }
         catch
         {
@@ -183,7 +186,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
 
             if (gateAcquired)
             {
-                ReleaseOneSlot();
+                ReleaseOneSlot(slotAcquiredAt);
             }
 
             throw;
@@ -283,11 +286,21 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
         }
     }
 
-    private void ReleaseOneSlot()
+    private void ReleaseOneSlot(long slotAcquiredAt = 0)
     {
         if (Interlocked.Decrement(ref _acquiredSlots) >= 0)
         {
-            _concurrencyGate?.Release();
+            if (_concurrencyGate is not null)
+            {
+                if (slotAcquiredAt > 0)
+                {
+                    _concurrencyGate.Release(Stopwatch.GetElapsedTime(slotAcquiredAt));
+                }
+                else
+                {
+                    _concurrencyGate.Release();
+                }
+            }
         }
         else
         {

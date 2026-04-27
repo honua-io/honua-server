@@ -27,7 +27,7 @@ public class Wfs20StandardsComplianceIntegrationTests
         xml.Should().Contain("SpatialOperators");
         xml.Should().Contain("ComparisonOperators");
         xml.Should().Contain("Functions");
-        xml.Should().Contain("ST_Area");
+        xml.Should().NotContain("ST_Area");
 
         var xmlDoc = new XmlDocument();
         var action = () => xmlDoc.LoadXml(xml);
@@ -89,16 +89,24 @@ public class Wfs20StandardsComplianceIntegrationTests
 
         foreach (var supported in new[]
                  {
+                     "ImplementsExtendedOperators"
+                 })
+        {
+            constraintValues[supported].Should().Be("TRUE");
+        }
+
+        foreach (var unsupported in new[]
+                 {
                      "ImplementsFunctions",
-                     "ImplementsExtendedOperators",
                      "ImplementsArithmeticOperators",
                      "ImplementsCQL2Text",
                      "ImplementsCQL2JSON",
                      "ImplementsCQL2SpatialOperators",
-                     "ImplementsCQL2TemporalOperators"
+                     "ImplementsCQL2TemporalOperators",
+                     "ImplementsCQL2Functions"
                  })
         {
-            constraintValues[supported].Should().Be("TRUE");
+            constraintValues[unsupported].Should().Be("FALSE");
         }
 
         constraintValues["ImplementsCQL2ArrayOperators"].Should().Be("FALSE");

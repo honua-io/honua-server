@@ -72,8 +72,9 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
         // Assert
         response.EnsureSuccessStatusCode();
 
-        // Verify streaming headers are present
-        Assert.True(response.Headers.TransferEncodingChunked ?? false, "Response should use chunked transfer encoding for streaming");
+        Assert.False(
+            response.Headers.TransferEncodingChunked ?? false,
+            "FeatureServer streaming should not set Transfer-Encoding manually; the server transport owns response framing.");
 
         var content = await response.Content.ReadAsStringAsync();
         var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
@@ -81,7 +82,7 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
         Assert.NotNull(queryResponse);
         Assert.True(queryResponse.Features?.Length > 0, "Should return features");
 
-        _output.WriteLine($"Streamed {queryResponse.Features?.Length} features with chunked transfer encoding");
+        _output.WriteLine($"Streamed {queryResponse.Features?.Length} features");
     }
 
     [IntegrationTest]
@@ -147,8 +148,9 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
         // Assert
         response.EnsureSuccessStatusCode();
 
-        // Small result sets should not use chunked transfer encoding
-        Assert.False(response.Headers.TransferEncodingChunked ?? false, "Small result sets should not use streaming");
+        Assert.False(
+            response.Headers.TransferEncodingChunked ?? false,
+            "Small result sets should not set Transfer-Encoding manually.");
 
         var content = await response.Content.ReadAsStringAsync();
         var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
@@ -185,8 +187,9 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
         // Assert
         response.EnsureSuccessStatusCode();
 
-        // Verify streaming headers for IDs only query
-        Assert.True(response.Headers.TransferEncodingChunked ?? false, "IDs-only queries should also use streaming for large result sets");
+        Assert.False(
+            response.Headers.TransferEncodingChunked ?? false,
+            "FeatureServer IDs-only streaming should not set Transfer-Encoding manually; the server transport owns response framing.");
 
         var content = await response.Content.ReadAsStringAsync();
         var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
@@ -226,8 +229,9 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
         // Assert
         response.EnsureSuccessStatusCode();
 
-        // Verify streaming headers are present for POST requests too
-        Assert.True(response.Headers.TransferEncodingChunked ?? false, "POST requests should also use streaming for large result sets");
+        Assert.False(
+            response.Headers.TransferEncodingChunked ?? false,
+            "FeatureServer POST streaming should not set Transfer-Encoding manually; the server transport owns response framing.");
 
         var responseContent = await response.Content.ReadAsStringAsync();
         var queryResponse = JsonSerializer.Deserialize(responseContent, FeatureServerJsonContext.Default.QueryResponse);
@@ -761,7 +765,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         queryResponse.Should().NotBeNull();
         queryResponse!.ObjectIds.Should().NotBeNull();
-        queryResponse.ObjectIds!.Should().HaveCount(1);
+        queryResponse.ObjectIds!.Should().HaveCount(5);
 
         using var jsonDoc = JsonDocument.Parse(content);
         jsonDoc.RootElement.TryGetProperty("features", out _).Should().BeFalse();
@@ -2325,6 +2329,49 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithAddOperationAndCallerObjectId_ReturnsGeneratedObjectId()
+    {
+        var editsRequest = new ApplyEditsRequest
+        {
+            Adds =
+            [
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["objectid"] = 999999L,
+                        ["name"] = "Caller ObjectId Should Be Ignored"
+                    },
+                    Geometry = new GeoServicesGeometry
+                    {
+                        X = -122.4194,
+                        Y = 37.7749
+                    }
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            responseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+
+        applyEditsResponse.Should().NotBeNull();
+        applyEditsResponse!.AddResults.Should().ContainSingle();
+        applyEditsResponse.AddResults![0].Success.Should().BeTrue();
+        applyEditsResponse.AddResults[0].ObjectId.Should().BeGreaterThan(0);
+        applyEditsResponse.AddResults[0].ObjectId.Should().NotBe(999999L);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithUpdateOperation_ReturnsUpdatedObjectId()
     {
         // Arrange - First add a feature to update
@@ -2728,6 +2775,69 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         result!.UpdateResults.Should().HaveCount(1);
         result.UpdateResults![0].Success.Should().BeTrue();
         result.UpdateResults[0].ObjectId.Should().Be(objectId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkUpdate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
+    public async Task UpdateFeatures_WithAttributeOnlyPayload_PreservesExistingGeometryAndAttributes()
+    {
+        var addPayload = """
+            {
+              "features": [
+                {
+                  "attributes": {
+                    "name": "Attribute-only update target",
+                    "description": "Description should survive"
+                  },
+                  "geometry": {
+                    "x": -122.35,
+                    "y": 37.77
+                  }
+                }
+              ]
+            }
+            """;
+
+        var addResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
+            new StringContent(addPayload, Encoding.UTF8, "application/json"));
+        addResponse.Be200Ok();
+
+        var addContent = await addResponse.Content.ReadAsStringAsync();
+        var addResult = JsonSerializer.Deserialize(addContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        var objectId = addResult!.AddResults![0].ObjectId!.Value;
+
+        var updatePayload = $$"""
+            {
+              "features": [
+                {
+                  "attributes": {
+                    "objectid": {{objectId}},
+                    "name": "Attribute-only update applied"
+                  }
+                }
+              ]
+            }
+            """;
+
+        var updateResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateFeatures",
+            new StringContent(updatePayload, Encoding.UTF8, "application/json"));
+        updateResponse.Be200Ok();
+
+        var queryResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&objectIds={objectId}&returnGeometry=true");
+        queryResponse.Be200Ok();
+
+        using var document = JsonDocument.Parse(await queryResponse.Content.ReadAsStringAsync());
+        var feature = document.RootElement.GetProperty("features").EnumerateArray().Single();
+        var attributes = feature.GetProperty("attributes");
+        attributes.GetProperty("name").GetString().Should().Be("Attribute-only update applied");
+        attributes.GetProperty("description").GetString().Should().Be("Description should survive");
+        var geometry = feature.GetProperty("geometry");
+        geometry.GetProperty("x").GetDouble().Should().BeApproximately(-122.35, 0.000001);
+        geometry.GetProperty("y").GetDouble().Should().BeApproximately(37.77, 0.000001);
     }
 
     [IntegrationTest]

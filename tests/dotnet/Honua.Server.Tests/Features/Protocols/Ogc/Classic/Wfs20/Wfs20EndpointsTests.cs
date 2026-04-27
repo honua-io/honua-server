@@ -142,6 +142,40 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    public async Task Wfs_GetCapabilities_WithJsonAccept_ReturnsXml()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
+        request.Headers.TryAddWithoutValidation("Accept", "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    public async Task Wfs_GetCapabilities_WithXmlPreferredOverRejectedWildcard_ReturnsXml()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
+        request.Headers.TryAddWithoutValidation("Accept", "application/xml;q=0.5, */*;q=0");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "DescribeFeatureType")]
     public async Task Wfs_DescribeFeatureType_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable()
     {
@@ -185,6 +219,34 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("exceptionCode=\"InvalidUpdateSequence\"");
         content.Should().Contain("locator=\"updateSequence\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs_GetCapabilities_UpdateSequenceCurrent_ReturnsCurrentUpdateSequence()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&UPDATESEQUENCE=20260325");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"CurrentUpdateSequence\"");
+        content.Should().Contain("locator=\"updateSequence\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs_GetCapabilities_UnsupportedAcceptFormats_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&ACCEPTFORMATS=application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"acceptFormats\"");
     }
 
     [IntegrationTest]
@@ -531,6 +593,22 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "ListStoredQueries")]
+    public async Task Wfs_ListStoredQueries_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/wfs?SERVICE=WFS&REQUEST=ListStoredQueries&VERSION=2.0.0");
+        request.Headers.TryAddWithoutValidation("Accept", "application/xml;q=0");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "DescribeStoredQueries")]
     public async Task Wfs_DescribeStoredQueries_ReturnsGetFeatureByIdDefinition()
     {
@@ -545,6 +623,22 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("Parameter name=\"id\" type=\"xsd:string\"");
         content.Should().Contain("QueryExpressionText");
         content.Should().Contain("rid=\"${id}\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "DescribeStoredQueries")]
+    public async Task Wfs_DescribeStoredQueries_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/wfs?SERVICE=WFS&REQUEST=DescribeStoredQueries&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}");
+        request.Headers.TryAddWithoutValidation("Accept", "application/xml;q=0");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
     }
 
     [IntegrationTest]
@@ -581,6 +675,28 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"lockId\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable()
+    {
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0" />
+            """;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/wfs")
+        {
+            Content = new StringContent(requestBody, Encoding.UTF8, "application/xml")
+        };
+        request.Headers.TryAddWithoutValidation("Accept", "application/xml;q=0");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
     }
 
     [IntegrationTest]

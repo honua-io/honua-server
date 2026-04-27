@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -96,6 +97,43 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer")]
+    public async Task ServiceInfo_PostWithUnsupportedFormat_ReturnsBadRequest()
+    {
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "html"
+        });
+
+        var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer")]
+    public async Task ServiceInfo_PostWithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var response = await _client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer",
+            new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public async Task ServiceInfo_WithUnsupportedFormat_ReturnsBadRequest()
+    {
+        var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer?f=html");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_UnknownService_ReturnsNotFound()
@@ -175,6 +213,21 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("name").GetString().Should().Be("geometry.buffer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_PostWithUnsupportedFormat_ReturnsBadRequest()
+    {
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "html"
+        });
+
+        var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -269,6 +322,18 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var response = await _client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
+            new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
     }
 
     [IntegrationTest]

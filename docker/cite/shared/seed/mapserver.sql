@@ -26,7 +26,7 @@ VALUES (
     ARRAY['JSON', 'GeoJSON'],
     ARRAY['Query', 'Extract'],
     ST_MakeEnvelope(-180, -90, 180, 90, 4326),
-    '{"accessPolicy":{"allowAnonymous":true},"enabledProtocols":["FeatureServer","MapServer","OgcFeatures","OData"]}'::jsonb
+    '{"accessPolicy":{"allowAnonymous":true},"enabledProtocols":["FeatureServer","MapServer","OgcFeatures","OData","Wms","Wmts"]}'::jsonb
 )
 ON CONFLICT (service_name) DO UPDATE SET
     description = EXCLUDED.description,

@@ -29,6 +29,7 @@ internal static class OgcGeoJsonFeatureBuilder
                 layer,
                 new GeoJsonFeatureBuildOptions(
                     ProjectedProperties: projectedProperties,
+                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(layer),
                     IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, layer)))),
             geometry,
             links);
@@ -50,6 +51,7 @@ internal static class OgcGeoJsonFeatureBuilder
                 layer,
                 new GeoJsonFeatureBuildOptions(
                     ProjectedProperties: projectedProperties,
+                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(layer),
                     IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, layer)))),
             geometry,
             links);
@@ -83,4 +85,7 @@ internal static class OgcGeoJsonFeatureBuilder
         SimpleGeoJsonGeometry? geometry,
         ImmutableArray<Link>? links)
         => featureBase.ToOgcGeoJsonFeature(geometry, links);
+
+    private static bool ShouldIncludePublicIdentifierProperty(LayerDefinition layer)
+        => !layer.ObjectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
 }

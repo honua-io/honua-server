@@ -30,6 +30,8 @@ internal readonly record struct GeoServicesQueryRequest
     public required QueryLimits QueryLimits { get; init; }
 
     public SqlFragment? SqlFilter { get; init; }
+
+    public bool UseObjectIdsFastPath { get; init; }
 }
 
 /// <summary>
@@ -53,8 +55,9 @@ internal sealed class GeoServicesQueryParameterAdapter(
         try
         {
             var queryParams = request.Parameters;
-            var hasObjectIds = queryParams.ObjectIds is { Length: > 0 };
-            var outFields = ResolveOutFields(queryParams);
+            var hasObjectIdRequest = queryParams.ObjectIds is { Length: > 0 };
+            var hasObjectIds = request.UseObjectIdsFastPath && hasObjectIdRequest;
+            var outFields = ResolveOutFields(queryParams, layer);
             var spatialFilter = ResolveSpatialFilter(queryParams, request.ParsedGeometry, request.InputSrid);
             var orderBy = OrderByParsing.ParseFeatureServerOrderBy(
                 queryParams.OrderByFields,
@@ -99,7 +102,9 @@ internal sealed class GeoServicesQueryParameterAdapter(
                 ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
                 OutFields = outFields,
                 Offset = queryParams.ResultOffset,
-                Limit = hasObjectIds
+                Limit = queryParams.ReturnIdsOnly
+                    ? null
+                    : hasObjectIdRequest
                     ? queryParams.ResultRecordCount ?? queryParams.ObjectIds?.Length
                     : queryParams.ResultRecordCount ?? request.QueryLimits.DefaultRecordCount,
                 OrderBy = orderBy,
@@ -122,7 +127,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
         }
     }
 
-    private static ImmutableArray<string>? ResolveOutFields(QueryParameters queryParams)
+    private static ImmutableArray<string>? ResolveOutFields(QueryParameters queryParams, LayerDefinition layer)
     {
         if (string.IsNullOrEmpty(queryParams.OutFields) ||
             string.Equals(queryParams.OutFields, "*", StringComparison.Ordinal))
@@ -130,9 +135,17 @@ internal sealed class GeoServicesQueryParameterAdapter(
             return null;
         }
 
-        return queryParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
+        var fields = queryParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(static field => field.Trim())
-            .ToImmutableArray();
+            .Where(static field => field.Length > 0)
+            .ToList();
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
+        if (!fields.Any(field => field.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
+        {
+            fields.Add(objectIdFieldName);
+        }
+
+        return fields.ToImmutableArray();
     }
 
     private static SpatialFilter? ResolveSpatialFilter(

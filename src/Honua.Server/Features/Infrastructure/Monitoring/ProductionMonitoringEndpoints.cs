@@ -6,8 +6,10 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Import;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
 
@@ -103,14 +105,17 @@ internal static class ProductionMonitoringEndpoints
     /// Gets database connection pool metrics.
     /// </summary>
     /// <param name="connectionPoolMetrics">Connection pool metrics.</param>
+    /// <param name="serviceProvider">Service provider used to resolve optional provider-specific metrics.</param>
     /// <returns>Connection pool metrics.</returns>
     private static IResult GetConnectionPoolMetrics(
-        [FromServices] ConnectionPoolMetrics connectionPoolMetrics)
+        [FromServices] ConnectionPoolMetrics connectionPoolMetrics,
+        [FromServices] IServiceProvider serviceProvider)
     {
         var hasUtilization = connectionPoolMetrics.TryGetPoolUtilization(out var utilization);
         var failures = connectionPoolMetrics.GetTotalFailures();
         var timeouts = connectionPoolMetrics.GetTotalTimeouts();
         var healthStatus = ResolveConnectionPoolHealthStatus(hasUtilization, utilization);
+        var queryConcurrencyGate = serviceProvider.GetService<QueryConcurrencyGate>();
 
         var response = new ConnectionPoolMetricsResponse
         {
@@ -122,6 +127,9 @@ internal static class ProductionMonitoringEndpoints
             TotalTimeouts = timeouts,
             HealthStatus = healthStatus,
             IsHealthy = string.Equals(healthStatus, "Healthy", StringComparison.Ordinal),
+            QueryAdmission = queryConcurrencyGate is null
+                ? null
+                : QueryAdmissionMetricsResponse.FromSnapshot(queryConcurrencyGate.GetSnapshot()),
             Timestamp = DateTimeOffset.UtcNow
         };
 
@@ -586,10 +594,104 @@ internal sealed class ConnectionPoolMetricsResponse
     public required bool IsHealthy { get; set; }
 
     /// <summary>
+    /// Gets query admission-control telemetry when the active provider exposes it.
+    /// </summary>
+    [JsonPropertyName("queryAdmission")]
+    public QueryAdmissionMetricsResponse? QueryAdmission { get; set; }
+
+    /// <summary>
     /// Gets or sets the timestamp.
     /// </summary>
     [JsonPropertyName("timestamp")]
     public required DateTimeOffset Timestamp { get; set; }
+}
+
+/// <summary>
+/// Response model for provider-level query admission metrics.
+/// </summary>
+internal sealed class QueryAdmissionMetricsResponse
+{
+    /// <summary>
+    /// Gets a value indicating whether adaptive admission is enabled.
+    /// </summary>
+    [JsonPropertyName("adaptiveEnabled")]
+    public required bool AdaptiveEnabled { get; set; }
+
+    /// <summary>
+    /// Gets the current logical concurrent query limit.
+    /// </summary>
+    [JsonPropertyName("currentLimit")]
+    public required int CurrentLimit { get; set; }
+
+    /// <summary>
+    /// Gets the minimum adaptive logical query limit.
+    /// </summary>
+    [JsonPropertyName("minLimit")]
+    public required int MinLimit { get; set; }
+
+    /// <summary>
+    /// Gets the maximum logical query limit.
+    /// </summary>
+    [JsonPropertyName("maxLimit")]
+    public required int MaxLimit { get; set; }
+
+    /// <summary>
+    /// Gets the number of requests currently holding a query slot.
+    /// </summary>
+    [JsonPropertyName("inFlight")]
+    public required int InFlight { get; set; }
+
+    /// <summary>
+    /// Gets the number of query slots currently available.
+    /// </summary>
+    [JsonPropertyName("availableSlots")]
+    public required int AvailableSlots { get; set; }
+
+    /// <summary>
+    /// Gets the number of requests waiting on a query slot.
+    /// </summary>
+    [JsonPropertyName("queuedWaiters")]
+    public required int QueuedWaiters { get; set; }
+
+    /// <summary>
+    /// Gets the adaptive controller target database lease duration in milliseconds.
+    /// </summary>
+    [JsonPropertyName("targetDurationMs")]
+    public required double TargetDurationMs { get; set; }
+
+    /// <summary>
+    /// Gets the observed database lease duration EWMA in milliseconds.
+    /// </summary>
+    [JsonPropertyName("durationEwmaMs")]
+    public required double DurationEwmaMs { get; set; }
+
+    /// <summary>
+    /// Gets the number of logical target-limit changes.
+    /// </summary>
+    [JsonPropertyName("adjustmentCount")]
+    public required long AdjustmentCount { get; set; }
+
+    /// <summary>
+    /// Gets the most recent target-limit adjustment direction.
+    /// </summary>
+    [JsonPropertyName("lastAdjustmentDirection")]
+    public required string LastAdjustmentDirection { get; set; }
+
+    internal static QueryAdmissionMetricsResponse FromSnapshot(QueryConcurrencyGateSnapshot snapshot)
+        => new()
+        {
+            AdaptiveEnabled = snapshot.AdaptiveEnabled,
+            CurrentLimit = snapshot.CurrentLimit,
+            MinLimit = snapshot.MinLimit,
+            MaxLimit = snapshot.MaxLimit,
+            InFlight = snapshot.InFlight,
+            AvailableSlots = snapshot.AvailableSlots,
+            QueuedWaiters = snapshot.QueuedWaiters,
+            TargetDurationMs = snapshot.TargetDurationMs,
+            DurationEwmaMs = snapshot.DurationEwmaMs,
+            AdjustmentCount = snapshot.AdjustmentCount,
+            LastAdjustmentDirection = snapshot.LastAdjustmentDirection
+        };
 }
 
 /// <summary>

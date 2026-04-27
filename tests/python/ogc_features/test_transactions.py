@@ -19,6 +19,22 @@ import httpx
 from shared.geometry import GeometryGenerator
 
 
+def _extract_feature_id(response: httpx.Response) -> str:
+    location = response.headers.get("location", "")
+    if location:
+        return location.rstrip("/").split("/")[-1]
+
+    data = response.json()
+    feature_id = data.get("id")
+    assert feature_id, f"Create response did not include a feature id: {data}"
+    return str(feature_id)
+
+
+def _assert_created(response: httpx.Response) -> str:
+    assert response.status_code == 201, response.text
+    return _extract_feature_id(response)
+
+
 class TestCreateFeature:
     """Tests for feature creation (POST)."""
 
@@ -43,8 +59,7 @@ class TestCreateFeature:
             json=feature,
             headers={"Content-Type": "application/geo+json"},
         )
-        # May return 201, 200, or 501 if not implemented
-        assert response.status_code in [200, 201, 400, 404, 405, 501]
+        _assert_created(response)
 
     @pytest.mark.integration
     @pytest.mark.ogc
@@ -68,10 +83,10 @@ class TestCreateFeature:
             headers={"Content-Type": "application/geo+json"},
         )
 
-        if response.status_code in [200, 201]:
-            # Should have Location header with new feature URL
-            location = response.headers.get("location")
-            # Location header is recommended but not required
+        feature_id = _assert_created(response)
+        location = response.headers.get("location")
+        assert location
+        assert f"/ogc/features/collections/{test_collection_id}/items/{feature_id}" in location
 
     @pytest.mark.integration
     @pytest.mark.ogc
@@ -86,8 +101,7 @@ class TestCreateFeature:
             json=invalid_feature,
             headers={"Content-Type": "application/geo+json"},
         )
-        # Should return 400 for invalid input, or 501 if not implemented
-        assert response.status_code in [400, 405, 501]
+        assert response.status_code == 400, response.text
 
     @pytest.mark.integration
     @pytest.mark.ogc
@@ -109,7 +123,7 @@ class TestCreateFeature:
             json=feature,
             headers={"Content-Type": "application/geo+json"},
         )
-        assert response.status_code in [404, 405, 501]
+        assert response.status_code == 404, response.text
 
 
 class TestReplaceFeature:
@@ -137,20 +151,7 @@ class TestReplaceFeature:
             json=feature,
             headers={"Content-Type": "application/geo+json"},
         )
-
-        if create_response.status_code not in [200, 201]:
-            pytest.skip("Create not supported")
-
-        # Try to get feature ID from response or location
-        location = create_response.headers.get("location", "")
-        if location:
-            feature_id = location.split("/")[-1]
-        else:
-            create_data = create_response.json()
-            feature_id = create_data.get("id")
-
-        if not feature_id:
-            pytest.skip("Could not get feature ID")
+        feature_id = _assert_created(create_response)
 
         # Replace the feature
         new_point = geometry_generator.point(lon=-122.5)
@@ -165,8 +166,7 @@ class TestReplaceFeature:
             json=replacement,
             headers={"Content-Type": "application/geo+json"},
         )
-        # May return 200, 204, or 501 if not implemented
-        assert response.status_code in [200, 204, 400, 404, 405, 501]
+        assert response.status_code == 200, response.text
 
     @pytest.mark.integration
     @pytest.mark.ogc
@@ -189,7 +189,7 @@ class TestReplaceFeature:
             json=feature,
             headers={"Content-Type": "application/geo+json"},
         )
-        assert response.status_code in [404, 405, 501]
+        assert response.status_code == 404, response.text
 
 
 class TestUpdateFeature:
@@ -217,19 +217,7 @@ class TestUpdateFeature:
             json=feature,
             headers={"Content-Type": "application/geo+json"},
         )
-
-        if create_response.status_code not in [200, 201]:
-            pytest.skip("Create not supported")
-
-        location = create_response.headers.get("location", "")
-        if location:
-            feature_id = location.split("/")[-1]
-        else:
-            create_data = create_response.json()
-            feature_id = create_data.get("id")
-
-        if not feature_id:
-            pytest.skip("Could not get feature ID")
+        feature_id = _assert_created(create_response)
 
         # Partial update
         patch = {"properties": {"status": "published"}}
@@ -239,7 +227,7 @@ class TestUpdateFeature:
             json=patch,
             headers={"Content-Type": "application/merge-patch+json"},
         )
-        assert response.status_code in [200, 204, 400, 404, 405, 501]
+        assert response.status_code == 200, response.text
 
 
 class TestDeleteFeature:
@@ -267,25 +255,13 @@ class TestDeleteFeature:
             json=feature,
             headers={"Content-Type": "application/geo+json"},
         )
-
-        if create_response.status_code not in [200, 201]:
-            pytest.skip("Create not supported")
-
-        location = create_response.headers.get("location", "")
-        if location:
-            feature_id = location.split("/")[-1]
-        else:
-            create_data = create_response.json()
-            feature_id = create_data.get("id")
-
-        if not feature_id:
-            pytest.skip("Could not get feature ID")
+        feature_id = _assert_created(create_response)
 
         # Delete the feature
         response = http_client.delete(
             f"/ogc/features/collections/{test_collection_id}/items/{feature_id}"
         )
-        assert response.status_code in [200, 204, 404, 405, 501]
+        assert response.status_code == 204, response.text
 
     @pytest.mark.integration
     @pytest.mark.ogc
@@ -296,7 +272,7 @@ class TestDeleteFeature:
         response = http_client.delete(
             f"/ogc/features/collections/{test_collection_id}/items/nonexistent_999999"
         )
-        assert response.status_code in [404, 405, 501]
+        assert response.status_code == 404, response.text
 
     @pytest.mark.integration
     @pytest.mark.ogc
@@ -320,27 +296,13 @@ class TestDeleteFeature:
             json=feature,
             headers={"Content-Type": "application/geo+json"},
         )
-
-        if create_response.status_code not in [200, 201]:
-            pytest.skip("Create not supported")
-
-        location = create_response.headers.get("location", "")
-        if location:
-            feature_id = location.split("/")[-1]
-        else:
-            create_data = create_response.json()
-            feature_id = create_data.get("id")
-
-        if not feature_id:
-            pytest.skip("Could not get feature ID")
+        feature_id = _assert_created(create_response)
 
         # Delete it
         delete_response = http_client.delete(
             f"/ogc/features/collections/{test_collection_id}/items/{feature_id}"
         )
-
-        if delete_response.status_code not in [200, 204]:
-            pytest.skip("Delete not supported")
+        assert delete_response.status_code == 204, delete_response.text
 
         # Verify it's gone
         get_response = http_client.get(

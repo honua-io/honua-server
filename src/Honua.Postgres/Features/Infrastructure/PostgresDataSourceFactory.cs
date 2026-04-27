@@ -35,6 +35,12 @@ internal static class PostgresDataSourceFactory
         limits.RequestTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.RequestTimeout), limits.RequestTimeout);
         limits.Multiplexing = section[nameof(ConnectionLimits.Multiplexing)] ?? limits.Multiplexing;
         limits.ConnectionAcquisitionTimeoutSeconds = ReadInt(section, nameof(ConnectionLimits.ConnectionAcquisitionTimeoutSeconds), limits.ConnectionAcquisitionTimeoutSeconds);
+        limits.AdaptiveConcurrencyEnabled = ReadBool(section, nameof(ConnectionLimits.AdaptiveConcurrencyEnabled), limits.AdaptiveConcurrencyEnabled);
+        limits.AdaptiveConcurrencyMinQueries = ReadInt(section, nameof(ConnectionLimits.AdaptiveConcurrencyMinQueries), limits.AdaptiveConcurrencyMinQueries);
+        limits.AdaptiveConcurrencyInitialQueries = ReadInt(section, nameof(ConnectionLimits.AdaptiveConcurrencyInitialQueries), limits.AdaptiveConcurrencyInitialQueries);
+        limits.AdaptiveConcurrencyMaxQueries = ReadInt(section, nameof(ConnectionLimits.AdaptiveConcurrencyMaxQueries), limits.AdaptiveConcurrencyMaxQueries);
+        limits.AdaptiveConcurrencyTargetDurationMs = ReadInt(section, nameof(ConnectionLimits.AdaptiveConcurrencyTargetDurationMs), limits.AdaptiveConcurrencyTargetDurationMs);
+        limits.AdaptiveConcurrencyUpdateIntervalMs = ReadInt(section, nameof(ConnectionLimits.AdaptiveConcurrencyUpdateIntervalMs), limits.AdaptiveConcurrencyUpdateIntervalMs);
         limits.LockTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.LockTimeout), limits.LockTimeout);
         limits.StatementTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.StatementTimeout), limits.StatementTimeout);
         limits.IdleInTransactionTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.IdleInTransactionTimeout), limits.IdleInTransactionTimeout);
@@ -149,6 +155,9 @@ internal static class PostgresDataSourceFactory
 
     private static int ReadInt(IConfiguration section, string key, int fallback)
         => int.TryParse(section[key], NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : fallback;
+
+    private static bool ReadBool(IConfiguration section, string key, bool fallback)
+        => bool.TryParse(section[key], out var value) ? value : fallback;
 
     private static TimeSpan ReadTimeSpan(IConfiguration section, string key, TimeSpan fallback)
         => TimeSpan.TryParse(section[key], CultureInfo.InvariantCulture, out var value) ? value : fallback;

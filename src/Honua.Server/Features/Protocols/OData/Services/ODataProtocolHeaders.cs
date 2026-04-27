@@ -9,14 +9,14 @@ internal static class ODataProtocolHeaders
 {
     internal const string CurrentVersion = "4.01";
     internal const string V4CompatibleVersion = "4.0";
-
+    private static readonly Version CurrentParsedVersion = new(4, 1);
     private const string ODataMaxVersionHeader = "OData-MaxVersion";
     private const string ODataVersionHeader = "OData-Version";
     private const string VaryHeader = "Vary";
 
     public static void SetVersionHeader(HttpContext context)
     {
-        context.Response.Headers[ODataVersionHeader] = ResolveResponseVersion(context.Request);
+        context.Response.Headers[ODataVersionHeader] = GetResponseVersion(context);
 
         if (context.Request.Headers.ContainsKey(ODataMaxVersionHeader))
         {
@@ -24,21 +24,31 @@ internal static class ODataProtocolHeaders
         }
     }
 
-    private static string ResolveResponseVersion(HttpRequest request)
-    {
-        return request.Headers.TryGetValue(ODataMaxVersionHeader, out var maxVersion) &&
-            IsV4Only(maxVersion)
+    public static string GetResponseVersion(HttpContext context)
+        => RequestCapsResponseAtODataV4(context.Request.Headers)
             ? V4CompatibleVersion
             : CurrentVersion;
-    }
 
-    private static bool IsV4Only(StringValues maxVersion)
+    private static bool RequestCapsResponseAtODataV4(IHeaderDictionary headers)
     {
-        foreach (var value in maxVersion)
+        if (!headers.TryGetValue(ODataMaxVersionHeader, out var values))
         {
-            if (string.Equals(value?.Trim(), V4CompatibleVersion, StringComparison.Ordinal))
+            return false;
+        }
+
+        foreach (var headerValue in values)
+        {
+            if (headerValue is null)
             {
-                return true;
+                continue;
+            }
+
+            foreach (var token in headerValue.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (Version.TryParse(token, out var maxVersion) && maxVersion < CurrentParsedVersion)
+                {
+                    return true;
+                }
             }
         }
 

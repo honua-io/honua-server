@@ -5,11 +5,12 @@ name: honua-scale-test
 services:
   # PostgreSQL with PostGIS (shared by all Honua instances)
   postgres:
-    image: postgis/postgis:17-3.5-alpine
+    image: postgis/postgis:17-3.5
     environment:
       POSTGRES_DB: honua_scale_test
       POSTGRES_USER: honua_user
       POSTGRES_PASSWORD: honua_password
+      POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
       # Enable encryption at rest and security features
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
       POSTGRES_HOST_AUTH_METHOD: "scram-sha-256"

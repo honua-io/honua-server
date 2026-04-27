@@ -3,11 +3,12 @@ name: honua-test-db
 services:
   # External PostGIS database for contributors who want a reusable local test DB
   postgis-test:
-    image: postgis/postgis:17-3.5-alpine
+    image: postgis/postgis:17-3.5
     environment:
       POSTGRES_DB: honua_test
       POSTGRES_USER: test
       POSTGRES_PASSWORD: test
+      POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
       POSTGRES_HOST_AUTH_METHOD: "scram-sha-256"
       POSTGRESQL_CONF_ssl: "on"

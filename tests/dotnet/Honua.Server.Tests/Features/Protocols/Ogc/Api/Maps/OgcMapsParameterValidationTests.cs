@@ -30,49 +30,37 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_PngFormat_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_PngFormat_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?f=png&bbox=-180,-90,180,90");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_JpegFormat_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_JpegFormat_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?f=jpeg&bbox=-180,-90,180,90");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_TiffFormat_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_TiffFormat_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?f=tiff&bbox=-180,-90,180,90");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("image/tiff");
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/tiff");
     }
 
     [IntegrationTest]
@@ -83,12 +71,8 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
     #endregion
@@ -98,34 +82,34 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_CustomDimensions_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_CustomDimensions_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?width=512&height=512&bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_MinimumDimensions_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_MinimumDimensions_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?width=1&height=1&bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_MaximumDimensions_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_MaximumDimensions_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?width=4096&height=4096&bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -137,7 +121,7 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     #endregion
@@ -159,25 +143,25 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_ProjectedBboxWithExplicitBboxCrs_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_ProjectedBboxWithExplicitBboxCrs_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map" +
             "?bbox=-20037508,-20037508,20037508,20037508&bbox-crs=EPSG:3857&f=png");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_SafeCurieBboxCrs_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_SafeCurieBboxCrs_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map" +
             "?bbox=-90,-180,90,180&bbox-crs=%5BEPSG:4326%5D&f=png");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -189,9 +173,7 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?f=png");
 
-        // Should succeed or return error based on layer availability, not bad request
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK, HttpStatusCode.BadRequest, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     #endregion
@@ -217,25 +199,25 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_QualityBoundaryMin_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_QualityBoundaryMin_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map" +
             "?bbox=-180,-90,180,90&f=jpeg&quality=1");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_QualityBoundaryMax_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_QualityBoundaryMax_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map" +
             "?bbox=-180,-90,180,90&f=jpeg&quality=100");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     #endregion
@@ -283,23 +265,23 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/map")]
-    public async Task GetDatasetMap_SingleCollection_ReturnsSuccessOrNotFound()
+    public async Task GetDatasetMap_SingleCollection_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/map?collections={TestLayerId}&bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/map")]
-    public async Task GetDatasetMap_MultipleCollections_ReturnsSuccessOrNotFound()
+    public async Task GetDatasetMap_MultipleCollections_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/map?collections={TestLayerId},{TestLayerId}&bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -310,8 +292,8 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/map?collections=%20{TestLayerId}%20,%20{TestLayerId}%20&bbox=-180,-90,180,90&f=png");
 
-        // Whitespace should be trimmed during parsing
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        // Whitespace should be trimmed during parsing.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     #endregion

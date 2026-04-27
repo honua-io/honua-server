@@ -28,6 +28,11 @@ internal sealed class ODataCrudHandler(
     Honua.Server.Features.Infrastructure.Caching.IETagService etagService,
     FeatureMutationEventService mutationEventService)
 {
+    private static readonly HashSet<string> FeatureRequestContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/json"
+    };
+
     private readonly ODataCrudService _crudService = crudService ?? throw new ArgumentNullException(nameof(crudService));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly Honua.Server.Features.Infrastructure.Caching.IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
@@ -641,6 +646,12 @@ internal sealed class ODataCrudHandler(
     {
         try
         {
+            var contentTypeError = ValidateFeatureRequestContentType(context);
+            if (contentTypeError is not null)
+            {
+                return (null, contentTypeError);
+            }
+
             var request = await JsonSerializer.DeserializeAsync(
                 context.Request.Body,
                 ODataJsonContext.Default.ODataFeatureRequest,
@@ -669,6 +680,30 @@ internal sealed class ODataCrudHandler(
                 "InvalidRequest",
                 "Request body must be valid JSON."));
         }
+    }
+
+    private static IResult? ValidateFeatureRequestContentType(HttpContext context)
+    {
+        if (context.Request.ContentLength is 0)
+        {
+            return null;
+        }
+
+        var contentType = context.Request.ContentType;
+        var mediaType = string.IsNullOrWhiteSpace(contentType)
+            ? null
+            : contentType.Split(';', 2)[0].Trim();
+
+        if (!string.IsNullOrWhiteSpace(mediaType) &&
+            FeatureRequestContentTypes.Contains(mediaType))
+        {
+            return null;
+        }
+
+        return ValidationErrorHelpers.CreateUnsupportedMediaType(
+            context,
+            string.IsNullOrWhiteSpace(mediaType) ? "(missing)" : mediaType,
+            FeatureRequestContentTypes);
     }
 
     private static async Task<IResult?> RequireAnyODataWriteAccessBeforeBodyAsync(

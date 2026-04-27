@@ -162,7 +162,9 @@ internal static class WmsRequestHandlers
                         $"Unsupported WMS VERSION '{version}'. Supported version is 1.3.0.");
                 }
 
-                if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
+                if (!XmlContentNegotiation.IsXmlAccepted(
+                        context.Request.Headers.Accept.ToString(),
+                        [WmsCapabilitiesMimeType]))
                 {
                     return Results.StatusCode(StatusCodes.Status406NotAcceptable);
                 }

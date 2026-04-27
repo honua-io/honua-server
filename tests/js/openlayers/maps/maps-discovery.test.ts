@@ -104,22 +104,6 @@ describe('OGC API Maps OpenLayers compatibility', () => {
     const resp = await fetch(url);
     const duration = Date.now() - start;
 
-    if (resp.status === 404) {
-      const contentType = resp.headers.get('content-type') ?? '';
-      expect(contentType).toContain('json');
-      const body = await resp.json();
-      expect(body.status ?? body.error?.code).toBe(404);
-      evidence.record('CERT-RNDR-01', 'skip', {
-        durationMs: duration,
-        notes: 'OGC API Maps endpoint reached by OpenLayers ImageStatic; no raster map fixture was available for this collection.',
-      });
-      evidence.recordExtension('JS-EXT-OGC-MAPS-01', 'skip', {
-        durationMs: duration,
-        notes: 'OpenLayers ImageStatic source was configured, but the live collection has no raster map fixture.',
-      });
-      return;
-    }
-
     expect(resp.status).toBe(200);
     expect(resp.headers.get('content-type') ?? '').toContain('image/png');
     const buffer = await resp.arrayBuffer();

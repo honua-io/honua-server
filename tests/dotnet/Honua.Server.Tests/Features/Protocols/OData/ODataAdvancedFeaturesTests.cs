@@ -8,6 +8,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Protocols.OData.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -675,6 +676,46 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         responseBody.Should().Contain("OData-Version: 4.01");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithNonAtomicCreate_PublishesSingleMutationEvent()
+    {
+        var publisher = new RecordingFeatureChangeEventPublisher();
+        await using var fixture = new WebAppFixture()
+            .UseSeed(Path.Combine("tests", "seed", "odata.yaml"))
+            .ReplaceService<IFeatureChangeEventPublisher>(publisher);
+        await fixture.InitializeAsync();
+
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "create-single-event",
+                Method = "POST",
+                Url = $"Layers({TestLayerId})/Features",
+                Body = new Dictionary<string, object?>
+                {
+                    ["Attributes"] = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Batch Single Event City"
+                    }
+                }
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        publisher.Requests.Should().ContainSingle(request =>
+            request.LayerId == TestLayerId &&
+            string.Equals(request.Operation, "create", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(request.Protocol, "OData", StringComparison.OrdinalIgnoreCase));
+    }
+
     private async Task<long> CountFeaturesAsync()
     {
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
@@ -685,6 +726,23 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
         var result = await command.ExecuteScalarAsync();
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private sealed class RecordingFeatureChangeEventPublisher : IFeatureChangeEventPublisher
+    {
+        private readonly object _lock = new();
+
+        public List<FeatureChangeEventRequest> Requests { get; } = [];
+
+        public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+        {
+            lock (_lock)
+            {
+                Requests.Add(request);
+            }
+
+            return Task.CompletedTask;
+        }
     }
 
     #endregion

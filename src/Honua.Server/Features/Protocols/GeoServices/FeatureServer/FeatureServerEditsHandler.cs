@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -40,6 +41,7 @@ internal sealed class FeatureServerEditsHandler(
     private readonly IEditParameterAdapter<GeoServicesEditRequest> _editParameterAdapter = dependencies.EditParameterAdapter;
     private readonly IEditProcessor _editProcessor = dependencies.EditProcessor;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
+    private readonly IFilterExpressionService _filterExpressionService = dependencies.FilterExpressionService;
     private readonly IHttpContextAccessor _httpContextAccessor = dependencies.HttpContextAccessor;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<FeatureServerEditsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -197,7 +199,7 @@ internal sealed class FeatureServerEditsHandler(
 
         await ProcessAddOperationsAsync(request, context, layer, cancellationToken);
         await ProcessUpdateOperationsAsync(request, context, layer, cancellationToken);
-        await ProcessDeleteOperationsAsync(request, layer.Id, context, cancellationToken);
+        await ProcessDeleteOperationsAsync(request, layer, context, cancellationToken);
 
         return context;
     }
@@ -221,6 +223,9 @@ internal sealed class FeatureServerEditsHandler(
                 var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, layer, cancellationToken);
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
+                context.CreateResponseObjectIds.Add(TryGetObjectId(newFeature.Attributes.ToDictionary(), layer, out var responseObjectId)
+                    ? responseObjectId
+                    : null);
             }
             catch (ArgumentException ex)
             {
@@ -255,7 +260,7 @@ internal sealed class FeatureServerEditsHandler(
         for (var i = 0; i < request.Updates.Length; i++)
         {
             var update = request.Updates[i];
-            if (!TryGetObjectId(update.Attributes, out var objectId))
+            if (!TryGetObjectId(update.Attributes, layer, out var objectId))
             {
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
@@ -266,7 +271,25 @@ internal sealed class FeatureServerEditsHandler(
 
             try
             {
-                var updateFeature = await BuildFeatureFromGeoServicesAsync(update, objectId, layer, cancellationToken);
+                var existingFeature = await ResolveFeatureByGeoServicesObjectIdAsync(layer, objectId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!ShouldUseInternalObjectIdFastPath(layer) && existingFeature is null)
+                {
+                    context.HasValidationErrors = true;
+                    context.UpdateResults![i] = CreateFailureResult(
+                        code: 1002,
+                        description: "Feature not found",
+                        objectId: objectId);
+                    continue;
+                }
+
+                var internalObjectId = existingFeature?.Id ?? objectId;
+                var updateFeature = await BuildFeatureFromGeoServicesAsync(
+                    update,
+                    internalObjectId,
+                    layer,
+                    cancellationToken,
+                    existingFeature).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
@@ -296,7 +319,7 @@ internal sealed class FeatureServerEditsHandler(
     /// </summary>
     private async Task ProcessDeleteOperationsAsync(
         ApplyEditsRequest request,
-        int layerId,
+        LayerDefinition layer,
         EditOperationContext context,
         CancellationToken cancellationToken)
     {
@@ -314,9 +337,23 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            context.DeleteIds.Add(objectId);
+            var existingFeature = await ResolveFeatureByGeoServicesObjectIdAsync(layer, objectId, cancellationToken)
+                .ConfigureAwait(false);
+            if (!ShouldUseInternalObjectIdFastPath(layer) && existingFeature is null)
+            {
+                context.HasValidationErrors = true;
+                context.DeleteResults![i] = CreateFailureResult(
+                    code: 1003,
+                    description: "Feature not found",
+                    objectId: objectId);
+                continue;
+            }
+
+            var internalObjectId = existingFeature?.Id ?? objectId;
+            context.DeleteIds.Add(internalObjectId);
+            context.DeleteResponseObjectIds.Add(objectId);
             context.DeleteIndexes.Add(i);
-            context.DeleteFeatures.Add(await ReadDeleteFeatureSnapshotAsync(layerId, objectId, cancellationToken));
+            context.DeleteFeatures.Add(existingFeature ?? await ReadDeleteFeatureSnapshotAsync(layer.Id, internalObjectId, cancellationToken));
         }
     }
 
@@ -377,8 +414,10 @@ internal sealed class FeatureServerEditsHandler(
         var editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken);
 
         ApplyResults(context.AddResults, context.CreateIndexes, editResult.CreateResults);
-        ApplyResults(context.UpdateResults, context.UpdateIndexes, editResult.UpdateResults);
-        ApplyResults(context.DeleteResults, context.DeleteIndexes, editResult.DeleteResults);
+        ApplyCreateResponseObjectIds(context);
+        CaptureCreateEventObjectIds(context, editResult.CreateResults);
+        ApplyResults(context.UpdateResults, context.UpdateIndexes, editResult.UpdateResults, context.UpdateObjectIds);
+        ApplyResults(context.DeleteResults, context.DeleteIndexes, editResult.DeleteResults, context.DeleteResponseObjectIds);
 
         return editResult;
     }
@@ -396,7 +435,7 @@ internal sealed class FeatureServerEditsHandler(
 
         ApplyRollbackResults(context.AddResults, context.CreateIndexes, null, rollbackError);
         ApplyRollbackResults(context.UpdateResults, context.UpdateIndexes, context.UpdateObjectIds, rollbackError);
-        ApplyRollbackResults(context.DeleteResults, context.DeleteIndexes, context.DeleteIds, rollbackError);
+        ApplyRollbackResults(context.DeleteResults, context.DeleteIndexes, context.DeleteResponseObjectIds, rollbackError);
 
         var response = new ApplyEditsResponse
         {
@@ -457,10 +496,13 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
+            var eventObjectId = context.CreateEventObjectIds.Count > i
+                ? context.CreateEventObjectIds[i] ?? objectId
+                : objectId;
             await _mutationEventService.PublishAsync(
                 _httpContextAccessor.HttpContext!,
                 layerId,
-                objectId,
+                eventObjectId,
                 "create",
                 HonuaTelemetry.Protocols.FeatureServer,
                 cancellationToken,
@@ -473,7 +515,7 @@ internal sealed class FeatureServerEditsHandler(
         {
             var resultIndex = context.UpdateIndexes[i];
             var result = context.UpdateResults?[resultIndex];
-            if (result is not { Success: true, ObjectId: { } objectId })
+            if (result is not { Success: true })
             {
                 continue;
             }
@@ -481,7 +523,7 @@ internal sealed class FeatureServerEditsHandler(
             await _mutationEventService.PublishAsync(
                 _httpContextAccessor.HttpContext!,
                 layerId,
-                objectId,
+                context.UpdateFeatures[i].Id,
                 "update",
                 HonuaTelemetry.Protocols.FeatureServer,
                 cancellationToken,
@@ -494,7 +536,7 @@ internal sealed class FeatureServerEditsHandler(
         {
             var resultIndex = context.DeleteIndexes[i];
             var result = context.DeleteResults?[resultIndex];
-            if (result is not { Success: true, ObjectId: { } objectId })
+            if (result is not { Success: true })
             {
                 continue;
             }
@@ -503,7 +545,7 @@ internal sealed class FeatureServerEditsHandler(
             await _mutationEventService.PublishAsync(
                 _httpContextAccessor.HttpContext!,
                 layerId,
-                objectId,
+                context.DeleteIds[i],
                 "delete",
                 HonuaTelemetry.Protocols.FeatureServer,
                 cancellationToken,
@@ -523,22 +565,69 @@ internal sealed class FeatureServerEditsHandler(
         public EditResult?[]? DeleteResults { get; init; }
         public List<Feature> CreateFeatures { get; } = new();
         public List<int> CreateIndexes { get; } = new();
+        public List<long?> CreateResponseObjectIds { get; } = new();
+        public List<long?> CreateEventObjectIds { get; } = new();
         public List<Feature> UpdateFeatures { get; } = new();
         public List<int> UpdateIndexes { get; } = new();
         public List<long> UpdateObjectIds { get; } = new();
         public List<long> DeleteIds { get; } = new();
+        public List<long> DeleteResponseObjectIds { get; } = new();
         public List<Feature?> DeleteFeatures { get; } = new();
         public List<int> DeleteIndexes { get; } = new();
         public bool HasValidationErrors { get; set; }
     }
 
+    private async Task<Feature?> ResolveFeatureByGeoServicesObjectIdAsync(
+        LayerDefinition layer,
+        long objectId,
+        CancellationToken cancellationToken)
+    {
+        if (ShouldUseInternalObjectIdFastPath(layer))
+        {
+            return await _featureReader.GetAsync(layer.Id, objectId, cancellationToken).ConfigureAwait(false);
+        }
+
+        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(layer);
+        if (objectIdField is null)
+        {
+            return null;
+        }
+
+        var expression = new BinaryExpression(
+            new PropertyReference(objectIdField.Name),
+            BinaryOperator.Equal,
+            new Literal(objectId, LiteralType.Number));
+        var translation = _filterExpressionService.Translate(expression, layer);
+        if (!translation.IsSuccess)
+        {
+            throw new ArgumentException(translation.ErrorMessage ?? "Invalid ObjectId field.");
+        }
+
+        var result = await _featureReader.QueryAsync(
+            layer.Id,
+            new FeatureQuery
+            {
+                SqlFilter = translation.SqlFilter,
+                Limit = 1
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        return result.Items.IsDefaultOrEmpty ? null : result.Items[0];
+    }
+
+    private static bool ShouldUseInternalObjectIdFastPath(LayerDefinition layer)
+        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(layer)?.Name.Equals(
+            FieldNames.ObjectId,
+            StringComparison.OrdinalIgnoreCase) != false;
+
     private async Task<Feature> BuildFeatureFromGeoServicesAsync(
         GeoServicesFeature feature,
         long objectId,
         LayerDefinition layer,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Feature? existingFeature = null)
     {
-        byte[]? geometry = null;
+        byte[]? geometry = existingFeature?.Geometry;
         if (feature.Geometry != null)
         {
             // Layer 1: Validate Esri JSON input
@@ -597,10 +686,23 @@ internal sealed class FeatureServerEditsHandler(
                 SanitizeEditErrorMessage(attributesResult.ErrorMessage, "Invalid attributes."));
         }
 
-        return Feature.Create(objectId, geometry, attributesResult.Value!);
+        var attributes = existingFeature?.Attributes.ToBuilder()
+            ?? ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in attributesResult.Value!)
+        {
+            attributes[key] = value;
+        }
+
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
+        if (objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+        {
+            attributes.Remove(objectIdFieldName);
+        }
+
+        return Feature.Create(objectId, geometry, attributes.ToImmutable());
     }
 
-    private static bool TryGetObjectId(Dictionary<string, object?>? attributes, out long objectId)
+    private static bool TryGetObjectId(Dictionary<string, object?>? attributes, LayerDefinition layer, out long objectId)
     {
         objectId = 0;
 
@@ -609,9 +711,10 @@ internal sealed class FeatureServerEditsHandler(
             return false;
         }
 
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         foreach (var entry in attributes)
         {
-            if (string.Equals(entry.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(entry.Key, objectIdFieldName, StringComparison.OrdinalIgnoreCase))
             {
                 return FeatureServerValueParser.TryConvertToLong(entry.Value, out objectId);
             }
@@ -635,13 +738,13 @@ internal sealed class FeatureServerEditsHandler(
         };
     }
 
-    private static EditResult ConvertEditOperationResult(EditOperationResult result)
+    private static EditResult ConvertEditOperationResult(EditOperationResult result, long? responseObjectId = null)
     {
         if (result.IsSuccess)
         {
             return new EditResult
             {
-                ObjectId = result.ObjectId,
+                ObjectId = responseObjectId ?? result.ObjectId,
                 GlobalId = result.GlobalId,
                 Success = true
             };
@@ -650,7 +753,7 @@ internal sealed class FeatureServerEditsHandler(
         return CreateFailureResult(
             result.ErrorCode,
             SanitizeEditErrorMessage(result.ErrorMessage, "Operation failed"),
-            result.ObjectId,
+            responseObjectId ?? result.ObjectId,
             result.GlobalId);
     }
 
@@ -673,7 +776,11 @@ internal sealed class FeatureServerEditsHandler(
         }
     }
 
-    private static void ApplyResults(EditResult?[]? results, List<int> indexes, ImmutableArray<EditOperationResult> operationResults)
+    private static void ApplyResults(
+        EditResult?[]? results,
+        List<int> indexes,
+        ImmutableArray<EditOperationResult> operationResults,
+        List<long>? responseObjectIds = null)
     {
         if (results == null)
         {
@@ -683,12 +790,51 @@ internal sealed class FeatureServerEditsHandler(
         var count = Math.Min(indexes.Count, operationResults.Length);
         for (var i = 0; i < count; i++)
         {
-            results[indexes[i]] = ConvertEditOperationResult(operationResults[i]);
+            var responseObjectId = responseObjectIds != null && i < responseObjectIds.Count
+                ? responseObjectIds[i]
+                : (long?)null;
+            results[indexes[i]] = ConvertEditOperationResult(operationResults[i], responseObjectId);
         }
 
         for (var i = count; i < indexes.Count; i++)
         {
             results[indexes[i]] ??= CreateFailureResult(1000, "Operation failed");
+        }
+    }
+
+    private static void ApplyCreateResponseObjectIds(EditOperationContext context)
+    {
+        if (context.AddResults == null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < context.CreateIndexes.Count && i < context.CreateResponseObjectIds.Count; i++)
+        {
+            var responseObjectId = context.CreateResponseObjectIds[i];
+            if (!responseObjectId.HasValue)
+            {
+                continue;
+            }
+
+            var result = context.AddResults[context.CreateIndexes[i]];
+            if (result is { Success: true })
+            {
+                result.ObjectId = responseObjectId.Value;
+            }
+        }
+    }
+
+    private static void CaptureCreateEventObjectIds(
+        EditOperationContext context,
+        ImmutableArray<EditOperationResult> operationResults)
+    {
+        context.CreateEventObjectIds.Clear();
+        for (var i = 0; i < context.CreateIndexes.Count; i++)
+        {
+            context.CreateEventObjectIds.Add(i < operationResults.Length
+                ? operationResults[i].ObjectId
+                : null);
         }
     }
 

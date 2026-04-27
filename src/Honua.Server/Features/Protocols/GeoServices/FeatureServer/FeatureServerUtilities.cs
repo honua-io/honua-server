@@ -278,15 +278,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static string ResolveServiceObjectIdField(ServiceDefinition service)
-    {
-        var candidate = service.Layers
-            .Select(layer => layer.PrimaryKeyField?.Name)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        return candidate.Length == 1 ? candidate[0]! : FieldNames.ObjectId;
-    }
+        => GeoServicesObjectIdFieldResolver.ResolveServiceObjectIdFieldName(service);
 
     /// <summary>
     /// Maps layer definition to layer response
@@ -300,7 +292,7 @@ internal static partial class FeatureServerEndpoints
         bool supportsGeobufOutput,
         bool supportsAttachmentUploads)
     {
-        var objectIdField = layer.ObjectIdFieldName;
+        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         var displayField = ResolveDisplayFieldFromLayer(layer, objectIdField);
         var supportsStatistics = true;
         var supportsAdvancedQueries = service.SupportsAdvancedQueries;

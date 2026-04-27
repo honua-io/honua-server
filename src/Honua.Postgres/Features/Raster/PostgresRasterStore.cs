@@ -246,7 +246,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             if (query.Quality.HasValue)
             {
-                options.Add(string.Create(CultureInfo.InvariantCulture, $"QUALITY={query.Quality.Value}"));
+                var quality = PostgresRasterGdalOptions.ClampJpegQuality(query.Quality.Value);
+                options.Add(string.Create(CultureInfo.InvariantCulture, $"QUALITY={quality}"));
             }
 
             return [.. options];
@@ -272,7 +273,8 @@ internal sealed class PostgresRasterStore : IRasterStore
                 options.Add("COMPRESS=JPEG");
                 if (query.Quality.HasValue)
                 {
-                    options.Add(string.Create(CultureInfo.InvariantCulture, $"JPEG_QUALITY={query.Quality.Value}"));
+                    var quality = PostgresRasterGdalOptions.ClampJpegQuality(query.Quality.Value);
+                    options.Add(string.Create(CultureInfo.InvariantCulture, $"JPEG_QUALITY={quality}"));
                 }
                 break;
         }
@@ -359,22 +361,24 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(tileCommand, "@col", col);
         AddParameter(tileCommand, "@row", row);
 
-        await using var tileReader = await tileCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (await tileReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await using (var tileReader = await tileCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
-            var tileDataOrd = tileReader.GetOrdinal("tile_data");
-            var contentTypeOrd = tileReader.GetOrdinal("content_type");
-            var tileData = (byte[])tileReader[tileDataOrd];
-            var contentType = tileReader.GetString(contentTypeOrd);
-            PostgresRasterLog.TileGenerated(_logger, layerId, rasterId, level, row, col, tileData.Length);
-            return new RasterResult
+            if (await tileReader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                Data = tileData,
-                ContentType = contentType,
-                Width = 256,
-                Height = 256,
-                Srid = 3857
-            };
+                var tileDataOrd = tileReader.GetOrdinal("tile_data");
+                var contentTypeOrd = tileReader.GetOrdinal("content_type");
+                var tileData = (byte[])tileReader[tileDataOrd];
+                var contentType = tileReader.GetString(contentTypeOrd);
+                PostgresRasterLog.TileGenerated(_logger, layerId, rasterId, level, row, col, tileData.Length);
+                return new RasterResult
+                {
+                    Data = tileData,
+                    ContentType = contentType,
+                    Width = 256,
+                    Height = 256,
+                    Srid = 3857
+                };
+            }
         }
 
         // Dynamic tile generation via PostGIS

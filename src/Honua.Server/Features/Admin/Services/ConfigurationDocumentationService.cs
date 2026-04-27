@@ -393,6 +393,18 @@ public sealed class ConfigurationDocumentationService
                     "Npgsql multiplexing mode ('auto', 'true', or 'false'); default off avoids write-lock contention at high concurrency", "false", opts.Multiplexing, "Allowed: auto|true|false"),
                 BuildPropertyWithCurrent("Limits:Connections:ConnectionAcquisitionTimeoutSeconds", "Limits__Connections__ConnectionAcquisitionTimeoutSeconds", "integer",
                     "Maximum seconds to wait for a gate slot before returning HTTP 503 with Retry-After", 5, opts.ConnectionAcquisitionTimeoutSeconds, "Range: 1-60"),
+                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyEnabled", "Limits__Connections__AdaptiveConcurrencyEnabled", "boolean",
+                    "Enable adaptive query admission below the configured database pool ceiling", false, opts.AdaptiveConcurrencyEnabled, "Allowed: true|false"),
+                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyMinQueries", "Limits__Connections__AdaptiveConcurrencyMinQueries", "integer",
+                    "Minimum adaptive concurrent query limit", 1, opts.AdaptiveConcurrencyMinQueries, "Range: 1-1000"),
+                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyInitialQueries", "Limits__Connections__AdaptiveConcurrencyInitialQueries", "integer",
+                    "Initial adaptive concurrent query limit; 0 starts at MaxConcurrentQueries", 0, opts.AdaptiveConcurrencyInitialQueries, "Range: 0-1000"),
+                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyMaxQueries", "Limits__Connections__AdaptiveConcurrencyMaxQueries", "integer",
+                    "Maximum adaptive concurrent query limit; 0 uses MaxConcurrentQueries", 0, opts.AdaptiveConcurrencyMaxQueries, "Range: 0-1000"),
+                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyTargetDurationMs", "Limits__Connections__AdaptiveConcurrencyTargetDurationMs", "integer",
+                    "Target database lease duration for adaptive admission", 100, opts.AdaptiveConcurrencyTargetDurationMs, "Range: 1-60000"),
+                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyUpdateIntervalMs", "Limits__Connections__AdaptiveConcurrencyUpdateIntervalMs", "integer",
+                    "Minimum milliseconds between adaptive admission adjustments", 1000, opts.AdaptiveConcurrencyUpdateIntervalMs, "Range: 0-60000"),
                 BuildPropertyWithCurrent("Limits:Connections:RequestTimeout", "Limits__Connections__RequestTimeout", "timespan",
                     "Overall request timeout", TimeSpan.FromSeconds(120), opts.RequestTimeout, "Range: 00:00:10-00:10:00")
             ]

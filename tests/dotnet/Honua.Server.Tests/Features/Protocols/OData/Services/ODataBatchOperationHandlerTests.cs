@@ -44,6 +44,7 @@ public sealed class ODataBatchOperationHandlerTests
                     Id = "write-1",
                     Method = "POST",
                     Url = "Features",
+                    AtomicityGroup = "group-1",
                     Body = new Dictionary<string, object?>
                     {
                         ["LayerId"] = 1,
@@ -86,6 +87,7 @@ public sealed class ODataBatchOperationHandlerTests
                     Id = "write-1",
                     Method = "POST",
                     Url = "Features",
+                    AtomicityGroup = "group-1",
                     Body = new Dictionary<string, object?>
                     {
                         ["LayerId"] = 1,
@@ -128,6 +130,7 @@ public sealed class ODataBatchOperationHandlerTests
                     Id = "write-1",
                     Method = "POST",
                     Url = "Features",
+                    AtomicityGroup = "group-1",
                     Body = new Dictionary<string, object?>
                     {
                         ["Attributes"] = new Dictionary<string, object?>

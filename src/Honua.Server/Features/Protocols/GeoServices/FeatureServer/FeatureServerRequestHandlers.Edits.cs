@@ -302,12 +302,13 @@ internal static partial class FeatureServerEndpoints
             return (null, rbacError);
         }
 
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         var query = new FeatureQuery
         {
             Where = whereClause,
             Limit = limits.Query.MaxRecordCount,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-            OutFields = [FieldNames.ObjectId]
+            OutFields = [objectIdFieldName]
         };
 
         if (!string.IsNullOrWhiteSpace(geometry))
@@ -377,7 +378,9 @@ internal static partial class FeatureServerEndpoints
                 ["Narrow the where or geometry filter, or delete by explicit objectIds."]));
         }
 
-        var ids = queryResult.Items.Select(f => (object)f.Id).ToArray();
+        var ids = queryResult.Items
+            .Select(feature => (object)GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
+            .ToArray();
         return (ids, null);
     }
 

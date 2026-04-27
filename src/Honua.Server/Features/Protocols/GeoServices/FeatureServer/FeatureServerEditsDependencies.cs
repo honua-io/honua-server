@@ -4,6 +4,7 @@
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -20,6 +21,7 @@ internal sealed class FeatureServerEditsDependencies
         IEditParameterAdapter<GeoServicesEditRequest> editParameterAdapter,
         IEditProcessor editProcessor,
         FeatureMutationValidator mutationValidator,
+        IFilterExpressionService filterExpressionService,
         IHttpContextAccessor httpContextAccessor,
         FeatureMutationEventService mutationEventService)
     {
@@ -30,6 +32,7 @@ internal sealed class FeatureServerEditsDependencies
         EditParameterAdapter = editParameterAdapter ?? throw new ArgumentNullException(nameof(editParameterAdapter));
         EditProcessor = editProcessor ?? throw new ArgumentNullException(nameof(editProcessor));
         MutationValidator = mutationValidator ?? throw new ArgumentNullException(nameof(mutationValidator));
+        FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         HttpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
         MutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
     }
@@ -41,6 +44,7 @@ internal sealed class FeatureServerEditsDependencies
     public IEditParameterAdapter<GeoServicesEditRequest> EditParameterAdapter { get; }
     public IEditProcessor EditProcessor { get; }
     public FeatureMutationValidator MutationValidator { get; }
+    public IFilterExpressionService FilterExpressionService { get; }
     public IHttpContextAccessor HttpContextAccessor { get; }
     public FeatureMutationEventService MutationEventService { get; }
 }

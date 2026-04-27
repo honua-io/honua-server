@@ -7,10 +7,29 @@ Enhanced OGC standards compliance tests for WFS 2.0 filter capabilities.
 
 import pytest
 import httpx
+from typing import Dict
 from xml.etree import ElementTree as ET
 
 from shared.temporal_operator_compliance import ALL_TEMPORAL_COMPLIANCE_CASES
 from shared.spatial_function_compliance import ALL_SPATIAL_FUNCTION_CASES
+
+
+def _constraint_defaults(root: ET.Element) -> Dict[str, str]:
+    ns = {"fes": "http://www.opengis.net/fes/2.0"}
+    defaults: Dict[str, str] = {}
+    for constraint in root.findall(".//fes:Constraint", ns):
+        name = constraint.attrib.get("name")
+        default_value = next(
+            (
+                element.text
+                for element in constraint.iter()
+                if element.tag.endswith("DefaultValue")
+            ),
+            None,
+        )
+        if name and default_value:
+            defaults[name] = default_value
+    return defaults
 
 
 class TestEnhancedStandardsCompliance:
@@ -95,35 +114,29 @@ class TestEnhancedStandardsCompliance:
 
     @pytest.mark.integration
     @pytest.mark.ogc
-    def test_wfs_enhanced_spatial_functions_advertised(
+    def test_wfs_unsupported_functions_not_advertised(
         self, http_client: httpx.Client
     ):
-        """Test that spatial functions are advertised in capabilities."""
+        """Test that unsupported FES functions are not advertised in capabilities."""
         response = http_client.get("/wfs", params={"request": "GetCapabilities"})
         assert response.status_code == 200
 
         root = ET.fromstring(response.content)
         ns = {"fes": "http://www.opengis.net/fes/2.0"}
 
-        # Find function definitions
         functions = root.findall(".//fes:Function", ns)
-        advertised_functions = {func.attrib["name"] for func in functions}
+        advertised_functions = {func.attrib.get("name") for func in functions}
+        constraint_defaults = _constraint_defaults(root)
 
-        # Verify spatial functions are advertised
-        expected_spatial_functions = {
-            "ST_Area", "ST_Length", "ST_Distance", "ST_Buffer", "ST_Centroid",
-            "ST_IsValid", "ST_GeometryType", "ST_NumGeometries"
-        }
-
-        for func in expected_spatial_functions:
-            assert func in advertised_functions, f"Missing spatial function: {func}"
+        assert not advertised_functions, f"Unexpected advertised functions: {advertised_functions}"
+        assert constraint_defaults["ImplementsFunctions"] == "FALSE"
 
     @pytest.mark.integration
     @pytest.mark.ogc
-    def test_wfs_comprehensive_function_coverage(
+    def test_wfs_function_conformance_matches_runtime_support(
         self, http_client: httpx.Client
     ):
-        """Test comprehensive function coverage across all categories."""
+        """Test FES function conformance flags match the WFS runtime surface."""
         response = http_client.get("/wfs", params={"request": "GetCapabilities"})
         assert response.status_code == 200
 
@@ -131,26 +144,12 @@ class TestEnhancedStandardsCompliance:
         ns = {"fes": "http://www.opengis.net/fes/2.0"}
 
         functions = root.findall(".//fes:Function", ns)
-        advertised_functions = {func.attrib["name"] for func in functions}
+        constraint_defaults = _constraint_defaults(root)
 
-        # String functions
-        string_functions = {"UPPER", "LOWER", "CONCAT", "LENGTH", "SUBSTRING"}
-        assert string_functions.issubset(advertised_functions), "Missing string functions"
-
-        # Math functions
-        math_functions = {"ABS", "CEIL", "FLOOR", "ROUND", "SQRT", "POWER", "MOD"}
-        assert math_functions.issubset(advertised_functions), "Missing math functions"
-
-        # Date/time functions
-        date_functions = {"YEAR", "MONTH", "DAY", "NOW"}
-        assert date_functions.issubset(advertised_functions), "Missing date/time functions"
-
-        # Aggregate functions
-        aggregate_functions = {"COUNT", "SUM", "AVG", "MIN", "MAX"}
-        assert aggregate_functions.issubset(advertised_functions), "Missing aggregate functions"
-
-        # Should have substantial function coverage (35+ functions)
-        assert len(advertised_functions) >= 35, f"Should advertise 35+ functions, got {len(advertised_functions)}"
+        assert functions == []
+        assert constraint_defaults["ImplementsFunctions"] == "FALSE"
+        assert constraint_defaults["ImplementsArithmeticOperators"] == "FALSE"
+        assert constraint_defaults["ImplementsCQL2Functions"] == "FALSE"
 
     @pytest.mark.integration
     @pytest.mark.ogc
@@ -250,12 +249,13 @@ class TestEnhancedStandardsCompliance:
         if len(spatial_ops) >= 12:
             passed_checks += 1
 
-        # Function coverage (2 checks)
+        # FES function advertisement consistency (2 checks)
         total_checks += 2
         functions = root.findall(".//fes:Function", ns)
-        if len(functions) >= 20:
+        constraint_defaults = _constraint_defaults(root)
+        if constraint_defaults.get("ImplementsFunctions") == "FALSE" and len(functions) == 0:
             passed_checks += 1
-        if len(functions) >= 35:
+        if constraint_defaults.get("ImplementsArithmeticOperators") == "FALSE":
             passed_checks += 1
 
         # CQL2 support (3 checks)

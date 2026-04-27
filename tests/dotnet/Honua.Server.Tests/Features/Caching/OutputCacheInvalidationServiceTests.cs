@@ -129,6 +129,51 @@ public sealed class OutputCacheInvalidationServiceTests
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task InvalidateLayerAsync_WithNamedCollection_EvictsOgcNameQueryResponseCache()
+    {
+        var outputCacheStore = Substitute.For<IOutputCacheStore>();
+        var responseCache = Substitute.For<IResponseCache>();
+        var layerCatalog = Substitute.For<ILayerCatalog>();
+        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns([]);
+        layerCatalog.GetLayerAsync(42, Arg.Any<CancellationToken>())
+            .Returns(LayerDefinition.CreateBasic(42, "Named Layer", GeometryType.Point));
+
+        var services = new ServiceCollection();
+        services.AddScoped(_ => layerCatalog);
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var logger = NullLogger<OutputCacheInvalidationService>.Instance;
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, null, scopeFactory, null, logger);
+
+        await sut.InvalidateLayerAsync(null, 42, CancellationToken.None);
+
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:42:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:named_layer:*", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateCollectionAsync_WithNamedCollection_EvictsNumericAndNameAliases()
+    {
+        var responseCache = Substitute.For<IResponseCache>();
+        var layerCatalog = Substitute.For<ILayerCatalog>();
+        layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
+            .Returns([LayerDefinition.CreateBasic(42, "Named Layer", GeometryType.Point)]);
+
+        var services = new ServiceCollection();
+        services.AddScoped(_ => layerCatalog);
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var logger = NullLogger<OutputCacheInvalidationService>.Instance;
+        var sut = new OutputCacheInvalidationService(null, responseCache, null, scopeFactory, null, logger);
+
+        await sut.InvalidateCollectionAsync("Named Layer", CancellationToken.None);
+
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:42:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:named_layer:*", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task InvalidateServiceCatalogAsync_LayerIdsWithoutServiceId_EvictsLayerQueryResponseCaches()
     {
         var responseCache = Substitute.For<IResponseCache>();

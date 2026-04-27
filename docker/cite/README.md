@@ -15,3 +15,23 @@ This directory contains reproducible Docker inputs for OGC CITE and related conf
 - `shared/` - Seed data, test data, and runner scripts reused by multiple suites.
 
 Runner scripts in `scripts/conformance/cite/` are the supported entry points. They reference the suite compose files under this directory and keep result artifacts outside `docker/cite/`.
+
+## Classic WMS/WFS CI Entry Point
+
+Use `.github/workflows/cite-classic-conformance.yml` for an on-demand run of WMS 1.3, WFS 2.0, or both suites without external secrets. The workflow builds `honua-server:latest` once per suite job, sets `HONUA_CITE_SKIP_BUILD=true`, and then runs the existing scripts against the Docker Compose assets in `wms13/` and `wfs20/`.
+
+Local runs can reuse an already-built image the same way:
+
+```bash
+docker build -t honua-server:latest .
+HONUA_CITE_SKIP_BUILD=true ./scripts/conformance/cite/run-cite-wms-tests.sh --profile minimal
+HONUA_CITE_SKIP_BUILD=true ./scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic
+```
+
+If another local service already uses the WFS TeamEngine host port, set
+`HONUA_CITE_WFS20_TEAMENGINE_PORT`, for example:
+
+```bash
+HONUA_CITE_WFS20_TEAMENGINE_PORT=18081 \
+HONUA_CITE_SKIP_BUILD=true ./scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic
+```

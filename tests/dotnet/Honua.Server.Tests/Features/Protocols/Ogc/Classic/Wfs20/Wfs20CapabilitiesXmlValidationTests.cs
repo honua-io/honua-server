@@ -45,19 +45,20 @@ public class Wfs20CapabilitiesXmlValidationTests
     }
 
     [Fact]
-    public void GetCapabilitiesXml_FunctionsAndCql2_ShouldAdvertiseRuntimeCapabilities()
+    public void GetCapabilitiesXml_FunctionsAndCql2_ShouldNotAdvertiseUnsupportedCapabilities()
     {
         var xml = SerializeToXml(CreateWfsCapabilitiesWithFilterCapabilities());
 
         xml.Should().Contain("Functions");
-        xml.Should().Contain("name=\"ST_Area\"");
-        xml.Should().Contain("name=\"UPPER\"");
-        xml.Should().MatchRegex(@"name=""ImplementsFunctions""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
-        xml.Should().MatchRegex(@"name=""ImplementsArithmeticOperators""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
+        xml.Should().NotContain("name=\"ST_Area\"");
+        xml.Should().NotContain("name=\"UPPER\"");
+        xml.Should().MatchRegex(@"name=""ImplementsFunctions""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsArithmeticOperators""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
         xml.Should().MatchRegex(@"name=""ImplementsExtendedOperators""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
-        xml.Should().MatchRegex(@"name=""ImplementsCQL2Text""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
-        xml.Should().MatchRegex(@"name=""ImplementsCQL2JSON""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsCQL2Text""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsCQL2JSON""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
         xml.Should().MatchRegex(@"name=""ImplementsCQL2ArrayOperators""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsCQL2Functions""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
     }
 
     [Fact]

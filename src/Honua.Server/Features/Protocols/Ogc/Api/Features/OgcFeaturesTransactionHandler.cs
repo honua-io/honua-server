@@ -82,6 +82,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             var inputCrs = crsResult.Definition;
 
+            var contentTypeError = OgcFeaturePayloadReader.ValidateJsonContentType(context);
+            if (contentTypeError is not null)
+            {
+                return contentTypeError;
+            }
+
             var (batchRequest, requestError) = await ReadBatchRequestAsync(context, cancellationToken);
             if (batchRequest == null)
             {
@@ -103,6 +109,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 cancellationToken).ConfigureAwait(false);
 
             List<BatchOperationResult> results;
+            long?[]? objectIdsByOperationIndex = null;
             var hasErrors = false;
 
             if (preparedBatch.ShortCircuitResults is { Count: > 0 })
@@ -140,7 +147,18 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     },
                     cancellationToken).ConfigureAwait(false);
 
-                results = MapBatchEditResults(batchRequest.Operations.Count, preparedBatch.PreparedOperations, editResult);
+                objectIdsByOperationIndex = MapBatchObjectIdsByOperationIndex(
+                    batchRequest.Operations.Count,
+                    preparedBatch.PreparedOperations,
+                    editResult);
+                results = await MapBatchEditResultsAsync(
+                    batchRequest.Operations.Count,
+                    layerId,
+                    layer,
+                    inputCrs,
+                    preparedBatch.PreparedOperations,
+                    editResult,
+                    cancellationToken).ConfigureAwait(false);
                 hasErrors = results.Any(result => !result.IsSuccess);
             }
 
@@ -161,7 +179,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     var operation = batchRequest.Operations[index];
                     var result = results[index];
                     var preparedOperation = preparedOperationsByIndex?[index];
-                    if (!TryGetBatchEventOperation(operation, result, preparedOperation, out var eventOperation, out var objectId))
+                    if (!TryGetBatchEventOperation(
+                            operation,
+                            result,
+                            preparedOperation,
+                            objectIdsByOperationIndex?[index],
+                            out var eventOperation,
+                            out var objectId))
                     {
                         continue;
                     }
@@ -251,6 +275,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
 
             var objectId = resolvedFeature.Value.ObjectId;
+            var existing = resolvedFeature.Value.Feature;
+            var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, layer);
+
+            var contentTypeError = OgcFeaturePayloadReader.ValidateFeatureContentType(context);
+            if (contentTypeError is not null)
+            {
+                return contentTypeError;
+            }
 
             var (requestFeature, requestError) = await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
             if (requestFeature == null)
@@ -258,9 +290,26 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, requestError ?? "Invalid GeoJSON payload.");
             }
 
-            // Check if feature exists and validate ETag if provided
-            var existing = resolvedFeature.Value.Feature;
+            var payloadFeatureId = OgcFeatureIdentifierResolver.FormatPayloadId(requestFeature.Id);
+            if (payloadFeatureId is not null &&
+                !string.Equals(payloadFeatureId, expectedFeatureId, StringComparison.Ordinal))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Payload feature ID '{payloadFeatureId}' does not match route feature ID '{featureId}'.");
+            }
 
+            var payloadPublicId = OgcFeatureIdentifierResolver.FormatPayloadPublicId(requestFeature.Properties, layer);
+            if (payloadPublicId is not null &&
+                !string.Equals(payloadPublicId, expectedFeatureId, StringComparison.Ordinal))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Payload public feature ID '{payloadPublicId}' does not match route feature ID '{featureId}'.");
+            }
+            requestFeature = EnsureFeaturePublicId(requestFeature, layer, expectedFeatureId);
+
+            // Check if feature exists and validate ETag if provided
             if (!string.IsNullOrWhiteSpace(ifMatch))
             {
                 var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
@@ -445,6 +494,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var objectId = resolvedFeature.Value.ObjectId;
 
             var existing = resolvedFeature.Value.Feature;
+            var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, layer);
 
             if (!string.IsNullOrWhiteSpace(ifMatch))
             {
@@ -458,6 +508,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
             }
 
+            var contentTypeError = OgcFeaturePayloadReader.ValidatePatchContentType(context);
+            if (contentTypeError is not null)
+            {
+                return contentTypeError;
+            }
+
             var (patchRequest, patchError) = await ReadPatchRequestAsync(context, cancellationToken);
             if (patchRequest == null)
             {
@@ -465,13 +521,23 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
 
             if (patchRequest.FeatureId is not null &&
-                !string.Equals(patchRequest.FeatureId, featureId, StringComparison.Ordinal) &&
-                !(long.TryParse(patchRequest.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var payloadObjectId) &&
-                  payloadObjectId == objectId))
+                !string.Equals(patchRequest.FeatureId, expectedFeatureId, StringComparison.Ordinal))
             {
                 return StandardErrorHelpers.CreateBadRequest(
                     context,
                     $"Payload feature ID '{patchRequest.FeatureId}' does not match route feature ID '{featureId}'.");
+            }
+
+            if (patchRequest.HasProperties)
+            {
+                var payloadPublicId = OgcFeatureIdentifierResolver.FormatPayloadPublicId(patchRequest.Properties, layer);
+                if (payloadPublicId is not null &&
+                    !string.Equals(payloadPublicId, expectedFeatureId, StringComparison.Ordinal))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"Payload public feature ID '{payloadPublicId}' does not match route feature ID '{featureId}'.");
+                }
             }
 
             var crsResult = await OgcRequestCrsResolver.TryResolveInputCrsAsync(
@@ -706,6 +772,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(operation.Type))
+            {
+                return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                    operation.Id,
+                    "Batch operation type is required.",
+                    400));
+            }
+
             switch (operation.Type.ToUpperInvariant())
             {
                 case "CREATE":
@@ -802,6 +876,26 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
 
         var objectId = resolvedFeature.Value.ObjectId;
+        var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(resolvedFeature.Value.Feature, layer);
+
+        if (TryValidateRequestFeaturePublicId(
+                operation.Feature,
+                layer,
+                expectedFeatureId,
+                out var identityError))
+        {
+            operation = operation with
+            {
+                Feature = EnsureFeaturePublicId(operation.Feature, layer, expectedFeatureId)
+            };
+        }
+        else
+        {
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                identityError ?? "Payload feature ID does not match operation feature ID.",
+                400));
+        }
 
         if (state.DeletedObjectIds.Contains(objectId))
         {
@@ -834,6 +928,52 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             Operation: operation,
             Feature: feature,
             ObjectId: objectId));
+    }
+
+    private static bool TryValidateRequestFeaturePublicId(
+        GeoJsonFeature feature,
+        LayerDefinition layer,
+        string expectedFeatureId,
+        out string? error)
+    {
+        error = null;
+
+        var payloadFeatureId = OgcFeatureIdentifierResolver.FormatPayloadId(feature.Id);
+        if (payloadFeatureId is not null &&
+            !string.Equals(payloadFeatureId, expectedFeatureId, StringComparison.Ordinal))
+        {
+            error = $"Payload feature ID '{payloadFeatureId}' does not match operation feature ID '{expectedFeatureId}'.";
+            return false;
+        }
+
+        var payloadPublicId = OgcFeatureIdentifierResolver.FormatPayloadPublicId(feature.Properties, layer);
+        if (payloadPublicId is not null &&
+            !string.Equals(payloadPublicId, expectedFeatureId, StringComparison.Ordinal))
+        {
+            error = $"Payload public feature ID '{payloadPublicId}' does not match operation feature ID '{expectedFeatureId}'.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static GeoJsonFeature EnsureFeaturePublicId(
+        GeoJsonFeature feature,
+        LayerDefinition layer,
+        string expectedFeatureId)
+    {
+        var publicIdField = OgcFeatureIdentifierResolver.ResolveWritablePublicIdField(layer);
+        if (publicIdField is null ||
+            feature.Properties.ContainsKey(publicIdField.Name))
+        {
+            return feature;
+        }
+
+        var properties = new Dictionary<string, object?>(feature.Properties, StringComparer.OrdinalIgnoreCase)
+        {
+            [publicIdField.Name] = expectedFeatureId
+        };
+        return feature with { Properties = properties };
     }
 
     private async Task<PreparedBatchValidationResult> PrepareDeleteOperationAsync(
@@ -976,10 +1116,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         return new PreparedBatchPlan(editBatch, preparedOperations.ToImmutable(), null);
     }
 
-    private static List<BatchOperationResult> MapBatchEditResults(
+    private async Task<List<BatchOperationResult>> MapBatchEditResultsAsync(
         int operationCount,
+        int layerId,
+        LayerDefinition layer,
+        CrsDefinition inputCrs,
         ImmutableArray<PreparedBatchOperation> preparedOperations,
-        FeatureEditResult editResult)
+        FeatureEditResult editResult,
+        CancellationToken cancellationToken)
     {
         var results = new BatchOperationResult[operationCount];
         var createIndex = 0;
@@ -990,9 +1134,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         {
             results[operation.Index] = operation.OperationKind switch
             {
-                BatchOperationKind.Create => MapCreateEditResult(
+                BatchOperationKind.Create => await MapCreateEditResultAsync(
                     operation.Operation,
-                    GetEditResult(editResult.CreateResults, createIndex++)),
+                    layerId,
+                    layer,
+                    inputCrs,
+                    GetEditResult(editResult.CreateResults, createIndex++),
+                    cancellationToken).ConfigureAwait(false),
                 BatchOperationKind.Update => MapUpdateEditResult(
                     operation.Operation,
                     operation.ObjectId,
@@ -1008,20 +1156,72 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         return results.ToList();
     }
 
+    private static long?[] MapBatchObjectIdsByOperationIndex(
+        int operationCount,
+        ImmutableArray<PreparedBatchOperation> preparedOperations,
+        FeatureEditResult editResult)
+    {
+        var objectIds = new long?[operationCount];
+        var createIndex = 0;
+        var updateIndex = 0;
+        var deleteIndex = 0;
+
+        foreach (var operation in preparedOperations)
+        {
+            switch (operation.OperationKind)
+            {
+                case BatchOperationKind.Create:
+                    objectIds[operation.Index] = GetEditResult(editResult.CreateResults, createIndex++).ObjectId;
+                    break;
+                case BatchOperationKind.Update:
+                    var updateResult = GetEditResult(editResult.UpdateResults, updateIndex++);
+                    objectIds[operation.Index] = operation.ObjectId ?? updateResult.ObjectId;
+                    break;
+                case BatchOperationKind.Delete:
+                    var deleteResult = GetEditResult(editResult.DeleteResults, deleteIndex++);
+                    objectIds[operation.Index] = operation.ObjectId ?? deleteResult.ObjectId;
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported batch operation kind {operation.OperationKind}.");
+            }
+        }
+
+        return objectIds;
+    }
+
     private static EditOperationResult GetEditResult(ImmutableArray<EditOperationResult> results, int index)
         => index < results.Length
             ? results[index]
             : EditOperationResult.Failure("Operation result was missing.", errorCode: 500);
 
-    private static BatchOperationResult MapCreateEditResult(BatchOperationModel operation, EditOperationResult editResult)
+    private async Task<BatchOperationResult> MapCreateEditResultAsync(
+        BatchOperationModel operation,
+        int layerId,
+        LayerDefinition layer,
+        CrsDefinition inputCrs,
+        EditOperationResult editResult,
+        CancellationToken cancellationToken)
     {
         if (editResult.IsSuccess && editResult.ObjectId.HasValue)
         {
+            var responseFeature = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
+                _featureReader,
+                layerId,
+                layer,
+                editResult.ObjectId.Value,
+                inputCrs,
+                cancellationToken).ConfigureAwait(false);
+            var featureId = responseFeature.HasValue
+                ? OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, layer)
+                : OgcFeatureIdentifierResolver.FormatPayloadId(operation.Feature?.Id)
+                  ?? OgcFeatureIdentifierResolver.FormatPayloadPublicId(operation.Feature?.Properties, layer)
+                  ?? editResult.ObjectId.Value.ToString(CultureInfo.InvariantCulture);
+
             return new BatchOperationResult
             {
                 OperationId = operation.Id,
                 IsSuccess = true,
-                FeatureId = editResult.ObjectId.Value.ToString(CultureInfo.InvariantCulture),
+                FeatureId = featureId,
                 StatusCode = 201
             };
         }
@@ -1132,9 +1332,25 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 context.Request.Body,
                 OgcJsonContext.Default.BatchRequest,
                 cancellationToken);
-            return request == null
-                ? (null, "Invalid batch request payload.")
-                : (request, null);
+            if (request == null)
+            {
+                return (null, "Invalid batch request payload.");
+            }
+
+            if (request.Operations == null)
+            {
+                return (null, "Batch request operations are required.");
+            }
+
+            for (var i = 0; i < request.Operations.Count; i++)
+            {
+                if (request.Operations[i] == null)
+                {
+                    return (null, $"Batch operation at index {i} is required.");
+                }
+            }
+
+            return (request, null);
         }
         catch (JsonException)
         {
@@ -1269,6 +1485,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         BatchOperationModel operation,
         BatchOperationResult result,
         PreparedBatchOperation? preparedOperation,
+        long? operationObjectId,
         out string eventOperation,
         out long objectId)
     {
@@ -1284,6 +1501,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         switch (normalized)
         {
             case "CREATE":
+                if (operationObjectId.HasValue)
+                {
+                    objectId = operationObjectId.Value;
+                    eventOperation = "create";
+                    return true;
+                }
+
                 if (!long.TryParse(result.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out objectId))
                 {
                     return false;

@@ -88,6 +88,18 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /odata/Layers({layerId})/Features")]
+    public async Task CreateFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/odata/Layers({TestLayerId})/Features",
+            new StringContent("""{"Attributes":{"name":"Bad Type"}}""", Encoding.UTF8, "text/plain"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("PATCH /odata/Features({layerId},{objectId})")]
     public async Task UpdateFeature_WithValidPayload_ReturnsUpdatedFeature()
@@ -118,6 +130,42 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
         updated.GetProperty("ObjectId").GetInt64().Should().Be(existingId);
         var updatedAttributes = ODataTestHelpers.ParseAttributes(updated);
         updatedAttributes.GetProperty("name").GetString().Should().Be("Updated City");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /odata/Features({layerId},{objectId})")]
+    public async Task UpdateFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Original");
+        using var message = new HttpRequestMessage(
+            new HttpMethod("PATCH"),
+            $"/odata/Features({TestLayerId},{existingId})")
+        {
+            Content = new StringContent("""{"Attributes":{"name":"Bad Type"}}""", Encoding.UTF8, "text/plain")
+        };
+
+        var response = await _fixture.Client.SendAsync(message);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /odata/Layers({layerId})/Features({objectId})")]
+    public async Task ReplaceFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Original");
+        using var message = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/odata/Layers({TestLayerId})/Features({existingId})")
+        {
+            Content = new StringContent("""{"Attributes":{"name":"Bad Type"}}""", Encoding.UTF8, "text/plain")
+        };
+
+        var response = await _fixture.Client.SendAsync(message);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
     }
 
     [IntegrationTest]

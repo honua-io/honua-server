@@ -96,7 +96,10 @@ internal sealed partial class ODataBatchOperationHandler(
             if (isMultipartRequest)
             {
                 var boundary = $"batchresponse_{Guid.NewGuid():N}";
-                var payload = CreateMultipartBatchResponsePayload(response, boundary);
+                var payload = CreateMultipartBatchResponsePayload(
+                    response,
+                    boundary,
+                    ODataProtocolHeaders.GetResponseVersion(context));
                 return Results.Text(payload, $"multipart/mixed;boundary={boundary}");
             }
 
@@ -489,7 +492,10 @@ internal sealed partial class ODataBatchOperationHandler(
         return url.Trim().TrimStart('/');
     }
 
-    private static string CreateMultipartBatchResponsePayload(ODataBatchResponse response, string boundary)
+    private static string CreateMultipartBatchResponsePayload(
+        ODataBatchResponse response,
+        string boundary,
+        string odataVersion)
     {
         var builder = new StringBuilder();
 
@@ -510,7 +516,7 @@ internal sealed partial class ODataBatchOperationHandler(
                 .Append(ReasonPhrases.GetReasonPhrase(item.Status))
                 .Append("\r\n");
 
-            builder.Append("OData-Version: 4.01\r\n");
+            builder.Append("OData-Version: ").Append(odataVersion).Append("\r\n");
             if (item.Headers != null)
             {
                 foreach (var header in item.Headers)
@@ -578,6 +584,7 @@ internal sealed partial class ODataBatchOperationHandler(
             }
 
             if (!requestsById.TryGetValue(responseItem.Id, out var request) ||
+                request.AtomicityGroup == null ||
                 !IsMutationMethod(request.Method))
             {
                 continue;
@@ -635,6 +642,7 @@ internal sealed partial class ODataBatchOperationHandler(
                 }
 
                 if (!requestsById.TryGetValue(responseItem.Id, out var request) ||
+                    request.AtomicityGroup == null ||
                     !IsMutationMethod(request.Method))
                 {
                     continue;

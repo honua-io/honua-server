@@ -311,6 +311,27 @@ public sealed class PbfQueryFormatterTests
         allFields.Length.Should().BeGreaterThanOrEqualTo(limitedFields.Length);
     }
 
+    [Fact]
+    public void FormatAsPbf_WithRuntimeDistanceAttribute_IncludesRuntimeField()
+    {
+        var layer = CreatePointLayer();
+        var attrs = new Dictionary<string, object?>
+        {
+            ["objectid"] = 1L,
+            ["distance"] = 12.5
+        }.ToImmutableDictionary();
+        var feature = Feature.Create(1, null, attrs);
+        var result = QueryResult<Feature>.Create(1, [feature]);
+
+        var (response, _) = _sut.FormatAsPbf(
+            result, layer, returnGeometry: false, outputSrid: null,
+            returnZ: false, returnM: false, geometryPrecision: null,
+            maxAllowableOffset: null, outFields: null);
+
+        var responseString = System.Text.Encoding.UTF8.GetString(response);
+        responseString.Should().Contain("distance");
+    }
+
     // ── exceededTransferLimit ──────────────────────────────────
 
     [Fact]

@@ -94,22 +94,8 @@ internal sealed partial class Wfs20Handler
                 rollbackOnFailure,
                 cancellationToken).ConfigureAwait(false);
 
-            if (editResult.HasErrors)
-            {
-                var firstError = GetFirstTransactionError(editResult);
-                if (editResult.WasRolledBack)
-                {
-                    Wfs20Log.TransactionRolledBack(_logger, firstError);
-                }
-
-                return Wfs20ErrorResults.CreateBadRequest(
-                    context,
-                    "OperationProcessingFailed",
-                    firstError,
-                    "Transaction");
-            }
-
-            if ((editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0)
+            var committedChangeCount = editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount;
+            if (committedChangeCount > 0 && !editResult.WasRolledBack)
             {
                 var serviceIdsByLayer = await ResolveTransactionServiceIdsAsync(
                     context,
@@ -129,8 +115,23 @@ internal sealed partial class Wfs20Handler
                     CancellationToken.None).ConfigureAwait(false);
             }
 
+            if (editResult.HasErrors)
+            {
+                var firstError = GetFirstTransactionError(editResult);
+                if (editResult.WasRolledBack)
+                {
+                    Wfs20Log.TransactionRolledBack(_logger, firstError);
+                }
+
+                return Wfs20ErrorResults.CreateBadRequest(
+                    context,
+                    "OperationProcessingFailed",
+                    firstError,
+                    "Transaction");
+            }
+
             Wfs20Log.TransactionReturned(_logger, editResult.CreatedCount, editResult.UpdatedCount, editResult.DeletedCount);
-            HonuaTelemetry.SetSuccess(activity, editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount);
+            HonuaTelemetry.SetSuccess(activity, committedChangeCount);
 
             var responseXml = BuildTransactionResponseXml(prepared, editResult);
             return Results.Content(responseXml, "application/xml", Encoding.UTF8);

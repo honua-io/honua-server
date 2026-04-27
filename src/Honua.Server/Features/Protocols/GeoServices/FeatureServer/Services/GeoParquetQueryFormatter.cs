@@ -9,6 +9,7 @@ using Apache.Arrow.Types;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
@@ -126,7 +127,7 @@ internal sealed class GeoParquetQueryFormatter
 
     internal static List<FieldDefinition> ResolveSelectedFields(LayerDefinition layer, string[]? outFields)
     {
-        var objectIdFieldName = layer.ObjectIdFieldName;
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         var includeAllFields = outFields == null || outFields.Length == 0 ||
             (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
 
@@ -200,7 +201,7 @@ internal sealed class GeoParquetQueryFormatter
         IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null,
         bool isEmpty = false)
     {
-        var objectIdFieldName = layer.ObjectIdFieldName;
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         var resolvedFields = ResolveSelectedFields(layer, outFields);
 
         // BuildSchema handles objectId as the first dedicated column, so exclude it
@@ -439,7 +440,7 @@ internal sealed class GeoParquetQueryFormatter
         {
             if (field.Name == objectIdFieldName)
             {
-                arrays.Add(BuildObjectIdArray(features));
+                arrays.Add(BuildObjectIdArray(features, objectIdFieldName));
             }
             else if (field.Name == GeometryColumnName && returnGeometry && geometryArray != null)
             {
@@ -467,12 +468,12 @@ internal sealed class GeoParquetQueryFormatter
     /// <summary>
     /// Builds Int64 array for object IDs directly from features without intermediate allocation
     /// </summary>
-    private static Int64Array BuildObjectIdArray(ImmutableArray<Feature> features)
+    private static Int64Array BuildObjectIdArray(ImmutableArray<Feature> features, string objectIdFieldName)
     {
         var builder = new Int64Array.Builder();
         foreach (var feature in features)
         {
-            builder.Append(feature.Id);
+            builder.Append(GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
         }
         return builder.Build();
     }

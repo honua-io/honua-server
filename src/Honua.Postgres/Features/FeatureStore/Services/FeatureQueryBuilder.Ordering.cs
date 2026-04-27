@@ -29,8 +29,8 @@ internal sealed partial class FeatureQueryBuilder
             }
         }
 
-        // Paging without an explicit sort is not stable in PostgreSQL. Use objectid as the
-        // deterministic default order, and add it as a tiebreaker for explicit paged sorts.
+        // Any server-side page needs deterministic order when the caller did not
+        // provide one, otherwise first pages can drift between executions.
         if (RequiresStablePageOrder(query) && !HasObjectIdOrdering(query))
         {
             orderClauses.Add($"{DatabaseSchema.ObjectIdColumn} ASC");
@@ -44,7 +44,22 @@ internal sealed partial class FeatureQueryBuilder
     }
 
     private static bool RequiresStablePageOrder(FeatureQuery query)
-        => query.Offset.HasValue || query.Limit.HasValue;
+        => query.Offset.HasValue ||
+           query.SpatialFilter.HasValue ||
+           (query.Limit.HasValue && !IsUnorderedFirstPageLikeFilter(query));
+
+    private static bool IsUnorderedFirstPageLikeFilter(FeatureQuery query)
+    {
+        if (!query.Limit.HasValue ||
+            query.Offset.HasValue ||
+            query.SpatialFilter.HasValue ||
+            query.OrderBy.HasValue)
+        {
+            return false;
+        }
+
+        return query.SqlFilter?.Sql.Contains(" LIKE ", StringComparison.OrdinalIgnoreCase) == true;
+    }
 
     private static bool HasObjectIdOrdering(FeatureQuery query)
     {
@@ -56,7 +71,8 @@ internal sealed partial class FeatureQueryBuilder
         foreach (var orderBy in query.OrderBy.Value)
         {
             var fieldLower = orderBy.Field.ToLowerInvariant();
-            if (fieldLower is DatabaseSchema.ObjectIdColumn or DatabaseSchema.ObjectIdColumnAlt or DatabaseSchema.IdColumn)
+            if (fieldLower is DatabaseSchema.ObjectIdColumn or DatabaseSchema.ObjectIdColumnAlt ||
+                fieldLower is DatabaseSchema.IdColumn && !orderBy.FieldType.HasValue)
             {
                 return true;
             }
@@ -76,7 +92,8 @@ internal sealed partial class FeatureQueryBuilder
 
         var fieldLower = fieldName.ToLowerInvariant();
 
-        if (fieldLower is DatabaseSchema.ObjectIdColumn or DatabaseSchema.ObjectIdColumnAlt or DatabaseSchema.IdColumn)
+        if (fieldLower is DatabaseSchema.ObjectIdColumn or DatabaseSchema.ObjectIdColumnAlt ||
+            fieldLower is DatabaseSchema.IdColumn && !orderBy.FieldType.HasValue)
         {
             return DatabaseSchema.ObjectIdColumn;
         }

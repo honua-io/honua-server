@@ -67,6 +67,12 @@ internal sealed partial class OgcFeaturesCrudHandler(
             activity?.SetTag(HonuaTelemetry.Tags.Operation, "create");
             activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
+            var contentTypeError = OgcFeaturePayloadReader.ValidateFeatureContentType(context);
+            if (contentTypeError is not null)
+            {
+                return contentTypeError;
+            }
+
             var (requestFeature, requestError) = await OgcFeaturePayloadReader.ReadGeoJsonFeatureAsync(context, cancellationToken);
             if (requestFeature == null)
             {

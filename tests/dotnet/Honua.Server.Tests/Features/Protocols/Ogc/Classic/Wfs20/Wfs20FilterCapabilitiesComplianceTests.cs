@@ -40,28 +40,26 @@ public class Wfs20FilterCapabilitiesComplianceTests
     }
 
     [Fact]
-    public void FilterCapabilities_FunctionsAndCql2_ShouldAdvertiseRuntimeCapabilities()
+    public void FilterCapabilities_FunctionsAndCql2_ShouldAdvertiseRuntimeSupportedCapabilities()
     {
         var filterCapabilities = GetActualFilterCapabilities();
         var constraintDict = filterCapabilities.Conformance.Constraints
             .ToDictionary(c => c.Name, c => c.DefaultValue);
 
         filterCapabilities.Functions.Should().NotBeNull();
-        filterCapabilities.Functions!.Functions.Select(function => function.Name)
-            .Should().Contain(["ST_NumGeometries", "UPPER", "SQRT", "NOW", "COUNT"]);
-        filterCapabilities.Functions.Functions.Should().HaveCountGreaterOrEqualTo(35);
-        constraintDict["ImplementsFunctions"].Should().Be("TRUE");
-        constraintDict["ImplementsArithmeticOperators"].Should().Be("TRUE");
+        filterCapabilities.Functions!.Functions.Should().BeEmpty();
+        constraintDict["ImplementsFunctions"].Should().Be("FALSE");
+        constraintDict["ImplementsArithmeticOperators"].Should().Be("FALSE");
         constraintDict["ImplementsExtendedOperators"].Should().Be("TRUE");
-        constraintDict["ImplementsCQL2Text"].Should().Be("TRUE");
-        constraintDict["ImplementsCQL2JSON"].Should().Be("TRUE");
-        constraintDict["ImplementsCQL2BasicCQL"].Should().Be("TRUE");
-        constraintDict["ImplementsCQL2AdvancedComparison"].Should().Be("TRUE");
-        constraintDict["ImplementsCQL2BasicSpatial"].Should().Be("TRUE");
-        constraintDict["ImplementsCQL2SpatialOperators"].Should().Be("TRUE");
-        constraintDict["ImplementsCQL2TemporalOperators"].Should().Be("TRUE");
+        constraintDict["ImplementsCQL2Text"].Should().Be("FALSE");
+        constraintDict["ImplementsCQL2JSON"].Should().Be("FALSE");
+        constraintDict["ImplementsCQL2BasicCQL"].Should().Be("FALSE");
+        constraintDict["ImplementsCQL2AdvancedComparison"].Should().Be("FALSE");
+        constraintDict["ImplementsCQL2BasicSpatial"].Should().Be("FALSE");
+        constraintDict["ImplementsCQL2SpatialOperators"].Should().Be("FALSE");
+        constraintDict["ImplementsCQL2TemporalOperators"].Should().Be("FALSE");
         constraintDict["ImplementsCQL2ArrayOperators"].Should().Be("FALSE");
-        constraintDict["ImplementsCQL2Functions"].Should().Be("TRUE");
+        constraintDict["ImplementsCQL2Functions"].Should().Be("FALSE");
     }
 
     [Fact]

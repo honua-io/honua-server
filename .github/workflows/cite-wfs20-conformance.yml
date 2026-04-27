@@ -135,6 +135,8 @@ jobs:
         echo "✅ CITE infrastructure verified"
 
     - name: Execute WFS 2.0 CITE conformance tests
+      env:
+        HONUA_CITE_SKIP_BUILD: 'true'
       run: |
         echo "Executing OGC WFS 2.0 CITE conformance tests..."
         echo "Profile: ${{ matrix.profile }}"

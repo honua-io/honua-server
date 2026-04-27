@@ -1,0 +1,70 @@
+name: Classic OGC CITE Conformance Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Classic OGC suite to run'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - wms13
+          - wfs20
+      wms-profile:
+        description: 'WMS 1.3 CITE profile'
+        required: false
+        default: 'minimal'
+        type: choice
+        options:
+          - minimal
+          - default
+          - full
+      wfs20-profile:
+        description: 'WFS 2.0 CITE profile'
+        required: false
+        default: 'basic'
+        type: choice
+        options:
+          - basic
+          - transactional
+          - full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cite-classic-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wms13:
+    if: ${{ inputs.suite == 'both' || inputs.suite == 'wms13' }}
+    uses: ./.github/workflows/cite-conformance-common.yml
+    with:
+      suite: wms13
+      display-name: WMS 1.3
+      runner-script: ./scripts/conformance/cite/run-cite-wms-tests.sh
+      results-dir: cite-wms-results
+      summary-file: cite-wms-summary.md
+      timeout-seconds: 2400
+      job-timeout-minutes: 45
+      cite-profile: ${{ inputs['wms-profile'] }}
+      extra-artifact-paths: docker/cite/wms13/config/
+
+  wfs20:
+    if: ${{ inputs.suite == 'both' || inputs.suite == 'wfs20' }}
+    uses: ./.github/workflows/cite-conformance-common.yml
+    with:
+      suite: wfs20
+      display-name: WFS 2.0
+      runner-script: ./scripts/conformance/cite/run-cite-wfs20-tests.sh
+      results-dir: cite-wfs20-results
+      summary-file: cite-summary.md
+      timeout-seconds: 5400
+      job-timeout-minutes: 100
+      cite-profile: ${{ inputs['wfs20-profile'] }}
+      extra-artifact-paths: |
+        docker/cite/wfs20/config/
+        docker/cite/shared/test-data/

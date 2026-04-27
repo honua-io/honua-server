@@ -208,6 +208,21 @@ internal static class Wfs20DispatcherEndpoint
             }
         }
 
+        var acceptFormats = parameters.Get(Wfs20Utilities.ParameterNames.AcceptFormats);
+        if (!string.IsNullOrWhiteSpace(acceptFormats))
+        {
+            var acceptedFormats = acceptFormats.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (acceptedFormats.Length > 0 &&
+                !acceptedFormats.Any(Wfs20Utilities.IsXmlCapabilitiesFormat))
+            {
+                return Wfs20ErrorResults.CreateBadRequest(
+                    context,
+                    "InvalidParameterValue",
+                    "GetCapabilities supports only application/xml.",
+                    "acceptFormats");
+            }
+        }
+
         // GetCapabilities is inherently XML-only. Tolerate catch-all Accept
         // headers, but honor an explicit rejection of XML (e.g. `q=0` on
         // application/xml): there is no non-XML representation to fall back on,
@@ -229,7 +244,17 @@ internal static class Wfs20DispatcherEndpoint
         }
 
         var updateSequence = parameters.Get(Wfs20Utilities.ParameterNames.UpdateSequence);
-        if (Wfs20Utilities.CompareUpdateSequence(updateSequence, Wfs20Utilities.CurrentUpdateSequence) > 0)
+        var updateSequenceComparison = Wfs20Utilities.CompareUpdateSequence(updateSequence, Wfs20Utilities.CurrentUpdateSequence);
+        if (updateSequenceComparison == 0)
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "CurrentUpdateSequence",
+                $"UPDATESEQUENCE '{updateSequence}' is current.",
+                "updateSequence");
+        }
+
+        if (updateSequenceComparison > 0)
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -500,6 +525,11 @@ internal static class Wfs20DispatcherEndpoint
                     unsupportedTransactionParameter.Locator);
             }
 
+            if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
+            {
+                return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+            }
+
             return await handler.HandleTransactionAsync(context, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -533,6 +563,11 @@ internal static class Wfs20DispatcherEndpoint
                     validationError.Locator);
             }
 
+            if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
+            {
+                return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+            }
+
             return await handler.HandleListStoredQueriesAsync(context, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -564,6 +599,11 @@ internal static class Wfs20DispatcherEndpoint
                     validationError.ExceptionCode,
                     validationError.Detail,
                     validationError.Locator);
+            }
+
+            if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
+            {
+                return Results.StatusCode(StatusCodes.Status406NotAcceptable);
             }
 
             var storedQueryIds = parameters.Get(Wfs20Utilities.ParameterNames.StoredQueryId);

@@ -10,7 +10,7 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Infrastructure;
 
 /// <summary>
-/// Tests for <see cref="QueryConcurrencyGate"/> semaphore-based admission control.
+/// Tests for <see cref="QueryConcurrencyGate"/> admission control.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class QueryConcurrencyGateTests
@@ -25,6 +25,7 @@ public sealed class QueryConcurrencyGateTests
 
         acquired.Should().BeTrue();
         gate.AvailableSlots.Should().Be(9);
+        gate.CurrentLimit.Should().Be(10);
     }
 
     [UnitTest]
@@ -103,5 +104,181 @@ public sealed class QueryConcurrencyGateTests
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => gate.WaitAsync(cts.Token));
+
+        gate.Release();
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void Constructor_ClampsLimitToConnectionPoolCeiling()
+    {
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 10,
+            MaxConnectionPoolSize = 3
+        });
+
+        gate.MaxLimit.Should().Be(3);
+        gate.CurrentLimit.Should().Be(3);
+        gate.AvailableSlots.Should().Be(3);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task SetTargetLimit_Increase_AdmitsQueuedWaiter()
+    {
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 3,
+            MaxConnectionPoolSize = 3,
+            ConnectionAcquisitionTimeoutSeconds = 1,
+            AdaptiveConcurrencyEnabled = true,
+            AdaptiveConcurrencyMinQueries = 1,
+            AdaptiveConcurrencyInitialQueries = 1
+        });
+
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        var queued = gate.WaitAsync(CancellationToken.None);
+        await Task.Delay(50);
+        queued.IsCompleted.Should().BeFalse();
+
+        gate.SetTargetLimit(2);
+
+        (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
+        gate.AvailableSlots.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task SetTargetLimit_Decrease_DoesNotCancelCurrentHolders()
+    {
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 3,
+            MaxConnectionPoolSize = 3,
+            AdaptiveConcurrencyEnabled = true,
+            AdaptiveConcurrencyMinQueries = 1,
+            AdaptiveConcurrencyInitialQueries = 3
+        });
+
+        for (var i = 0; i < 3; i++)
+        {
+            (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        }
+
+        gate.SetTargetLimit(1);
+
+        gate.CurrentLimit.Should().Be(1);
+        gate.AvailableSlots.Should().Be(0);
+
+        gate.Release();
+        gate.AvailableSlots.Should().Be(0);
+
+        gate.Release();
+        gate.AvailableSlots.Should().Be(0);
+
+        gate.Release();
+        gate.AvailableSlots.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Release_WithSlowLeaseDuration_ReducesAdaptiveLimit()
+    {
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 4,
+            MaxConnectionPoolSize = 4,
+            AdaptiveConcurrencyEnabled = true,
+            AdaptiveConcurrencyMinQueries = 1,
+            AdaptiveConcurrencyInitialQueries = 4,
+            AdaptiveConcurrencyTargetDurationMs = 10,
+            AdaptiveConcurrencyUpdateIntervalMs = 0
+        });
+
+        for (var i = 0; i < 4; i++)
+        {
+            (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        }
+
+        gate.Release(TimeSpan.FromMilliseconds(100));
+
+        gate.CurrentLimit.Should().Be(3);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Release_WithFastSaturatedLease_IncreasesAdaptiveLimitAndDrainsWaiter()
+    {
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 4,
+            MaxConnectionPoolSize = 4,
+            ConnectionAcquisitionTimeoutSeconds = 1,
+            AdaptiveConcurrencyEnabled = true,
+            AdaptiveConcurrencyMinQueries = 1,
+            AdaptiveConcurrencyInitialQueries = 1,
+            AdaptiveConcurrencyTargetDurationMs = 100,
+            AdaptiveConcurrencyUpdateIntervalMs = 0
+        });
+
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        var queued = gate.WaitAsync(CancellationToken.None);
+        await Task.Delay(50);
+        queued.IsCompleted.Should().BeFalse();
+
+        gate.Release(TimeSpan.FromMilliseconds(1));
+
+        (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
+        gate.CurrentLimit.Should().Be(2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetSnapshot_ReportsAdaptiveAdmissionState()
+    {
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 4,
+            MaxConnectionPoolSize = 4,
+            ConnectionAcquisitionTimeoutSeconds = 1,
+            AdaptiveConcurrencyEnabled = true,
+            AdaptiveConcurrencyMinQueries = 1,
+            AdaptiveConcurrencyInitialQueries = 1,
+            AdaptiveConcurrencyTargetDurationMs = 100,
+            AdaptiveConcurrencyUpdateIntervalMs = 0
+        });
+
+        var snapshot = gate.GetSnapshot();
+        snapshot.AdaptiveEnabled.Should().BeTrue();
+        snapshot.CurrentLimit.Should().Be(1);
+        snapshot.MinLimit.Should().Be(1);
+        snapshot.MaxLimit.Should().Be(4);
+        snapshot.TargetDurationMs.Should().Be(100);
+        snapshot.LastAdjustmentDirection.Should().Be("none");
+
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        var queued = gate.WaitAsync(CancellationToken.None);
+        await Task.Delay(50);
+
+        snapshot = gate.GetSnapshot();
+        snapshot.InFlight.Should().Be(1);
+        snapshot.AvailableSlots.Should().Be(0);
+        snapshot.QueuedWaiters.Should().Be(1);
+
+        gate.Release(TimeSpan.FromMilliseconds(1));
+        (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
+
+        snapshot = gate.GetSnapshot();
+        snapshot.CurrentLimit.Should().Be(2);
+        snapshot.InFlight.Should().Be(1);
+        snapshot.AvailableSlots.Should().Be(1);
+        snapshot.QueuedWaiters.Should().Be(0);
+        snapshot.DurationEwmaMs.Should().BeApproximately(1, 0.01);
+        snapshot.AdjustmentCount.Should().Be(1);
+        snapshot.LastAdjustmentDirection.Should().Be("increase");
+
+        gate.Release();
     }
 }

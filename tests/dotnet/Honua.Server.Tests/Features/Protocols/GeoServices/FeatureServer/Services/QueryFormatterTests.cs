@@ -330,6 +330,88 @@ public sealed class QueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatQueryResultAsync_WithJsonAndProjectedFields_PreservesPublicObjectId()
+    {
+        var limitsOptions = Options.Create(new LimitsOptions());
+        var formatter = new QueryFormatter(
+            limitsOptions,
+            new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+
+        var feature = Feature.Create(
+            42,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["id"] = 101L,
+                ["name"] = "alpha"
+            }.ToImmutableDictionary());
+
+        var (response, contentType) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            CreateIdBackedPointLayer(),
+            format: "json",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: ["name"]);
+
+        contentType.Should().Be("application/json");
+        var queryResponse = response.Should().BeOfType<QueryResponse>().Subject;
+        queryResponse.ObjectIdFieldName.Should().Be("id");
+        var attributes = queryResponse.Features.Should().ContainSingle().Subject.Attributes;
+        attributes.Should().Contain("id", 101L);
+        attributes.Should().Contain("name", "alpha");
+        attributes.Should().NotContainKey("objectid");
+    }
+
+    [Fact]
+    public async Task FormatQueryResultAsync_WithJson_StringIdAndNumericObjectId_UsesObjectIdField()
+    {
+        var limitsOptions = Options.Create(new LimitsOptions());
+        var formatter = new QueryFormatter(
+            limitsOptions,
+            new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+
+        var feature = Feature.Create(
+            42,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["id"] = "alpha-1",
+                ["objectid"] = 42L,
+                ["name"] = "alpha"
+            }.ToImmutableDictionary());
+
+        var (response, contentType) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            CreateStringIdPointLayer(),
+            format: "json",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null);
+
+        contentType.Should().Be("application/json");
+        var queryResponse = response.Should().BeOfType<QueryResponse>().Subject;
+        queryResponse.ObjectIdFieldName.Should().Be(FieldNames.ObjectId);
+        queryResponse.Fields.Should().Contain(field =>
+            field.Name == "id" && field.Type == "esriFieldTypeString");
+        queryResponse.Fields.Should().Contain(field =>
+            field.Name == FieldNames.ObjectId && field.Type == "esriFieldTypeInteger");
+
+        var attributes = queryResponse.Features.Should().ContainSingle().Subject.Attributes;
+        attributes.Should().Contain("id", "alpha-1");
+        attributes.Should().Contain(FieldNames.ObjectId, 42L);
+    }
+
+    [Fact]
     public async Task FormatQueryResultAsync_WithJson_RuntimeDistance_IncludesFieldAndAttribute()
     {
         var limitsOptions = Options.Create(new LimitsOptions());
@@ -388,6 +470,19 @@ public sealed class QueryFormatterTests
             SpatialReference.WGS84,
             [
                 new FieldDefinition("id", FieldType.Integer, Nullable: false),
+                new FieldDefinition("name", FieldType.String, Length: 128)
+            ]);
+
+    private static LayerDefinition CreateStringIdPointLayer()
+        => new(
+            9,
+            "string-id-test-layer",
+            null,
+            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
+            SpatialReference.WGS84,
+            [
+                new FieldDefinition("id", FieldType.String, Length: 64, Nullable: false),
+                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
                 new FieldDefinition("name", FieldType.String, Length: 128)
             ]);
 

@@ -27,10 +27,11 @@ public class Wfs20ComplianceValidationTests
         constraintValues["ImplementsStandardFilter"].Should().Be("TRUE");
         constraintValues["ImplementsSpatialFilter"].Should().Be("TRUE");
         constraintValues["ImplementsTemporalFilter"].Should().Be("TRUE");
-        constraintValues["ImplementsFunctions"].Should().Be("TRUE");
-        constraintValues["ImplementsCQL2Text"].Should().Be("TRUE");
-        constraintValues["ImplementsCQL2JSON"].Should().Be("TRUE");
+        constraintValues["ImplementsFunctions"].Should().Be("FALSE");
+        constraintValues["ImplementsCQL2Text"].Should().Be("FALSE");
+        constraintValues["ImplementsCQL2JSON"].Should().Be("FALSE");
         constraintValues["ImplementsCQL2ArrayOperators"].Should().Be("FALSE");
+        constraintValues["ImplementsCQL2Functions"].Should().Be("FALSE");
     }
 
     [Fact]
@@ -60,16 +61,15 @@ public class Wfs20ComplianceValidationTests
     }
 
     [Fact]
-    public void FunctionDefinitions_ShouldBePresentWhenFunctionsConformanceIsTrue()
+    public void FunctionDefinitions_ShouldBeEmptyWhenFunctionsConformanceIsFalse()
     {
         var filterCapabilities = InvokeBuildFilterCapabilities();
 
         filterCapabilities.Functions.Should().NotBeNull();
-        filterCapabilities.Functions!.Functions.Select(function => function.Name)
-            .Should().Contain(["ST_NumGeometries", "UPPER", "SQRT", "NOW", "COUNT"]);
+        filterCapabilities.Functions!.Functions.Should().BeEmpty();
         filterCapabilities.Conformance.Constraints
             .Single(c => c.Name == "ImplementsFunctions")
-            .DefaultValue.Should().Be("TRUE");
+            .DefaultValue.Should().Be("FALSE");
     }
 
     private static FilterCapabilities InvokeBuildFilterCapabilities()
