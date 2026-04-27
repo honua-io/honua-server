@@ -359,18 +359,21 @@ internal sealed class ODataCrudHandler(
                 result = result with { StatusCode = StatusCodes.Status204NoContent, Data = null };
             }
 
-            await _mutationEventService.InvalidateLayerAsync(null, resolvedLayerId.Value, CancellationToken.None);
-            if (hasCreatedObjectId)
+            if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
             {
-                await _mutationEventService.PublishAsync(
-                    context,
-                    resolvedLayerId.Value,
-                    createdObjectId,
-                    "create",
-                    HonuaTelemetry.Protocols.OData,
-                    CancellationToken.None,
-                    mutationFeature: result.MutationFeature,
-                    serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+                await _mutationEventService.InvalidateLayerAsync(null, resolvedLayerId.Value, CancellationToken.None);
+                if (hasCreatedObjectId)
+                {
+                    await _mutationEventService.PublishAsync(
+                        context,
+                        resolvedLayerId.Value,
+                        createdObjectId,
+                        "create",
+                        HonuaTelemetry.Protocols.OData,
+                        CancellationToken.None,
+                        mutationFeature: result.MutationFeature,
+                        serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+                }
             }
             HonuaTelemetry.SetSuccess(activity);
         }
@@ -562,16 +565,19 @@ internal sealed class ODataCrudHandler(
                 result = result with { StatusCode = StatusCodes.Status204NoContent, Data = null };
             }
 
-            await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
-            await _mutationEventService.PublishAsync(
-                context,
-                layerId,
+            if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
+            {
+                await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                await _mutationEventService.PublishAsync(
+                    context,
+                    layerId,
                     objectId,
                     replace ? "replace" : "update",
                     HonuaTelemetry.Protocols.OData,
-                CancellationToken.None,
-                mutationFeature: result.MutationFeature,
-                serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+                    CancellationToken.None,
+                    mutationFeature: result.MutationFeature,
+                    serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+            }
             HonuaTelemetry.SetSuccess(activity);
         }
         else
@@ -620,16 +626,19 @@ internal sealed class ODataCrudHandler(
         var result = await _crudService.DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, effectiveToken);
         if (result.IsSuccess)
         {
-            await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
-            await _mutationEventService.PublishAsync(
-                context,
-                layerId,
-                objectId,
-                "delete",
-                HonuaTelemetry.Protocols.OData,
-                CancellationToken.None,
-                mutationFeature: result.MutationFeature,
-                serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+            if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
+            {
+                await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                await _mutationEventService.PublishAsync(
+                    context,
+                    layerId,
+                    objectId,
+                    "delete",
+                    HonuaTelemetry.Protocols.OData,
+                    CancellationToken.None,
+                    mutationFeature: result.MutationFeature,
+                    serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+            }
             HonuaTelemetry.SetSuccess(activity);
         }
         else

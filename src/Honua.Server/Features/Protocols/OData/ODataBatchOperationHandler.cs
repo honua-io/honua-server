@@ -584,7 +584,6 @@ internal sealed partial class ODataBatchOperationHandler(
             }
 
             if (!requestsById.TryGetValue(responseItem.Id, out var request) ||
-                request.AtomicityGroup == null ||
                 !IsMutationMethod(request.Method))
             {
                 continue;
@@ -642,7 +641,6 @@ internal sealed partial class ODataBatchOperationHandler(
                 }
 
                 if (!requestsById.TryGetValue(responseItem.Id, out var request) ||
-                    request.AtomicityGroup == null ||
                     !IsMutationMethod(request.Method))
                 {
                     continue;

@@ -111,6 +111,32 @@ public sealed class QueryConcurrencyGateTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task WaitAsync_WhenCancellationLosesRaceToAdmission_ReturnsTrue()
+    {
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 1,
+            ConnectionAcquisitionTimeoutSeconds = 5
+        });
+
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+
+        using var cts = new CancellationTokenSource();
+        var queued = gate.WaitAsync(cts.Token);
+        await Task.Delay(50);
+
+        gate.Release();
+        await cts.CancelAsync();
+
+        (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
+        gate.AvailableSlots.Should().Be(0);
+
+        gate.Release();
+        gate.AvailableSlots.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void Constructor_ClampsLimitToConnectionPoolCeiling()
     {
         var gate = new QueryConcurrencyGate(new ConnectionLimits

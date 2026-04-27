@@ -5,6 +5,7 @@ using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -34,7 +35,7 @@ public sealed class ODataBatchOperationHandlerTests
     [Operation(Operations.ODataBatch)]
     public async Task InvalidateCacheForBatchAsync_IgnoresFailedMutationResponses()
     {
-        var (sut, context, outputCacheStore, _) = CreateSut();
+        var (sut, context, outputCacheStore, _, _) = CreateSut();
         var request = new ODataBatchRequest
         {
             Requests =
@@ -77,7 +78,7 @@ public sealed class ODataBatchOperationHandlerTests
     [Operation(Operations.ODataBatch)]
     public async Task InvalidateCacheForBatchAsync_InvalidatesSuccessfulMutationLayer()
     {
-        var (sut, context, outputCacheStore, _) = CreateSut();
+        var (sut, context, outputCacheStore, _, _) = CreateSut();
         var request = new ODataBatchRequest
         {
             Requests =
@@ -118,9 +119,102 @@ public sealed class ODataBatchOperationHandlerTests
 
     [UnitTest]
     [Operation(Operations.ODataBatch)]
+    public async Task InvalidateCacheForBatchAsync_InvalidatesSuccessfulNonAtomicMutationLayer()
+    {
+        var (sut, context, outputCacheStore, _, _) = CreateSut();
+        var request = new ODataBatchRequest
+        {
+            Requests =
+            [
+                new ODataBatchRequestItem
+                {
+                    Id = "write-1",
+                    Method = "POST",
+                    Url = "Features",
+                    Body = new Dictionary<string, object?>
+                    {
+                        ["LayerId"] = 1,
+                        ["Attributes"] = new Dictionary<string, object?>
+                        {
+                            ["name"] = "Created"
+                        }
+                    }
+                }
+            ]
+        };
+        var response = new ODataBatchResponse
+        {
+            Responses =
+            [
+                new ODataBatchResponseItem
+                {
+                    Id = "write-1",
+                    Status = 201
+                }
+            ]
+        };
+
+        await InvokeInvalidateCacheAsync(sut, context, request, response);
+
+        await outputCacheStore.Received().EvictByTagAsync("layer:1", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.ODataBatch)]
+    public async Task PublishBatchFeatureEventsAsync_PublishesSuccessfulNonAtomicMutation()
+    {
+        var (sut, context, _, _, publisher) = CreateSut();
+        var request = new ODataBatchRequest
+        {
+            Requests =
+            [
+                new ODataBatchRequestItem
+                {
+                    Id = "write-1",
+                    Method = "POST",
+                    Url = "Layers(1)/Features",
+                    Body = new Dictionary<string, object?>
+                    {
+                        ["Attributes"] = new Dictionary<string, object?>
+                        {
+                            ["name"] = "Created"
+                        }
+                    }
+                }
+            ]
+        };
+        var response = new ODataBatchResponse
+        {
+            Responses =
+            [
+                new ODataBatchResponseItem
+                {
+                    Id = "write-1",
+                    Status = 201,
+                    Body = new Dictionary<string, object?>
+                    {
+                        ["ObjectId"] = 42L
+                    }
+                }
+            ]
+        };
+
+        await InvokePublishFeatureEventsAsync(sut, context, request, response);
+
+        await publisher.Received(1).PublishAsync(
+            Arg.Is<FeatureChangeEventRequest>(eventRequest =>
+                eventRequest.LayerId == 1 &&
+                eventRequest.ObjectId == 42L &&
+                eventRequest.Operation == "create" &&
+                eventRequest.Protocol == Honua.ServiceDefaults.HonuaTelemetry.Protocols.OData),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.ODataBatch)]
     public async Task InvalidateCacheForBatchAsync_UsesMetadataFallbackWhenLayerCannotBeResolved()
     {
-        var (sut, context, outputCacheStore, responseCache) = CreateSut();
+        var (sut, context, outputCacheStore, responseCache, _) = CreateSut();
         var request = new ODataBatchRequest
         {
             Requests =
@@ -174,10 +268,34 @@ public sealed class ODataBatchOperationHandlerTests
         await task;
     }
 
-    private static (ODataBatchOperationHandler Sut, DefaultHttpContext Context, IOutputCacheStore OutputCacheStore, IResponseCache ResponseCache) CreateSut()
+    private static async Task InvokePublishFeatureEventsAsync(
+        ODataBatchOperationHandler sut,
+        HttpContext context,
+        ODataBatchRequest batchRequest,
+        ODataBatchResponse response)
+    {
+        var method = typeof(ODataBatchOperationHandler).GetMethod(
+            "PublishBatchFeatureEventsAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        var task = (Task)method!.Invoke(sut, [context, batchRequest, response, CancellationToken.None])!;
+        await task;
+    }
+
+    private static (
+        ODataBatchOperationHandler Sut,
+        DefaultHttpContext Context,
+        IOutputCacheStore OutputCacheStore,
+        IResponseCache ResponseCache,
+        IFeatureChangeEventPublisher Publisher) CreateSut()
     {
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var layerCatalog = Substitute.For<ILayerCatalog>();
+        var layer = LayerDefinition.CreateBasic(1, "Features", GeometryType.Point);
+        var service = ServiceDefinition.CreateSingle("odata-service", layer);
+        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>()).Returns([service]);
         var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var outputCacheInvalidationService = new OutputCacheInvalidationService(
             outputCacheStore,
@@ -189,6 +307,7 @@ public sealed class ODataBatchOperationHandlerTests
 
         var services = new ServiceCollection();
         services.AddSingleton(outputCacheInvalidationService);
+        services.AddSingleton(layerCatalog);
 
         var context = new DefaultHttpContext
         {
@@ -196,7 +315,7 @@ public sealed class ODataBatchOperationHandlerTests
         };
 
         var dependencies = new ODataBatchDependencies(
-            Substitute.For<ILayerCatalog>(),
+            layerCatalog,
             Substitute.For<IFeatureReader>(),
             Substitute.For<IFeatureWriter>(),
             Substitute.For<IGeometryService>(),
@@ -207,9 +326,9 @@ public sealed class ODataBatchOperationHandlerTests
             new ETagService(),
             new ODataEditParameterAdapter(NullLogger<ODataEditParameterAdapter>.Instance),
             new EditProcessor(NullLogger<EditProcessor>.Instance),
-            new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>(), outputCacheInvalidationService));
+            new FeatureMutationEventService(publisher, outputCacheInvalidationService));
 
         var sut = new ODataBatchOperationHandler(dependencies, NullLogger<ODataBatchOperationHandler>.Instance);
-        return (sut, context, outputCacheStore, responseCache);
+        return (sut, context, outputCacheStore, responseCache, publisher);
     }
 }

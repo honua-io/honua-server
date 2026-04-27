@@ -85,12 +85,20 @@ internal sealed class QueryConcurrencyGate : IDisposable
         }
         catch (TimeoutException)
         {
-            waiter.TrySetCanceled(CancellationToken.None);
-            return false;
+            if (waiter.TrySetCanceled(CancellationToken.None))
+            {
+                return false;
+            }
+
+            return await waiter.Task.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            waiter.TrySetCanceled(cancellationToken);
+            if (!waiter.TrySetCanceled(cancellationToken))
+            {
+                return await waiter.Task.ConfigureAwait(false);
+            }
+
             throw new OperationCanceledException(cancellationToken);
         }
     }
