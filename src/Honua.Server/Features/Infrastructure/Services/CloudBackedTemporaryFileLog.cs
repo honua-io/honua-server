@@ -58,4 +58,13 @@ internal static partial class CloudBackedTemporaryFileLog
         Level = LogLevel.Warning,
         Message = "Rejecting shared temporary file write because Redis coordination was lost while enforcing cloud-backed storage quotas.")]
     public static partial void SharedWriteRejectedRedisLost(ILogger logger);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Failed to remove temporary file {FileId} from shared {Provider} storage after Redis quota coordination was lost.")]
+    public static partial void SharedStorageCleanupAfterLeaseLossFailed(
+        ILogger logger,
+        string fileId,
+        CloudStorageProvider provider,
+        Exception exception);
 }

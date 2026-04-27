@@ -129,6 +129,11 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
                     throw new InvalidOperationException(uploadResult.ErrorMessage ?? "Failed to store temporary file in shared storage.");
                 }
 
+                await EnsureCloudQuotaLeaseStillHeldAsync(
+                    quotaLease,
+                    uploadResult.File.FileId,
+                    cancellationToken).ConfigureAwait(false);
+
                 var publicToken = await CreatePublicTokenAsync(
                     uploadResult.File.FileId,
                     expiration ?? _options.DefaultExpiration,
@@ -150,9 +155,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             catch (OperationCanceledException) when (quotaLease?.LeaseLostToken.IsCancellationRequested == true
                                                     && !cancellationToken.IsCancellationRequested)
             {
-                throw new TemporaryStorageLimitExceededException(
-                    "Temporary file coordination was lost while writing to shared storage. Please retry shortly.",
-                    _options.StorageFullRetryAfterSeconds);
+                throw CreateCloudQuotaLeaseLostException();
             }
             finally
             {
@@ -168,6 +171,48 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         {
             _cloudWriteGate.Release();
         }
+    }
+
+    private async Task EnsureCloudQuotaLeaseStillHeldAsync(
+        RedisLeaseCoordinator? quotaLease,
+        string cloudObjectKey,
+        CancellationToken cancellationToken)
+    {
+        if (quotaLease is null)
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!quotaLease.LeaseLostToken.IsCancellationRequested
+            && await quotaLease.TryAcquireOrExtendAsync().ConfigureAwait(false))
+        {
+            return;
+        }
+
+        try
+        {
+            _ = await _cloudFileStorage.DeleteAsync(cloudObjectKey, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            CloudBackedTemporaryFileLog.SharedStorageCleanupAfterLeaseLossFailed(
+                _logger,
+                cloudObjectKey,
+                _cloudFileStorage.Provider,
+                ex);
+        }
+
+        CloudBackedTemporaryFileLog.SharedWriteRejectedRedisLost(_logger);
+        throw CreateCloudQuotaLeaseLostException();
+    }
+
+    private TemporaryStorageLimitExceededException CreateCloudQuotaLeaseLostException()
+    {
+        return new TemporaryStorageLimitExceededException(
+            "Temporary file coordination was lost while writing to shared storage. Please retry shortly.",
+            _options.StorageFullRetryAfterSeconds);
     }
 
     public async Task<(byte[] data, string contentType)?> GetTemporaryFileAsync(
