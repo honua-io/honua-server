@@ -492,6 +492,7 @@ catalog discovery on top of the same authorization graph via
 |----------------|---------|--------|-------------|
 | `honua://jobs/{jobId}` | `resources/templates/list` | functional | Job lifecycle record — status, phase, percent complete, warnings, link to results |
 | `honua://jobs/{jobId}/results` | `resources/templates/list` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
+| `honua://jobs/{jobId}/report` | `resources/templates/list` | functional | Delegates to `IAnalysisReportService.GetReportAsync`. Builds the structured `AnalysisReport` envelope from the persisted result package, inheriting auth and terminal-state semantics from the underlying job-results path. Gated by `Reporting:Enabled` (default `true`). |
 | `honua://workspaces/{workspaceId}` | `resources/templates/list` | contract stub | Stable template pending workspace store |
 | `honua://catalog/processes` | `resources/list` | contract stub | Stable URI pending catalog service |
 | `honua://published-services` | `resources/list` | gated (opt-in) | Reads `IPublishedServiceStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
@@ -528,6 +529,20 @@ implementation synthesizes a terminal package from the durable execution-job
 record and published artifact references. MCP therefore stays aligned with the
 canonical job lifecycle instead of inventing a second result model.
 
+`honua://jobs/{jobId}/report` is the paired analytical-report surface for
+the same terminal package. The handler delegates to
+`IAnalysisReportService`, which builds the structured `AnalysisReport`
+envelope from the persisted result package using the per-process-family
+template registry (`analytics.buffer-aggregate`, `analytics.density`,
+`generalization.dissolve`, `surface.slope`, plus a generic fallback) and
+the configured narrative path (deterministic by default; LLM-assisted with
+deterministic fallback when `Reporting:Narrative:Enabled=true`). The
+report envelope is versioned via `reportContractVersion` so historical
+reports stay valid as templates evolve. Markdown and HTML bodies are
+served by the paired HTTP routes documented in the operator
+[Control Plane API](../operator/CONTROL_PLANE_API.md#analysis-report-endpoints)
+guide and referenced from the resource via `renderUris`.
+
 #### Resource payload notes
 
 - `honua://jobs/{jobId}` returns
@@ -551,6 +566,24 @@ canonical job lifecycle instead of inventing a second result model.
   been stored.
 - `notImplementedReason` is omitted on successful
   `honua://jobs/{jobId}/results` payloads; only stub resources emit it.
+- `honua://jobs/{jobId}/report` returns
+  `{ reportId, reportContractVersion, jobId, resultPackageId, processId, processFamily, templateId, templateVersion, summaryTitle, summaryDescription?, narrativeMode, generatedAt, assumptions, sections, renderUris }`.
+  `reportContractVersion` is the canonical version pin (currently
+  `honua.report.v1`); readers that receive an unsupported version surface the
+  stable `report.contract.unsupported` error code. `narrativeMode` is one of
+  `deterministic`, `llm-assisted`, or `fallback-from-llm-error` so consumers
+  can tell whether the prose was authored by the deterministic path, the LLM
+  provider, or a degraded fallback. `sections[*]` carry the polymorphic
+  `kind` discriminator (`heading`, `paragraph`, `key-metric`, `table`,
+  `chart`, `map-embed`, `narrative`, `provenance-footer`); `chart` sections
+  embed inline SVG and `table` sections honor the `Reporting:MaxTableRows`
+  cap. `renderUris.{markdown,html}` point at the paired HTTP render
+  endpoints (`/api/v1/analysis/reports/{jobId}/render?format=md|html`) so
+  clients can dereference rendered output without re-deriving the URI.
+  Reads share the `IGeoprocessingJobService` authorization and terminal-state
+  preconditions of `honua://jobs/{jobId}/results`, so the resource surfaces
+  the same `not_found`, `failed_precondition`, `permission_denied`, and
+  `unauthenticated` error codes when the underlying job rejects the request.
 - `honua://workspaces/{workspaceId}` returns
   `{ workspaceId, kind, label, status: "not_implemented", notImplementedReason }`
   with nullable fields such as `uri` and `expiresAt` omitted until the
@@ -746,4 +779,9 @@ method as the `target` and `authenticated = false`.
 - Vertical slice: `src/Honua.Server/Features/Protocols/Mcp/`
 - Tools: `src/Honua.Server/Features/Protocols/Mcp/Tools/`
 - Resources: `src/Honua.Server/Features/Protocols/Mcp/Resources/`
-- Tests: `tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/`
+- Reporting feature (builder, renderers, narrative provider, templates):
+  `src/Honua.Core/Features/Reporting/`,
+  `src/Honua.Server/Features/Reporting/`
+- Tests: `tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/`,
+  `tests/dotnet/Honua.Server.Tests/Features/Reporting/`,
+  `tests/dotnet/Honua.Core.Tests/Features/Reporting/`

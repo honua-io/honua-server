@@ -132,10 +132,35 @@ public sealed class AnalysisReportBuilderTests
         first.ReportId.Should().Be(second.ReportId);
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task BuildAsync_AppliesMaxTableRowsCapAcrossArtifactAssumptionAndErrorTables()
+    {
+        var builder = CreateBuilder(
+            out _,
+            narrativeEnabled: false,
+            llmProvider: null,
+            maxTableRows: 1);
+        var package = BuildFailedGenericPackage();
+
+        var report = await builder.BuildAsync("job-cap", package, CancellationToken.None);
+
+        var tables = report.Sections.OfType<TableSection>().ToList();
+        tables.Should().HaveCountGreaterThanOrEqualTo(3,
+            "the failed generic package should produce errors, artifacts, and assumptions tables");
+
+        foreach (var table in tables)
+        {
+            table.Rows.Should().HaveCount(1, "MaxTableRows=1 should bind every TableSection");
+            table.TruncatedRowCount.Should().BeGreaterThan(0, "rows beyond the cap must be reflected in TruncatedRowCount");
+        }
+    }
+
     private static AnalysisReportBuilder CreateBuilder(
         out AnalysisReportTemplateRegistry registry,
         bool narrativeEnabled,
-        INarrativeProvider? llmProvider)
+        INarrativeProvider? llmProvider,
+        int? maxTableRows = null)
     {
         var templates = new IAnalysisReportTemplate[]
         {
@@ -147,10 +172,15 @@ public sealed class AnalysisReportBuilderTests
         };
         registry = new AnalysisReportTemplateRegistry(templates);
         var deterministic = new DeterministicNarrativeProvider();
-        var options = Options.Create(new ReportingConfiguration
+        var configuration = new ReportingConfiguration
         {
             Narrative = new ReportingNarrativeConfiguration { Enabled = narrativeEnabled }
-        });
+        };
+        if (maxTableRows is int cap)
+        {
+            configuration.MaxTableRows = cap;
+        }
+        var options = Options.Create(configuration);
         return new AnalysisReportBuilder(
             registry,
             deterministic,
@@ -197,6 +227,39 @@ public sealed class AnalysisReportBuilderTests
                 GeneratedArtifactIds = new[] { "artifact-1" }
             },
             assumptions: new[] { "Input places are in EPSG:4326." });
+    }
+
+    private static AnalysisResultPackage BuildFailedGenericPackage()
+    {
+        // Failed status hits the Errors table path on GenericAnalysisReportTemplate.
+        // Three of each so MaxTableRows=1 forces non-zero TruncatedRowCount on
+        // artifacts, assumptions, and errors.
+        var artifacts = new[]
+        {
+            new ArtifactRef { ArtifactId = "a1", Kind = ArtifactKind.FeatureLayer, Label = "L1" },
+            new ArtifactRef { ArtifactId = "a2", Kind = ArtifactKind.FeatureLayer, Label = "L2" },
+            new ArtifactRef { ArtifactId = "a3", Kind = ArtifactKind.FeatureLayer, Label = "L3" }
+        };
+        var package = AnalysisResultPackage.CreateFailed(
+            resultPackageId: "pkg-cap",
+            summary: new ResultSummary { Title = "Failed run" },
+            errors: new[]
+            {
+                new GeoprocessingError { Kind = GeoprocessingErrorKind.ValidationFailed, Message = "e1" },
+                new GeoprocessingError { Kind = GeoprocessingErrorKind.ValidationFailed, Message = "e2" },
+                new GeoprocessingError { Kind = GeoprocessingErrorKind.ValidationFailed, Message = "e3" }
+            },
+            provenance: new ProvenanceRecord
+            {
+                Sources = Array.Empty<ProvenanceSource>(),
+                ProcessDefinitions = new[] { "tooling.unknown" },
+                Assumptions = new[] { "p1", "p2", "p3" }
+            });
+        return package with
+        {
+            Artifacts = artifacts,
+            Assumptions = new[] { "u1", "u2", "u3" }
+        };
     }
 
     private sealed class StubLlmNarrativeProvider : INarrativeProvider

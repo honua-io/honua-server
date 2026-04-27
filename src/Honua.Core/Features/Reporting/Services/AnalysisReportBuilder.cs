@@ -95,7 +95,7 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
         }
 
         var generatedAt = _timeProvider.GetUtcNow();
-        var sections = ComposeSections(draft, slotFill, narrativeMode, jobId, package, generatedAt);
+        var sections = ComposeSections(draft, slotFill, narrativeMode, jobId, package, generatedAt, _configuration.MaxTableRows);
 
         return new AnalysisReport
         {
@@ -136,10 +136,14 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
         NarrativeMode mode,
         string jobId,
         AnalysisResultPackage package,
-        DateTimeOffset generatedAt)
+        DateTimeOffset generatedAt,
+        int maxTableRows)
     {
         var sections = new List<AnalysisReportSection>(draft.Sections.Count + draft.NarrativeSlots.Count + 1);
-        sections.AddRange(draft.Sections);
+        foreach (var section in draft.Sections)
+        {
+            sections.Add(EnforceTableRowCap(section, maxTableRows));
+        }
 
         foreach (var slot in draft.NarrativeSlots)
         {
@@ -170,6 +174,26 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
 
         sections.Add(TemplateBuildHelpers.BuildProvenanceFooter(jobId, package, generatedAt));
         return sections;
+    }
+
+    private static AnalysisReportSection EnforceTableRowCap(AnalysisReportSection section, int maxRows)
+    {
+        if (section is not TableSection table || table.Rows.Count <= maxRows)
+        {
+            return section;
+        }
+
+        var trimmed = new List<IReadOnlyList<string>>(maxRows);
+        for (var i = 0; i < maxRows; i++)
+        {
+            trimmed.Add(table.Rows[i]);
+        }
+
+        return table with
+        {
+            Rows = trimmed,
+            TruncatedRowCount = table.TruncatedRowCount + (table.Rows.Count - maxRows)
+        };
     }
 
     private static string BuildReportId(string jobId, AnalysisResultPackage package)

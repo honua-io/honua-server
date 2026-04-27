@@ -59,13 +59,19 @@ public sealed class ReportingCacheConfiguration
 public sealed class ReportingNarrativeConfiguration
 {
     /// <summary>
+    /// Token accepted by <see cref="Provider"/>. Validated case-insensitively
+    /// when <see cref="Enabled"/> is true.
+    /// </summary>
+    public const string ProviderOpenAi = "openai";
+
+    /// <summary>
     /// Whether the LLM narrative provider is enabled. Default: <c>false</c> —
     /// reports stay deterministic until explicitly enabled.
     /// </summary>
     public bool Enabled { get; set; }
 
     /// <summary>Provider type. Currently only <c>openai</c> is supported.</summary>
-    public string Provider { get; set; } = "openai";
+    public string Provider { get; set; } = ProviderOpenAi;
 
     /// <summary>
     /// API endpoint base URL. Must follow the OpenAI <c>/v1/chat/completions</c>
@@ -113,6 +119,13 @@ public sealed class ReportingConfigurationValidator : ConfigurationValidator<Rep
         }
 
         ValidateRequiredString(options.Narrative.Provider, "Reporting:Narrative:Provider", errors);
+
+        if (!string.IsNullOrWhiteSpace(options.Narrative.Provider) &&
+            !string.Equals(options.Narrative.Provider, ReportingNarrativeConfiguration.ProviderOpenAi, StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add(
+                $"Reporting:Narrative:Provider '{options.Narrative.Provider}' is not supported. Only '{ReportingNarrativeConfiguration.ProviderOpenAi}' is recognized.");
+        }
 
         if (string.IsNullOrWhiteSpace(options.Narrative.Endpoint))
         {
