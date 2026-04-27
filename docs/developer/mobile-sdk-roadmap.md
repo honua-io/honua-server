@@ -4,8 +4,8 @@ This document scopes the `honua-mobile-sdk` deliverable: a MAUI-first cross-plat
 mobile SDK that gives field-collection apps a shippable read / write / edit / sync /
 offline-cache cycle on top of the canonical Honua server pipelines.
 
-The roadmap is the source of truth for first-tier child tickets while
-`honua-mobile-sdk` does not yet exist as a GitHub repo. Sub-tickets live in
+The roadmap is the source of truth for first-tier child tickets while the
+`honua-mobile` GitHub repo does not yet exist. Sub-tickets live in
 `honua-server` under the `area/sdk` label and migrate into the new repo once it
 is created (see [Phase 0 — Scaffolding](#phase-0--scaffolding-and-bring-up)).
 
@@ -21,6 +21,17 @@ form ingestion, `OfflineSyncManager`, and gRPC submission). The SDK pulls those
 patterns out of the example and into a shippable, versioned NuGet package.
 
 This pass scopes the SDK only. Implementation lands in the child tickets below.
+
+### Naming convention
+
+Three names are used distinctly throughout this roadmap and ADR-0034:
+
+- **GitHub repo**: `honua-mobile` (per `AGENTS.md` repository map). All
+  `honua-io/honua-mobile` URLs below resolve to this repo once it is created.
+- **SDK deliverable**: `honua-mobile-sdk` (the ticket-level product name used
+  in `#811` and child tickets).
+- **NuGet package**: `Honua.Sdk.Mobile` (parallel to `Honua.Sdk.Grpc` and
+  `Honua.Sdk.OgcFeatures`; see ADR-0034).
 
 ## Scope
 
@@ -82,10 +93,10 @@ sync / offline-cache cycle named in the ticket acceptance criteria.
 
 ### Phase 0 — Scaffolding and bring-up
 
-Repository creation is the gate. Until `honua-io/honua-mobile-sdk` exists,
+Repository creation is the gate. Until `honua-io/honua-mobile` exists,
 sub-tickets are filed under `honua-server` and labelled with `area/sdk`. Each
 sub-ticket body links back to this roadmap and includes the migration note
-("move to honua-mobile-sdk once created"). Scaffolding deliverables:
+("move to honua-mobile once created"). Scaffolding deliverables:
 
 - GitHub repo with branch protection, dependabot, and Trivy scanning aligned
   with the rest of the org.
@@ -111,8 +122,11 @@ divergence is platform tooling.
 
 ### Phase 2 — Auth and write
 
-- `IAuthTokenProvider` mirrors the contract of `HonuaGrpcAuthHandler` from
-  `honua-sdk-dotnet`. No new authorization model.
+- `IAuthTokenProvider` follows the bearer-token convention established in
+  `FieldDataCollection/Services/HonuaMobileClient.cs` (`CreateAuthHeaders`).
+  No shared gRPC auth handler exists in `honua-sdk-dotnet` today; the mobile
+  SDK defines the interface fresh and aligns with the admin-side
+  `HonuaAdminAuthHandler` token semantics. No new authorization model.
 - Platform-native secure storage: Keychain on iOS, Keystore on Android. The
   SDK does not roll its own crypto; it adapts to the platform APIs.
 - API-key and bearer-token modes are supported. OAuth device flow is deferred
@@ -153,13 +167,19 @@ divergence is platform tooling.
 
 ## Compatibility and versioning
 
-- The SDK consumes the same admin and feature contracts as
-  `honua-sdk-dotnet`; the [SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md)
-  governs server and SDK alignment.
-- Mobile SDK semver follows the .NET SDK family. A mobile SDK release on
-  major `vN` requires a server release on the same admin API major.
-- Backwards-incompatible mobile changes follow the migration-guide policy
-  in [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md).
+- For admin/control-plane usage, the SDK follows the
+  [SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md), which governs the
+  JS/TS, Python, and .NET admin clients only. A mobile SDK release that
+  consumes the admin surface stays on the same admin API major as the
+  matched server release.
+- Feature contracts (gRPC `Honua.Sdk.Grpc` stubs and OData `Honua.Sdk.OgcFeatures`)
+  are not covered by that matrix. Their compatibility follows proto
+  backward-compatibility conventions (additive changes only within a major;
+  breaking changes ride a new proto package version). Concrete tracking is
+  scoped into child ticket F (sync) when the SDK surface stabilises.
+- Mobile SDK semver follows the .NET SDK family. Backwards-incompatible
+  mobile changes follow the migration-guide policy in
+  [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md).
 
 ## Risks and mitigations
 
@@ -174,7 +194,7 @@ divergence is platform tooling.
 ## Child tickets
 
 Six first-tier sub-tickets are filed in `honua-server` and link back to this
-roadmap. Each migrates into `honua-io/honua-mobile-sdk` once the repo exists.
+roadmap. Each migrates into `honua-io/honua-mobile` once the repo exists.
 
 | ID | Issue | Title | Phase |
 |----|-------|-------|-------|
@@ -186,7 +206,7 @@ roadmap. Each migrates into `honua-io/honua-mobile-sdk` once the repo exists.
 | F | [#831](https://github.com/honua-io/honua-server/issues/831) | `honua-mobile-sdk: sync conflict resolution policy` | 4 |
 
 Repo creation (ticket #826) is the migration gate: once
-`honua-io/honua-mobile-sdk` exists, child tickets B–F migrate into the new
+`honua-io/honua-mobile` exists, child tickets B–F migrate into the new
 repo and the parent (#811) is updated with the new issue numbers.
 
 ## Out-of-scope follow-ons
