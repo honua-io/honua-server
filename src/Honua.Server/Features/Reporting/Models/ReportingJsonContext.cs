@@ -4,7 +4,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Reporting.Domain;
-using Honua.Server.Features.Reporting.Mcp;
 
 namespace Honua.Server.Features.Reporting.Models;
 
@@ -35,7 +34,6 @@ namespace Honua.Server.Features.Reporting.Models;
 [JsonSerializable(typeof(MapEmbedSection))]
 [JsonSerializable(typeof(NarrativeSection))]
 [JsonSerializable(typeof(ProvenanceFooterSection))]
-[JsonSerializable(typeof(McpAnalysisReport))]
 [JsonSerializable(typeof(JsonElement))]
 internal sealed partial class ReportingJsonContext : JsonSerializerContext
 {

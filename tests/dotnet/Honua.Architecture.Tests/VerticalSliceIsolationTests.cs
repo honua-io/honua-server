@@ -42,8 +42,8 @@ public sealed class VerticalSliceIsolationTests
     /// <summary>
     /// Protocol-adapter features that are allowed to consume a specific domain
     /// feature's transport-neutral services. The Mcp operator surface adapts
-    /// <c>IGeoprocessingJobService</c>, but lives in its own vertical slice per
-    /// ticket #728.
+    /// <c>IGeoprocessingJobService</c> and <c>IAnalysisReportService</c>, but
+    /// lives in its own vertical slice per ticket #728 / #801.
     /// Grounding is a domain feature that reuses the Geoprocessing process
     /// catalog + destructive classifier per ticket #742. Each entry lists the
     /// cross-feature references permitted for the key.
@@ -51,9 +51,9 @@ public sealed class VerticalSliceIsolationTests
     private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
         new(StringComparer.Ordinal)
         {
-            ["Mcp"] = new[] { "Geoprocessing", "Grounding" },
+            ["Mcp"] = new[] { "Geoprocessing", "Grounding", "Reporting" },
             ["Grounding"] = new[] { "Geoprocessing" },
-            ["Reporting"] = new[] { "Geoprocessing", "Mcp" }
+            ["Reporting"] = new[] { "Geoprocessing" }
         };
 
     private static readonly string[] _protocolAdapterNames =

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Server.Features.Protocols.Mcp.Models;
 
@@ -68,6 +69,9 @@ namespace Honua.Server.Features.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpPackageView))]
 [JsonSerializable(typeof(McpPackageSummary))]
 [JsonSerializable(typeof(McpPackageListView))]
+[JsonSerializable(typeof(McpAnalysisReport))]
+[JsonSerializable(typeof(McpAnalysisReportRenderUris))]
+[JsonSerializable(typeof(AnalysisReportSection))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(IReadOnlyList<McpToolDescriptor>))]
 [JsonSerializable(typeof(IReadOnlyList<McpResourceDescriptor>))]

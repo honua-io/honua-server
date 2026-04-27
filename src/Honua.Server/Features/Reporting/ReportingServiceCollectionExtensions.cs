@@ -4,16 +4,17 @@
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
-using Honua.Server.Features.Protocols.Mcp.Resources;
-using Honua.Server.Features.Reporting.Mcp;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Reporting;
 
 /// <summary>
 /// DI registration for the reporting feature on the server-host side. Wires
-/// the report service, MCP resource, and (when enabled) the OpenAI narrative
-/// provider on top of the deterministic core registration.
+/// the report service and (when enabled) the OpenAI narrative provider on top
+/// of the deterministic core registration. The MCP adapter for the
+/// <c>honua://jobs/{jobId}/report</c> resource is registered alongside the
+/// other MCP resources by <c>McpServiceCollectionExtensions</c> so the
+/// protocol-adapter dependency direction stays Mcp → Reporting.
 /// </summary>
 internal static class ReportingServiceCollectionExtensions
 {
@@ -38,9 +39,6 @@ internal static class ReportingServiceCollectionExtensions
         services.AddMemoryCache();
 
         services.TryAddSingleton<IAnalysisReportService, AnalysisReportService>();
-
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IMcpResource, AnalysisReportResource>());
 
         var narrativeEnabled = section.GetValue("Narrative:Enabled", defaultValue: false);
         if (narrativeEnabled)

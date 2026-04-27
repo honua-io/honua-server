@@ -4,7 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Reporting.Domain;
 
-namespace Honua.Server.Features.Reporting.Mcp;
+namespace Honua.Server.Features.Protocols.Mcp.Models;
 
 /// <summary>
 /// MCP wire envelope for <c>honua://jobs/{jobId}/report</c>. Mirrors

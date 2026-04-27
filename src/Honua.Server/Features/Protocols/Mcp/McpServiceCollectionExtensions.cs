@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Reporting;
 using Honua.Server.Features.Grounding;
 using Honua.Server.Features.Protocols.Mcp.Resources;
 using Honua.Server.Features.Protocols.Mcp.Tools;
@@ -50,6 +51,11 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobResultsResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, WorkspaceResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, ProcessCatalogResource>());
+
+        if (configuration.GetSection(ReportingConfiguration.SectionName).GetValue("Enabled", defaultValue: true))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, AnalysisReportResource>());
+        }
 
         services.TryAddSingleton<McpOperatorSurface>();
 

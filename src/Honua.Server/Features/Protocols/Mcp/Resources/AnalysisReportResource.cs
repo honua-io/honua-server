@@ -1,14 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using Honua.Core.Features.Reporting.Domain;
-using Honua.Server.Features.Protocols.Mcp;
 using Honua.Server.Features.Protocols.Mcp.Models;
-using Honua.Server.Features.Protocols.Mcp.Resources;
-using Honua.Server.Features.Reporting.Models;
+using Honua.Server.Features.Reporting;
 
-namespace Honua.Server.Features.Reporting.Mcp;
+namespace Honua.Server.Features.Protocols.Mcp.Resources;
 
 /// <summary>
 /// MCP resource for <c>honua://jobs/{jobId}/report</c>. Delegates to
@@ -80,19 +77,7 @@ internal sealed class AnalysisReportResource : IMcpResource
             .ConfigureAwait(false);
 
         var wire = ToWire(report);
-        var json = JsonSerializer.Serialize(wire, ReportingJsonContext.Default.McpAnalysisReport);
-        return new McpResourcesReadResult
-        {
-            Contents =
-            [
-                new McpResourceContent
-                {
-                    Uri = uri,
-                    MimeType = McpResourceHelpers.JsonMimeType,
-                    Text = json
-                }
-            ]
-        };
+        return McpResourceHelpers.SingleJsonContent(uri, wire, McpJsonContext.Default.McpAnalysisReport);
     }
 
     private static McpAnalysisReport ToWire(AnalysisReport report) => new()

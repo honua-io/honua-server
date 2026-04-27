@@ -300,9 +300,9 @@ public sealed class McpTaxonomyAlignmentTests
         [
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
             new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance),
-            new Honua.Server.Features.Reporting.Mcp.AnalysisReportResource(
+            new AnalysisReportResource(
                 reportService,
-                NullLogger<Honua.Server.Features.Reporting.Mcp.AnalysisReportResource>.Instance),
+                NullLogger<AnalysisReportResource>.Instance),
             new WorkspaceResource(jobService, NullLogger<WorkspaceResource>.Instance),
             new ProcessCatalogResource(jobService, NullLogger<ProcessCatalogResource>.Instance),
             new PublishedServiceResource(

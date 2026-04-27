@@ -602,6 +602,10 @@ public static class EndpointRegistry
         new("POST", "/v1/spec/apply"),
         new("POST", "/v1/spec/cancel"),
         new("GET", "/v1/spec/artifact/{hash}"),
+
+        // Analysis report HTTP surface (#801).
+        new("GET", "/api/v1/analysis/reports/{jobId}"),
+        new("GET", "/api/v1/analysis/reports/{jobId}/render"),
     ];
 }
 
