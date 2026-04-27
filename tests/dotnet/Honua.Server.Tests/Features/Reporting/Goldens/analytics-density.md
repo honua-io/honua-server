@@ -35,10 +35,9 @@ _Outputs produced by the workflow._
 Density binning ran in hex mode with cell size 500 m, producing 128 bin(s). The peak bin holds 17.
 
 ---
-_Job_: `job-golden`  
-_Result package_: `pkg-density`  
-_Processes_: analytics.density  
-_Sources_: places  
-_Executed at_: 2026-04-24 09:55:00Z  
-_Generated at_: 2026-04-24 10:00:00Z
-
+- _Job_: `job-golden`
+- _Result package_: `pkg-density`
+- _Processes_: analytics.density
+- _Sources_: places
+- _Executed at_: 2026-04-24 09:55:00Z
+- _Generated at_: 2026-04-24 10:00:00Z

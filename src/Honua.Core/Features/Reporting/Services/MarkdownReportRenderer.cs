@@ -34,7 +34,10 @@ internal sealed class MarkdownReportRenderer : IAnalysisReportRenderer
             sb.AppendLine();
         }
 
-        return sb.ToString();
+        // Trim trailing whitespace and the extra blank line emitted after the
+        // last section so the body ends with exactly one newline (no
+        // trailing spaces, no blank line at EOF).
+        return sb.ToString().TrimEnd() + Environment.NewLine;
     }
 
     private static void RenderSection(StringBuilder sb, AnalysisReportSection section)
@@ -98,30 +101,29 @@ internal sealed class MarkdownReportRenderer : IAnalysisReportRenderer
                 break;
 
             case ProvenanceFooterSection footer:
+                // Render each footer entry as a list item rather than relying
+                // on Markdown hard-break (two-trailing-space) syntax, which
+                // produced checked-in trailing whitespace on the goldens.
                 sb.AppendLine("---");
-                sb.Append("_Job_: `").Append(footer.JobId).AppendLine("`  ");
-                sb.Append("_Result package_: `").Append(footer.ResultPackageId).AppendLine("`  ");
+                sb.Append("- _Job_: `").Append(footer.JobId).AppendLine("`");
+                sb.Append("- _Result package_: `").Append(footer.ResultPackageId).AppendLine("`");
                 if (footer.ProcessDefinitions.Count > 0)
                 {
-                    sb.Append("_Processes_: ")
-                        .Append(string.Join(", ", footer.ProcessDefinitions))
-                        .AppendLine("  ");
+                    sb.Append("- _Processes_: ")
+                        .AppendLine(string.Join(", ", footer.ProcessDefinitions));
                 }
                 if (footer.Sources.Count > 0)
                 {
-                    sb.Append("_Sources_: ")
-                        .Append(string.Join(", ", footer.Sources))
-                        .AppendLine("  ");
+                    sb.Append("- _Sources_: ")
+                        .AppendLine(string.Join(", ", footer.Sources));
                 }
                 if (footer.ExecutedAt is { } executedAt)
                 {
-                    sb.Append("_Executed at_: ")
-                        .Append(executedAt.ToString("u", CultureInfo.InvariantCulture))
-                        .AppendLine("  ");
+                    sb.Append("- _Executed at_: ")
+                        .AppendLine(executedAt.ToString("u", CultureInfo.InvariantCulture));
                 }
-                sb.Append("_Generated at_: ")
-                    .Append(footer.GeneratedAt.ToString("u", CultureInfo.InvariantCulture))
-                    .AppendLine();
+                sb.Append("- _Generated at_: ")
+                    .AppendLine(footer.GeneratedAt.ToString("u", CultureInfo.InvariantCulture));
                 break;
         }
     }

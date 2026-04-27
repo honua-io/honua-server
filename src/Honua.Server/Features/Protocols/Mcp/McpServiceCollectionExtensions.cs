@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Reporting;
 using Honua.Server.Features.Grounding;
 using Honua.Server.Features.Protocols.Mcp.Resources;
 using Honua.Server.Features.Protocols.Mcp.Tools;
+using Honua.Server.Features.Reporting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Protocols.Mcp;
@@ -52,7 +52,12 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, WorkspaceResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, ProcessCatalogResource>());
 
-        if (configuration.GetSection(ReportingConfiguration.SectionName).GetValue("Enabled", defaultValue: true))
+        // Only advertise the report resource when the host has actually wired
+        // IAnalysisReportService. AddAnalysisReporting is the canonical
+        // registrar and is gated on Reporting:Enabled; checking for the
+        // service here covers both the disabled-feature case and tests that
+        // call AddMcpOperatorSurface in isolation.
+        if (services.Any(d => d.ServiceType == typeof(IAnalysisReportService)))
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, AnalysisReportResource>());
         }

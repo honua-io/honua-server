@@ -30,10 +30,9 @@ _Outputs produced by the workflow._
 This run applied a buffer of 500 meters, buffered 42 feature(s) and dissolved them into 7 group(s) covering 123456.789 m².
 
 ---
-_Job_: `job-golden`  
-_Result package_: `pkg-buffer`  
-_Processes_: analytics.buffer-aggregate  
-_Sources_: places  
-_Executed at_: 2026-04-24 09:55:00Z  
-_Generated at_: 2026-04-24 10:00:00Z
-
+- _Job_: `job-golden`
+- _Result package_: `pkg-buffer`
+- _Processes_: analytics.buffer-aggregate
+- _Sources_: places
+- _Executed at_: 2026-04-24 09:55:00Z
+- _Generated at_: 2026-04-24 10:00:00Z

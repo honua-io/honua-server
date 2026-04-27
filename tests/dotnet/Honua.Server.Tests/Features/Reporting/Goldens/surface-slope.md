@@ -30,10 +30,9 @@ _Outputs produced by the workflow._
 Slope was computed in degrees using z-factor 1. Mean slope is 12.4 degrees; the maximum is 64.8 degrees.
 
 ---
-_Job_: `job-golden`  
-_Result package_: `pkg-slope`  
-_Processes_: surface.slope  
-_Sources_: dem  
-_Executed at_: 2026-04-24 09:55:00Z  
-_Generated at_: 2026-04-24 10:00:00Z
-
+- _Job_: `job-golden`
+- _Result package_: `pkg-slope`
+- _Processes_: surface.slope
+- _Sources_: dem
+- _Executed at_: 2026-04-24 09:55:00Z
+- _Generated at_: 2026-04-24 10:00:00Z
