@@ -545,9 +545,10 @@ internal static class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidDimensionValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
         }
 
-        if (!TryParseWmsFeatureInfoPixel(query, imageWidth, imageHeight, out var pixelX, out var pixelY))
+        if (!TryParseWmsFeatureInfoPixel(query, versionValue, imageWidth, imageHeight, out var pixelX, out var pixelY))
         {
-            return CreateWmsServiceException(context, "InvalidPoint", "I/J (or X/Y) must be within the request image dimensions.");
+            var pointParameters = IsWms111Version(versionValue) ? "X/Y" : "I/J";
+            return CreateWmsServiceException(context, "InvalidPoint", $"{pointParameters} must be within the request image dimensions.");
         }
 
         if (!TryResolveWmsRequestedLayers(service, context, mapLayerTokens, out var mapLayers, out var unresolvedMapLayer))
@@ -1127,6 +1128,7 @@ internal static class WmsRequestHandlers
 
     private static bool TryParseWmsFeatureInfoPixel(
         IQueryCollection query,
+        string version,
         int imageWidth,
         int imageHeight,
         out int pixelX,
@@ -1135,8 +1137,9 @@ internal static class WmsRequestHandlers
         pixelX = 0;
         pixelY = 0;
 
-        var xValue = GetQueryValue(query, "I") ?? GetQueryValue(query, "X");
-        var yValue = GetQueryValue(query, "J") ?? GetQueryValue(query, "Y");
+        var isWms111 = IsWms111Version(version);
+        var xValue = GetQueryValue(query, isWms111 ? "X" : "I");
+        var yValue = GetQueryValue(query, isWms111 ? "Y" : "J");
         if (string.IsNullOrWhiteSpace(xValue) || string.IsNullOrWhiteSpace(yValue))
         {
             return false;

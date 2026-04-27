@@ -442,6 +442,23 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_WithLegacyPointParameters_ReturnsServiceException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&X=41&Y=74");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidPoint");
+        content.Should().Contain("I/J must be within the request image dimensions.");
+    }
+
+    [IntegrationTest]
     [Protocol(TestProtocols.Wms111)]
     [Operation(Operations.Wms)]
     [InterfaceOperation(TestProtocols.Wms111, "GetFeatureInfo")]
@@ -455,6 +472,24 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
         content.Should().Contain("Layer=");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms111)]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms111, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms111_GetFeatureInfo_WithWms13PointParameters_ReturnsServiceException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.1.1&BBOX=-180,-90,180,90&SRS=EPSG:4326&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=41&J=74");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidPoint");
+        content.Should().Contain("X/Y must be within the request image dimensions.");
     }
 
     [IntegrationTest]
