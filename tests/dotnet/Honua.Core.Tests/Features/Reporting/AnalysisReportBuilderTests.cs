@@ -69,6 +69,70 @@ public sealed class AnalysisReportBuilderTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task BuildAsync_WhenLlmProviderReturnsUnknownSlotKeys_StaysDeterministic()
+    {
+        // Defends the report-level NarrativeMode invariant: claiming
+        // LlmAssisted requires a declared slot to actually be replaced with
+        // distinct LLM prose. An LLM that returns slot keys the template did
+        // not declare must not flip the mode.
+        var llm = new StubLlmNarrativeProvider(new Dictionary<string, string>
+        {
+            ["unknown-slot"] = "Off-template paragraph"
+        });
+        var builder = CreateBuilder(out _, narrativeEnabled: true, llmProvider: llm);
+        var package = BuildBufferPackage();
+
+        var report = await builder.BuildAsync("job-123", package, CancellationToken.None);
+
+        report.NarrativeMode.Should().Be(NarrativeMode.Deterministic);
+        var narrative = report.Sections.OfType<NarrativeSection>().Single();
+        narrative.LlmText.Should().BeNull();
+        narrative.Mode.Should().Be(NarrativeMode.Deterministic);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task BuildAsync_WhenLlmProviderEchoesDeterministicText_StaysDeterministic()
+    {
+        // The merge keeps the deterministic baseline when the LLM echoes
+        // identical text. Report-level mode must not claim LlmAssisted
+        // because no observable replacement happened.
+        var package = BuildBufferPackage();
+        var draft = new AnalyticsBufferAggregateReportTemplate().Build(package);
+        var echo = draft.NarrativeSlots.Single().DeterministicText;
+        var llm = new StubLlmNarrativeProvider(new Dictionary<string, string>
+        {
+            ["summary"] = echo
+        });
+        var builder = CreateBuilder(out _, narrativeEnabled: true, llmProvider: llm);
+
+        var report = await builder.BuildAsync("job-123", package, CancellationToken.None);
+
+        report.NarrativeMode.Should().Be(NarrativeMode.Deterministic);
+        report.Sections.OfType<NarrativeSection>().Single().LlmText.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task BuildAsync_WhenLlmProviderReturnsBlankSlotText_StaysDeterministic()
+    {
+        // MergeFill drops blank LLM values. After merging, no slot carries
+        // distinct LLM prose, so report mode must remain Deterministic.
+        var llm = new StubLlmNarrativeProvider(new Dictionary<string, string>
+        {
+            ["summary"] = "   "
+        });
+        var builder = CreateBuilder(out _, narrativeEnabled: true, llmProvider: llm);
+        var package = BuildBufferPackage();
+
+        var report = await builder.BuildAsync("job-123", package, CancellationToken.None);
+
+        report.NarrativeMode.Should().Be(NarrativeMode.Deterministic);
+        report.Sections.OfType<NarrativeSection>().Single().LlmText.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task BuildAsync_WhenLlmProviderThrows_FallsBackToDeterministic()
     {
         var llm = new ThrowingLlmNarrativeProvider(new InvalidOperationException("boom"));

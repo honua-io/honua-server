@@ -79,8 +79,17 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
 
                 if (llmFill.SlotText.Count > 0)
                 {
-                    slotFill = MergeFill(deterministicFill.SlotText, llmFill.SlotText);
-                    narrativeMode = NarrativeMode.LlmAssisted;
+                    var merged = MergeFill(deterministicFill.SlotText, llmFill.SlotText);
+                    // Only claim LlmAssisted when the merged fill actually
+                    // replaces a declared slot's deterministic baseline. An
+                    // LLM that returns unknown keys, blank text, or text equal
+                    // to the deterministic copy must leave the report
+                    // deterministic so narrativeMode tracks observable prose.
+                    if (HasLlmReplacement(draft.NarrativeSlots, merged))
+                    {
+                        slotFill = merged;
+                        narrativeMode = NarrativeMode.LlmAssisted;
+                    }
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -128,6 +137,30 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
                 : kvp.Value;
         }
         return merged;
+    }
+
+    /// <summary>
+    /// Returns true when the merged slot fill carries non-blank text for at
+    /// least one declared <see cref="NarrativeSlot"/> that differs from the
+    /// slot's deterministic baseline. Mirrors the per-slot predicate inside
+    /// <see cref="ComposeSections"/> so the report-level
+    /// <see cref="NarrativeMode"/> can never claim LLM assistance the section
+    /// list does not actually expose.
+    /// </summary>
+    private static bool HasLlmReplacement(
+        IReadOnlyList<NarrativeSlot> slots,
+        Dictionary<string, string> mergedFill)
+    {
+        foreach (var slot in slots)
+        {
+            if (mergedFill.TryGetValue(slot.SlotId, out var filled)
+                && !string.IsNullOrWhiteSpace(filled)
+                && !string.Equals(filled, slot.DeterministicText, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<AnalysisReportSection> ComposeSections(

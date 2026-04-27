@@ -576,8 +576,11 @@ guide and referenced from the resource via `renderUris`.
   provider, or a degraded fallback. `sections[*]` carry the polymorphic
   `kind` discriminator (`heading`, `paragraph`, `key-metric`, `table`,
   `chart`, `map-embed`, `narrative`, `provenance-footer`); `chart` sections
-  embed inline SVG and `table` sections honor the `Reporting:MaxTableRows`
-  cap. `renderUris.{markdown,html}` point at the paired HTTP render
+  carry structured chart data (`chartKind`, `categories`, `series`, axis
+  labels) so clients can rebind the data, and `table` sections honor the
+  `Reporting:MaxTableRows` cap. Inline SVG is emitted only by the HTML
+  render endpoint, not the JSON envelope. `renderUris.{markdown,html}`
+  point at the paired HTTP render
   endpoints (`/api/v1/analysis/reports/{jobId}/render?format=md|html`) so
   clients can dereference rendered output without re-deriving the URI.
   Reads share the `IGeoprocessingJobService` authorization and terminal-state
