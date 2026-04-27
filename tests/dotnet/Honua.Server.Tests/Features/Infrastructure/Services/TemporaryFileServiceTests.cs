@@ -454,10 +454,9 @@ public sealed class TemporaryFileServiceTests : IDisposable
     [Fact]
     public async Task StoreTemporaryFileAsync_WhenQuotaLeaseIsLostDuringUpload_FailsClosed()
     {
-        var uploadDelay = TimeSpan.FromSeconds(12);
         var cloudStorage = new FakeCloudFileStorage(
             CloudStorageProvider.AwsS3,
-            uploadDelay: uploadDelay);
+            completeUploads: false);
         var redis = CreateRedisLeaseLossMultiplexer();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
@@ -474,7 +473,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         var ex = await act.Should().ThrowAsync<TemporaryStorageLimitExceededException>();
         ex.Which.Message.Should().Contain("coordination");
-        var maxElapsed = uploadDelay + TimeSpan.FromSeconds(Environment.GetEnvironmentVariable("CI") == "true" ? 8 : 3);
+        var maxElapsed = TimeSpan.FromSeconds(Environment.GetEnvironmentVariable("CI") == "true" ? 30 : 20);
         stopwatch.Elapsed.Should().BeLessThan(maxElapsed,
             "lease-loss detection should fail closed within a small bounded overhead of the in-flight upload delay");
     }
@@ -707,11 +706,16 @@ public sealed class TemporaryFileServiceTests : IDisposable
         private readonly ConcurrentDictionary<string, byte[]> _payloads = new(StringComparer.Ordinal);
 
         private readonly TimeSpan _uploadDelay;
+        private readonly bool _completeUploads;
 
-        public FakeCloudFileStorage(CloudStorageProvider provider, TimeSpan? uploadDelay = null)
+        public FakeCloudFileStorage(
+            CloudStorageProvider provider,
+            TimeSpan? uploadDelay = null,
+            bool completeUploads = true)
         {
             Provider = provider;
             _uploadDelay = uploadDelay ?? TimeSpan.Zero;
+            _completeUploads = completeUploads;
         }
 
         public CloudStorageProvider Provider { get; }
@@ -736,7 +740,11 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         public async Task<UploadResult> UploadAsync(ByteArrayUploadRequest request, CancellationToken cancellationToken = default)
         {
-            if (_uploadDelay > TimeSpan.Zero)
+            if (!_completeUploads)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            else if (_uploadDelay > TimeSpan.Zero)
             {
                 await Task.Delay(_uploadDelay, cancellationToken);
             }
