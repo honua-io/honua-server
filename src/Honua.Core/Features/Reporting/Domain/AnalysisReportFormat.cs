@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Core.Features.Reporting.Domain;
 
 /// <summary>
@@ -21,24 +23,31 @@ public enum AnalysisReportFormat
 
 /// <summary>
 /// Narrative path that produced the textual blocks in a rendered report.
+/// Wire values are the kebab-case-lower tags published in
+/// <see cref="ReportingConstants"/> so HTTP and MCP envelopes match the
+/// documented operator contract instead of leaking numeric enum values.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<NarrativeMode>))]
 public enum NarrativeMode
 {
     /// <summary>
     /// All narrative blocks were produced by the deterministic provider.
     /// </summary>
+    [JsonStringEnumMemberName(ReportingConstants.NarrativeModeDeterministicTag)]
     Deterministic = 0,
 
     /// <summary>
     /// One or more narrative blocks were produced by the LLM provider on top
     /// of the deterministic scaffolding.
     /// </summary>
+    [JsonStringEnumMemberName(ReportingConstants.NarrativeModeLlmAssistedTag)]
     LlmAssisted = 1,
 
     /// <summary>
     /// The LLM provider failed or timed out and the renderer fell back to the
     /// deterministic narrative path.
     /// </summary>
+    [JsonStringEnumMemberName(ReportingConstants.NarrativeModeFallbackFromLlmErrorTag)]
     FallbackFromLlmError = 2
 }
 

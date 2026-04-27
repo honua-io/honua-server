@@ -156,6 +156,44 @@ public sealed class AnalysisReportBuilderTests
         }
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task BuildAsync_AllowsMaxTableRowsAboveTwoHundred()
+    {
+        // Templates previously hard-coded a 200-row cap, masking any operator
+        // configuration that wanted to surface more rows. Build a package with
+        // >200 rows and a configured cap of 250 — the artifact/assumption
+        // tables must keep all 250 rows inside the cap and only truncate the
+        // overflow.
+        const int packageRows = 280;
+        const int configuredCap = 250;
+
+        var builder = CreateBuilder(
+            out _,
+            narrativeEnabled: false,
+            llmProvider: null,
+            maxTableRows: configuredCap);
+        var package = BuildLargeGenericPackage(packageRows);
+
+        var report = await builder.BuildAsync("job-large", package, CancellationToken.None);
+
+        var tables = report.Sections.OfType<TableSection>().ToList();
+        tables.Should().NotBeEmpty();
+
+        foreach (var table in tables)
+        {
+            table.Rows.Count.Should().BeLessThanOrEqualTo(configuredCap,
+                "operator-configured MaxTableRows must be the binding cap");
+            if (table.Rows.Count == configuredCap)
+            {
+                table.Rows.Count.Should().BeGreaterThan(200,
+                    "the configured cap must override the legacy template-local 200-row clamp");
+                table.TruncatedRowCount.Should().Be(packageRows - configuredCap,
+                    "the truncation count must reflect rows trimmed at the configured cap");
+            }
+        }
+    }
+
     private static AnalysisReportBuilder CreateBuilder(
         out AnalysisReportTemplateRegistry registry,
         bool narrativeEnabled,
@@ -260,6 +298,37 @@ public sealed class AnalysisReportBuilderTests
             Artifacts = artifacts,
             Assumptions = new[] { "u1", "u2", "u3" }
         };
+    }
+
+    private static AnalysisResultPackage BuildLargeGenericPackage(int rowCount)
+    {
+        // Generic-template path with rowCount artifacts and assumptions so we
+        // can exercise MaxTableRows values above the historical 200-row clamp.
+        var artifacts = Enumerable
+            .Range(0, rowCount)
+            .Select(i => new ArtifactRef
+            {
+                ArtifactId = $"a{i}",
+                Kind = ArtifactKind.FeatureLayer,
+                Label = $"L{i}"
+            })
+            .ToArray();
+        var assumptions = Enumerable
+            .Range(0, rowCount)
+            .Select(i => $"u{i}")
+            .ToArray();
+        var package = AnalysisResultPackage.CreateCompleted(
+            resultPackageId: "pkg-large",
+            summary: new ResultSummary { Title = "Large run" },
+            artifacts: artifacts,
+            workspaceRefs: Array.Empty<WorkspaceRef>(),
+            provenance: new ProvenanceRecord
+            {
+                Sources = Array.Empty<ProvenanceSource>(),
+                ProcessDefinitions = new[] { "tooling.large" }
+            },
+            assumptions: assumptions);
+        return package;
     }
 
     private sealed class StubLlmNarrativeProvider : INarrativeProvider

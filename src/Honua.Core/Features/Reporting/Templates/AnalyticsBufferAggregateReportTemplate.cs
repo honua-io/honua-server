@@ -15,7 +15,6 @@ namespace Honua.Core.Features.Reporting.Templates;
 /// </summary>
 internal sealed class AnalyticsBufferAggregateReportTemplate : IAnalysisReportTemplate
 {
-    private const int MaxRows = 200;
     private const string ProcessIdentifier = "analytics.buffer-aggregate";
 
     /// <inheritdoc />
@@ -88,8 +87,8 @@ internal sealed class AnalyticsBufferAggregateReportTemplate : IAnalysisReportTe
             });
         }
 
-        sections.AddRange(TemplateBuildHelpers.BuildArtifactsSection(package, MaxRows));
-        sections.AddRange(TemplateBuildHelpers.BuildAssumptionsSection(package, MaxRows));
+        sections.AddRange(TemplateBuildHelpers.BuildArtifactsSection(package, int.MaxValue));
+        sections.AddRange(TemplateBuildHelpers.BuildAssumptionsSection(package, int.MaxValue));
 
         var narrative = new NarrativeSlot
         {

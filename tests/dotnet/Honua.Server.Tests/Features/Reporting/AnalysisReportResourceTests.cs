@@ -86,6 +86,32 @@ public sealed class AnalysisReportResourceTests
             .Should().Be(original.Sections.OfType<NarrativeSection>().Single().DeterministicText);
     }
 
+    [UnitTest]
+    [Operation(Operations.ContractTesting)]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}")]
+    public void ReportingJsonContext_SerializesNarrativeMode_AsDocumentedString()
+    {
+        // Pin the HTTP wire contract: docs/operator/CONTROL_PLANE_API.md and
+        // docs/developer/MCP_SERVER.md document narrativeMode as the string
+        // tags "deterministic", "llm-assisted", and "fallback-from-llm-error".
+        // This guard ensures the source-generated context applies the enum
+        // string converter on both the top-level field and the inner
+        // NarrativeSection.Mode so neither path leaks numeric enum values.
+        var report = BuildFakeReport() with { NarrativeMode = NarrativeMode.LlmAssisted };
+        var withFallback = BuildFakeReport() with { NarrativeMode = NarrativeMode.FallbackFromLlmError };
+
+        var llmJson = JsonSerializer.Serialize(report, ReportingJsonContext.Default.AnalysisReport);
+        var fallbackJson = JsonSerializer.Serialize(withFallback, ReportingJsonContext.Default.AnalysisReport);
+
+        using var llmDoc = JsonDocument.Parse(llmJson);
+        llmDoc.RootElement.GetProperty("narrativeMode").GetString()
+            .Should().Be(ReportingConstants.NarrativeModeLlmAssistedTag);
+
+        using var fallbackDoc = JsonDocument.Parse(fallbackJson);
+        fallbackDoc.RootElement.GetProperty("narrativeMode").GetString()
+            .Should().Be(ReportingConstants.NarrativeModeFallbackFromLlmErrorTag);
+    }
+
     private static AnalysisReport BuildFakeReport() => ReportingFixtures.CreateBuilder()
         .BuildAsync("job-xyz", ReportingFixtures.BufferAggregatePackage(), CancellationToken.None)
         .GetAwaiter()

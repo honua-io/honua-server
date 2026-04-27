@@ -15,7 +15,6 @@ namespace Honua.Core.Features.Reporting.Templates;
 /// </summary>
 internal sealed class AnalyticsDensityReportTemplate : IAnalysisReportTemplate
 {
-    private const int MaxRows = 200;
     private const int TopBinChartLimit = 10;
     private const string ProcessIdentifier = "analytics.density";
 
@@ -105,8 +104,8 @@ internal sealed class AnalyticsDensityReportTemplate : IAnalysisReportTemplate
             });
         }
 
-        sections.AddRange(TemplateBuildHelpers.BuildArtifactsSection(package, MaxRows));
-        sections.AddRange(TemplateBuildHelpers.BuildAssumptionsSection(package, MaxRows));
+        sections.AddRange(TemplateBuildHelpers.BuildArtifactsSection(package, int.MaxValue));
+        sections.AddRange(TemplateBuildHelpers.BuildAssumptionsSection(package, int.MaxValue));
 
         var narrative = new NarrativeSlot
         {

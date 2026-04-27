@@ -14,7 +14,6 @@ namespace Honua.Core.Features.Reporting.Templates;
 /// </summary>
 internal sealed class SurfaceSlopeReportTemplate : IAnalysisReportTemplate
 {
-    private const int MaxRows = 200;
     private const string ProcessIdentifier = "surface.slope";
 
     /// <inheritdoc />
@@ -81,8 +80,8 @@ internal sealed class SurfaceSlopeReportTemplate : IAnalysisReportTemplate
             }
         }
 
-        sections.AddRange(TemplateBuildHelpers.BuildArtifactsSection(package, MaxRows));
-        sections.AddRange(TemplateBuildHelpers.BuildAssumptionsSection(package, MaxRows));
+        sections.AddRange(TemplateBuildHelpers.BuildArtifactsSection(package, int.MaxValue));
+        sections.AddRange(TemplateBuildHelpers.BuildAssumptionsSection(package, int.MaxValue));
 
         var narrative = new NarrativeSlot
         {

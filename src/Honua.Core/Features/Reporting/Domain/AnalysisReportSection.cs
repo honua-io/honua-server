@@ -151,14 +151,19 @@ public sealed record ChartSeries
 }
 
 /// <summary>
-/// Chart variant emitted by reporting renderers.
+/// Chart variant emitted by reporting renderers. Wire values are the lower-case
+/// tags so JSON envelopes carry stable string identifiers instead of numeric
+/// enum values.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ReportChartKind>))]
 public enum ReportChartKind
 {
     /// <summary>Vertical bar chart.</summary>
+    [JsonStringEnumMemberName("bar")]
     Bar = 0,
 
     /// <summary>Polyline chart.</summary>
+    [JsonStringEnumMemberName("line")]
     Line = 1
 }
 

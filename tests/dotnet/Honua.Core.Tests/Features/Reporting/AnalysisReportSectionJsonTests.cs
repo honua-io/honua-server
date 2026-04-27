@@ -55,6 +55,47 @@ public sealed class AnalysisReportSectionJsonTests
         doc.RootElement.GetProperty("slotId").GetString().Should().Be("summary");
         doc.RootElement.GetProperty("deterministicText").GetString().Should().Be("Deterministic");
         doc.RootElement.GetProperty("llmText").GetString().Should().Be("LLM");
+        // Enum-on-wire contract: NarrativeMode must serialize as the documented
+        // kebab-case-lower tag (not the numeric enum value).
+        doc.RootElement.GetProperty("mode").GetString()
+            .Should().Be(ReportingConstants.NarrativeModeLlmAssistedTag);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void NarrativeSection_RoundTrips_NarrativeModeStringTag()
+    {
+        var original = (AnalysisReportSection)new NarrativeSection
+        {
+            SlotId = "summary",
+            DeterministicText = "Deterministic",
+            Mode = NarrativeMode.FallbackFromLlmError
+        };
+
+        var json = JsonSerializer.Serialize(original, _options);
+        var restored = JsonSerializer.Deserialize<AnalysisReportSection>(json, _options);
+
+        var restoredNarrative = restored.Should().BeOfType<NarrativeSection>().Subject;
+        restoredNarrative.Mode.Should().Be(NarrativeMode.FallbackFromLlmError);
+        json.Should().Contain($"\"mode\":\"{ReportingConstants.NarrativeModeFallbackFromLlmErrorTag}\"");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ChartSection_SerializesChartKind_AsLowercaseStringTag()
+    {
+        var section = (AnalysisReportSection)new ChartSection
+        {
+            ChartKind = ReportChartKind.Bar,
+            Categories = new[] { "A" },
+            Series = new[] { new ChartSeries { Name = "S", Values = new[] { 1.0 } } }
+        };
+
+        var json = JsonSerializer.Serialize(section, _options);
+
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("kind").GetString().Should().Be(AnalysisReportSectionKinds.Chart);
+        doc.RootElement.GetProperty("chartKind").GetString().Should().Be("bar");
     }
 
     [UnitTest]

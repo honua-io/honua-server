@@ -15,7 +15,6 @@ namespace Honua.Core.Features.Reporting.Templates;
 /// </summary>
 internal sealed class GenericAnalysisReportTemplate : IAnalysisReportTemplate
 {
-    private const int MaxRowsForGenericTemplate = 200;
     private static readonly string[] _errorTableColumns = ["Kind", "Message"];
 
     /// <inheritdoc />
@@ -53,8 +52,8 @@ internal sealed class GenericAnalysisReportTemplate : IAnalysisReportTemplate
             });
         }
 
-        sections.AddRange(TemplateBuildHelpers.BuildArtifactsSection(package, MaxRowsForGenericTemplate));
-        sections.AddRange(TemplateBuildHelpers.BuildAssumptionsSection(package, MaxRowsForGenericTemplate));
+        sections.AddRange(TemplateBuildHelpers.BuildArtifactsSection(package, int.MaxValue));
+        sections.AddRange(TemplateBuildHelpers.BuildAssumptionsSection(package, int.MaxValue));
 
         var narrative = new NarrativeSlot
         {
