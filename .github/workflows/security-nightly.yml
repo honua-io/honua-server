@@ -141,7 +141,7 @@ jobs:
       # filtered step, so lower severities are intentionally not retained by this
       # workflow; re-introduce them by removing the `severity:` input on this step.
       - name: Run Trivy SARIF scan
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -164,7 +164,7 @@ jobs:
           retention-days: 30
 
       - name: Fail on high or critical filesystem vulnerabilities
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -217,7 +217,7 @@ jobs:
       # workflow; re-introduce them by removing the `severity:` input on this step.
       - name: Run container Trivy SARIF scan
         id: trivy-sarif
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:security-test
           format: sarif
@@ -232,7 +232,7 @@ jobs:
 
       - name: Fail on high or critical container vulnerabilities
         id: trivy-vulnerabilities
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:security-test
           format: table
