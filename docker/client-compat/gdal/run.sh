@@ -29,10 +29,16 @@ pytest tests/python/gdal_ogr \
     --override-ini="addopts=" \
     || true
 
-# Copy evidence to /output. tests/python/gdal-ogr-results.json is written by
-# the conftest at session teardown.
+# Copy raw evidence to /output for human inspection. tests/python/gdal-ogr-results.json
+# is written by the conftest at session teardown.
 if [[ -f tests/python/gdal-ogr-results.json ]]; then
     cp tests/python/gdal-ogr-results.json /output/
+    # Convert the GDAL custom JSON into per-protocol .cert.json envelopes so
+    # the baseline-diff step in client-interop-nightly can compare GDAL
+    # results against tests/baselines/client-compat/gdal/.
+    python3 scripts/client-compat/convert-gdal-results.py \
+        --input tests/python/gdal-ogr-results.json \
+        --output-dir /output
 fi
 
 # If a .cert.json envelope was produced by the suite (some sub-modules emit

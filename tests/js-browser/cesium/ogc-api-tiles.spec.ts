@@ -58,8 +58,14 @@ test.describe('Cesium OGC API Tiles', () => {
 
     await viewer.waitForTilesLoaded();
 
-    // If any tile request fired, it must use {z}/{y}/{x} substitution rather
-    // than the literal placeholders.
+    // No tile request observed means the provider initialized but Cesium did
+    // not request any tiles for the current camera/level. Record as skip so
+    // the cert envelope does not falsely report substitution evidence.
+    test.skip(
+      tileUrls.length === 0,
+      'No OGC API Tiles requests captured; cannot substantiate {z}/{x}/{y} substitution.',
+    );
+
     for (const url of tileUrls) {
       expect(url).not.toContain('{z}');
       expect(url).not.toContain('{x}');

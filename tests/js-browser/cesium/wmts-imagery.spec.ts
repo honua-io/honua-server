@@ -58,9 +58,15 @@ test.describe('Cesium WMTS imagery', () => {
       (window as any).__cesiumViewer = viewer;
     }, WMTS_URL);
 
-    // WMTS tile requests may legitimately be skipped if no tiles intersect the
-    // current view at the chosen level; assert the provider initialized rather
-    // than requiring a network round-trip.
     await viewer.waitForTilesLoaded();
+
+    // WMTS tile requests may legitimately not fire if no tiles intersect the
+    // current view at the chosen level. Record as skip rather than a false
+    // pass so the cert envelope reflects what actually happened.
+    test.skip(
+      tileUrls.length === 0,
+      'No WMTS tile requests captured; provider initialized but Cesium fetched no tiles.',
+    );
+    expect(tileUrls.length).toBeGreaterThan(0);
   });
 });

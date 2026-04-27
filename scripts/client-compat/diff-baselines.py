@@ -8,7 +8,7 @@ Inputs:
                     (default: docker/client-compat/output, recursed).
   --gap-report PATH Where to write the Markdown gap report
                     (default: docs/gis/gap-report.md).
-  --strict          Exit non-zero if any pass→fail regression is detected.
+  --strict          Exit non-zero if the current run fails the regression gate.
 
 The script identifies envelopes by ``(client_lane, protocol)`` rather than by
 filename so that ``run_id`` differences do not cause spurious diffs. For each
@@ -24,6 +24,18 @@ shared (lane, protocol, test_case_id) tuple it classifies the change:
 The report sorts regressions to the top so reviewers see the actionable diffs
 first. The ``--strict`` flag is what the CI workflow uses; non-strict mode is
 useful for local refresh runs.
+
+In ``--strict`` mode the script exits non-zero when **any** of these hold:
+
+  1. A baseline envelope's ``(client_lane, protocol)`` is missing from the
+     current run (lane crashed without producing evidence).
+  2. A baseline test_case_id is missing from a current-run envelope (lane ran
+     but truncated its output).
+  3. A baseline ``pass`` regressed to current ``fail``.
+  4. The current-run directory contained no envelopes at all.
+
+Without those checks a crashed lane (lane-job exit 0 ⊕ no envelope written)
+would silently pass the nightly gate.
 """
 from __future__ import annotations
 
@@ -228,18 +240,29 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    if not current:
+    missing_envelopes = sorted(set(baselines.keys()) - set(current.keys()))
+    no_current_evidence = bool(baselines) and not current
+
+    if no_current_evidence:
         print(
             f"::error::No current-run envelopes found under {current_dir}. "
             "Did the lane containers write to /output?",
             file=sys.stderr,
         )
+    elif missing_envelopes:
+        print(
+            f"::error::{len(missing_envelopes)} baseline envelope(s) missing from current run:",
+            file=sys.stderr,
+        )
+        for lane, protocol in missing_envelopes:
+            print(f"  - {lane}/{protocol}", file=sys.stderr)
 
     changes = diff(baselines, current)
     write_gap_report(changes, baselines, current, gap_report_path)
     print(f"Wrote {gap_report_path}")
 
     regressions = [c for c in changes if c.classification == "regression"]
+    gaps = [c for c in changes if c.classification == "gap"]
     if regressions:
         print(f"::error::{len(regressions)} regression(s) detected:", file=sys.stderr)
         for r in regressions:
@@ -247,8 +270,18 @@ def main() -> int:
                 f"  - {r.lane}/{r.protocol}: {r.test_case_id} pass → fail",
                 file=sys.stderr,
             )
+    if gaps:
+        print(
+            f"::error::{len(gaps)} baseline test case(s) missing from current run:",
+            file=sys.stderr,
+        )
+        for g in gaps:
+            print(
+                f"  - {g.lane}/{g.protocol}: {g.test_case_id} (baseline {g.baseline_status})",
+                file=sys.stderr,
+            )
 
-    if args.strict and regressions:
+    if args.strict and (regressions or gaps or missing_envelopes or no_current_evidence):
         return 1
 
     return 0

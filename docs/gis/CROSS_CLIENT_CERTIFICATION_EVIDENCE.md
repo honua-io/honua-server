@@ -14,9 +14,9 @@ Each certification run produces one JSON file per client lane per protocol. The 
   "run_id": "<timestamp or CI run ID>",
   "run_date": "<ISO 8601>",
   "server_version": "<honua-server version/commit>",
-  "client_lane": "<js|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel|ci-desktop|ci-bi>",
+  "client_lane": "<js|js-cesium|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel|ci-desktop|ci-bi|arcgis-stub>",
   "client_version": "<client tool version>",
-  "protocol": "<featureserver|mapserver|ogc-features|odata|mvt|wfs|wms|wmts|admin-api>",
+  "protocol": "<featureserver|mapserver|ogc-features|ogc-maps|ogc-tiles|odata|mvt|wfs|wms|wmts|admin-api>",
   "environment": "<local|ci|staging>",
   "results": [
     {
@@ -49,9 +49,9 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `run_id` | string | Yes | Unique run identifier — timestamp (`20260316T1430Z`) or CI run ID |
 | `run_date` | string | Yes | ISO 8601 date/time of the run |
 | `server_version` | string | Yes | Honua Server version or commit SHA |
-| `client_lane` | string | Yes | One of: `js`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel`, `ci-desktop`, `ci-bi` |
+| `client_lane` | string | Yes | One of: `js`, `js-cesium`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel`, `ci-desktop`, `ci-bi`, `arcgis-stub`. The Cesium browser sub-lane uses `js-cesium` (rather than the umbrella `js`) so it is independently identifiable in the docker/client-compat baseline-diff; the ArcGIS Pro REST stub uses `arcgis-stub` to keep its evidence distinct from a future licensed `desktop-arcgis` runner. |
 | `client_version` | string | Yes | Version of the client tool under test |
-| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `admin-api` |
+| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `admin-api`. The `ogc-maps` and `ogc-tiles` values are emitted by the Cesium imagery lane (and by future OGC API Maps / Tiles producers) and align with the protocol abbreviations in [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md#protocol-abbreviations). |
 | `environment` | string | Yes | One of: `local`, `ci`, `staging` |
 | `results` | array | Yes | Array of common-core CERT-\* test case result objects |
 | `results[].test_case_id` | string | Yes | CERT-\* ID from the matrix |
@@ -174,6 +174,32 @@ These automated envelopes use the `ci-desktop` and `ci-bi` client lane values to
 
 Manual lanes (desktop-arcgis, desktop-qgis, bi-powerbi, bi-excel) still require operator-produced evidence per the [Client Templates and Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md).
 
+## Real-Client Interop Matrix Workflow Output
+
+The `client-interop-nightly.yml` workflow (added by ticket [`#806`](https://github.com/honua-io/honua-server/issues/806)) runs the docker/client-compat matrix once per night and emits one `.cert.json` envelope per `(lane, protocol)` pair. Lane services are defined in `docker/client-compat/compose.yml` and write their envelopes into `docker/client-compat/output/<lane>/`:
+
+```
+docker/client-compat/output/
+  cesium/        <run-id>-js-cesium-{wms,wmts,ogc-tiles,ogc-maps}.cert.json
+  openlayers/    <run-id>-js-{ogc-features,ogc-maps,mvt,wfs,wms,wmts}.cert.json
+  pyqgis/        <run-id>-desktop-qgis-{ogc-features,wfs}.cert.json
+  gdal/          gdal-ogr-results.json
+                 <run-id>-cli-gdal-{ogc-features,wfs}.cert.json
+  arcgis-stub/   <run-id>-arcgis-stub-{featureserver,mapserver}.cert.json
+```
+
+The lane → `client_lane` mapping is intentional:
+
+- `cesium` lane → `client_lane: "js-cesium"` (separate from the umbrella `js` lane so the Docker matrix can be diff-baselined independently of the merge-blocking Esri Leaflet / MapLibre lanes that ride on `ci.yml`)
+- `arcgis-stub` lane → `client_lane: "arcgis-stub"` (REST-only stub; CERT-RNDR-* and the visual / style slice IDs are recorded as `skip` with note `pending: licensed-arcgis-runner` rather than `pass`); both `featureserver` and `mapserver` envelopes are emitted from the same run
+- `pyqgis` lane → `client_lane: "desktop-qgis"` (same lane as the standalone `pyqgis-client-compat-nightly.yml`)
+- `openlayers` lane → `client_lane: "js"` (same lane as the in-tree OpenLayers Vitest tests)
+- `gdal` lane → emits the raw `gdal-ogr-results.json` for human inspection plus per-protocol cert envelopes via `scripts/client-compat/convert-gdal-results.py` under `client_lane: "cli"` (`oapif`→`ogc-features`, `wfs`→`wfs`); the converter projects test categories (`discovery`/`read`/`query`/`export`) onto CERT-DISC-01/CONN-01/QFLT-01/RNDR-01 and seeds the rest of the 24-ID common core as `skip` or `not-applicable`
+
+A pre-honua **seed** service applies `tests/seed/client-compat-v1.sql` (schema + `test_service`/layer 0 used by pyqgis) and `tests/seed/browser-compat.yaml` (`browser_compat`/layers 2000-2002 used by cesium/openlayers/arcgis-stub) before honua starts, so lane services always observe the seeded data their specs reference.
+
+Baselines are committed as `tests/baselines/client-compat/<lane>/<lane>-<protocol>.cert.json` (with the `run_id` prefix stripped for stable diffing). `scripts/client-compat/diff-baselines.py` indexes envelopes by `(client_lane, protocol)` from the JSON body — directory names are documentary only — and refreshes [`docs/gis/gap-report.md`](gap-report.md) on every run. The workflow `--strict` flag fails on `pass`→`fail` regressions, baseline test cases missing from the current run, baseline envelopes missing entirely (a crashed lane), or no current-run evidence at all — so a silently-dropped lane cannot be reduced to a passing nightly. Use `scripts/client-compat/refresh-baselines.sh` to bump baselines after an intentional behavior change; the cadence is scheduled quarterly via `/schedule`.
+
 ## Integration Mapping
 
 This section describes how each evidence source will map to the evidence envelope. The repo currently enforces `[Protocol]`, `[Operation]`, and `[Endpoint]` attributes on integration tests (see `TestAttributeEnforcementTests`). CERT-ID-specific markers described below are proposed conventions to be added in a follow-up implementation ticket.
@@ -189,6 +215,9 @@ This section describes how each evidence source will map to the evidence envelop
 | CITE testng-results XML | OGC conformance | Reference: link via `cite_results` field; CITE tests are protocol-scoped, not client-scoped |
 | Manual runbook | Desktop, BI | Manual: operator fills a JSON template or markdown checklist, converted to `.cert.json` |
 | Playwright MapLibre suite | JS (MVT) | Automated: `tests/js-browser/maplibre/` renders MapLibre GL JS against live TileJSON/MVT endpoints and emits a `<run-id>-js-mvt.cert.json` envelope via the custom reporter. See [MapLibre MVT automated workflow](#maplibre-mvt-automated-workflow) below. A manual fallback remains documented for ad-hoc visual verification. |
+| Playwright CesiumJS suite | JS — Cesium (`js-cesium`) | Automated: `tests/js-browser/cesium/` exercises CesiumJS imagery providers (WMS, WMTS, OGC API Tiles, OGC API Maps) under `docker/client-compat/cesium/` in `client-interop-nightly.yml`; emits one envelope per protocol (`<run-id>-js-cesium-{wms,wmts,ogc-tiles,ogc-maps}.cert.json`). Vector-feature CERT-\* IDs and the visual / style slice IDs are recorded as `not-applicable` because Cesium imagery providers consume server-rendered raster output. |
+| ArcGIS Pro REST stub | `arcgis-stub` | Automated stub: `docker/client-compat/arcgis-stub/stub_runner.py` issues both the FeatureServer and MapServer REST sequences Pro itself emits and writes one envelope per protocol (`*-arcgis-stub-featureserver.cert.json` and `*-arcgis-stub-mapserver.cert.json`). CERT-RNDR-\* and the visual / style slice IDs are recorded as `skip` with note `pending: licensed-arcgis-runner` until a licensed Windows runner is provisioned. |
+| GDAL/OGR pytest suite | CLI (`cli` via converter) | Automated: `tests/python/gdal_ogr/conftest.py:EvidenceCollector` writes `gdal-ogr-results.json`; the `gdal` lane runner invokes `scripts/client-compat/convert-gdal-results.py` to emit one cert envelope per protocol (`<run-id>-cli-gdal-ogc-features.cert.json`, `<run-id>-cli-gdal-wfs.cert.json`). The converter maps test categories `discovery`/`read`/`query`/`export` onto CERT-DISC-01/CONN-01/QFLT-01/RNDR-01 and seeds the remaining common-core IDs as `skip` (applicable but not exercised) or `not-applicable`. |
 
 ### Manual Lane Workflow
 

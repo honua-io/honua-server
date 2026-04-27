@@ -10,6 +10,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 - `pr-validation.yml`: PR template compliance validation.
 - `load-soak-nightly.yml`: nightly load/soak testing.
 - `windows-client-compat-nightly.yml`: nightly/manual Windows client compatibility certification (full CERT-\* matrix: 18 test cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes and reusable evidence pack artifacts.
+- `client-interop-nightly.yml`: nightly real-client interop matrix that exercises Honua against actual GIS clients (QGIS, GDAL/OGR, OpenLayers, Cesium, ArcGIS Pro stub) via the Docker harnesses under `docker/client-compat/`. The workflow diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/`, refreshes `docs/gis/gap-report.md`, and fails on any `pass`→`fail` regression. Non-PR-blocking until 30 consecutive nightly passes (#806).
 - `codeql.yml`: static analysis (nightly + trunk push; not PR-blocking).
 - `container-security.yml`: container security scanning (nightly).
 - `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wfs20-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`, `cite-kml22-conformance.yml`, `cite-gml32-conformance.yml`, `cite-gpkg12-conformance.yml`, `ogc-maps-conformance.yml`: OGC conformance testing (nightly; not PR-blocking).
@@ -49,6 +50,7 @@ The CITE regression gates for implemented map/tile standards run on:
 | `cite-gml32-conformance.yml` | GML 3.2 (`ets-gml32`) | `results_available` and `failed_tests == 0` |
 | `cite-gpkg12-conformance.yml` | GeoPackage 1.2 (`ets-gpkg12`) | `results_available` and `failed_tests == 0` |
 | `windows-client-compat-nightly.yml` | Full CERT-\* matrix (automated) | Zero `fail` results in `.cert.json` envelopes; `skip`/`not-applicable` allowed with documented reason |
+| `client-interop-nightly.yml` | Real-client interop matrix (Docker: gdal, pyqgis, openlayers, cesium, arcgis-stub) | Zero `pass`→`fail` regressions vs `tests/baselines/client-compat/`; baseline-diff failure surfaces in `docs/gis/gap-report.md` |
 
 ¹ WFS 2.0 accepts partial compliance during development — the workflow passes when at least one test succeeds, even if some tests fail. NON_COMPLIANT status (zero passed tests) fails the workflow.
 

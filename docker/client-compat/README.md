@@ -54,16 +54,37 @@ docker/client-compat/output/
     <run-id>-js-ogc-features.cert.json
     ...
   gdal/
-    gdal-ogr-results.json
+    gdal-ogr-results.json                       # raw GDAL evidence (kept for inspection)
+    <run-id>-cli-gdal-ogc-features.cert.json    # converted by scripts/client-compat/convert-gdal-results.py
+    <run-id>-cli-gdal-wfs.cert.json
   pyqgis/
     <run-id>-desktop-qgis-ogc-features.cert.json
     ...
   arcgis-stub/
     <run-id>-arcgis-stub-featureserver.cert.json
+    <run-id>-arcgis-stub-mapserver.cert.json
 ```
 
 The baseline-diff step in `.github/workflows/client-interop-nightly.yml` reads
-these files and compares them with `tests/baselines/client-compat/`.
+these files and compares them with `tests/baselines/client-compat/`. The
+GDAL/OGR pytest suite emits its own per-protocol/category JSON report; the
+lane runner converts it into per-protocol `.cert.json` envelopes via
+`scripts/client-compat/convert-gdal-results.py` so the diff sees a uniform
+shape across lanes.
+
+## Seed data
+
+A one-shot `seed` service (built from `docker/client-compat/seed/`) runs
+between `postgres` becoming healthy and `honua` starting. It applies:
+
+- `tests/seed/client-compat-v1.sql` — schema + `test_service` (layer `0`)
+  used by the `pyqgis` lane
+- `tests/seed/browser-compat.yaml`  — `browser_compat` service (layers
+  `2000`-`2002`) used by the `cesium`, `openlayers`, and `arcgis-stub` lanes
+
+`honua` waits for `seed` via `service_completed_successfully`, so lane
+services that depend on `honua: service_healthy` always observe a populated
+database.
 
 ## Adding a new client lane
 

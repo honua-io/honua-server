@@ -19,11 +19,13 @@ tests/baselines/client-compat/
   openlayers/
     ...
   gdal/
-    ...
+    cli-gdal-ogc-features.cert.json
+    cli-gdal-wfs.cert.json
   pyqgis/
     ...
   arcgis-stub/
     arcgis-stub-featureserver.cert.json
+    arcgis-stub-mapserver.cert.json
 ```
 
 Filenames omit the `run_id` prefix so the baseline is content-stable across

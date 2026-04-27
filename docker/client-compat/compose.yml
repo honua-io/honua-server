@@ -23,6 +23,29 @@ services:
       timeout: 5s
       retries: 5
 
+  seed:
+    # One-shot job: applies tests/seed/client-compat-v1.sql (schema +
+    # test_service/layer 0 used by pyqgis) and tests/seed/browser-compat.yaml
+    # (browser_compat/layers 2000-2002 used by cesium and openlayers) so the
+    # lane services see the data their specs reference.
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/seed/Dockerfile
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: compat_password
+      PGDATABASE: honua_compat
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ../../tests:/workspace/tests:ro
+    restart: "no"
+
   honua:
     image: honua-server:client-compat
     build:
@@ -39,10 +62,11 @@ services:
       ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       Security__ConnectionEncryption__MasterKey: test-master-key-that-is-at-least-32-characters-long-for-security
       Security__ConnectionEncryption__Salt: dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
-      CLIENT_COMPAT_SEED_SOURCE: tests/seed/client-compat-v1.sql
     depends_on:
       postgres:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     healthcheck:
