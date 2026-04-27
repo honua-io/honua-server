@@ -1,0 +1,23 @@
+{
+  "name": "honua-cesium-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "CesiumJS browser interop tests for Honua Server (WMS, WMTS, OGC API Tiles, OGC API Maps).",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "test": "npx playwright test --config playwright.config.ts",
+    "test:headed": "npx playwright test --config playwright.config.ts --headed",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cesium": "^1.119.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  }
+}
