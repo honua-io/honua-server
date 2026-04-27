@@ -471,8 +471,44 @@ for run lifecycle, scheduler semantics, and tuning details.
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/v1/admin/license` | GET | Get license status |
-| `/api/v1/admin/license` | POST | Upload license |
+| `/api/v1/admin/license` | POST | Upload license (placeholder `InMemoryLicenseManager` — does not run the canonical Ed25519 / JWS validator; replaced by the License store + bootstrap child ticket). |
 | `/api/v1/admin/license/entitlements` | GET | Get entitlements |
+| `/api/v1/admin/license/status` | GET | Platform-admin license status (mirrors `GET /api/v1/admin/license`) |
+| `/api/v1/admin/license/features` | GET | Platform-admin entitlements / feature view |
+
+The unified license envelope (compact JWS / EdDSA / Ed25519), BYOL and
+marketplace issuance flows, multi-key rotation, and the AWS/Azure marketplace
+adapter contracts are defined in [ADR-0033](../contributor/adr/0033-unified-license-format.md)
+and the companion [unified license and entitlement architecture](../contributor/architecture/unified-license-and-entitlement.md).
+Operational procedures live in the licensing runbooks:
+[License Migration](runbooks/LICENSE_MIGRATION.md),
+[License Key Rotation](runbooks/LICENSE_KEY_ROTATION.md), and
+[Marketplace Operations](runbooks/MARKETPLACE_OPERATIONS.md).
+
+The licensing slice introduces additional routes that land with their
+child tickets per the ADR-0033 § "Bounded Child Tickets" decomposition.
+They are listed here so the canonical route set in the ADR, the
+architecture doc, and this contract agree:
+
+| Endpoint | Method | Visibility | Land with |
+|----------|--------|------------|-----------|
+| `/api/v1/admin/license/upload` | POST | Every instance. Currently registered with a placeholder handler that returns HTTP `501 Not Implemented` (`"License upload is not yet supported"`); the canonical Ed25519 / JWS upload path lands with the child ticket below. The `LICENSE_MIGRATION.md` and `LICENSE_KEY_ROTATION.md` runbooks call this route — both runbooks flag the dependency in their § "Status / Prerequisites" callouts. | License store + bootstrap child ticket |
+| `/api/v1/admin/license/keys` | GET | Every instance | License store + bootstrap child ticket |
+| `/api/v1/admin/license/mint` | POST | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
+| `/api/v1/admin/license/refresh` | POST | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
+| `/api/v1/admin/license/signing/status` | GET | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
+| `/api/v1/admin/marketplace/aws/reconcile` | POST | When `Aws:Marketplace:Enabled=true` | AWS marketplace adapter child ticket |
+| `/api/v1/admin/marketplace/azure/reconcile` | POST | When `Azure:Marketplace:Enabled=true` | Azure marketplace adapter child ticket |
+| `/api/v1/marketplace/azure/webhook` | POST | When `Azure:Marketplace:Enabled=true`. Public — Azure AD JWT bearer | Azure marketplace adapter child ticket |
+| `/api/v1/marketplace/azure/landing` | GET | When `Azure:Marketplace:Enabled=true`. Public — Microsoft redirects the purchaser's browser here with `?token=<marketplace-token>`; handler calls Microsoft's Resolve API server-to-server (`x-ms-marketplace-token` header). | Azure marketplace adapter child ticket |
+| `/api/v1/marketplace/azure/activate` | POST | When `Azure:Marketplace:Enabled=true`. Public — backend POST from the landing page after the purchaser confirms; handler calls Microsoft's Activate API server-to-server. | Azure marketplace adapter child ticket |
+
+The `/api/v1/admin/license/upload` route is registered today but its
+handler returns 501; the canonical Ed25519 / JWS upload pipeline lands
+with the License store + bootstrap child ticket. The mint-host-only and
+marketplace routes are not present in the current `EndpointRegistry`;
+they register through their child-ticket PRs along with the
+corresponding architecture-test rows.
 
 ### **Role Management Endpoints**
 
@@ -571,6 +607,41 @@ When `approvalRequired` is `true`, detected changes create a pending approval re
 | `/api/v1/admin/tile-operations/jobs/{jobId}` | GET | Get tile operation job status |
 | `/api/v1/admin/tile-operations/jobs/{jobId}/cancel` | POST | Cancel tile operation job |
 | `/api/v1/admin/tile-operations/jobs/{jobId}/retry` | POST | Retry tile operation job |
+
+### **Analysis Report Endpoints**
+
+These routes live alongside the management API at `/api/v1/analysis/...` and
+require admin authorization. They render the canonical `AnalysisReport`
+envelope and the rendered Markdown / HTML body for a completed geoprocessing
+job; the same envelope is mirrored on the MCP resource
+`honua://jobs/{jobId}/report` (see [MCP Server](../developer/MCP_SERVER.md)).
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/analysis/reports/{jobId}` | GET | Retrieve the structured `AnalysisReport` JSON envelope. Auth and terminal-state semantics are inherited from the underlying job-results path. |
+| `/api/v1/analysis/reports/{jobId}/render?format=md\|html` | GET | Render the report body. `format=md` returns `text/markdown; charset=utf-8`; `format=html` returns `text/html; charset=utf-8` as a self-contained document with inline CSS and inline SVG charts (no external CDN). Unsupported formats return `400 Bad Request`. |
+
+Notes:
+
+- Routes are gated by `Reporting:Enabled` (default `true`). When disabled
+  the endpoints (and the paired MCP resource) are not registered.
+- Reports are versioned via `reportContractVersion` (`honua.report.v1`).
+  Render requests against an unsupported contract version return
+  `409 Conflict` with the stable `report.contract.unsupported` error code.
+- Rendered bodies are cached server-side keyed by
+  `(jobId, contractVersion, format, resultPackageId)` for `Reporting:Cache:TtlMinutes`
+  (default `60`, capped at 24 h) so repeat renders for the same package
+  do not re-run the renderer.
+- Narrative blocks degrade cleanly: when the LLM provider is disabled or
+  fails, the response carries `narrativeMode = "deterministic"` or
+  `"fallback-from-llm-error"` and the deterministic provider authors the
+  prose. HTML output is fully offline (no external script or font
+  references) so on-prem operators can serve reports without internet
+  egress.
+- 401 / 403 / 404 / 409 / 503 responses use `application/problem+json` and
+  match the geoprocessing job-service exception taxonomy
+  (`unauthenticated`, `permission_denied`, `not_found`, `failed_precondition`,
+  `unavailable`).
 
 ---
 

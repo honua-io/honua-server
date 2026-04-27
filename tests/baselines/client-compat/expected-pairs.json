@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "description": "Expected (client_lane, protocol) pairs the docker/client-compat matrix must produce evidence for on every nightly run. scripts/client-compat/diff-baselines.py uses this manifest in --strict mode to fail when any pair is missing from BOTH baseline and current run, so a never-baselined lane cannot silently disappear from the gate. Bump alongside the matrix in docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md when a lane × protocol is added or retired.",
+  "expected_pairs": [
+    { "client_lane": "js-cesium", "protocol": "wms" },
+    { "client_lane": "js-cesium", "protocol": "wmts" },
+    { "client_lane": "js-cesium", "protocol": "ogc-tiles" },
+    { "client_lane": "js-cesium", "protocol": "ogc-maps" },
+    { "client_lane": "js", "protocol": "ogc-features" },
+    { "client_lane": "js", "protocol": "ogc-maps" },
+    { "client_lane": "js", "protocol": "mvt" },
+    { "client_lane": "js", "protocol": "wfs" },
+    { "client_lane": "js", "protocol": "wms" },
+    { "client_lane": "js", "protocol": "wmts" },
+    { "client_lane": "desktop-qgis", "protocol": "ogc-features" },
+    { "client_lane": "desktop-qgis", "protocol": "wfs" },
+    { "client_lane": "cli", "protocol": "ogc-features" },
+    { "client_lane": "cli", "protocol": "wfs" },
+    { "client_lane": "arcgis-stub", "protocol": "featureserver" },
+    { "client_lane": "arcgis-stub", "protocol": "mapserver" }
+  ]
+}

@@ -176,6 +176,12 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    // Tagged Flaky pending #812's `[FlakyTest]` infrastructure: the 10 s wait on the
+    // reconciliation callback intermittently times out when the shared "Redis" collection
+    // and Testcontainers fixture are under load (consecutive validation runs reproduced
+    // a TimeoutException on `await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(10))`).
+    // The test passes reliably in isolation. Migrate to `[FlakyTest("...")]` when #812 lands.
+    [Trait("Flaky", "true")]
     public async Task JobReconciliationService_WithRedis_CancelsDurablyRequestedStaleJob()
     {
         await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);

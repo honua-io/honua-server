@@ -19,4 +19,5 @@ Layout:
 
 - `esri-leaflet/` contains the Esri Leaflet browser lane and its support files
 - `maplibre/` contains the MapLibre GL JS browser lane and its support files
+- `cesium/` contains the CesiumJS imagery-provider lane (WMS, WMTS, OGC API Tiles, OGC API Maps); run via `docker/client-compat/cesium/` in the nightly real-client interop matrix
 - `fixtures/` contains the static browser page served by the Esri Leaflet lane

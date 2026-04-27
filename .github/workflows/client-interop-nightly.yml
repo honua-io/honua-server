@@ -1,0 +1,247 @@
+name: Real-Client Interop Matrix (Nightly)
+
+# Tier: nightly. Non-PR-blocking. Promote to gating once 30 consecutive
+# nightly passes are observed across all lanes (#806 design).
+#
+# Exercises Honua against the actual GIS clients customers use (QGIS, GDAL,
+# OpenLayers, Cesium, ArcGIS Pro stub) via Docker harnesses under
+# docker/client-compat/. CITE conformance suites prove spec compliance; this
+# matrix proves real-client compatibility.
+
+on:
+  schedule:
+    - cron: '0 7 * * *' # 07:00 UTC, before pyqgis-client-compat (07:30) and windows-client-compat (07:15)
+  workflow_dispatch:
+    inputs:
+      lanes:
+        description: 'Comma-separated lane subset (default = all)'
+        required: false
+        default: 'gdal,pyqgis,openlayers,cesium,arcgis-stub'
+
+permissions:
+  contents: write   # baseline-diff job commits gap-report.md
+  pull-requests: read
+
+concurrency:
+  group: client-interop-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Resolve lane matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      lanes: ${{ steps.resolve.outputs.lanes }}
+      client_lanes: ${{ steps.resolve.outputs.client_lanes }}
+    steps:
+      - name: Resolve lanes input
+        id: resolve
+        shell: bash
+        env:
+          LANES_INPUT: ${{ github.event.inputs.lanes }}
+        run: |
+          set -euo pipefail
+          # Schedule and dispatch-with-empty-input default to the full matrix.
+          default='gdal,pyqgis,openlayers,cesium,arcgis-stub'
+          raw="${LANES_INPUT:-}"
+          # Strip whitespace and trailing/leading commas.
+          raw="${raw// /}"
+          raw="${raw#,}"
+          raw="${raw%,}"
+          if [[ -z "$raw" ]]; then
+            raw="$default"
+          fi
+          # Reject anything not in the known lane set so a typo can't silently
+          # produce an empty matrix that "passes".
+          allowed=$'gdal\npyqgis\nopenlayers\ncesium\narcgis-stub'
+          IFS=',' read -ra requested <<<"$raw"
+          for lane in "${requested[@]}"; do
+            if ! grep -Fxq "$lane" <<<"$allowed"; then
+              echo "::error::Unknown lane '$lane'; allowed: $(tr '\n' ',' <<<"$allowed" | sed 's/,$//')" >&2
+              exit 1
+            fi
+          done
+          json=$(jq -cn --arg lanes "$raw" '$lanes | split(",")')
+          echo "lanes=$json" >> "$GITHUB_OUTPUT"
+          echo "Resolved lane matrix: $json"
+
+          # Map each requested lane to its client_lane value (the field on
+          # .cert.json envelopes that the diff script keys on). The mapping
+          # mirrors docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md and the
+          # docker compose service names.
+          declare -A LANE_TO_CLIENT_LANE=(
+            [gdal]="cli"
+            [pyqgis]="desktop-qgis"
+            [openlayers]="js"
+            [cesium]="js-cesium"
+            [arcgis-stub]="arcgis-stub"
+          )
+          client_lanes=""
+          for lane in "${requested[@]}"; do
+            mapped="${LANE_TO_CLIENT_LANE[$lane]:-}"
+            if [[ -z "$mapped" ]]; then
+              echo "::error::No client_lane mapping for '$lane'; update LANE_TO_CLIENT_LANE in the prepare job." >&2
+              exit 1
+            fi
+            if [[ -n "$client_lanes" ]]; then client_lanes+=","; fi
+            client_lanes+="$mapped"
+          done
+          echo "client_lanes=$client_lanes" >> "$GITHUB_OUTPUT"
+          echo "Resolved client_lanes filter: $client_lanes"
+
+  matrix:
+    name: ${{ matrix.lane }}
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: ${{ fromJSON(needs.prepare.outputs.lanes) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure docker BuildKit
+        run: |
+          mkdir -p ~/.docker
+          echo '{ "features": { "buildkit": true } }' > ~/.docker/config.json
+
+      - name: Cache docker buildx layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: client-compat-${{ matrix.lane }}-${{ hashFiles(format('docker/client-compat/{0}/**', matrix.lane)) }}
+          restore-keys: |
+            client-compat-${{ matrix.lane }}-
+
+      - name: Build honua + lane image and run
+        id: run
+        shell: bash
+        run: |
+          set +e
+          mkdir -p docker/client-compat/output/${{ matrix.lane }}
+          docker compose -f docker/client-compat/compose.yml \
+            --profile ${{ matrix.lane }} \
+            up --build --abort-on-container-exit \
+            --exit-code-from ${{ matrix.lane }} \
+            ${{ matrix.lane }}
+          exit_code=$?
+          docker compose -f docker/client-compat/compose.yml down --remove-orphans
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          # Don't fail this job — baseline-diff is the regression gate.
+          exit 0
+
+      - name: Upload lane evidence
+        if: always()
+        uses: ./.github/actions/upload-ci-evidence
+        with:
+          kind: evidence
+          suffix: client-compat-${{ matrix.lane }}
+          path: docker/client-compat/output/${{ matrix.lane }}
+          tier: nightly
+
+      - name: Annotate failed lane
+        if: steps.run.outputs.exit_code != '0'
+        run: |
+          echo "::warning::Lane ${{ matrix.lane }} exited with code ${{ steps.run.outputs.exit_code }}"
+
+  baseline-diff:
+    name: Baseline diff and gap report
+    needs: [prepare, matrix]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # We push the gap report back when it changes.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download all lane artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          pattern: '*-client-compat-*'
+          merge-multiple: false
+
+      - name: Stage current-run envelopes
+        shell: bash
+        run: |
+          mkdir -p docker/client-compat/output
+          shopt -s nullglob
+          # Each lane artifact lands in its own subdir; flatten to lane name.
+          for dir in artifacts/*/; do
+              name="$(basename "$dir")"
+              # Derive lane from artifact suffix (suffix=client-compat-<lane>).
+              lane="${name##*client-compat-}"
+              if [[ -z "$lane" || "$lane" == "$name" ]]; then continue; fi
+              mkdir -p "docker/client-compat/output/$lane"
+              cp -r "$dir"* "docker/client-compat/output/$lane/" 2>/dev/null || true
+          done
+          find docker/client-compat/output -name '*.cert.json' -printf '%p\n' | sort
+
+      - name: Compare against baselines and refresh gap report
+        id: diff
+        shell: bash
+        env:
+          CLIENT_LANES: ${{ needs.prepare.outputs.client_lanes }}
+        run: |
+          set +e
+          # CLIENT_LANES carries the client_lane filter for the lanes that
+          # actually ran; on a scheduled (full-matrix) run this equals every
+          # client_lane in expected-pairs.json so the filter is a no-op.
+          # On workflow_dispatch with a lane subset it scopes strict mode to
+          # just the requested lanes — without it, diff-baselines.py would
+          # treat every other baseline/expected-pair as a missing-envelope
+          # failure.
+          python3 scripts/client-compat/diff-baselines.py \
+            --baselines tests/baselines/client-compat \
+            --current docker/client-compat/output \
+            --gap-report docs/gis/gap-report.md \
+            --client-lanes "$CLIENT_LANES" \
+            --strict
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Commit gap-report.md if changed
+        if: github.event_name == 'schedule'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet docs/gis/gap-report.md; then
+            echo "No gap-report changes."
+            exit 0
+          fi
+          git add docs/gis/gap-report.md
+          git commit -m "chore(client-compat): refresh nightly gap report
+
+          Auto-generated by .github/workflows/client-interop-nightly.yml.
+          Source baselines: tests/baselines/client-compat/."
+          git push origin HEAD:trunk || \
+            echo "::warning::Could not push gap-report; create a PR manually if needed."
+
+      - name: Upload gap report
+        if: always()
+        uses: ./.github/actions/upload-ci-evidence
+        with:
+          kind: evidence
+          suffix: gap-report
+          path: docs/gis/gap-report.md
+          tier: nightly
+          summary-file: docs/gis/gap-report.md
+
+      - name: Fail on regressions
+        if: steps.diff.outputs.exit_code != '0'
+        run: |
+          echo "::error::Client-interop matrix detected regressions; see docs/gis/gap-report.md"
+          exit 1

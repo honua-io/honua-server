@@ -14,6 +14,10 @@ WORKDIR /src
 
 # grpc.tools' bundled linux_arm64 protoc segfaults on native ARM runners.
 # Use the distro compiler through the supported PROTOBUF_PROTOC override instead.
+# DL3008 suppression rationale: the SDK base image is digest-pinned, so the protobuf-compiler
+# version is fixed by the upstream snapshot. Pinning here forces a parallel version update on
+# every digest bump.
+# hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends protobuf-compiler && \
     rm -rf /var/lib/apt/lists/*
@@ -36,7 +40,10 @@ ARG TARGETARCH
 # Slim by default: set HONUA_INCLUDE_STAC_OPS_DEMO=true to keep the hosted STAC ops demo assets.
 ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
 
-# Restore dependencies
+# Restore dependencies.
+# SC2086 suppression rationale: EXTRA_MSBUILD_ARGS holds multiple MSBuild flags that must
+# word-split into separate `-p:` arguments. Quoting collapses them into a single (invalid) argument.
+# hadolint ignore=SC2086
 RUN --mount=type=cache,target=/root/.nuget/packages \
     case "${TARGETARCH:-amd64}" in \
         amd64) RUNTIME_ID="linux-musl-x64" ;; \
@@ -52,8 +59,11 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # Copy source code
 COPY . .
 
-# Build application (disable AOT for default image)
+# Build application (disable AOT for default image).
+# SC2086 suppression rationale: EXTRA_MSBUILD_ARGS holds multiple MSBuild flags that must
+# word-split into separate `-p:` arguments. Quoting collapses them into a single (invalid) argument.
 ARG CONFIGURATION=Release
+# hadolint ignore=SC2086
 RUN --mount=type=cache,target=/root/.nuget/packages \
     case "${TARGETARCH:-amd64}" in \
         amd64) RUNTIME_ID="linux-musl-x64" ;; \
@@ -86,7 +96,11 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # Runtime stage
 FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 
-# Security: Install runtime dependencies
+# Security: Install runtime dependencies.
+# DL3018 suppression rationale: the runtime base image is digest-pinned to a specific Alpine
+# snapshot, so apk package versions are deterministic for that snapshot. Pinning here would
+# force a parallel apk-version update on every digest bump.
+# hadolint ignore=DL3018
 RUN apk upgrade --no-cache && \
     apk add --no-cache \
     icu-libs \

@@ -184,11 +184,12 @@ QT_QPA_PLATFORM=offscreen pytest tests/python/pyqgis -m pyqgis --tb=short
 | `HONUA_PYQGIS_SEED_PATH` | SQL snapshot for the local runtime | `tests/seed/client-compat-v1.sql` |
 | `HONUA_PYQGIS_PORT` | Base server port (worker index added for xdist) | `5575` |
 | `HONUA_PYQGIS_TIMEOUT` | Server startup timeout (seconds) | `120` |
+| `HONUA_PYQGIS_OUTPUT_DIR` | Destination directory for `.cert.json` envelopes (the docker/client-compat lane sets this to `/output` because `tests/` is bind-mounted read-only) | unset (writes under `tests/TestResults/`) |
 | `QGIS_PREFIX_PATH` | QGIS installation prefix | auto-detected |
 
 ### Evidence Output
 
-The PyQGIS lane produces per-protocol `.cert.json` certification envelopes under `tests/TestResults/`:
+The PyQGIS lane produces per-protocol `.cert.json` certification envelopes under `tests/TestResults/` (override with `HONUA_PYQGIS_OUTPUT_DIR`):
 
 - `<run-id>-desktop-qgis-ogc-features.cert.json`
 - `<run-id>-desktop-qgis-wfs.cert.json`
@@ -200,6 +201,22 @@ The [visual / style certification slice](../gis/visual-style-certification-slice
 ### Nightly CI
 
 The `pyqgis-client-compat-nightly.yml` workflow runs this lane daily at 7:30 AM UTC against `ubuntu-24.04` with PostGIS, QGIS/PyQGIS, and `xvfb`. Evidence artifacts are uploaded automatically.
+
+## GDAL/OGR Lane
+
+The GDAL/OGR interoperability suite (`tests/python/gdal_ogr/`) runs in two modes:
+
+- **Local development** — pytest brings up the shared `postgis` + `honua_server` fixtures and seeds per-worker layers, then queries them via `ogrinfo`/`ogr2ogr`. Standard `pytest -m gdal` invocation.
+- **External (Docker harness)** — when `HONUA_BASE_URL` is set, the lane skips the local `honua_server`/`postgis` chain entirely and targets the URL directly. The `docker/client-compat/gdal/` runner uses this mode against the Compose `honua` service, and the lane is the source of the `cli`/`ogc-features` and `cli`/`wfs` evidence in the [client-interop-nightly](../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md#real-client-interop-matrix-workflow-output) gate.
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HONUA_BASE_URL` | Target an already-running server (skips the local `honua_server`/`postgis` fixture chain) | unset (starts local) |
+| `HONUA_GDAL_SERVICE_ID` | Service ID for OAPIF/WFS targets in external mode | unset (per-worker `test_service_<gw…>`) |
+| `HONUA_GDAL_COLLECTION_ID` | Collection ID for OAPIF queries in external mode | unset (per-worker `1000+`) |
+| `HONUA_GDAL_RESULTS_PATH` | Destination for the raw `gdal-ogr-results.json` evidence report (the docker/client-compat lane sets this to `/output/gdal-ogr-results.json` because `tests/` is bind-mounted read-only) | unset (writes under `tests/python/`) |
 
 ## Using Reusable Docker Compose Test Database
 

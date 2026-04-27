@@ -350,7 +350,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
             .Returns(Task.FromResult(true));
 
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var handler = new DelayedSuccessHandler(TimeSpan.FromMilliseconds(2_500));
+        var handler = new CancellationAwareHandler();
         httpClientFactory.CreateClient("feature-change-webhook").Returns(new HttpClient(handler));
 
         var dispatcher = new FeatureChangeWebhookDispatcher(
@@ -386,7 +386,9 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
         Assert.True(claimExtendCalls >= 1, $"expected at least one delivery-claim renewal while webhook delivery was in flight, but saw {claimExtendCalls}");
 
-        await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
+        cts.Cancel();
+        await handler.WaitForCancellationAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        await AwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
     [UnitTest]
@@ -568,7 +570,13 @@ public sealed class FeatureChangeWebhookDispatcherTests
         Task executeTask)
     {
         cancellationTokenSource.Cancel();
+        await AwaitDispatcherShutdownAsync(cancellationTokenSource, executeTask);
+    }
 
+    private static async Task AwaitDispatcherShutdownAsync(
+        CancellationTokenSource cancellationTokenSource,
+        Task executeTask)
+    {
         try
         {
             await executeTask.WaitAsync(TimeSpan.FromSeconds(5));
@@ -614,21 +622,6 @@ public sealed class FeatureChangeWebhookDispatcherTests
         {
             SendCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
-        }
-    }
-
-    private sealed class DelayedSuccessHandler(TimeSpan delay) : HttpMessageHandler
-    {
-        private readonly TimeSpan _delay = delay;
-        private readonly TaskCompletionSource _requestStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task WaitForRequestAsync() => _requestStarted.Task;
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            _requestStarted.TrySetResult();
-            await Task.Delay(_delay, cancellationToken);
-            return new HttpResponseMessage(HttpStatusCode.OK);
         }
     }
 

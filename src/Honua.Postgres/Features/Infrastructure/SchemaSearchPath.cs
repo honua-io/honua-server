@@ -36,6 +36,8 @@ internal static partial class SchemaSearchPath
         }
 
         await using var command = connection.CreateCommand();
+        // codeql[cs/sql-injection]: identifier is validated against ^[A-Za-z_][A-Za-z0-9_]*$ allow-list
+        // above; PostgreSQL `SET search_path` does not accept parameter binding for identifiers.
         command.CommandText = $"SET search_path TO \"{sanitized}\", public;";
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
