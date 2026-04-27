@@ -671,9 +671,16 @@ def _write_cert_evidence(
     oapif_evidence: CertificationEvidenceCollector,
     wfs_evidence: CertificationEvidenceCollector,
 ) -> Generator[None, None, None]:
-    """Persist .cert.json envelopes at session teardown."""
+    """Persist .cert.json envelopes at session teardown.
+
+    ``HONUA_PYQGIS_OUTPUT_DIR`` overrides the destination — the
+    docker/client-compat PyQGIS lane points it at ``/output`` because
+    ``tests/`` is bind-mounted read-only inside the container.
+    """
     yield
-    results_dir = TESTS_ROOT / "TestResults"
+    override = os.environ.get("HONUA_PYQGIS_OUTPUT_DIR")
+    results_dir = Path(override) if override else TESTS_ROOT / "TestResults"
+    results_dir.mkdir(parents=True, exist_ok=True)
     run_id = _utc_now_compact()
     worker_id = os.environ.get("PYTEST_XDIST_WORKER")
     suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"

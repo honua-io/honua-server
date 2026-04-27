@@ -176,6 +176,77 @@ def gdal_version() -> str:
 
 
 @pytest.fixture(scope="session")
+def base_url(request: pytest.FixtureRequest) -> str:
+    """Resolve the Honua base URL.
+
+    When ``HONUA_BASE_URL`` is set (e.g. by the docker/client-compat GDAL
+    lane against the Compose ``honua`` service) the suite targets that URL
+    directly and never instantiates the shared ``honua_server`` /
+    ``postgis`` / ``worker_schema`` chain — those would try to start a
+    local ``dotnet run`` server inside the read-only GDAL image. When the
+    env var is absent (local development), fall back to the inherited
+    server fixture so the in-process behaviour is unchanged.
+    """
+    override = os.getenv("HONUA_BASE_URL")
+    if override:
+        return override.rstrip("/")
+    server = request.getfixturevalue("honua_server")
+    return server.base_url
+
+
+def _worker_id() -> str:
+    return os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+
+
+def _worker_index() -> int:
+    wid = _worker_id()
+    if wid.startswith("gw") and wid[2:].isdigit():
+        return int(wid[2:])
+    return 0
+
+
+@pytest.fixture
+def test_service_id() -> str:
+    """Service ID for GDAL OAPIF/WFS targets.
+
+    External (Docker harness) mode reads ``HONUA_GDAL_SERVICE_ID``
+    (the seeded ``test_service`` from ``client-compat-v1.sql``); local
+    development falls back to the per-worker service name used by the
+    shared test fixtures.
+    """
+    override = os.getenv("HONUA_GDAL_SERVICE_ID")
+    if override:
+        return override
+    return f"test_service_{_worker_id()}"
+
+
+@pytest.fixture
+def test_collection_id() -> str:
+    """Collection ID for GDAL OAPIF queries.
+
+    External mode reads ``HONUA_GDAL_COLLECTION_ID`` (``"0"`` for the
+    seeded layer); local development falls back to the per-worker layer
+    ID used by the shared OGC fixtures.
+    """
+    override = os.getenv("HONUA_GDAL_COLLECTION_ID")
+    if override:
+        return override
+    return str(1000 + _worker_index())
+
+
+@pytest.fixture(autouse=True)
+def reset_worker_state() -> None:
+    """Shadow the shared autouse reset.
+
+    The shared ``reset_worker_state`` resets per-worker schema data
+    between tests, which transitively requires the ``postgis`` and
+    ``worker_schema`` fixtures. The GDAL suite is read-only against
+    seeded data, so it does not need that chain — and in external
+    (Docker harness) mode the dependencies cannot start at all.
+    """
+
+
+@pytest.fixture(scope="session")
 def oapif_dsn(base_url: str) -> str:
     """GDAL OAPIF driver connection string."""
     return f"OAPIF:{base_url}/ogc/features"
@@ -216,13 +287,28 @@ def evidence_collector() -> EvidenceCollector:
 
 @pytest.fixture(scope="session", autouse=True)
 def _write_evidence_report():
-    """Write the evidence JSON report at session teardown."""
+    """Write the evidence JSON report at session teardown.
+
+    ``HONUA_GDAL_RESULTS_PATH`` overrides the destination — the
+    docker/client-compat GDAL lane points it at ``/output`` because
+    ``tests/python`` is bind-mounted read-only inside the container.
+    """
     yield
-    if _evidence.has_records:
-        worker_id = os.environ.get("PYTEST_XDIST_WORKER")
-        suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
+    if not _evidence.has_records:
+        return
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+    suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
+    override = os.environ.get("HONUA_GDAL_RESULTS_PATH")
+    if override:
+        report_path = Path(override)
+        if suffix:
+            report_path = report_path.with_name(
+                f"{report_path.stem}{suffix}{report_path.suffix}"
+            )
+    else:
         report_path = Path(__file__).parent.parent / f"gdal-ogr-results{suffix}.json"
-        _evidence.write_report(report_path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    _evidence.write_report(report_path)
 
 
 # ============================================================================

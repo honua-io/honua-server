@@ -91,6 +91,8 @@ services:
       dockerfile: docker/client-compat/gdal/Dockerfile
     environment:
       HONUA_BASE_URL: http://honua:5000
+      HONUA_GDAL_SERVICE_ID: test_service
+      HONUA_GDAL_COLLECTION_ID: "0"
     depends_on:
       honua:
         condition: service_healthy
@@ -98,6 +100,11 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:ro
+      # The lane runner invokes scripts/client-compat/convert-gdal-results.py
+      # to project gdal-ogr-results.json into per-protocol .cert.json
+      # envelopes. Mounting only the client-compat helpers (not the whole
+      # scripts/ tree) keeps the surface area tight.
+      - ../../scripts/client-compat:/workspace/scripts/client-compat:ro
       - ./output/gdal:/output
 
   pyqgis:

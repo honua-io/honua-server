@@ -89,7 +89,9 @@ A one-shot `seed` service (built from `docker/client-compat/seed/`) runs
 between `postgres` becoming healthy and `honua` starting. It applies:
 
 - `tests/seed/client-compat-v1.sql` — schema + `test_service` (layer `0`)
-  used by the `pyqgis` lane
+  used by the `pyqgis` and `gdal` lanes (the gdal lane points at the same
+  `(test_service, 0)` pair via `HONUA_GDAL_SERVICE_ID` /
+  `HONUA_GDAL_COLLECTION_ID`)
 - `tests/seed/browser-compat.yaml`  — `browser_compat` service (layers
   `2000`-`2002`) used by the `cesium`, `openlayers`, and `arcgis-stub` lanes
 

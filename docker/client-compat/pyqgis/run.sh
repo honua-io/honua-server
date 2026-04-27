@@ -18,10 +18,14 @@ done
 
 mkdir -p /output
 
+# tests/python/pyqgis/conftest.py honors HONUA_PYQGIS_OUTPUT_DIR and writes
+# .cert.json envelopes there directly, so the lane never needs to write into
+# the read-only tests/ bind mount.
 export HONUA_PYQGIS_BASE_URL="${HONUA_BASE_URL}"
 export HONUA_PYQGIS_SERVICE_ID
 export HONUA_PYQGIS_COLLECTION_ID
 export HONUA_PYQGIS_REQUIRE_WFS=1
+export HONUA_PYQGIS_OUTPUT_DIR=/output
 export QT_QPA_PLATFORM=offscreen
 
 xvfb-run -a pytest tests/python/pyqgis \
@@ -29,10 +33,5 @@ xvfb-run -a pytest tests/python/pyqgis \
     --tb=short \
     -v \
     || true
-
-shopt -s nullglob
-for f in tests/TestResults/*-desktop-qgis-*.cert.json; do
-    cp "$f" /output/
-done
 
 echo "PyQGIS lane complete; output written to /output."
