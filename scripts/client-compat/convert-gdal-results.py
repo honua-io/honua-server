@@ -12,12 +12,23 @@ Mapping rules:
 
 Category → CERT-* mapping is many-to-one because the GDAL test suite emits
 fine-grained category labels (e.g. ``feature_read``, ``attribute_query``,
-``spatial_query``, ``export_geojson``, ``export_gpkg``, ``export_csv``)
-rather than the coarse ``read``/``query``/``export`` buckets. When several
-categories roll up into one CERT-* ID their statuses are aggregated with
-``fail > pass > skip > not-applicable`` so a single failing sub-category
-cannot be hidden behind passing siblings, and a single passing sub-category
-cannot upgrade an otherwise-failing roll-up.
+``spatial_query``) rather than the coarse ``read``/``query`` buckets. When
+several categories roll up into one CERT-* ID their statuses are aggregated
+with ``fail > pass > skip > not-applicable`` so a single failing
+sub-category cannot be hidden behind passing siblings, and a single passing
+sub-category cannot upgrade an otherwise-failing roll-up.
+
+CLI / SDK lane scope: per
+``docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md`` (line 99) the CLI lane
+covers "All CERT-* except CERT-RNDR". The GDAL ``export_*`` categories
+(``export_geojson`` / ``export_gpkg`` / ``export_csv`` / ``export``)
+exercise ogr2ogr serialization paths that the matrix does not certify as
+CERT-RNDR-* evidence for this lane, so they are intentionally **unmapped**
+here — their pass/fail status is preserved in the raw
+``gdal-ogr-results.json`` for human inspection but does not feed any
+common-core CERT-* result. CERT-RNDR-01 / CERT-RNDR-02 (and the visual /
+style slice IDs) therefore appear in the GDAL envelope as
+``not-applicable``.
 
 Categories not exercised in the input are seeded as ``not-applicable``;
 known-applicable IDs the suite does not exercise are seeded as ``skip`` so
@@ -37,14 +48,18 @@ PROTOCOL_MAP = {"oapif": "ogc-features", "wfs": "wfs"}
 # Maps the category labels emitted by tests/python/gdal_ogr/test_*.py (via
 # ``evidence_collector.record(..., category, ...)``) onto the common-core
 # CERT-* IDs. Many-to-one is intentional — see module docstring for the
-# aggregation rule. The legacy short labels (``read`` / ``query`` /
-# ``export``) are kept as aliases so any historical or hand-curated GDAL
-# report still maps cleanly.
+# aggregation rule. The legacy short labels (``read`` / ``query``) are
+# kept as aliases so any historical or hand-curated GDAL report still maps
+# cleanly. ``schema_introspection`` maps onto CERT-SCHM-01 because the
+# matrix defines that as the schema-coverage ID (DISC-01 is for service /
+# collection discovery, not field/property schema).
 CATEGORY_MAP = {
     # Discovery family (test_*_discovery.py)
     "discovery": "CERT-DISC-01",
-    "schema_introspection": "CERT-DISC-01",
     "feature_count": "CERT-DISC-01",
+    # Schema family — CERT-SCHM-01 ("retrieve field/property schema") in
+    # the matrix; recorded by test_*_discovery.py:test_schema_introspection.
+    "schema_introspection": "CERT-SCHM-01",
     # Read family (test_*_read.py)
     "feature_read": "CERT-CONN-01",
     "read": "CERT-CONN-01",
@@ -52,12 +67,24 @@ CATEGORY_MAP = {
     "attribute_query": "CERT-QFLT-01",
     "spatial_query": "CERT-QFLT-01",
     "query": "CERT-QFLT-01",
-    # Export family (test_*_export.py)
-    "export_geojson": "CERT-RNDR-01",
-    "export_gpkg": "CERT-RNDR-01",
-    "export_csv": "CERT-RNDR-01",
-    "export": "CERT-RNDR-01",
+    # Export family is intentionally **unmapped** — see _UNMAPPED_CATEGORIES
+    # below and the module docstring. The CLI / SDK lane row in the matrix
+    # excludes CERT-RNDR for this lane, so a passing ogr2ogr export must not
+    # certify CERT-RNDR-01 in the cert envelope.
 }
+
+# Categories the converter recognises but deliberately does not feed into
+# the common-core results. They appear in the raw ``gdal-ogr-results.json``
+# (preserved for human inspection) but not in the cert envelope, so the
+# baseline cannot certify a CERT-* ID outside the matrix contract. Listing
+# them here suppresses the unknown-category ::warning:: that would
+# otherwise fire on every GDAL run.
+_UNMAPPED_CATEGORIES: frozenset[str] = frozenset({
+    "export_geojson",
+    "export_gpkg",
+    "export_csv",
+    "export",  # legacy alias
+})
 
 # Higher number wins when several categories roll up to one CERT-* ID.
 # Mirrors the aggregation rule the conftest already applies per-category
@@ -122,6 +149,11 @@ def build_envelope(
     for category, status in categories.items():
         cid = CATEGORY_MAP.get(category)
         if cid is None:
+            if category in _UNMAPPED_CATEGORIES:
+                # Intentionally outside the cert envelope — see module
+                # docstring + _UNMAPPED_CATEGORIES. Evidence is preserved in
+                # the raw gdal-ogr-results.json.
+                continue
             print(
                 f"::warning::Unknown GDAL category '{category}' (status={status}); "
                 "add it to CATEGORY_MAP in convert-gdal-results.py.",

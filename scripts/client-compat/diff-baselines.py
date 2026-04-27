@@ -261,6 +261,8 @@ def write_gap_report(
             )
         lines.append("")
 
+    unbaselined_missing: list[tuple[str, str]] = []
+    unbaselined_no_baseline: list[tuple[str, str]] = []
     if expected_pairs:
         present_pairs = set(baselines.keys()) | set(current.keys())
         unbaselined_missing = [
@@ -299,7 +301,12 @@ def write_gap_report(
                 lines.append(f"| {lane} | {protocol} | {has_current} |")
             lines.append("")
 
-    if not any(by_classification.get(k) for k, _ in SECTION_ORDER):
+    # The "No deviations" success section must only appear when *no* gate
+    # failure section was emitted — including the expected-pair gates above,
+    # which are independent of the by_classification diff sections.
+    has_classification_findings = any(by_classification.get(k) for k, _ in SECTION_ORDER)
+    has_expected_pair_findings = bool(unbaselined_missing or unbaselined_no_baseline)
+    if not (has_classification_findings or has_expected_pair_findings):
         lines.append("## No deviations from baseline")
         lines.append("")
         lines.append("All current `.cert.json` envelopes match the committed baseline. ✅")
