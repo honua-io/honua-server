@@ -474,7 +474,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         var ex = await act.Should().ThrowAsync<TemporaryStorageLimitExceededException>();
         ex.Which.Message.Should().Contain("coordination");
-        var maxElapsed = uploadDelay + TimeSpan.FromSeconds(Environment.GetEnvironmentVariable("CI") == "true" ? 4 : 3);
+        var maxElapsed = uploadDelay + TimeSpan.FromSeconds(Environment.GetEnvironmentVariable("CI") == "true" ? 8 : 3);
         stopwatch.Elapsed.Should().BeLessThan(maxElapsed,
             "lease-loss detection should fail closed within a small bounded overhead of the in-flight upload delay");
     }

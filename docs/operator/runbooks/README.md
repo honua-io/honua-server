@@ -10,6 +10,14 @@ Stabilize first, diagnose second, document after. Prefer safe, reversible change
 
 ---
 
+## Licensing Runbooks
+
+- [License Migration](LICENSE_MIGRATION.md) — move from any pre-existing license format to the unified Ed25519 / JWS envelope (ADR-0033) without forced re-issuance
+- [License Key Rotation](LICENSE_KEY_ROTATION.md) — additive Ed25519 signing key rotation, including the smoke test required by the acceptance criteria
+- [Marketplace Operations](MARKETPLACE_OPERATIONS.md) — AWS and Azure marketplace adapter health: webhook 10s SLA, metering reconciliation, lifecycle failures
+
+---
+
 ## Honua Diagnostic Endpoints
 
 Use these during any incident:
