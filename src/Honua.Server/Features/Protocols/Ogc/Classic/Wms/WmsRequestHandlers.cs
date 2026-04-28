@@ -35,7 +35,9 @@ internal static class WmsRequestHandlers
     private const string Wms13Version = "1.3.0";
     private const string Wms111Version = "1.1.1";
     private const string WmsCapabilitiesMimeType = "text/xml";
+    private const string Wms111CapabilitiesMimeType = "application/vnd.ogc.wms_xml";
     private const string WmsXmlExceptionMimeType = "text/xml";
+    private const string WmsSeXmlExceptionMimeType = "application/vnd.ogc.se_xml";
     private const string WmsExceptionSchemaLocation = "http://www.opengis.net/ogc http://schemas.opengis.net/wms/1.3.0/exceptions_1_3_0.xsd";
     private const string WmsCapabilitiesSchemaLocation = "http://www.opengis.net/wms http://schemas.opengis.net/wms/1.3.0/capabilities_1_3_0.xsd";
     private const string Wms111CapabilitiesDtd = "http://schemas.opengis.net/wms/1.1.1/WMS_MS_Capabilities.dtd";
@@ -85,6 +87,8 @@ internal static class WmsRequestHandlers
         (350, 20),
         (345, 45)
     ];
+    private static readonly string[] _wms13CapabilitiesMediaTypes = [WmsCapabilitiesMimeType];
+    private static readonly string[] _wms111CapabilitiesMediaTypes = [Wms111CapabilitiesMimeType, WmsCapabilitiesMimeType];
 
     /// <summary>
     /// Handle OGC WMS requests (GetCapabilities, GetMap, GetFeatureInfo).
@@ -166,18 +170,18 @@ internal static class WmsRequestHandlers
                         $"Unsupported WMS VERSION '{version}'. Supported versions are 1.3.0 and 1.1.1.");
                 }
 
+                var capabilitiesVersion = string.IsNullOrWhiteSpace(version) ? Wms13Version : version.Trim();
                 if (!XmlContentNegotiation.IsXmlAccepted(
                         context.Request.Headers.Accept.ToString(),
-                        [WmsCapabilitiesMimeType]))
+                        GetWmsCapabilitiesMediaTypes(capabilitiesVersion)))
                 {
                     return Results.StatusCode(StatusCodes.Status406NotAcceptable);
                 }
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-                var capabilitiesVersion = string.IsNullOrWhiteSpace(version) ? Wms13Version : version.Trim();
                 var xml = await BuildWmsCapabilities(context, svcDef, serviceId, baseUrl, capabilitiesVersion).ConfigureAwait(false);
-                return Results.Content(xml, WmsCapabilitiesMimeType, Encoding.UTF8, StatusCodes.Status200OK);
+                return Results.Content(xml, GetWmsCapabilitiesMimeType(capabilitiesVersion), Encoding.UTF8, StatusCodes.Status200OK);
             }
 
             if (string.Equals(requestType, "GetMap", StringComparison.OrdinalIgnoreCase))
@@ -1005,13 +1009,20 @@ internal static class WmsRequestHandlers
 
         return string.Equals(exceptionsValue, "XML", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(exceptionsValue, "text/xml", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(exceptionsValue, "application/vnd.ogc.se_xml", StringComparison.OrdinalIgnoreCase);
+               string.Equals(exceptionsValue, WmsSeXmlExceptionMimeType, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string GetWmsExceptionMimeType(string? exceptionsValue)
+    private static string[] GetWmsCapabilitiesMediaTypes(string version)
+        => IsWms111Version(version) ? _wms111CapabilitiesMediaTypes : _wms13CapabilitiesMediaTypes;
+
+    private static string GetWmsCapabilitiesMimeType(string version)
+        => IsWms111Version(version) ? Wms111CapabilitiesMimeType : WmsCapabilitiesMimeType;
+
+    private static string GetWmsExceptionMimeType(string? exceptionsValue, string? version)
     {
-        return string.Equals(exceptionsValue, "application/vnd.ogc.se_xml", StringComparison.OrdinalIgnoreCase)
-            ? "application/vnd.ogc.se_xml"
+        return string.Equals(exceptionsValue, WmsSeXmlExceptionMimeType, StringComparison.OrdinalIgnoreCase) ||
+               (string.IsNullOrWhiteSpace(exceptionsValue) && IsWms111Version(version))
+            ? WmsSeXmlExceptionMimeType
             : WmsXmlExceptionMimeType;
     }
 
@@ -1243,7 +1254,7 @@ internal static class WmsRequestHandlers
 
         var version = context is null ? Wms13Version : GetQueryValue(context.Request.Query, "VERSION");
         var xml = BuildWmsServiceExceptionReport(code, message, version);
-        var contentType = GetWmsExceptionMimeType(context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS"));
+        var contentType = GetWmsExceptionMimeType(context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS"), version);
         return Results.Content(xml, contentType, Encoding.UTF8, statusCode);
     }
 
@@ -2136,7 +2147,9 @@ internal static class WmsRequestHandlers
         sb.AppendLine("    <Request>");
 
         sb.AppendLine("      <GetCapabilities>");
-        sb.AppendLine("        <Format>text/xml</Format>");
+        sb.Append("        <Format>")
+            .Append(isWms111 ? Wms111CapabilitiesMimeType : WmsCapabilitiesMimeType)
+            .AppendLine("</Format>");
         sb.AppendLine("        <DCPType>");
         sb.AppendLine("          <HTTP>");
         sb.AppendLine("            <Get>");
@@ -2174,7 +2187,9 @@ internal static class WmsRequestHandlers
         sb.AppendLine("    <Exception>");
         if (isWms111)
         {
-            sb.AppendLine("      <Format>application/vnd.ogc.se_xml</Format>");
+            sb.Append("      <Format>")
+                .Append(WmsSeXmlExceptionMimeType)
+                .AppendLine("</Format>");
         }
         else
         {

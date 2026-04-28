@@ -110,9 +110,10 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.wms_xml");
         content.Should().Contain("<WMT_MS_Capabilities");
         content.Should().Contain("version=\"1.1.1\"");
+        content.Should().Contain("<Format>application/vnd.ogc.wms_xml</Format>");
         content.Should().Contain("<SRS>EPSG:4326</SRS>");
         content.Should().Contain("<LatLonBoundingBox");
         content.Should().Contain("<BoundingBox SRS=\"EPSG:4326\" minx=\"-180.000000\" miny=\"-90.000000\" maxx=\"180.000000\" maxy=\"90.000000\"");
@@ -309,6 +310,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.se_xml");
         content.Should().Contain("<ServiceExceptionReport version=\"1.1.1\">");
         content.Should().NotContain("xmlns=\"http://www.opengis.net/ogc\"");
     }
@@ -530,7 +532,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.se_xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidPoint");
         content.Should().Contain("X/Y must be within the request image dimensions.");
