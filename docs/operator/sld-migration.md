@@ -43,13 +43,26 @@ Successful (200) response shape:
 }
 ```
 
-When error-severity diagnostics block import, the API returns 422 with a `{ "success": false, "message": "SLD import failed; see diagnostics." }` envelope. No partial stylesheet is stored, and the diagnostic count is recorded in the server log via the `SldImportRejected` structured log entry. Surfacing the diagnostic array directly in the 422 body is tracked as a follow-up; for now, callers that need the per-rule reason should retry with verbose logging or capture the conversion log.
+When error-severity diagnostics block import, the API returns 422 with a structured failure envelope:
 
-Malformed or unsafe XML returns 400 with a generic problem detail; raw exception messages are never echoed. Payloads larger than the 1 MiB cap return 413 before parsing.
+```json
+{
+  "success": false,
+  "message": "SLD import failed; see diagnostics.",
+  "data": {
+    "detectedVersion": "Sld10",
+    "diagnostics": [
+      { "severity": "Error", "construct": "MapLibreLayers", "message": "SLD document contained no convertible symbolizers." }
+    ]
+  }
+}
+```
+
+No partial stylesheet is stored. The diagnostic count is also recorded in the server log via the `SldImportRejected` structured log entry. Malformed or unsafe XML returns 400 with a generic problem detail; raw exception messages are never echoed. Payloads larger than the 1 MiB cap return 413 before parsing.
 
 ### Export response
 
-A 200 response is `application/xml` containing a complete SLD 1.0 document. The `X-Sld-Diagnostic-Count` header reports the number of diagnostics emitted while exporting; the `X-Sld-Diagnostics` header carries the JSON-encoded diagnostic array when the count is non-zero. If the stored MapLibre style cannot be exported (no convertible layers, deserialization failure), the endpoint returns 422 with the `{ "success": false, "message": "..." }` envelope.
+A 200 response is `application/xml` containing a complete SLD 1.0 document. The `X-Sld-Diagnostic-Count` header reports the number of diagnostics emitted while exporting; the `X-Sld-Diagnostics` header carries the JSON-encoded diagnostic array when the count is non-zero. If the stored MapLibre style cannot be exported (no convertible layers, deserialization failure, or all layers produced error diagnostics), the endpoint returns 422 with the same failure envelope as the import path — `success: false` plus a `data.diagnostics` array describing why the export was refused.
 
 ## Supported subset
 

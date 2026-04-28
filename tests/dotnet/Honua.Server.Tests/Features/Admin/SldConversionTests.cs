@@ -130,6 +130,64 @@ public sealed class SldConversionTests
     }
 
     [UnitTest]
+    public void Parse_RuleLevelVendorOption_EmitsWarningDiagnostic()
+    {
+        // Rule-level VendorOption (e.g. GeoServer's labelObstacle) must surface as a
+        // diagnostic, not be silently dropped — the operator doc promises no construct
+        // is dropped quietly.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld""
+    xmlns:ogc=""http://www.opengis.net/ogc"">
+  <NamedLayer><Name>labels</Name><UserStyle><FeatureTypeStyle><Rule>
+    <Name>label-rule</Name>
+    <VendorOption name=""labelObstacle"">true</VendorOption>
+    <PolygonSymbolizer><Fill><CssParameter name=""fill"">#abcdef</CssParameter></Fill></PolygonSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        conversion.Diagnostics.Should().Contain(d =>
+            d.Construct == "VendorOption"
+            && d.Message.Contains("labelObstacle")
+            && d.Message.StartsWith("Rule VendorOption")
+            && d.RuleName == "label-rule");
+    }
+
+    [UnitTest]
+    public void Parse_TextSymbolizerVendorOption_EmitsWarningDiagnostic()
+    {
+        // GeoServer commonly attaches partials/autoWrap/repeat options at the
+        // TextSymbolizer level; they must surface as diagnostics.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld""
+    xmlns:ogc=""http://www.opengis.net/ogc"">
+  <NamedLayer><Name>labels</Name><UserStyle><FeatureTypeStyle><Rule>
+    <Name>place-labels</Name>
+    <TextSymbolizer>
+      <Label><ogc:PropertyName>name</ogc:PropertyName></Label>
+      <Fill><CssParameter name=""fill"">#000000</CssParameter></Fill>
+      <VendorOption name=""autoWrap"">120</VendorOption>
+      <VendorOption name=""partials"">true</VendorOption>
+    </TextSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        conversion.Diagnostics.Should().Contain(d =>
+            d.Construct == "VendorOption"
+            && d.Message.Contains("autoWrap")
+            && d.Message.StartsWith("TextSymbolizer VendorOption"));
+        conversion.Diagnostics.Should().Contain(d =>
+            d.Construct == "VendorOption"
+            && d.Message.Contains("partials")
+            && d.Message.StartsWith("TextSymbolizer VendorOption"));
+    }
+
+    [UnitTest]
     public void Parse_PolygonStrokeWithoutWidth_DefaultsToOnePixel()
     {
         // SLD/SE default stroke-width is 1.0 when the CssParameter is omitted; the previous

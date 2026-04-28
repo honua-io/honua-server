@@ -214,6 +214,12 @@ internal static class SldParser
                         "ElseFilter has no portable MapLibre equivalent; rule will render unfiltered.",
                         name));
                     break;
+                case "VendorOption":
+                    diagnostics.Add(Warn(
+                        "VendorOption",
+                        $"Rule VendorOption '{child.Attribute("name")?.Value}' is not portable to MapLibre and was ignored.",
+                        name));
+                    break;
                 case "MinScaleDenominator":
                     minScale = ParseDouble(child.Value);
                     break;
@@ -253,6 +259,8 @@ internal static class SldParser
         SldExternalGraphic? externalGraphic = null;
         double? size = null;
         double? opacity = null;
+
+        EmitSymbolizerVendorOptionDiagnostics(element, diagnostics, ruleName, "PointSymbolizer");
 
         var graphic = ChildLocal(element, "Graphic");
         if (graphic != null)
@@ -333,6 +341,8 @@ internal static class SldParser
         List<SldConversionDiagnostic> diagnostics,
         string? ruleName)
     {
+        EmitSymbolizerVendorOptionDiagnostics(element, diagnostics, ruleName, "LineSymbolizer");
+
         var stroke = ParseStroke(ChildLocal(element, "Stroke")) ?? new SldStroke(null, null, null, null, null, null);
         if (ChildLocal(element, "PerpendicularOffset") != null)
         {
@@ -350,6 +360,8 @@ internal static class SldParser
         List<SldConversionDiagnostic> diagnostics,
         string? ruleName)
     {
+        EmitSymbolizerVendorOptionDiagnostics(element, diagnostics, ruleName, "PolygonSymbolizer");
+
         var fill = ParseFill(ChildLocal(element, "Fill"));
         var stroke = ParseStroke(ChildLocal(element, "Stroke"));
         if (ChildLocal(element, "Displacement") != null)
@@ -368,6 +380,8 @@ internal static class SldParser
         List<SldConversionDiagnostic> diagnostics,
         string? ruleName)
     {
+        EmitSymbolizerVendorOptionDiagnostics(element, diagnostics, ruleName, "TextSymbolizer");
+
         var label = ParseLabelExpression(ChildLocal(element, "Label"), diagnostics, ruleName);
         var font = ParseFont(ChildLocal(element, "Font"));
         var fill = ParseFill(ChildLocal(element, "Fill"));
@@ -607,6 +621,28 @@ internal static class SldParser
         Message = message,
         RuleName = ruleName
     };
+
+    private static void EmitSymbolizerVendorOptionDiagnostics(
+        XElement element,
+        List<SldConversionDiagnostic> diagnostics,
+        string? ruleName,
+        string scope)
+    {
+        // GeoServer attaches vendor options at the symbolizer level (e.g. labelObstacle,
+        // graphic-margin, partials, autoWrap, repeat). They have no portable MapLibre
+        // equivalent; record a diagnostic per occurrence so callers see exactly what
+        // would have been ignored.
+        foreach (var child in element.Elements())
+        {
+            if (child.Name.LocalName == "VendorOption")
+            {
+                diagnostics.Add(Warn(
+                    "VendorOption",
+                    $"{scope} VendorOption '{child.Attribute("name")?.Value}' is not portable to MapLibre and was ignored.",
+                    ruleName));
+            }
+        }
+    }
 }
 
 internal static class SldNamespaces
