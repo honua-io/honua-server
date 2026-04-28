@@ -38,8 +38,8 @@ Request scope options:
 - Jobs are tracked via the unified operations progress store as `OperationType.TileCache` (`OperationType.PMTilesArchive` for `archive` jobs, `OperationType.PMTilesPublish` for `publish` jobs).
 - `seed`/`warm` currently target MVT generation through the standard tile provider.
 - `invalidate`/`purge` use output cache invalidation scopes (layer/service/global metadata).
-- `archive` generates a PMTiles v3 archive from tile outputs and uploads it to cloud storage as a temporary admin download (24h TTL).
-- `publish` generates a durable PMTiles artifact at a deterministic key with no TTL and returns a provider-agnostic descriptor for browser MapLibre/PMTiles consumption. See [PMTiles Publishing](pmtiles-publishing.md).
+- `archive` generates a PMTiles v3 archive from tile outputs and uploads it to cloud storage as a temporary admin download (24h TTL). Partial generation failures still produce a downloadable archive (random per-job key, 24h TTL).
+- `publish` generates a durable PMTiles artifact at a deterministic key with no TTL and returns a provider-agnostic descriptor for browser MapLibre/PMTiles consumption. Unlike `archive`, `publish` aborts before upload if any tiles fail to generate (`Publish aborted before upload: N tiles failed during generation.`), so a previously good artifact at the deterministic key is never overwritten with bytes that miss the failed tiles. See [PMTiles Publishing](pmtiles-publishing.md).
 - Retry creates a new job ID while preserving the original request parameters.
 
 ## Metrics
