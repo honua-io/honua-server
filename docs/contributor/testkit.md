@@ -223,11 +223,14 @@ enabled, and expose either a WMTS layer or one known non-empty MapServer tile.
 
 The probe endpoint (`GET /__test/cross-server-consume/proxy?url=<sourceUrl>`)
 is mounted only when `ASPNETCORE_ENVIRONMENT=Test`. It accepts loopback
-`http`/`https` URLs without embedded credentials, or explicitly configured
-licensed ArcGIS Server URLs that match the ArcGIS consume environment
-variables. It forwards the request and maps upstream failures to
-`502 Bad Gateway`; requests exceeding the two-minute timeout return
-`504 Gateway Timeout`. Invalid URLs return `400 Bad Request`.
+`http`/`https` URLs, or explicitly configured licensed ArcGIS Server URLs
+that match the ArcGIS consume environment variables. URLs that embed
+userinfo credentials, or that include `token`, `access_token`, `apikey`,
+or `api_key` query parameters, are rejected with `400 Bad Request`; supply
+ArcGIS tokens via `HONUA_TEST_ARCGIS_TOKEN` or `HONUA_TEST_ARCGIS_AUTHORIZATION`
+instead. The endpoint forwards accepted requests and maps upstream failures
+to `502 Bad Gateway`; requests exceeding the two-minute timeout return
+`504 Gateway Timeout`. Other invalid URLs return `400 Bad Request`.
 
 The nightly `cross-server-consume-nightly.yml` workflow runs the same
 suite, refreshes [`docs/compatibility/cross-server-consume-gap-report.md`](../compatibility/cross-server-consume-gap-report.md)

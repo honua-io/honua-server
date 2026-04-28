@@ -6,6 +6,9 @@ using Honua.Server.Tests.Features.CrossServerConsume;
 
 namespace Honua.Server.Tests.Features.Import;
 
+/// <summary>
+/// Verifies licensed ArcGIS Server consume configuration gating and defaults.
+/// </summary>
 public sealed class ArcGisServerConsumeConfigurationTests
 {
     [Fact]

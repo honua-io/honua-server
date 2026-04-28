@@ -9,6 +9,9 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Import;
 
+/// <summary>
+/// Verifies the test-only cross-server consume proxy rejects unsafe source URLs.
+/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Consume)]
 public sealed class ConsumeProbeEndpointTests : IAsyncLifetime
