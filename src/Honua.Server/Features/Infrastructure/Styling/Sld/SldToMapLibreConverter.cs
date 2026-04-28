@@ -140,10 +140,13 @@ internal static class SldToMapLibreConverter
         var radius = point.Size.HasValue ? point.Size.Value / 2d : 5d;
         circlePaint["circle-radius"] = new MapLibreExpression(radius);
 
+        // Color and opacity are emitted as separate paint properties (matching the
+        // polygon-fill convention). Baking the opacity into rgba() would double-apply
+        // it once MapLibre multiplies *-color alpha by *-opacity.
         var fillColor = point.Mark?.Fill?.Color;
         if (!string.IsNullOrEmpty(fillColor))
         {
-            circlePaint["circle-color"] = new MapLibreExpression(NormalizeColor(fillColor, point.Mark?.Fill?.Opacity));
+            circlePaint["circle-color"] = new MapLibreExpression(NormalizeColor(fillColor, null));
         }
 
         if (point.Mark?.Fill?.Opacity is { } fillOpacity)
@@ -155,6 +158,8 @@ internal static class SldToMapLibreConverter
             circlePaint["circle-opacity"] = new MapLibreExpression(graphicOpacity);
         }
 
+        // MapLibre does not expose a circle-stroke-opacity, so stroke alpha must
+        // ride inside the color (rgba) when SLD specifies a stroke-opacity.
         var strokeColor = point.Mark?.Stroke?.Color;
         if (!string.IsNullOrEmpty(strokeColor))
         {
@@ -197,7 +202,9 @@ internal static class SldToMapLibreConverter
         var paint = new Dictionary<string, MapLibreExpression>();
         if (!string.IsNullOrEmpty(line.Stroke.Color))
         {
-            paint["line-color"] = new MapLibreExpression(NormalizeColor(line.Stroke.Color, line.Stroke.Opacity));
+            // Pass null for opacity: line-opacity is set as a separate paint
+            // property below, so baking opacity into rgba() would double-apply.
+            paint["line-color"] = new MapLibreExpression(NormalizeColor(line.Stroke.Color, null));
         }
 
         if (line.Stroke.Width.HasValue)
@@ -291,7 +298,9 @@ internal static class SldToMapLibreConverter
 
             if (!string.IsNullOrEmpty(stroke.Color))
             {
-                linePaint["line-color"] = new MapLibreExpression(NormalizeColor(stroke.Color, stroke.Opacity));
+                // Pass null for opacity: line-opacity is set as a separate paint
+                // property below, so baking opacity into rgba() would double-apply.
+                linePaint["line-color"] = new MapLibreExpression(NormalizeColor(stroke.Color, null));
             }
 
             if (stroke.Opacity.HasValue)

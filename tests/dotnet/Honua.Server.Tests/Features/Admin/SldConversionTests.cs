@@ -35,7 +35,10 @@ public sealed class SldConversionTests
         var layer = conversion.Layers[0];
         layer.Type.Should().Be("circle");
         layer.Id.Should().Be("simple-point-0");
-        layer.Paint!["circle-color"].StringValue.Should().StartWith("rgba(255,127,0");
+        // SLD fill is a plain 7-char hex; opacity rides on circle-opacity so MapLibre
+        // does not multiply the alpha twice once *-color and *-opacity are combined.
+        layer.Paint!["circle-color"].StringValue.Should().Be("#ff7f00");
+        layer.Paint["circle-opacity"].NumberValue.Should().Be(0.8d);
         layer.Paint["circle-stroke-color"].StringValue.Should().Be("#1f2937");
         layer.Paint["circle-radius"].NumberValue.Should().Be(5d);
     }
@@ -48,7 +51,10 @@ public sealed class SldConversionTests
         conversion.HasErrors.Should().BeFalse();
         var layer = conversion.Layers.Single();
         layer.Type.Should().Be("line");
-        layer.Paint!["line-color"].StringValue.Should().StartWith("rgba(0,68,204");
+        // SLD stroke is a plain 7-char hex; stroke-opacity rides on line-opacity so
+        // MapLibre does not multiply the alpha twice when combining color and opacity.
+        layer.Paint!["line-color"].StringValue.Should().Be("#0044cc");
+        layer.Paint["line-opacity"].NumberValue.Should().Be(0.85d);
         layer.Paint["line-width"].NumberValue.Should().Be(3d);
         layer.Paint["line-dasharray"].Items.Should().NotBeNull();
         layer.Paint["line-dasharray"].Items![0].NumberValue.Should().Be(5d);
@@ -185,6 +191,72 @@ public sealed class SldConversionTests
             d.Construct == "VendorOption"
             && d.Message.Contains("partials")
             && d.Message.StartsWith("TextSymbolizer VendorOption"));
+    }
+
+    [UnitTest]
+    public void Parse_HexColorWithOpacity_DoesNotDoubleApplyAlpha()
+    {
+        // Regression: previously the converter baked SLD opacity into rgba() on the
+        // *-color paint property AND set *-opacity, so MapLibre multiplied the alpha
+        // twice (e.g. fill-opacity 0.5 with #ff0000 rendered at 0.25 alpha). Color
+        // and opacity must be independent paint properties for hex inputs.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>alpha-trio</Name><UserStyle><FeatureTypeStyle>
+    <Rule>
+      <PointSymbolizer>
+        <Graphic>
+          <Mark>
+            <WellKnownName>circle</WellKnownName>
+            <Fill>
+              <CssParameter name=""fill"">#ff0000</CssParameter>
+              <CssParameter name=""fill-opacity"">0.5</CssParameter>
+            </Fill>
+          </Mark>
+          <Size>8</Size>
+        </Graphic>
+      </PointSymbolizer>
+    </Rule>
+    <Rule>
+      <LineSymbolizer>
+        <Stroke>
+          <CssParameter name=""stroke"">#00ff00</CssParameter>
+          <CssParameter name=""stroke-opacity"">0.4</CssParameter>
+        </Stroke>
+      </LineSymbolizer>
+    </Rule>
+    <Rule>
+      <PolygonSymbolizer>
+        <Stroke>
+          <CssParameter name=""stroke"">#0000ff</CssParameter>
+          <CssParameter name=""stroke-opacity"">0.3</CssParameter>
+          <CssParameter name=""stroke-width"">2</CssParameter>
+        </Stroke>
+      </PolygonSymbolizer>
+    </Rule>
+  </FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+
+        var circle = conversion.Layers.Single(l => l.Type == "circle");
+        circle.Paint!["circle-color"].StringValue.Should().Be("#ff0000",
+            "hex color must round-trip without opacity baked into rgba()");
+        circle.Paint["circle-opacity"].NumberValue.Should().Be(0.5d);
+
+        // The line layer from the LineSymbolizer and the polygon-stroke-only outline
+        // are both `line` layers with no `-outline` suffix (the suffix only applies
+        // when the polygon also has a Fill). Distinguish them by color instead.
+        var lineLayer = conversion.Layers.Single(l => l.Type == "line"
+            && l.Paint != null && l.Paint["line-color"].StringValue == "#00ff00");
+        lineLayer.Paint!["line-opacity"].NumberValue.Should().Be(0.4d);
+
+        var polygonStroke = conversion.Layers.Single(l => l.Type == "line"
+            && l.Paint != null && l.Paint["line-color"].StringValue == "#0000ff");
+        polygonStroke.Paint!["line-opacity"].NumberValue.Should().Be(0.3d);
+        polygonStroke.Paint["line-width"].NumberValue.Should().Be(2d);
     }
 
     [UnitTest]

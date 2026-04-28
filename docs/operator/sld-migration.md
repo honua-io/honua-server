@@ -98,7 +98,7 @@ The converter never silently drops these — each emits a `Warning` diagnostic, 
 
 - CSS named colors and `#RRGGBB` are passed through.
 - `#AARRGGBB` (alpha-prefixed) is normalized to `rgba(R,G,B,A)`.
-- `<Opacity>` and `fill-opacity` / `stroke-opacity` CSS parameters are folded into either a separate `*-opacity` paint property or an `rgba()` value when MapLibre cannot express the property/opacity pair separately.
+- `<Opacity>` and `fill-opacity` / `stroke-opacity` CSS parameters are emitted as a separate `*-opacity` paint property (`circle-opacity`, `line-opacity`, `fill-opacity`) so MapLibre does not multiply the alpha twice. The exception is point/text stroke and halo, where MapLibre has no `*-stroke-opacity` / `*-halo-opacity` paint property and the opacity must ride inside the color via `rgba()`.
 
 ## MapLibre → SLD export limitations
 
