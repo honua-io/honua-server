@@ -14,7 +14,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends clang lld protobuf-compiler zlib1g-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY Honua.sln Directory.Build.props .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/

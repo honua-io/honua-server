@@ -21,6 +21,11 @@ sql:
           description TEXT,
           table_schema TEXT NOT NULL DEFAULT current_schema(),
           table_name TEXT NOT NULL,
+          primary_key_column TEXT NOT NULL DEFAULT 'objectid',
+          geometry_column TEXT DEFAULT 'geometry',
+          storage_srid INT,
+          temporal_column TEXT,
+          storage_options JSONB NOT NULL DEFAULT '{}'::jsonb,
           geometry_type TEXT NOT NULL,
           srid INT NOT NULL DEFAULT 4326,
           extent GEOMETRY(POLYGON, 4326),
@@ -34,6 +39,11 @@ sql:
           style_version INT DEFAULT 1,
           created_at TIMESTAMPTZ DEFAULT NOW()
       );
+  - "ALTER TABLE IF EXISTS honua.layers ADD COLUMN IF NOT EXISTS primary_key_column TEXT NOT NULL DEFAULT 'objectid';"
+  - "ALTER TABLE IF EXISTS honua.layers ADD COLUMN IF NOT EXISTS geometry_column TEXT DEFAULT 'geometry';"
+  - "ALTER TABLE IF EXISTS honua.layers ADD COLUMN IF NOT EXISTS storage_srid INT;"
+  - "ALTER TABLE IF EXISTS honua.layers ADD COLUMN IF NOT EXISTS temporal_column TEXT;"
+  - "ALTER TABLE IF EXISTS honua.layers ADD COLUMN IF NOT EXISTS storage_options JSONB NOT NULL DEFAULT '{}'::jsonb;"
   - |
       CREATE TABLE IF NOT EXISTS honua.service_layers (
           service_name VARCHAR(64) NOT NULL REFERENCES honua.services(service_name) ON DELETE CASCADE,
@@ -195,6 +205,7 @@ sql:
           host VARCHAR(255) NOT NULL,
           port INT NOT NULL DEFAULT 5432,
           database_name VARCHAR(64) NOT NULL,
+          provider_name TEXT NOT NULL DEFAULT 'postgis',
           username VARCHAR(64) NOT NULL,
           ssl_required BOOLEAN NOT NULL DEFAULT TRUE,
           ssl_mode VARCHAR(16) NOT NULL DEFAULT 'require',
@@ -215,6 +226,8 @@ sql:
           CONSTRAINT chk_ssl_mode CHECK (ssl_mode IN ('disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full')),
           CONSTRAINT chk_health_status CHECK (health_status IN ('healthy', 'unhealthy', 'unknown'))
       );
+  - "ALTER TABLE IF EXISTS honua.data_connections ADD COLUMN IF NOT EXISTS provider_name TEXT NOT NULL DEFAULT 'postgis';"
+  - "CREATE INDEX IF NOT EXISTS idx_data_connections_provider_name ON honua.data_connections(provider_name);"
   - |
       CREATE TABLE IF NOT EXISTS honua.encryption_keys (
           key_version INT PRIMARY KEY,

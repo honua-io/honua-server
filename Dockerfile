@@ -27,7 +27,7 @@ RUN groupadd --gid 1001 --system builduser && \
     useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin builduser
 
 # Copy solution and project files first for better layer caching
-COPY Honua.sln Directory.Build.props .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/

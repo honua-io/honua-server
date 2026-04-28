@@ -44,6 +44,23 @@ CREATE TABLE IF NOT EXISTS honua.layers (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Keep the initial migration safe for pre-created metadata tables used by
+-- integration-test seeds and early preview deployments.
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS primary_key_column TEXT NOT NULL DEFAULT 'objectid';
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS geometry_column TEXT DEFAULT 'geometry';
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS storage_srid INT;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS temporal_column TEXT;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS storage_options JSONB NOT NULL DEFAULT '{}'::jsonb;
+
 -- Service layers junction table - maps layers to services with layer index
 CREATE TABLE IF NOT EXISTS honua.service_layers (
     service_name VARCHAR(64) NOT NULL REFERENCES honua.services(service_name) ON DELETE CASCADE,
