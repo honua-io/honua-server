@@ -50,8 +50,8 @@ The workflow stays the same shape. Only two lines change:
 
 1. Install the `honua-gdal` plugin into the GDAL container (or swap to the
    `honua/gdal-driver` image).
-2. Replace `OAPIF:${GDAL_E2E_OAPIF_LANDING}` with `HONUA:${GDAL_E2E_BASE_URL}`
-   in the two `ogrinfo` / `ogr2ogr` invocations.
+2. Replace `OAPIF:${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}` with
+   `HONUA:${GDAL_E2E_BASE_URL}` in the two `ogrinfo` / `ogr2ogr` invocations.
 
 The seed expectations above do not change. New honua-specific assertions
 (`HONUA_TOKEN`, FeatureServer fallback) belong in the driver's own CI inside

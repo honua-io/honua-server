@@ -17,9 +17,10 @@ env:
   GDAL_E2E_COLLECTION_ID: '0'
   GDAL_E2E_SEED_SOURCE: tests/seed/client-compat-v1.sql
   # GDAL_E2E_BASE_URL is the future HONUA: swap target (see ADR-0034 and
-  # tests/seed/README-gdal-driver-e2e.md). GDAL_E2E_OAPIF_LANDING is derived
-  # from it at the job level so the two URLs cannot drift.
+  # tests/seed/README-gdal-driver-e2e.md). Keep the OAPIF path separate because
+  # GitHub Actions does not allow the `env` context inside jobs.<job>.env.
   GDAL_E2E_BASE_URL: http://localhost:5000
+  GDAL_E2E_OAPIF_PATH: /ogc/features
   # Bumping pins the GDAL major.minor used by the workflow. ADR-0034 targets
   # GDAL 3.6+ as the support floor; the osgeo/gdal:ubuntu-small tag pulls a
   # current LTS image that satisfies that floor.
@@ -37,8 +38,6 @@ jobs:
     name: GDAL OAPIF Read + GeoPackage Round-Trip
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-    env:
-      GDAL_E2E_OAPIF_LANDING: ${{ env.GDAL_E2E_BASE_URL }}/ogc/features
 
     services:
       postgres:
@@ -72,9 +71,9 @@ jobs:
       - name: Verify honua-server reachable from host
         run: |
           set -euo pipefail
-          curl -fsS "$GDAL_E2E_OAPIF_LANDING" -o /tmp/landing.json
+          curl -fsS "${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}" -o /tmp/landing.json
           jq -e '.links | length > 0' /tmp/landing.json >/dev/null
-          curl -fsS "$GDAL_E2E_OAPIF_LANDING/conformance" -o /tmp/conformance.json
+          curl -fsS "${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}/conformance" -o /tmp/conformance.json
           jq -e '.conformsTo | length > 0' /tmp/conformance.json >/dev/null
 
       - name: Acceptance — ogrinfo lists collections
@@ -85,7 +84,7 @@ jobs:
           docker run --rm --network=host \
             -v "${PWD}/tests/TestResults/gdal:/out" \
             "$GDAL_IMAGE" \
-            ogrinfo -ro -so "OAPIF:${GDAL_E2E_OAPIF_LANDING}" \
+            ogrinfo -ro -so "OAPIF:${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}" \
             | tee tests/TestResults/gdal/ogrinfo.txt
           # GDAL's ogrinfo prints one layer per line as: `<index>: <name>[ (geom)]`.
           # Match the seeded collection id (`0`) at the layer-name position so we
@@ -103,7 +102,7 @@ jobs:
           # Sum across all paged responses; honua-server defaults to 1000 per
           # page, which already covers the 10-feature seed.
           count=$(curl -fsS \
-            "${GDAL_E2E_OAPIF_LANDING}/collections/${GDAL_E2E_COLLECTION_ID}/items?limit=1000" \
+            "${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}/collections/${GDAL_E2E_COLLECTION_ID}/items?limit=1000" \
             | jq '.numberReturned // (.features | length)')
           echo "Source feature count from OAPIF items endpoint: $count"
           echo "count=$count" >> "$GITHUB_OUTPUT"
@@ -122,7 +121,7 @@ jobs:
             "$GDAL_IMAGE" \
             ogr2ogr \
               -f GPKG /out/out.gpkg \
-              "OAPIF:${GDAL_E2E_OAPIF_LANDING}" \
+              "OAPIF:${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}" \
               "${GDAL_E2E_COLLECTION_ID}"
           if [ ! -s tests/TestResults/gdal/out.gpkg ]; then
             echo "::error::ogr2ogr did not produce a non-empty GeoPackage"
@@ -170,7 +169,7 @@ jobs:
             echo ""
             echo "- Stand-in driver: \`OAPIF:\` (built-in to GDAL ${GDAL_IMAGE##*:})"
             echo "- Reference server: honua-server with seed \`${GDAL_E2E_SEED_SOURCE}\`"
-            echo "- OAPIF landing: \`${GDAL_E2E_OAPIF_LANDING}\`"
+            echo "- OAPIF landing: \`${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}\`"
             echo "- Collection under test: \`${GDAL_E2E_COLLECTION_ID}\`"
             echo "- Source feature count: \`${{ steps.source-count.outputs.count }}\`"
             echo ""
