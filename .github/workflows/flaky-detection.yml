@@ -1,0 +1,178 @@
+name: Flaky Test Detection
+
+on:
+  schedule:
+    # Daily flake hunt: re-run the integration tier three times and report any
+    # test that is not 3-for-3 consistent. See ADR-0037.
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Number of times to re-run the integration tier'
+        required: false
+        default: '3'
+      project:
+        description: 'Test project to scan'
+        required: false
+        default: 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  HONUA_TEST_CONFIGURATION: Release
+
+concurrency:
+  group: flaky-detection-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flake-hunt:
+    name: Integration Tier Flake Hunt
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      ITERATIONS: ${{ github.event.inputs.iterations || '3' }}
+      CSPROJ: ${{ github.event.inputs.project || 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj' }}
+      HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Build target project
+        timeout-minutes: 30
+        run: dotnet build "${CSPROJ}" --no-restore --configuration Release
+
+      - name: Run integration tier ${{ github.event.inputs.iterations || '3' }}× and collect TRX
+        timeout-minutes: 150
+        run: |
+          set -uo pipefail
+          mkdir -p ./tests/TestResults
+          for i in $(seq 1 "${ITERATIONS}"); do
+            echo "::group::flake-hunt iteration ${i}"
+            # Continue past failures so a 1/3 fail still produces TRX for analysis.
+            dotnet test "${CSPROJ}" \
+              --no-build \
+              --no-restore \
+              --configuration Release \
+              --filter "Tier=Integration&Tier!=Slow" \
+              --logger "trx;LogFileName=flake-hunt-${i}.trx" \
+              --logger "console;verbosity=minimal" \
+              --results-directory ./tests/TestResults \
+              || echo "iteration ${i} reported failures (expected during flake hunt)"
+            echo "::endgroup::"
+          done
+
+      - name: Analyze TRX results for inconsistent outcomes
+        id: analyze
+        env:
+          ITERATIONS: ${{ env.ITERATIONS }}
+        run: |
+          python3 - <<'PY'
+          import glob, json, os, sys
+          from collections import defaultdict
+          from xml.etree import ElementTree as ET
+
+          ns = {"vs": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+          totals = defaultdict(lambda: {"pass": 0, "fail": 0, "other": 0, "messages": []})
+
+          trx_files = sorted(glob.glob("tests/TestResults/flake-hunt-*.trx"))
+          if not trx_files:
+              print("::error::no TRX files produced by flake hunt")
+              sys.exit(1)
+          print(f"Analyzing {len(trx_files)} TRX file(s)")
+
+          for trx in trx_files:
+              tree = ET.parse(trx)
+              root = tree.getroot()
+              for unit in root.findall(".//vs:UnitTestResult", ns):
+                  name = unit.get("testName") or "unknown"
+                  outcome = (unit.get("outcome") or "Other").lower()
+                  if outcome == "passed":
+                      totals[name]["pass"] += 1
+                  elif outcome == "failed":
+                      totals[name]["fail"] += 1
+                      msg = unit.find(".//vs:ErrorInfo/vs:Message", ns)
+                      if msg is not None and msg.text:
+                          totals[name]["messages"].append(msg.text.strip().splitlines()[0][:200])
+                  else:
+                      totals[name]["other"] += 1
+
+          iterations = int(os.environ.get("ITERATIONS", "3"))
+          flaky = []
+          for name, c in totals.items():
+              total = c["pass"] + c["fail"] + c["other"]
+              if total < iterations:
+                  continue  # not run in every iteration; skip
+              if c["fail"] > 0 and c["pass"] > 0:
+                  flaky.append({
+                      "name": name,
+                      "pass": c["pass"],
+                      "fail": c["fail"],
+                      "iterations": total,
+                      "sample_message": (c["messages"] or [""])[0],
+                  })
+
+          report = {
+              "iterations_requested": iterations,
+              "trx_files": len(trx_files),
+              "tests_seen": len(totals),
+              "flaky_count": len(flaky),
+              "flaky_candidates": sorted(flaky, key=lambda x: (-x["fail"], x["name"])),
+          }
+          with open("tests/TestResults/flaky-report.json", "w", encoding="utf-8") as fh:
+              json.dump(report, fh, indent=2)
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write(f"# Flaky Test Detection\n\n")
+                  fh.write(f"- Iterations: {iterations}\n")
+                  fh.write(f"- Tests observed: {len(totals)}\n")
+                  fh.write(f"- Flake candidates: {len(flaky)}\n\n")
+                  if flaky:
+                      fh.write("| Test | Pass | Fail | Sample Failure |\n|---|---|---|---|\n")
+                      for f in report["flaky_candidates"]:
+                          msg = f["sample_message"].replace("|", "\\|")
+                          fh.write(f"| `{f['name']}` | {f['pass']} | {f['fail']} | {msg} |\n")
+                  else:
+                      fh.write("No flake candidates detected in this run.\n")
+
+          # Always exit 0 — flake detection should not fail the workflow; it is
+          # a reporting concern. Detection of a candidate is success, not failure.
+          print(f"flaky_count={len(flaky)}")
+          PY
+
+      - name: Upload flake report and TRX artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flaky-detection-report
+          path: |
+            tests/TestResults/flaky-report.json
+            tests/TestResults/flake-hunt-*.trx
+          retention-days: 30

@@ -77,6 +77,7 @@ public sealed class RedisImportJobManagerIntegrationTests
     }
 
     [IntegrationTest]
+    [FlakyTest("In-memory fallback Dequeue with 200ms timeout occasionally returns null under CI load when the Enqueue→Dequeue settle exceeds the wait window. Tracked in #812 quarantine sweep.")]
     public async Task JobQueue_WithoutRedis_UsesInMemoryFallback()
     {
         var queue = new RedisJobQueue(null, NullLogger.Instance, $"test:queue:{Guid.NewGuid():N}");

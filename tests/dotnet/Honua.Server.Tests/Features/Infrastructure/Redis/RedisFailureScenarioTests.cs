@@ -30,6 +30,7 @@ public sealed class RedisFailureScenarioTests : IClassFixture<RedisFixture>
     [IntegrationTest]
     [Operation(Operations.Infrastructure)]
     [Endpoint("POST /infra/redis/queue/dequeue-complete")]
+    [FlakyTest("Redis Enqueue→GetQueueLength visibility race observed under CI load (queue length reads stale 0 instead of 1 immediately after Enqueue). Tracked in #812 quarantine sweep.")]
     public async Task JobQueue_WithLiveRedis_DequeuesAndCompletesJobs()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redisFixture.ConnectionString);

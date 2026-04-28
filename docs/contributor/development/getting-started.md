@@ -68,11 +68,24 @@ Integration tests use [Testcontainers](https://dotnet.testcontainers.org/) and s
 dotnet test
 ```
 
-Run a specific category:
+Run by execution tier (preferred — matches the CI dispatch in [ADR-0037](../adr/0037-unified-ci-test-tier-strategy.md)):
+```bash
+dotnet test --filter "Tier=Fast"          # Unit-style tests, no DB/HTTP
+dotnet test --filter "Tier=Integration"   # Most of the existing suite
+dotnet test --filter "Tier=Slow"          # Scale/External/Emulator/Cloud (env vars required)
+```
+
+Run by legacy category (still supported; `Tier` is additive):
 ```bash
 dotnet test --filter Category=Unit
 dotnet test --filter Category=Integration
 dotnet test tests/dotnet/Honua.Architecture.Tests/
+```
+
+Run only the `server-tests` shards a PR diff would target (mirrors the CI matrix selection):
+```bash
+scripts/ci/honua-server-targeted-tests.sh --base origin/trunk
+# Emits {"run_all": ..., "shards": [...], "reason": "..."} — see ci-shards.json
 ```
 
 ## 5. Development loop

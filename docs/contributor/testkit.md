@@ -275,12 +275,32 @@ await postgres.CreateTestData(schema)
 
 ## Custom Attributes
 
-### Test Categories
+### Test Categories And Tiers
+
+Each attribute emits both a `Category` trait and a `Tier` trait. The tier
+maps to the CI schedule defined in ADR-0037 (`docs/contributor/adr/0037-unified-ci-test-tier-strategy.md`).
+
+| Attribute | Category | Tier | When it runs |
+|-----------|----------|------|--------------|
+| `[UnitTest]` | `Unit` | `Fast` | Every PR (no DB, no HTTP, no Testcontainers). |
+| `[IntegrationTest]` | `Integration` | `Integration` | Targeted shards on PRs; full matrix on merge-to-trunk. PR shard step composes `(matrix.filter)&Tier!=Slow` so a Slow-tagged sibling in the same shard namespace skips. |
+| `[EmulatorTest]` | `Integration,Emulator` | `Slow` | `nightly-slow-tier.yml` — runs `Tier=Slow&Category=Emulator` against LocalStack S3 + Azurite + Postgres. |
+| `[ScaleTest]` | `Integration,Scale` | `Slow` | Currently **not** scheduled. Multi-node compose fixtures are tracked as a separate workflow; the trait is in place for the future workflow to opt in. |
+| `[ExternalServiceTest]` | `Integration,External` | `Slow` | Currently **not** scheduled. External service credentials (e.g. Esri Geoportal) are tracked as a separate workflow. |
+| `[CloudTest]` | `Integration,Cloud` | `Slow` | Currently **not** scheduled. Real-cloud credentials are tracked as a separate workflow. |
+| `[FlakyTest("reason")]` | (additive) | (inherits sibling tier) | Always runs on its tier's normal schedule; surfaced separately by `flaky-detection.yml`. |
 
 ```csharp
-[UnitTest]  // Fast, isolated tests
-[IntegrationTest]  // Uses real dependencies
+[UnitTest]              // Fast, isolated tests
+[IntegrationTest]       // Uses real dependencies
+[ScaleTest]             // Multi-node scale, runs nightly
+[ExternalServiceTest]   // External services, runs nightly
+[EmulatorTest]          // Emulator-backed integration, runs nightly
+[CloudTest]             // Deployed-environment validation, runs nightly
+[FlakyTest("reason — tracked in #N")]  // Quarantine reporting, never auto-skips
 ```
+
+Filter on tier directly: `dotnet test --filter "Tier=Fast"` (or `Integration` / `Slow`).
 
 ### Protocol Tracking
 
