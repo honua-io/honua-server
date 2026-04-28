@@ -73,11 +73,13 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
         try
         {
-            var objectKey = CloudStoragePath.BuildObjectKey(
-                CloudStoragePath.GenerateFileId(),
-                request.FileName,
-                request.Folder,
-                _options.KeyPrefix);
+            var objectKey = !string.IsNullOrWhiteSpace(request.ObjectKeyOverride)
+                ? request.ObjectKeyOverride
+                : CloudStoragePath.BuildObjectKey(
+                    CloudStoragePath.GenerateFileId(),
+                    request.FileName,
+                    request.Folder,
+                    _options.KeyPrefix);
 
             var uploadedAt = DateTimeOffset.UtcNow;
             var expiresAt = request.TimeToLive.HasValue

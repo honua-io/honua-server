@@ -105,7 +105,8 @@ internal sealed partial class TileOperationJobService(
     {
         var tileCacheIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.TileCache, cancellationToken).ConfigureAwait(false);
         var archiveIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.PMTilesArchive, cancellationToken).ConfigureAwait(false);
-        var operationIds = tileCacheIds.Concat(archiveIds).Distinct().ToList();
+        var publishIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.PMTilesPublish, cancellationToken).ConfigureAwait(false);
+        var operationIds = tileCacheIds.Concat(archiveIds).Concat(publishIds).Distinct().ToList();
         var result = new List<TileOperationProgress>(operationIds.Count);
         foreach (var operationId in operationIds)
         {
@@ -203,160 +204,163 @@ internal sealed partial class TileOperationJobService(
             : RenewLeaseAsync(leaseCoordinator, renewalCts!.Token);
         var processingToken = processingCts?.Token ?? cancellationToken;
 
-        var cachedRequest = await TryGetActiveJobRequestAsync(jobId, processingToken).ConfigureAwait(false);
-        if (cachedRequest == null)
-        {
-            var missingRequestProgress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false);
-            await MarkMissingRequestAsync(jobId, missingRequestProgress, CancellationToken.None).ConfigureAwait(false);
-
-            if (renewalCts != null)
-            {
-                renewalCts.Cancel();
-                await renewalTask.ConfigureAwait(false);
-                await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
-            }
-
-            return;
-        }
-
-        var request = cachedRequest.Value.Request;
-
-        TileOperationMetrics.QueueDepth.Add(-1, new TagList { { "operation", request.Operation } });
-
-        var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false)
-            ?? TileOperationProgress.CreateInitial(
-                jobId,
-                request.Operation,
-                request.ServiceId,
-                request.LayerId,
-                request.TileMatrixSetId);
-
-        if (progress.Status == OperationStatus.Cancelled)
-        {
-            return;
-        }
-
-        var stopwatch = Stopwatch.StartNew();
-        using var linkedCts = processingCts is null
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-            : CancellationTokenSource.CreateLinkedTokenSource(processingToken);
-        _runningTokens[jobId] = linkedCts;
-        var shouldRequeue = false;
-
-        var started = progress with
-        {
-            Status = OperationStatus.Processing,
-            CurrentPhase = $"Running {request.Operation} operation"
-        };
-        await _progressStore.SetProgressAsync(jobId, started, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
-
-        TileOperationProgress finalProgress;
+        // Outer try/finally: any post-acquire exit (early return, throw, cancel)
+        // must release the Redis claim and dispose the coordinator. Releasing only
+        // inside the inner processing finally would leak the lease for missing-
+        // request, already-cancelled, or pre-dispatch lookup-failure exits.
         try
         {
-            using var scope = _serviceScopeFactory.CreateScope();
-            var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
-            var previousSchema = schemaContext?.CurrentSchema;
+            var cachedRequest = await TryGetActiveJobRequestAsync(jobId, processingToken).ConfigureAwait(false);
+            if (cachedRequest == null)
+            {
+                var missingRequestProgress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false);
+                await MarkMissingRequestAsync(jobId, missingRequestProgress, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
 
+            var request = cachedRequest.Value.Request;
+
+            TileOperationMetrics.QueueDepth.Add(-1, new TagList { { "operation", request.Operation } });
+
+            var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false)
+                ?? TileOperationProgress.CreateInitial(
+                    jobId,
+                    request.Operation,
+                    request.ServiceId,
+                    request.LayerId,
+                    request.TileMatrixSetId);
+
+            if (progress.Status == OperationStatus.Cancelled)
+            {
+                return;
+            }
+
+            var stopwatch = Stopwatch.StartNew();
+            using var linkedCts = processingCts is null
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : CancellationTokenSource.CreateLinkedTokenSource(processingToken);
+            _runningTokens[jobId] = linkedCts;
+            var shouldRequeue = false;
+
+            var started = progress with
+            {
+                Status = OperationStatus.Processing,
+                CurrentPhase = $"Running {request.Operation} operation"
+            };
+            await _progressStore.SetProgressAsync(jobId, started, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+
+            TileOperationProgress finalProgress;
             try
             {
-                if (!string.IsNullOrWhiteSpace(cachedRequest.Value.SchemaName) && schemaContext != null)
-                {
-                    schemaContext.CurrentSchema = cachedRequest.Value.SchemaName;
-                }
+                using var scope = _serviceScopeFactory.CreateScope();
+                var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
+                var previousSchema = schemaContext?.CurrentSchema;
 
-                var layerCatalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
-                var tileProvider = scope.ServiceProvider.GetRequiredService<ITileProvider>();
-
-                finalProgress = request.Operation switch
+                try
                 {
-                    "seed" => await ExecuteSeedOrWarmAsync(started, request, warmMode: false, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
-                    "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
-                    "invalidate" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
-                    "purge" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
-                    "archive" => await ExecuteArchiveAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
-                    _ => started with
+                    if (!string.IsNullOrWhiteSpace(cachedRequest.Value.SchemaName) && schemaContext != null)
                     {
-                        Status = OperationStatus.Failed,
-                        CompletedAt = DateTimeOffset.UtcNow,
-                        ErrorMessage = $"Unsupported tile operation '{request.Operation}'.",
-                        CurrentPhase = "Failed"
+                        schemaContext.CurrentSchema = cachedRequest.Value.SchemaName;
                     }
+
+                    var layerCatalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
+                    var tileProvider = scope.ServiceProvider.GetRequiredService<ITileProvider>();
+
+                    finalProgress = request.Operation switch
+                    {
+                        "seed" => await ExecuteSeedOrWarmAsync(started, request, warmMode: false, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
+                        "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
+                        "invalidate" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
+                        "purge" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
+                        "archive" => await ExecuteArchiveAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
+                        "publish" => await ExecutePublishAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
+                        _ => started with
+                        {
+                            Status = OperationStatus.Failed,
+                            CompletedAt = DateTimeOffset.UtcNow,
+                            ErrorMessage = $"Unsupported tile operation '{request.Operation}'.",
+                            CurrentPhase = "Failed"
+                        }
+                    };
+                }
+                finally
+                {
+                    if (schemaContext != null)
+                    {
+                        schemaContext.CurrentSchema = previousSchema;
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
+            {
+                if (leaseCoordinator?.LeaseLostToken.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
+                {
+                    finalProgress = started with
+                    {
+                        Status = OperationStatus.Queued,
+                        CompletedAt = null,
+                        ErrorMessage = null,
+                        CurrentPhase = "Lease lost; awaiting retry"
+                    };
+                    shouldRequeue = true;
+                }
+                else
+                {
+                    finalProgress = (TileOperationProgress)started.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogJobFailed(_logger, jobId, request.Operation, ex);
+                finalProgress = started with
+                {
+                    Status = OperationStatus.Failed,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = "Tile operation failed.",
+                    CurrentPhase = "Failed"
                 };
             }
             finally
             {
-                if (schemaContext != null)
-                {
-                    schemaContext.CurrentSchema = previousSchema;
-                }
+                _runningTokens.TryRemove(jobId, out _);
+                stopwatch.Stop();
             }
-        }
-        catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
-        {
-            if (leaseCoordinator?.LeaseLostToken.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
-            {
-                finalProgress = started with
+
+            await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+            TileOperationMetrics.JobDurationMs.Record(
+                stopwatch.Elapsed.TotalMilliseconds,
+                new TagList { { "operation", request.Operation } });
+            TileOperationMetrics.JobCount.Add(
+                1,
+                new TagList
                 {
-                    Status = OperationStatus.Queued,
-                    CompletedAt = null,
-                    ErrorMessage = null,
-                    CurrentPhase = "Lease lost; awaiting retry"
-                };
-                shouldRequeue = true;
+                    { "operation", request.Operation },
+                    { "status", finalProgress.Status.ToString().ToLowerInvariant() }
+                });
+
+            if (finalProgress.Status == OperationStatus.Completed)
+            {
+                _jobRequests.TryRemove(jobId, out _);
+                await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                finalProgress = (TileOperationProgress)started.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+                RefreshJobRequestRetention(jobId);
+                await PersistJobRequestAsync(jobId, request, cachedRequest.Value.SchemaName, cancellationToken).ConfigureAwait(false);
+                if (shouldRequeue)
+                {
+                    await _jobQueue.Writer.WriteAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            LogJobFailed(_logger, jobId, request.Operation, ex);
-            finalProgress = started with
-            {
-                Status = OperationStatus.Failed,
-                CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = "Tile operation failed.",
-                CurrentPhase = "Failed"
-            };
         }
         finally
         {
-            _runningTokens.TryRemove(jobId, out _);
-            stopwatch.Stop();
             if (renewalCts != null)
             {
                 renewalCts.Cancel();
                 await renewalTask.ConfigureAwait(false);
                 await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
                 leaseCoordinator.Dispose();
-            }
-        }
-
-        await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
-        TileOperationMetrics.JobDurationMs.Record(
-            stopwatch.Elapsed.TotalMilliseconds,
-            new TagList { { "operation", request.Operation } });
-        TileOperationMetrics.JobCount.Add(
-            1,
-            new TagList
-            {
-                { "operation", request.Operation },
-                { "status", finalProgress.Status.ToString().ToLowerInvariant() }
-            });
-
-        if (finalProgress.Status == OperationStatus.Completed)
-        {
-            _jobRequests.TryRemove(jobId, out _);
-            await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            RefreshJobRequestRetention(jobId);
-            await PersistJobRequestAsync(jobId, request, cachedRequest.Value.SchemaName, cancellationToken).ConfigureAwait(false);
-            if (shouldRequeue)
-            {
-                await _jobQueue.Writer.WriteAsync(jobId, CancellationToken.None).ConfigureAwait(false);
             }
         }
     }
@@ -516,26 +520,331 @@ internal sealed partial class TileOperationJobService(
 
         var layerId = request.LayerId.Value;
 
+        var build = await BuildPMTilesArchiveAsync("archive", progress, request, layerId, tileProvider, cancellationToken).ConfigureAwait(false);
+        if (!build.HasArchive)
+        {
+            return build.Progress;
+        }
+
+        await using var archiveStream = build.ArchiveStream!;
+
+        var current = build.Progress with { CurrentPhase = "Uploading archive" };
+        await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+
+        var cloudStorage = serviceProvider.GetService<ICloudFileStorage>();
+        if (cloudStorage == null)
+        {
+            return current with
+            {
+                ArchiveSizeBytes = build.ArchiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "Cloud storage is not configured. Archive operations require cloud storage.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
+        {
+            Content = archiveStream,
+            FileName = $"{current.JobId}.pmtiles",
+            ContentType = "application/vnd.pmtiles",
+            SizeBytes = build.ArchiveSize,
+            TimeToLive = TimeSpan.FromHours(24),
+            Folder = "pmtiles",
+            Metadata = ImmutableDictionary<string, string>.Empty
+                .Add("jobId", current.JobId)
+                .Add("operation", "archive")
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (!uploadResult.Success)
+        {
+            return current with
+            {
+                ArchiveSizeBytes = build.ArchiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = $"Archive upload failed: {uploadResult.ErrorMessage ?? "unknown error"}.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var archiveFileId = uploadResult.File?.FileId;
+        if (string.IsNullOrWhiteSpace(archiveFileId))
+        {
+            return current with
+            {
+                ArchiveSizeBytes = build.ArchiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "Archive upload succeeded but returned no file ID.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var downloadUrl = await cloudStorage.GetPresignedUrlAsync(
+            archiveFileId,
+            TimeSpan.FromHours(24),
+            cancellationToken).ConfigureAwait(false);
+
+        TileOperationMetrics.ArchivesGenerated.Add(1);
+        TileOperationMetrics.ArchiveSizeBytes.Record(build.ArchiveSize);
+
+        var completedStatus = build.Failed > 0 ? OperationStatus.Failed : OperationStatus.Completed;
+        return current with
+        {
+            ArchiveSizeBytes = build.ArchiveSize,
+            ArchiveFileId = archiveFileId,
+            DownloadUrl = downloadUrl,
+            Status = completedStatus,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = build.Failed > 0 ? $"{build.Failed} tiles failed during generation." : null,
+            CurrentPhase = build.Failed > 0 ? "Archive completed with failures" : "Archive generation completed"
+        };
+    }
+
+    private async Task<TileOperationProgress> ExecutePublishAsync(
+        TileOperationProgress progress,
+        TileOperationStartRequest request,
+        ILayerCatalog layerCatalog,
+        ITileProvider tileProvider,
+        IServiceProvider serviceProvider,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(request.TileMatrixSetId, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NotSupportedException("Only TileMatrixSetId 'WebMercatorQuad' is currently supported.");
+        }
+
+        if (!request.LayerId.HasValue)
+        {
+            throw new InvalidOperationException("Publish operations require a layerId.");
+        }
+
+        var layerId = request.LayerId.Value;
+
+        var cloudOptions = serviceProvider.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
+        var publishOptions = cloudOptions.PMTilesPublish ?? new PMTilesPublishOptions();
+
+        // Pre-flight: validate URL strategy configuration before generating or uploading
+        // a permanent artifact, so a misconfigured PublicUrl never produces an orphan.
+        if (publishOptions.UrlStrategy == PMTilesUrlStrategy.PublicUrl &&
+            string.IsNullOrWhiteSpace(publishOptions.PublicBucketBaseUrl))
+        {
+            return progress with
+            {
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "PMTilesPublish:PublicBucketBaseUrl must be configured when UrlStrategy is PublicUrl.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var build = await BuildPMTilesArchiveAsync("publish", progress, request, layerId, tileProvider, cancellationToken).ConfigureAwait(false);
+        if (!build.HasArchive)
+        {
+            return build.Progress;
+        }
+
+        await using var archiveStream = build.ArchiveStream!;
+
+        // Durable publish writes to a deterministic key that may already host a
+        // previously good artifact. A partial generation (failed > 0) would
+        // overwrite that artifact with bytes missing the failed tiles, which is
+        // a silent data-loss for active clients. Refuse to upload in that case
+        // and fail the job so operators retry once the upstream is healthy.
+        // The temporary archive path tolerates partial failures because it
+        // writes to a random per-job key with a 24-hour TTL.
+        if (build.Failed > 0)
+        {
+            return build.Progress with
+            {
+                ArchiveSizeBytes = build.ArchiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = $"Publish aborted before upload: {build.Failed} tiles failed during generation.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var cloudStorage = serviceProvider.GetService<ICloudFileStorage>();
+        if (cloudStorage == null)
+        {
+            return build.Progress with
+            {
+                ArchiveSizeBytes = build.ArchiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "Cloud storage is not configured. Publish operations require cloud storage.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var providerKeyPrefix = cloudOptions.Provider switch
+        {
+            CloudStorageProvider.AwsS3 => cloudOptions.AwsS3?.KeyPrefix,
+            CloudStorageProvider.AzureBlob => cloudOptions.AzureBlob?.BlobPrefix,
+            _ => null
+        };
+
+        var objectKey = BuildPublishObjectKey(
+            providerKeyPrefix,
+            publishOptions.KeyPrefix,
+            request.ServiceId,
+            layerId,
+            request.TileMatrixSetId);
+
+        var current = build.Progress with { CurrentPhase = "Uploading durable PMTiles artifact" };
+        await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+        TileOperationLog.PublishUploadStart(_logger, current.JobId, objectKey);
+
+        // Pre-check whether the deterministic key already has a prior published
+        // artifact. If it does, our upload is an overwrite of a previously good
+        // publish, so a later access-URL failure must not roll back this key:
+        // doing so would erase the only PMTiles bytes clients currently see.
+        var keyAlreadyExisted = await cloudStorage.ExistsAsync(objectKey, cancellationToken).ConfigureAwait(false);
+
+        var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
+        {
+            Content = archiveStream,
+            FileName = $"{Path.GetFileName(objectKey)}",
+            ContentType = "application/vnd.pmtiles",
+            SizeBytes = build.ArchiveSize,
+            TimeToLive = null,
+            ObjectKeyOverride = objectKey,
+            Metadata = ImmutableDictionary<string, string>.Empty
+                .Add("jobId", current.JobId)
+                .Add("operation", "publish")
+                .Add("layerId", layerId.ToString(CultureInfo.InvariantCulture))
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (!uploadResult.Success || uploadResult.File is null)
+        {
+            return current with
+            {
+                ArchiveSizeBytes = build.ArchiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = $"Publish upload failed: {uploadResult.ErrorMessage ?? "unknown error"}.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var bucket = ResolvePublishBucket(cloudOptions);
+        var artifactId = uploadResult.File.FileId;
+
+        string accessUrl;
+        DateTimeOffset? accessUrlExpiresAt;
+        try
+        {
+            (accessUrl, accessUrlExpiresAt) = await ResolvePublishAccessUrlAsync(
+                cloudStorage,
+                publishOptions,
+                artifactId,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            TileOperationLog.PublishAccessUrlFailed(_logger, current.JobId, artifactId, publishOptions.UrlStrategy, ex);
+            if (!keyAlreadyExisted)
+            {
+                // The durable artifact is brand new at this key, so deleting it
+                // only removes the failed upload — there was no prior good copy
+                // to preserve. This keeps a misconfigured PublicUrl / SignedUrl
+                // strategy from leaving an unreferenced orphan.
+                await TryDeletePublishArtifactAsync(cloudStorage, artifactId, current.JobId, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                // The key already had a previously good publish that this upload
+                // overwrote. The new bytes are still valid PMTiles content; only
+                // access-URL generation failed. Leave the artifact in place so
+                // existing clients continue to see PMTiles at this key, and let
+                // the operator re-run publish once the URL strategy is fixed.
+                TileOperationLog.PublishOverwriteRetained(_logger, current.JobId, artifactId, publishOptions.UrlStrategy);
+            }
+
+            // Provider exceptions can carry SDK internals, account identifiers, or
+            // signed-URL fragments; surface a stable client-safe message and rely
+            // on structured logging for the diagnostic detail.
+            return current with
+            {
+                ArchiveSizeBytes = build.ArchiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "Publish access URL generation failed.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var descriptor = new PMTilesArtifactDescriptor
+        {
+            ArtifactId = artifactId,
+            StorageProvider = uploadResult.File.Provider,
+            Bucket = bucket,
+            ObjectKey = uploadResult.File.StoragePath,
+            ContentType = uploadResult.File.ContentType,
+            SizeBytes = uploadResult.File.SizeBytes,
+            UrlStrategy = publishOptions.UrlStrategy,
+            AccessUrl = accessUrl,
+            AccessUrlExpiresAt = accessUrlExpiresAt,
+            PublishedAt = uploadResult.File.UploadedAt,
+            MinZoom = build.MinZoom,
+            MaxZoom = build.MaxZoom,
+            Bounds = [build.MinLon, build.MinLat, build.MaxLon, build.MaxLat],
+            LayerId = layerId,
+            ServiceId = request.ServiceId,
+            TileMatrixSetId = request.TileMatrixSetId
+        };
+
+        TileOperationMetrics.ArchivesGenerated.Add(1);
+        TileOperationMetrics.ArchiveSizeBytes.Record(build.ArchiveSize);
+        TileOperationLog.PublishUploadComplete(_logger, current.JobId, descriptor.ObjectKey, build.ArchiveSize, descriptor.UrlStrategy);
+
+        return current with
+        {
+            ArchiveSizeBytes = build.ArchiveSize,
+            PublishedArtifact = descriptor,
+            Status = OperationStatus.Completed,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = null,
+            CurrentPhase = "Publish completed"
+        };
+    }
+
+    /// <summary>
+    /// Generates tiles for the requested scope, writes them to a PMTiles archive
+    /// stream, and updates progress along the way. Shared between the temporary
+    /// admin <c>archive</c> path and the durable <c>publish</c> path so that
+    /// progress, telemetry, geodesy, and failure semantics stay aligned.
+    /// </summary>
+    private async Task<PMTilesBuildResult> BuildPMTilesArchiveAsync(
+        string operationName,
+        TileOperationProgress progress,
+        TileOperationStartRequest request,
+        int layerId,
+        ITileProvider tileProvider,
+        CancellationToken cancellationToken)
+    {
         var tileCoordinates = BuildTileCoordinates(request);
         if (tileCoordinates.Count == 0)
         {
-            throw new InvalidOperationException("Archive operation produced no target tiles.");
+            throw new InvalidOperationException($"{operationName} operation produced no target tiles.");
         }
 
         var total = (long)tileCoordinates.Count;
-        var processed = 0L;
-        var successful = 0L;
-        var failed = 0L;
+        long processed = 0;
+        long successful = 0;
+        long failed = 0;
         var warningList = new List<string>();
 
         var current = progress with
         {
             TotalTiles = total,
-            CurrentPhase = "Generating tiles for archive"
+            CurrentPhase = $"Generating tiles for {operationName}"
         };
         await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
 
-        // Phase 1: Collect all tiles for the single layer
         var writer = new PMTilesWriter(tileCompression: PMTilesCompression.None);
         foreach (var coordinate in tileCoordinates)
         {
@@ -584,21 +893,20 @@ internal sealed partial class TileOperationJobService(
 
         if (processed > 0)
         {
-            TileOperationMetrics.TileThroughput.Add(processed, new TagList { { "operation", "archive" } });
+            TileOperationMetrics.TileThroughput.Add(processed, new TagList { { "operation", operationName } });
         }
 
         if (writer.TileCount == 0)
         {
-            return current with
+            return PMTilesBuildResult.Empty(current with
             {
                 Status = OperationStatus.Failed,
                 CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = "No tiles were generated for the archive.",
+                ErrorMessage = $"No tiles were generated for the {operationName}.",
                 CurrentPhase = "Failed"
-            };
+            });
         }
 
-        // Phase 2: Write PMTiles archive
         current = current with { CurrentPhase = "Writing PMTiles archive" };
         await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
 
@@ -609,110 +917,173 @@ internal sealed partial class TileOperationJobService(
         var minZoom = Math.Clamp(request.MinZoom ?? _tileLimits.MinTileZoom, _tileLimits.MinTileZoom, _tileLimits.MaxTileZoom);
         var maxZoom = Math.Clamp(request.MaxZoom ?? minZoom, minZoom, _tileLimits.MaxTileZoom);
 
+        var minLon = Math.Min(bbox[0], bbox[2]);
+        var minLat = Math.Min(bbox[1], bbox[3]);
+        var maxLon = Math.Max(bbox[0], bbox[2]);
+        var maxLat = Math.Max(bbox[1], bbox[3]);
+
         var metadata = new PMTilesArchiveMetadata
         {
-            MinLon = Math.Min(bbox[0], bbox[2]),
-            MinLat = Math.Min(bbox[1], bbox[3]),
-            MaxLon = Math.Max(bbox[0], bbox[2]),
-            MaxLat = Math.Max(bbox[1], bbox[3]),
+            MinLon = minLon,
+            MinLat = minLat,
+            MaxLon = maxLon,
+            MaxLat = maxLat,
             MinZoom = minZoom,
             MaxZoom = maxZoom
         };
 
-        using var archiveStream = new MemoryStream();
-        var archiveSize = await writer.WriteAsync(archiveStream, metadata, cancellationToken).ConfigureAwait(false);
-        archiveStream.Position = 0;
-
-        // Phase 3: Upload archive
-        current = current with { CurrentPhase = "Uploading archive" };
-        await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
-
-        var cloudStorage = serviceProvider.GetService<ICloudFileStorage>();
-        if (cloudStorage == null)
+        var archiveStream = new MemoryStream();
+        try
         {
-            return current with
+            var archiveSize = await writer.WriteAsync(archiveStream, metadata, cancellationToken).ConfigureAwait(false);
+            archiveStream.Position = 0;
+
+            return new PMTilesBuildResult
             {
-                ProcessedTiles = processed,
-                SuccessfulTiles = successful,
-                FailedTiles = failed,
-                ArchiveSizeBytes = archiveSize,
-                Status = OperationStatus.Failed,
-                CompletedAt = DateTimeOffset.UtcNow,
-                Warnings = warningList.ToArray(),
-                ErrorMessage = "Cloud storage is not configured. Archive operations require cloud storage.",
-                CurrentPhase = "Failed"
+                Progress = current with
+                {
+                    ProcessedTiles = processed,
+                    SuccessfulTiles = successful,
+                    FailedTiles = failed,
+                    Warnings = warningList.ToArray()
+                },
+                ArchiveStream = archiveStream,
+                ArchiveSize = archiveSize,
+                Failed = failed,
+                MinZoom = minZoom,
+                MaxZoom = maxZoom,
+                MinLon = minLon,
+                MinLat = minLat,
+                MaxLon = maxLon,
+                MaxLat = maxLat
             };
         }
-
-        var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
+        catch
         {
-            Content = archiveStream,
-            FileName = $"{current.JobId}.pmtiles",
-            ContentType = "application/vnd.pmtiles",
-            SizeBytes = archiveSize,
-            TimeToLive = TimeSpan.FromHours(24),
-            Folder = "pmtiles",
-            Metadata = ImmutableDictionary<string, string>.Empty
-                .Add("jobId", current.JobId)
-                .Add("operation", "archive")
-        }, cancellationToken).ConfigureAwait(false);
+            await archiveStream.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
 
-        if (!uploadResult.Success)
+    private async Task TryDeletePublishArtifactAsync(
+        ICloudFileStorage cloudStorage,
+        string artifactId,
+        string jobId,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            return current with
+            // Real providers (S3, Azure Blob, LocalFileStorage) report delete failure
+            // by returning false rather than throwing, so the bool result is the only
+            // signal a soft failure ever leaves an orphan worth flagging.
+            var deleted = await cloudStorage.DeleteAsync(artifactId, cancellationToken).ConfigureAwait(false);
+            if (!deleted)
             {
-                ProcessedTiles = processed,
-                SuccessfulTiles = successful,
-                FailedTiles = failed,
-                ArchiveSizeBytes = archiveSize,
-                Status = OperationStatus.Failed,
-                CompletedAt = DateTimeOffset.UtcNow,
-                Warnings = warningList.ToArray(),
-                ErrorMessage = $"Archive upload failed: {uploadResult.ErrorMessage ?? "unknown error"}.",
-                CurrentPhase = "Failed"
-            };
+                TileOperationLog.PublishOrphanCleanupReturnedFalse(_logger, jobId, artifactId);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            TileOperationLog.PublishOrphanCleanupFailed(_logger, jobId, artifactId, ex);
+        }
+    }
+
+    private static string BuildPublishObjectKey(
+        string? providerKeyPrefix,
+        string publishKeyPrefix,
+        string? serviceId,
+        int layerId,
+        string? tileMatrixSetId)
+    {
+        var serviceSegment = string.IsNullOrWhiteSpace(serviceId)
+            ? "_"
+            : SanitizeKeySegment(serviceId);
+        var matrixSegment = string.IsNullOrWhiteSpace(tileMatrixSetId)
+            ? "WebMercatorQuad"
+            : SanitizeKeySegment(tileMatrixSetId);
+
+        var segments = new List<string>(4);
+        if (!string.IsNullOrWhiteSpace(providerKeyPrefix))
+        {
+            segments.Add(providerKeyPrefix.Trim('/'));
         }
 
-        var archiveFileId = uploadResult.File?.FileId;
-        if (string.IsNullOrWhiteSpace(archiveFileId))
+        if (!string.IsNullOrWhiteSpace(publishKeyPrefix))
         {
-            return current with
-            {
-                ProcessedTiles = processed,
-                SuccessfulTiles = successful,
-                FailedTiles = failed,
-                ArchiveSizeBytes = archiveSize,
-                Status = OperationStatus.Failed,
-                CompletedAt = DateTimeOffset.UtcNow,
-                Warnings = warningList.ToArray(),
-                ErrorMessage = "Archive upload succeeded but returned no file ID.",
-                CurrentPhase = "Failed"
-            };
+            segments.Add(publishKeyPrefix.Trim('/'));
         }
 
-        var downloadUrl = await cloudStorage.GetPresignedUrlAsync(
-            archiveFileId,
-            TimeSpan.FromHours(24),
-            cancellationToken).ConfigureAwait(false);
+        segments.Add(serviceSegment);
+        segments.Add(layerId.ToString(CultureInfo.InvariantCulture));
+        segments.Add($"{matrixSegment}.pmtiles");
 
-        TileOperationMetrics.ArchivesGenerated.Add(1);
-        TileOperationMetrics.ArchiveSizeBytes.Record(archiveSize);
+        return string.Join('/', segments.Where(static segment => segment.Length > 0));
+    }
 
-        var completedStatus = failed > 0 ? OperationStatus.Failed : OperationStatus.Completed;
-        return current with
+    private static string SanitizeKeySegment(string value)
+    {
+        var trimmed = value.Trim().Trim('/');
+        var builder = new System.Text.StringBuilder(trimmed.Length);
+        foreach (var ch in trimmed)
         {
-            ProcessedTiles = processed,
-            SuccessfulTiles = successful,
-            FailedTiles = failed,
-            ArchiveSizeBytes = archiveSize,
-            ArchiveFileId = archiveFileId,
-            DownloadUrl = downloadUrl,
-            Status = completedStatus,
-            CompletedAt = DateTimeOffset.UtcNow,
-            Warnings = warningList.ToArray(),
-            ErrorMessage = failed > 0 ? $"{failed} tiles failed during generation." : null,
-            CurrentPhase = failed > 0 ? "Archive completed with failures" : "Archive generation completed"
+            if (char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.')
+            {
+                builder.Append(ch);
+            }
+            else
+            {
+                builder.Append('_');
+            }
+        }
+
+        return builder.Length == 0 ? "_" : builder.ToString();
+    }
+
+    private static string ResolvePublishBucket(CloudStorageOptions options)
+    {
+        return options.Provider switch
+        {
+            CloudStorageProvider.AwsS3 => options.AwsS3?.BucketName ?? string.Empty,
+            CloudStorageProvider.AzureBlob => options.AzureBlob?.ContainerName ?? string.Empty,
+            CloudStorageProvider.Local => options.LocalStorage?.BasePath ?? string.Empty,
+            _ => string.Empty
         };
+    }
+
+    private static async Task<(string AccessUrl, DateTimeOffset? ExpiresAt)> ResolvePublishAccessUrlAsync(
+        ICloudFileStorage cloudStorage,
+        PMTilesPublishOptions publishOptions,
+        string artifactId,
+        CancellationToken cancellationToken)
+    {
+        switch (publishOptions.UrlStrategy)
+        {
+            case PMTilesUrlStrategy.PublicUrl:
+                if (string.IsNullOrWhiteSpace(publishOptions.PublicBucketBaseUrl))
+                {
+                    throw new InvalidOperationException(
+                        "PMTilesPublish:PublicBucketBaseUrl must be configured when UrlStrategy is PublicUrl.");
+                }
+
+                var publicBase = publishOptions.PublicBucketBaseUrl.TrimEnd('/');
+                return ($"{publicBase}/{artifactId}", null);
+
+            case PMTilesUrlStrategy.RangeProxy:
+                return ($"/api/v1/tiles/pmtiles/{artifactId}", null);
+
+            case PMTilesUrlStrategy.SignedUrl:
+            default:
+                var lifetime = publishOptions.SignedUrlLifetime <= TimeSpan.Zero
+                    ? TimeSpan.FromDays(7)
+                    : publishOptions.SignedUrlLifetime;
+                var signedUrl = await cloudStorage.GetPresignedUrlAsync(artifactId, lifetime, cancellationToken).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(signedUrl))
+                {
+                    throw new InvalidOperationException("Storage provider did not return a presigned URL for the published artifact.");
+                }
+
+                return (signedUrl, DateTimeOffset.UtcNow.Add(lifetime));
+        }
     }
 
     private static async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(
@@ -798,9 +1169,9 @@ internal sealed partial class TileOperationJobService(
     private static TileOperationStartRequest NormalizeRequest(TileOperationStartRequest request)
     {
         var operation = request.Operation.Trim().ToLowerInvariant();
-        if (operation is not ("seed" or "warm" or "invalidate" or "purge" or "archive"))
+        if (operation is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish"))
         {
-            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge, archive.", nameof(request));
+            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge, archive, publish.", nameof(request));
         }
 
         return request with
@@ -952,7 +1323,8 @@ internal sealed partial class TileOperationJobService(
     {
         var tileCacheIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.TileCache, cancellationToken).ConfigureAwait(false);
         var archiveIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.PMTilesArchive, cancellationToken).ConfigureAwait(false);
-        var activeOperationIds = tileCacheIds.Concat(archiveIds).Distinct().ToList();
+        var publishIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.PMTilesPublish, cancellationToken).ConfigureAwait(false);
+        var activeOperationIds = tileCacheIds.Concat(archiveIds).Concat(publishIds).Distinct().ToList();
         var recovered = new List<string>(activeOperationIds.Count);
 
         foreach (var jobId in activeOperationIds)
@@ -1081,6 +1453,26 @@ internal sealed partial class TileOperationJobService(
 
     private readonly record struct TileCoordinate(int Z, int X, int Y);
     private readonly record struct CachedTileOperationRequest(TileOperationStartRequest Request, string? SchemaName, DateTimeOffset ExpiresAtUtc);
+
+    private sealed record PMTilesBuildResult
+    {
+        public required TileOperationProgress Progress { get; init; }
+        public MemoryStream? ArchiveStream { get; init; }
+        public long ArchiveSize { get; init; }
+        public long Failed { get; init; }
+        public int MinZoom { get; init; }
+        public int MaxZoom { get; init; }
+        public double MinLon { get; init; }
+        public double MinLat { get; init; }
+        public double MaxLon { get; init; }
+        public double MaxLat { get; init; }
+
+        [System.Diagnostics.CodeAnalysis.MemberNotNullWhen(true, nameof(ArchiveStream))]
+        public bool HasArchive => ArchiveStream is not null;
+
+        public static PMTilesBuildResult Empty(TileOperationProgress progress) => new() { Progress = progress };
+    }
+
     [LoggerMessage(EventId = 9200, Level = LogLevel.Warning, Message = "Tile job {JobId} failed during {Operation}.")]
     private static partial void LogJobFailed(ILogger logger, string jobId, string operation, Exception exception);
 }

@@ -1309,14 +1309,15 @@
     },
     {
       "surfaceId": "vector-tiles-mvt",
-      "displayName": "Vector tiles and MapLibre style endpoints",
+      "displayName": "Vector tiles, PMTiles range proxy, and MapLibre style endpoints",
       "surfaceKind": "http-route-family",
-      "protocol": "MVT + TileJSON",
-      "canonicalIdentifier": "/tiles/{layerId}/... + /api/styles/{layerId}.json",
+      "protocol": "MVT + TileJSON + PMTiles",
+      "canonicalIdentifier": "/tiles/{layerId}/... + /api/styles/{layerId}.json + /api/v1/tiles/pmtiles/{artifactId}",
       "parentSurfaceId": null,
       "endpointPrefixes": [
         "/tiles/",
-        "/api/styles/"
+        "/api/styles/",
+        "/api/v1/tiles/pmtiles/"
       ],
       "endpointExactMatches": [],
       "endpointContains": [],

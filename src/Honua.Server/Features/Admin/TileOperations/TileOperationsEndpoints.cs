@@ -21,13 +21,13 @@ internal static class TileOperationsEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Tile Operations")
-            .WithDescription("Tile cache seed/warm/invalidate/purge/archive job control")
+            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish job control")
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/jobs", HandleStartJob)
             .WithName("StartTileOperationJob")
             .WithSummary("Start a tile operation job")
-            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, archive) for asynchronous execution");
+            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, archive, publish) for asynchronous execution");
 
         _ = group.MapGet("/jobs/{jobId}", HandleGetJobStatus)
             .WithName("GetTileOperationJobStatus")
@@ -236,6 +236,18 @@ internal static class TileOperationsEndpoints
             }
         }
 
+        if (operation is "publish")
+        {
+            if (!request.LayerId.HasValue)
+            {
+                return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                    "Publish operations require 'layerId'.");
+            }
+        }
+
         return null;
     }
 }
@@ -276,6 +288,8 @@ internal sealed record TileOperationListResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationCancelResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationRetryResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationListResponse))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(Honua.Core.Features.Tiles.PMTiles.PMTilesArtifactDescriptor))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(Honua.Core.Features.Tiles.PMTiles.PMTilesUrlStrategy))]
 internal sealed partial class TileOperationsJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }

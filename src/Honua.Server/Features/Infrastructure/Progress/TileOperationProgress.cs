@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Tiles.PMTiles;
 
 namespace Honua.Server.Features.Infrastructure.Progress;
 
@@ -23,6 +24,7 @@ internal sealed record TileOperationProgress : IOperationProgress, ICancellableO
     public long ArchiveSizeBytes { get; init; }
     public string? ArchiveFileId { get; init; }
     public string? DownloadUrl { get; init; }
+    public PMTilesArtifactDescriptor? PublishedArtifact { get; init; }
     public DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public string? ErrorMessage { get; init; }
@@ -36,7 +38,12 @@ internal sealed record TileOperationProgress : IOperationProgress, ICancellableO
     public TimeSpan Duration => (CompletedAt ?? DateTimeOffset.UtcNow) - StartedAt;
 
     string IOperationProgress.OperationId => JobId;
-    OperationType IOperationProgress.Type => Operation == "archive" ? OperationType.PMTilesArchive : OperationType.TileCache;
+    OperationType IOperationProgress.Type => Operation switch
+    {
+        "archive" => OperationType.PMTilesArchive,
+        "publish" => OperationType.PMTilesPublish,
+        _ => OperationType.TileCache
+    };
 
     public IOperationProgress WithCancellation(DateTimeOffset completedAt, string? currentPhase)
         => this with

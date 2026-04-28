@@ -9,6 +9,8 @@ internal static class RequestTelemetryClassifier
 {
     internal const string OperationItemKey = "__honua.telemetry.operation";
 
+    private const string PMTilesProxyPathPrefix = "/api/v1/tiles/pmtiles";
+
     internal static string? ResolveProtocol(PathString path)
     {
         var value = path.Value ?? string.Empty;
@@ -16,6 +18,14 @@ internal static class RequestTelemetryClassifier
         if (value.StartsWith("/rest/services/Utilities/PrintingTools/GPServer", StringComparison.OrdinalIgnoreCase))
         {
             return HonuaTelemetry.Protocols.PrintingTools;
+        }
+
+        // Check the PMTiles range-proxy surface before the broader "/admin" /
+        // "/tiles" fallbacks below so range traffic is tagged as PMTiles instead
+        // of being silently dropped or absorbed into the FeatureServer bucket.
+        if (StartsWithPathSegment(value, PMTilesProxyPathPrefix))
+        {
+            return HonuaTelemetry.Protocols.PMTiles;
         }
 
         if (StartsWithPathSegment(value, "/ogc/tiles"))
@@ -146,6 +156,13 @@ internal static class RequestTelemetryClassifier
 
         var path = context.Request.Path.Value ?? string.Empty;
         var method = context.Request.Method;
+
+        if (StartsWithPathSegment(path, PMTilesProxyPathPrefix))
+        {
+            return string.Equals(method, HttpMethods.Head, StringComparison.OrdinalIgnoreCase)
+                ? "pmtiles.head"
+                : "pmtiles.range";
+        }
 
         if (path.StartsWith("/rest/services/Utilities/PrintingTools/GPServer", StringComparison.OrdinalIgnoreCase))
         {

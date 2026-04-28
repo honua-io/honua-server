@@ -69,8 +69,20 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             // Report initial progress if callback provided
             request.Progress?.Report(initialProgress);
 
-            var fileId = GenerateFileId();
-            var storagePath = BuildStoragePath(fileId, request.FileName, request.Folder);
+            string fileId;
+            string storagePath;
+            if (!string.IsNullOrWhiteSpace(request.ObjectKeyOverride))
+            {
+                ValidateObjectKeyOverride(request.ObjectKeyOverride);
+                fileId = request.ObjectKeyOverride;
+                storagePath = request.ObjectKeyOverride;
+            }
+            else
+            {
+                fileId = GenerateFileId();
+                storagePath = BuildStoragePath(fileId, request.FileName, request.Folder);
+            }
+
             var fullPath = Path.Combine(_basePath, storagePath);
 
             // Ensure directory exists
@@ -453,8 +465,36 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         await File.WriteAllTextAsync(metadataFile, json, cancellationToken);
     }
 
-    private string GetMetadataFilePath(string fileId) =>
-        Path.Combine(_metadataPath, $"{fileId}.json");
+    private string GetMetadataFilePath(string fileId)
+    {
+        // Deterministic publish flows can use slash-bearing object keys as fileIds.
+        // Encode separators so the metadata file lives flat under _metadataPath
+        // and Directory.GetFiles(*.json) still finds it.
+        var safeName = fileId
+            .Replace('/', '_')
+            .Replace('\\', '_');
+        return Path.Combine(_metadataPath, $"{safeName}.json");
+    }
+
+    private static void ValidateObjectKeyOverride(string objectKey)
+    {
+        if (Path.IsPathRooted(objectKey))
+        {
+            throw new ArgumentException("Object key override must be a relative path.", nameof(objectKey));
+        }
+
+        if (objectKey.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+        {
+            throw new ArgumentException("Object key override contains invalid path characters.", nameof(objectKey));
+        }
+
+        var separators = new[] { '/', '\\' };
+        var segments = objectKey.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Any(segment => segment == ".."))
+        {
+            throw new ArgumentException("Object key override must not contain relative traversal segments.", nameof(objectKey));
+        }
+    }
 
     private static string GenerateFileId() =>
         Guid.NewGuid().ToString("N");

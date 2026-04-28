@@ -1,0 +1,321 @@
+# PMTiles Publishing
+
+PMTiles archive generation has two distinct delivery modes. This guide documents the
+durable publish workflow introduced in #845 and contrasts it with the existing
+temporary admin archive download.
+
+## Modes At A Glance
+
+| Concern | `operation: "archive"` | `operation: "publish"` |
+|---------|-----------------------|------------------------|
+| Object lifetime | 24-hour TTL | Permanent (no TTL) |
+| Object key | Random per job (`pmtiles/{guid}.pmtiles`) | Deterministic (`{prefix}/pmtiles/{serviceId}/{layerId}/{tms}.pmtiles`) |
+| Result fields | `archiveFileId`, `downloadUrl`, `archiveSizeBytes` | `publishedArtifact` (full descriptor) |
+| Audience | Admin operators downloading a PMTiles file | Browser-based MapLibre/PMTiles clients |
+| Re-run behavior | Generates a new file each run | Overwrites the existing artifact |
+
+`operation: "archive"` continues to behave exactly as before. New deployments wanting a
+durable browser-readable artifact should use `operation: "publish"`.
+
+## Publish API
+
+```bash
+curl -X POST https://<host>/api/v1/admin/tile-operations/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "operation": "publish",
+    "serviceId": "world",
+    "layerId": 42,
+    "minZoom": 0,
+    "maxZoom": 12,
+    "bbox": [-180, -85.0511, 180, 85.0511]
+  }'
+```
+
+`layerId` is required. `serviceId`, `bbox`, `minZoom`, `maxZoom`, `maxTiles`, and
+`tileMatrixSetId` follow the same semantics as the `archive` operation.
+
+Polling `GET /api/v1/admin/tile-operations/jobs/{jobId}` returns
+`TileOperationProgress` with a populated `publishedArtifact` once the job completes:
+
+```json
+{
+  "jobId": "...",
+  "operation": "publish",
+  "status": 2,
+  "publishedArtifact": {
+    "artifactId": "pmtiles/world/42/WebMercatorQuad.pmtiles",
+    "storageProvider": "AwsS3",
+    "bucket": "honua-tiles",
+    "objectKey": "pmtiles/world/42/WebMercatorQuad.pmtiles",
+    "contentType": "application/vnd.pmtiles",
+    "sizeBytes": 12483211,
+    "urlStrategy": "SignedUrl",
+    "accessUrl": "https://honua-tiles.s3.amazonaws.com/pmtiles/world/42/WebMercatorQuad.pmtiles?X-Amz-Signature=...",
+    "accessUrlExpiresAt": "2026-05-05T00:00:00Z",
+    "publishedAt": "2026-04-28T00:00:00Z",
+    "minZoom": 0,
+    "maxZoom": 12,
+    "bounds": [-180.0, -85.0511, 180.0, 85.0511],
+    "layerId": 42,
+    "serviceId": "world",
+    "tileMatrixSetId": "WebMercatorQuad"
+  }
+}
+```
+
+The descriptor carries all fields a MapLibre/PMTiles client needs to construct a
+`pmtiles://{accessUrl}` source: bounds, minzoom, maxzoom, content type, and access URL.
+
+## URL Strategies
+
+`FileStorage:PMTilesPublish:UrlStrategy` selects how clients reach the artifact.
+
+### `SignedUrl` (default)
+
+Server returns a presigned/SAS URL with a finite lifetime:
+
+```jsonc
+"FileStorage": {
+  "PMTilesPublish": {
+    "UrlStrategy": "SignedUrl",
+    "SignedUrlLifetime": "7.00:00:00"
+  }
+}
+```
+
+* AWS S3 SigV4 IAM credentials cap presign lifetime at 7 days.
+* Azure SAS tokens accept longer lifetimes via account-level keys.
+* The signed `accessUrl` is generated once at publish time and persisted with
+  the descriptor; the job-status endpoint replays the same URL and does not
+  re-sign it. To rotate the URL before `accessUrlExpiresAt`, re-run
+  `operation: "publish"` for the same `(serviceId, layerId, tileMatrixSetId)`
+  — publish is idempotent at the deterministic key and the new descriptor
+  carries a fresh `accessUrl`/`accessUrlExpiresAt`. For workloads that
+  outlive the configured `SignedUrlLifetime`, raise the lifetime within the
+  provider's cap (Azure SAS) or switch to `PublicUrl` / `RangeProxy`.
+
+This is the safe default for private buckets — credentials never reach the browser.
+
+### `PublicUrl`
+
+Suitable when the bucket/container is publicly readable and a stable URL is
+acceptable. Configure the public base URL:
+
+```jsonc
+"FileStorage": {
+  "PMTilesPublish": {
+    "UrlStrategy": "PublicUrl",
+    "PublicBucketBaseUrl": "https://cdn.example.com/honua-tiles"
+  }
+}
+```
+
+`accessUrl` is computed as `{PublicBucketBaseUrl}/{objectKey}`.
+`accessUrlExpiresAt` is `null` because the URL never expires.
+
+### `RangeProxy`
+
+For private deployments that cannot expose object storage credentials or public
+URLs to the browser. Range requests are routed through the server:
+
+```jsonc
+"FileStorage": {
+  "PMTilesPublish": {
+    "UrlStrategy": "RangeProxy"
+  }
+}
+```
+
+`accessUrl` is the server-root-relative path `/api/v1/tiles/pmtiles/{artifactId}`.
+Browser clients hosted on the same origin as the Honua server can pass it
+straight to `pmtiles.PMTiles(...)`; SDKs running on a different origin should
+resolve the relative form against the configured Honua server origin (e.g.,
+`new URL(descriptor.accessUrl, honuaServerOrigin).toString()`) before handing
+it to the PMTiles client. The proxy endpoint:
+
+* responds to `GET` and `HEAD`. `Accept-Ranges: bytes`, `ETag`, and
+  `Last-Modified` are emitted on every response (including `HEAD`)
+* `HEAD` returns `200 OK` with `Content-Length` and no body, so MapLibre /
+  pmtiles.js probes that pre-flight the artifact succeed without transferring
+  the archive
+* honors RFC 7233 `Range: bytes=offset-end` `GET` requests with
+  `206 Partial Content` and `Content-Range`
+* returns `416 Range Not Satisfiable` (with `Content-Range: bytes */<size>`)
+  for ranges past the artifact end **and** for any single range larger than
+  64 MiB — this is a per-request cap, not a per-object cap. PMTiles clients
+  pull tiny tile-sized ranges (~16 KiB), so this only affects bespoke tools
+  that try to mirror the archive in one pass; for bulk pulls use direct
+  `SignedUrl` / `PublicUrl` access or a no-`Range` `GET` against the proxy
+  (the latter streams the whole archive as `200 OK`).
+* a `GET` without a `Range` header returns the full archive as `200 OK`
+* returns `404 Not Found` when the underlying object is missing (e.g., the
+  artifact was deleted out-of-band by lifecycle policy or console action, or
+  metadata is cached but the bytes are gone). All three read paths surface
+  this consistently as `404`: the no-`Range` `GET` (full download), the
+  `Range` `GET` that falls back to a download (when no native range reader
+  is registered), and the `Range` `GET` served by a native range reader
+  (S3 `NoSuchKey` / Azure 404). Callers never see `500` for a missing
+  object. Non-404 provider exceptions (e.g., S3 `AccessDenied`, Azure
+  `Forbidden`) continue to propagate so the global exception mapper can
+  surface them.
+* only serves objects that are tagged as durable PMTiles publish artifacts —
+  the resolver requires `Content-Type: application/vnd.pmtiles`, the
+  `operation=publish` storage metadata tag set by the publish workflow, and
+  (when `FileStorage:PMTilesPublish:KeyPrefix` is configured) a key under the
+  configured publish prefix. Other CloudFile objects in the same bucket are
+  returned as `404 Not Found` even if the artifact ID is guessed.
+* is publicly accessible — MapLibre browser clients have no admin credentials.
+  Restrict via deployment-level rate limiting / WAF if necessary.
+
+The proxy adds one server-side hop per range read. PMTiles clients typically read
+small ranges (~16 KiB) per tile, so latency overhead is dominated by the cloud
+read. Direct `SignedUrl` or `PublicUrl` access avoids the hop entirely.
+
+## Object Storage CORS Requirements
+
+`PublicUrl` and `SignedUrl` strategies stream bytes from object storage directly
+to the browser. The bucket/container CORS policy must allow:
+
+| Setting | Value |
+|---------|-------|
+| Methods | `GET`, `HEAD` |
+| Allowed request headers | `Range`, `If-Range`, `If-None-Match`, `If-Modified-Since` |
+| Exposed response headers | `Accept-Ranges`, `Content-Range`, `Content-Length`, `ETag`, `Last-Modified` |
+| Allowed origins | Application domains that load the MapLibre map |
+
+The Honua server CORS policy already exposes those response headers for the
+`RangeProxy` strategy.
+
+### AWS S3 CORS sample
+
+```json
+[
+  {
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedOrigins": ["https://app.example.com"],
+    "AllowedHeaders": ["Range", "If-Range", "If-None-Match", "If-Modified-Since"],
+    "ExposeHeaders": ["Accept-Ranges", "Content-Range", "Content-Length", "ETag", "Last-Modified"],
+    "MaxAgeSeconds": 600
+  }
+]
+```
+
+### Azure Blob CORS sample
+
+```xml
+<Cors>
+  <CorsRule>
+    <AllowedOrigins>https://app.example.com</AllowedOrigins>
+    <AllowedMethods>GET,HEAD</AllowedMethods>
+    <AllowedHeaders>Range,If-Range,If-None-Match,If-Modified-Since</AllowedHeaders>
+    <ExposedHeaders>Accept-Ranges,Content-Range,Content-Length,ETag,Last-Modified</ExposedHeaders>
+    <MaxAgeInSeconds>600</MaxAgeInSeconds>
+  </CorsRule>
+</Cors>
+```
+
+## Failure Semantics
+
+The publish path validates strategy-specific configuration **before** uploading
+the durable artifact, and rolls back any object that was just written if access
+URL generation subsequently fails — but never at the cost of a previously good
+publish:
+
+* **Partial tile-generation failure**: if any tile fails to generate during
+  archive build (`failed > 0`), publish aborts before upload. The job is
+  marked `Failed` with `Publish aborted before upload: N tiles failed during
+  generation.` and **no upload happens**, so a deterministic key that already
+  has a previously published artifact is never overwritten with bytes that
+  are missing the failed tiles. The temporary `archive` operation still
+  tolerates partial failures because it writes to a random per-job key with
+  a 24-hour TTL — there is no live durable artifact to corrupt.
+* `PublicUrl` without `PublicBucketBaseUrl` configured fails the job with a
+  pre-flight error and never uploads a file.
+* `SignedUrl` strategy: if the storage provider returns no presigned URL (e.g.,
+  IAM/SAS misconfiguration), the rollback behavior depends on whether the
+  deterministic key already had a prior publish:
+  * **No prior artifact** (first publish at this key): the just-uploaded
+    artifact is deleted before the job is marked failed, so a later re-run
+    does not race against an orphan.
+  * **Prior artifact existed** (re-publish overwrote a previously good
+    artifact): the new bytes are **left in place** and a
+    `PublishOverwriteRetained` warning (`EventId 9215`) is logged. Deleting
+    would erase the only PMTiles bytes clients can see, turning a transient
+    URL-generation failure into total data loss for the active artifact.
+    The new bytes are still valid PMTiles content; only access-URL
+    generation failed, so existing clients keep working until the operator
+    fixes the URL strategy and re-runs publish.
+* `RangeProxy` does not call out to the storage provider for URL generation, so
+  no rollback path is required.
+
+When a rollback delete is attempted but itself fails, the job is still marked
+failed and a warning is emitted with the artifact ID and job ID so operators
+can reconcile the leftover object out-of-band:
+
+* `PublishOrphanCleanupFailed` (`EventId 9212`) when `DeleteAsync` throws.
+* `PublishOrphanCleanupReturnedFalse` (`EventId 9213`) when the provider reports
+  a soft failure by returning `false` (S3 / Azure Blob / LocalFileStorage all
+  catch transport-level failures and surface them this way, so the bool result
+  is the only signal that the orphan still exists).
+
+Whatever the failure mode of the access URL step, the job-status payload always
+returns the stable client-safe message `Publish access URL generation failed.`
+The provider-specific exception (account, IAM principal, signed-URL fragment,
+SDK type name, …) is captured only in the structured log entry
+`PublishAccessUrlFailed` (`EventId 9214`) so admin API clients never see
+provider internals leak through `errorMessage`.
+
+## Restart Recovery
+
+Queued and in-flight `publish` jobs are tracked under
+`OperationType.PMTilesPublish` in the universal operations progress store and
+are restored alongside `TileCache` and `PMTilesArchive` jobs when the tile
+operations service starts. A publish job that was queued before a restart
+resumes at the next worker tick without operator intervention; an in-flight
+upload that lost its host fails with the standard cancellation semantics and
+must be re-issued.
+
+## Object Keys And Re-publishing
+
+Publish uses a deterministic key derived from the request:
+
+```
+{provider-key-prefix?}/{publish-key-prefix}/{serviceId or "_"}/{layerId}/{tileMatrixSetId}.pmtiles
+```
+
+Example with S3 `KeyPrefix=tenants/acme` and publish prefix `pmtiles`:
+
+```
+tenants/acme/pmtiles/world/42/WebMercatorQuad.pmtiles
+```
+
+Re-publishing the same `(serviceId, layerId, tileMatrixSetId)` overwrites the
+existing object. Object stores guarantee atomic PUT, but in-flight readers may
+observe the previous version until they retry. Plan re-publish during low-traffic
+windows or move to a versioned URL scheme as a follow-up.
+
+## MapLibre / PMTiles Client Hint
+
+The descriptor exposes everything required for a browser client to register a
+PMTiles source without ad hoc configuration. From SDK-JS / pmtiles.js:
+
+```js
+const protocol = new pmtiles.Protocol();
+maplibregl.addProtocol("pmtiles", protocol.tile);
+
+const p = new pmtiles.PMTiles(descriptor.accessUrl);
+protocol.add(p);
+
+map.addSource("layer-42", {
+  type: "vector",
+  url: `pmtiles://${descriptor.accessUrl}`,
+  bounds: descriptor.bounds,
+  minzoom: descriptor.minZoom,
+  maxzoom: descriptor.maxZoom
+});
+```
+
+Server-side metadata for downstream packaging additionally exposes
+`SourceProtocol.PMTiles` so map packages can express PMTiles as a first-class
+source binding.

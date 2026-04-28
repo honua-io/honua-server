@@ -64,11 +64,13 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
 
         try
         {
-            var objectKey = CloudStoragePath.BuildObjectKey(
-                CloudStoragePath.GenerateFileId(),
-                request.FileName,
-                request.Folder,
-                _options.BlobPrefix);
+            var objectKey = !string.IsNullOrWhiteSpace(request.ObjectKeyOverride)
+                ? request.ObjectKeyOverride
+                : CloudStoragePath.BuildObjectKey(
+                    CloudStoragePath.GenerateFileId(),
+                    request.FileName,
+                    request.Folder,
+                    _options.BlobPrefix);
 
             var uploadedAt = DateTimeOffset.UtcNow;
             var expiresAt = request.TimeToLive.HasValue

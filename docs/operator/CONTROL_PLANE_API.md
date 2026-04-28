@@ -402,8 +402,8 @@ Focused guidance and a concrete JSON example:
 | `/api/v1/admin/operations/type/{operationType}` | GET | List operations by type |
 
 Supported `operationType` values: `Upload`, `Import`, `Ingest`, `ExternalImport`,
-`TileCache`, `PMTilesArchive`, `Export`, `RasterImport`, `Print`, `Geoprocessing`,
-`Publishing`, `Orchestration`.
+`TileCache`, `PMTilesArchive`, `PMTilesPublish`, `Export`, `RasterImport`, `Print`,
+`Geoprocessing`, `Publishing`, `Orchestration`.
 
 Geoprocessing operations report workflow-specific progress including the current
 deterministic stage and plan step counts. Cancellation is supported through the
@@ -609,6 +609,15 @@ When `approvalRequired` is `true`, detected changes create a pending approval re
 | `/api/v1/admin/tile-operations/jobs/{jobId}` | GET | Get tile operation job status |
 | `/api/v1/admin/tile-operations/jobs/{jobId}/cancel` | POST | Cancel tile operation job |
 | `/api/v1/admin/tile-operations/jobs/{jobId}/retry` | POST | Retry tile operation job |
+
+Supported `operation` values on the start request: `seed`, `warm`, `invalidate`,
+`purge`, `archive`, `publish`. The `publish` operation produces a durable PMTiles
+artifact whose descriptor (provider, bucket, object key, content type, size, URL
+strategy, browser-usable access URL, MapLibre source hints) is returned on the
+job-status response as `publishedArtifact`. See
+[Tile Operations Runbook](tile-operations-runbook.md) and the
+[PMTiles Publishing](pmtiles-publishing.md) guide for request/response details
+and storage configuration.
 
 ### **Analysis Report Endpoints**
 
