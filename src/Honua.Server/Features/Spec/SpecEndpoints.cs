@@ -126,6 +126,13 @@ internal static class SpecEndpoints
                     $"Canonical spec JSON could not be read: {ex.Message}",
                     SourceSpan.Synthetic));
             }
+            catch (FormatException ex)
+            {
+                diagnostics.Add(SpecDiagnostic.Error(
+                    SpecDiagnosticCode.ParseError,
+                    $"Canonical spec JSON could not be read: {ex.Message}",
+                    SourceSpan.Synthetic));
+            }
         }
 
         if (document is not null && !HasErrorDiagnostics(diagnostics))

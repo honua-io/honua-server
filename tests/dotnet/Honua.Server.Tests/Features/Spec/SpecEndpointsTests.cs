@@ -128,6 +128,56 @@ public sealed class SpecEndpointsTests
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /v1/spec/validate")]
+    public async Task Validate_CanonicalSpecObjectWithOutOfRangeNumber_ReturnsParseDiagnostic()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsync(
+            "/v1/spec/validate",
+            new StringContent(
+                """
+                {
+                  "spec": {
+                    "grammar": "v1.0",
+                    "sources": [
+                      {
+                        "id": "hospitals",
+                        "type": "layer",
+                        "ref": "catalog:layer:1"
+                      }
+                    ],
+                    "compute": [
+                      {
+                        "id": "broken",
+                        "op": "buffer",
+                        "params": {
+                          "distance": {
+                            "kind": "distance",
+                            "unit": "m",
+                            "value": 1e400
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+                """,
+                Encoding.UTF8,
+                "application/json"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        Assert.False(root.GetProperty("isValid").GetBoolean());
+        Assert.Contains(root.GetProperty("diagnostics").EnumerateArray(), diagnostic =>
+            diagnostic.GetProperty("code").GetString() == "ParseError" &&
+            diagnostic.GetProperty("severity").GetString() == "error");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_WithoutSource_Returns400WithInvalidRequestBody()
     {
         using var factory = new TestWebApplicationFactory();
