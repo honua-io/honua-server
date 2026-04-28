@@ -782,7 +782,6 @@ internal sealed class FeatureServerQueryExecutor
         if (context.Request.Protocol.StartsWith("HTTP/1.", StringComparison.OrdinalIgnoreCase))
         {
             context.Response.Headers.ContentLength = null;
-            context.Response.Headers.TransferEncoding = "chunked";
         }
     }
 
