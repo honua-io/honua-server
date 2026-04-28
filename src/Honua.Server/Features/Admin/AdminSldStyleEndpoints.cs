@@ -137,7 +137,7 @@ internal static class AdminSldStyleEndpoints
 
             SldStyleLog.ImportRejected(logger, layerId, diagnostics.Length);
             return Results.Json(
-                ApiResponse<SldImportFailureResponse>.Failure("SLD import failed; see diagnostics."),
+                ApiResponse<SldImportFailureResponse>.Failure("SLD import failed; see diagnostics.", failure),
                 SldStyleJsonContext.Default.ApiResponseSldImportFailureResponse,
                 statusCode: StatusCodes.Status422UnprocessableEntity);
         }
@@ -248,8 +248,13 @@ internal static class AdminSldStyleEndpoints
 
         if (export.Diagnostics.Any(d => d.Severity == SldDiagnosticSeverity.Error))
         {
+            var failure = new SldImportFailureResponse
+            {
+                Diagnostics = export.Diagnostics
+            };
+
             return Results.Json(
-                ApiResponse<SldImportFailureResponse>.Failure("Stored style cannot be exported to SLD; see diagnostics."),
+                ApiResponse<SldImportFailureResponse>.Failure("Stored style cannot be exported to SLD; see diagnostics.", failure),
                 SldStyleJsonContext.Default.ApiResponseSldImportFailureResponse,
                 statusCode: StatusCodes.Status422UnprocessableEntity);
         }

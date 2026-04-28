@@ -78,4 +78,20 @@ public sealed class ApiResponse<T>
             Message = message
         };
     }
+
+    /// <summary>
+    /// Creates a failure response with a structured payload.
+    /// </summary>
+    /// <param name="message">Error message</param>
+    /// <param name="data">Failure response data</param>
+    /// <returns>Failed API response</returns>
+    public static ApiResponse<T> Failure(string message, T? data)
+    {
+        return new ApiResponse<T>
+        {
+            Success = false,
+            Data = data,
+            Message = message
+        };
+    }
 }

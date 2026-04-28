@@ -65,7 +65,8 @@ public sealed class SldConversionTests
         var fill = conversion.Layers.First(l => l.Type == "fill");
         var outline = conversion.Layers.First(l => l.Type == "line");
 
-        fill.Paint!["fill-color"].StringValue.Should().StartWith("rgba(243,111,33");
+        fill.Paint!["fill-color"].StringValue.Should().Be("#f36f21");
+        fill.Paint["fill-opacity"].NumberValue.Should().Be(0.6d);
         fill.Paint.Should().NotContainKey("fill-outline-color",
             "outline lives on the dedicated line layer; setting fill-outline-color would double-stroke the polygon");
         outline.Paint!["line-color"].StringValue.Should().Be("#1f2937");
@@ -196,7 +197,8 @@ public sealed class SldConversionTests
         conversion.DetectedVersion.Should().Be(SldVersion.Sld11);
         conversion.HasErrors.Should().BeFalse();
         var fillLayer = conversion.Layers.First(l => l.Type == "fill");
-        fillLayer.Paint!["fill-color"].StringValue.Should().StartWith("rgba(51,102,204");
+        fillLayer.Paint!["fill-color"].StringValue.Should().Be("#3366cc");
+        fillLayer.Paint["fill-opacity"].NumberValue.Should().Be(0.5d);
     }
 
     [UnitTest]

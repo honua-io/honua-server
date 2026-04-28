@@ -260,7 +260,7 @@ internal static class SldToMapLibreConverter
             var fillPaint = new Dictionary<string, MapLibreExpression>();
             if (polygon.Fill.Color is { Length: > 0 } fillColor)
             {
-                fillPaint["fill-color"] = new MapLibreExpression(NormalizeColor(fillColor, polygon.Fill.Opacity));
+                fillPaint["fill-color"] = new MapLibreExpression(NormalizeColor(fillColor, null));
             }
 
             if (polygon.Fill.Opacity is { } fillOpacity)

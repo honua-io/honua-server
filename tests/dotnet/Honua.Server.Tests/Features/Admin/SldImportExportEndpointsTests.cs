@@ -6,6 +6,8 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Styling.Sld;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -141,6 +143,40 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
+    public async Task ImportSld_NoConvertibleSymbolizers_ReturnsFailureDiagnosticsPayload()
+    {
+        var client = _fixture.CreateAdminClient();
+        const string sld = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld">
+          <NamedLayer>
+            <Name>empty</Name>
+            <UserStyle>
+              <FeatureTypeStyle>
+                <Rule><Name>empty-rule</Name></Rule>
+              </FeatureTypeStyle>
+            </UserStyle>
+          </NamedLayer>
+        </StyledLayerDescriptor>
+        """;
+
+        using var content = new StringContent(sld, Encoding.UTF8, "application/xml");
+        var response = await client.PostAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style/import-sld",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var failure = await DeserializeFailureAsync(response);
+        failure.Success.Should().BeFalse();
+        failure.Data.Should().NotBeNull();
+        failure.Data!.DetectedVersion.Should().Be("Sld10");
+        failure.Data.Diagnostics.Should().Contain(d =>
+            d.Severity == SldDiagnosticSeverity.Error && d.Construct == "MapLibreLayers");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
     [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld")]
     public async Task ExportSld_AfterPolygonImport_ReturnsValidSldXml()
     {
@@ -162,6 +198,37 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
         xml.Should().Contain("StyledLayerDescriptor")
             .And.Contain("PolygonSymbolizer");
         exportResponse.Headers.Should().ContainKey("X-Sld-Diagnostic-Count");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld")]
+    public async Task ExportSld_UnconvertibleStoredStyle_ReturnsFailureDiagnosticsPayload()
+    {
+        var client = _fixture.CreateAdminClient();
+        await StoreMapLibreStyleAsync("""
+        {
+          "version": 8,
+          "layers": [
+            {
+              "id": "background",
+              "type": "background",
+              "paint": { "background-color": "#ffffff" }
+            }
+          ]
+        }
+        """);
+
+        var response = await client.GetAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style/export-sld");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var failure = await DeserializeFailureAsync(response);
+        failure.Success.Should().BeFalse();
+        failure.Data.Should().NotBeNull();
+        failure.Data!.Diagnostics.Should().Contain(d =>
+            d.Severity == SldDiagnosticSeverity.Error && d.Construct == "MapLibreLayers");
+        failure.Data.Diagnostics.Should().Contain(d => d.Construct == "BackgroundLayer");
     }
 
     [IntegrationTest]
@@ -194,11 +261,34 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
         reImported.Data!.LayerCount.Should().BeGreaterThan(0);
     }
 
-    private static async Task<Honua.Server.Features.Infrastructure.Models.ApiResponse<SldImportResponse>> DeserializeImportAsync(
-        HttpResponseMessage response)
+    private static async Task<ApiResponse<SldImportResponse>> DeserializeImportAsync(HttpResponseMessage response)
     {
         var payload = await response.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize(payload, SldStyleJsonContext.Default.ApiResponseSldImportResponse)!;
+    }
+
+    private static async Task<ApiResponse<SldImportFailureResponse>> DeserializeFailureAsync(HttpResponseMessage response)
+    {
+        var payload = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize(payload, SldStyleJsonContext.Default.ApiResponseSldImportFailureResponse)!;
+    }
+
+    private async Task StoreMapLibreStyleAsync(string styleJson)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE honua.layers
+            SET maplibre_style = @style::jsonb,
+                geoservices_drawing_info = NULL,
+                style_version = COALESCE(style_version, 0) + 1
+            WHERE layer_id = @layerId;
+            """;
+        _ = command.Parameters.AddWithValue("@style", styleJson);
+        _ = command.Parameters.AddWithValue("@layerId", WebAppFixture.TestLayerId);
+
+        var rows = await command.ExecuteNonQueryAsync();
+        rows.Should().Be(1);
     }
 
     private static string LoadFixture(string fileName)
