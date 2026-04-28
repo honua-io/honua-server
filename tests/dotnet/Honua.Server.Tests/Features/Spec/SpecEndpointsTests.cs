@@ -20,6 +20,130 @@ public sealed class SpecEndpointsTests
 {
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/validate")]
+    public async Task Validate_TextSpec_ReturnsDiagnosticsAndCanonicalJson()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsync("/v1/spec/validate", JsonContent(new
+        {
+            text = """
+            grammar "v1.0"
+            source hospitals { type = "layer", ref = "catalog:layer:1" }
+            compute buffered {
+              op = buffer
+              inputs = { input = @hospitals }
+              params = { distance = 500.m, crs = "EPSG:3857" }
+            }
+            output result { expr = @buffered }
+            """,
+            includeCanonicalJson = true
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        Assert.True(root.GetProperty("isValid").GetBoolean());
+        Assert.Equal("v1.0", root.GetProperty("grammar").GetString());
+        Assert.Equal("v1.0", root.GetProperty("operatorCapabilityVersion").GetString());
+
+        var canonicalJson = root.GetProperty("canonicalJson").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(canonicalJson));
+        using var canonical = JsonDocument.Parse(canonicalJson!);
+        Assert.Equal("v1.0", canonical.RootElement.GetProperty("grammar").GetString());
+        Assert.Equal("buffer", canonical.RootElement.GetProperty("compute")[0].GetProperty("op").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/validate")]
+    public async Task Validate_TextSpecWithUnknownOperator_ReturnsInvalidWithDiagnostic()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsync("/v1/spec/validate", JsonContent(new
+        {
+            text = """
+            grammar "v1.0"
+            source hospitals { type = "layer", ref = "catalog:layer:1" }
+            compute broken {
+              op = does_not_exist
+              inputs = { input = @hospitals }
+            }
+            """
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        Assert.False(root.GetProperty("isValid").GetBoolean());
+        Assert.Contains(root.GetProperty("diagnostics").EnumerateArray(), diagnostic =>
+            diagnostic.GetProperty("code").GetString() == "UnknownOperator" &&
+            diagnostic.GetProperty("severity").GetString() == "error");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/validate")]
+    public async Task Validate_CanonicalSpecObject_RunsSameValidator()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsync("/v1/spec/validate", JsonContent(new
+        {
+            spec = new
+            {
+                grammar = "v1.0",
+                sources = new[]
+                {
+                    new
+                    {
+                        id = "hospitals",
+                        type = "layer",
+                        @ref = "catalog:layer:1"
+                    }
+                },
+                compute = new[]
+                {
+                    new
+                    {
+                        id = "broken",
+                        op = "does_not_exist"
+                    }
+                }
+            }
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        Assert.False(root.GetProperty("isValid").GetBoolean());
+        Assert.Contains(root.GetProperty("diagnostics").EnumerateArray(), diagnostic =>
+            diagnostic.GetProperty("code").GetString() == "UnknownOperator");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/validate")]
+    public async Task Validate_WithoutSource_Returns400WithInvalidRequestBody()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsync(
+            "/v1/spec/validate",
+            new StringContent("{}", Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("invalid-request-body", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_LinearChain_ReturnsDagWithContentHashesInTopologicalOrder()
     {

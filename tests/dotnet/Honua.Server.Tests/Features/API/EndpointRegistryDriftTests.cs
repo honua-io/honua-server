@@ -77,6 +77,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         "POST /v1/spec/apply",
         "POST /v1/spec/cancel",
         "POST /v1/spec/plan",
+        "POST /v1/spec/validate",
     };
 
     [Fact]

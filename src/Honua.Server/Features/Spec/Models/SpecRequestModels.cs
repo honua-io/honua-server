@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
@@ -29,6 +30,21 @@ internal sealed class SpecDocumentRequest
 
     /// <summary>Apply-only: maximum node concurrency. Ignored by <c>/plan</c>.</summary>
     public int? MaxConcurrency { get; init; }
+}
+
+/// <summary>
+/// Body of <c>POST /v1/spec/validate</c>.
+/// </summary>
+internal sealed class SpecValidateRequest
+{
+    /// <summary>Spec source text in the public DSL.</summary>
+    public string? Text { get; init; }
+
+    /// <summary>Canonical JSON spec document emitted by <c>SpecCanonicalizer</c>.</summary>
+    public JsonElement Spec { get; init; }
+
+    /// <summary>When true, valid requests include canonical JSON in the response.</summary>
+    public bool IncludeCanonicalJson { get; init; }
 }
 
 /// <summary>
@@ -79,6 +95,46 @@ internal sealed class SpecPlanResponse
     public required IReadOnlyList<SpecPlanNodeResponse> Nodes { get; init; }
 
     public IReadOnlyList<SpecWarning> Warnings { get; init; } = [];
+}
+
+/// <summary>
+/// Response body for <c>POST /v1/spec/validate</c>.
+/// </summary>
+internal sealed class SpecValidateResponse
+{
+    public required bool IsValid { get; init; }
+
+    public required IReadOnlyList<SpecValidateDiagnosticDto> Diagnostics { get; init; }
+
+    public string? CanonicalJson { get; init; }
+
+    public string? Grammar { get; init; }
+
+    public required string OperatorCapabilityVersion { get; init; }
+}
+
+internal sealed class SpecValidateDiagnosticDto
+{
+    public required string Code { get; init; }
+
+    public required string Severity { get; init; }
+
+    public required string Message { get; init; }
+
+    public string? Path { get; init; }
+
+    public SpecSourceSpanDto? Span { get; init; }
+}
+
+internal sealed class SpecSourceSpanDto
+{
+    public required int Line { get; init; }
+
+    public required int Column { get; init; }
+
+    public required int Offset { get; init; }
+
+    public required int Length { get; init; }
 }
 
 /// <summary>
@@ -154,6 +210,10 @@ internal sealed class SpecProblem
 [JsonSerializable(typeof(SpecNodeRequest))]
 [JsonSerializable(typeof(SpecPlanResponse))]
 [JsonSerializable(typeof(SpecPlanNodeResponse))]
+[JsonSerializable(typeof(SpecValidateRequest))]
+[JsonSerializable(typeof(SpecValidateResponse))]
+[JsonSerializable(typeof(SpecValidateDiagnosticDto))]
+[JsonSerializable(typeof(SpecSourceSpanDto))]
 [JsonSerializable(typeof(SpecCancelRequest))]
 [JsonSerializable(typeof(SpecCancelResponse))]
 [JsonSerializable(typeof(SpecProblem))]

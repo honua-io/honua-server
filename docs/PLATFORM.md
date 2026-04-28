@@ -117,6 +117,7 @@ REST API and GitOps-ready management:
 
 ### Spec Plan/Apply Engine
 Terraform-style plan/apply semantics for canonical spec documents ([Spec Engine reference](developer/SPEC_ENGINE.md)):
+- `POST /v1/spec/validate` parses spec DSL or canonical JSON and returns structured diagnostics for workspace linting
 - `POST /v1/spec/plan` returns a DAG with per-node cost estimates and structured warnings (catalog/metadata only — side-effect-free)
 - `POST /v1/spec/apply` streams per-node progress events over SSE, with a mirrored `geospatial.v1.SpecService/ApplySpec` gRPC server-streaming surface
 - `POST /v1/spec/cancel` cooperatively cancels an in-flight run; `GET /v1/spec/artifact/{hash}` retrieves cached outputs

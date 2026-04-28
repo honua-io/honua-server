@@ -7,6 +7,7 @@ using Honua.Core.Features.Spec.Domain;
 using Honua.Server.Features.Spec.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
+using SpecCanonicalJsonReader = Honua.Core.Features.Spec.Canonical.SpecJsonReader;
 
 namespace Honua.Server.Features.Spec;
 
@@ -27,6 +28,13 @@ internal static class SpecEndpoints
 
         var group = endpoints.MapGroup("/v1/spec")
             .WithTags("Spec");
+
+        group.MapPost("/validate", HandleValidateAsync)
+            .WithDisplayName("Spec Validate")
+            .WithName("SpecValidate")
+            .WithDescription("Parses and validates spec DSL or canonical JSON, returning structured diagnostics and optional canonical JSON.")
+            .Produces<SpecValidateResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest);
 
         group.MapPost("/plan", HandlePlanAsync)
             .WithDisplayName("Spec Plan")
@@ -56,6 +64,89 @@ internal static class SpecEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> HandleValidateAsync(
+        HttpContext context,
+        ISpecParser parser,
+        ISpecValidator validator,
+        ISpecCanonicalizer canonicalizer,
+        CancellationToken cancellationToken)
+    {
+        var request = await TryReadValidateRequestAsync(context, cancellationToken).ConfigureAwait(false);
+        if (request is null)
+        {
+            return BuildProblem(StatusCodes.Status400BadRequest,
+                SpecDiagnosticCodes.InvalidRequestBody,
+                "Request body could not be parsed as a spec validation request.");
+        }
+
+        var hasText = !string.IsNullOrWhiteSpace(request.Text);
+        var hasSpec = request.Spec.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null;
+        if (hasText == hasSpec)
+        {
+            return BuildProblem(StatusCodes.Status400BadRequest,
+                SpecDiagnosticCodes.InvalidRequestBody,
+                "Body must contain exactly one of 'text' or 'spec'.");
+        }
+
+        if (hasSpec && request.Spec.ValueKind != JsonValueKind.Object)
+        {
+            return BuildProblem(StatusCodes.Status400BadRequest,
+                SpecDiagnosticCodes.InvalidRequestBody,
+                "'spec' must be a canonical JSON object.");
+        }
+
+        var diagnostics = new List<SpecDiagnostic>();
+        SpecDocument? document = null;
+
+        if (hasText)
+        {
+            var parse = parser.Parse(request.Text!);
+            diagnostics.AddRange(parse.Diagnostics);
+            document = parse.Document;
+        }
+        else
+        {
+            try
+            {
+                document = SpecCanonicalJsonReader.Read(request.Spec.GetRawText());
+            }
+            catch (JsonException ex)
+            {
+                diagnostics.Add(SpecDiagnostic.Error(
+                    SpecDiagnosticCode.ParseError,
+                    $"Canonical spec JSON could not be parsed: {ex.Message}",
+                    SourceSpan.Synthetic));
+            }
+            catch (InvalidOperationException ex)
+            {
+                diagnostics.Add(SpecDiagnostic.Error(
+                    SpecDiagnosticCode.ParseError,
+                    $"Canonical spec JSON could not be read: {ex.Message}",
+                    SourceSpan.Synthetic));
+            }
+        }
+
+        if (document is not null && !HasErrorDiagnostics(diagnostics))
+        {
+            var validation = validator.Validate(document);
+            diagnostics.AddRange(validation.Diagnostics);
+        }
+
+        var isValid = document is not null && !HasErrorDiagnostics(diagnostics);
+        var canonicalJson = isValid && request.IncludeCanonicalJson
+            ? canonicalizer.ToJson(document!, indent: false)
+            : null;
+
+        return Results.Json(new SpecValidateResponse
+        {
+            IsValid = isValid,
+            Diagnostics = diagnostics.Select(ToValidateDiagnostic).ToList(),
+            CanonicalJson = canonicalJson,
+            Grammar = document?.Grammar,
+            OperatorCapabilityVersion = SpecGrammarVersion.CurrentOperatorCapability
+        }, SpecJsonContext.Default.SpecValidateResponse);
     }
 
     private static async Task<IResult> HandlePlanAsync(
@@ -325,6 +416,23 @@ internal static class SpecEndpoints
         }
     }
 
+    private static async Task<SpecValidateRequest?> TryReadValidateRequestAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await JsonSerializer.DeserializeAsync(
+                context.Request.Body,
+                SpecJsonContext.Default.SpecValidateRequest,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static CanonicalSpecDocument ToDocument(SpecDocumentRequest request)
     {
         // `SpecDocumentRequest.Nodes` defaults to an empty list, but System.Text.Json
@@ -442,6 +550,27 @@ internal static class SpecEndpoints
             Warnings = plan.Warnings
         };
     }
+
+    private static SpecValidateDiagnosticDto ToValidateDiagnostic(SpecDiagnostic diagnostic)
+        => new()
+        {
+            Code = diagnostic.Code.ToString(),
+            Severity = diagnostic.Severity.ToString().ToLowerInvariant(),
+            Message = diagnostic.Message,
+            Path = diagnostic.Path,
+            Span = diagnostic.Span.HasLocation
+                ? new SpecSourceSpanDto
+                {
+                    Line = diagnostic.Span.Line,
+                    Column = diagnostic.Span.Column,
+                    Offset = diagnostic.Span.Offset,
+                    Length = diagnostic.Span.Length
+                }
+                : null
+        };
+
+    private static bool HasErrorDiagnostics(IEnumerable<SpecDiagnostic> diagnostics)
+        => diagnostics.Any(diagnostic => diagnostic.Severity == SpecDiagnosticSeverity.Error);
 
     private static IResult BuildProblem(int status, string code, string detail)
     {
