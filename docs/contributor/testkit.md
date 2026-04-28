@@ -278,7 +278,7 @@ await postgres.CreateTestData(schema)
 ### Test Categories And Tiers
 
 Each attribute emits both a `Category` trait and a `Tier` trait. The tier
-maps to the CI schedule defined in ADR-0034 (`docs/contributor/adr/0034-unified-ci-test-tier-strategy.md`).
+maps to the CI schedule defined in ADR-0035 (`docs/contributor/adr/0035-unified-ci-test-tier-strategy.md`).
 
 | Attribute | Category | Tier | When it runs |
 |-----------|----------|------|--------------|
