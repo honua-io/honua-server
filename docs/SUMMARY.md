@@ -50,6 +50,7 @@
 - [API Examples](developer/API_EXAMPLES.md)
 - [Integration Patterns](developer/INTEGRATION_PATTERNS.md)
 - [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
+- [Mobile SDK Roadmap](developer/mobile-sdk-roadmap.md)
 - [MCP Server](developer/MCP_SERVER.md)
 - [Spec Plan/Apply Engine](developer/SPEC_ENGINE.md)
 - [Grounding & Intent Drafting](developer/GROUNDING.md)
