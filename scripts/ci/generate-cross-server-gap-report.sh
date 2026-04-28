@@ -53,6 +53,8 @@ def text_for_descendant(element: ET.Element, name: str) -> str:
 
 def classify_source(test_name: str) -> str:
     lower = test_name.lower()
+    if "arcgis" in lower:
+        return "ArcGIS Server"
     if "geoserver" in lower:
         return "GeoServer"
     if "mapserver" in lower:
@@ -68,6 +70,8 @@ def classify_protocol(test_name: str) -> str:
         return "WFS 2.0"
     if method.startswith("wmts"):
         return "WMTS 1.0"
+    if method.startswith("mapservertile"):
+        return "MapServer tile"
     return "Unknown"
 
 
@@ -141,6 +145,10 @@ def main() -> None:
         result for result in results
         if result.outcome.lower() in {"notexecuted", "skipped"} and result.details.lower().startswith("gap:")
     ]
+    configuration_skips = [
+        result for result in results
+        if result.outcome.lower() in {"notexecuted", "skipped"} and not result.details.lower().startswith("gap:")
+    ]
     failures = [
         result for result in results
         if result.outcome.lower() in {"failed", "error", "timeout"}
@@ -156,7 +164,7 @@ def main() -> None:
         "",
         f"Last refreshed: {generated_at}",
         "",
-        "This report is generated from the nightly cross-server consume suite. It tracks Honua-as-client reads against reference GeoServer and MapServer sources for WMS 1.3, WFS 2.0, and WMTS 1.0.",
+        "This report is generated from the nightly cross-server consume suite. It tracks Honua-as-client reads against reference GeoServer, MapServer, and explicitly licensed ArcGIS Server sources for WMS 1.3, WFS 2.0, WMTS 1.0, and ArcGIS MapServer tile read paths.",
         "",
         f"Source TRX: `{trx_path.as_posix()}`",
         "",
@@ -164,11 +172,13 @@ def main() -> None:
         "|---|---:|",
         f"| Passing | {len(passing)} |",
         f"| Open gaps | {len(open_gaps)} |",
+        f"| Configuration skips | {len(configuration_skips)} |",
         f"| Failures | {len(failures)} |",
         "",
     ]
 
     write_section(lines, "Open Gaps", open_gaps, "No open compatibility gaps were reported by skipped tests.")
+    write_section(lines, "Configuration Skips", configuration_skips, "No consume tests were skipped due to missing external configuration.")
     write_section(lines, "Failures", failures, "No failing consume tests were reported.")
     write_section(lines, "Passing", passing, "No passing consume tests were reported.")
 

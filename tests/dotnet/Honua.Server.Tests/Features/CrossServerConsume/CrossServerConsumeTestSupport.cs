@@ -175,6 +175,80 @@ internal static class CrossServerConsumeTestSupport
     }
 }
 
+internal sealed record ArcGisServerConsumeConfiguration(
+    bool IsLicensed,
+    string? WmsUrl,
+    string? WmsLayer,
+    string? WmsBbox,
+    string WmsCrs,
+    string WmsFormat,
+    string? WfsUrl,
+    string? WfsTypeName,
+    string? WmtsUrl,
+    string? WmtsLayer,
+    string? MapServerTileUrl)
+{
+    internal const string LicensedConsumeEnv = "HONUA_TEST_ARCGIS_SERVER_CONSUME";
+    internal const string WmsUrlEnv = "HONUA_TEST_ARCGIS_WMS_URL";
+    internal const string WmsLayerEnv = "HONUA_TEST_ARCGIS_WMS_LAYER";
+    internal const string WmsBboxEnv = "HONUA_TEST_ARCGIS_WMS_BBOX";
+    internal const string WmsCrsEnv = "HONUA_TEST_ARCGIS_WMS_CRS";
+    internal const string WmsFormatEnv = "HONUA_TEST_ARCGIS_WMS_FORMAT";
+    internal const string WfsUrlEnv = "HONUA_TEST_ARCGIS_WFS_URL";
+    internal const string WfsTypeNameEnv = "HONUA_TEST_ARCGIS_WFS_TYPENAME";
+    internal const string WmtsUrlEnv = "HONUA_TEST_ARCGIS_WMTS_URL";
+    internal const string WmtsLayerEnv = "HONUA_TEST_ARCGIS_WMTS_LAYER";
+    internal const string MapServerTileUrlEnv = "HONUA_TEST_ARCGIS_MAPSERVER_TILE_URL";
+    internal const string AuthorizationEnv = "HONUA_TEST_ARCGIS_AUTHORIZATION";
+    internal const string TokenEnv = "HONUA_TEST_ARCGIS_TOKEN";
+
+    internal bool HasWms => IsLicensed &&
+                            HasValue(WmsUrl) &&
+                            HasValue(WmsLayer) &&
+                            HasValue(WmsBbox);
+
+    internal bool HasWfs => IsLicensed &&
+                            HasValue(WfsUrl) &&
+                            HasValue(WfsTypeName);
+
+    internal bool HasWmts => IsLicensed &&
+                             HasValue(WmtsUrl) &&
+                             HasValue(WmtsLayer);
+
+    internal bool HasMapServerTile => IsLicensed && HasValue(MapServerTileUrl);
+
+    internal static ArcGisServerConsumeConfiguration FromEnvironment()
+        => From(Environment.GetEnvironmentVariable);
+
+    internal static ArcGisServerConsumeConfiguration From(Func<string, string?> readEnvironmentVariable)
+    {
+        var isLicensed = HasValue(readEnvironmentVariable(CrossServerConsumeTestSupport.ExternalServicesEnv)) &&
+                         HasValue(readEnvironmentVariable(LicensedConsumeEnv));
+
+        return new ArcGisServerConsumeConfiguration(
+            isLicensed,
+            ReadOptional(readEnvironmentVariable, WmsUrlEnv),
+            ReadOptional(readEnvironmentVariable, WmsLayerEnv),
+            ReadOptional(readEnvironmentVariable, WmsBboxEnv),
+            ReadOptional(readEnvironmentVariable, WmsCrsEnv) ?? "EPSG:4326",
+            ReadOptional(readEnvironmentVariable, WmsFormatEnv) ?? "image/png",
+            ReadOptional(readEnvironmentVariable, WfsUrlEnv),
+            ReadOptional(readEnvironmentVariable, WfsTypeNameEnv),
+            ReadOptional(readEnvironmentVariable, WmtsUrlEnv),
+            ReadOptional(readEnvironmentVariable, WmtsLayerEnv),
+            ReadOptional(readEnvironmentVariable, MapServerTileUrlEnv));
+    }
+
+    private static string? ReadOptional(Func<string, string?> readEnvironmentVariable, string name)
+    {
+        var value = readEnvironmentVariable(name);
+        return HasValue(value) ? value : null;
+    }
+
+    private static bool HasValue(string? value)
+        => !string.IsNullOrWhiteSpace(value);
+}
+
 /// <summary>
 /// xUnit fixture that starts the GeoServer reference container and a Honua test host
 /// for cross-server consume checks.
@@ -300,6 +374,46 @@ public sealed class CrossServerConsumeMapServerFixture : IAsyncLifetime
         {
             await _mapServer.DisposeAsync().ConfigureAwait(false);
         }
+    }
+}
+
+/// <summary>
+/// xUnit fixture that starts a Honua test host for licensed ArcGIS Server
+/// cross-server consume checks.
+/// </summary>
+public sealed class CrossServerConsumeArcGisServerFixture : IAsyncLifetime
+{
+    private readonly WebAppFixture _honua = new();
+
+    internal ArcGisServerConsumeConfiguration Configuration { get; private set; } =
+        ArcGisServerConsumeConfiguration.FromEnvironment();
+
+    /// <summary>
+    /// Gets the Honua HTTP client used to route source-server reads through Honua.
+    /// </summary>
+    public HttpClient HonuaClient => _honua.Client;
+
+    /// <inheritdoc />
+    public async Task InitializeAsync()
+    {
+        Configuration = ArcGisServerConsumeConfiguration.FromEnvironment();
+        if (!Configuration.IsLicensed)
+        {
+            return;
+        }
+
+        await _honua.InitializeAsync().ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task DisposeAsync()
+    {
+        if (!Configuration.IsLicensed)
+        {
+            return;
+        }
+
+        await _honua.DisposeAsync().ConfigureAwait(false);
     }
 }
 

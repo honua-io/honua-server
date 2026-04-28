@@ -42,6 +42,19 @@ jobs:
         continue-on-error: true
         env:
           HONUA_TEST_CROSS_SERVER_CONSUME: '1'
+          HONUA_TEST_ARCGIS_SERVER_CONSUME: ${{ secrets.HONUA_TEST_ARCGIS_SERVER_CONSUME }}
+          HONUA_TEST_ARCGIS_WMS_URL: ${{ secrets.HONUA_TEST_ARCGIS_WMS_URL }}
+          HONUA_TEST_ARCGIS_WMS_LAYER: ${{ secrets.HONUA_TEST_ARCGIS_WMS_LAYER }}
+          HONUA_TEST_ARCGIS_WMS_BBOX: ${{ secrets.HONUA_TEST_ARCGIS_WMS_BBOX }}
+          HONUA_TEST_ARCGIS_WMS_CRS: ${{ secrets.HONUA_TEST_ARCGIS_WMS_CRS }}
+          HONUA_TEST_ARCGIS_WMS_FORMAT: ${{ secrets.HONUA_TEST_ARCGIS_WMS_FORMAT }}
+          HONUA_TEST_ARCGIS_WFS_URL: ${{ secrets.HONUA_TEST_ARCGIS_WFS_URL }}
+          HONUA_TEST_ARCGIS_WFS_TYPENAME: ${{ secrets.HONUA_TEST_ARCGIS_WFS_TYPENAME }}
+          HONUA_TEST_ARCGIS_WMTS_URL: ${{ secrets.HONUA_TEST_ARCGIS_WMTS_URL }}
+          HONUA_TEST_ARCGIS_WMTS_LAYER: ${{ secrets.HONUA_TEST_ARCGIS_WMTS_LAYER }}
+          HONUA_TEST_ARCGIS_MAPSERVER_TILE_URL: ${{ secrets.HONUA_TEST_ARCGIS_MAPSERVER_TILE_URL }}
+          HONUA_TEST_ARCGIS_TOKEN: ${{ secrets.HONUA_TEST_ARCGIS_TOKEN }}
+          HONUA_TEST_ARCGIS_AUTHORIZATION: ${{ secrets.HONUA_TEST_ARCGIS_AUTHORIZATION }}
         run: |
           mkdir -p tests/TestResults
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \

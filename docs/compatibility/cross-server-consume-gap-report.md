@@ -2,7 +2,7 @@
 
 Last refreshed: 2026-04-27T21:27:30Z
 
-This report is generated from the nightly cross-server consume suite. It tracks Honua-as-client reads against reference GeoServer and MapServer sources for WMS 1.3, WFS 2.0, and WMTS 1.0.
+This report is generated from the nightly cross-server consume suite. It tracks Honua-as-client reads against reference GeoServer, MapServer, and explicitly licensed ArcGIS Server sources for WMS 1.3, WFS 2.0, WMTS 1.0, and ArcGIS MapServer tile read paths.
 
 Source TRX: `tests/TestResults/cross-server-consume.trx`
 
@@ -10,6 +10,7 @@ Source TRX: `tests/TestResults/cross-server-consume.trx`
 |---|---:|
 | Passing | 12 |
 | Open gaps | 2 |
+| Configuration skips | 0 |
 | Failures | 0 |
 
 ## Open Gaps
@@ -18,6 +19,10 @@ Source TRX: `tests/TestResults/cross-server-consume.trx`
 |---|---|---|---|
 | MapServer | WMTS 1.0 | `WmtsGetTile MapServer ReturnsAdvertisedTile` | gap: camptocamp/mapserver:8.0 exposes WMS/WFS but does not include WMTS_SERVER support; add a MapCache-backed reference source for WMTS. |
 | MapServer | WMTS 1.0 | `WmtsGetCapabilities MapServer ReturnsLayerDocument` | gap: camptocamp/mapserver:8.0 exposes WMS/WFS but does not include WMTS_SERVER support; add a MapCache-backed reference source for WMTS. |
+
+## Configuration Skips
+
+No consume tests were skipped due to missing external configuration.
 
 ## Failures
 

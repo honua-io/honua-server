@@ -144,7 +144,7 @@ These workflows enforce conformance to external geospatial standards. They are n
 | `cite-gml32-conformance.yml` | GML 3.2 CITE conformance |
 | `cite-gpkg12-conformance.yml` | GeoPackage 1.2 CITE conformance |
 | `geoservices-parity-nightly.yml` | GeoServices REST parity checks (nightly) |
-| `cross-server-consume-nightly.yml` | Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers (nightly) |
+| `cross-server-consume-nightly.yml` | Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers, plus license-gated ArcGIS Server reads when secrets are configured (nightly) |
 
 Standards compatibility policy is documented in `docs/gis/STANDARDS_APIS.md`.
 

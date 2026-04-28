@@ -55,7 +55,7 @@ These workflows run on schedule and can be dispatched manually:
 | `cite-gml32-conformance.yml` | Sat 6am UTC | OGC GML 3.2 CITE conformance |
 | `cite-gpkg12-conformance.yml` | Sat 3am UTC | OGC GeoPackage 1.2 CITE conformance |
 | `geoservices-parity-nightly.yml` | Scheduled | GeoServices parity check |
-| `cross-server-consume-nightly.yml` | Daily 7:00am UTC | Honua-as-client WMS/WFS/WMTS reads against GeoServer and MapServer reference containers |
+| `cross-server-consume-nightly.yml` | Daily 7:00am UTC | Honua-as-client WMS/WFS/WMTS reads against GeoServer and MapServer reference containers, with license-gated ArcGIS Server WMS/WFS/WMTS or MapServer tile reads when secrets are configured |
 | `windows-client-compat-nightly.yml` | Daily 7:15am UTC | Full CERT-\* matrix certification (18 test cases × 4 protocol lanes) with `.cert.json` envelopes + reusable evidence pack |
 | `pyqgis-client-compat-nightly.yml` | Daily 7:30am UTC | PyQGIS desktop client compatibility (OGC Features + WFS) with per-protocol `.cert.json` envelopes |
 | `sdk-server-compatibility.yml` | Monday 8:35am UTC plus post-merge `trunk` pushes | Manifest-driven last-3 server refs x last-3 SDK sets compatibility matrix through `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`; publishes the `sdk-compatibility-matrix-<run-id>` table artifact and fails on supported-cell regressions |

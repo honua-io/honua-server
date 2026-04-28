@@ -177,12 +177,55 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
   --filter "FullyQualifiedName~CrossServerConsume"
 ```
 
+Licensed ArcGIS Server consume checks are part of the same suite, but they
+remain off unless a licensed server is explicitly configured. Set the base
+cross-server gate and the ArcGIS license gate, then provide only the read paths
+that exist on the licensed server. WFS and tile coverage are optional per
+service; missing variables are recorded as configuration skips in the gap
+report rather than failing the GeoServer or MapServer reference checks.
+
+```bash
+export HONUA_TEST_CROSS_SERVER_CONSUME="1"
+export HONUA_TEST_ARCGIS_SERVER_CONSUME="1"
+
+# WMS 1.3 GetCapabilities + GetMap. EPSG:4326 BBOX is WMS 1.3 axis order
+# (latitude,longitude); set HONUA_TEST_ARCGIS_WMS_CRS for other CRSs and
+# HONUA_TEST_ARCGIS_WMS_FORMAT when the server should be requested with a
+# format other than image/png.
+export HONUA_TEST_ARCGIS_WMS_URL="https://gis.example.com/arcgis/services/Honua/MapServer/WMSServer"
+export HONUA_TEST_ARCGIS_WMS_LAYER="0"
+export HONUA_TEST_ARCGIS_WMS_BBOX="18.8,-161,22.5,-154.5"
+
+# WFS 2.0, when enabled on the ArcGIS service.
+export HONUA_TEST_ARCGIS_WFS_URL="https://gis.example.com/arcgis/services/Honua/MapServer/WFSServer"
+export HONUA_TEST_ARCGIS_WFS_TYPENAME="Honua:Parcels"
+
+# WMTS 1.0, when exposed by the ArcGIS service.
+export HONUA_TEST_ARCGIS_WMTS_URL="https://gis.example.com/arcgis/rest/services/Honua/MapServer/WMTS"
+export HONUA_TEST_ARCGIS_WMTS_LAYER="Honua"
+
+# Or provide one known non-empty ArcGIS REST tile URL instead of WMTS.
+export HONUA_TEST_ARCGIS_MAPSERVER_TILE_URL="https://gis.example.com/arcgis/rest/services/Honua/MapServer/tile/0/0/0"
+
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+  --filter "FullyQualifiedName~CrossServerConsumeArcGisServer"
+```
+
+Optional ArcGIS authentication is supplied by secret-valued environment
+variables. Use `HONUA_TEST_ARCGIS_TOKEN` for ArcGIS token query authentication
+or `HONUA_TEST_ARCGIS_AUTHORIZATION` for an HTTP `Authorization` header value
+such as `Bearer <token>`. Do not embed credentials or tokens in endpoint URLs.
+The seed service must advertise the configured WMS layer, return a non-empty
+image for the configured WMS bbox, return at least one WFS feature when WFS is
+enabled, and expose either a WMTS layer or one known non-empty MapServer tile.
+
 The probe endpoint (`GET /__test/cross-server-consume/proxy?url=<sourceUrl>`)
 is mounted only when `ASPNETCORE_ENVIRONMENT=Test`. It accepts loopback
-`http`/`https` URLs without embedded credentials, forwards the request,
-and maps upstream failures to `502 Bad Gateway`; requests exceeding the
-two-minute timeout return `504 Gateway Timeout`. Invalid URLs return
-`400 Bad Request`.
+`http`/`https` URLs without embedded credentials, or explicitly configured
+licensed ArcGIS Server URLs that match the ArcGIS consume environment
+variables. It forwards the request and maps upstream failures to
+`502 Bad Gateway`; requests exceeding the two-minute timeout return
+`504 Gateway Timeout`. Invalid URLs return `400 Bad Request`.
 
 The nightly `cross-server-consume-nightly.yml` workflow runs the same
 suite, refreshes [`docs/compatibility/cross-server-consume-gap-report.md`](../compatibility/cross-server-consume-gap-report.md)
