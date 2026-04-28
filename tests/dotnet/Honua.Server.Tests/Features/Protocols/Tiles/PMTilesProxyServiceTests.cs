@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Net;
+using Amazon.S3;
+using Azure;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -198,6 +201,106 @@ public sealed class PMTilesProxyServiceTests
     }
 
     [Fact]
+    public async Task ReadRangeAsync_RangeReader_S3NoSuchKey_ReturnsNotFound()
+    {
+        // S3 GetObjectAsync throws AmazonS3Exception (NoSuchKey) when the key
+        // is missing. The proxy must normalize that to PMTilesRangeOutcome.NotFound
+        // so the endpoint returns 404, not let the global exception mapper surface
+        // it as 500.
+        var stub = new TestCloudStorage();
+        var fileId = stub.AddFile(new byte[16], provider: CloudStorageProvider.AwsS3);
+        var failingReader = new ThrowingRangeReader(
+            CloudStorageProvider.AwsS3,
+            new AmazonS3Exception("NoSuchKey")
+            {
+                StatusCode = HttpStatusCode.NotFound,
+                ErrorCode = "NoSuchKey"
+            });
+        var options = Options.Create(new CloudStorageOptions
+        {
+            Provider = CloudStorageProvider.AwsS3,
+            AwsS3 = new AwsS3Options { BucketName = "honua-bucket", Region = "us-east-1" }
+        });
+        var sut = new PMTilesProxyService(stub, [failingReader], options);
+
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
+        var result = await sut.ReadRangeAsync(metadata, "bytes=0-3", CancellationToken.None);
+
+        result.Outcome.Should().Be(PMTilesRangeOutcome.NotFound);
+        result.TotalSize.Should().Be(16);
+    }
+
+    [Fact]
+    public async Task ReadRangeAsync_RangeReader_AzureBlobNotFound_ReturnsNotFound()
+    {
+        // Azure DownloadStreamingAsync throws RequestFailedException with status
+        // 404 when the blob is missing. Same normalization as the S3 path.
+        var stub = new TestCloudStorage();
+        var fileId = stub.AddFile(new byte[16], provider: CloudStorageProvider.AzureBlob);
+        var failingReader = new ThrowingRangeReader(
+            CloudStorageProvider.AzureBlob,
+            new RequestFailedException(status: 404, message: "BlobNotFound"));
+        var options = Options.Create(new CloudStorageOptions
+        {
+            Provider = CloudStorageProvider.AzureBlob,
+            AzureBlob = new AzureBlobOptions { ConnectionString = "fake", ContainerName = "tiles" }
+        });
+        var sut = new PMTilesProxyService(stub, [failingReader], options);
+
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
+        var result = await sut.ReadRangeAsync(metadata, "bytes=0-3", CancellationToken.None);
+
+        result.Outcome.Should().Be(PMTilesRangeOutcome.NotFound);
+        result.TotalSize.Should().Be(16);
+    }
+
+    [Fact]
+    public async Task ReadRangeAsync_RangeReader_NonNotFoundException_Propagates()
+    {
+        // Non-404 exceptions must continue to propagate so the global exception
+        // mapper can surface them; only NoSuchKey / 404 is normalized to NotFound.
+        var stub = new TestCloudStorage();
+        var fileId = stub.AddFile(new byte[16], provider: CloudStorageProvider.AwsS3);
+        var failingReader = new ThrowingRangeReader(
+            CloudStorageProvider.AwsS3,
+            new AmazonS3Exception("AccessDenied")
+            {
+                StatusCode = HttpStatusCode.Forbidden,
+                ErrorCode = "AccessDenied"
+            });
+        var options = Options.Create(new CloudStorageOptions
+        {
+            Provider = CloudStorageProvider.AwsS3,
+            AwsS3 = new AwsS3Options { BucketName = "honua-bucket", Region = "us-east-1" }
+        });
+        var sut = new PMTilesProxyService(stub, [failingReader], options);
+
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
+        var act = async () => await sut.ReadRangeAsync(metadata, "bytes=0-3", CancellationToken.None);
+
+        await act.Should().ThrowAsync<AmazonS3Exception>();
+    }
+
+    [Fact]
+    public void IsProviderNotFound_RecognizesProviderShapes()
+    {
+        PMTilesProxyService.IsProviderNotFound(
+            new AmazonS3Exception("missing") { StatusCode = HttpStatusCode.NotFound })
+            .Should().BeTrue();
+        PMTilesProxyService.IsProviderNotFound(
+            new AmazonS3Exception("missing") { ErrorCode = "NoSuchKey" })
+            .Should().BeTrue();
+        PMTilesProxyService.IsProviderNotFound(
+            new RequestFailedException(status: 404, message: "BlobNotFound"))
+            .Should().BeTrue();
+        PMTilesProxyService.IsProviderNotFound(
+            new RequestFailedException(status: 500, message: "Internal"))
+            .Should().BeFalse();
+        PMTilesProxyService.IsProviderNotFound(new InvalidOperationException("other"))
+            .Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ReadRangeAsync_RangeReaderRegistered_DispatchesByProvider()
     {
         var stub = new TestCloudStorage();
@@ -286,6 +389,28 @@ public sealed class PMTilesProxyServiceTests
         public Task<string?> GetPresignedUrlAsync(string fileId, TimeSpan? expiresIn = null, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
         public Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(string fileName, string contentType, TimeSpan? expiresIn = null, string? folder = null, CancellationToken cancellationToken = default) => Task.FromResult<(string Url, string FileId)?>(null);
         public Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
+    }
+
+    private sealed class ThrowingRangeReader : ICloudRangeReader
+    {
+        private readonly Exception _exception;
+
+        public ThrowingRangeReader(CloudStorageProvider provider, Exception exception)
+        {
+            Provider = provider;
+            _exception = exception;
+        }
+
+        public CloudStorageProvider Provider { get; }
+
+        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
+            => Task.FromException<byte[]>(_exception);
+
+        public Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
+            => Task.FromException<Stream>(_exception);
+
+        public Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
+            => Task.FromException<long>(_exception);
     }
 
     private sealed class RecordingRangeReader : ICloudRangeReader

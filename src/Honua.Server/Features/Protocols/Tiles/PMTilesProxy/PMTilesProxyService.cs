@@ -1,7 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using System.Net.Http.Headers;
+using Amazon.S3;
+using Azure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Options;
@@ -127,7 +130,18 @@ internal sealed class PMTilesProxyService
         byte[]? payload;
         if (reader != null && !string.IsNullOrEmpty(bucket))
         {
-            payload = await reader.ReadRangeAsync(bucket, metadata.StoragePath, start, (int)length, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                payload = await reader.ReadRangeAsync(bucket, metadata.StoragePath, start, (int)length, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsProviderNotFound(ex))
+            {
+                // S3 NoSuchKey / Azure 404. Match the download-fallback path
+                // by surfacing a missing underlying object as NotFound so the
+                // endpoint returns 404 instead of letting the global exception
+                // mapper turn the provider exception into a 500.
+                return PMTilesRangeResult.NotFound(totalSize);
+            }
         }
         else
         {
@@ -145,6 +159,14 @@ internal sealed class PMTilesProxyService
 
         return PMTilesRangeResult.Partial(start, end, totalSize, payload);
     }
+
+    internal static bool IsProviderNotFound(Exception exception) => exception switch
+    {
+        AmazonS3Exception s3 when s3.StatusCode == HttpStatusCode.NotFound
+            || string.Equals(s3.ErrorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase) => true,
+        RequestFailedException azure when azure.Status == (int)HttpStatusCode.NotFound => true,
+        _ => false
+    };
 
     public async Task<Stream?> OpenFullAsync(string artifactId, CancellationToken cancellationToken)
     {

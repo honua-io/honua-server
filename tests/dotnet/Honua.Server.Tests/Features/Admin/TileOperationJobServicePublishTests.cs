@@ -349,6 +349,70 @@ public sealed class TileOperationJobServicePublishTests
     }
 
     [Fact]
+    public async Task Publish_PartialTileFailure_DoesNotUploadOrOverwriteDeterministicKey()
+    {
+        // Background: BuildPMTilesArchiveAsync swallows per-tile exceptions and
+        // continues with whatever tiles succeeded. For the temporary `archive`
+        // path that is fine — the result writes to a random per-job key with a
+        // 24h TTL. For durable `publish`, the deterministic key may already
+        // host a previously good artifact, so a partial generation must not be
+        // promoted there. ExecutePublishAsync gates the upload on
+        // build.Failed == 0; this test confirms the gate by configuring the
+        // tile provider to throw on the second of two requested tiles.
+
+        var stub = new StubCloudStorage();
+        var publishOptions = new PMTilesPublishOptions
+        {
+            UrlStrategy = PMTilesUrlStrategy.SignedUrl,
+            SignedUrlLifetime = TimeSpan.FromHours(1)
+        };
+
+        using var serviceProvider = BuildScope(
+            stub,
+            includeCloudStorage: true,
+            publishOptions: publishOptions,
+            configureTileProvider: tileProvider =>
+            {
+                tileProvider.GetMvtTileAsync(
+                        Arg.Any<int>(),
+                        Arg.Any<int>(),
+                        Arg.Any<int>(),
+                        Arg.Any<int>(),
+                        Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
+                        Arg.Any<Honua.Core.Features.Tiles.TileOptions>(),
+                        Arg.Any<TileLimits>(),
+                        Arg.Any<CancellationToken>())
+                    .Returns(
+                        Task.FromResult<byte[]?>([0x01, 0x02, 0x03, 0x04]),
+                        Task.FromException<byte[]?>(new InvalidOperationException("simulated tile fetch failure")));
+            });
+        var sut = CreateSut(serviceProvider);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "publish",
+            ServiceId = "world",
+            LayerId = 41,
+            MinZoom = 0,
+            MaxZoom = 1,
+            MaxTiles = 5
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Failed);
+        progress.ErrorMessage.Should().Contain("Publish aborted before upload");
+        progress.ErrorMessage.Should().Contain("tiles failed during generation");
+
+        progress.PublishedArtifact.Should().BeNull(
+            "a partial publish must never expose a descriptor; clients would otherwise see a mix of stale and new bytes via the deterministic key");
+        stub.LastUpload.Should().BeNull(
+            "the partial archive must not be uploaded — that would silently overwrite the prior good artifact at the deterministic key");
+    }
+
+    [Fact]
     public async Task Publish_DeterministicKey_OverwritesPreviousArtifact()
     {
         var stub = new StubCloudStorage();
@@ -500,23 +564,31 @@ public sealed class TileOperationJobServicePublishTests
         StubCloudStorage stub,
         bool includeCloudStorage,
         PMTilesPublishOptions? publishOptions = null,
-        CloudStorageOptions? cloudOptions = null)
+        CloudStorageOptions? cloudOptions = null,
+        Action<ITileProvider>? configureTileProvider = null)
     {
         var services = new ServiceCollection();
         var layerCatalog = Substitute.For<ILayerCatalog>();
         services.AddSingleton(layerCatalog);
 
         var tileProvider = Substitute.For<ITileProvider>();
-        tileProvider.GetMvtTileAsync(
-                Arg.Any<int>(),
-                Arg.Any<int>(),
-                Arg.Any<int>(),
-                Arg.Any<int>(),
-                Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
-                Arg.Any<Honua.Core.Features.Tiles.TileOptions>(),
-                Arg.Any<TileLimits>(),
-                Arg.Any<CancellationToken>())
-            .Returns([0x01, 0x02, 0x03, 0x04]);
+        if (configureTileProvider is not null)
+        {
+            configureTileProvider(tileProvider);
+        }
+        else
+        {
+            tileProvider.GetMvtTileAsync(
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
+                    Arg.Any<Honua.Core.Features.Tiles.TileOptions>(),
+                    Arg.Any<TileLimits>(),
+                    Arg.Any<CancellationToken>())
+                .Returns([0x01, 0x02, 0x03, 0x04]);
+        }
         services.AddSingleton(tileProvider);
 
         if (includeCloudStorage)

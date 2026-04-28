@@ -50,8 +50,8 @@ Prometheus/OpenTelemetry surfaces include:
 - `honua.tile.jobs.total` (tagged by `operation`, `status`)
 - `honua.tile.jobs.duration_ms`
 - `honua.tile.jobs.tiles_processed`
-- `honua.tile.archives.total` (archive generation count)
-- `honua.tile.archives.size_bytes` (archive size histogram)
+- `honua.tile.archives.total` (count of generated PMTiles archives — incremented by both `archive` and `publish` jobs)
+- `honua.tile.archives.size_bytes` (size histogram for generated PMTiles archives — recorded by both `archive` and `publish` jobs)
 
 ## Example: Invalidate a Layer
 

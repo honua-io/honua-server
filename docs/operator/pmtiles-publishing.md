@@ -145,10 +145,14 @@ it to the PMTiles client. The proxy endpoint:
 * a `GET` without a `Range` header returns the full archive as `200 OK`
 * returns `404 Not Found` when the underlying object is missing (e.g., the
   artifact was deleted out-of-band by lifecycle policy or console action, or
-  metadata is cached but the bytes are gone). Both the no-`Range` `GET` path
-  and any `Range` `GET` that has to fall back to the download path surface
-  this consistently as `404`, so callers do not see `500` for a missing
-  object.
+  metadata is cached but the bytes are gone). All three read paths surface
+  this consistently as `404`: the no-`Range` `GET` (full download), the
+  `Range` `GET` that falls back to a download (when no native range reader
+  is registered), and the `Range` `GET` served by a native range reader
+  (S3 `NoSuchKey` / Azure 404). Callers never see `500` for a missing
+  object. Non-404 provider exceptions (e.g., S3 `AccessDenied`, Azure
+  `Forbidden`) continue to propagate so the global exception mapper can
+  surface them.
 * only serves objects that are tagged as durable PMTiles publish artifacts —
   the resolver requires `Content-Type: application/vnd.pmtiles`, the
   `operation=publish` storage metadata tag set by the publish workflow, and
@@ -212,6 +216,14 @@ the durable artifact, and rolls back any object that was just written if access
 URL generation subsequently fails — but never at the cost of a previously good
 publish:
 
+* **Partial tile-generation failure**: if any tile fails to generate during
+  archive build (`failed > 0`), publish aborts before upload. The job is
+  marked `Failed` with `Publish aborted before upload: N tiles failed during
+  generation.` and **no upload happens**, so a deterministic key that already
+  has a previously published artifact is never overwritten with bytes that
+  are missing the failed tiles. The temporary `archive` operation still
+  tolerates partial failures because it writes to a random per-job key with
+  a 24-hour TTL — there is no live durable artifact to corrupt.
 * `PublicUrl` without `PublicBucketBaseUrl` configured fails the job with a
   pre-flight error and never uploads a file.
 * `SignedUrl` strategy: if the storage provider returns no presigned URL (e.g.,

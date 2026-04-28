@@ -648,6 +648,25 @@ internal sealed partial class TileOperationJobService(
 
         await using var archiveStream = build.ArchiveStream!;
 
+        // Durable publish writes to a deterministic key that may already host a
+        // previously good artifact. A partial generation (failed > 0) would
+        // overwrite that artifact with bytes missing the failed tiles, which is
+        // a silent data-loss for active clients. Refuse to upload in that case
+        // and fail the job so operators retry once the upstream is healthy.
+        // The temporary archive path tolerates partial failures because it
+        // writes to a random per-job key with a 24-hour TTL.
+        if (build.Failed > 0)
+        {
+            return build.Progress with
+            {
+                ArchiveSizeBytes = build.ArchiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = $"Publish aborted before upload: {build.Failed} tiles failed during generation.",
+                CurrentPhase = "Failed"
+            };
+        }
+
         var cloudStorage = serviceProvider.GetService<ICloudFileStorage>();
         if (cloudStorage == null)
         {
@@ -782,15 +801,14 @@ internal sealed partial class TileOperationJobService(
         TileOperationMetrics.ArchiveSizeBytes.Record(build.ArchiveSize);
         TileOperationLog.PublishUploadComplete(_logger, current.JobId, descriptor.ObjectKey, build.ArchiveSize, descriptor.UrlStrategy);
 
-        var completedStatus = build.Failed > 0 ? OperationStatus.Failed : OperationStatus.Completed;
         return current with
         {
             ArchiveSizeBytes = build.ArchiveSize,
             PublishedArtifact = descriptor,
-            Status = completedStatus,
+            Status = OperationStatus.Completed,
             CompletedAt = DateTimeOffset.UtcNow,
-            ErrorMessage = build.Failed > 0 ? $"{build.Failed} tiles failed during generation." : null,
-            CurrentPhase = build.Failed > 0 ? "Publish completed with failures" : "Publish completed"
+            ErrorMessage = null,
+            CurrentPhase = "Publish completed"
         };
     }
 
