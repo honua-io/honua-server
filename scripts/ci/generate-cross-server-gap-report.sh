@@ -172,6 +172,9 @@ def main() -> None:
     write_section(lines, "Failures", failures, "No failing consume tests were reported.")
     write_section(lines, "Passing", passing, "No passing consume tests were reported.")
 
+    while lines and not lines[-1]:
+        lines.pop()
+
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

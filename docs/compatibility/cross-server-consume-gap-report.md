@@ -39,4 +39,3 @@ No failing consume tests were reported.
 | MapServer | WMS 1.3 | `WmsGetMap MapServer ReturnsImageForKnownLayer` | Passed |
 | GeoServer | WFS 2.0 | `WfsGetCapabilities GeoServer ReturnsFeatureTypeDocument` | Passed |
 | GeoServer | WMS 1.3 | `WmsGetFeatureInfo GeoServer ReturnsFeatureInfoPayload` | Passed |
-
