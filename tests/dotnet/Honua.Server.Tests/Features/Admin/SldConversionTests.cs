@@ -871,6 +871,138 @@ public sealed class SldConversionTests
         symbol.Paint["text-color"].StringValue.Should().Be("#112233");
     }
 
+    [UnitTest]
+    public void Parse_PolygonSymbolizer_GraphicFill_WarnsAndDropsFillLayer()
+    {
+        // Regression: SLD <Fill><GraphicFill>...</GraphicFill></Fill> embeds a tiled
+        // pattern that has no portable MapLibre equivalent (fill-pattern requires a
+        // sprite). The converter previously emitted a fill layer with empty paint,
+        // which the rendering pipeline defaults to opaque black — a solid fill
+        // silently substituted for the unsupported pattern. The parser now emits a
+        // GraphicFill warning and drops the empty Fill so the converter skips the
+        // layer entirely.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>patterns</Name><UserStyle><FeatureTypeStyle><Rule>
+    <PolygonSymbolizer>
+      <Fill>
+        <GraphicFill>
+          <Graphic>
+            <Mark><WellKnownName>square</WellKnownName></Mark>
+          </Graphic>
+        </GraphicFill>
+      </Fill>
+    </PolygonSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        conversion.Layers.Should().BeEmpty(
+            "GraphicFill is unsupported and the empty Fill must not produce a default-black fill layer");
+        conversion.Diagnostics.Should().Contain(d =>
+            d.Construct == "GraphicFill"
+            && d.Severity == SldDiagnosticSeverity.Warning,
+            "the operator must see the unsupported construct rather than silently rendering a solid fill");
+    }
+
+    [UnitTest]
+    public void Parse_PolygonSymbolizer_GraphicStroke_WarnsAndDropsLineLayer()
+    {
+        // Regression: SLD <Stroke><GraphicStroke>...</GraphicStroke></Stroke> embeds
+        // a repeating sprite stroke that has no portable MapLibre equivalent
+        // (line-pattern requires a sprite). The converter previously emitted a line
+        // layer with default 1px stroke. Diagnose the construct and drop the layer.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>patterns</Name><UserStyle><FeatureTypeStyle><Rule>
+    <PolygonSymbolizer>
+      <Stroke>
+        <GraphicStroke>
+          <Graphic>
+            <Mark><WellKnownName>square</WellKnownName></Mark>
+          </Graphic>
+        </GraphicStroke>
+      </Stroke>
+    </PolygonSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        conversion.Layers.Should().BeEmpty(
+            "GraphicStroke is unsupported and the empty Stroke must not produce a default-black line layer");
+        conversion.Diagnostics.Should().Contain(d =>
+            d.Construct == "GraphicStroke"
+            && d.Severity == SldDiagnosticSeverity.Warning);
+    }
+
+    [UnitTest]
+    public void Parse_LineSymbolizer_GraphicStroke_WarnsAndDropsSymbolizer()
+    {
+        // Regression: a LineSymbolizer with only a GraphicStroke fell back to the
+        // empty SldStroke fallback inside ParseLineSymbolizer, so the converter
+        // produced a line layer with empty paint and the renderer defaulted to a
+        // 1px opaque line. The symbolizer must now be dropped entirely.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>roads</Name><UserStyle><FeatureTypeStyle><Rule>
+    <LineSymbolizer>
+      <Stroke>
+        <GraphicStroke>
+          <Graphic>
+            <Mark><WellKnownName>circle</WellKnownName></Mark>
+          </Graphic>
+        </GraphicStroke>
+      </Stroke>
+    </LineSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        conversion.Layers.Should().BeEmpty();
+        conversion.Diagnostics.Should().Contain(d =>
+            d.Construct == "GraphicStroke"
+            && d.Severity == SldDiagnosticSeverity.Warning);
+    }
+
+    [UnitTest]
+    public void Parse_PolygonSymbolizer_GraphicFillWithFallbackColor_KeepsCssFillAndWarns()
+    {
+        // Mixed case: an SLD <Fill> contains BOTH a portable CssParameter and an
+        // unsupported GraphicFill. The converter must keep the CssParameter fill
+        // (so the layer still renders) but emit a GraphicFill warning so the
+        // operator sees the lossy aspect of the conversion.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>patterns</Name><UserStyle><FeatureTypeStyle><Rule>
+    <PolygonSymbolizer>
+      <Fill>
+        <GraphicFill>
+          <Graphic><Mark><WellKnownName>square</WellKnownName></Mark></Graphic>
+        </GraphicFill>
+        <CssParameter name=""fill"">#abcdef</CssParameter>
+      </Fill>
+    </PolygonSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        var fill = conversion.Layers.Single();
+        fill.Type.Should().Be("fill");
+        fill.Paint!["fill-color"].StringValue.Should().Be("#abcdef");
+        conversion.Diagnostics.Should().Contain(d =>
+            d.Construct == "GraphicFill"
+            && d.Severity == SldDiagnosticSeverity.Warning,
+            "the GraphicFill is still lossy even when a CssParameter fill is present");
+    }
+
     private static SldConversionResult ParseAndConvert(string fixtureName)
     {
         var xml = ReadFixture(fixtureName);

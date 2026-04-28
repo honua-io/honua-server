@@ -83,6 +83,7 @@ The converter never silently drops these — each emits a `Warning` diagnostic, 
 
 - `VendorOption`, GeoServer-specific extensions
 - `RasterSymbolizer` (raster styling is handled by Honua's raster pipeline separately)
+- `GraphicFill` / `GraphicStroke` (sprite-pattern fills and strokes) — MapLibre `fill-pattern` / `line-pattern` requires a sprite that the migration path cannot synthesize. The parser emits a `GraphicFill` or `GraphicStroke` warning and drops the empty Fill/Stroke so the converter does not emit a fill/line layer that would default to opaque black at render time. When the same `<Fill>` carries a portable `<CssParameter name="fill">…</CssParameter>` alongside the `GraphicFill`, the CssParameter is honored and the warning still surfaces.
 - `ExternalGraphic` with a remote URI (no remote resource is fetched; sprite must be supplied separately)
 - OGC `Function` expressions in filters and labels
 - Spatial/temporal predicates: `BBOX`, `Intersects`, `Contains`, `Within`, `Beyond`, `DWithin`, `After`, `Before`, `During`, etc.

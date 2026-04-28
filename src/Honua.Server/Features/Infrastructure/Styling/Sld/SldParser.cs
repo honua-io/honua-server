@@ -230,7 +230,11 @@ internal static class SldParser
                     symbolizers.Add(ParsePointSymbolizer(child, diagnostics, name));
                     break;
                 case "LineSymbolizer":
-                    symbolizers.Add(ParseLineSymbolizer(child, diagnostics, name));
+                    var line = ParseLineSymbolizer(child, diagnostics, name);
+                    if (line != null)
+                    {
+                        symbolizers.Add(line);
+                    }
                     break;
                 case "PolygonSymbolizer":
                     symbolizers.Add(ParsePolygonSymbolizer(child, diagnostics, name));
@@ -270,7 +274,7 @@ internal static class SldParser
                 switch (graphicChild.Name.LocalName)
                 {
                     case "Mark":
-                        mark = ParseMark(graphicChild);
+                        mark = ParseMark(graphicChild, diagnostics, ruleName);
                         break;
                     case "ExternalGraphic":
                         externalGraphic = ParseExternalGraphic(graphicChild, diagnostics, ruleName);
@@ -294,11 +298,11 @@ internal static class SldParser
         return new SldPointSymbolizer(mark, externalGraphic, size, opacity);
     }
 
-    private static SldMark ParseMark(XElement element)
+    private static SldMark ParseMark(XElement element, List<SldConversionDiagnostic> diagnostics, string? ruleName)
     {
         var well = ChildLocal(element, "WellKnownName")?.Value?.Trim();
-        var fill = ParseFill(ChildLocal(element, "Fill"));
-        var stroke = ParseStroke(ChildLocal(element, "Stroke"));
+        var fill = ParseFill(ChildLocal(element, "Fill"), diagnostics, ruleName, "Mark Fill");
+        var stroke = ParseStroke(ChildLocal(element, "Stroke"), diagnostics, ruleName, "Mark Stroke");
         return new SldMark(well, fill, stroke);
     }
 
@@ -336,14 +340,15 @@ internal static class SldParser
         return new SldExternalGraphic(href, format);
     }
 
-    private static SldLineSymbolizer ParseLineSymbolizer(
+    private static SldLineSymbolizer? ParseLineSymbolizer(
         XElement element,
         List<SldConversionDiagnostic> diagnostics,
         string? ruleName)
     {
         EmitSymbolizerVendorOptionDiagnostics(element, diagnostics, ruleName, "LineSymbolizer");
 
-        var stroke = ParseStroke(ChildLocal(element, "Stroke")) ?? new SldStroke(null, null, null, null, null, null);
+        var strokeElement = ChildLocal(element, "Stroke");
+        var stroke = ParseStroke(strokeElement, diagnostics, ruleName, "LineSymbolizer Stroke");
         if (ChildLocal(element, "PerpendicularOffset") != null)
         {
             diagnostics.Add(Warn(
@@ -352,7 +357,12 @@ internal static class SldParser
                 ruleName));
         }
 
-        return new SldLineSymbolizer(stroke);
+        // Drop the symbolizer when no portable stroke content remains (missing
+        // <Stroke>, empty <Stroke/>, or only GraphicFill/GraphicStroke children).
+        // Otherwise the converter would emit a line layer whose empty paint defaults
+        // to opaque black at render time and silently substitute for the unsupported
+        // construct. Diagnostics are already emitted at parse time.
+        return stroke == null ? null : new SldLineSymbolizer(stroke);
     }
 
     private static SldPolygonSymbolizer ParsePolygonSymbolizer(
@@ -362,8 +372,8 @@ internal static class SldParser
     {
         EmitSymbolizerVendorOptionDiagnostics(element, diagnostics, ruleName, "PolygonSymbolizer");
 
-        var fill = ParseFill(ChildLocal(element, "Fill"));
-        var stroke = ParseStroke(ChildLocal(element, "Stroke"));
+        var fill = ParseFill(ChildLocal(element, "Fill"), diagnostics, ruleName, "PolygonSymbolizer Fill");
+        var stroke = ParseStroke(ChildLocal(element, "Stroke"), diagnostics, ruleName, "PolygonSymbolizer Stroke");
         if (ChildLocal(element, "Displacement") != null)
         {
             diagnostics.Add(Warn(
@@ -384,8 +394,8 @@ internal static class SldParser
 
         var label = ParseLabelExpression(ChildLocal(element, "Label"), diagnostics, ruleName);
         var font = ParseFont(ChildLocal(element, "Font"));
-        var fill = ParseFill(ChildLocal(element, "Fill"));
-        var halo = ParseHalo(ChildLocal(element, "Halo"));
+        var fill = ParseFill(ChildLocal(element, "Fill"), diagnostics, ruleName, "TextSymbolizer Fill");
+        var halo = ParseHalo(ChildLocal(element, "Halo"), diagnostics, ruleName);
 
         if (ChildLocal(element, "LabelPlacement") != null)
         {
@@ -429,7 +439,11 @@ internal static class SldParser
         return string.IsNullOrEmpty(literal) ? null : literal;
     }
 
-    private static SldFill? ParseFill(XElement? fill)
+    private static SldFill? ParseFill(
+        XElement? fill,
+        List<SldConversionDiagnostic> diagnostics,
+        string? ruleName,
+        string scope)
     {
         if (fill == null)
         {
@@ -438,29 +452,55 @@ internal static class SldParser
 
         string? color = null;
         double? opacity = null;
-        foreach (var css in fill.Elements())
+        foreach (var child in fill.Elements())
         {
-            if (css.Name.LocalName != "CssParameter" && css.Name.LocalName != "SvgParameter")
+            if (child.Name.LocalName == "GraphicFill")
+            {
+                // SLD <GraphicFill> embeds a <Graphic> sub-tree to fill the polygon with a
+                // tiled pattern. MapLibre has no portable equivalent — fill-pattern requires
+                // a sprite, which the migration path cannot synthesize. Emit a warning so
+                // the operator sees the unsupported construct; the caller skips the fill
+                // layer when no portable CssParameter remains.
+                diagnostics.Add(Warn(
+                    "GraphicFill",
+                    $"{scope} GraphicFill has no portable MapLibre equivalent (fill-pattern requires a sprite). Fill omitted.",
+                    ruleName));
+                continue;
+            }
+
+            if (child.Name.LocalName != "CssParameter" && child.Name.LocalName != "SvgParameter")
             {
                 continue;
             }
 
-            var paramName = css.Attribute("name")?.Value;
+            var paramName = child.Attribute("name")?.Value;
             switch (paramName)
             {
                 case "fill":
-                    color = css.Value?.Trim();
+                    color = child.Value?.Trim();
                     break;
                 case "fill-opacity":
-                    opacity = ParseDouble(css.Value);
+                    opacity = ParseDouble(child.Value);
                     break;
             }
+        }
+
+        // Drop empty fills (missing CssParameter/SvgParameter children, e.g. only
+        // GraphicFill or empty <Fill/>) so the converter does not emit a fill layer
+        // that would default to opaque black at render time.
+        if (color == null && opacity == null)
+        {
+            return null;
         }
 
         return new SldFill(color, opacity);
     }
 
-    private static SldStroke? ParseStroke(XElement? stroke)
+    private static SldStroke? ParseStroke(
+        XElement? stroke,
+        List<SldConversionDiagnostic> diagnostics,
+        string? ruleName,
+        string scope)
     {
         if (stroke == null)
         {
@@ -474,15 +514,29 @@ internal static class SldParser
         string? lineJoin = null;
         double[]? dashArray = null;
 
-        foreach (var css in stroke.Elements())
+        foreach (var child in stroke.Elements())
         {
-            if (css.Name.LocalName != "CssParameter" && css.Name.LocalName != "SvgParameter")
+            if (child.Name.LocalName is "GraphicFill" or "GraphicStroke")
+            {
+                // <GraphicFill>/<GraphicStroke> embed a <Graphic> sub-tree for stroke fill
+                // or repeating sprite. MapLibre has no portable equivalent (line-pattern
+                // requires a sprite). Emit a warning so the operator sees the unsupported
+                // construct; the caller skips the line layer when no portable CssParameter
+                // remains.
+                diagnostics.Add(Warn(
+                    child.Name.LocalName,
+                    $"{scope} {child.Name.LocalName} has no portable MapLibre equivalent (line-pattern requires a sprite). Stroke omitted.",
+                    ruleName));
+                continue;
+            }
+
+            if (child.Name.LocalName != "CssParameter" && child.Name.LocalName != "SvgParameter")
             {
                 continue;
             }
 
-            var paramName = css.Attribute("name")?.Value;
-            var value = css.Value?.Trim();
+            var paramName = child.Attribute("name")?.Value;
+            var value = child.Value?.Trim();
             switch (paramName)
             {
                 case "stroke":
@@ -504,6 +558,19 @@ internal static class SldParser
                     dashArray = ParseDashArray(value);
                     break;
             }
+        }
+
+        // Drop empty strokes (missing CssParameter/SvgParameter children, e.g. only
+        // GraphicStroke or empty <Stroke/>) so the converter does not emit a line
+        // layer that would default to a 1px opaque line at render time.
+        if (color == null
+            && opacity == null
+            && width == null
+            && lineCap == null
+            && lineJoin == null
+            && dashArray == null)
+        {
+            return null;
         }
 
         return new SldStroke(color, opacity, width, lineCap, lineJoin, dashArray);
@@ -550,7 +617,7 @@ internal static class SldParser
         return new SldFont(family, size, style, weight);
     }
 
-    private static SldHalo? ParseHalo(XElement? halo)
+    private static SldHalo? ParseHalo(XElement? halo, List<SldConversionDiagnostic> diagnostics, string? ruleName)
     {
         if (halo == null)
         {
@@ -558,7 +625,7 @@ internal static class SldParser
         }
 
         var radius = ParseDouble(ChildLocal(halo, "Radius")?.Value);
-        var fill = ParseFill(ChildLocal(halo, "Fill"));
+        var fill = ParseFill(ChildLocal(halo, "Fill"), diagnostics, ruleName, "Halo Fill");
         return new SldHalo(radius, fill);
     }
 
