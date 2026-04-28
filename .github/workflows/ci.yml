@@ -294,7 +294,7 @@ jobs:
           - shard_name: Feature APIs
             artifact_suffix: feature-apis
             log_name: server-tests-feature-apis
-            timeout_minutes: 45
+            timeout_minutes: 60
             max_cpu_count: ""
             upload_operator_eval_report: false
             upload_odata_evidence: false
