@@ -1,7 +1,7 @@
 # CI Workflow Inventory
 
 > Canonical inventory of all GitHub Actions workflows across the Honua project.
-> Last updated: 2026-04-18 (ticket #734)
+> Last updated: 2026-04-27 (ticket #809)
 
 ## honua-server
 
@@ -22,6 +22,7 @@
 | `cite-gml32-conformance.yml` | OGC GML 3.2 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Saturday 6am UTC |
 | `cite-gpkg12-conformance.yml` | OGC GeoPackage 1.2 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Saturday 3am UTC |
 | `geoservices-parity-nightly.yml` | GeoServices Parity Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled parity check |
+| `cross-server-consume-nightly.yml` | Cross-Server Consume Nightly | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:00am UTC; runs Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers via the Test-environment `/__test/cross-server-consume/proxy` endpoint, uploads TRX/report artifacts, and best-effort commits the refreshed gap report (warns instead of failing if push is blocked) |
 | `windows-client-compat-nightly.yml` | Windows Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:15am UTC; full CERT-\* matrix (18 test cases × 4 protocol lanes: FeatureServer, OGC Features, MapServer, OData) with per-protocol `.cert.json` envelopes under `certification/`, plus `overall-summary.json`, per-lane transcripts, and `pack/`; supports `--profile smoke` (11-check MVP) and `--profile full` (default) |
 | `pyqgis-client-compat-nightly.yml` | PyQGIS Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:30am UTC; PyQGIS desktop client compatibility using real QGIS providers against `client-compat-v1.sql`; produces `desktop-qgis-ogc-features.cert.json` and `desktop-qgis-wfs.cert.json` envelopes |
 | `sdk-server-compatibility.yml` | SDK Server Compatibility | nightly | `push` (trunk), `schedule`, `workflow_dispatch` | No | Manifest-driven last-3 server refs x last-3 SDK sets matrix from `docs/developer/sdk-compatibility-versions.json`; runs live compatibility smoke checks through checked-out `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`, validates admin compatibility metadata plus seeded FeatureServer and OGC API Features surfaces, uploads per-cell JSON evidence, and publishes `sdk-compatibility-matrix-<run-id>` with supported-cell regression failure |

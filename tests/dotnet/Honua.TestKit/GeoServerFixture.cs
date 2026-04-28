@@ -28,7 +28,6 @@ public sealed class GeoServerFixture : IAsyncLifetime
     private const int GeoServerPort = 8080;
     private const string DefaultUsernameValue = "admin";
     private const string DefaultPasswordValue = "geoserver";
-    private const string CuratedShapefileZipFileName = "Extreme_Tsunami_Evacuation_Zones.zip";
     private readonly bool _seedCuratedData;
 
     public const string CuratedWorkspaceName = "honua_curated";
@@ -237,7 +236,7 @@ public sealed class GeoServerFixture : IAsyncLifetime
             return;
         }
 
-        var shapefileZipPath = ResolveCuratedShapefileZipPath();
+        var shapefileZipPath = ReferenceServerTestData.ResolveTsunamiEvacuationZonesZipPath();
         var zipBytes = await File.ReadAllBytesAsync(shapefileZipPath).ConfigureAwait(false);
 
         using var content = new ByteArrayContent(zipBytes);
@@ -323,40 +322,6 @@ public sealed class GeoServerFixture : IAsyncLifetime
 
     private static StringContent CreateJsonContent(string payload)
         => new(payload, Encoding.UTF8, "application/json");
-
-    private static string ResolveCuratedShapefileZipPath()
-    {
-        var outputDirectoryCandidate = Path.Combine(AppContext.BaseDirectory, "TestData", CuratedShapefileZipFileName);
-        if (File.Exists(outputDirectoryCandidate))
-        {
-            return outputDirectoryCandidate;
-        }
-
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        if (directory != null)
-        {
-            var repositoryCandidate = Path.Combine(
-                directory.FullName,
-                "tests",
-                "Honua.Server.Tests",
-                "TestData",
-                CuratedShapefileZipFileName);
-
-            if (File.Exists(repositoryCandidate))
-            {
-                return repositoryCandidate;
-            }
-        }
-
-        throw new FileNotFoundException(
-            $"Unable to locate '{CuratedShapefileZipFileName}' for GeoServer fixture seeding.",
-            CuratedShapefileZipFileName);
-    }
 
     private static string EscapePathSegment(string value)
         => Uri.EscapeDataString(value);

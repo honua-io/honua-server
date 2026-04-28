@@ -26,6 +26,7 @@
 - [Data Modeling Guide](gis/DATA_MODELING_GUIDE.md)
 - [FileGDB Import](gis/FILEGDB_IMPORT_WORKFLOW.md)
 - [Known Limitations](gis/MVP_COMPATIBILITY_CONTRACT.md)
+- [Cross-Server Consume Gap Report](compatibility/cross-server-consume-gap-report.md)
 - Tutorials
   - [QGIS Getting Started](gis/tutorials/qgis-getting-started.md)
   - [GeoServer Migration](gis/tutorials/geoserver-migration-guide.md)

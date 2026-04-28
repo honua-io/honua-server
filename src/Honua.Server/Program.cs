@@ -1113,6 +1113,11 @@ app.MapGeoservicesImportEndpoints();
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();
 
+if (isTestEnvironment)
+{
+    app.MapCrossServerConsumeProbeEndpoints();
+}
+
 // Configure temporary file serving endpoints
 app.MapTemporaryFileEndpoints();
 

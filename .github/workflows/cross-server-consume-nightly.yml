@@ -1,0 +1,93 @@
+name: Cross-Server Consume Nightly
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cross-server-consume-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  consume:
+    name: Reference Server Consume
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Build
+        run: dotnet build Honua.sln --no-restore --configuration Release
+
+      - name: Run cross-server consume suite
+        id: consume-tests
+        continue-on-error: true
+        env:
+          HONUA_TEST_CROSS_SERVER_CONSUME: '1'
+        run: |
+          mkdir -p tests/TestResults
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~CrossServerConsume" \
+            --logger "trx;LogFileName=cross-server-consume.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Generate gap report
+        if: always() && hashFiles('tests/TestResults/cross-server-consume.trx') != ''
+        run: |
+          bash scripts/ci/generate-cross-server-gap-report.sh \
+            tests/TestResults/cross-server-consume.trx \
+            docs/compatibility/cross-server-consume-gap-report.md
+
+      - name: Write gap report summary
+        if: always() && hashFiles('docs/compatibility/cross-server-consume-gap-report.md') != ''
+        run: cat docs/compatibility/cross-server-consume-gap-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit refreshed gap report
+        if: always() && hashFiles('docs/compatibility/cross-server-consume-gap-report.md') != ''
+        run: |
+          if git diff --quiet -- docs/compatibility/cross-server-consume-gap-report.md; then
+            echo "Gap report unchanged."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/compatibility/cross-server-consume-gap-report.md
+          git commit -m "docs: refresh cross-server consume gap report"
+          git push origin HEAD:${GITHUB_REF_NAME} || \
+            echo "::warning::Could not push cross-server consume gap report; create a PR manually if needed."
+
+      - name: Upload consume artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cross-server-consume-${{ github.run_id }}
+          path: |
+            tests/TestResults/cross-server-consume.trx
+            docs/compatibility/cross-server-consume-gap-report.md
+
+      - name: Fail on consume test failure
+        if: steps.consume-tests.outcome == 'failure'
+        run: exit 1
