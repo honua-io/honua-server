@@ -191,7 +191,7 @@ public sealed class ImageServerMosaicIntegrationTests
     }
 
     [IntegrationTest]
-    [Operation(Operations.Query)]
+    [Operation(Operations.Query, Operations.PerformanceTesting)]
     public async Task QueryRasters_ForTenOverlappingRasters_CompletesWithinTwoSeconds()
     {
         var fixture = await CreateFixtureAsync().ConfigureAwait(false);

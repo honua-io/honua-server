@@ -349,6 +349,8 @@ The artifact includes:
 
 Raster import accepts multipart form-data with a primary raster file and optional sidecar files (`.pgw`/`.jgw`/`.tfw`/`.wld` for georeferencing, `.prj` for CRS). GeoTIFF files contain embedded georeferencing; PNG and JPEG formats require a world file. An explicit `srid` field can override CRS detection. Optional `acquisitionDate` stores a per-raster timestamp used by ImageServer and OGC temporal mosaic selection, and `tileZoomLevels` controls which cache levels are pre-generated.
 
+Per-layer mosaic homogeneity is enforced at import: subsequent uploads to a layer must share the SRID and band count of the layer's first raster. Mismatched uploads return `400 Bad Request` with a structured message (`Layer {id} requires raster homogeneity for mosaic compositing. Expected SRID=…, BandCount=…; upload has SRID=…, BandCount=…`) and the transaction is rolled back before commit.
+
 ---
 
 ## **Layer Style (Minimal Example)**

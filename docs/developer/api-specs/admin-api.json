@@ -4532,7 +4532,9 @@
         "properties": {
           "mergeStrategy": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "enum": [null, "newest", "oldest", "average", "max", "min"],
+            "description": "Canonical merge strategy applied when a layer's mosaic produces overlapping pixels. Always one of the canonical lowercase tokens or null when unset."
           }
         }
       },
@@ -4652,7 +4654,8 @@
         "properties": {
           "mergeStrategy": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Merge strategy applied when overlapping rasters mosaic together. Allowed values (case-insensitive): newest, oldest, average, max, min. Stored values are normalized to lowercase. An empty string clears the field. Unknown values are rejected with 400 Bad Request."
           }
         }
       },
