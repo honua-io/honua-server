@@ -148,7 +148,7 @@ internal sealed partial class Wfs20Handler
 
             if (isHitsRequest)
             {
-                return CreateLegacyFeatureCollectionResult(version, [], planSet.TotalMatched);
+                return CreateLegacyFeatureCollectionResult(version, [], planSet.TotalMatched, reportMatchedCount: true);
             }
 
             return await BuildLegacyFeatureCollectionResultAsync(version, planSet, cancellationToken)
@@ -384,9 +384,11 @@ internal sealed partial class Wfs20Handler
         string version,
         IReadOnlyList<(LayerQueryPlan Plan, ImmutableArray<Feature> Features)> queryResults,
         long totalMatched,
-        int? returnedCount = null)
+        int? returnedCount = null,
+        bool reportMatchedCount = false)
     {
         var count = returnedCount ?? queryResults.Sum(entry => entry.Features.Length);
+        var numberOfFeatures = reportMatchedCount ? totalMatched : count;
         var xml = WriteXmlDocument(writer =>
         {
             writer.WriteStartDocument();
@@ -396,7 +398,7 @@ internal sealed partial class Wfs20Handler
             writer.WriteAttributeString("xmlns", "xsi", null, Wfs20Utilities.XsiNamespace);
             writer.WriteAttributeString("version", version);
             writer.WriteAttributeString("timeStamp", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-            writer.WriteAttributeString("numberOfFeatures", (count == 0 ? totalMatched : count).ToString(CultureInfo.InvariantCulture));
+            writer.WriteAttributeString("numberOfFeatures", numberOfFeatures.ToString(CultureInfo.InvariantCulture));
 
             foreach (var queryResult in queryResults)
             {
@@ -982,10 +984,47 @@ internal sealed partial class Wfs20Handler
             return true;
         }
 
+        if (TryGetTextXmlGmlSubtype(normalized, out var subtype))
+        {
+            return IsWfs10(version)
+                ? string.Equals(subtype, "gml/2.1.2", StringComparison.OrdinalIgnoreCase)
+                : string.Equals(subtype, "gml/3.1.1", StringComparison.OrdinalIgnoreCase);
+        }
+
         return IsWfs10(version)
             ? string.Equals(normalized, "GML2", StringComparison.OrdinalIgnoreCase)
             : string.Equals(normalized, "GML3", StringComparison.OrdinalIgnoreCase) ||
               string.Equals(normalized, "GML3.1", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetTextXmlGmlSubtype(string outputFormat, out string subtype)
+    {
+        subtype = string.Empty;
+        var parts = outputFormat.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 2 || !string.Equals(parts[0], "text/xml", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        foreach (var part in parts[1..])
+        {
+            var separatorIndex = part.IndexOf('=');
+            if (separatorIndex <= 0 || separatorIndex == part.Length - 1)
+            {
+                continue;
+            }
+
+            var key = part[..separatorIndex].Trim();
+            if (!string.Equals(key, "subtype", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            subtype = part[(separatorIndex + 1)..].Trim().Trim('"', '\'');
+            return true;
+        }
+
+        return false;
     }
 
     private static void WriteSrsName(XmlWriter writer, string srsName, bool includeSrsName)

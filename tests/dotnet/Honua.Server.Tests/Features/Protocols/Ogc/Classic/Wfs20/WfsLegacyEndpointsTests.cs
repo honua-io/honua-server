@@ -95,6 +95,41 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Protocol(TestProtocols.Wfs11)]
     [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs11, "GetFeature")]
+    public async Task Wfs11_GetFeature_TextXmlGml31SubtypeOutputFormat_ReturnsGml31FeatureCollection()
+    {
+        var outputFormat = Uri.EscapeDataString("text/xml; subtype=gml/3.1.1");
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&OUTPUTFORMAT={outputFormat}&MAXFEATURES=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
+        content.Should().Contain("<wfs:FeatureCollection");
+        content.Should().Contain("version=\"1.1.0\"");
+        content.Should().Contain("gml:id=\"test_layer.");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs11)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs11, "GetFeature")]
+    public async Task Wfs11_GetFeature_MaxFeaturesZero_ReportsNoReturnedFeatures()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&MAXFEATURES=0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("numberOfFeatures=\"0\"");
+        content.Should().NotContain("<gml:featureMember>");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs11)]
+    [Operation(Operations.Query)]
     [Endpoint("POST /wfs")]
     [InterfaceOperation(TestProtocols.Wfs11, "GetFeature")]
     public async Task Wfs11_Post_GetFeature_XmlBody_ReturnsGml31FeatureCollection()
@@ -246,6 +281,41 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         content.Should().Contain("version=\"1.0.0\"");
         content.Should().Contain("<gml:featureMember>");
         content.Should().Contain("<gml:coordinates>");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs10)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs10, "GetFeature")]
+    public async Task Wfs10_GetFeature_TextXmlGml21SubtypeOutputFormat_ReturnsGml2FeatureCollection()
+    {
+        var outputFormat = Uri.EscapeDataString("text/xml; subtype=gml/2.1.2");
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&OUTPUTFORMAT={outputFormat}&MAXFEATURES=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
+        content.Should().Contain("<wfs:FeatureCollection");
+        content.Should().Contain("version=\"1.0.0\"");
+        content.Should().Contain("<gml:coordinates>");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs10)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs10, "GetFeature")]
+    public async Task Wfs10_GetFeature_MaxFeaturesZero_ReportsNoReturnedFeatures()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&MAXFEATURES=0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("numberOfFeatures=\"0\"");
+        content.Should().NotContain("<gml:featureMember>");
     }
 
     [IntegrationTest]
