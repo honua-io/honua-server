@@ -246,6 +246,9 @@ public static class HonuaTelemetry
         /// <summary>OGC API Tiles.</summary>
         public const string OgcTiles = "OGC-Tiles";
 
+        /// <summary>Durable PMTiles range-proxy surface.</summary>
+        public const string PMTiles = "PMTiles";
+
         /// <summary>OGC API Maps.</summary>
         public const string OgcMaps = "OGC-Maps";
 

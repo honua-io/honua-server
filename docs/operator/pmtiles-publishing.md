@@ -123,12 +123,16 @@ URLs to the browser. Range requests are routed through the server:
 
 `accessUrl` is `/api/v1/tiles/pmtiles/{artifactId}`. The proxy endpoint:
 
-* responds to `GET` and `HEAD`
-* honors RFC 7233 `Range: bytes=offset-end` requests with `206 Partial Content`,
-  `Content-Range`, `Accept-Ranges`, `ETag`, and `Last-Modified` response headers
-* returns `416 Range Not Satisfiable` for ranges past the artifact end
-* falls back to a full body when no `Range` header is sent (useful for HEAD
-  probes)
+* responds to `GET` and `HEAD`. `Accept-Ranges: bytes`, `ETag`, and
+  `Last-Modified` are emitted on every response (including `HEAD`)
+* `HEAD` returns `200 OK` with `Content-Length` and no body, so MapLibre /
+  pmtiles.js probes that pre-flight the artifact succeed without transferring
+  the archive
+* honors RFC 7233 `Range: bytes=offset-end` `GET` requests with
+  `206 Partial Content` and `Content-Range`
+* returns `416 Range Not Satisfiable` (with `Content-Range: bytes */<size>`)
+  for ranges past the artifact end
+* a `GET` without a `Range` header returns the full archive as `200 OK`
 * only serves objects that are tagged as durable PMTiles publish artifacts —
   the resolver requires `Content-Type: application/vnd.pmtiles`, the
   `operation=publish` storage metadata tag set by the publish workflow, and
@@ -198,6 +202,33 @@ URL generation subsequently fails:
   job is marked failed, so a later re-run does not race against an orphan.
 * `RangeProxy` does not call out to the storage provider for URL generation, so
   no rollback path is required.
+
+If the rollback delete itself fails the job is still marked failed and a
+warning is emitted with the artifact ID and job ID so operators can reconcile
+the leftover object out-of-band:
+
+* `PublishOrphanCleanupFailed` (`EventId 9212`) when `DeleteAsync` throws.
+* `PublishOrphanCleanupReturnedFalse` (`EventId 9213`) when the provider reports
+  a soft failure by returning `false` (S3 / Azure Blob / LocalFileStorage all
+  catch transport-level failures and surface them this way, so the bool result
+  is the only signal that the orphan still exists).
+
+Whatever the failure mode of the access URL step, the job-status payload always
+returns the stable client-safe message `Publish access URL generation failed.`
+The provider-specific exception (account, IAM principal, signed-URL fragment,
+SDK type name, …) is captured only in the structured log entry
+`PublishAccessUrlFailed` (`EventId 9214`) so admin API clients never see
+provider internals leak through `errorMessage`.
+
+## Restart Recovery
+
+Queued and in-flight `publish` jobs are tracked under
+`OperationType.PMTilesPublish` in the universal operations progress store and
+are restored alongside `TileCache` and `PMTilesArchive` jobs when the tile
+operations service starts. A publish job that was queued before a restart
+resumes at the next worker tick without operator intervention; an in-flight
+upload that lost its host fails with the standard cancellation semantics and
+must be re-issued.
 
 ## Object Keys And Re-publishing
 

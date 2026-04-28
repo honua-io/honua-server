@@ -225,6 +225,78 @@ public sealed class TileOperationJobServicePublishTests
     }
 
     [Fact]
+    public async Task Publish_AccessUrlFailure_DoesNotLeakProviderExceptionMessage()
+    {
+        const string sensitive = "AWS:AccessDenied User: arn:aws:iam::123456789012:user/secret-name";
+        var stub = new StubCloudStorage(presignedUrlOverride: _ => throw new InvalidOperationException(sensitive));
+        var publishOptions = new PMTilesPublishOptions
+        {
+            UrlStrategy = PMTilesUrlStrategy.SignedUrl,
+            SignedUrlLifetime = TimeSpan.FromHours(1)
+        };
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true, publishOptions: publishOptions);
+        var sut = CreateSut(serviceProvider);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "publish",
+            LayerId = 31,
+            MinZoom = 0,
+            MaxZoom = 0,
+            MaxTiles = 1
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Failed);
+        progress.ErrorMessage.Should().Be("Publish access URL generation failed.");
+        progress.ErrorMessage.Should().NotContain("AWS");
+        progress.ErrorMessage.Should().NotContain("arn:aws");
+
+        // Rollback delete must still run on the just-uploaded artifact.
+        stub.LastUpload.Should().NotBeNull();
+        stub.DeletedFileIds.Should().Contain(stub.LastUpload!.ObjectKeyOverride!);
+    }
+
+    [Fact]
+    public async Task Publish_RollbackDelete_WhenProviderReturnsFalse_StillFailsJobWithoutLeakingException()
+    {
+        var stub = new StubCloudStorage(
+            presignedUrlOverride: _ => null,
+            deleteResultOverride: _ => false);
+        var publishOptions = new PMTilesPublishOptions
+        {
+            UrlStrategy = PMTilesUrlStrategy.SignedUrl,
+            SignedUrlLifetime = TimeSpan.FromHours(1)
+        };
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true, publishOptions: publishOptions);
+        var sut = CreateSut(serviceProvider);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "publish",
+            LayerId = 22,
+            MinZoom = 0,
+            MaxZoom = 0,
+            MaxTiles = 1
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Failed);
+        progress.ErrorMessage.Should().Be("Publish access URL generation failed.");
+
+        // The delete attempt happened (so cleanup logic ran) even though the
+        // provider reported it as a soft failure.
+        stub.LastUpload.Should().NotBeNull();
+        stub.DeletedFileIds.Should().Contain(stub.LastUpload!.ObjectKeyOverride!);
+    }
+
+    [Fact]
     public async Task Publish_DeterministicKey_OverwritesPreviousArtifact()
     {
         var stub = new StubCloudStorage();
@@ -417,13 +489,16 @@ public sealed class TileOperationJobServicePublishTests
     {
         private readonly Dictionary<string, CloudFile> _files = new(StringComparer.Ordinal);
         private readonly Func<string, string?>? _presignedUrlOverride;
+        private readonly Func<string, bool?>? _deleteResultOverride;
 
         public StubCloudStorage(
             CloudStorageProvider provider = CloudStorageProvider.AwsS3,
-            Func<string, string?>? presignedUrlOverride = null)
+            Func<string, string?>? presignedUrlOverride = null,
+            Func<string, bool?>? deleteResultOverride = null)
         {
             Provider = provider;
             _presignedUrlOverride = presignedUrlOverride;
+            _deleteResultOverride = deleteResultOverride;
         }
 
         public CloudStorageProvider Provider { get; }
@@ -490,6 +565,15 @@ public sealed class TileOperationJobServicePublishTests
         public Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
         {
             DeletedFileIds.Add(fileId);
+            if (_deleteResultOverride is not null)
+            {
+                var overridden = _deleteResultOverride(fileId);
+                if (overridden.HasValue)
+                {
+                    return Task.FromResult(overridden.Value);
+                }
+            }
+
             return Task.FromResult(_files.Remove(fileId));
         }
 

@@ -30,4 +30,10 @@ internal static partial class TileOperationLog
 
     [LoggerMessage(EventId = 9212, Level = LogLevel.Warning, Message = "Failed to delete orphan PMTiles publish artifact {ArtifactId} for tile job {JobId} after access URL generation failure.")]
     public static partial void PublishOrphanCleanupFailed(ILogger logger, string jobId, string artifactId, Exception exception);
+
+    [LoggerMessage(EventId = 9213, Level = LogLevel.Warning, Message = "Cloud storage reported failure deleting orphan PMTiles publish artifact {ArtifactId} for tile job {JobId} after access URL generation failure.")]
+    public static partial void PublishOrphanCleanupReturnedFalse(ILogger logger, string jobId, string artifactId);
+
+    [LoggerMessage(EventId = 9214, Level = LogLevel.Warning, Message = "Publish access URL generation failed for tile job {JobId} (artifact {ArtifactId}, strategy {UrlStrategy}).")]
+    public static partial void PublishAccessUrlFailed(ILogger logger, string jobId, string artifactId, PMTilesUrlStrategy urlStrategy, Exception exception);
 }

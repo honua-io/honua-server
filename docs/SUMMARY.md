@@ -17,6 +17,7 @@
 - [Webhooks](operator/feature-change-webhooks.md)
 - [Tile Operations](operator/tile-operations-runbook.md)
 - [SLD Migration Reference](operator/sld-migration.md)
+- [PMTiles Publishing](operator/pmtiles-publishing.md)
 - [Troubleshooting](operator/troubleshooting.md)
 - [Upgrade & Rollback](operator/runbooks/UPGRADE_AND_ROLLBACK.md)
 

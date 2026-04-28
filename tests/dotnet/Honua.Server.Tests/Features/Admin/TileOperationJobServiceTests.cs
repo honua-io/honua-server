@@ -220,6 +220,74 @@ public sealed class TileOperationJobServiceTests
     }
 
     [Fact]
+    public async Task ProcessQueuedJobAsync_WithMissingRequest_ReleasesRedisLease()
+    {
+        using var serviceProvider = CreateServiceProvider();
+        var progressStore = new InMemoryUniversalProgressStore();
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var database = Substitute.For<IDatabase>();
+        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
+            .Returns(true);
+        database.LockReleaseAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(true);
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        redis.GetDatabase().Returns(database);
+        var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache, redis);
+        const string jobId = "missing-request-with-lease";
+
+        // No cached request and no progress entry — simulates the post-restart
+        // scenario where the request blob expired but the queue still references
+        // the job.
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        await database.Received().LockReleaseAsync(
+            Arg.Is<RedisKey>(k => ((string?)k!)!.EndsWith(jobId, StringComparison.Ordinal)),
+            Arg.Any<RedisValue>(),
+            Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
+    public async Task ProcessQueuedJobAsync_WithCancelledStatus_ReleasesRedisLease()
+    {
+        using var serviceProvider = CreateServiceProvider();
+        var progressStore = new InMemoryUniversalProgressStore();
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var database = Substitute.For<IDatabase>();
+        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
+            .Returns(true);
+        database.LockReleaseAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(true);
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        redis.GetDatabase().Returns(database);
+        var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache, redis);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "invalidate",
+            LayerId = 7
+        });
+
+        // Pre-cancel before the worker dispatches; ProcessQueuedJobAsync should
+        // still release the Redis claim instead of leaving it held until TTL.
+        await progressStore.SetProgressAsync(
+            jobId,
+            TileOperationProgress.CreateInitial(jobId, "invalidate", null, 7, "WebMercatorQuad") with
+            {
+                Status = OperationStatus.Cancelled,
+                CompletedAt = DateTimeOffset.UtcNow
+            });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        await database.Received().LockReleaseAsync(
+            Arg.Is<RedisKey>(k => ((string?)k!)!.EndsWith(jobId, StringComparison.Ordinal)),
+            Arg.Any<RedisValue>(),
+            Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
     public async Task RecoverQueuedJobIdsAsync_WithActiveRedisClaim_DoesNotRequeueProcessingJob()
     {
         using var serviceProvider = CreateServiceProvider();

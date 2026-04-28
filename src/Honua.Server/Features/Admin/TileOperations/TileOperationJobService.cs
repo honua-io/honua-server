@@ -204,161 +204,163 @@ internal sealed partial class TileOperationJobService(
             : RenewLeaseAsync(leaseCoordinator, renewalCts!.Token);
         var processingToken = processingCts?.Token ?? cancellationToken;
 
-        var cachedRequest = await TryGetActiveJobRequestAsync(jobId, processingToken).ConfigureAwait(false);
-        if (cachedRequest == null)
-        {
-            var missingRequestProgress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false);
-            await MarkMissingRequestAsync(jobId, missingRequestProgress, CancellationToken.None).ConfigureAwait(false);
-
-            if (renewalCts != null)
-            {
-                renewalCts.Cancel();
-                await renewalTask.ConfigureAwait(false);
-                await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
-            }
-
-            return;
-        }
-
-        var request = cachedRequest.Value.Request;
-
-        TileOperationMetrics.QueueDepth.Add(-1, new TagList { { "operation", request.Operation } });
-
-        var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false)
-            ?? TileOperationProgress.CreateInitial(
-                jobId,
-                request.Operation,
-                request.ServiceId,
-                request.LayerId,
-                request.TileMatrixSetId);
-
-        if (progress.Status == OperationStatus.Cancelled)
-        {
-            return;
-        }
-
-        var stopwatch = Stopwatch.StartNew();
-        using var linkedCts = processingCts is null
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-            : CancellationTokenSource.CreateLinkedTokenSource(processingToken);
-        _runningTokens[jobId] = linkedCts;
-        var shouldRequeue = false;
-
-        var started = progress with
-        {
-            Status = OperationStatus.Processing,
-            CurrentPhase = $"Running {request.Operation} operation"
-        };
-        await _progressStore.SetProgressAsync(jobId, started, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
-
-        TileOperationProgress finalProgress;
+        // Outer try/finally: any post-acquire exit (early return, throw, cancel)
+        // must release the Redis claim and dispose the coordinator. Releasing only
+        // inside the inner processing finally would leak the lease for missing-
+        // request, already-cancelled, or pre-dispatch lookup-failure exits.
         try
         {
-            using var scope = _serviceScopeFactory.CreateScope();
-            var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
-            var previousSchema = schemaContext?.CurrentSchema;
+            var cachedRequest = await TryGetActiveJobRequestAsync(jobId, processingToken).ConfigureAwait(false);
+            if (cachedRequest == null)
+            {
+                var missingRequestProgress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false);
+                await MarkMissingRequestAsync(jobId, missingRequestProgress, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
 
+            var request = cachedRequest.Value.Request;
+
+            TileOperationMetrics.QueueDepth.Add(-1, new TagList { { "operation", request.Operation } });
+
+            var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false)
+                ?? TileOperationProgress.CreateInitial(
+                    jobId,
+                    request.Operation,
+                    request.ServiceId,
+                    request.LayerId,
+                    request.TileMatrixSetId);
+
+            if (progress.Status == OperationStatus.Cancelled)
+            {
+                return;
+            }
+
+            var stopwatch = Stopwatch.StartNew();
+            using var linkedCts = processingCts is null
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : CancellationTokenSource.CreateLinkedTokenSource(processingToken);
+            _runningTokens[jobId] = linkedCts;
+            var shouldRequeue = false;
+
+            var started = progress with
+            {
+                Status = OperationStatus.Processing,
+                CurrentPhase = $"Running {request.Operation} operation"
+            };
+            await _progressStore.SetProgressAsync(jobId, started, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+
+            TileOperationProgress finalProgress;
             try
             {
-                if (!string.IsNullOrWhiteSpace(cachedRequest.Value.SchemaName) && schemaContext != null)
-                {
-                    schemaContext.CurrentSchema = cachedRequest.Value.SchemaName;
-                }
+                using var scope = _serviceScopeFactory.CreateScope();
+                var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
+                var previousSchema = schemaContext?.CurrentSchema;
 
-                var layerCatalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
-                var tileProvider = scope.ServiceProvider.GetRequiredService<ITileProvider>();
-
-                finalProgress = request.Operation switch
+                try
                 {
-                    "seed" => await ExecuteSeedOrWarmAsync(started, request, warmMode: false, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
-                    "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
-                    "invalidate" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
-                    "purge" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
-                    "archive" => await ExecuteArchiveAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
-                    "publish" => await ExecutePublishAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
-                    _ => started with
+                    if (!string.IsNullOrWhiteSpace(cachedRequest.Value.SchemaName) && schemaContext != null)
                     {
-                        Status = OperationStatus.Failed,
-                        CompletedAt = DateTimeOffset.UtcNow,
-                        ErrorMessage = $"Unsupported tile operation '{request.Operation}'.",
-                        CurrentPhase = "Failed"
+                        schemaContext.CurrentSchema = cachedRequest.Value.SchemaName;
                     }
+
+                    var layerCatalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
+                    var tileProvider = scope.ServiceProvider.GetRequiredService<ITileProvider>();
+
+                    finalProgress = request.Operation switch
+                    {
+                        "seed" => await ExecuteSeedOrWarmAsync(started, request, warmMode: false, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
+                        "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
+                        "invalidate" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
+                        "purge" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
+                        "archive" => await ExecuteArchiveAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
+                        "publish" => await ExecutePublishAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
+                        _ => started with
+                        {
+                            Status = OperationStatus.Failed,
+                            CompletedAt = DateTimeOffset.UtcNow,
+                            ErrorMessage = $"Unsupported tile operation '{request.Operation}'.",
+                            CurrentPhase = "Failed"
+                        }
+                    };
+                }
+                finally
+                {
+                    if (schemaContext != null)
+                    {
+                        schemaContext.CurrentSchema = previousSchema;
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
+            {
+                if (leaseCoordinator?.LeaseLostToken.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
+                {
+                    finalProgress = started with
+                    {
+                        Status = OperationStatus.Queued,
+                        CompletedAt = null,
+                        ErrorMessage = null,
+                        CurrentPhase = "Lease lost; awaiting retry"
+                    };
+                    shouldRequeue = true;
+                }
+                else
+                {
+                    finalProgress = (TileOperationProgress)started.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogJobFailed(_logger, jobId, request.Operation, ex);
+                finalProgress = started with
+                {
+                    Status = OperationStatus.Failed,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = "Tile operation failed.",
+                    CurrentPhase = "Failed"
                 };
             }
             finally
             {
-                if (schemaContext != null)
-                {
-                    schemaContext.CurrentSchema = previousSchema;
-                }
+                _runningTokens.TryRemove(jobId, out _);
+                stopwatch.Stop();
             }
-        }
-        catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
-        {
-            if (leaseCoordinator?.LeaseLostToken.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
-            {
-                finalProgress = started with
+
+            await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+            TileOperationMetrics.JobDurationMs.Record(
+                stopwatch.Elapsed.TotalMilliseconds,
+                new TagList { { "operation", request.Operation } });
+            TileOperationMetrics.JobCount.Add(
+                1,
+                new TagList
                 {
-                    Status = OperationStatus.Queued,
-                    CompletedAt = null,
-                    ErrorMessage = null,
-                    CurrentPhase = "Lease lost; awaiting retry"
-                };
-                shouldRequeue = true;
+                    { "operation", request.Operation },
+                    { "status", finalProgress.Status.ToString().ToLowerInvariant() }
+                });
+
+            if (finalProgress.Status == OperationStatus.Completed)
+            {
+                _jobRequests.TryRemove(jobId, out _);
+                await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                finalProgress = (TileOperationProgress)started.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+                RefreshJobRequestRetention(jobId);
+                await PersistJobRequestAsync(jobId, request, cachedRequest.Value.SchemaName, cancellationToken).ConfigureAwait(false);
+                if (shouldRequeue)
+                {
+                    await _jobQueue.Writer.WriteAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            LogJobFailed(_logger, jobId, request.Operation, ex);
-            finalProgress = started with
-            {
-                Status = OperationStatus.Failed,
-                CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = "Tile operation failed.",
-                CurrentPhase = "Failed"
-            };
         }
         finally
         {
-            _runningTokens.TryRemove(jobId, out _);
-            stopwatch.Stop();
             if (renewalCts != null)
             {
                 renewalCts.Cancel();
                 await renewalTask.ConfigureAwait(false);
                 await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
                 leaseCoordinator.Dispose();
-            }
-        }
-
-        await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
-        TileOperationMetrics.JobDurationMs.Record(
-            stopwatch.Elapsed.TotalMilliseconds,
-            new TagList { { "operation", request.Operation } });
-        TileOperationMetrics.JobCount.Add(
-            1,
-            new TagList
-            {
-                { "operation", request.Operation },
-                { "status", finalProgress.Status.ToString().ToLowerInvariant() }
-            });
-
-        if (finalProgress.Status == OperationStatus.Completed)
-        {
-            _jobRequests.TryRemove(jobId, out _);
-            await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            RefreshJobRequestRetention(jobId);
-            await PersistJobRequestAsync(jobId, request, cachedRequest.Value.SchemaName, cancellationToken).ConfigureAwait(false);
-            if (shouldRequeue)
-            {
-                await _jobQueue.Writer.WriteAsync(jobId, CancellationToken.None).ConfigureAwait(false);
             }
         }
     }
@@ -720,13 +722,17 @@ internal sealed partial class TileOperationJobService(
         {
             // The durable artifact was just written. Roll it back so a misconfigured
             // URL strategy or storage glitch never leaves a public/private orphan.
+            TileOperationLog.PublishAccessUrlFailed(_logger, current.JobId, artifactId, publishOptions.UrlStrategy, ex);
             await TryDeletePublishArtifactAsync(cloudStorage, artifactId, current.JobId, cancellationToken).ConfigureAwait(false);
+            // Provider exceptions can carry SDK internals, account identifiers, or
+            // signed-URL fragments; surface a stable client-safe message and rely
+            // on structured logging for the diagnostic detail.
             return current with
             {
                 ArchiveSizeBytes = build.ArchiveSize,
                 Status = OperationStatus.Failed,
                 CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = $"Publish access URL generation failed: {ex.Message}",
+                ErrorMessage = "Publish access URL generation failed.",
                 CurrentPhase = "Failed"
             };
         }
@@ -928,7 +934,14 @@ internal sealed partial class TileOperationJobService(
     {
         try
         {
-            await cloudStorage.DeleteAsync(artifactId, cancellationToken).ConfigureAwait(false);
+            // Real providers (S3, Azure Blob, LocalFileStorage) report delete failure
+            // by returning false rather than throwing, so the bool result is the only
+            // signal a soft failure ever leaves an orphan worth flagging.
+            var deleted = await cloudStorage.DeleteAsync(artifactId, cancellationToken).ConfigureAwait(false);
+            if (!deleted)
+            {
+                TileOperationLog.PublishOrphanCleanupReturnedFalse(_logger, jobId, artifactId);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
