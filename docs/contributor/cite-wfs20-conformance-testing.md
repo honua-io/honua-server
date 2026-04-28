@@ -2,6 +2,8 @@
 
 This document describes how to run OGC Compliance and Interoperability Testing & Evaluation (CITE) suite tests against Honua Server to validate WFS 2.0 conformance.
 
+> WFS 1.1.0 and WFS 1.0.0 read-only compatibility is tracked separately in the [Legacy OGC CITE Guide](cite-legacy-ogc-conformance-testing.md). Those Basic profiles run as a documented manual procedure rather than a PR gate.
+
 ## Overview
 
 The CITE test suite validates that Honua Server correctly implements the OGC WFS 2.0 specification. This includes:

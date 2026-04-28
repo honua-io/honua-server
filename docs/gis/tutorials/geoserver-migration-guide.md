@@ -12,8 +12,8 @@ Honua provides GeoServer migration tooling for discovery, compatibility classifi
 
 | GeoServer Endpoint | Honua Equivalent | Notes |
 |---|---|---|
-| `GET /geoserver/wfs?service=WFS&request=GetFeature` | `GET /wfs?service=WFS&request=GetFeature` | WFS 2.0 compatible |
-| `GET /geoserver/ows?service=WFS&request=GetCapabilities` | `GET /wfs?service=WFS&request=GetCapabilities` | WFS capabilities |
+| `GET /geoserver/wfs?service=WFS&request=GetFeature` | `GET /wfs?service=WFS&request=GetFeature` | WFS 2.0, 1.1.0, and 1.0.0 compatible (read-only) |
+| `GET /geoserver/ows?service=WFS&request=GetCapabilities` | `GET /wfs?service=WFS&request=GetCapabilities&version={2.0.0\|1.1.0\|1.0.0}` | Capabilities for any supported WFS version |
 | GeoServer REST `/workspaces/{ws}/datastores/{ds}/featuretypes` | `GET /ogc/features/collections` | OGC API Features discovery |
 | GeoServer WFS `GetFeature` with CQL filter | `GET /ogc/features/collections/{id}/items?filter=...` | CQL2 filtering |
 | GeoServer WFS `GetFeature` with bbox | `GET /ogc/features/collections/{id}/items?bbox=...` | Spatial filtering |
@@ -24,7 +24,7 @@ Honua provides GeoServer migration tooling for discovery, compatibility classifi
 | GeoServer Endpoint | Honua Equivalent | Notes |
 |---|---|---|
 | `GET /geoserver/wms?service=WMS&request=GetMap` | `GET /rest/services/{id}/MapServer/export` | Dynamic map rendering |
-| `GET /geoserver/wms?request=GetMap` | `GET /ogc/services/{id}/wms` | WMS 1.3 compatible |
+| `GET /geoserver/wms?request=GetMap` | `GET /ogc/services/{id}/wms` | WMS 1.3.0 and 1.1.1 compatible (read-only). Use the matching `VERSION=`; 1.1.1 expects `SRS`/`X`/`Y` and lon/lat `EPSG:4326` BBOX, 1.3.0 expects `CRS`/`I`/`J` and lat/lon `EPSG:4326` BBOX. |
 | `GET /geoserver/gwc/service/wmts` | `GET /rest/services/{id}/MapServer/WMTS` | WMTS tile access |
 | `GET /geoserver/gwc/service/wmts` | `GET /ogc/services/{id}/wmts` | OGC WMTS endpoint |
 | GeoServer tile layer | `GET /tiles/{layerId}/{z}/{x}/{y}.mvt` | Vector tiles (MapLibre-ready) |
@@ -199,8 +199,8 @@ curl -X PUT http://localhost:8080/api/v1/admin/metadata/layers/{layerId}/style \
 
 After migrating server configuration, update client applications:
 
-- [ ] **WFS clients**: Point to `http://honua-host:8080/wfs` (WFS 2.0) or migrate to `http://honua-host:8080/ogc/features` (OGC API Features)
-- [ ] **WMS clients**: Point to `http://honua-host:8080/rest/services/{id}/MapServer/WMS` or `http://honua-host:8080/ogc/services/{id}/wms`
+- [ ] **WFS clients**: Point to `http://honua-host:8080/wfs` (WFS 2.0, 1.1.0, or 1.0.0 read-only) or migrate to `http://honua-host:8080/ogc/features` (OGC API Features). Pin `VERSION=` for clients that cannot negotiate.
+- [ ] **WMS clients**: Point to `http://honua-host:8080/rest/services/{id}/MapServer/WMS` or `http://honua-host:8080/ogc/services/{id}/wms` (WMS 1.3.0 or 1.1.1; legacy clients pinned to 1.1.1 connect without changes)
 - [ ] **WMTS clients**: Point to `http://honua-host:8080/rest/services/{id}/MapServer/WMTS` or `http://honua-host:8080/ogc/services/{id}/wmts`
 - [ ] **REST API consumers**: Map GeoServer REST paths to Honua Admin API equivalents (see table above)
 - [ ] **Authentication**: Replace GeoServer credentials with Honua API keys or OIDC tokens
@@ -213,7 +213,10 @@ After migrating server configuration, update client applications:
 | Protocol | GeoServer | Honua |
 |---|---|---|
 | WFS 2.0 | Native | Supported |
+| WFS 1.1.0 | Native | Supported (read-only; CITE Basic evidence pending) |
+| WFS 1.0.0 | Native | Supported (read-only; CITE Basic evidence pending) |
 | WMS 1.3 | Native | Via MapServer |
+| WMS 1.1.1 | Native | Via MapServer (read-only; CITE Basic evidence pending) |
 | WMTS 1.0 | Via GeoWebCache | Via MapServer |
 | OGC API Features | Plugin (community) | Native |
 | OGC API Tiles | Plugin (community) | Native |

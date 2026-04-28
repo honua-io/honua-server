@@ -25,6 +25,11 @@ public static class Protocols
     public const string Wms13 = "WMS-1.3.0";
 
     /// <summary>
+    /// OGC Web Map Service 1.1.1 compatibility operations.
+    /// </summary>
+    public const string Wms111 = "WMS-1.1.1";
+
+    /// <summary>
     /// OGC Web Map Tile Service 1.0.0 operations.
     /// </summary>
     public const string Wmts10 = "WMTS-1.0.0";
@@ -118,6 +123,16 @@ public static class Protocols
     /// OGC WFS 2.0 protocol.
     /// </summary>
     public const string Wfs20 = "WFS-2.0";
+
+    /// <summary>
+    /// OGC WFS 1.1.0 compatibility protocol.
+    /// </summary>
+    public const string Wfs11 = "WFS-1.1.0";
+
+    /// <summary>
+    /// OGC WFS 1.0.0 compatibility protocol.
+    /// </summary>
+    public const string Wfs10 = "WFS-1.0.0";
 
     /// <summary>
     /// Real-time feature-change streaming protocol (WebSocket/SSE).

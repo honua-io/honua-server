@@ -166,7 +166,7 @@ Open the generated `.qgs` file in QGIS, or package it as `.qgz` using the client
 
 ## Alternative: Connect via WFS
 
-QGIS also supports WFS 2.0 connections to Honua. This is validated nightly by the automated PyQGIS compatibility suite.
+QGIS also supports WFS 2.0 connections to Honua. This is validated nightly by the automated PyQGIS compatibility suite. Honua additionally accepts WFS 1.1.0 and WFS 1.0.0 read-only requests against the same `/wfs` endpoint, which legacy QGIS releases pinned to those versions can use without a server-side change.
 
 1. Go to **Layer > Add Layer > Add WFS / OGC API - Features Layer** (or press `Ctrl+L` and select the **WFS / OGC API Features** tab)
 2. Click **New** to create a connection:
@@ -175,7 +175,7 @@ QGIS also supports WFS 2.0 connections to Honua. This is validated nightly by th
 3. Click **Connect**
 4. Select a feature type and click **Add**
 
-WFS uses GetCapabilities for type discovery and supports attribute and spatial filtering via the QGIS WFS provider.
+QGIS negotiates the WFS version with the server. To force a legacy version (for example, when reproducing an older client trace), append `VERSION=1.1.0` or `VERSION=1.0.0` to the URL. WFS uses GetCapabilities for type discovery and supports attribute and spatial filtering via the QGIS WFS provider.
 
 ## Verify OGC API Features Endpoints
 

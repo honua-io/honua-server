@@ -114,7 +114,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     public async Task Wfs_GetCapabilities_InvalidAcceptVersions_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&ACCEPTVERSIONS=1.1.0");
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&ACCEPTVERSIONS=9.9.9");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
