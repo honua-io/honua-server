@@ -109,6 +109,32 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
+    public async Task ImportSld_TextSymbolizer_StoresSymbolLayerWithTextProperties()
+    {
+        var client = _fixture.CreateAdminClient();
+        var sld = LoadFixture("text-sld10.xml");
+
+        using var content = new StringContent(sld, Encoding.UTF8, "application/xml");
+        var response = await client.PostAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style/import-sld",
+            content);
+
+        response.Be200Ok();
+        var apiResponse = await DeserializeImportAsync(response);
+        apiResponse.Data!.LayerCount.Should().BeGreaterThan(0);
+
+        var stored = apiResponse.Data.MapLibreStyle!.Value;
+        var layers = stored.GetProperty("layers");
+        layers.GetArrayLength().Should().BeGreaterThan(0);
+
+        var symbol = layers.EnumerateArray().Single(l => l.GetProperty("type").GetString() == "symbol");
+        symbol.GetProperty("layout").GetProperty("text-field").GetString().Should().Be("{name}");
+        symbol.GetProperty("paint").GetProperty("text-color").GetString().Should().Be("#000000");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
     public async Task ImportSld_ExternalGraphic_ReturnsWarningDiagnostic()
     {
         var client = _fixture.CreateAdminClient();
@@ -229,6 +255,30 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
         failure.Data!.Diagnostics.Should().Contain(d =>
             d.Severity == SldDiagnosticSeverity.Error && d.Construct == "MapLibreLayers");
         failure.Data.Diagnostics.Should().Contain(d => d.Construct == "BackgroundLayer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld")]
+    public async Task ExportSld_StoredStyleMissingLayersArray_ReturnsFailureDiagnosticsPayload()
+    {
+        var client = _fixture.CreateAdminClient();
+        await StoreMapLibreStyleAsync("""
+        {
+          "version": 8,
+          "sources": {}
+        }
+        """);
+
+        var response = await client.GetAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style/export-sld");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var failure = await DeserializeFailureAsync(response);
+        failure.Success.Should().BeFalse();
+        failure.Data!.Diagnostics.Should().Contain(d =>
+            d.Severity == SldDiagnosticSeverity.Error && d.Construct == "MapLibreLayers");
     }
 
     [IntegrationTest]

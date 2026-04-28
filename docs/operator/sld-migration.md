@@ -120,7 +120,9 @@ For higher-fidelity export (vendor function emission, GeoServer extension preser
 
 ## GeoServer import service integration
 
-`GeoServerImportService` (in `Honua.Postgres`) injects the optional `ISldStyleConverter` from `Honua.Core.Features.Styling.Abstractions`. When registered (the default in Honua.Server), SLD styles encountered during a GeoServer import are converted in place and any conversion diagnostics are appended to the import warnings. The `UnsupportedStyleBehavior` import option still gates whether conversion errors fail the import, skip the style, or warn.
+`GeoServerImportService` (in `Honua.Postgres`) injects the optional `ISldStyleConverter` from `Honua.Core.Features.Styling.Abstractions`. When registered (the default in Honua.Server), SLD styles encountered during a GeoServer import are run through the converter and any conversion diagnostics (warnings and errors) are appended to the import warnings list. The `UnsupportedStyleBehavior` import option still gates whether conversion errors fail the import, skip the style, or warn.
+
+The bulk import path validates the SLD payload and surfaces diagnostics; it does **not** persist the converted MapLibre JSON to the catalog. Imported style resources carry the note `"SLD validated; apply via per-layer admin SLD endpoint to persist MapLibre style"`. To store the converted style, call `POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld` for each target layer (the admin endpoint is the single canonical persistence path; see [Endpoints](#endpoints)).
 
 If the converter is not registered (e.g. embedded scenarios that omit Honua.Server), the legacy unsupported-style behavior applies and a warning is recorded so operators see a clear migration path.
 

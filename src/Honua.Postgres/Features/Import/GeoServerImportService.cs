@@ -1330,7 +1330,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     ResourceType = "Style",
                     Name = style.Name,
                     WorkspaceName = style.WorkspaceName,
-                    Notes = style.Format == "sld" ? "Converted from SLD to MapLibre format" : "Imported style"
+                    Notes = style.Format == "sld"
+                        ? "SLD validated; apply via per-layer admin SLD endpoint to persist MapLibre style"
+                        : "Imported style"
                 });
 
                 result.SuccessCount++;
@@ -1409,10 +1411,12 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
     private async Task ConvertAndImportStyleAsync(GeoServerStyleInfo style, CancellationToken cancellationToken)
     {
-        // Convert SLD style to MapLibre format for Honua. SLD parsing/conversion is delegated
-        // to ISldStyleConverter (Honua.Server). Style persistence (catalog wiring) is a follow-up
-        // (issue #375 leaves the persistence side intentionally as a no-op so this method remains
-        // a single-responsibility conversion hook callable from both dry-run and full-import paths).
+        // SLD parsing/conversion is delegated to ISldStyleConverter (Honua.Server) and
+        // executed by TryConvertSldStyle so warnings/errors are surfaced in the import
+        // result. Per-layer style persistence is performed by the admin SLD endpoint
+        // (POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld); this method
+        // remains a single-responsibility conversion hook for the bulk import path and
+        // does not write the converted MapLibre JSON to the catalog.
         Log.StyleConversionStarted(_logger, style.Name);
         await Task.Delay(125, cancellationToken); // Simulate style conversion
     }

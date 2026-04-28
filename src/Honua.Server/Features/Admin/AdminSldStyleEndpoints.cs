@@ -48,7 +48,7 @@ internal static class AdminSldStyleEndpoints
             .WithSummary("Export the stored MapLibre style as an SLD 1.0 document.")
             .Produces<string>(StatusCodes.Status200OK, "application/xml")
             .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+            .Produces<ApiResponse<SldImportFailureResponse>>(StatusCodes.Status422UnprocessableEntity);
     }
 
     private static async Task<IResult> HandleImportSld(
@@ -222,9 +222,9 @@ internal static class AdminSldStyleEndpoints
         if (!snapshot.MapLibreStyle.Value.TryGetProperty("layers", out var layersElement)
             || layersElement.ValueKind != JsonValueKind.Array)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status422UnprocessableEntity,
+            return ExportFailure(
+                "Stored MapLibre style is missing a layers array.",
+                "MapLibreLayers",
                 "Stored MapLibre style is missing a layers array.");
         }
 
@@ -237,9 +237,9 @@ internal static class AdminSldStyleEndpoints
         }
         catch (JsonException)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status422UnprocessableEntity,
+            return ExportFailure(
+                "Stored style cannot be exported to SLD; see diagnostics.",
+                "MapLibreLayers",
                 "Stored MapLibre style cannot be deserialized for export.");
         }
 
@@ -248,15 +248,9 @@ internal static class AdminSldStyleEndpoints
 
         if (export.Diagnostics.Any(d => d.Severity == SldDiagnosticSeverity.Error))
         {
-            var failure = new SldImportFailureResponse
-            {
-                Diagnostics = export.Diagnostics
-            };
-
-            return Results.Json(
-                ApiResponse<SldImportFailureResponse>.Failure("Stored style cannot be exported to SLD; see diagnostics.", failure),
-                SldStyleJsonContext.Default.ApiResponseSldImportFailureResponse,
-                statusCode: StatusCodes.Status422UnprocessableEntity);
+            return ExportFailure(
+                "Stored style cannot be exported to SLD; see diagnostics.",
+                export.Diagnostics);
         }
 
         var diagnosticCount = export.Diagnostics.Length;
@@ -271,6 +265,28 @@ internal static class AdminSldStyleEndpoints
         SldStyleLog.ExportSucceeded(logger, layerId, layers.Length, diagnosticCount);
 
         return Results.Content(export.SldXml, "application/xml", Encoding.UTF8);
+    }
+
+    private static IResult ExportFailure(string message, string construct, string diagnosticMessage)
+        => ExportFailure(message,
+            [new SldConversionDiagnostic
+            {
+                Severity = SldDiagnosticSeverity.Error,
+                Construct = construct,
+                Message = diagnosticMessage
+            }]);
+
+    private static IResult ExportFailure(string message, SldConversionDiagnostic[] diagnostics)
+    {
+        var failure = new SldImportFailureResponse
+        {
+            Diagnostics = diagnostics
+        };
+
+        return Results.Json(
+            ApiResponse<SldImportFailureResponse>.Failure(message, failure),
+            SldStyleJsonContext.Default.ApiResponseSldImportFailureResponse,
+            statusCode: StatusCodes.Status422UnprocessableEntity);
     }
 
     private static async Task<string> ReadBodyAsync(HttpRequest request, CancellationToken cancellationToken)
