@@ -1,0 +1,73 @@
+{
+  "$schema": "https://honua.io/schemas/sdk-compatibility-versions.v1.json",
+  "schemaVersion": 1,
+  "adminApiMajor": "v1",
+  "matrixDepth": 3,
+  "serverRefs": [
+    {
+      "label": "current",
+      "ref": "HEAD",
+      "channel": "preview",
+      "description": "The workflow trigger commit. GitHub Actions resolves this to github.sha before checkout so post-merge runs exercise the just-built server revision."
+    },
+    {
+      "label": "trunk-previous-1",
+      "ref": "f04c09c0b33a4986d017ea5e1f8c3f1481034fef",
+      "channel": "preview",
+      "description": "Previous trunk commit retained until tagged server releases are available."
+    },
+    {
+      "label": "trunk-previous-2",
+      "ref": "297936162efab3a0d7cdd7e6e8d0031e018c0ecd",
+      "channel": "preview",
+      "description": "Second previous trunk commit retained until tagged server releases are available."
+    }
+  ],
+  "sdkSetVersions": [
+    {
+      "label": "sdk-current",
+      "channel": "preview",
+      "description": "Current trunk heads for the generated JavaScript/TypeScript, Python, and .NET SDKs.",
+      "refs": {
+        "js": "trunk",
+        "python": "trunk",
+        "dotnet": "trunk"
+      }
+    },
+    {
+      "label": "sdk-previous-1",
+      "channel": "preview",
+      "description": "Previous SDK set snapshot from each SDK trunk lineage.",
+      "refs": {
+        "js": "091d4b2b47c69721c5e6f55814fcdc0b05681637",
+        "python": "f22ac1b7ca5e8dddbc3e176268659c46169d85b8",
+        "dotnet": "19c67713ba58dbefcaf5e836bc8260ce0dce32ea"
+      }
+    },
+    {
+      "label": "sdk-previous-2",
+      "channel": "preview",
+      "description": "Second previous SDK set snapshot from each SDK trunk lineage.",
+      "refs": {
+        "js": "3416b28b43eddc40bb007c84e6ca9020a7b8b70f",
+        "python": "d084f9156d153e7fa5e61e0b337da5f5a0788940",
+        "dotnet": "95a5cd2ddeabb79d7d665fd8eada614b8832ff26"
+      }
+    }
+  ],
+  "matrix": {
+    "supported": [
+      { "server": "current", "sdk": "sdk-current" },
+      { "server": "current", "sdk": "sdk-previous-1" },
+      { "server": "current", "sdk": "sdk-previous-2" },
+      { "server": "trunk-previous-1", "sdk": "sdk-current" },
+      { "server": "trunk-previous-1", "sdk": "sdk-previous-1" },
+      { "server": "trunk-previous-1", "sdk": "sdk-previous-2" },
+      { "server": "trunk-previous-2", "sdk": "sdk-current" },
+      { "server": "trunk-previous-2", "sdk": "sdk-previous-1" },
+      { "server": "trunk-previous-2", "sdk": "sdk-previous-2" }
+    ],
+    "evaluation": [],
+    "unsupported": []
+  }
+}

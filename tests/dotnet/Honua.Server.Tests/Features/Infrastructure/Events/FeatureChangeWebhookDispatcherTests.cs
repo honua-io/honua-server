@@ -19,6 +19,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.Events;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class FeatureChangeWebhookDispatcherTests
 {
+    private const string PublicIpLiteralWebhookUrl = "https://1.1.1.1/feature-change";
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task FeatureChangeWebhookUrlValidation_RejectsPrivateAddressTargets()
@@ -218,7 +220,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
             Options.Create(new FeatureChangeWebhookOptions
             {
                 Enabled = true,
-                Url = "https://example.com/feature-change",
+                Url = PublicIpLiteralWebhookUrl,
                 Secret = "super-secret",
                 MaxAttempts = 1
             }),
@@ -361,7 +363,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
             Options.Create(new FeatureChangeWebhookOptions
             {
                 Enabled = true,
-                Url = "https://example.com/feature-change",
+                Url = PublicIpLiteralWebhookUrl,
                 Secret = "super-secret",
                 MaxAttempts = 1,
                 RequestTimeoutSeconds = 5
@@ -437,7 +439,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
             Options.Create(new FeatureChangeWebhookOptions
             {
                 Enabled = true,
-                Url = "https://example.com/feature-change",
+                Url = PublicIpLiteralWebhookUrl,
                 Secret = "super-secret",
                 MaxAttempts = 1,
                 RequestTimeoutSeconds = 30

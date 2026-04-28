@@ -1,4 +1,4 @@
-# ADR-0034: Provider-Ready Data Source Binding
+# ADR-0035: Provider-Ready Data Source Binding
 
 ## Status
 Accepted
