@@ -604,6 +604,7 @@ public static class EndpointRegistry
         new("POST", "/mcp"),
 
         // Spec plan / apply engine (#789).
+        new("POST", "/v1/spec/validate"),
         new("POST", "/v1/spec/plan"),
         new("POST", "/v1/spec/apply"),
         new("POST", "/v1/spec/cancel"),

@@ -234,7 +234,7 @@ public static class SpecJsonReader
                     return new LiteralNode(
                         SourceSpan.Synthetic,
                         SpecTypeKind.Number,
-                        Number: element.GetDouble());
+                        Number: ReadFiniteDouble(element));
                 }
 
             case JsonValueKind.True:
@@ -310,7 +310,7 @@ public static class SpecJsonReader
                 literal = new LiteralNode(
                     SourceSpan.Synthetic,
                     kind,
-                    Number: valueEl.GetDouble(),
+                    Number: ReadFiniteDouble(valueEl),
                     Unit: unitEl.GetString());
                 return true;
             }
@@ -318,6 +318,17 @@ public static class SpecJsonReader
 
         literal = null!;
         return false;
+    }
+
+    private static double ReadFiniteDouble(JsonElement element)
+    {
+        var value = element.GetDouble();
+        if (!double.IsFinite(value))
+        {
+            throw new FormatException("Canonical spec JSON numeric values must be finite.");
+        }
+
+        return value;
     }
 
     private static bool TryReadGeometry(JsonElement element, out GeometryLiteral literal)
