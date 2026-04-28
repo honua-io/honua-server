@@ -1,4 +1,4 @@
-# ADR-0034: Mobile SDK Language Strategy
+# ADR-0036: Mobile SDK Language Strategy
 
 ## Status
 

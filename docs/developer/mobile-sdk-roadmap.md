@@ -13,7 +13,7 @@ tracking — server-side requirement coordination keeps them adjacent to this
 roadmap and to the parent `#811`. Implementation lands in the
 `honua-io/honua-mobile` repo.
 
-Companion ADR: [ADR-0034 Mobile SDK Language Strategy](../contributor/adr/0034-mobile-sdk-language-strategy.md).
+Companion ADR: [ADR-0036 Mobile SDK Language Strategy](../contributor/adr/0036-mobile-sdk-language-strategy.md).
 
 ## Why this roadmap exists now
 
@@ -300,7 +300,7 @@ These are explicitly deferred and tracked separately:
 
 ## References
 
-- ADR-0034: Mobile SDK Language Strategy
+- ADR-0036: Mobile SDK Language Strategy
 - ADR-0024: Open-Core Edition Model (license tier coverage)
 - ADR-0018: Source-Generated JSON Serialization for AOT Compatibility
 - `AGENTS.md`: Honua repository map, protocol adapter architecture,
