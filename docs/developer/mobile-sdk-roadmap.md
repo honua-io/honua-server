@@ -40,7 +40,7 @@ implementation in `honua-io/honua-mobile`.
 
 ### Naming convention
 
-Three name spaces are used distinctly throughout this roadmap and ADR-0034:
+Three name spaces are used distinctly throughout this roadmap and ADR-0036:
 
 - **GitHub repo**: `honua-mobile`, hosted at
   [honua-io/honua-mobile](https://github.com/honua-io/honua-mobile) (per
@@ -84,7 +84,7 @@ Out of scope:
 - Native platform UI shells; this SDK ships services and view-model-friendly
   primitives, not pages or views.
 - Server-side changes; the SDK only consumes the canonical server pipelines.
-- React Native or Flutter bindings (see ADR-0034 alternatives).
+- React Native or Flutter bindings (see ADR-0036 alternatives).
 
 ## Architecture invariants
 
@@ -261,7 +261,7 @@ MAUI workload installed and add platform-specific smoke runners.
 |------|-----------|--------|-----------|
 | .NET MAUI iOS AOT publish regressions on a future runtime upgrade | Medium | High (CI breaks on iOS target) | Pin to .NET 10 LTS in Phase 0; upgrade path tracked in Phase 1. |
 | GeoPackage SpatiaLite extension availability on Android emulator images | Medium | Medium (offline tests fail in CI) | Use SQLite-PCL-raw with bundled SpatiaLite when spatial-index work in Phase 3 requires it; documented in child ticket E. |
-| KMP ecosystem catching up before implementation starts | Low | Low (decision can be revisited) | ADR-0034 records explicit re-evaluation triggers. |
+| KMP ecosystem catching up before implementation starts | Low | Low (decision can be revisited) | ADR-0036 records explicit re-evaluation triggers. |
 | Reference app patterns not extractable as clean SDK surfaces | Medium | Medium (scope creep on Phases 3 and 4) | Each phase scopes the interface-first extraction explicitly. |
 | Cross-repo coordination friction (server-tracked tickets vs `honua-mobile` implementation) | Low | Low | `area/sdk` label and roadmap cross-links keep tickets traceable; migrate to `honua-mobile` if friction surfaces. |
 
@@ -291,7 +291,7 @@ or sub-issues there). When a child ticket completes, close it in
 These are explicitly deferred and tracked separately:
 
 - AR / VR utility visualization (`#359` mobile epic).
-- React Native and Flutter bindings (rejected in ADR-0034; revisit triggers
+- React Native and Flutter bindings (rejected in ADR-0036; revisit triggers
   documented there).
 - OAuth device flow (gated on server-side OAuth surface stabilising).
 - Mobile-side spatial editing UI primitives (app-team responsibility).

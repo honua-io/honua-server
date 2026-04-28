@@ -213,7 +213,7 @@ production-ready form. Neither choice aligns with the existing
 
 ### Supersedes
 
-None. ADR-0034 codifies the existing AGENTS.md "MAUI-first" direction; no
+None. ADR-0036 codifies the existing AGENTS.md "MAUI-first" direction; no
 prior ADR proposed an alternative.
 
 ## References
