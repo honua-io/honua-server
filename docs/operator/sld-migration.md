@@ -58,7 +58,7 @@ A 200 response is `application/xml` containing a complete SLD 1.0 document. The 
 | `PointSymbolizer` / `Mark` (any well-known name) | `circle` | Non-`circle` well-known names emit a `Mark.WellKnownName` warning; sprites are not generated. |
 | `PointSymbolizer` / `ExternalGraphic` | `symbol` | `icon-image` is set to the resource href. Remote URIs are recorded but never fetched. |
 | `LineSymbolizer` (`stroke`, `stroke-width`, `stroke-opacity`, `stroke-dasharray`, `stroke-linecap`, `stroke-linejoin`) | `line` | `PerpendicularOffset` ignored with warning. |
-| `PolygonSymbolizer` (`Fill` + optional `Stroke`) | `fill` plus `line` outline when `stroke-width` is set | `Displacement` ignored with warning. |
+| `PolygonSymbolizer` (`Fill` and/or `Stroke`) | `fill` for the body and a separate `line` for the outline | A `fill` layer is emitted only when the SLD has a `Fill`; otherwise the polygon is exported as a single `line` layer. Outline always lives on the dedicated `line` layer (no `fill-outline-color`) to avoid double-stroking. SLD/SE default `stroke-width` of `1.0` is applied when omitted. `Displacement` ignored with warning. |
 | `TextSymbolizer` (`Label`, `Font`, `Fill`, `Halo`) | `symbol` | Only `<ogc:PropertyName>` labels are mapped to `{field}`. Functions warn and the label is dropped. |
 | `MinScaleDenominator` / `MaxScaleDenominator` | `minzoom` / `maxzoom` | Web Mercator approximation: `zoom ≈ log2(559082264 / scale)`, clamped to `[0,24]`. Latitude variance is documented in the design brief. |
 | OGC Filter `PropertyIsEqualTo`, `PropertyIsNotEqualTo`, `PropertyIsLessThan*`, `PropertyIsGreaterThan*` | MapLibre comparison expressions | `PropertyIsBetween` decomposes into `>= AND <=` when feasible. |

@@ -66,8 +66,88 @@ public sealed class SldConversionTests
         var outline = conversion.Layers.First(l => l.Type == "line");
 
         fill.Paint!["fill-color"].StringValue.Should().StartWith("rgba(243,111,33");
-        fill.Paint["fill-outline-color"].StringValue.Should().Be("#1f2937");
-        outline.Paint!["line-width"].NumberValue.Should().Be(1.5d);
+        fill.Paint.Should().NotContainKey("fill-outline-color",
+            "outline lives on the dedicated line layer; setting fill-outline-color would double-stroke the polygon");
+        outline.Paint!["line-color"].StringValue.Should().Be("#1f2937");
+        outline.Paint["line-width"].NumberValue.Should().Be(1.5d);
+        outline.Id.Should().EndWith("-outline");
+    }
+
+    [UnitTest]
+    public void Parse_PolygonStrokeOnly_ProducesLineLayerWithoutFill()
+    {
+        // Stroke-only PolygonSymbolizer must not emit a fill layer; otherwise the rendering
+        // pipeline defaults missing fill-color to opaque black and paints a solid polygon.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>borders</Name><UserStyle><FeatureTypeStyle><Rule>
+    <PolygonSymbolizer>
+      <Stroke>
+        <CssParameter name=""stroke"">#1f2937</CssParameter>
+        <CssParameter name=""stroke-width"">2</CssParameter>
+      </Stroke>
+    </PolygonSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        conversion.Layers.Should().ContainSingle(l => l.Type == "line",
+            "stroke-only polygon must emit exactly one layer (the outline)");
+        conversion.Layers.Should().NotContain(l => l.Type == "fill",
+            "no Fill in the SLD source means no fill layer should be emitted");
+        var outline = conversion.Layers.Single();
+        outline.Paint!["line-color"].StringValue.Should().Be("#1f2937");
+        outline.Paint["line-width"].NumberValue.Should().Be(2d);
+    }
+
+    [UnitTest]
+    public void Parse_PolygonFillOnly_ProducesFillLayerWithoutOutline()
+    {
+        // Fill-only PolygonSymbolizer must not carry a fill-outline-color (no Stroke
+        // means no outline). The previous behavior used to copy a default into the fill,
+        // here we verify only the fill-color is present.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>fills</Name><UserStyle><FeatureTypeStyle><Rule>
+    <PolygonSymbolizer>
+      <Fill>
+        <CssParameter name=""fill"">#abcdef</CssParameter>
+      </Fill>
+    </PolygonSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        var fill = conversion.Layers.Single();
+        fill.Type.Should().Be("fill");
+        fill.Paint!["fill-color"].StringValue.Should().Be("#abcdef");
+        fill.Paint.Should().NotContainKey("fill-outline-color");
+    }
+
+    [UnitTest]
+    public void Parse_PolygonStrokeWithoutWidth_DefaultsToOnePixel()
+    {
+        // SLD/SE default stroke-width is 1.0 when the CssParameter is omitted; the previous
+        // converter required Width.HasValue to emit anything, dropping the outline entirely.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>thin-borders</Name><UserStyle><FeatureTypeStyle><Rule>
+    <PolygonSymbolizer>
+      <Stroke>
+        <CssParameter name=""stroke"">#000000</CssParameter>
+      </Stroke>
+    </PolygonSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        var outline = conversion.Layers.Single(l => l.Type == "line");
+        outline.Paint!["line-width"].NumberValue.Should().Be(1d, "SLD default stroke-width is 1.0 when omitted");
     }
 
     [UnitTest]

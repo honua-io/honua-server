@@ -251,37 +251,42 @@ internal static class SldToMapLibreConverter
         double? maxZoom,
         List<MapLibreStyleLayer> layers)
     {
-        var fillPaint = new Dictionary<string, MapLibreExpression>();
-        if (polygon.Fill?.Color is { Length: > 0 } fillColor)
+        // Emit a fill layer only when the SLD PolygonSymbolizer carries a Fill.
+        // StyleTranslator.ResolveFillStyle defaults missing fill-color to opaque black,
+        // so emitting an empty fill layer for stroke-only polygons would produce an
+        // unintended solid fill.
+        if (polygon.Fill != null)
         {
-            fillPaint["fill-color"] = new MapLibreExpression(NormalizeColor(fillColor, polygon.Fill.Opacity));
+            var fillPaint = new Dictionary<string, MapLibreExpression>();
+            if (polygon.Fill.Color is { Length: > 0 } fillColor)
+            {
+                fillPaint["fill-color"] = new MapLibreExpression(NormalizeColor(fillColor, polygon.Fill.Opacity));
+            }
+
+            if (polygon.Fill.Opacity is { } fillOpacity)
+            {
+                fillPaint["fill-opacity"] = new MapLibreExpression(fillOpacity);
+            }
+
+            // Outline lives on the dedicated line layer below (when Stroke is present);
+            // setting fill-outline-color in addition would render two outlines.
+            layers.Add(new MapLibreStyleLayer
+            {
+                Id = $"{ruleId}-{symbolizerIndex}",
+                Type = "fill",
+                Filter = filter,
+                MinZoom = minZoom,
+                MaxZoom = maxZoom,
+                Paint = fillPaint.Count > 0 ? fillPaint : null
+            });
         }
 
-        if (polygon.Fill?.Opacity is { } fillOpacity)
+        if (polygon.Stroke is { } stroke)
         {
-            fillPaint["fill-opacity"] = new MapLibreExpression(fillOpacity);
-        }
-
-        if (polygon.Stroke?.Color is { Length: > 0 } outlineColor)
-        {
-            fillPaint["fill-outline-color"] = new MapLibreExpression(NormalizeColor(outlineColor, polygon.Stroke.Opacity));
-        }
-
-        layers.Add(new MapLibreStyleLayer
-        {
-            Id = $"{ruleId}-{symbolizerIndex}",
-            Type = "fill",
-            Filter = filter,
-            MinZoom = minZoom,
-            MaxZoom = maxZoom,
-            Paint = fillPaint
-        });
-
-        if (polygon.Stroke is { } stroke && stroke.Width.HasValue)
-        {
+            // SLD/SE default stroke width is 1.0 px when the CssParameter is omitted.
             var linePaint = new Dictionary<string, MapLibreExpression>
             {
-                ["line-width"] = new MapLibreExpression(stroke.Width.Value)
+                ["line-width"] = new MapLibreExpression(stroke.Width ?? 1d)
             };
 
             if (!string.IsNullOrEmpty(stroke.Color))
@@ -299,9 +304,13 @@ internal static class SldToMapLibreConverter
                 linePaint["line-dasharray"] = ToExpressionArray(dashArray);
             }
 
+            // The id suffix flags this as the polygon outline. When the polygon also has
+            // a Fill, the fill layer above keeps the canonical id and this layer carries
+            // the "-outline" suffix for stable round-trip identity.
+            var outlineSuffix = polygon.Fill != null ? "-outline" : string.Empty;
             layers.Add(new MapLibreStyleLayer
             {
-                Id = $"{ruleId}-{symbolizerIndex}-outline",
+                Id = $"{ruleId}-{symbolizerIndex}{outlineSuffix}",
                 Type = "line",
                 Filter = filter,
                 MinZoom = minZoom,
