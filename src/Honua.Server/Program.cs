@@ -1173,6 +1173,11 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
     {
         Honua.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
     }
+    else if (provider.Equals(DataProviderNames.MySql, StringComparison.OrdinalIgnoreCase) ||
+             provider.Equals("mariadb", StringComparison.OrdinalIgnoreCase))
+    {
+        Honua.MySql.ServiceCollectionExtensions.AddMySqlServices(services, configuration);
+    }
     else
     {
         throw new InvalidOperationException($"Unsupported data source provider '{provider}'.");
