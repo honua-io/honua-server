@@ -1924,11 +1924,48 @@ internal static class WmsRequestHandlers
         return new WmsImageResult(imageBytes, contentType, warningHeader);
     }
 
-    private static void AppendWmsCiteDimensions(StringBuilder sb, LayerDefinition layer, string indent)
+    private static void AppendWmsCiteDimensions(StringBuilder sb, LayerDefinition layer, string indent, bool isWms111)
     {
         var definition = GetCiteWmsDimensionDefinition(layer);
         if (definition is null)
         {
+            return;
+        }
+
+        if (isWms111)
+        {
+            sb.Append(indent)
+                .Append("<Dimension name=\"")
+                .Append(EscapeXml(definition.Value.Name))
+                .Append("\" units=\"")
+                .Append(EscapeXml(definition.Value.Units))
+                .Append('"');
+
+            if (!string.IsNullOrWhiteSpace(definition.Value.UnitSymbol))
+            {
+                sb.Append(" unitSymbol=\"")
+                    .Append(EscapeXml(definition.Value.UnitSymbol!))
+                    .Append('"');
+            }
+
+            sb.AppendLine(" />");
+            sb.Append(indent)
+                .Append("<Extent name=\"")
+                .Append(EscapeXml(definition.Value.Name))
+                .Append('"');
+
+            if (!string.IsNullOrWhiteSpace(definition.Value.Default))
+            {
+                sb.Append(" default=\"")
+                    .Append(EscapeXml(definition.Value.Default!))
+                    .Append('"');
+            }
+
+            sb.Append(" nearestValue=\"")
+                .Append(definition.Value.NearestValue ? "1" : "0")
+                .Append("\">")
+                .Append(EscapeXml(definition.Value.Extent))
+                .AppendLine("</Extent>");
             return;
         }
 
@@ -1969,6 +2006,19 @@ internal static class WmsRequestHandlers
         sb.Append('>')
             .Append(EscapeXml(definition.Value.Extent))
             .AppendLine("</Dimension>");
+    }
+
+    private static void AppendWmsOnlineResource(StringBuilder sb, string indent, string href, bool isWms111)
+    {
+        sb.Append(indent).Append("<OnlineResource ");
+        if (isWms111)
+        {
+            sb.Append("xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:type=\"simple\" ");
+        }
+
+        sb.Append("xlink:href=\"")
+            .Append(EscapeXml(href))
+            .AppendLine("\" />");
     }
 
     private static CiteWmsDimensionDefinition? GetCiteWmsDimensionDefinition(LayerDefinition layer)
@@ -2038,8 +2088,7 @@ internal static class WmsRequestHandlers
                 .Append(Wms111CapabilitiesDtd)
                 .AppendLine("\">");
             sb.Append("<WMT_MS_Capabilities ")
-                .Append("version=\"1.1.1\" ")
-                .Append("xmlns:xlink=\"http://www.w3.org/1999/xlink\" ")
+                .Append("version=\"1.1.1\"")
                 .AppendLine(">");
         }
         else
@@ -2062,6 +2111,7 @@ internal static class WmsRequestHandlers
         sb.AppendLine("      <Keyword>OGC</Keyword>");
         sb.Append("      <Keyword>").Append(EscapeXml(service.Name ?? serviceId)).AppendLine("</Keyword>");
         sb.AppendLine("    </KeywordList>");
+        AppendWmsOnlineResource(sb, "    ", wmsEndpoint, isWms111);
         sb.AppendLine("    <ContactInformation>");
         sb.AppendLine("      <ContactPersonPrimary>");
         sb.AppendLine("        <ContactPerson>Honua Support</ContactPerson>");
@@ -2089,7 +2139,9 @@ internal static class WmsRequestHandlers
         sb.AppendLine("        <Format>text/xml</Format>");
         sb.AppendLine("        <DCPType>");
         sb.AppendLine("          <HTTP>");
-        sb.Append("            <Get><OnlineResource xlink:href=\"").Append(EscapeXml(wmsUrlPrefix)).AppendLine("\" /></Get>");
+        sb.AppendLine("            <Get>");
+        AppendWmsOnlineResource(sb, "              ", wmsUrlPrefix, isWms111);
+        sb.AppendLine("            </Get>");
         sb.AppendLine("          </HTTP>");
         sb.AppendLine("        </DCPType>");
         sb.AppendLine("      </GetCapabilities>");
@@ -2099,7 +2151,9 @@ internal static class WmsRequestHandlers
         sb.AppendLine("        <Format>image/jpeg</Format>");
         sb.AppendLine("        <DCPType>");
         sb.AppendLine("          <HTTP>");
-        sb.Append("            <Get><OnlineResource xlink:href=\"").Append(EscapeXml(wmsUrlPrefix)).AppendLine("\" /></Get>");
+        sb.AppendLine("            <Get>");
+        AppendWmsOnlineResource(sb, "              ", wmsUrlPrefix, isWms111);
+        sb.AppendLine("            </Get>");
         sb.AppendLine("          </HTTP>");
         sb.AppendLine("        </DCPType>");
         sb.AppendLine("      </GetMap>");
@@ -2109,7 +2163,9 @@ internal static class WmsRequestHandlers
         sb.AppendLine("        <Format>application/json</Format>");
         sb.AppendLine("        <DCPType>");
         sb.AppendLine("          <HTTP>");
-        sb.Append("            <Get><OnlineResource xlink:href=\"").Append(EscapeXml(wmsUrlPrefix)).AppendLine("\" /></Get>");
+        sb.AppendLine("            <Get>");
+        AppendWmsOnlineResource(sb, "              ", wmsUrlPrefix, isWms111);
+        sb.AppendLine("            </Get>");
         sb.AppendLine("          </HTTP>");
         sb.AppendLine("        </DCPType>");
         sb.AppendLine("      </GetFeatureInfo>");
@@ -2158,10 +2214,6 @@ internal static class WmsRequestHandlers
             sb.AppendLine("        <KeywordList>");
             sb.Append("          <Keyword>").Append(EscapeXml(layerName)).AppendLine("</Keyword>");
             sb.AppendLine("        </KeywordList>");
-            sb.AppendLine("        <Style>");
-            sb.AppendLine("          <Name>default</Name>");
-            sb.AppendLine("          <Title>Default style</Title>");
-            sb.AppendLine("        </Style>");
             sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
             sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
             if (!isWms111)
@@ -2175,12 +2227,16 @@ internal static class WmsRequestHandlers
                 await AppendWmsGeographicBoundsAsync(context, sb, extent.Value, "        ", isWms111).ConfigureAwait(false);
             }
 
-            AppendWmsCiteDimensions(sb, layer, "        ");
+            AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
 
             sb.AppendLine("        <MetadataURL type=\"TC211\">");
             sb.AppendLine("          <Format>text/xml</Format>");
-            sb.Append("          <OnlineResource xlink:href=\"").Append(EscapeXml(metadataUrl)).AppendLine("\" />");
+            AppendWmsOnlineResource(sb, "          ", metadataUrl, isWms111);
             sb.AppendLine("        </MetadataURL>");
+            sb.AppendLine("        <Style>");
+            sb.AppendLine("          <Name>default</Name>");
+            sb.AppendLine("          <Title>Default style</Title>");
+            sb.AppendLine("        </Style>");
             sb.AppendLine("      </Layer>");
         }
 

@@ -214,6 +214,45 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Protocol(TestProtocols.Wfs11)]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs11_GetFeature_MalformedFeatureId_ReturnsOws10ExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&FEATUREID=test_layer.bad");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("<ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows\" version=\"1.0.0\">");
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"RESOURCEID\"");
+        content.Should().Contain("resourceId");
+        content.Should().Contain("test_layer.bad");
+        content.Should().Contain("is malformed.");
+        content.Should().NotContain("NoApplicableCode");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs11)]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs11_GetFeature_UnsupportedSrsName_ReturnsOws10ExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&SRSNAME=EPSG:999999");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("<ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows\" version=\"1.0.0\">");
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"SRSNAME\"");
+        content.Should().Contain("Unsupported srsName");
+        content.Should().Contain("EPSG:999999");
+        content.Should().NotContain("NoApplicableCode");
+    }
+
+    [IntegrationTest]
     [Protocol(TestProtocols.Wfs10)]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
@@ -378,6 +417,45 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("<ServiceExceptionReport version=\"1.0.0\">");
         content.Should().Contain("Unknown feature type");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs10)]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs10_GetFeature_MalformedFeatureId_ReturnsServiceExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&FEATUREID=test_layer.bad");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("<ServiceExceptionReport version=\"1.0.0\">");
+        content.Should().Contain("code=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"RESOURCEID\"");
+        content.Should().Contain("resourceId");
+        content.Should().Contain("test_layer.bad");
+        content.Should().Contain("is malformed.");
+        content.Should().NotContain("NoApplicableCode");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs10)]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs10_GetFeature_UnsupportedSrsName_ReturnsServiceExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&SRSNAME=EPSG:999999");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("<ServiceExceptionReport version=\"1.0.0\">");
+        content.Should().Contain("code=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"SRSNAME\"");
+        content.Should().Contain("Unsupported srsName");
+        content.Should().Contain("EPSG:999999");
+        content.Should().NotContain("NoApplicableCode");
     }
 
     private async Task AssertLegacyFilterReturnsFifthFeatureAsync(string version, string filter)

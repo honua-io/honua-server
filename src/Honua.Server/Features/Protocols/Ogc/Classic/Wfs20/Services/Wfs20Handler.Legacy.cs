@@ -159,6 +159,11 @@ internal sealed partial class Wfs20Handler
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
             return CreateLegacyWfsException(version, "InvalidParameterValue", "Invalid WFS parameter value; see logs for details.");
         }
+        catch (WfsQueryException ex)
+        {
+            Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
+            return CreateLegacyWfsException(version, ex.ExceptionCode, ex.Message, ex.Locator);
+        }
         catch (Exception ex)
         {
             Wfs20Log.DatabaseQueryFailed(_logger, Wfs20Utilities.Operations.GetFeature, ex.Message);

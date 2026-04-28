@@ -120,6 +120,50 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Protocol(TestProtocols.Wms111)]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms111_GetCapabilities_UsesDtdCompatibleServiceAndDimensionElements()
+    {
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;";
+            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
+            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<!DOCTYPE WMT_MS_Capabilities SYSTEM \"http://schemas.opengis.net/wms/1.1.1/WMS_MS_Capabilities.dtd\">");
+        content.Should().Contain("<WMT_MS_Capabilities version=\"1.1.1\">");
+        content.Should().NotContain("<WMT_MS_Capabilities version=\"1.1.1\" xmlns:xlink=");
+        content.Should().Contain("<OnlineResource xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:type=\"simple\" xlink:href=\"");
+        content.Should().Contain("<Dimension name=\"time\" units=\"ISO8601\" />");
+        content.Should().Contain("<Extent name=\"time\" default=\"2000-01-01T00:00:30Z\" nearestValue=\"1\">2000-01-01T00:00:00Z/2000-01-01T00:01:00Z/PT5S</Extent>");
+        content.Should().NotContain("</Dimension>");
+
+        var serviceStart = content.IndexOf("  <Service>", StringComparison.Ordinal);
+        var serviceOnlineResource = content.IndexOf("    <OnlineResource", serviceStart, StringComparison.Ordinal);
+        var contactInformation = content.IndexOf("    <ContactInformation>", serviceStart, StringComparison.Ordinal);
+        serviceOnlineResource.Should().BeGreaterThan(serviceStart);
+        serviceOnlineResource.Should().BeLessThan(contactInformation);
+
+        var dimension = content.IndexOf("<Dimension name=\"time\"", StringComparison.Ordinal);
+        var extent = content.IndexOf("<Extent name=\"time\"", StringComparison.Ordinal);
+        var metadataUrl = content.IndexOf("<MetadataURL", dimension, StringComparison.Ordinal);
+        var style = content.IndexOf("<Style>", metadataUrl, StringComparison.Ordinal);
+        extent.Should().BeGreaterThan(dimension);
+        metadataUrl.Should().BeGreaterThan(extent);
+        style.Should().BeGreaterThan(metadataUrl);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetCapabilities_Epsg4326BoundingBox_UsesLatLonAxisOrder()
