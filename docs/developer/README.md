@@ -15,6 +15,7 @@ Build applications and integrations with Honua APIs and SDKs.
 
 - [SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md) — Server/SDK version support
 - [SDK Metadata Format](SDK_COMPATIBILITY_METADATA.md) — Compatibility metadata schema
+- [Mobile SDK Roadmap](mobile-sdk-roadmap.md) — Read / write / edit / sync / offline-cache cycle plan for `honua-mobile-sdk` (MAUI, iOS + Android)
 - [MCP Server](MCP_SERVER.md) — SDK-hosted discovery/query MCP package plus the server-owned operator surface for AI agents
 - [Spec Plan/Apply Engine](SPEC_ENGINE.md) — Terraform-style plan/apply for canonical specs with content-hash artifact cache (REST + gRPC)
 - [Grounding & Intent Drafting](GROUNDING.md) — Pipeline behind `honua_ground_candidates` / `honua_clarify_intent`: workflow-family classifier, candidate ranking, material-ambiguity rule set, and deterministic engine
