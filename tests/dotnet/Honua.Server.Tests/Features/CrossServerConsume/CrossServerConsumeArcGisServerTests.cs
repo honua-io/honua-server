@@ -46,7 +46,7 @@ public sealed class CrossServerConsumeArcGisServerTests : IClassFixture<CrossSer
                 ("VERSION", "1.3.0")));
 
         CrossServerConsumeTestSupport.AssertRoot(document, "WMS_Capabilities");
-        CrossServerConsumeTestSupport.AssertDocumentContains(document, config.WmsLayer!);
+        CrossServerConsumeTestSupport.AssertWmsLayerAdvertised(document, config.WmsLayer!);
     }
 
     [ExternalServiceTest(

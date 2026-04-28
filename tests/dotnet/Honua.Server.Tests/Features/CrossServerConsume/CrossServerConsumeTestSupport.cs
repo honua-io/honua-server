@@ -82,6 +82,17 @@ internal static class CrossServerConsumeTestSupport
             .Should().BeTrue("capabilities document should advertise '{0}'", expectedValue);
     }
 
+    internal static void AssertWmsLayerAdvertised(XDocument document, string layerName)
+    {
+        document.Root.Should().NotBeNull();
+
+        document.Root!.Descendants()
+            .Where(static element => string.Equals(element.Name.LocalName, "Layer", StringComparison.Ordinal))
+            .Select(static layer => ReadChildValue(layer, "Name"))
+            .Any(name => string.Equals(name, layerName, StringComparison.OrdinalIgnoreCase))
+            .Should().BeTrue("WMS capabilities should advertise layer name '{0}'", layerName);
+    }
+
     internal static void AssertFeatureCollectionHasFeature(XDocument document, string expectedLayerName)
     {
         AssertRoot(document, "FeatureCollection");
