@@ -131,7 +131,12 @@ URLs to the browser. Range requests are routed through the server:
 * honors RFC 7233 `Range: bytes=offset-end` `GET` requests with
   `206 Partial Content` and `Content-Range`
 * returns `416 Range Not Satisfiable` (with `Content-Range: bytes */<size>`)
-  for ranges past the artifact end
+  for ranges past the artifact end **and** for any single range larger than
+  64 MiB — this is a per-request cap, not a per-object cap. PMTiles clients
+  pull tiny tile-sized ranges (~16 KiB), so this only affects bespoke tools
+  that try to mirror the archive in one pass; for bulk pulls use direct
+  `SignedUrl` / `PublicUrl` access or a no-`Range` `GET` against the proxy
+  (the latter streams the whole archive as `200 OK`).
 * a `GET` without a `Range` header returns the full archive as `200 OK`
 * only serves objects that are tagged as durable PMTiles publish artifacts —
   the resolver requires `Content-Type: application/vnd.pmtiles`, the

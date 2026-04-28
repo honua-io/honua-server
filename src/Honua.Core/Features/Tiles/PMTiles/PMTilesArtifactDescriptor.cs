@@ -73,8 +73,12 @@ public sealed record PMTilesArtifactDescriptor
     public required PMTilesUrlStrategy UrlStrategy { get; init; }
 
     /// <summary>
-    /// Browser-usable access URL. Public URL, presigned/SAS URL, or absolute
-    /// proxy URL depending on <see cref="UrlStrategy"/>.
+    /// Browser-usable access URL. Absolute public URL for
+    /// <see cref="PMTilesUrlStrategy.PublicUrl"/>, absolute presigned/SAS URL for
+    /// <see cref="PMTilesUrlStrategy.SignedUrl"/>, or root-relative proxy path
+    /// (<c>/api/v1/tiles/pmtiles/{artifactId}</c>) for
+    /// <see cref="PMTilesUrlStrategy.RangeProxy"/>. Browser clients should
+    /// resolve the relative form against the Honua server origin.
     /// </summary>
     public required string AccessUrl { get; init; }
 

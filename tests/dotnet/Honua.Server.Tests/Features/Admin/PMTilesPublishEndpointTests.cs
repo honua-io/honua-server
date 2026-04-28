@@ -90,7 +90,7 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/tiles/pmtiles/{artifactId}")]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
     public async Task PMTilesProxy_RangeRequest_Returns206WithRangeHeaders()
     {
         var jobId = await StartPublishJobAsync();
@@ -118,7 +118,7 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/tiles/pmtiles/{artifactId}")]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
     public async Task PMTilesProxy_MissingArtifact_Returns404()
     {
         var response = await _client.GetAsync($"/api/v1/tiles/pmtiles/{Guid.NewGuid():N}");
@@ -126,7 +126,7 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/tiles/pmtiles/{artifactId}")]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
     public async Task PMTilesProxy_UnsatisfiableRange_Returns416()
     {
         var jobId = await StartPublishJobAsync();
@@ -142,6 +142,37 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
 
         using var response = await _client.SendAsync(request);
         response.StatusCode.Should().Be(HttpStatusCode.RequestedRangeNotSatisfiable);
+    }
+
+    [IntegrationTest]
+    [Endpoint("HEAD /api/v1/tiles/pmtiles/{*artifactId}")]
+    public async Task PMTilesProxy_HeadRequest_Returns200WithContentLengthAndNoBody()
+    {
+        var jobId = await StartPublishJobAsync();
+        var (status, finalJson) = await WaitForJobCompletionAsync(jobId);
+        status.Should().Be(OperationStatus.Completed, "publish job must complete to test HEAD probes");
+        var descriptor = GetPropertyCaseInsensitive(finalJson!.RootElement, "publishedArtifact");
+        var artifactId = GetPropertyCaseInsensitive(descriptor, "artifactId").GetString()!;
+        var sizeBytes = GetPropertyCaseInsensitive(descriptor, "sizeBytes").GetInt64();
+        finalJson.Dispose();
+
+        using var headRequest = new HttpRequestMessage(HttpMethod.Head, $"/api/v1/tiles/pmtiles/{artifactId}");
+        using var headResponse = await _client.SendAsync(headRequest);
+
+        headResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        headResponse.Headers.AcceptRanges.Should().Contain("bytes");
+        headResponse.Content.Headers.ContentLength.Should().Be(sizeBytes);
+        var body = await headResponse.Content.ReadAsByteArrayAsync();
+        body.Length.Should().Be(0, "HEAD responses must not transfer a body");
+    }
+
+    [IntegrationTest]
+    [Endpoint("HEAD /api/v1/tiles/pmtiles/{*artifactId}")]
+    public async Task PMTilesProxy_HeadMissingArtifact_Returns404()
+    {
+        using var headRequest = new HttpRequestMessage(HttpMethod.Head, $"/api/v1/tiles/pmtiles/{Guid.NewGuid():N}");
+        using var response = await _client.SendAsync(headRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     private async Task<string> StartPublishJobAsync()
