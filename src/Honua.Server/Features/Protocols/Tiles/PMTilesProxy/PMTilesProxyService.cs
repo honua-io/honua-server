@@ -16,6 +16,9 @@ namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 internal sealed class PMTilesProxyService
 {
     private const long MaxRangeLength = 64 * 1024 * 1024; // 64 MiB cap per range request
+    internal const string PMTilesContentType = "application/vnd.pmtiles";
+    internal const string OperationMetadataKey = "operation";
+    internal const string PublishOperationValue = "publish";
 
     private readonly ICloudFileStorage _cloudStorage;
     private readonly IEnumerable<ICloudRangeReader> _rangeReaders;
@@ -44,7 +47,55 @@ internal sealed class PMTilesProxyService
             return PMTilesProxyResolution.NotFound();
         }
 
+        if (!IsPublishedPMTilesArtifact(metadata))
+        {
+            return PMTilesProxyResolution.NotFound();
+        }
+
         return PMTilesProxyResolution.Found(metadata);
+    }
+
+    private bool IsPublishedPMTilesArtifact(CloudFile metadata)
+    {
+        if (!string.Equals(metadata.ContentType, PMTilesContentType, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!metadata.Metadata.TryGetValue(OperationMetadataKey, out var operationTag) ||
+            !string.Equals(operationTag, PublishOperationValue, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var publishPrefix = NormalizeKeySegment(_storageOptions.PMTilesPublish?.KeyPrefix);
+        if (string.IsNullOrEmpty(publishPrefix))
+        {
+            return true;
+        }
+
+        var providerPrefix = NormalizeKeySegment(_storageOptions.Provider switch
+        {
+            CloudStorageProvider.AwsS3 => _storageOptions.AwsS3?.KeyPrefix,
+            CloudStorageProvider.AzureBlob => _storageOptions.AzureBlob?.BlobPrefix,
+            _ => null
+        });
+
+        var key = metadata.StoragePath ?? metadata.FileId;
+        var expectedPrefix = string.IsNullOrEmpty(providerPrefix)
+            ? publishPrefix + "/"
+            : providerPrefix + "/" + publishPrefix + "/";
+        return key.StartsWith(expectedPrefix, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeKeySegment(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return value.Trim().Trim('/');
     }
 
     public async Task<PMTilesRangeResult> ReadRangeAsync(

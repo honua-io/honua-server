@@ -35,7 +35,7 @@ Request scope options:
 
 ## Operational Notes
 
-- Jobs are tracked via the unified operations progress store as `OperationType.TileCache` (or `OperationType.PMTilesArchive` for archive jobs).
+- Jobs are tracked via the unified operations progress store as `OperationType.TileCache` (`OperationType.PMTilesArchive` for `archive` jobs, `OperationType.PMTilesPublish` for `publish` jobs).
 - `seed`/`warm` currently target MVT generation through the standard tile provider.
 - `invalidate`/`purge` use output cache invalidation scopes (layer/service/global metadata).
 - `archive` generates a PMTiles v3 archive from tile outputs and uploads it to cloud storage as a temporary admin download (24h TTL).

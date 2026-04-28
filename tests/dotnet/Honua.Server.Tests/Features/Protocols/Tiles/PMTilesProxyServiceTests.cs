@@ -50,6 +50,89 @@ public sealed class PMTilesProxyServiceTests
     }
 
     [Fact]
+    public async Task ResolveAsync_NonPMTilesContentType_ReturnsNotFound()
+    {
+        var stub = new TestCloudStorage();
+        var fileId = stub.AddFile(
+            [0, 1, 2, 3],
+            contentType: "application/octet-stream",
+            metadata: ImmutableDictionary<string, string>.Empty.Add("operation", "publish"));
+        var sut = new PMTilesProxyService(stub, [], Options.Create(new CloudStorageOptions()));
+
+        var resolution = await sut.ResolveAsync(fileId, CancellationToken.None);
+
+        resolution.Exists.Should().BeFalse();
+        resolution.Metadata.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_MissingPublishOperationTag_ReturnsNotFound()
+    {
+        var stub = new TestCloudStorage();
+        var fileId = stub.AddFile(
+            [0, 1, 2, 3],
+            contentType: "application/vnd.pmtiles",
+            metadata: ImmutableDictionary<string, string>.Empty.Add("operation", "archive"));
+        var sut = new PMTilesProxyService(stub, [], Options.Create(new CloudStorageOptions()));
+
+        var resolution = await sut.ResolveAsync(fileId, CancellationToken.None);
+
+        resolution.Exists.Should().BeFalse();
+        resolution.Metadata.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_KeyOutsidePublishPrefix_ReturnsNotFound()
+    {
+        var stub = new TestCloudStorage();
+        var fileId = stub.AddFile(
+            [0, 1, 2, 3],
+            contentType: "application/vnd.pmtiles",
+            metadata: ImmutableDictionary<string, string>.Empty.Add("operation", "publish"),
+            storagePath: "secrets/leaked-credentials.bin");
+        var options = Options.Create(new CloudStorageOptions
+        {
+            Provider = CloudStorageProvider.AwsS3,
+            AwsS3 = new AwsS3Options { BucketName = "honua-bucket", Region = "us-east-1" },
+            PMTilesPublish = new PMTilesPublishOptions { KeyPrefix = "pmtiles" }
+        });
+        var sut = new PMTilesProxyService(stub, [], options);
+
+        var resolution = await sut.ResolveAsync(fileId, CancellationToken.None);
+
+        resolution.Exists.Should().BeFalse();
+        resolution.Metadata.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ProviderPrefixedPublishKey_IsAccepted()
+    {
+        var stub = new TestCloudStorage();
+        var fileId = stub.AddFile(
+            [0, 1, 2, 3],
+            contentType: "application/vnd.pmtiles",
+            metadata: ImmutableDictionary<string, string>.Empty.Add("operation", "publish"),
+            storagePath: "tenants/acme/pmtiles/world/42/WebMercatorQuad.pmtiles");
+        var options = Options.Create(new CloudStorageOptions
+        {
+            Provider = CloudStorageProvider.AwsS3,
+            AwsS3 = new AwsS3Options
+            {
+                BucketName = "honua-bucket",
+                Region = "us-east-1",
+                KeyPrefix = "tenants/acme"
+            },
+            PMTilesPublish = new PMTilesPublishOptions { KeyPrefix = "pmtiles" }
+        });
+        var sut = new PMTilesProxyService(stub, [], options);
+
+        var resolution = await sut.ResolveAsync(fileId, CancellationToken.None);
+
+        resolution.Exists.Should().BeTrue();
+        resolution.Metadata.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task ReadRangeAsync_NoRangeHeader_ReturnsFull()
     {
         var stub = new TestCloudStorage();
@@ -119,22 +202,30 @@ public sealed class PMTilesProxyServiceTests
 
     private sealed class TestCloudStorage : ICloudFileStorage
     {
+        private static readonly ImmutableDictionary<string, string> DefaultPublishMetadata =
+            ImmutableDictionary<string, string>.Empty.Add("operation", "publish");
+
         private readonly Dictionary<string, (CloudFile File, byte[] Bytes)> _files = new(StringComparer.Ordinal);
 
         public CloudStorageProvider Provider => CloudStorageProvider.Local;
 
-        public string AddFile(byte[] bytes, CloudStorageProvider provider = CloudStorageProvider.Local)
+        public string AddFile(
+            byte[] bytes,
+            CloudStorageProvider provider = CloudStorageProvider.Local,
+            string contentType = "application/vnd.pmtiles",
+            ImmutableDictionary<string, string>? metadata = null,
+            string? storagePath = null)
         {
             var fileId = Guid.NewGuid().ToString("N");
             _files[fileId] = (new CloudFile
             {
                 FileId = fileId,
                 FileName = $"{fileId}.bin",
-                StoragePath = fileId,
-                ContentType = "application/octet-stream",
+                StoragePath = storagePath ?? $"pmtiles/{fileId}",
+                ContentType = contentType,
                 SizeBytes = bytes.Length,
                 UploadedAt = DateTimeOffset.UtcNow,
-                Metadata = ImmutableDictionary<string, string>.Empty,
+                Metadata = metadata ?? DefaultPublishMetadata,
                 Provider = provider
             }, bytes);
             return fileId;

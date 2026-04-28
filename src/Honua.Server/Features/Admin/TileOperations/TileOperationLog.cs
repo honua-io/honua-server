@@ -27,4 +27,7 @@ internal static partial class TileOperationLog
 
     [LoggerMessage(EventId = 9211, Level = LogLevel.Information, Message = "Published PMTiles artifact for tile job {JobId} ({Size} bytes) at {ObjectKey} via {UrlStrategy}.")]
     public static partial void PublishUploadComplete(ILogger logger, string jobId, string objectKey, long size, PMTilesUrlStrategy urlStrategy);
+
+    [LoggerMessage(EventId = 9212, Level = LogLevel.Warning, Message = "Failed to delete orphan PMTiles publish artifact {ArtifactId} for tile job {JobId} after access URL generation failure.")]
+    public static partial void PublishOrphanCleanupFailed(ILogger logger, string jobId, string artifactId, Exception exception);
 }

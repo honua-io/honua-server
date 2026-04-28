@@ -186,6 +186,42 @@ public sealed class TileOperationJobServicePublishTests
         progress.Should().NotBeNull();
         progress!.Status.Should().Be(OperationStatus.Failed);
         progress.ErrorMessage.Should().NotBeNullOrWhiteSpace();
+        stub.LastUpload.Should().BeNull("misconfigured PublicUrl must fail before upload to avoid orphan artifacts");
+    }
+
+    [Fact]
+    public async Task Publish_SignedUrlFailure_RollsBackUploadedArtifact()
+    {
+        var stub = new StubCloudStorage(presignedUrlOverride: _ => null); // simulate provider returning no presigned URL
+        var publishOptions = new PMTilesPublishOptions
+        {
+            UrlStrategy = PMTilesUrlStrategy.SignedUrl,
+            SignedUrlLifetime = TimeSpan.FromHours(1)
+        };
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true, publishOptions: publishOptions);
+        var sut = CreateSut(serviceProvider);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "publish",
+            LayerId = 21,
+            MinZoom = 0,
+            MaxZoom = 0,
+            MaxTiles = 1
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Failed);
+        progress.ErrorMessage.Should().Contain("Publish access URL generation failed");
+
+        stub.LastUpload.Should().NotBeNull();
+        stub.DeletedFileIds.Should().Contain(stub.LastUpload!.ObjectKeyOverride!,
+            "the durable artifact must be removed when access URL generation fails");
+        var orphanLookup = await stub.GetMetadataAsync(stub.LastUpload.ObjectKeyOverride!);
+        orphanLookup.Should().BeNull("the orphan artifact must no longer be present in storage");
     }
 
     [Fact]
@@ -380,15 +416,21 @@ public sealed class TileOperationJobServicePublishTests
     private sealed class StubCloudStorage : ICloudFileStorage
     {
         private readonly Dictionary<string, CloudFile> _files = new(StringComparer.Ordinal);
+        private readonly Func<string, string?>? _presignedUrlOverride;
 
-        public StubCloudStorage(CloudStorageProvider provider = CloudStorageProvider.AwsS3)
+        public StubCloudStorage(
+            CloudStorageProvider provider = CloudStorageProvider.AwsS3,
+            Func<string, string?>? presignedUrlOverride = null)
         {
             Provider = provider;
+            _presignedUrlOverride = presignedUrlOverride;
         }
 
         public CloudStorageProvider Provider { get; }
 
         public FileUploadRequest? LastUpload { get; private set; }
+
+        public List<string> DeletedFileIds { get; } = [];
 
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
         {
@@ -446,7 +488,10 @@ public sealed class TileOperationJobServicePublishTests
             => Task.FromResult<byte[]?>(null);
 
         public Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
-            => Task.FromResult(_files.Remove(fileId));
+        {
+            DeletedFileIds.Add(fileId);
+            return Task.FromResult(_files.Remove(fileId));
+        }
 
         public Task<BatchUploadResult> UploadBatchAsync(BatchUploadRequest request, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -464,7 +509,14 @@ public sealed class TileOperationJobServicePublishTests
             => Task.FromResult<IReadOnlyList<CloudFile>>(_files.Values.ToArray());
 
         public Task<string?> GetPresignedUrlAsync(string fileId, TimeSpan? expiresIn = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<string?>($"https://signed.example/{fileId}?ttl={(int)(expiresIn?.TotalSeconds ?? 0)}");
+        {
+            if (_presignedUrlOverride is not null)
+            {
+                return Task.FromResult(_presignedUrlOverride(fileId));
+            }
+
+            return Task.FromResult<string?>($"https://signed.example/{fileId}?ttl={(int)(expiresIn?.TotalSeconds ?? 0)}");
+        }
 
         public Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(string fileName, string contentType, TimeSpan? expiresIn = null, string? folder = null, CancellationToken cancellationToken = default)
             => Task.FromResult<(string Url, string FileId)?>(null);

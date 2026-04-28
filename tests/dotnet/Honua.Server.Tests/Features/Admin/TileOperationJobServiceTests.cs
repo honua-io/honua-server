@@ -134,6 +134,38 @@ public sealed class TileOperationJobServiceTests
     }
 
     [Fact]
+    public async Task ReadQueuedJobIdsAsync_WithQueuedPublishJob_RecoversAcrossRestart()
+    {
+        using var serviceProvider = CreateServiceProvider();
+        var progressStore = new InMemoryUniversalProgressStore();
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
+        const string jobId = "publish-queued-job";
+
+        await cache.SetStringAsync(
+            $"tile:request:{jobId}",
+            JsonSerializer.Serialize(new PersistedTileOperationRequest
+            {
+                Request = new TileOperationStartRequest
+                {
+                    Operation = "publish",
+                    LayerId = 99,
+                    TileMatrixSetId = "WebMercatorQuad"
+                }
+            }));
+
+        await progressStore.SetProgressAsync(
+            jobId,
+            TileOperationProgress.CreateInitial(jobId, "publish", null, 99, "WebMercatorQuad"));
+
+        await using var enumerator = sut.ReadQueuedJobIdsAsync().GetAsyncEnumerator();
+        var hasRecoveredJob = await enumerator.MoveNextAsync();
+
+        hasRecoveredJob.Should().BeTrue();
+        enumerator.Current.Should().Be(jobId);
+    }
+
+    [Fact]
     public async Task ProcessQueuedJobAsync_WhenRequestMetadataIsMissing_FailsJobAndCleansUpRequest()
     {
         using var serviceProvider = CreateServiceProvider();

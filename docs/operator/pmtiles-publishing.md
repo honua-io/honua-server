@@ -129,6 +129,12 @@ URLs to the browser. Range requests are routed through the server:
 * returns `416 Range Not Satisfiable` for ranges past the artifact end
 * falls back to a full body when no `Range` header is sent (useful for HEAD
   probes)
+* only serves objects that are tagged as durable PMTiles publish artifacts —
+  the resolver requires `Content-Type: application/vnd.pmtiles`, the
+  `operation=publish` storage metadata tag set by the publish workflow, and
+  (when `FileStorage:PMTilesPublish:KeyPrefix` is configured) a key under the
+  configured publish prefix. Other CloudFile objects in the same bucket are
+  returned as `404 Not Found` even if the artifact ID is guessed.
 * is publicly accessible — MapLibre browser clients have no admin credentials.
   Restrict via deployment-level rate limiting / WAF if necessary.
 
@@ -178,6 +184,20 @@ The Honua server CORS policy already exposes those response headers for the
   </CorsRule>
 </Cors>
 ```
+
+## Failure Semantics
+
+The publish path validates strategy-specific configuration **before** uploading
+the durable artifact, and rolls back any object that was just written if access
+URL generation subsequently fails:
+
+* `PublicUrl` without `PublicBucketBaseUrl` configured fails the job with a
+  pre-flight error and never uploads a file.
+* `SignedUrl` strategy: if the storage provider returns no presigned URL (e.g.,
+  IAM/SAS misconfiguration), the just-uploaded artifact is deleted before the
+  job is marked failed, so a later re-run does not race against an orphan.
+* `RangeProxy` does not call out to the storage provider for URL generation, so
+  no rollback path is required.
 
 ## Object Keys And Re-publishing
 
