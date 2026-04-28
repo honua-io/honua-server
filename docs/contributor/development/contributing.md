@@ -63,6 +63,9 @@ dotnet publish src/Honua.Server --configuration Release -p:PublishAot=true -p:St
 - **Line/Branch Coverage**: informational only (not CI-blocking)
 - Use `[IntegrationTest]`, `[Protocol(...)]`, `[Endpoint(...)]` attributes
 - Integration tests use Testcontainers (no external database needed)
+- **Tier dispatch (ADR-0035)**: each TestKit attribute already emits a `Tier` trait (`Fast` / `Integration` / `Slow`). New test attributes must emit exactly one tier from `Honua.TestKit.Constants.Tiers`. Tier assignment is additive — do not remove the existing `Category` trait.
+- **Selective shard map**: when adding a `server-tests` shard, update both `.github/workflows/ci.yml::server-tests` (the matrix entry) and `.github/ci-shards.json` (the source-path → shard map) in the same PR. The names and filters must match exactly — the `Validate shard parity` step in the `targeted-shards` job fails the run if either side has an extra or mismatched entry.
+- **Flaky-test quarantine**: tag a known-intermittent test with `[FlakyTest("reason — tracked in #N")]`. The trait is additive and never sets `Skip`; the test still runs on its tier's normal schedule. Apply it only after the nightly `flaky-detection.yml` workflow surfaces the test as a candidate and a human has triaged the underlying cause.
 
 ---
 

@@ -97,18 +97,37 @@ test script and the workflow matrix do not drift.
 changed source path to one or more shards via `.github/ci-shards.json`, and
 emits a JSON descriptor consumed by the `server-tests` matrix:
 
-- If the diff touches **shared infrastructure** (`tests/dotnet/Honua.TestKit/`,
-  `src/Honua.Core/`, `src/Honua.Postgres/`, `src/Honua.Server/Features/Infrastructure/`,
-  `Honua.sln`, `.github/`, `scripts/ci/`), the script emits
-  `{"run_all": true}` and the matrix runs every shard. This is the safe
-  fallback.
-- Otherwise, the script emits `{"run_all": false, "shards": ["odata", ...]}`
-  with the relevant shard names.
-- The matrix uses GitHub Actions' built-in `if:` filter on the matrix entry so
-  unmatched shards skip cleanly with a green status.
-- The script never emits an empty matrix. When no source paths match, it
-  defaults to `{"run_all": false, "shards": ["core"]}` so the smoke shard
-  always runs.
+- If the diff touches **shared infrastructure**
+  (`infrastructure_paths` in `ci-shards.json` —
+  `tests/dotnet/Honua.TestKit/`, `src/Honua.Core/`, `src/Honua.Postgres/`,
+  `src/Honua.ServiceDefaults/`, `src/Honua.Server/Features/Infrastructure/`,
+  `Honua.sln`, `.github/`, `scripts/ci/`), the script short-circuits to
+  `{"run_all": true, "reason": "infrastructure_change"}` and the matrix
+  runs every shard.
+- If the diff touches a **watched source prefix** (`unmapped_source_run_all_prefixes`
+  — `src/Honua.Server/`, `src/Honua.DuckDB/`, `tests/dotnet/Honua.Server.Tests/`)
+  but the changed path is **not** matched by any shard's `paths`, the script
+  emits `{"run_all": true, "reason": "unmapped_source_change"}`. This catches
+  new feature directories whose tests are not yet routed to a specific shard
+  — the alternative would be to silently fall back to the Core shard whose
+  filter excludes `Honua.Server.Tests.Features.*`. New features land green
+  on a full matrix until a follow-up shards them.
+- Otherwise, the script emits `{"run_all": false, "shards": [...]}` with the
+  matched shard names.
+- The matrix uses GitHub Actions' built-in `if:` filter on the matrix entry
+  so unmatched shards skip cleanly with a green status.
+- The script never emits an empty matrix. When no source under a watched
+  prefix was touched (e.g. doc-only diffs), it defaults to
+  `{"run_all": false, "shards": ["Core"], "reason": "no_path_match"}` so a
+  smoke shard still runs.
+
+In addition to selecting shards, the **PR Fast tier always runs** regardless
+of which shards are selected: `dotnet-foundation-tests` invokes
+`dotnet test --filter "Tier=Fast"` against `Honua.Server.Tests` (alongside the
+unfiltered Core / LoadTests / Architecture projects whose contents are
+already Fast-tier). This honours the "Tier=Fast across all projects on every
+PR" contract and prevents a PR with no matching shard from skipping the fast
+server unit tests.
 
 The targeted entrypoint runs the architecture tests on every PR regardless of
 diff content; that is the gate that catches the #802 class of issue (new
@@ -158,12 +177,17 @@ remove it from the coverage ledger.
 ### Negative
 
 - Integration regressions outside the targeted shards reach trunk. Mitigated by
-  (a) the merge queue running the full matrix on push, and (b) the script
-  defaulting to `run_all` when shared infrastructure changes.
-- `.github/ci-shards.json` becomes load-bearing. Drift between source layout
-  and shard mapping is silent unless a CI step validates that every source
-  directory is covered. The validation step is wired into the
-  `Detect Targeted Shards` job below.
+  (a) the merge queue running the full matrix on push, (b) the script
+  defaulting to `run_all` when shared infrastructure changes, and (c) the
+  `unmapped_source_run_all_prefixes` guard which forces `run_all` when a PR
+  touches a source path under a watched prefix that no shard claims.
+- `.github/ci-shards.json` becomes load-bearing. The `Detect Targeted Shards`
+  job runs a parity check that fails the PR if any `shard_name`/`filter`
+  pair in `ci.yml::server-tests` is missing from `ci-shards.json` or
+  vice-versa. Drift between source layout and shard mapping (a new source
+  directory landing without an entry in `ci-shards.json`) is still possible
+  but is contained by the `unmapped_source_run_all_prefixes` guard which
+  emits `run_all` for that PR.
 - Operating-system-level flakes (Testcontainers slow-start, runner congestion)
   look like flaky tests. Human review is required before `[FlakyTest]` is
   applied.
@@ -183,8 +207,13 @@ remove it from the coverage ledger.
 - `FlakyTestAttribute` is `[AttributeUsage(... AllowMultiple = false)]`. A
   test should never be tagged flaky on more than one attribute level — if
   the whole class is flaky, tag the class.
-- The targeted-test script is shell-only. Avoid Python so the PR-gate startup
-  cost stays under one second.
+- The targeted-test script is shell + jq only. Keep the PR-gate startup cost
+  near zero — the script must complete in well under a second on the
+  workflow runner.
+- The shard-parity check inside the `targeted-shards` job uses Python's
+  standard library only (a small line-based parser plus `json`). PyYAML is
+  not required so no `pip install` step is needed on the runner.
 - Any new shard added to the `server-tests` matrix MUST also be added to
-  `.github/ci-shards.json` in the same PR. CI fails fast if a shard exists in
-  one and not the other.
+  `.github/ci-shards.json` in the same PR. The `Validate shard parity`
+  step in the `targeted-shards` job fails the run if a `shard_name`/`filter`
+  pair in `ci.yml` is missing from `ci-shards.json` (or vice-versa).

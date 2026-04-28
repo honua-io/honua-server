@@ -136,6 +136,95 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Per ADR-0035 the shard map is the single source of truth: every
+      # entry in ci.yml::server-tests must have a matching shard in
+      # ci-shards.json (and vice versa) with identical filter strings.
+      # Drift here would cause the targeted-shards descriptor to silently
+      # skip shards that exist in the matrix or to enumerate ghost shards
+      # the matrix never runs.
+      - name: Validate shard parity (ci.yml ↔ ci-shards.json)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re, sys
+
+          # Extract the server-tests matrix include list directly with
+          # a small line-based parser so we do not need PyYAML installed
+          # on the runner. The matrix entries have a fixed two-space
+          # indent under `include:` and use block-style mappings.
+          with open(".github/workflows/ci.yml", "r", encoding="utf-8") as fh:
+              lines = fh.read().splitlines()
+
+          entries = []
+          in_matrix = False
+          current = None
+          for raw in lines:
+              if not in_matrix:
+                  if re.match(r"^  server-tests:\s*$", raw):
+                      in_matrix = "found_job"
+                  continue
+              if in_matrix == "found_job":
+                  if re.match(r"^        include:\s*$", raw):
+                      in_matrix = "in_include"
+                  elif raw.startswith("  ") and not raw.startswith("    "):
+                      # Next top-level job; abort matrix scan.
+                      in_matrix = False
+                  continue
+              # in_include
+              entry_start = re.match(r"^          - shard_name:\s*(.+)$", raw)
+              if entry_start:
+                  if current is not None:
+                      entries.append(current)
+                  name = entry_start.group(1).strip()
+                  current = {"shard_name": name, "filter": None}
+                  continue
+              filt = re.match(r"^            filter:\s*\"(.*)\"\s*$", raw)
+              if filt and current is not None:
+                  current["filter"] = filt.group(1)
+                  continue
+              # End of matrix block: any line that is less-indented than the
+              # entries (eight spaces) and not blank/comment terminates it.
+              if raw and not raw.startswith("          ") and not raw.startswith("            "):
+                  if current is not None:
+                      entries.append(current)
+                      current = None
+                  in_matrix = False
+
+          if current is not None:
+              entries.append(current)
+
+          yml_shards = {e["shard_name"]: e["filter"] for e in entries if e["filter"] is not None}
+          if not yml_shards:
+              print("::error::could not parse server-tests matrix from ci.yml")
+              sys.exit(2)
+
+          with open(".github/ci-shards.json", "r", encoding="utf-8") as fh:
+              cfg = json.load(fh)
+          json_shards = {s["name"]: s["filter"] for s in cfg["shards"]}
+
+          errors = []
+          only_yml = sorted(set(yml_shards) - set(json_shards))
+          only_json = sorted(set(json_shards) - set(yml_shards))
+          if only_yml:
+              errors.append(f"shards in ci.yml but missing from ci-shards.json: {only_yml}")
+          if only_json:
+              errors.append(f"shards in ci-shards.json but missing from ci.yml: {only_json}")
+          for name in sorted(set(yml_shards) & set(json_shards)):
+              if yml_shards[name] != json_shards[name]:
+                  errors.append(
+                      f"filter mismatch for shard '{name}':\n"
+                      f"  ci.yml:        {yml_shards[name]}\n"
+                      f"  ci-shards.json: {json_shards[name]}"
+                  )
+
+          if errors:
+              for err in errors:
+                  print(f"::error::{err}")
+              sys.exit(1)
+
+          print(f"Shard parity OK ({len(yml_shards)} shards).")
+          PY
+
       - name: Compute shard descriptor
         id: compute
         env:
@@ -240,6 +329,24 @@ jobs:
             --no-restore \
             --configuration Release \
             --logger "trx;LogFileName=load-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Run .NET Tests (Server Fast Tier)
+        # Per ADR-0035 the Fast tier runs across every test project on every
+        # PR, including Honua.Server.Tests. Filtering by Tier=Fast keeps this
+        # step under a few minutes — the [UnitTest] tests in Server.Tests use
+        # NSubstitute / NullLogger / in-memory caches and do not require the
+        # PostgreSQL service. Decoupled from the targeted-shards matrix so a
+        # PR with no matching shard still runs the fast server unit tests.
+        timeout-minutes: 10
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Tier=Fast" \
+            --logger "trx;LogFileName=server-fast-tier.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 

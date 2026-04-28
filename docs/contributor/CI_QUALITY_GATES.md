@@ -6,9 +6,11 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 ## Core Workflows
 
-- `ci.yml`: build, formatting verification, full test suite, merge-blocking Esri Leaflet browser compatibility tests, and MCP certification (see [MCP Certification](mcp-certification.md)).
+- `ci.yml`: build, formatting verification, tier-aware test dispatch (PRs run only the `targeted-shards` subset emitted by `scripts/ci/honua-server-targeted-tests.sh`; merge-to-trunk runs the full 11-shard `server-tests` matrix — see [Test Tier Strategy](#test-tier-strategy) and [ADR-0035](adr/0035-unified-ci-test-tier-strategy.md)), merge-blocking Esri Leaflet browser compatibility tests, and MCP certification (see [MCP Certification](mcp-certification.md)).
 - `pr-validation.yml`: PR template compliance validation.
 - `load-soak-nightly.yml`: nightly load/soak testing.
+- `nightly-slow-tier.yml`: nightly `Tier=Slow` execution across `Honua.Server.Tests`, `Honua.Postgres.Tests`, and `Honua.Core.Tests` (Scale/External/Emulator/Cloud-tagged tests). Daily 4am UTC.
+- `flaky-detection.yml`: nightly flake reporting — re-runs the integration tier 3× and uploads a flake-candidate report. Daily 5am UTC. See [ADR-0035](adr/0035-unified-ci-test-tier-strategy.md) for the quarantine workflow.
 - `windows-client-compat-nightly.yml`: nightly/manual Windows client compatibility certification (full CERT-\* matrix: 18 test cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes and reusable evidence pack artifacts.
 - `client-interop-nightly.yml`: nightly real-client interop matrix that exercises Honua against actual GIS clients (QGIS, GDAL/OGR, OpenLayers, Cesium, ArcGIS Pro stub) via the Docker harnesses under `docker/client-compat/`. The workflow diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` (gated by `tests/baselines/client-compat/expected-pairs.json`), refreshes `docs/gis/gap-report.md`, and fails on any baseline `pass` regressing to a non-`pass` status, missing lane envelope, or new `fail` in an unbaselined case. Non-PR-blocking until 30 consecutive nightly passes (#806).
 - `codeql.yml`: static analysis (nightly + trunk push; not PR-blocking).
@@ -20,7 +22,26 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 ## CI Gate (Required Status Check)
 
-The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`pr-readiness`, `changes`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `esri-leaflet-browser-tests`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`, `llm-architecture-review`, `architecture-gate`). Configure it as a required status check in branch protection to gate PRs on a single job.
+The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`pr-readiness`, `changes`, `targeted-shards`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `esri-leaflet-browser-tests`, `maplibre-compat`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`). Configure it as a required status check in branch protection to gate PRs on a single job.
+
+The `targeted-shards` job runs a **parity check** (Python, stdlib only) that compares every `shard_name`/`filter` pair in `ci.yml::server-tests` against `.github/ci-shards.json` and fails the PR if either side has an extra or mismatched entry. Then it emits the `{run_all, shards[], reason}` JSON descriptor that scopes the `server-tests` matrix on PRs. Matrix entries whose `shard_name` is not in the descriptor's `shards` array are skipped via the per-entry `if: contains(...)` filter (no failure, just a skipped status). On `push` to `trunk` and `workflow_dispatch` the descriptor is forced to `run_all: true`, so every shard runs.
+
+## Test Tier Strategy
+
+ADR-0035 defines a `Tier` xUnit trait — `Fast`, `Integration`, or `Slow` — that the existing TestKit attributes emit alongside the legacy `Category` trait. Tier assignment is **additive on the attribute**, so no test method needs to be re-tagged for the default mapping. See [ADR-0035: Unified CI Test Tier Strategy](adr/0035-unified-ci-test-tier-strategy.md) and [TestKit attributes](testkit.md#test-categories-and-tiers) for the full mapping.
+
+| Event | Workflow | Tier scope |
+|---|---|---|
+| Pull Request | `ci.yml` | Foundation tests (Core/Architecture/LoadTests, primarily `Tier=Fast`) plus a `--filter "Tier=Fast"` step against `Honua.Server.Tests` plus the `server-tests` shards selected by `scripts/ci/honua-server-targeted-tests.sh`. |
+| Merge to trunk | `ci.yml` (`push`) | Same as PR plus the **full** 11-shard `server-tests` matrix and the Postgres compat matrix. |
+| Nightly slow tier | `nightly-slow-tier.yml` | `--filter "Tier=Slow"` across `Honua.Server.Tests`, `Honua.Postgres.Tests`, `Honua.Core.Tests`. |
+| Nightly flake hunt | `flaky-detection.yml` | Re-runs `--filter "Tier=Integration&Tier!=Slow"` three times and reports inconsistent outcomes (never fails the workflow). |
+
+The Tier=Fast PR step always runs regardless of which shards `targeted-shards` selects, so a PR whose diff matches no integration shard still exercises `[UnitTest]` methods in `Honua.Server.Tests`.
+
+The shard map has a single source of truth: `.github/ci-shards.json` mirrors the `shard_name` and `filter` values from `ci.yml::server-tests`, plus the `paths` prefixes that route a changed file to a shard. Adding or renaming a shard requires editing both files in the same PR — the parity check inside `targeted-shards` fails the run if they disagree. When a PR touches a source path under `unmapped_source_run_all_prefixes` (`src/Honua.Server/`, `src/Honua.DuckDB/`, `tests/dotnet/Honua.Server.Tests/`) that no shard claims, the script emits `{"run_all": true, "reason": "unmapped_source_change"}` so new feature directories run on a full matrix until a follow-up PR adds explicit shard routing.
+
+`Tier=Slow` tests still respect their existing env-var skip logic (`HONUA_TEST_S3_*`, `HONUA_TEST_AZURE_BLOB_*`, `HONUA_TEST_DB_URL`, etc.); the nightly workflow asserts those variables are set before the test step so a missing variable is a hard failure rather than a silent no-op.
 
 ## Quality Gates
 

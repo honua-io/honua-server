@@ -153,7 +153,35 @@ TARGETED_SHARDS_JSON="$(
       '
 )"
 
-# Apply default-when-no-match.
+# Detect changed files that look like source code under a watched prefix but
+# were not matched by any shard. This prevents an unmapped feature directory
+# (e.g. src/Honua.Server/Features/Export/) from silently falling back to the
+# Core shard whose filter excludes Honua.Server.Tests.Features.*.
+UNMAPPED_SOURCE_HIT="$(
+  printf '%s\n' "${CHANGED_FILES}" \
+    | jq -Rsc --slurpfile cfg "${CONFIG_FILE}" '
+        split("\n")
+        | map(select(length > 0)) as $files
+        | ($cfg[0].unmapped_source_run_all_prefixes // []) as $watched
+        | ($cfg[0].shards | map(.paths) | flatten) as $known_paths
+        | $files
+        | any(
+            . as $f
+            | ($watched | any(. as $p | $f | startswith($p)))
+              and (($known_paths | any(. as $p | $f | startswith($p))) | not)
+          )
+      '
+)"
+
+if [[ "${UNMAPPED_SOURCE_HIT}" == "true" ]]; then
+  jq -nc --argjson shards "${ALL_SHARD_NAMES_JSON}" \
+    '{run_all: true, shards: $shards, reason: "unmapped_source_change"}'
+  exit 0
+fi
+
+# Apply default-when-no-match. Only reached when no source under a watched
+# prefix was touched (e.g. docs- or workflow-only diffs that did not already
+# trigger the infrastructure_paths short-circuit).
 SHARDS_LEN="$(printf '%s' "${TARGETED_SHARDS_JSON}" | jq 'length')"
 if [[ "${SHARDS_LEN}" == "0" ]]; then
   TARGETED_SHARDS_JSON="$(jq -c '.default_shards_when_no_match' "${CONFIG_FILE}")"
