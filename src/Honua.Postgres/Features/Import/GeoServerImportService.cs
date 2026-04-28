@@ -9,6 +9,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Styling.Abstractions;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Postgres.Features.Import;
@@ -21,18 +22,21 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     private readonly GeoServerRestClient _restClient;
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsRegistry _crsRegistry;
+    private readonly ISldStyleConverter? _sldConverter;
     private readonly ILogger<GeoServerImportService> _logger;
 
     public GeoServerImportService(
         GeoServerRestClient restClient,
         IDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
-        ILogger<GeoServerImportService> logger)
+        ILogger<GeoServerImportService> logger,
+        ISldStyleConverter? sldConverter = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _sldConverter = sldConverter;
     }
 
     /// <inheritdoc />
@@ -967,7 +971,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         }
     }
 
-    private static GeoServerImportResult CreateDryRunResult(GeoServerServiceInfo serviceInfo, FilteredResources resources, GeoServerImportRequest request, TimeSpan duration)
+    private GeoServerImportResult CreateDryRunResult(GeoServerServiceInfo serviceInfo, FilteredResources resources, GeoServerImportRequest request, TimeSpan duration)
     {
         var importedResources = new List<GeoServerImportedResource>();
 
@@ -1011,14 +1015,18 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 ResourceType = "Style",
                 Name = style.Name,
                 WorkspaceName = style.WorkspaceName,
-                Notes = style.Format == "sld" ? "Would require SLD conversion (issue #375)" : "Would be created"
+                Notes = style.Format == "sld"
+                    ? (_sldConverter != null
+                        ? "Would convert SLD to MapLibre via ISldStyleConverter"
+                        : "SLD converter not registered; style would be skipped or warned (issue #375)")
+                    : "Would be created"
             });
         }
 
         var warnings = new List<string>();
-        if (resources.StyleCount > 0)
+        if (resources.StyleCount > 0 && _sldConverter == null)
         {
-            warnings.Add("Style import requires implementing issue #375 for SLD conversion");
+            warnings.Add("ISldStyleConverter is not registered; SLD styles will be skipped or warned at import time.");
         }
 
         if (serviceInfo.CompatibilityAssessment?.IncompatibleResources > 0)
@@ -1274,28 +1282,35 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         {
             try
             {
-                // Check if SLD conversion is available (issue #375)
+                // SLD-to-MapLibre conversion (issue #375).
                 if (style.Format == "sld")
                 {
-                    var behavior = request.ImportOptions?.UnsupportedStyleBehavior ?? UnsupportedResourceBehavior.LogWarning;
-                    var warningMessage = $"SLD style {style.Name} requires conversion to MapLibre format (issue #375)";
+                    var conversionWarnings = TryConvertSldStyle(style, request, result, out var converterAvailable);
 
-                    if (behavior == UnsupportedResourceBehavior.FailImport)
+                    if (!converterAvailable)
                     {
-                        throw new InvalidOperationException(warningMessage);
-                    }
+                        // No ISldStyleConverter wired; fall through to legacy unsupported-style behavior.
+                        var behavior = request.ImportOptions?.UnsupportedStyleBehavior ?? UnsupportedResourceBehavior.LogWarning;
+                        var warningMessage = $"SLD style {style.Name} requires the SLD converter (issue #375). No ISldStyleConverter is registered.";
 
-                    if (behavior == UnsupportedResourceBehavior.Skip)
-                    {
-                        Log.StyleSkipped(_logger, style.Name);
-                        result.SkippedCount++;
-                        continue;
-                    }
+                        if (behavior == UnsupportedResourceBehavior.FailImport)
+                        {
+                            throw new InvalidOperationException(warningMessage);
+                        }
 
-                    if (behavior == UnsupportedResourceBehavior.LogWarning)
-                    {
+                        if (behavior == UnsupportedResourceBehavior.Skip)
+                        {
+                            Log.StyleSkipped(_logger, style.Name);
+                            result.SkippedCount++;
+                            continue;
+                        }
+
                         Log.StyleRequiresConversion(_logger, style.Name);
                         result.Warnings.Add(warningMessage);
+                    }
+                    else
+                    {
+                        result.Warnings.AddRange(conversionWarnings);
                     }
                 }
 
@@ -1388,16 +1403,68 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
     private async Task ConvertAndImportStyleAsync(GeoServerStyleInfo style, CancellationToken cancellationToken)
     {
-        // Convert SLD style to MapLibre format for Honua
-        // Note: Requires SLD to MapLibre conversion (tracked in issue #375)
+        // Convert SLD style to MapLibre format for Honua. SLD parsing/conversion is delegated
+        // to ISldStyleConverter (Honua.Server). Style persistence (catalog wiring) is a follow-up
+        // (issue #375 leaves the persistence side intentionally as a no-op so this method remains
+        // a single-responsibility conversion hook callable from both dry-run and full-import paths).
         Log.StyleConversionStarted(_logger, style.Name);
-
-        // Implementation would:
-        // 1. Parse SLD style document
-        // 2. Convert symbology to MapLibre JSON format
-        // 3. Handle color ramps, symbols, and complex styling
-        // 4. Store converted style in Honua style repository
         await Task.Delay(125, cancellationToken); // Simulate style conversion
+    }
+
+    /// <summary>
+    /// Invokes the registered <see cref="ISldStyleConverter"/> against the embedded SLD content
+    /// when available and returns any warning messages for inclusion in import results.
+    /// </summary>
+    private List<string> TryConvertSldStyle(
+        GeoServerStyleInfo style,
+        GeoServerImportRequest request,
+        ImportStepResult result,
+        out bool converterAvailable)
+    {
+        var warnings = new List<string>();
+        converterAvailable = _sldConverter != null;
+
+        if (_sldConverter == null)
+        {
+            return warnings;
+        }
+
+        if (string.IsNullOrWhiteSpace(style.SldContent))
+        {
+            warnings.Add($"SLD style {style.Name} has no embedded content; conversion skipped.");
+            return warnings;
+        }
+
+        var conversion = _sldConverter.Convert(style.SldContent!);
+        foreach (var warning in conversion.Warnings)
+        {
+            warnings.Add($"SLD style {style.Name}: {warning}");
+        }
+
+        if (conversion.HasErrors)
+        {
+            var behavior = request.ImportOptions?.UnsupportedStyleBehavior ?? UnsupportedResourceBehavior.LogWarning;
+            var firstError = conversion.Errors.Count > 0 ? conversion.Errors[0] : "SLD conversion produced no layers.";
+            var message = $"SLD style {style.Name} could not be converted: {firstError}";
+
+            if (behavior == UnsupportedResourceBehavior.FailImport)
+            {
+                throw new InvalidOperationException(message);
+            }
+
+            if (behavior == UnsupportedResourceBehavior.Skip)
+            {
+                Log.StyleSkipped(_logger, style.Name);
+                result.SkippedCount++;
+            }
+            else
+            {
+                Log.StyleRequiresConversion(_logger, style.Name);
+                warnings.Add(message);
+            }
+        }
+
+        return warnings;
     }
 
     private async Task ValidateImportedResourcesAsync(GeoServerImportRequest request, CancellationToken cancellationToken)

@@ -1,0 +1,623 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Globalization;
+using System.Xml;
+using System.Xml.Linq;
+using Honua.Server.Features.Infrastructure.Helpers;
+
+namespace Honua.Server.Features.Infrastructure.Styling.Sld;
+
+/// <summary>
+/// Parses SLD 1.0 and SLD 1.1 / Symbology Encoding documents into the internal
+/// <see cref="SldDocument"/> tree. Always delegates XML loading to
+/// <see cref="SecureXmlDocumentParser"/> so DTDs and external entities are blocked.
+/// </summary>
+internal static class SldParser
+{
+    private const int MaxInputCharacters = 1_048_576; // 1 MiB - migration uploads are small.
+
+    private static readonly char[] DashArraySeparators = [' ', ','];
+
+    public static SldDocument Parse(string sldXml)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sldXml);
+
+        if (sldXml.Length > MaxInputCharacters)
+        {
+            throw new SldParseException(
+                $"SLD document exceeds the {MaxInputCharacters} character limit.");
+        }
+
+        XDocument document;
+        try
+        {
+            document = SecureXmlDocumentParser.Parse(sldXml);
+        }
+        catch (XmlException ex)
+        {
+            throw new SldParseException("SLD document is not well-formed XML.", ex);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new SldParseException("SLD document was empty or whitespace.", ex);
+        }
+
+        var root = document.Root
+            ?? throw new SldParseException("SLD document has no root element.");
+
+        if (!IsRecognizedRoot(root))
+        {
+            throw new SldParseException(
+                "SLD document root must be StyledLayerDescriptor, FeatureTypeStyle, or UserStyle.");
+        }
+
+        var diagnostics = new List<SldConversionDiagnostic>();
+        var version = DetectVersion(root);
+        var namedLayers = ParseRootContents(root, diagnostics);
+
+        return new SldDocument(version, namedLayers, diagnostics);
+    }
+
+    private static bool IsRecognizedRoot(XElement root)
+    {
+        var local = root.Name.LocalName;
+        return local is "StyledLayerDescriptor"
+            or "UserStyle"
+            or "FeatureTypeStyle";
+    }
+
+    private static SldVersion DetectVersion(XElement root)
+    {
+        var versionAttribute = root.Attribute("version")?.Value;
+        if (!string.IsNullOrWhiteSpace(versionAttribute) && versionAttribute.StartsWith("1.1", StringComparison.Ordinal))
+        {
+            return SldVersion.Sld11;
+        }
+
+        // Heuristic: if the root or any descendant uses the SE namespace, treat as 1.1.
+        foreach (var descendant in root.DescendantsAndSelf())
+        {
+            if (string.Equals(descendant.Name.NamespaceName, SldNamespaces.Se, StringComparison.Ordinal))
+            {
+                return SldVersion.Sld11;
+            }
+        }
+
+        return SldVersion.Sld10;
+    }
+
+    private static List<SldNamedLayer> ParseRootContents(XElement root, List<SldConversionDiagnostic> diagnostics)
+    {
+        var local = root.Name.LocalName;
+        if (local == "StyledLayerDescriptor")
+        {
+            var named = new List<SldNamedLayer>();
+            foreach (var element in root.Elements())
+            {
+                switch (element.Name.LocalName)
+                {
+                    case "NamedLayer":
+                        named.Add(ParseNamedLayer(element, diagnostics));
+                        break;
+                    case "UserLayer":
+                        diagnostics.Add(Warn(
+                            "UserLayer",
+                            "UserLayer is not supported; only NamedLayer entries are converted."));
+                        break;
+                }
+            }
+
+            return named;
+        }
+
+        if (local == "UserStyle")
+        {
+            var styles = new List<SldUserStyle> { ParseUserStyle(root, diagnostics) };
+            return new List<SldNamedLayer> { new(null, styles) };
+        }
+
+        // FeatureTypeStyle root.
+        var featureTypeStyles = new List<SldFeatureTypeStyle> { ParseFeatureTypeStyle(root, diagnostics) };
+        var userStyle = new SldUserStyle(null, featureTypeStyles);
+        return new List<SldNamedLayer> { new(null, new List<SldUserStyle> { userStyle }) };
+    }
+
+    private static SldNamedLayer ParseNamedLayer(XElement element, List<SldConversionDiagnostic> diagnostics)
+    {
+        var name = ChildLocal(element, "Name")?.Value?.Trim();
+        var styles = new List<SldUserStyle>();
+
+        foreach (var child in element.Elements())
+        {
+            switch (child.Name.LocalName)
+            {
+                case "UserStyle":
+                    styles.Add(ParseUserStyle(child, diagnostics));
+                    break;
+                case "NamedStyle":
+                    diagnostics.Add(Warn(
+                        "NamedStyle",
+                        $"NamedStyle '{ChildLocal(child, "Name")?.Value}' references a server-side style and cannot be converted."));
+                    break;
+            }
+        }
+
+        return new SldNamedLayer(name, styles);
+    }
+
+    private static SldUserStyle ParseUserStyle(XElement element, List<SldConversionDiagnostic> diagnostics)
+    {
+        var name = ChildLocal(element, "Name")?.Value?.Trim();
+        var featureTypeStyles = new List<SldFeatureTypeStyle>();
+
+        foreach (var child in element.Elements())
+        {
+            if (child.Name.LocalName == "FeatureTypeStyle")
+            {
+                featureTypeStyles.Add(ParseFeatureTypeStyle(child, diagnostics));
+            }
+        }
+
+        return new SldUserStyle(name, featureTypeStyles);
+    }
+
+    private static SldFeatureTypeStyle ParseFeatureTypeStyle(XElement element, List<SldConversionDiagnostic> diagnostics)
+    {
+        var name = ChildLocal(element, "Name")?.Value?.Trim();
+        var rules = new List<SldRule>();
+
+        foreach (var child in element.Elements())
+        {
+            switch (child.Name.LocalName)
+            {
+                case "Rule":
+                    rules.Add(ParseRule(child, diagnostics));
+                    break;
+                case "VendorOption":
+                    diagnostics.Add(Warn(
+                        "VendorOption",
+                        $"VendorOption '{child.Attribute("name")?.Value}' is not portable to MapLibre and was ignored."));
+                    break;
+                case "Transformation":
+                    diagnostics.Add(Warn(
+                        "Transformation",
+                        "FeatureTypeStyle Transformation is not supported and was ignored."));
+                    break;
+            }
+        }
+
+        return new SldFeatureTypeStyle(name, rules);
+    }
+
+    private static SldRule ParseRule(XElement element, List<SldConversionDiagnostic> diagnostics)
+    {
+        string? name = null;
+        SldFilter? filter = null;
+        double? minScale = null;
+        double? maxScale = null;
+        var symbolizers = new List<SldSymbolizer>();
+
+        foreach (var child in element.Elements())
+        {
+            switch (child.Name.LocalName)
+            {
+                case "Name":
+                    name = child.Value?.Trim();
+                    break;
+                case "Filter":
+                    filter = SldFilterParser.ParseFilter(child, diagnostics, name);
+                    break;
+                case "ElseFilter":
+                    diagnostics.Add(Warn(
+                        "ElseFilter",
+                        "ElseFilter has no portable MapLibre equivalent; rule will render unfiltered.",
+                        name));
+                    break;
+                case "MinScaleDenominator":
+                    minScale = ParseDouble(child.Value);
+                    break;
+                case "MaxScaleDenominator":
+                    maxScale = ParseDouble(child.Value);
+                    break;
+                case "PointSymbolizer":
+                    symbolizers.Add(ParsePointSymbolizer(child, diagnostics, name));
+                    break;
+                case "LineSymbolizer":
+                    symbolizers.Add(ParseLineSymbolizer(child, diagnostics, name));
+                    break;
+                case "PolygonSymbolizer":
+                    symbolizers.Add(ParsePolygonSymbolizer(child, diagnostics, name));
+                    break;
+                case "TextSymbolizer":
+                    symbolizers.Add(ParseTextSymbolizer(child, diagnostics, name));
+                    break;
+                case "RasterSymbolizer":
+                    diagnostics.Add(Warn(
+                        "RasterSymbolizer",
+                        "RasterSymbolizer is not supported; raster styling is handled separately.",
+                        name));
+                    break;
+            }
+        }
+
+        return new SldRule(name, filter, minScale, maxScale, symbolizers);
+    }
+
+    private static SldPointSymbolizer ParsePointSymbolizer(
+        XElement element,
+        List<SldConversionDiagnostic> diagnostics,
+        string? ruleName)
+    {
+        SldMark? mark = null;
+        SldExternalGraphic? externalGraphic = null;
+        double? size = null;
+        double? opacity = null;
+
+        var graphic = ChildLocal(element, "Graphic");
+        if (graphic != null)
+        {
+            foreach (var graphicChild in graphic.Elements())
+            {
+                switch (graphicChild.Name.LocalName)
+                {
+                    case "Mark":
+                        mark = ParseMark(graphicChild);
+                        break;
+                    case "ExternalGraphic":
+                        externalGraphic = ParseExternalGraphic(graphicChild, diagnostics, ruleName);
+                        break;
+                    case "Size":
+                        size = ParseDouble(graphicChild.Value);
+                        break;
+                    case "Opacity":
+                        opacity = ParseDouble(graphicChild.Value);
+                        break;
+                    case "Rotation":
+                        diagnostics.Add(Warn(
+                            "Rotation",
+                            "Graphic Rotation is not yet mapped to icon-rotate; value preserved as warning.",
+                            ruleName));
+                        break;
+                }
+            }
+        }
+
+        return new SldPointSymbolizer(mark, externalGraphic, size, opacity);
+    }
+
+    private static SldMark ParseMark(XElement element)
+    {
+        var well = ChildLocal(element, "WellKnownName")?.Value?.Trim();
+        var fill = ParseFill(ChildLocal(element, "Fill"));
+        var stroke = ParseStroke(ChildLocal(element, "Stroke"));
+        return new SldMark(well, fill, stroke);
+    }
+
+    private static SldExternalGraphic ParseExternalGraphic(
+        XElement element,
+        List<SldConversionDiagnostic> diagnostics,
+        string? ruleName)
+    {
+        string? href = null;
+        var onlineResource = ChildLocal(element, "OnlineResource");
+        if (onlineResource != null)
+        {
+            // xlink:href attribute is the URI reference.
+            href = onlineResource.Attribute(SldNamespaces.XlinkNs + "href")?.Value
+                ?? onlineResource.Attribute("href")?.Value;
+        }
+
+        var format = ChildLocal(element, "Format")?.Value?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(href) && IsRemoteUri(href))
+        {
+            diagnostics.Add(Warn(
+                "ExternalGraphic",
+                $"ExternalGraphic references remote URI '{href}'. Honua does not fetch external resources; icon-image will reference the URI as-is and migration users must add the icon to their sprite sheet.",
+                ruleName));
+        }
+        else if (!string.IsNullOrWhiteSpace(href))
+        {
+            diagnostics.Add(Warn(
+                "ExternalGraphic",
+                $"ExternalGraphic references '{href}'. Sprite asset must be supplied separately; icon-image is set to the resource name.",
+                ruleName));
+        }
+
+        return new SldExternalGraphic(href, format);
+    }
+
+    private static SldLineSymbolizer ParseLineSymbolizer(
+        XElement element,
+        List<SldConversionDiagnostic> diagnostics,
+        string? ruleName)
+    {
+        var stroke = ParseStroke(ChildLocal(element, "Stroke")) ?? new SldStroke(null, null, null, null, null, null);
+        if (ChildLocal(element, "PerpendicularOffset") != null)
+        {
+            diagnostics.Add(Warn(
+                "PerpendicularOffset",
+                "LineSymbolizer PerpendicularOffset has no MapLibre equivalent and was ignored.",
+                ruleName));
+        }
+
+        return new SldLineSymbolizer(stroke);
+    }
+
+    private static SldPolygonSymbolizer ParsePolygonSymbolizer(
+        XElement element,
+        List<SldConversionDiagnostic> diagnostics,
+        string? ruleName)
+    {
+        var fill = ParseFill(ChildLocal(element, "Fill"));
+        var stroke = ParseStroke(ChildLocal(element, "Stroke"));
+        if (ChildLocal(element, "Displacement") != null)
+        {
+            diagnostics.Add(Warn(
+                "Displacement",
+                "PolygonSymbolizer Displacement has no MapLibre equivalent and was ignored.",
+                ruleName));
+        }
+
+        return new SldPolygonSymbolizer(fill, stroke);
+    }
+
+    private static SldTextSymbolizer ParseTextSymbolizer(
+        XElement element,
+        List<SldConversionDiagnostic> diagnostics,
+        string? ruleName)
+    {
+        var label = ParseLabelExpression(ChildLocal(element, "Label"), diagnostics, ruleName);
+        var font = ParseFont(ChildLocal(element, "Font"));
+        var fill = ParseFill(ChildLocal(element, "Fill"));
+        var halo = ParseHalo(ChildLocal(element, "Halo"));
+
+        if (ChildLocal(element, "LabelPlacement") != null)
+        {
+            diagnostics.Add(Warn(
+                "LabelPlacement",
+                "LabelPlacement is partially mapped: only basic point/line placement defaults are honored.",
+                ruleName));
+        }
+
+        return new SldTextSymbolizer(label, font, fill, halo);
+    }
+
+    private static string? ParseLabelExpression(
+        XElement? labelElement,
+        List<SldConversionDiagnostic> diagnostics,
+        string? ruleName)
+    {
+        if (labelElement == null)
+        {
+            return null;
+        }
+
+        // <Label><ogc:PropertyName>name</ogc:PropertyName></Label>
+        var propertyName = labelElement.Elements()
+            .FirstOrDefault(e => e.Name.LocalName == "PropertyName");
+        if (propertyName != null)
+        {
+            return $"{{{propertyName.Value.Trim()}}}";
+        }
+
+        if (labelElement.Elements().Any(e => e.Name.LocalName == "Function"))
+        {
+            diagnostics.Add(Warn(
+                "Function",
+                "Label uses an OGC Function expression; only PropertyName references are converted.",
+                ruleName));
+            return null;
+        }
+
+        var literal = labelElement.Value?.Trim();
+        return string.IsNullOrEmpty(literal) ? null : literal;
+    }
+
+    private static SldFill? ParseFill(XElement? fill)
+    {
+        if (fill == null)
+        {
+            return null;
+        }
+
+        string? color = null;
+        double? opacity = null;
+        foreach (var css in fill.Elements())
+        {
+            if (css.Name.LocalName != "CssParameter" && css.Name.LocalName != "SvgParameter")
+            {
+                continue;
+            }
+
+            var paramName = css.Attribute("name")?.Value;
+            switch (paramName)
+            {
+                case "fill":
+                    color = css.Value?.Trim();
+                    break;
+                case "fill-opacity":
+                    opacity = ParseDouble(css.Value);
+                    break;
+            }
+        }
+
+        return new SldFill(color, opacity);
+    }
+
+    private static SldStroke? ParseStroke(XElement? stroke)
+    {
+        if (stroke == null)
+        {
+            return null;
+        }
+
+        string? color = null;
+        double? opacity = null;
+        double? width = null;
+        string? lineCap = null;
+        string? lineJoin = null;
+        double[]? dashArray = null;
+
+        foreach (var css in stroke.Elements())
+        {
+            if (css.Name.LocalName != "CssParameter" && css.Name.LocalName != "SvgParameter")
+            {
+                continue;
+            }
+
+            var paramName = css.Attribute("name")?.Value;
+            var value = css.Value?.Trim();
+            switch (paramName)
+            {
+                case "stroke":
+                    color = value;
+                    break;
+                case "stroke-opacity":
+                    opacity = ParseDouble(value);
+                    break;
+                case "stroke-width":
+                    width = ParseDouble(value);
+                    break;
+                case "stroke-linecap":
+                    lineCap = value;
+                    break;
+                case "stroke-linejoin":
+                    lineJoin = value;
+                    break;
+                case "stroke-dasharray":
+                    dashArray = ParseDashArray(value);
+                    break;
+            }
+        }
+
+        return new SldStroke(color, opacity, width, lineCap, lineJoin, dashArray);
+    }
+
+    private static SldFont? ParseFont(XElement? font)
+    {
+        if (font == null)
+        {
+            return null;
+        }
+
+        string? family = null;
+        double? size = null;
+        string? style = null;
+        string? weight = null;
+
+        foreach (var css in font.Elements())
+        {
+            if (css.Name.LocalName != "CssParameter" && css.Name.LocalName != "SvgParameter")
+            {
+                continue;
+            }
+
+            var paramName = css.Attribute("name")?.Value;
+            var value = css.Value?.Trim();
+            switch (paramName)
+            {
+                case "font-family":
+                    family = value;
+                    break;
+                case "font-size":
+                    size = ParseDouble(value);
+                    break;
+                case "font-style":
+                    style = value;
+                    break;
+                case "font-weight":
+                    weight = value;
+                    break;
+            }
+        }
+
+        return new SldFont(family, size, style, weight);
+    }
+
+    private static SldHalo? ParseHalo(XElement? halo)
+    {
+        if (halo == null)
+        {
+            return null;
+        }
+
+        var radius = ParseDouble(ChildLocal(halo, "Radius")?.Value);
+        var fill = ParseFill(ChildLocal(halo, "Fill"));
+        return new SldHalo(radius, fill);
+    }
+
+    private static double[]? ParseDashArray(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var parts = value.Split(DashArraySeparators, StringSplitOptions.RemoveEmptyEntries);
+        var result = new double[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out result[i]))
+            {
+                return null;
+            }
+        }
+
+        return result.Length > 0 ? result : null;
+    }
+
+    private static double? ParseDouble(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static XElement? ChildLocal(XElement parent, string localName)
+    {
+        foreach (var child in parent.Elements())
+        {
+            if (child.Name.LocalName == localName)
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsRemoteUri(string href)
+    {
+        return href.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || href.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            || href.StartsWith("ftp://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static SldConversionDiagnostic Warn(string construct, string message, string? ruleName = null) => new()
+    {
+        Severity = SldDiagnosticSeverity.Warning,
+        Construct = construct,
+        Message = message,
+        RuleName = ruleName
+    };
+}
+
+internal static class SldNamespaces
+{
+    public const string Sld = "http://www.opengis.net/sld";
+    public const string Se = "http://www.opengis.net/se";
+    public const string Ogc = "http://www.opengis.net/ogc";
+    public const string Xlink = "http://www.w3.org/1999/xlink";
+
+    public static readonly XNamespace SldNs = XNamespace.Get(Sld);
+    public static readonly XNamespace SeNs = XNamespace.Get(Se);
+    public static readonly XNamespace OgcNs = XNamespace.Get(Ogc);
+    public static readonly XNamespace XlinkNs = XNamespace.Get(Xlink);
+}

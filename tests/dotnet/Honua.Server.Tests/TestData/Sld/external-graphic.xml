@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0"
+    xmlns="http://www.opengis.net/sld"
+    xmlns:ogc="http://www.opengis.net/ogc"
+    xmlns:xlink="http://www.w3.org/1999/xlink">
+  <NamedLayer>
+    <Name>external</Name>
+    <UserStyle>
+      <FeatureTypeStyle>
+        <Rule>
+          <Name>icon-rule</Name>
+          <PointSymbolizer>
+            <Graphic>
+              <ExternalGraphic>
+                <OnlineResource xlink:type="simple" xlink:href="https://example.com/sprites/marker.png"/>
+                <Format>image/png</Format>
+              </ExternalGraphic>
+              <Size>16</Size>
+            </Graphic>
+          </PointSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>

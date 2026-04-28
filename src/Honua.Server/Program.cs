@@ -466,6 +466,8 @@ builder.Services.AddHostedService(sp =>
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
+builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.ISldStyleConverter,
+    Honua.Server.Features.Infrastructure.Styling.Sld.SldStyleConverter>();
 builder.Services.AddStyleSuggestionCore();
 
 // Configure temporary file service for image exports
@@ -1053,6 +1055,7 @@ app.MapDeployControlEndpoints();
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();
 app.MapAdminStyleSuggestionEndpoints();
+app.MapAdminSldStyleEndpoints();
 
 // Configure admin alerting zone/rule endpoints
 app.MapAlertAdminEndpoints();

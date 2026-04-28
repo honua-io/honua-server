@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0"
+    xmlns="http://www.opengis.net/sld"
+    xmlns:ogc="http://www.opengis.net/ogc"
+    xmlns:xlink="http://www.w3.org/1999/xlink">
+  <NamedLayer>
+    <Name>vendor</Name>
+    <UserStyle>
+      <FeatureTypeStyle>
+        <VendorOption name="ruleEvaluation">first</VendorOption>
+        <Rule>
+          <PolygonSymbolizer>
+            <Fill>
+              <CssParameter name="fill">#444444</CssParameter>
+            </Fill>
+          </PolygonSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>

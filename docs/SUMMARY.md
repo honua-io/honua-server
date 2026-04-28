@@ -16,6 +16,7 @@
 - [Control Plane API](operator/CONTROL_PLANE_API.md)
 - [Webhooks](operator/feature-change-webhooks.md)
 - [Tile Operations](operator/tile-operations-runbook.md)
+- [SLD Migration Reference](operator/sld-migration.md)
 - [Troubleshooting](operator/troubleshooting.md)
 - [Upgrade & Rollback](operator/runbooks/UPGRADE_AND_ROLLBACK.md)
 

@@ -181,19 +181,30 @@ HONUA_REDIS_URL=redis:6379
 
 ### Styling
 
-GeoServer uses SLD (Styled Layer Descriptor) or CSS styling. Honua uses MapLibre GL Style JSON. The scanner inventories style metadata, compatibility warnings, and external graphic references, but the current GeoServer import flow does not convert or apply styles. Recreate target styles through the Admin API after data import, using the scanner artifact and its manual follow-up steps as the migration checklist.
+GeoServer uses SLD (Styled Layer Descriptor) or CSS styling. Honua uses MapLibre GL Style JSON. The scanner inventories style metadata, compatibility warnings, and external graphic references. The Admin API offers a server-side SLD-to-MapLibre conversion endpoint so SLD documents can be imported and exported alongside the canonical MapLibre representation.
 
 Manage styles via the Admin API:
 
 ```bash
-# Get current style
+# Get current style (MapLibre JSON)
 curl http://localhost:8080/api/v1/admin/metadata/layers/{layerId}/style
 
-# Update style
+# Update style (MapLibre JSON)
 curl -X PUT http://localhost:8080/api/v1/admin/metadata/layers/{layerId}/style \
   -H "Content-Type: application/json" \
   -d '{ "version": 8, "layers": [...] }'
+
+# Import an SLD/SE document and convert to MapLibre
+curl -X POST http://localhost:8080/api/v1/admin/metadata/layers/{layerId}/style/import-sld \
+  -H "Content-Type: application/xml" \
+  --data-binary @style.sld
+
+# Export the stored MapLibre style as SLD 1.0 XML
+curl http://localhost:8080/api/v1/admin/metadata/layers/{layerId}/style/export-sld \
+  -H "Accept: application/xml"
 ```
+
+The import endpoint returns the stored MapLibre style and a `diagnostics` array. Warnings cover lossy conversion (e.g. `VendorOption`, `ExternalGraphic` remote URIs, OGC `Function` filter expressions). Errors abort the import; nothing is stored. See [SLD Migration Reference](../../operator/sld-migration.md) for the supported subset.
 
 ## Client Migration Checklist
 
@@ -204,7 +215,7 @@ After migrating server configuration, update client applications:
 - [ ] **WMTS clients**: Point to `http://honua-host:8080/rest/services/{id}/MapServer/WMTS` or `http://honua-host:8080/ogc/services/{id}/wmts`
 - [ ] **REST API consumers**: Map GeoServer REST paths to Honua Admin API equivalents (see table above)
 - [ ] **Authentication**: Replace GeoServer credentials with Honua API keys or OIDC tokens
-- [ ] **Styles**: Recreate target styles from the scanner artifact and adjust MapLibre JSON as needed
+- [ ] **Styles**: Run each SLD through `POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld` and review the diagnostic list before promoting the converted style
 - [ ] **CRS configuration**: Verify required SRIDs exist in PostGIS `spatial_ref_sys`
 - [ ] **Tile consumers**: Update tile URLs to Honua vector tile or WMTS endpoints
 
