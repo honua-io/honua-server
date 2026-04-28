@@ -86,8 +86,14 @@ Server returns a presigned/SAS URL with a finite lifetime:
 
 * AWS S3 SigV4 IAM credentials cap presign lifetime at 7 days.
 * Azure SAS tokens accept longer lifetimes via account-level keys.
-* Clients should refresh `accessUrl` before `accessUrlExpiresAt` by re-querying
-  the job status endpoint.
+* The signed `accessUrl` is generated once at publish time and persisted with
+  the descriptor; the job-status endpoint replays the same URL and does not
+  re-sign it. To rotate the URL before `accessUrlExpiresAt`, re-run
+  `operation: "publish"` for the same `(serviceId, layerId, tileMatrixSetId)`
+  — publish is idempotent at the deterministic key and the new descriptor
+  carries a fresh `accessUrl`/`accessUrlExpiresAt`. For workloads that
+  outlive the configured `SignedUrlLifetime`, raise the lifetime within the
+  provider's cap (Azure SAS) or switch to `PublicUrl` / `RangeProxy`.
 
 This is the safe default for private buckets — credentials never reach the browser.
 

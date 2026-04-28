@@ -56,9 +56,15 @@ public static class CorsConfiguration
 
                     if (devOrigins.Length > 0)
                     {
+                        // AllowAnyHeader covers request headers; exposed response
+                        // headers must still be enumerated. Mirror the production
+                        // policy so the PMTiles RangeProxy strategy (#845) works
+                        // for cross-origin browser clients in development.
                         policy.WithOrigins(devOrigins)
                               .AllowAnyMethod()
                               .AllowAnyHeader()
+                              .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding",
+                                  "Accept-Ranges", "Content-Range", "Content-Length", "ETag", "Last-Modified")
                               .AllowCredentials()
                               .SetPreflightMaxAge(TimeSpan.FromMinutes(5));
                     }
