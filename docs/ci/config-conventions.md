@@ -62,8 +62,7 @@ Use stable, tool-specific names across all repos:
 
 | Secret | Purpose |
 |---|---|
-| `NUGET_API_KEY` | NuGet package publishing |
-| `NPM_TOKEN` | npm package publishing |
+| `GITHUB_TOKEN` | GitHub Packages publish/restore in Actions |
 | `DOCKERHUB_USERNAME` | Docker Hub authentication |
 | `DOCKERHUB_TOKEN` | Docker Hub authentication |
 | `DEPLOY_TOKEN` | Environment deployment |
