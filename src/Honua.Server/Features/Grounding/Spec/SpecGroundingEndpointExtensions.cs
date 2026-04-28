@@ -367,6 +367,12 @@ internal static class SpecGroundingEndpointExtensions
             error = $"spec could not be read: {ex.Message}";
             return false;
         }
+        catch (FormatException ex)
+        {
+            document = CreateEmptySpecDocument();
+            error = $"spec could not be read: {ex.Message}";
+            return false;
+        }
     }
 
     private static SpecDocument CreateEmptySpecDocument()
