@@ -273,11 +273,12 @@ public sealed class PackageDomainTests
     public void SourceProtocol_AllValuesAreDefined()
     {
         var values = Enum.GetValues<SourceProtocol>();
-        values.Should().HaveCount(11);
+        values.Should().HaveCount(12);
         values.Should().Contain(SourceProtocol.GeoservicesFeatureService);
         values.Should().Contain(SourceProtocol.OgcFeatures);
         values.Should().Contain(SourceProtocol.VectorTile);
         values.Should().Contain(SourceProtocol.WorkspaceArtifact);
+        values.Should().Contain(SourceProtocol.PMTiles);
     }
 
     [UnitTest]

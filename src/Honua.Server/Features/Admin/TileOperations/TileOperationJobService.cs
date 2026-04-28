@@ -105,7 +105,8 @@ internal sealed partial class TileOperationJobService(
     {
         var tileCacheIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.TileCache, cancellationToken).ConfigureAwait(false);
         var archiveIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.PMTilesArchive, cancellationToken).ConfigureAwait(false);
-        var operationIds = tileCacheIds.Concat(archiveIds).Distinct().ToList();
+        var publishIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.PMTilesPublish, cancellationToken).ConfigureAwait(false);
+        var operationIds = tileCacheIds.Concat(archiveIds).Concat(publishIds).Distinct().ToList();
         var result = new List<TileOperationProgress>(operationIds.Count);
         foreach (var operationId in operationIds)
         {
@@ -274,6 +275,7 @@ internal sealed partial class TileOperationJobService(
                     "invalidate" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
                     "purge" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
                     "archive" => await ExecuteArchiveAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
+                    "publish" => await ExecutePublishAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
                     _ => started with
                     {
                         Status = OperationStatus.Failed,
@@ -715,6 +717,350 @@ internal sealed partial class TileOperationJobService(
         };
     }
 
+    private async Task<TileOperationProgress> ExecutePublishAsync(
+        TileOperationProgress progress,
+        TileOperationStartRequest request,
+        ILayerCatalog layerCatalog,
+        ITileProvider tileProvider,
+        IServiceProvider serviceProvider,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(request.TileMatrixSetId, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NotSupportedException("Only TileMatrixSetId 'WebMercatorQuad' is currently supported.");
+        }
+
+        if (!request.LayerId.HasValue)
+        {
+            throw new InvalidOperationException("Publish operations require a layerId.");
+        }
+
+        var layerId = request.LayerId.Value;
+
+        var tileCoordinates = BuildTileCoordinates(request);
+        if (tileCoordinates.Count == 0)
+        {
+            throw new InvalidOperationException("Publish operation produced no target tiles.");
+        }
+
+        var total = (long)tileCoordinates.Count;
+        var processed = 0L;
+        var successful = 0L;
+        var failed = 0L;
+        var warningList = new List<string>();
+
+        var current = progress with
+        {
+            TotalTiles = total,
+            CurrentPhase = "Generating tiles for publish"
+        };
+        await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+
+        var writer = new PMTilesWriter(tileCompression: PMTilesCompression.None);
+        foreach (var coordinate in tileCoordinates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var tileData = await tileProvider.GetMvtTileAsync(
+                    layerId,
+                    coordinate.X,
+                    coordinate.Y,
+                    coordinate.Z,
+                    query: null,
+                    _tileOptions,
+                    _tileLimits,
+                    cancellationToken).ConfigureAwait(false);
+
+                if (tileData is { Length: > 0 })
+                {
+                    writer.AddTile(coordinate.Z, coordinate.X, coordinate.Y, tileData);
+                    successful++;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                failed++;
+                if (warningList.Count < 20)
+                {
+                    warningList.Add($"Layer {layerId} tile {coordinate.Z}/{coordinate.X}/{coordinate.Y}: {ex.Message}");
+                }
+            }
+
+            processed++;
+            if (processed % 25 == 0 || processed == total)
+            {
+                current = current with
+                {
+                    ProcessedTiles = processed,
+                    SuccessfulTiles = successful,
+                    FailedTiles = failed,
+                    Warnings = warningList.ToArray(),
+                    CurrentPhase = $"Generating tiles ({processed}/{total})"
+                };
+                await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (processed > 0)
+        {
+            TileOperationMetrics.TileThroughput.Add(processed, new TagList { { "operation", "publish" } });
+        }
+
+        if (writer.TileCount == 0)
+        {
+            return current with
+            {
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "No tiles were generated for the publish.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        current = current with { CurrentPhase = "Writing PMTiles archive" };
+        await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+
+        var bbox = request.Bbox is { Length: 4 }
+            ? request.Bbox
+            : [-180d, -SpatialConstants.WebMercatorMaxLatitude, 180d, SpatialConstants.WebMercatorMaxLatitude];
+
+        var minZoom = Math.Clamp(request.MinZoom ?? _tileLimits.MinTileZoom, _tileLimits.MinTileZoom, _tileLimits.MaxTileZoom);
+        var maxZoom = Math.Clamp(request.MaxZoom ?? minZoom, minZoom, _tileLimits.MaxTileZoom);
+
+        var minLon = Math.Min(bbox[0], bbox[2]);
+        var minLat = Math.Min(bbox[1], bbox[3]);
+        var maxLon = Math.Max(bbox[0], bbox[2]);
+        var maxLat = Math.Max(bbox[1], bbox[3]);
+
+        var metadata = new PMTilesArchiveMetadata
+        {
+            MinLon = minLon,
+            MinLat = minLat,
+            MaxLon = maxLon,
+            MaxLat = maxLat,
+            MinZoom = minZoom,
+            MaxZoom = maxZoom
+        };
+
+        using var archiveStream = new MemoryStream();
+        var archiveSize = await writer.WriteAsync(archiveStream, metadata, cancellationToken).ConfigureAwait(false);
+        archiveStream.Position = 0;
+
+        var cloudStorage = serviceProvider.GetService<ICloudFileStorage>();
+        if (cloudStorage == null)
+        {
+            return current with
+            {
+                ProcessedTiles = processed,
+                SuccessfulTiles = successful,
+                FailedTiles = failed,
+                ArchiveSizeBytes = archiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                Warnings = warningList.ToArray(),
+                ErrorMessage = "Cloud storage is not configured. Publish operations require cloud storage.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var cloudOptions = serviceProvider.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
+        var publishOptions = cloudOptions.PMTilesPublish ?? new PMTilesPublishOptions();
+        var providerKeyPrefix = cloudOptions.Provider switch
+        {
+            CloudStorageProvider.AwsS3 => cloudOptions.AwsS3?.KeyPrefix,
+            CloudStorageProvider.AzureBlob => cloudOptions.AzureBlob?.BlobPrefix,
+            _ => null
+        };
+
+        var objectKey = BuildPublishObjectKey(
+            providerKeyPrefix,
+            publishOptions.KeyPrefix,
+            request.ServiceId,
+            layerId,
+            request.TileMatrixSetId);
+
+        current = current with { CurrentPhase = "Uploading durable PMTiles artifact" };
+        await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+        TileOperationLog.PublishUploadStart(_logger, current.JobId, objectKey);
+
+        var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
+        {
+            Content = archiveStream,
+            FileName = $"{Path.GetFileName(objectKey)}",
+            ContentType = "application/vnd.pmtiles",
+            SizeBytes = archiveSize,
+            TimeToLive = null,
+            ObjectKeyOverride = objectKey,
+            Metadata = ImmutableDictionary<string, string>.Empty
+                .Add("jobId", current.JobId)
+                .Add("operation", "publish")
+                .Add("layerId", layerId.ToString(CultureInfo.InvariantCulture))
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (!uploadResult.Success || uploadResult.File is null)
+        {
+            return current with
+            {
+                ProcessedTiles = processed,
+                SuccessfulTiles = successful,
+                FailedTiles = failed,
+                ArchiveSizeBytes = archiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                Warnings = warningList.ToArray(),
+                ErrorMessage = $"Publish upload failed: {uploadResult.ErrorMessage ?? "unknown error"}.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var bucket = ResolvePublishBucket(cloudOptions);
+        var artifactId = uploadResult.File.FileId;
+
+        var (accessUrl, accessUrlExpiresAt) = await ResolvePublishAccessUrlAsync(
+            cloudStorage,
+            publishOptions,
+            artifactId,
+            cancellationToken).ConfigureAwait(false);
+
+        var descriptor = new PMTilesArtifactDescriptor
+        {
+            ArtifactId = artifactId,
+            StorageProvider = uploadResult.File.Provider,
+            Bucket = bucket,
+            ObjectKey = uploadResult.File.StoragePath,
+            ContentType = uploadResult.File.ContentType,
+            SizeBytes = uploadResult.File.SizeBytes,
+            UrlStrategy = publishOptions.UrlStrategy,
+            AccessUrl = accessUrl,
+            AccessUrlExpiresAt = accessUrlExpiresAt,
+            PublishedAt = uploadResult.File.UploadedAt,
+            MinZoom = minZoom,
+            MaxZoom = maxZoom,
+            Bounds = [minLon, minLat, maxLon, maxLat],
+            LayerId = layerId,
+            ServiceId = request.ServiceId,
+            TileMatrixSetId = request.TileMatrixSetId
+        };
+
+        TileOperationMetrics.ArchivesGenerated.Add(1);
+        TileOperationMetrics.ArchiveSizeBytes.Record(archiveSize);
+        TileOperationLog.PublishUploadComplete(_logger, current.JobId, descriptor.ObjectKey, archiveSize, descriptor.UrlStrategy);
+
+        var completedStatus = failed > 0 ? OperationStatus.Failed : OperationStatus.Completed;
+        return current with
+        {
+            ProcessedTiles = processed,
+            SuccessfulTiles = successful,
+            FailedTiles = failed,
+            ArchiveSizeBytes = archiveSize,
+            PublishedArtifact = descriptor,
+            Status = completedStatus,
+            CompletedAt = DateTimeOffset.UtcNow,
+            Warnings = warningList.ToArray(),
+            ErrorMessage = failed > 0 ? $"{failed} tiles failed during generation." : null,
+            CurrentPhase = failed > 0 ? "Publish completed with failures" : "Publish completed"
+        };
+    }
+
+    private static string BuildPublishObjectKey(
+        string? providerKeyPrefix,
+        string publishKeyPrefix,
+        string? serviceId,
+        int layerId,
+        string? tileMatrixSetId)
+    {
+        var serviceSegment = string.IsNullOrWhiteSpace(serviceId)
+            ? "_"
+            : SanitizeKeySegment(serviceId);
+        var matrixSegment = string.IsNullOrWhiteSpace(tileMatrixSetId)
+            ? "WebMercatorQuad"
+            : SanitizeKeySegment(tileMatrixSetId);
+
+        var segments = new List<string>(4);
+        if (!string.IsNullOrWhiteSpace(providerKeyPrefix))
+        {
+            segments.Add(providerKeyPrefix.Trim('/'));
+        }
+
+        if (!string.IsNullOrWhiteSpace(publishKeyPrefix))
+        {
+            segments.Add(publishKeyPrefix.Trim('/'));
+        }
+
+        segments.Add(serviceSegment);
+        segments.Add(layerId.ToString(CultureInfo.InvariantCulture));
+        segments.Add($"{matrixSegment}.pmtiles");
+
+        return string.Join('/', segments.Where(static segment => segment.Length > 0));
+    }
+
+    private static string SanitizeKeySegment(string value)
+    {
+        var trimmed = value.Trim().Trim('/');
+        var builder = new System.Text.StringBuilder(trimmed.Length);
+        foreach (var ch in trimmed)
+        {
+            if (char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.')
+            {
+                builder.Append(ch);
+            }
+            else
+            {
+                builder.Append('_');
+            }
+        }
+
+        return builder.Length == 0 ? "_" : builder.ToString();
+    }
+
+    private static string ResolvePublishBucket(CloudStorageOptions options)
+    {
+        return options.Provider switch
+        {
+            CloudStorageProvider.AwsS3 => options.AwsS3?.BucketName ?? string.Empty,
+            CloudStorageProvider.AzureBlob => options.AzureBlob?.ContainerName ?? string.Empty,
+            CloudStorageProvider.Local => options.LocalStorage?.BasePath ?? string.Empty,
+            _ => string.Empty
+        };
+    }
+
+    private static async Task<(string AccessUrl, DateTimeOffset? ExpiresAt)> ResolvePublishAccessUrlAsync(
+        ICloudFileStorage cloudStorage,
+        PMTilesPublishOptions publishOptions,
+        string artifactId,
+        CancellationToken cancellationToken)
+    {
+        switch (publishOptions.UrlStrategy)
+        {
+            case PMTilesUrlStrategy.PublicUrl:
+                if (string.IsNullOrWhiteSpace(publishOptions.PublicBucketBaseUrl))
+                {
+                    throw new InvalidOperationException(
+                        "PMTilesPublish:PublicBucketBaseUrl must be configured when UrlStrategy is PublicUrl.");
+                }
+
+                var publicBase = publishOptions.PublicBucketBaseUrl.TrimEnd('/');
+                return ($"{publicBase}/{artifactId}", null);
+
+            case PMTilesUrlStrategy.RangeProxy:
+                return ($"/api/v1/tiles/pmtiles/{artifactId}", null);
+
+            case PMTilesUrlStrategy.SignedUrl:
+            default:
+                var lifetime = publishOptions.SignedUrlLifetime <= TimeSpan.Zero
+                    ? TimeSpan.FromDays(7)
+                    : publishOptions.SignedUrlLifetime;
+                var signedUrl = await cloudStorage.GetPresignedUrlAsync(artifactId, lifetime, cancellationToken).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(signedUrl))
+                {
+                    throw new InvalidOperationException("Storage provider did not return a presigned URL for the published artifact.");
+                }
+
+                return (signedUrl, DateTimeOffset.UtcNow.Add(lifetime));
+        }
+    }
+
     private static async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(
         TileOperationStartRequest request,
         ILayerCatalog layerCatalog,
@@ -798,9 +1144,9 @@ internal sealed partial class TileOperationJobService(
     private static TileOperationStartRequest NormalizeRequest(TileOperationStartRequest request)
     {
         var operation = request.Operation.Trim().ToLowerInvariant();
-        if (operation is not ("seed" or "warm" or "invalidate" or "purge" or "archive"))
+        if (operation is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish"))
         {
-            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge, archive.", nameof(request));
+            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge, archive, publish.", nameof(request));
         }
 
         return request with

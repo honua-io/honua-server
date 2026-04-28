@@ -671,6 +671,8 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(ImportStatus))]
 [JsonSerializable(typeof(GeoservicesImportStatus))]
 [JsonSerializable(typeof(GeoServerImportStatus))]
+[JsonSerializable(typeof(Honua.Core.Features.Tiles.PMTiles.PMTilesArtifactDescriptor))]
+[JsonSerializable(typeof(Honua.Core.Features.Tiles.PMTiles.PMTilesUrlStrategy))]
 internal sealed partial class UniversalProgressJsonContext : JsonSerializerContext
 {
 }
