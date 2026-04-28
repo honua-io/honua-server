@@ -29,6 +29,7 @@
     <!-- Program registers Postgres services via AddPostgreSqlServices -->
     <ProjectReference Include="..\Honua.Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.DuckDB\Honua.DuckDB.csproj" />
+    <ProjectReference Include="..\Honua.SqlServer\Honua.SqlServer.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference
       Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj"

@@ -4,6 +4,8 @@ Honua's primary provider requires PostgreSQL with PostGIS. This page documents t
 
 For read-only analytical and reference workloads, Honua also supports an embedded [DuckDB provider](duckdb-provider.md) that requires no external database infrastructure.
 
+For organizations with authoritative spatial data already in SQL Server, Honua offers a read-only [SQL Server provider](sqlserver-provider.md) that plugs in alongside the primary backend.
+
 ## Tested Configurations
 
 | Provider | Engine Version | PostGIS Version | CI Status |
