@@ -164,6 +164,24 @@ Enable ArcGIS parity import checks (source snapshot vs imported table parity):
 export HONUA_TEST_ESRI_PARITY="1"
 ```
 
+Enable the cross-server consume suite — `Honua.TestKit.GeoServerFixture`
+plus `Honua.TestKit.MapServerFixture` (`camptocamp/mapserver:8.0`) drive
+WMS 1.3, WFS 2.0, and WMTS 1.0 reads from Honua-as-client against
+containerized GeoServer and MapServer reference sources:
+
+```bash
+export HONUA_TEST_CROSS_SERVER_CONSUME="1"
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+  --filter "FullyQualifiedName~CrossServerConsume"
+```
+
+The nightly `cross-server-consume-nightly.yml` workflow runs the same
+suite, refreshes [`docs/compatibility/cross-server-consume-gap-report.md`](../compatibility/cross-server-consume-gap-report.md)
+from the TRX, and uploads both the TRX and gap report as workflow
+artifacts. Known interop quirks are recorded as `[Skip = "gap: ..."]`
+on the test method so they surface in the gap report rather than
+failing the run.
+
 #### Shared YAML Seed
 
 Apply shared YAML seed data to a schema:
