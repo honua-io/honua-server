@@ -114,12 +114,32 @@ emits a JSON descriptor consumed by the `server-tests` matrix:
   on a full matrix until a follow-up shards them.
 - Otherwise, the script emits `{"run_all": false, "shards": [...]}` with the
   matched shard names.
-- The matrix uses GitHub Actions' built-in `if:` filter on the matrix entry
-  so unmatched shards skip cleanly with a green status.
 - The script never emits an empty matrix. When no source under a watched
   prefix was touched (e.g. doc-only diffs), it defaults to
   `{"run_all": false, "shards": ["Core"], "reason": "no_path_match"}` so a
   smoke shard still runs.
+
+The `targeted-shards` job then projects the selected shard names into a
+`matrix_include` JSON array by joining against the rich shard records in
+`.github/ci-shards.json` (each record carries `shard_name`,
+`artifact_suffix`, `log_name`, `timeout_minutes`, `max_cpu_count`,
+`upload_operator_eval_report`, `upload_odata_evidence`, and `filter`).
+`server-tests` then declares its matrix as
+`strategy.matrix.include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}`.
+This means **unselected shards never instantiate a runner job at all** —
+GitHub Actions only schedules matrix entries that exist in the include list,
+so there is no per-shard checkout, build, service container, or runner cost
+for shards a PR did not select. (Earlier iterations kept the full 11-entry
+matrix and gated each entry with a step-level skip, which still incurred
+runner startup and Postgres service container cost for every shard. The
+current dynamic-matrix model eliminates that cost.) On `push` and
+`workflow_dispatch` events the descriptor is forced to `run_all: true`, so
+all eleven entries appear in `matrix_include` and run.
+
+`.github/ci-shards.json` is the single source of truth for both routing
+(`paths`) and matrix-runtime metadata. Adding a shard means editing one
+file. There is no separate parity check because there is no second source
+of truth to drift from.
 
 In addition to selecting shards, the **PR Fast tier always runs** regardless
 of which shards are selected: `dotnet-foundation-tests` invokes
@@ -131,12 +151,16 @@ server unit tests.
 
 **Slow tests stay out of PR shards.** The `Run server test shard` step in
 `ci.yml` composes the matrix-supplied filter as `(matrix.filter)&Tier!=Slow`
-before invoking `dotnet test`. The `ci-shards.json` mapping and the
-`server-tests` matrix continue to express pure FQN→shard routing (so the
-parity check stays a literal string compare); the Tier exclusion is layered
-in at a single, reviewable point. This prevents `[EmulatorTest]` /
-`[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods sitting in a
-shard's namespace (e.g. `Honua.Server.Tests.Import.*`) from running on PRs.
+before invoking `dotnet test`. The `ci-shards.json` `filter` field expresses
+pure FQN→shard routing; the Tier exclusion is layered in at a single,
+reviewable point at the test-invocation step. This prevents `[EmulatorTest]`
+/ `[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods sitting in
+a shard's namespace (e.g. `Honua.Server.Tests.Import.*`) from running on
+PRs. As a consequence, PR shards never need LocalStack/Azurite emulators —
+the Slow-only `[EmulatorTest]` tests that drive `EmulatorFixture` cannot
+fire — so `server-tests` does not provision them. Emulator provisioning
+lives exclusively in `EmulatorFixture` (Testcontainers) and only fires
+under `nightly-slow-tier.yml`.
 
 The targeted entrypoint runs the architecture tests on every PR regardless of
 diff content; that is the gate that catches the #802 class of issue (new
@@ -190,13 +214,18 @@ remove it from the coverage ledger.
   defaulting to `run_all` when shared infrastructure changes, and (c) the
   `unmapped_source_run_all_prefixes` guard which forces `run_all` when a PR
   touches a source path under a watched prefix that no shard claims.
-- `.github/ci-shards.json` becomes load-bearing. The `Detect Targeted Shards`
-  job runs a parity check that fails the PR if any `shard_name`/`filter`
-  pair in `ci.yml::server-tests` is missing from `ci-shards.json` or
-  vice-versa. Drift between source layout and shard mapping (a new source
-  directory landing without an entry in `ci-shards.json`) is still possible
-  but is contained by the `unmapped_source_run_all_prefixes` guard which
-  emits `run_all` for that PR.
+- `.github/ci-shards.json` becomes load-bearing. It is the single source of
+  truth for both the routing data (`paths`, `infrastructure_paths`,
+  `unmapped_source_run_all_prefixes`, `default_shards_when_no_match`) and
+  the matrix-runtime metadata each shard provides (`shard_name`, `filter`,
+  `artifact_suffix`, `log_name`, `timeout_minutes`, `max_cpu_count`, upload
+  flags). The `Detect Targeted Server-Tests Shards` job builds the
+  `matrix_include` array directly from this file, so there is no second
+  source to drift from. Drift between source layout and shard mapping (a
+  new source directory landing without an entry in `ci-shards.json`) is
+  still possible but is contained by the
+  `unmapped_source_run_all_prefixes` guard which emits `run_all` for that
+  PR.
 - Operating-system-level flakes (Testcontainers slow-start, runner congestion)
   look like flaky tests. Human review is required before `[FlakyTest]` is
   applied.
@@ -228,16 +257,18 @@ remove it from the coverage ledger.
 - The targeted-test script is shell + jq only. Keep the PR-gate startup cost
   near zero — the script must complete in well under a second on the
   workflow runner.
-- The shard-parity check inside the `targeted-shards` job uses Python's
-  standard library only (a small line-based parser plus `json`). PyYAML is
-  not required so no `pip install` step is needed on the runner.
-- Any new shard added to the `server-tests` matrix MUST also be added to
-  `.github/ci-shards.json` in the same PR. The `Validate shard parity`
-  step in the `targeted-shards` job fails the run if a `shard_name`/`filter`
-  pair in `ci.yml` is missing from `ci-shards.json` (or vice-versa). The
-  parity check compares the FQN-only filter strings; the runtime
-  `&Tier!=Slow` composition is applied uniformly to every shard and is not
-  part of the per-shard filter that ci-shards.json mirrors.
+- The `targeted-shards` job uses `jq` only (no Python required) to project
+  the selected shard names into a `matrix_include` array drawn from
+  `.github/ci-shards.json`. The `server-tests` matrix is then declared as
+  `strategy.matrix.include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}`,
+  so unselected shards never instantiate a runner.
+- Any new shard is added to `.github/ci-shards.json` only — there is no
+  separate matrix entry in `ci.yml`. Each shard record carries both routing
+  data (`paths`) and matrix-runtime metadata (`shard_name`,
+  `artifact_suffix`, `log_name`, `timeout_minutes`, `max_cpu_count`, upload
+  flags, `filter`). The runtime `&Tier!=Slow` composition is applied
+  uniformly to every shard at the test-invocation step in `ci.yml` and is
+  not encoded in `ci-shards.json`.
 - `nightly-slow-tier.yml` currently runs `Tier=Slow&Category=Emulator`
   because LocalStack S3 + Azurite + Postgres are the only fixtures
   provisioned. The Scale, Cloud, and ExternalService subfamilies need

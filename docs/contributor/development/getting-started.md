@@ -68,7 +68,7 @@ Integration tests use [Testcontainers](https://dotnet.testcontainers.org/) and s
 dotnet test
 ```
 
-Run by execution tier (preferred — matches the CI dispatch in [ADR-0035](../adr/0035-unified-ci-test-tier-strategy.md)):
+Run by execution tier (preferred — matches the CI dispatch in [ADR-0037](../adr/0037-unified-ci-test-tier-strategy.md)):
 ```bash
 dotnet test --filter "Tier=Fast"          # Unit-style tests, no DB/HTTP
 dotnet test --filter "Tier=Integration"   # Most of the existing suite

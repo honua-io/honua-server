@@ -4,7 +4,7 @@ on:
   schedule:
     # Tier=Slow&Category=Emulator: LocalStack S3 + Azurite + Postgres-backed
     # [EmulatorTest] coverage. Scale/Cloud/External slow subfamilies need
-    # dedicated workflows once their fixtures are wired up. See ADR-0035.
+    # dedicated workflows once their fixtures are wired up. See ADR-0037.
     - cron: '0 4 * * *'
   workflow_dispatch:
     inputs:
@@ -131,7 +131,7 @@ jobs:
           TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
         run: |
           mkdir -p ./tests/TestResults
-          # Per ADR-0035 this workflow runs the emulator subfamily of Tier=Slow
+          # Per ADR-0037 this workflow runs the emulator subfamily of Tier=Slow
           # (LocalStack S3 + Azurite + Postgres). The Scale/Cloud/External
           # subfamilies need additional fixtures (multi-node compose, real
           # cloud credentials, Esri Geoportal) and are tracked as separate

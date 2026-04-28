@@ -13,7 +13,7 @@ namespace Honua.TestKit.Attributes;
 /// Skips execution when required environment variables are not present.
 /// Tier=Slow with Category=Scale — runs only on a future scale-dedicated workflow
 /// (multi-node compose fixtures); the existing nightly slow-tier workflow scopes
-/// to Category=Emulator. See ADR-0035.
+/// to Category=Emulator. See ADR-0037.
 /// </summary>
 [TraitDiscoverer("Honua.TestKit.Attributes.ScaleTestDiscoverer", "Honua.TestKit")]
 public sealed class ScaleTestAttribute : FactAttribute, ITraitAttribute

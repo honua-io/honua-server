@@ -14,7 +14,7 @@ namespace Honua.TestKit.Attributes;
 /// Skips execution when required environment variables are not present.
 /// Tier=Slow with Category=External — runs only on a future external-service-dedicated
 /// workflow (real upstream credentials, e.g. Esri Geoportal); the existing nightly
-/// slow-tier workflow scopes to Category=Emulator. See ADR-0035.
+/// slow-tier workflow scopes to Category=Emulator. See ADR-0037.
 /// </summary>
 [TraitDiscoverer("Honua.TestKit.Attributes.ExternalServiceTestDiscoverer", "Honua.TestKit")]
 public sealed class ExternalServiceTestAttribute : FactAttribute, ITraitAttribute

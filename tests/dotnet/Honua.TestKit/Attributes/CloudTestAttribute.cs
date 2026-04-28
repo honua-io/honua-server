@@ -13,7 +13,7 @@ namespace Honua.TestKit.Attributes;
 /// Skips execution when required environment variables are not present.
 /// Tier=Slow with Category=Cloud — runs only on a future cloud-dedicated workflow
 /// (real cloud credentials); the existing nightly slow-tier workflow scopes to
-/// Category=Emulator. See ADR-0035.
+/// Category=Emulator. See ADR-0037.
 /// </summary>
 [TraitDiscoverer("Honua.TestKit.Attributes.CloudTestDiscoverer", "Honua.TestKit")]
 public sealed class CloudTestAttribute : FactAttribute, ITraitAttribute

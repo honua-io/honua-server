@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Extended by [ADR-0035: Unified CI Test Tier Strategy](0035-unified-ci-test-tier-strategy.md), which adds the `Tier=Fast|Integration|Slow` xUnit trait and defines the PR / merge-to-trunk / nightly execution schedule. This ADR continues to define **what** is tested (API-surface and operation coverage); ADR-0035 defines **when and where** each test runs.
+Accepted. Extended by [ADR-0037: Unified CI Test Tier Strategy](0037-unified-ci-test-tier-strategy.md), which adds the `Tier=Fast|Integration|Slow` xUnit trait and defines the PR / merge-to-trunk / nightly execution schedule. This ADR continues to define **what** is tested (API-surface and operation coverage); ADR-0037 defines **when and where** each test runs.
 
 ## Context
 
@@ -261,7 +261,7 @@ public static class EndpointRegistry
 
 ### 9. CI Integration
 
-The execution-tier dispatch (which test runs on which event, and how shards are selected on PRs) is owned by [ADR-0035](0035-unified-ci-test-tier-strategy.md). The illustrative snippet below shows the coverage gate only; the actual `ci.yml` filters by `Tier=` and selects `server-tests` shards via `scripts/ci/honua-server-targeted-tests.sh`.
+The execution-tier dispatch (which test runs on which event, and how shards are selected on PRs) is owned by [ADR-0037](0037-unified-ci-test-tier-strategy.md). The illustrative snippet below shows the coverage gate only; the actual `ci.yml` filters by `Tier=` and selects `server-tests` shards via `scripts/ci/honua-server-targeted-tests.sh`.
 
 ```yaml
 # .github/workflows/ci.yml

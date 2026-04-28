@@ -13,7 +13,7 @@ namespace Honua.TestKit.Attributes;
 /// Skips execution when required environment variables are not present.
 /// Tier=Slow with Category=Emulator — runs nightly via
 /// <c>nightly-slow-tier.yml</c> (filter <c>Tier=Slow&amp;Category=Emulator</c>).
-/// See ADR-0035.
+/// See ADR-0037.
 /// </summary>
 [TraitDiscoverer("Honua.TestKit.Attributes.EmulatorTestDiscoverer", "Honua.TestKit")]
 public sealed class EmulatorTestAttribute : FactAttribute, ITraitAttribute
