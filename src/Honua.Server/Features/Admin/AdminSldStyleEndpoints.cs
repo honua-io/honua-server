@@ -47,6 +47,7 @@ internal static class AdminSldStyleEndpoints
             .WithName("ExportLayerSldStyle")
             .WithSummary("Export the stored MapLibre style as an SLD 1.0 document.")
             .Produces<string>(StatusCodes.Status200OK, "application/xml")
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .Produces<ApiResponse<SldImportFailureResponse>>(StatusCodes.Status422UnprocessableEntity);
     }

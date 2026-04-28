@@ -23,6 +23,15 @@ internal static class SldToMapLibreConverter
     private const int MaxZoom = 24;
     private const int MinZoom = 0;
 
+    /// <summary>
+    /// Upper bound on sanitized SLD identifier length. The endpoint accepts up to a
+    /// 1 MiB body, so an unbounded stackalloc keyed on the SLD <c>Name</c> length
+    /// would let untrusted input drive multi-megabyte stack frames and risk a
+    /// StackOverflow. 64 characters is comfortably above typical rule-name lengths
+    /// while keeping the buffer trivially safe.
+    /// </summary>
+    private const int MaxSanitizedIdentifierLength = 64;
+
     public static SldConversionResult Convert(SldDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -63,7 +72,14 @@ internal static class SldToMapLibreConverter
         List<MapLibreStyleLayer> layers,
         List<SldConversionDiagnostic> diagnostics)
     {
-        var ruleId = SanitizeIdentifier(rule.Name) ?? $"rule{ruleIndex}";
+        // Always fold ruleIndex into ruleId so two SLD rules sharing a Name still
+        // produce distinct MapLibre layer ids — MapLibreStyleNormalizer rejects
+        // duplicate ids, which would turn an otherwise valid SLD into a 400 at
+        // import time.
+        var sanitized = SanitizeIdentifier(rule.Name);
+        var ruleId = sanitized != null
+            ? $"{sanitized}-{ruleIndex}"
+            : $"rule{ruleIndex}";
         var minZoom = ScaleToZoom(rule.MaxScaleDenominator);
         var maxZoom = ScaleToZoom(rule.MinScaleDenominator);
         var filter = BuildFilter(rule.Filter);
@@ -378,9 +394,17 @@ internal static class SldToMapLibreConverter
             layout["text-size"] = new MapLibreExpression(size);
         }
 
+        // Color and opacity are emitted as separate paint properties: MapLibre exposes
+        // text-opacity as a first-class paint property, so baking the alpha into rgba()
+        // would double-apply the alpha once MapLibre multiplies text-color × text-opacity.
         if (text.Fill?.Color is { Length: > 0 } color)
         {
-            paint["text-color"] = new MapLibreExpression(NormalizeColor(color, text.Fill.Opacity));
+            paint["text-color"] = new MapLibreExpression(NormalizeColor(color, null));
+        }
+
+        if (text.Fill?.Opacity is { } textOpacity)
+        {
+            paint["text-opacity"] = new MapLibreExpression(textOpacity);
         }
 
         if (text.Halo != null)
@@ -608,11 +632,26 @@ internal static class SldToMapLibreConverter
             return null;
         }
 
-        var span = name.Trim();
-        Span<char> buffer = stackalloc char[span.Length];
+        var span = name.AsSpan().Trim();
+        if (span.IsEmpty)
+        {
+            return null;
+        }
+
+        // Cap stack usage independently of the (1 MiB) body cap. Without this, a
+        // pathological SLD Name element could drive a multi-megabyte stackalloc.
+        // ruleIndex still guarantees ruleId uniqueness when truncation collapses
+        // two distinct names to the same prefix.
+        var bufferLength = Math.Min(span.Length, MaxSanitizedIdentifierLength);
+        Span<char> buffer = stackalloc char[bufferLength];
         var written = 0;
         foreach (var c in span)
         {
+            if (written == bufferLength)
+            {
+                break;
+            }
+
             if (char.IsLetterOrDigit(c) || c == '-' || c == '_')
             {
                 buffer[written++] = c;

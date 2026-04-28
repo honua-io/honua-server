@@ -34,7 +34,9 @@ public sealed class SldConversionTests
 
         var layer = conversion.Layers[0];
         layer.Type.Should().Be("circle");
-        layer.Id.Should().Be("simple-point-0");
+        // Layer id encodes ruleId-symbolizerIndex, where ruleId always folds in the
+        // 0-based ruleIndex so duplicate Rule Names cannot collide on layer id.
+        layer.Id.Should().Be("simple-point-0-0");
         // SLD fill is a plain 7-char hex; opacity rides on circle-opacity so MapLibre
         // does not multiply the alpha twice once *-color and *-opacity are combined.
         layer.Paint!["circle-color"].StringValue.Should().Be("#ff7f00");
@@ -735,6 +737,138 @@ public sealed class SldConversionTests
 
         act.Should().Throw<SldParseException>()
             .WithMessage("*exceeds*character limit*");
+    }
+
+    [UnitTest]
+    public void Parse_DuplicateRuleNames_ProduceDistinctLayerIds()
+    {
+        // Regression: SLD allows two Rules to share a Name. The previous converter
+        // built layer ids from `{sanitizedRuleName}-{symbolizerIndex}` only, so two
+        // matching rule names with matching symbolizer positions both produced the
+        // same id. MapLibreStyleNormalizer rejects duplicate ids and the SLD would
+        // fail import. Layer ids must always be unique across rules.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>features</Name><UserStyle><FeatureTypeStyle>
+    <Rule>
+      <Name>shared</Name>
+      <PolygonSymbolizer><Fill><CssParameter name=""fill"">#ff0000</CssParameter></Fill></PolygonSymbolizer>
+    </Rule>
+    <Rule>
+      <Name>shared</Name>
+      <PolygonSymbolizer><Fill><CssParameter name=""fill"">#00ff00</CssParameter></Fill></PolygonSymbolizer>
+    </Rule>
+  </FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        conversion.Layers.Should().HaveCount(2);
+        var ids = conversion.Layers.Select(l => l.Id).ToArray();
+        ids.Should().OnlyHaveUniqueItems(
+            "MapLibreStyleNormalizer rejects duplicate layer ids and admin import would 400 otherwise");
+        ids.Should().Contain("shared-0-0").And.Contain("shared-1-0");
+    }
+
+    [UnitTest]
+    public void Parse_VeryLongRuleName_TruncatesIdentifierAndStaysUnique()
+    {
+        // Regression: SanitizeIdentifier previously stackalloc'd `char[span.Length]`
+        // off the SLD Name element. With the 1 MiB body cap, an attacker-controlled
+        // Name could drive a multi-megabyte stack frame. The sanitizer now caps the
+        // sanitized identifier; ruleIndex still disambiguates rules whose names
+        // collapse to the same prefix after truncation.
+        var longA = new string('a', 200);
+        var longB = $"{new string('a', 200)}-different-tail";
+        var xml = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>features</Name><UserStyle><FeatureTypeStyle>
+    <Rule>
+      <Name>{longA}</Name>
+      <PolygonSymbolizer><Fill><CssParameter name=""fill"">#ff0000</CssParameter></Fill></PolygonSymbolizer>
+    </Rule>
+    <Rule>
+      <Name>{longB}</Name>
+      <PolygonSymbolizer><Fill><CssParameter name=""fill"">#00ff00</CssParameter></Fill></PolygonSymbolizer>
+    </Rule>
+  </FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        var ids = conversion.Layers.Select(l => l.Id!).ToArray();
+        ids.Should().OnlyHaveUniqueItems();
+        // Both rule names truncate to the same 64-char prefix; ruleIndex keeps the ids unique.
+        ids[0].Should().StartWith("aaaa")
+            .And.EndWith("-0-0");
+        ids[1].Should().StartWith("aaaa")
+            .And.EndWith("-1-0");
+    }
+
+    [UnitTest]
+    public void Parse_TextSymbolizerFillOpacity_RoundTripsThroughTextOpacity()
+    {
+        // Regression: TextSymbolizer Fill opacity used to be baked into the
+        // text-color rgba(); MapLibre exposes text-opacity as a first-class paint
+        // property, so the alpha must ride there. Otherwise MapLibre multiplies the
+        // alpha twice (color × opacity) and the export side has nothing to write
+        // back into SLD Fill fill-opacity.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld""
+    xmlns:ogc=""http://www.opengis.net/ogc"">
+  <NamedLayer><Name>labels</Name><UserStyle><FeatureTypeStyle><Rule>
+    <Name>place-labels</Name>
+    <TextSymbolizer>
+      <Label><ogc:PropertyName>name</ogc:PropertyName></Label>
+      <Fill>
+        <CssParameter name=""fill"">#112233</CssParameter>
+        <CssParameter name=""fill-opacity"">0.55</CssParameter>
+      </Fill>
+    </TextSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        var symbol = conversion.Layers.Single(l => l.Type == "symbol");
+        symbol.Paint!["text-color"].StringValue.Should().Be("#112233",
+            "text-color must round-trip without opacity baked into rgba()");
+        symbol.Paint["text-opacity"].NumberValue.Should().Be(0.55d);
+    }
+
+    [UnitTest]
+    public void Export_TextOpacity_EmittedAsFillOpacity()
+    {
+        // Symmetric to import: stored MapLibre text-opacity must round-trip into
+        // SLD Fill fill-opacity. Otherwise export silently discards opacity.
+        var layer = new MapLibreStyleLayer
+        {
+            Id = "label",
+            Type = "symbol",
+            Layout = new Dictionary<string, MapLibreExpression>
+            {
+                ["text-field"] = new MapLibreExpression("{name}")
+            },
+            Paint = new Dictionary<string, MapLibreExpression>
+            {
+                ["text-color"] = new MapLibreExpression("#112233"),
+                ["text-opacity"] = new MapLibreExpression(0.55d)
+            }
+        };
+
+        var export = MapLibreToSldConverter.Export(new[] { layer }, "test");
+
+        export.SldXml.Should().Contain("<CssParameter name=\"fill\">#112233</CssParameter>")
+            .And.Contain("<CssParameter name=\"fill-opacity\">0.55</CssParameter>");
+
+        // Round-trip: re-parse the exported SLD and confirm text-opacity comes back.
+        var roundTrip = SldToMapLibreConverter.Convert(SldParser.Parse(export.SldXml));
+        var symbol = roundTrip.Layers.Single(l => l.Type == "symbol");
+        symbol.Paint!["text-opacity"].NumberValue.Should().Be(0.55d);
+        symbol.Paint["text-color"].StringValue.Should().Be("#112233");
     }
 
     private static SldConversionResult ParseAndConvert(string fixtureName)

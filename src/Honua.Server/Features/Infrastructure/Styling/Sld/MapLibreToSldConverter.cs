@@ -232,6 +232,7 @@ internal static class MapLibreToSldConverter
         {
             var textField = TryGetLiteralString(layer, "text-field", diagnostics, isLayout: true);
             var textColor = TryGetLiteralString(layer, "text-color", diagnostics);
+            var textOpacity = TryGetLiteralNumber(layer, "text-opacity", diagnostics);
             var textSize = TryGetLiteralNumber(layer, "text-size", diagnostics, isLayout: true);
             var haloColor = TryGetLiteralString(layer, "text-halo-color", diagnostics);
             var haloWidth = TryGetLiteralNumber(layer, "text-halo-width", diagnostics);
@@ -259,9 +260,13 @@ internal static class MapLibreToSldConverter
                 textSymbolizer.Add(font);
             }
 
-            if (!string.IsNullOrEmpty(textColor))
+            // text-opacity rides on a separate paint property on the import side, so
+            // mirror that here: emit fill-opacity in the SLD <Fill> rather than
+            // dropping it. Otherwise stored MapLibre opacity round-trips through
+            // export → import as 1.0.
+            if (!string.IsNullOrEmpty(textColor) || textOpacity.HasValue)
             {
-                textSymbolizer.Add(BuildFill(textColor, null));
+                textSymbolizer.Add(BuildFill(textColor, textOpacity));
             }
 
             if (haloWidth.HasValue || !string.IsNullOrEmpty(haloColor))

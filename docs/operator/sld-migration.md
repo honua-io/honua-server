@@ -62,7 +62,7 @@ No partial stylesheet is stored. The diagnostic count is also recorded in the se
 
 ### Export response
 
-A 200 response is `application/xml` containing a complete SLD 1.0 document. The `X-Sld-Diagnostic-Count` header reports the number of diagnostics emitted while exporting; the `X-Sld-Diagnostics` header carries the JSON-encoded diagnostic array when the count is non-zero. If the stored MapLibre style cannot be exported (no convertible layers, deserialization failure, or all layers produced error diagnostics), the endpoint returns 422 with the same failure envelope as the import path — `success: false` plus a `data.diagnostics` array describing why the export was refused.
+A 200 response is `application/xml` containing a complete SLD 1.0 document. The `X-Sld-Diagnostic-Count` header reports the number of diagnostics emitted while exporting; the `X-Sld-Diagnostics` header carries the JSON-encoded diagnostic array when the count is non-zero. If the stored MapLibre style cannot be exported (no convertible layers, deserialization failure, or all layers produced error diagnostics), the endpoint returns 422 with the same failure envelope as the import path — `success: false` plus a `data.diagnostics` array describing why the export was refused. Layer routing returns 404 for missing layers and 400 for invalid layer identifiers (matching the rest of the admin layer endpoints).
 
 ## Supported subset
 
@@ -99,7 +99,7 @@ The converter never silently drops these — each emits a `Warning` diagnostic, 
 
 - CSS named colors and `#RRGGBB` are passed through.
 - `#AARRGGBB` (alpha-prefixed) is normalized to `rgba(R,G,B,A)`.
-- `<Opacity>` and `fill-opacity` / `stroke-opacity` CSS parameters are emitted as a separate `*-opacity` paint property (`circle-opacity`, `circle-stroke-opacity`, `line-opacity`, `fill-opacity`) so MapLibre does not multiply the alpha twice. The exception is text halo, where MapLibre has no `text-halo-opacity` paint property and the opacity must ride inside `text-halo-color` via `rgba()`.
+- `<Opacity>` and `fill-opacity` / `stroke-opacity` CSS parameters are emitted as a separate `*-opacity` paint property (`circle-opacity`, `circle-stroke-opacity`, `line-opacity`, `fill-opacity`, `text-opacity`) so MapLibre does not multiply the alpha twice. The exception is text halo, where MapLibre has no `text-halo-opacity` paint property and the opacity must ride inside `text-halo-color` via `rgba()`. `TextSymbolizer` `<Fill>` opacity round-trips through `text-opacity` on both import and export, matching the rest of the supported subset.
 
 ## MapLibre → SLD export limitations
 
