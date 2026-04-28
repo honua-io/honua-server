@@ -132,6 +132,18 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
                 PostgresRasterImportLog.RasterIngested(_logger, rasterId, width, height, bandCount, srid);
 
+                // Per-layer SRID and band-count homogeneity guard. ST_Union (used by mosaic
+                // export/identify/tile/statistics paths) requires all rasters in a layer to share
+                // the same SRID and band count; otherwise PostGIS aborts with an opaque error at
+                // query time. Reject the upload before commit so callers see a structured 400.
+                // Inner catch block handles the rollback; do not roll back here.
+                var homogeneityError = await CheckLayerHomogeneityAsync(
+                    connection, transaction, request.LayerId, rasterId, srid, bandCount, cancellationToken).ConfigureAwait(false);
+                if (homogeneityError != null)
+                {
+                    throw new ArgumentException(homogeneityError);
+                }
+
                 // Phase 3: Compute band statistics
                 ReportProgress(progress, operationId, startedAt, RasterImportPhase.ComputingStatistics, OperationStatus.Processing,
                     "Computing band statistics", rasterId: rasterId, totalBands: bandCount);
@@ -418,6 +430,52 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             reader.GetInt32(reader.GetOrdinal("height")),
             reader.GetInt32(reader.GetOrdinal("band_count")),
             reader.GetInt32(reader.GetOrdinal("srid")));
+    }
+
+    /// <summary>
+    /// Verifies the newly inserted raster shares the layer's canonical SRID and band count.
+    /// Returns null on success or a client-safe error message describing the mismatch.
+    /// First raster in a layer always passes (it sets the canonical values).
+    /// </summary>
+    private async Task<string?> CheckLayerHomogeneityAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        int layerId,
+        long newRasterId,
+        int newSrid,
+        int newBandCount,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"""
+            SELECT srid, band_count
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id <> @newRasterId
+            ORDER BY id ASC
+            LIMIT 1
+            """;
+        command.AddParameter("@layerId", layerId);
+        command.AddParameter("@newRasterId", newRasterId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var existingSrid = reader.GetInt32(0);
+        var existingBands = reader.GetInt32(1);
+
+        if (existingSrid == newSrid && existingBands == newBandCount)
+        {
+            return null;
+        }
+
+        PostgresRasterImportLog.HomogeneityRejected(_logger, layerId, newSrid, newBandCount, existingSrid, existingBands);
+        return $"Layer {layerId} requires raster homogeneity for mosaic compositing. " +
+               $"Expected SRID={existingSrid}, BandCount={existingBands}; " +
+               $"upload has SRID={newSrid}, BandCount={newBandCount}.";
     }
 
     private async Task ApplyWorldFileGeoReferencingAsync(

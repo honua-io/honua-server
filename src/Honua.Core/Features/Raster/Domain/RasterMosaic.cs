@@ -50,8 +50,11 @@ public readonly record struct RasterSelectionQuery
     public int? GeometrySrid { get; init; }
 
     /// <summary>
-    /// Optional temporal selection instant. When supplied, the store selects the most
-    /// recent acquisition at or before the requested instant.
+    /// Optional temporal selection instant. When supplied, the store selects rasters whose
+    /// effective acquisition equals the single most-recent acquisition across the layer at
+    /// or before the requested instant ("newest batch" snapshot). Rasters from earlier
+    /// acquisitions are excluded — layers with mixed-date scenes can therefore produce
+    /// spatial coverage gaps under a timestamp filter.
     /// </summary>
     public DateTimeOffset? Timestamp { get; init; }
 }

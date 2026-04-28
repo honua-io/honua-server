@@ -347,7 +347,7 @@ internal static class ServiceSettingsEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<LayerMetadataResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<LayerMetadataResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdateLayerMetadata(
             string serviceName,
             int layerId,
@@ -369,6 +369,13 @@ internal static class ServiceSettingsEndpoints
             if (layer is null)
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
+            }
+
+            if (request.RasterMosaic?.MergeStrategy is { Length: > 0 } mergeStrategyValue
+                && !TryNormalizeMergeStrategy(mergeStrategyValue, out _))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                    $"Invalid mergeStrategy '{mergeStrategyValue}'. Allowed values: newest, oldest, average, max, min."));
             }
 
             var existingMetadata = layer.Metadata ?? new CatalogMetadata();
@@ -404,12 +411,23 @@ internal static class ServiceSettingsEndpoints
             if (request.RasterMosaic is not null)
             {
                 var existingRm = existingMetadata.RasterMosaic ?? new RasterMosaicSettings();
-                updatedRasterMosaic = existingRm with
+                string? mergeStrategy;
+                if (request.RasterMosaic.MergeStrategy is null)
                 {
-                    MergeStrategy = request.RasterMosaic.MergeStrategy is ""
-                        ? null
-                        : (request.RasterMosaic.MergeStrategy ?? existingRm.MergeStrategy)
-                };
+                    mergeStrategy = existingRm.MergeStrategy;
+                }
+                else if (request.RasterMosaic.MergeStrategy.Length == 0)
+                {
+                    mergeStrategy = null;
+                }
+                else
+                {
+                    // Already validated above; normalize to the canonical lowercase token.
+                    TryNormalizeMergeStrategy(request.RasterMosaic.MergeStrategy, out var canonical);
+                    mergeStrategy = canonical;
+                }
+
+                updatedRasterMosaic = existingRm with { MergeStrategy = mergeStrategy };
             }
 
             var metadata = existingMetadata with
@@ -505,6 +523,35 @@ internal static class ServiceSettingsEndpoints
 
     private static string? NormalizeEmptyToNull(string? value)
         => string.IsNullOrEmpty(value) ? null : value;
+
+    /// <summary>
+    /// Validates a raster mosaic merge strategy against the canonical set and normalizes to
+    /// the lowercase canonical token. Allowed: newest, oldest, average, max, min.
+    /// </summary>
+    private static bool TryNormalizeMergeStrategy(string value, out string canonical)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "newest":
+                canonical = "newest";
+                return true;
+            case "oldest":
+                canonical = "oldest";
+                return true;
+            case "average":
+                canonical = "average";
+                return true;
+            case "max":
+                canonical = "max";
+                return true;
+            case "min":
+                canonical = "min";
+                return true;
+            default:
+                canonical = string.Empty;
+                return false;
+        }
+    }
 
     private static async Task InvalidateServiceCatalogCacheAsync(
         HttpContext context,

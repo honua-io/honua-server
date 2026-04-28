@@ -47,4 +47,16 @@ internal static partial class PostgresRasterImportLog
         Level = LogLevel.Error,
         Message = "Raster import failed for layer {LayerId}: file={FileName}")]
     public static partial void ImportFailed(ILogger logger, Exception ex, int layerId, string fileName);
+
+    [LoggerMessage(
+        EventId = 7826,
+        Level = LogLevel.Warning,
+        Message = "Raster import rejected for layer {LayerId}: incoming SRID={NewSrid}/bands={NewBandCount} does not match layer canonical SRID={ExpectedSrid}/bands={ExpectedBandCount}")]
+    public static partial void HomogeneityRejected(
+        ILogger logger,
+        int layerId,
+        int newSrid,
+        int newBandCount,
+        int expectedSrid,
+        int expectedBandCount);
 }

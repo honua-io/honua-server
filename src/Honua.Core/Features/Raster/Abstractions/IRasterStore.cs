@@ -24,6 +24,14 @@ public interface IRasterStore
     /// Queries rasters in a layer using optional spatial and temporal filters.
     /// Returned rasters are ordered from newest acquisition to oldest.
     /// </summary>
+    /// <remarks>
+    /// When <see cref="RasterSelectionQuery.Timestamp"/> is set, the implementation uses
+    /// "newest batch" semantics: it returns only rasters whose effective acquisition equals
+    /// the single most-recent acquisition at or before the requested instant. Rasters from
+    /// earlier acquisitions are excluded even when they cover areas the newer batch does not.
+    /// Layers with mixed-date scenes can therefore produce spatial coverage gaps when a
+    /// timestamp filter is applied; per-pixel temporal mosaicking is deferred follow-up scope.
+    /// </remarks>
     /// <param name="layerId">Layer identifier to query.</param>
     /// <param name="query">Selection filters to apply before mosaic building.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

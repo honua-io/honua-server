@@ -268,7 +268,9 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 
 ## Known limitations
 
+- Temporal mosaic uses "newest batch" semantics: when `time` is supplied, Honua selects rasters whose effective acquisition equals the single most-recent acquisition across the layer at or before the requested instant. Rasters from earlier acquisitions are excluded — layers with mixed-date scenes can therefore produce spatial coverage gaps under a timestamp filter. Per-pixel temporal mosaicking (newest-per-area) is deferred follow-up scope.
 - The current Honua route shape is layer-scoped: `GET /rest/services/{id}/ImageServer`, where `{id}` is the addressed raster layer identifier rather than a FeatureServer/MapServer-style `{serviceId}`.
+- Raster imports are rejected with `400 Bad Request` when the upload's SRID or band count differs from the layer's existing rasters; ST_Union requires homogeneity, and the guard fires before commit so callers get a structured error rather than a query-time PostGIS failure.
 - Export responses always return JSON with a temporary file URL. Temporary exports are stored through `ITemporaryFileService`, expire after one hour, and use shared cloud file storage instead of node-local disk when the configured `FileStorage` provider is `AwsS3` or `AzureBlob`. Shared cloud-backed temporary files require Redis coordination so quota enforcement remains correct across replicas.
 - Catalog filtering still happens in memory after the raster catalog is read; arbitrary geometry filters and `orderByFields` are not pushed to PostGIS yet.
 - `exportImage` and `identify` accept more request fields than they currently honor. Unsupported fields are intentionally documented here so they are not mistaken for full parity.
