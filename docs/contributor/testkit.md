@@ -182,7 +182,9 @@ remain off unless a licensed server is explicitly configured. Set the base
 cross-server gate and the ArcGIS license gate, then provide only the read paths
 that exist on the licensed server. WFS and tile coverage are optional per
 service; missing variables are recorded as configuration skips in the gap
-report rather than failing the GeoServer or MapServer reference checks.
+report rather than failing the GeoServer or MapServer reference checks. Test
+against ArcGIS Server 10.8 or newer when WFS 2.0 and WMTS 1.0 coverage is
+required.
 
 ```bash
 export HONUA_TEST_CROSS_SERVER_CONSUME="1"

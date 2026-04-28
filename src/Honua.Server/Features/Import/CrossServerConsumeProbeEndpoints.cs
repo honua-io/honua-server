@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net.Http.Headers;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Server.Features.Import;
 
@@ -15,6 +16,14 @@ internal static partial class CrossServerConsumeProbeEndpoints
     private const string ArcGisLicensedConsumeEnv = "HONUA_TEST_ARCGIS_SERVER_CONSUME";
     private const string ArcGisAuthorizationEnv = "HONUA_TEST_ARCGIS_AUTHORIZATION";
     private const string ArcGisTokenEnv = "HONUA_TEST_ARCGIS_TOKEN";
+
+    private static readonly string[] CredentialQueryParameterNames =
+    [
+        "token",
+        "access_token",
+        "apikey",
+        "api_key",
+    ];
 
     private static readonly string[] ArcGisSourceUrlEnvironmentVariables =
     [
@@ -135,6 +144,12 @@ internal static partial class CrossServerConsumeProbeEndpoints
             return false;
         }
 
+        if (HasCredentialQueryParameter(uri))
+        {
+            error = "Source URL must not include token credential query parameters.";
+            return false;
+        }
+
         if (!uri.IsLoopback)
         {
             if (!IsConfiguredArcGisSourceUri(uri))
@@ -185,8 +200,7 @@ internal static partial class CrossServerConsumeProbeEndpoints
     private static Uri AddArcGisTokenIfConfigured(Uri sourceUri)
     {
         var token = Environment.GetEnvironmentVariable(ArcGisTokenEnv);
-        if (string.IsNullOrWhiteSpace(token) ||
-            sourceUri.Query.Contains("token=", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(token))
         {
             return sourceUri;
         }
@@ -213,7 +227,8 @@ internal static partial class CrossServerConsumeProbeEndpoints
             if (string.IsNullOrWhiteSpace(configured) ||
                 !Uri.TryCreate(configured, UriKind.Absolute, out var configuredUri) ||
                 configuredUri is null ||
-                !string.IsNullOrWhiteSpace(configuredUri.UserInfo))
+                !string.IsNullOrWhiteSpace(configuredUri.UserInfo) ||
+                HasCredentialQueryParameter(configuredUri))
             {
                 continue;
             }
@@ -222,6 +237,28 @@ internal static partial class CrossServerConsumeProbeEndpoints
                 UriPathIsAtOrBelow(configuredUri.AbsolutePath, sourceUri.AbsolutePath))
             {
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasCredentialQueryParameter(Uri uri)
+    {
+        if (string.IsNullOrWhiteSpace(uri.Query))
+        {
+            return false;
+        }
+
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        foreach (var key in query.Keys)
+        {
+            foreach (var credentialParameterName in CredentialQueryParameterNames)
+            {
+                if (string.Equals(key, credentialParameterName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
             }
         }
 
