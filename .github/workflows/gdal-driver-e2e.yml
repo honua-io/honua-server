@@ -1,0 +1,191 @@
+name: GDAL Driver End-to-End
+
+# Proves that honua-server's OGC API Features surface responds correctly to
+# GDAL-style access patterns. Until the dedicated `honua-gdal` plugin ships
+# (see ADR-0034), this workflow exercises GDAL's built-in `OAPIF:` driver as
+# a stand-in. When the plugin lands, swap `OAPIF:` for `HONUA:` and add the
+# install step; the rest of the workflow stays the same.
+
+on:
+  schedule:
+    - cron: '45 7 * * *' # Daily 07:45 UTC — slots after pyqgis-client-compat
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  GDAL_E2E_SERVICE_ID: test_service
+  GDAL_E2E_COLLECTION_ID: '0'
+  GDAL_E2E_SEED_SOURCE: tests/seed/client-compat-v1.sql
+  # GDAL_E2E_BASE_URL is the future HONUA: swap target (see ADR-0034 and
+  # tests/seed/README-gdal-driver-e2e.md). Keep the OAPIF path separate because
+  # GitHub Actions does not allow the `env` context inside jobs.<job>.env.
+  GDAL_E2E_BASE_URL: http://localhost:5000
+  GDAL_E2E_OAPIF_PATH: /ogc/features
+  # Bumping pins the GDAL major.minor used by the workflow. ADR-0034 targets
+  # GDAL 3.6+ as the support floor; the osgeo/gdal:ubuntu-small tag pulls a
+  # current LTS image that satisfies that floor.
+  GDAL_IMAGE: 'ghcr.io/osgeo/gdal:ubuntu-small-3.10.0'
+
+concurrency:
+  group: gdal-driver-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gdal-e2e:
+    name: GDAL OAPIF Read + GeoPackage Round-Trip
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgis/postgis:18-3.6
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U honua"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Honua Server
+        uses: ./.github/actions/setup-honua-server
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          base-seed-path: ${{ env.GDAL_E2E_SEED_SOURCE }}
+          log-path: tests/TestResults/server.log
+
+      - name: Pull GDAL container image
+        run: docker pull "$GDAL_IMAGE"
+
+      - name: Verify honua-server reachable from host
+        run: |
+          set -euo pipefail
+          curl -fsS "${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}" -o /tmp/landing.json
+          jq -e '.links | length > 0' /tmp/landing.json >/dev/null
+          curl -fsS "${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}/conformance" -o /tmp/conformance.json
+          jq -e '.conformsTo | length > 0' /tmp/conformance.json >/dev/null
+
+      - name: Acceptance — ogrinfo lists collections
+        id: ogrinfo
+        run: |
+          set -euo pipefail
+          mkdir -p tests/TestResults/gdal
+          docker run --rm --network=host \
+            -v "${PWD}/tests/TestResults/gdal:/out" \
+            "$GDAL_IMAGE" \
+            ogrinfo -ro -so "OAPIF:${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}" \
+            | tee tests/TestResults/gdal/ogrinfo.txt
+          # GDAL's ogrinfo prints one layer per line as: `<index>: <name>[ (geom)]`.
+          # Match the seeded collection id (`0`) at the layer-name position so we
+          # don't false-match on incidental zeros elsewhere in the output.
+          if ! grep -Eq "^[0-9]+: ${GDAL_E2E_COLLECTION_ID}([[:space:]]|\(|$)" \
+              tests/TestResults/gdal/ogrinfo.txt; then
+            echo "::error::ogrinfo did not list the seeded collection '${GDAL_E2E_COLLECTION_ID}'"
+            exit 1
+          fi
+
+      - name: Capture source feature count
+        id: source-count
+        run: |
+          set -euo pipefail
+          # Sum across all paged responses; honua-server defaults to 1000 per
+          # page, which already covers the 10-feature seed.
+          count=$(curl -fsS \
+            "${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}/collections/${GDAL_E2E_COLLECTION_ID}/items?limit=1000" \
+            | jq '.numberReturned // (.features | length)')
+          echo "Source feature count from OAPIF items endpoint: $count"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" = "0" ] || [ "$count" = "null" ]; then
+            echo "::error::Source feature count is zero — seed did not populate the collection"
+            exit 1
+          fi
+
+      - name: Acceptance — ogr2ogr round-trips collection to GeoPackage
+        id: ogr2ogr
+        run: |
+          set -euo pipefail
+          rm -f tests/TestResults/gdal/out.gpkg
+          docker run --rm --network=host \
+            -v "${PWD}/tests/TestResults/gdal:/out" \
+            "$GDAL_IMAGE" \
+            ogr2ogr \
+              -f GPKG /out/out.gpkg \
+              "OAPIF:${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}" \
+              "${GDAL_E2E_COLLECTION_ID}"
+          if [ ! -s tests/TestResults/gdal/out.gpkg ]; then
+            echo "::error::ogr2ogr did not produce a non-empty GeoPackage"
+            exit 1
+          fi
+
+      - name: Validate GeoPackage round-trip fidelity
+        run: |
+          set -euo pipefail
+          # Use the same GDAL image to count features in the produced GPKG so
+          # we are comparing apples to apples (same OGR semantics on both ends).
+          # `+0` coerces the field to an integer so trailing whitespace or
+          # carriage returns in ogrinfo output cannot cause the string
+          # comparison below to false-fail.
+          gpkg_count=$(docker run --rm \
+            -v "${PWD}/tests/TestResults/gdal:/out" \
+            "$GDAL_IMAGE" \
+            ogrinfo -ro -al -so /out/out.gpkg \
+            | awk -F': *' '/^Feature Count/ {print $2+0; exit}')
+          echo "GeoPackage feature count: $gpkg_count"
+          source_count="${{ steps.source-count.outputs.count }}"
+          if [ -z "$gpkg_count" ] || [ "$gpkg_count" != "$source_count" ]; then
+            echo "::error::Feature count mismatch — source=$source_count, gpkg=$gpkg_count"
+            exit 1
+          fi
+
+          # Confirm CRS metadata survived the round-trip. The seed uses
+          # EPSG:4326; ogrinfo prints the SRS authority + code in the layer
+          # metadata block.
+          if ! docker run --rm \
+            -v "${PWD}/tests/TestResults/gdal:/out" \
+            "$GDAL_IMAGE" \
+            ogrinfo -ro -al -so /out/out.gpkg \
+            | grep -E 'AUTHORITY\["EPSG","4326"\]|ID\["EPSG",4326\]' >/dev/null; then
+            echo "::error::Round-tripped GeoPackage lost EPSG:4326 CRS metadata"
+            exit 1
+          fi
+
+      - name: Write evidence summary
+        if: always()
+        run: |
+          mkdir -p tests/TestResults/gdal
+          {
+            echo "## GDAL Driver E2E"
+            echo ""
+            echo "- Stand-in driver: \`OAPIF:\` (built-in to GDAL ${GDAL_IMAGE##*:})"
+            echo "- Reference server: honua-server with seed \`${GDAL_E2E_SEED_SOURCE}\`"
+            echo "- OAPIF landing: \`${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}\`"
+            echo "- Collection under test: \`${GDAL_E2E_COLLECTION_ID}\`"
+            echo "- Source feature count: \`${{ steps.source-count.outputs.count }}\`"
+            echo ""
+            echo "Acceptance evidence:"
+            echo ""
+            echo "- \`ogrinfo\` listed the seeded collection (see \`ogrinfo.txt\`)."
+            echo "- \`ogr2ogr\` round-tripped the collection to GeoPackage with matching feature count and EPSG:4326 CRS."
+          } > tests/TestResults/gdal/summary.md
+
+      - name: Upload GDAL E2E evidence
+        if: always()
+        uses: ./.github/actions/upload-ci-evidence
+        with:
+          kind: evidence
+          path: |
+            tests/TestResults/gdal/
+            tests/TestResults/server.log
+          tier: nightly
+          summary-file: tests/TestResults/gdal/summary.md

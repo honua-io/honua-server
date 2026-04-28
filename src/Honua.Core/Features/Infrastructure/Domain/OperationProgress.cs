@@ -122,7 +122,7 @@ public enum OperationType
     TileCache,
 
     /// <summary>
-    /// PMTiles archive generation operation.
+    /// PMTiles archive generation operation (temporary admin download).
     /// </summary>
     PMTilesArchive,
 
@@ -159,5 +159,10 @@ public enum OperationType
     /// <summary>
     /// Deployment lifecycle operation that hosts a promoted publish or package artifact.
     /// </summary>
-    Deployment
+    Deployment,
+
+    /// <summary>
+    /// PMTiles durable publish operation (no TTL, deterministic object key).
+    /// </summary>
+    PMTilesPublish
 }

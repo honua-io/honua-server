@@ -54,8 +54,8 @@ Honua serves multiple protocols from a single dataset. No ETL, no data duplicati
 | **OGC API Features** | QGIS, MapLibre, any OGC client | Feature CRUD with CQL2 filtering |
 | **OGC API Maps** | OGC map clients | Standards-based rendered map images |
 | **OGC API Tiles** | QGIS, MapLibre | Vector and raster tile access |
-| **WMS 1.3 / WMTS 1.0** | Legacy OGC clients | Map image and tile services |
-| **WFS 2.0** | Legacy OGC clients | Feature query with GML output |
+| **WMS 1.3 / 1.1.1, WMTS 1.0** | Legacy OGC clients (modern + 1.1.1-pinned) | Map image and tile services; WMS 1.1.1 is read-only and uses `SRS` / `X`/`Y` and lon/lat `EPSG:4326` BBOX order |
+| **WFS 2.0 / 1.1.0 / 1.0.0** | Legacy OGC clients (QGIS legacy, ArcGIS Desktop, GDAL/OGR, WFS 1.0.0-pinned stacks) | Feature query with GML output; 1.1.0 emits GML 3.1.1 / OWS 1.0 exceptions, 1.0.0 emits GML 2.1.2 / `ServiceExceptionReport`. Read-only on legacy versions. |
 | **OData v4** | Excel, Power BI, Tableau, SAP | BI integration with spatial functions |
 | **Vector Tiles (MVT)** | MapLibre, Leaflet, Mapbox GL | Client-side rendered maps |
 | **TileJSON + MapLibre Styles** | MapLibre | Auto-generated styles and tile metadata |
@@ -97,7 +97,7 @@ Full CRUD support across protocols:
 Server-side rendering via SkiaSharp:
 - **MapServer**: export, identify, legend, find
 - **OGC API Maps**: collection and dataset maps with CRS/scaling support
-- **WMS 1.3 / WMTS 1.0**: GetMap, GetFeatureInfo, GetTile
+- **WMS 1.3 / 1.1.1 / WMTS 1.0**: GetMap, GetFeatureInfo, GetTile (WMS 1.1.1 is read-only)
 
 ### File & Service Import
 Import from 10+ file formats and live services:

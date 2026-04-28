@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE StyledLayerDescriptor [
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld">
+  <NamedLayer>
+    <Name>&xxe;</Name>
+    <UserStyle>
+      <FeatureTypeStyle>
+        <Rule>
+          <PolygonSymbolizer>
+            <Fill>
+              <CssParameter name="fill">#000000</CssParameter>
+            </Fill>
+          </PolygonSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>

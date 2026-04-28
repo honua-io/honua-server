@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-04-21T00:00:00Z",
+  "updatedUtc": "2026-04-25T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -500,6 +500,53 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "The JS evidence envelope records the package-lock-resolved OpenLayers version in client_version."
+        }
+      ]
+    },
+    {
+      "surfaceId": "wms-1.1.1",
+      "displayName": "WMS 1.1.1",
+      "surfaceKind": "nested-standard",
+      "protocol": "WMS 1.1.1",
+      "canonicalIdentifier": "/rest/services/{serviceId}/MapServer/WMS + /ogc/services/{serviceId}/wms",
+      "parentSurfaceId": "map-server",
+      "endpointPrefixes": [
+        "/ogc/services/{serviceId}/wms"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/MapServer/WMS"
+      ],
+      "operationKeys": [
+        "WMS-1.1.1::GetCapabilities",
+        "WMS-1.1.1::GetMap",
+        "WMS-1.1.1::GetFeatureInfo"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "WMS 1.1.1 endpoint integration tests cover capabilities, map rendering, feature info, exception shape, and EPSG:4326 lon/lat axis order",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wms/OgcClassicWmsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#802",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "WMS 1.1.1 Basic CITE Team Engine run",
+          "executionLane": "release:manual-follow-through",
+          "evidenceLocations": [
+            "docs/contributor/cite-legacy-ogc-conformance-testing.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#802",
+          "versionCaptureRule": "Record Team Engine session id, capabilities document, XML results, HTML report, and Honua commit SHA before marking certified."
         }
       ]
     },
@@ -1169,15 +1216,108 @@
       ]
     },
     {
+      "surfaceId": "wfs-1.1.0",
+      "displayName": "WFS 1.1.0",
+      "surfaceKind": "operation-surface",
+      "protocol": "WFS 1.1.0",
+      "canonicalIdentifier": "/wfs + WFS 1.1.0 REQUEST dispatcher operations",
+      "parentSurfaceId": "wfs-2.0",
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/wfs"
+      ],
+      "operationKeys": [
+        "WFS-1.1.0::GetCapabilities",
+        "WFS-1.1.0::DescribeFeatureType",
+        "WFS-1.1.0::GetFeature"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "WFS 1.1.0 endpoint integration tests cover capabilities, schema, GET/POST GetFeature, and OWS 1.0 exception shape",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "src/Honua.Server/Features/Protocols/Ogc/Classic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/WfsLegacyEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#802",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "WFS 1.1.0 Basic CITE Team Engine run",
+          "executionLane": "release:manual-follow-through",
+          "evidenceLocations": [
+            "docs/contributor/cite-legacy-ogc-conformance-testing.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#802",
+          "versionCaptureRule": "Record Team Engine session id, capabilities document, XML results, HTML report, and Honua commit SHA before marking certified."
+        }
+      ]
+    },
+    {
+      "surfaceId": "wfs-1.0.0",
+      "displayName": "WFS 1.0.0",
+      "surfaceKind": "operation-surface",
+      "protocol": "WFS 1.0.0",
+      "canonicalIdentifier": "/wfs + WFS 1.0.0 REQUEST dispatcher operations",
+      "parentSurfaceId": "wfs-2.0",
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/wfs"
+      ],
+      "operationKeys": [
+        "WFS-1.0.0::GetCapabilities",
+        "WFS-1.0.0::DescribeFeatureType",
+        "WFS-1.0.0::GetFeature"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "WFS 1.0.0 endpoint integration tests cover capabilities, GML 2 schema, GetFeature, and ServiceExceptionReport shape",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "src/Honua.Server/Features/Protocols/Ogc/Classic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/WfsLegacyEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#802",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "WFS 1.0.0 Basic CITE Team Engine run",
+          "executionLane": "release:manual-follow-through",
+          "evidenceLocations": [
+            "docs/contributor/cite-legacy-ogc-conformance-testing.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#802",
+          "versionCaptureRule": "Record Team Engine session id, capabilities document, XML results, HTML report, and Honua commit SHA before marking certified."
+        }
+      ]
+    },
+    {
       "surfaceId": "vector-tiles-mvt",
-      "displayName": "Vector tiles and MapLibre style endpoints",
+      "displayName": "Vector tiles, PMTiles range proxy, and MapLibre style endpoints",
       "surfaceKind": "http-route-family",
-      "protocol": "MVT + TileJSON",
-      "canonicalIdentifier": "/tiles/{layerId}/... + /api/styles/{layerId}.json",
+      "protocol": "MVT + TileJSON + PMTiles",
+      "canonicalIdentifier": "/tiles/{layerId}/... + /api/styles/{layerId}.json + /api/v1/tiles/pmtiles/{artifactId}",
       "parentSurfaceId": null,
       "endpointPrefixes": [
         "/tiles/",
-        "/api/styles/"
+        "/api/styles/",
+        "/api/v1/tiles/pmtiles/"
       ],
       "endpointExactMatches": [],
       "endpointContains": [],

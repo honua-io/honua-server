@@ -105,5 +105,11 @@ public enum SourceProtocol
     /// Artifact from a workspace.
     /// </summary>
     [JsonStringEnumMemberName("workspace_artifact")]
-    WorkspaceArtifact = 10
+    WorkspaceArtifact = 10,
+
+    /// <summary>
+    /// Durable PMTiles archive consumed via the MapLibre <c>pmtiles://</c> source.
+    /// </summary>
+    [JsonStringEnumMemberName("pmtiles")]
+    PMTiles = 11
 }

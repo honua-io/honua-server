@@ -420,6 +420,7 @@ public class SpatialGeometryValidationTests
     /// Verifies no performance regression in validation functions
     /// </summary>
     [Fact]
+    [Trait("Category", "Performance")]
     public void IsValidCoordinate_PerformanceStress_HandlesRepeatedCalls()
     {
         const int iterations = 100000;

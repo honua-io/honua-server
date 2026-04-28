@@ -16,6 +16,8 @@
 - [Control Plane API](operator/CONTROL_PLANE_API.md)
 - [Webhooks](operator/feature-change-webhooks.md)
 - [Tile Operations](operator/tile-operations-runbook.md)
+- [SLD Migration Reference](operator/sld-migration.md)
+- [PMTiles Publishing](operator/pmtiles-publishing.md)
 - [Troubleshooting](operator/troubleshooting.md)
 - [Upgrade & Rollback](operator/runbooks/UPGRADE_AND_ROLLBACK.md)
 
@@ -26,6 +28,7 @@
 - [Data Modeling Guide](gis/DATA_MODELING_GUIDE.md)
 - [FileGDB Import](gis/FILEGDB_IMPORT_WORKFLOW.md)
 - [Known Limitations](gis/MVP_COMPATIBILITY_CONTRACT.md)
+- [Cross-Server Consume Gap Report](compatibility/cross-server-consume-gap-report.md)
 - Tutorials
   - [QGIS Getting Started](gis/tutorials/qgis-getting-started.md)
   - [GeoServer Migration](gis/tutorials/geoserver-migration-guide.md)
@@ -50,6 +53,7 @@
 - [API Examples](developer/API_EXAMPLES.md)
 - [Integration Patterns](developer/INTEGRATION_PATTERNS.md)
 - [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
+- [Mobile SDK Roadmap](developer/mobile-sdk-roadmap.md)
 - [MCP Server](developer/MCP_SERVER.md)
 - [Spec Plan/Apply Engine](developer/SPEC_ENGINE.md)
 - [Grounding & Intent Drafting](developer/GROUNDING.md)

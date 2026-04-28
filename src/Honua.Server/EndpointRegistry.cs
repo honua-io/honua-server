@@ -160,6 +160,8 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
+        new("POST", "/api/v1/admin/metadata/layers/{layerId}/style/import-sld"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/style/export-sld"),
         new("POST", "/api/v1/admin/metadata/layers/{layerId}/suggest-style"),
         new("POST", "/api/v1/admin/gitops/watch"),
         new("PUT", "/api/v1/admin/gitops/watch"),
@@ -370,6 +372,10 @@ public static class EndpointRegistry
         new("GET", "/tiles/{layerId}/h3/{z}/{x}/{y}.mvt"),
         new("GET", "/tiles/{layerId}/tile.json"),
         new("GET", "/api/styles/{layerId}.json"),
+
+        // Durable PMTiles publish range proxy (#845).
+        new("GET", "/api/v1/tiles/pmtiles/{*artifactId}"),
+        new("HEAD", "/api/v1/tiles/pmtiles/{*artifactId}"),
 
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),

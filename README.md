@@ -12,7 +12,7 @@
 
 ## Why Honua
 
-- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), STAC API, OGC API Features/Maps/Tiles/Processes, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
+- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), classic OGC WMS/WFS compatibility, STAC API, OGC API Features/Maps/Tiles/Processes, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
 - **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
 - **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf (`.fgb`), File Geodatabase (`.gdb.zip`), and GeoParquet (`.parquet`, `.geoparquet`) directly. Import from live Esri REST services or public object URLs for migration.
 - **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.
@@ -92,7 +92,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 ## Capabilities
 
-**Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions. Query output in JSON, GeoJSON, PBF, FlatGeobuf, and GeoParquet formats, plus GeoBuf when the configured feature store supports native GeoBuf output, with Accept-header content negotiation.
+**Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions. Query output in JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow (Arrow IPC) formats, plus GeoBuf when the configured feature store supports native GeoBuf output, with Accept-header content negotiation.
 
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 

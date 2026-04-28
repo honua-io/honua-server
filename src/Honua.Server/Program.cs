@@ -10,6 +10,9 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -463,6 +466,8 @@ builder.Services.AddHostedService(sp =>
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
+builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.ISldStyleConverter,
+    Honua.Server.Features.Infrastructure.Styling.Sld.SldStyleConverter>();
 builder.Services.AddStyleSuggestionCore();
 
 // Configure temporary file service for image exports
@@ -1050,6 +1055,7 @@ app.MapDeployControlEndpoints();
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();
 app.MapAdminStyleSuggestionEndpoints();
+app.MapAdminSldStyleEndpoints();
 
 // Configure admin alerting zone/rule endpoints
 app.MapAlertAdminEndpoints();
@@ -1110,6 +1116,11 @@ app.MapGeoservicesImportEndpoints();
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();
 
+if (isTestEnvironment)
+{
+    app.MapCrossServerConsumeProbeEndpoints();
+}
+
 // Configure temporary file serving endpoints
 app.MapTemporaryFileEndpoints();
 
@@ -1158,6 +1169,15 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
     {
         throw new InvalidOperationException($"Unsupported data source provider '{provider}'.");
     }
+
+    services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
+        new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
+    services.TryAddScoped(serviceProvider =>
+        new FeatureProviderBindingResolver(
+            serviceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
+            serviceProvider.GetRequiredService<IFeatureDataProviderRegistry>(),
+            DataProviderNames.Normalize(provider)));
+    services.TryAddScoped<FeatureProviderQueryRouter>();
 
     // Add centralized configuration management and secret services
     services.AddConfigurationManagement(configuration);

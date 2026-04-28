@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0"
+    xmlns="http://www.opengis.net/sld"
+    xmlns:ogc="http://www.opengis.net/ogc"
+    xmlns:xlink="http://www.w3.org/1999/xlink">
+  <NamedLayer>
+    <Name>roads</Name>
+    <UserStyle>
+      <FeatureTypeStyle>
+        <Rule>
+          <Name>dashed-road</Name>
+          <LineSymbolizer>
+            <Stroke>
+              <CssParameter name="stroke">#0044cc</CssParameter>
+              <CssParameter name="stroke-width">3</CssParameter>
+              <CssParameter name="stroke-opacity">0.85</CssParameter>
+              <CssParameter name="stroke-dasharray">5 2</CssParameter>
+              <CssParameter name="stroke-linecap">round</CssParameter>
+            </Stroke>
+          </LineSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>

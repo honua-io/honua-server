@@ -47,6 +47,7 @@ public sealed class UniversalProgressStoreIntegrationTests
     }
 
     [IntegrationTest]
+    [FlakyTest("RedisFixture lifecycle race during DeleteProgressAsync teardown — distributed progress state intermittently unavailable when the shared Redis collection fixture is being recycled across parallel tests. Tracked in #812 quarantine sweep.")]
     public async Task SetAndGetProgressAsync_WithDeploymentProgress_RoundTripsThroughRedis()
     {
         using var provider = BuildRedisServices();

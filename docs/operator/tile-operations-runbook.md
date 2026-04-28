@@ -15,6 +15,7 @@ Start jobs through:
 - `invalidate`
 - `purge`
 - `archive`
+- `publish`
 
 Request scope options:
 
@@ -34,10 +35,11 @@ Request scope options:
 
 ## Operational Notes
 
-- Jobs are tracked via the unified operations progress store as `OperationType.TileCache` (or `OperationType.PMTilesArchive` for archive jobs).
+- Jobs are tracked via the unified operations progress store as `OperationType.TileCache` (`OperationType.PMTilesArchive` for `archive` jobs, `OperationType.PMTilesPublish` for `publish` jobs).
 - `seed`/`warm` currently target MVT generation through the standard tile provider.
 - `invalidate`/`purge` use output cache invalidation scopes (layer/service/global metadata).
-- `archive` generates a PMTiles v3 archive from tile outputs and uploads it to cloud storage.
+- `archive` generates a PMTiles v3 archive from tile outputs and uploads it to cloud storage as a temporary admin download (24h TTL). Partial generation failures still produce a downloadable archive (random per-job key, 24h TTL).
+- `publish` generates a durable PMTiles artifact at a deterministic key with no TTL and returns a provider-agnostic descriptor for browser MapLibre/PMTiles consumption. Unlike `archive`, `publish` aborts before upload if any tiles fail to generate (`Publish aborted before upload: N tiles failed during generation.`), so a previously good artifact at the deterministic key is never overwritten with bytes that miss the failed tiles. See [PMTiles Publishing](pmtiles-publishing.md).
 - Retry creates a new job ID while preserving the original request parameters.
 
 ## Metrics
@@ -48,8 +50,8 @@ Prometheus/OpenTelemetry surfaces include:
 - `honua.tile.jobs.total` (tagged by `operation`, `status`)
 - `honua.tile.jobs.duration_ms`
 - `honua.tile.jobs.tiles_processed`
-- `honua.tile.archives.total` (archive generation count)
-- `honua.tile.archives.size_bytes` (archive size histogram)
+- `honua.tile.archives.total` (count of generated PMTiles archives — incremented by both `archive` and `publish` jobs)
+- `honua.tile.archives.size_bytes` (size histogram for generated PMTiles archives — recorded by both `archive` and `publish` jobs)
 
 ## Example: Invalidate a Layer
 
@@ -120,4 +122,29 @@ pmtiles show output.pmtiles
 - If cloud storage is not configured, both `archiveFileId` and `downloadUrl` will be null.
 - This operation generates tiles on-demand (does not read from cache). For large tile sets, use `maxTiles` to limit scope.
 - The archive uses PMTiles v3 format with MVT tile type and tiles sorted by Hilbert curve index.
+
+## Durable PMTiles Publish
+
+`operation: "publish"` writes a durable PMTiles artifact for browser-based MapLibre/PMTiles
+consumption. See [PMTiles Publishing](pmtiles-publishing.md) for storage configuration,
+URL strategies (`SignedUrl` / `PublicUrl` / `RangeProxy`), and required object-store CORS
+headers.
+
+### Request
+
+```bash
+curl -X POST https://<host>/api/v1/admin/tile-operations/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "operation": "publish",
+    "serviceId": "world",
+    "layerId": 42,
+    "minZoom": 0,
+    "maxZoom": 12
+  }'
+```
+
+Completed job status returns a `publishedArtifact` descriptor with provider, bucket,
+object key, content type, size, URL strategy, browser-usable access URL, and MapLibre
+source hints (bounds, minzoom, maxzoom).
 

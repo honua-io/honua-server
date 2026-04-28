@@ -164,6 +164,35 @@ Enable ArcGIS parity import checks (source snapshot vs imported table parity):
 export HONUA_TEST_ESRI_PARITY="1"
 ```
 
+Enable the cross-server consume suite — `Honua.TestKit.GeoServerFixture`
+plus `Honua.TestKit.MapServerFixture` (`camptocamp/mapserver:8.0`) drive
+WMS 1.3, WFS 2.0, and WMTS 1.0 reads from Honua-as-client against
+containerized GeoServer and MapServer reference sources. The suite routes
+reference-source reads through Honua's Test-environment consume probe endpoint
+instead of fetching the source servers directly from test code:
+
+```bash
+export HONUA_TEST_CROSS_SERVER_CONSUME="1"
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+  --filter "FullyQualifiedName~CrossServerConsume"
+```
+
+The probe endpoint (`GET /__test/cross-server-consume/proxy?url=<sourceUrl>`)
+is mounted only when `ASPNETCORE_ENVIRONMENT=Test`. It accepts loopback
+`http`/`https` URLs without embedded credentials, forwards the request,
+and maps upstream failures to `502 Bad Gateway`; requests exceeding the
+two-minute timeout return `504 Gateway Timeout`. Invalid URLs return
+`400 Bad Request`.
+
+The nightly `cross-server-consume-nightly.yml` workflow runs the same
+suite, refreshes [`docs/compatibility/cross-server-consume-gap-report.md`](../compatibility/cross-server-consume-gap-report.md)
+from the TRX, and uploads both the TRX and gap report as workflow
+artifacts. The auto-commit step is best-effort — if the push is blocked
+(branch protection, missing token), the workflow logs a warning instead
+of failing. Known interop quirks are recorded as `[Skip = "gap: ..."]`
+on the test method so they surface in the gap report rather than
+failing the run.
+
 #### Shared YAML Seed
 
 Apply shared YAML seed data to a schema:
@@ -246,12 +275,32 @@ await postgres.CreateTestData(schema)
 
 ## Custom Attributes
 
-### Test Categories
+### Test Categories And Tiers
+
+Each attribute emits both a `Category` trait and a `Tier` trait. The tier
+maps to the CI schedule defined in ADR-0037 (`docs/contributor/adr/0037-unified-ci-test-tier-strategy.md`).
+
+| Attribute | Category | Tier | When it runs |
+|-----------|----------|------|--------------|
+| `[UnitTest]` | `Unit` | `Fast` | Every PR (no DB, no HTTP, no Testcontainers). |
+| `[IntegrationTest]` | `Integration` | `Integration` | Targeted shards on PRs; full matrix on merge-to-trunk. PR shard step composes `(matrix.filter)&Tier!=Slow` so a Slow-tagged sibling in the same shard namespace skips. |
+| `[EmulatorTest]` | `Integration,Emulator` | `Slow` | `nightly-slow-tier.yml` — runs `Tier=Slow&Category=Emulator` against LocalStack S3 + Azurite + Postgres. |
+| `[ScaleTest]` | `Integration,Scale` | `Slow` | Currently **not** scheduled. Multi-node compose fixtures are tracked as a separate workflow; the trait is in place for the future workflow to opt in. |
+| `[ExternalServiceTest]` | `Integration,External` | `Slow` | Currently **not** scheduled. External service credentials (e.g. Esri Geoportal) are tracked as a separate workflow. |
+| `[CloudTest]` | `Integration,Cloud` | `Slow` | Currently **not** scheduled. Real-cloud credentials are tracked as a separate workflow. |
+| `[FlakyTest("reason")]` | (additive) | (inherits sibling tier) | Always runs on its tier's normal schedule; surfaced separately by `flaky-detection.yml`. |
 
 ```csharp
-[UnitTest]  // Fast, isolated tests
-[IntegrationTest]  // Uses real dependencies
+[UnitTest]              // Fast, isolated tests
+[IntegrationTest]       // Uses real dependencies
+[ScaleTest]             // Multi-node scale, runs nightly
+[ExternalServiceTest]   // External services, runs nightly
+[EmulatorTest]          // Emulator-backed integration, runs nightly
+[CloudTest]             // Deployed-environment validation, runs nightly
+[FlakyTest("reason — tracked in #N")]  // Quarantine reporting, never auto-skips
 ```
+
+Filter on tier directly: `dotnet test --filter "Tier=Fast"` (or `Integration` / `Slow`).
 
 ### Protocol Tracking
 

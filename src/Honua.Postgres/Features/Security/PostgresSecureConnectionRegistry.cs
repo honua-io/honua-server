@@ -119,10 +119,12 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         const string sql = """
             INSERT INTO honua.data_connections (
                 connection_id, name, description, host, port, database_name, username,
+                provider_name,
                 ssl_required, ssl_mode, connection_string_encrypted, encryption_key_version,
                 secret_ref, secret_type, created_by, is_active
             ) VALUES (
                 @connection_id, @name, @description, @host, @port, @database_name, @username,
+                @provider_name,
                 @ssl_required, @ssl_mode, @connection_string_encrypted, @encryption_key_version,
                 @secret_ref, @secret_type, @created_by, @is_active
             )
@@ -158,7 +160,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
     {
         const string sql = """
             SELECT connection_id, name, description, host, port, database_name, username,
-                   ssl_required, ssl_mode, connection_string_encrypted, encryption_key_version,
+                   provider_name, ssl_required, ssl_mode, connection_string_encrypted, encryption_key_version,
                    secret_ref, secret_type, created_at, updated_at, created_by, is_active,
                    last_health_check, health_status
             FROM honua.data_connections
@@ -196,7 +198,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
         const string sql = """
             SELECT connection_id, name, description, host, port, database_name, username,
-                   ssl_required, ssl_mode, connection_string_encrypted, encryption_key_version,
+                   provider_name, ssl_required, ssl_mode, connection_string_encrypted, encryption_key_version,
                    secret_ref, secret_type, created_at, updated_at, created_by, is_active,
                    last_health_check, health_status
             FROM honua.data_connections
@@ -231,7 +233,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
     {
         const string sql = """
             SELECT connection_id, name, description, host, port, database_name, username,
-                   ssl_required, ssl_mode, connection_string_encrypted, encryption_key_version,
+                   provider_name, ssl_required, ssl_mode, connection_string_encrypted, encryption_key_version,
                    secret_ref, secret_type, created_at, updated_at, created_by, is_active,
                    last_health_check, health_status
             FROM honua.data_connections
@@ -277,6 +279,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
                 port = @port,
                 database_name = @database_name,
                 username = @username,
+                provider_name = @provider_name,
                 ssl_required = @ssl_required,
                 ssl_mode = @ssl_mode,
                 connection_string_encrypted = @connection_string_encrypted,
@@ -399,6 +402,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         command.Parameters.Add(new NpgsqlParameter("@port", connection.Port));
         command.Parameters.Add(new NpgsqlParameter("@database_name", connection.DatabaseName));
         command.Parameters.Add(new NpgsqlParameter("@username", connection.Username));
+        command.Parameters.Add(new NpgsqlParameter("@provider_name", connection.NormalizedProvider));
         command.Parameters.Add(new NpgsqlParameter("@ssl_required", connection.SslRequired));
         command.Parameters.Add(new NpgsqlParameter("@ssl_mode", ToLowerString(connection.SslMode)));
         command.Parameters.Add(new NpgsqlParameter("@connection_string_encrypted", (object?)connection.ConnectionStringEncrypted ?? DBNull.Value));
@@ -420,18 +424,19 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
             Port = reader.GetInt32(4),                       // port
             DatabaseName = reader.GetString(5),              // database_name
             Username = reader.GetString(6),                  // username
-            SslRequired = reader.GetBoolean(7),              // ssl_required
-            SslMode = ParseSslMode(reader.GetString(8)), // ssl_mode
-            ConnectionStringEncrypted = reader.IsDBNull(9) ? null : (byte[])reader[9], // connection_string_encrypted
-            EncryptionKeyVersion = reader.GetInt32(10),      // encryption_key_version
-            SecretRef = reader.IsDBNull(11) ? null : reader.GetString(11), // secret_ref
-            SecretType = reader.IsDBNull(12) ? null : reader.GetString(12), // secret_type
-            CreatedAt = reader.GetDateTime(13),              // created_at
-            UpdatedAt = reader.GetDateTime(14),              // updated_at
-            CreatedBy = reader.GetString(15),                // created_by
-            IsActive = reader.GetBoolean(16),                // is_active
-            LastHealthCheck = reader.IsDBNull(17) ? null : reader.GetDateTime(17), // last_health_check
-            HealthStatus = Enum.Parse<ConnectionHealthStatus>(reader.GetString(18), true) // health_status
+            Provider = reader.GetString(7),                  // provider_name
+            SslRequired = reader.GetBoolean(8),              // ssl_required
+            SslMode = ParseSslMode(reader.GetString(9)), // ssl_mode
+            ConnectionStringEncrypted = reader.IsDBNull(10) ? null : (byte[])reader[10], // connection_string_encrypted
+            EncryptionKeyVersion = reader.GetInt32(11),      // encryption_key_version
+            SecretRef = reader.IsDBNull(12) ? null : reader.GetString(12), // secret_ref
+            SecretType = reader.IsDBNull(13) ? null : reader.GetString(13), // secret_type
+            CreatedAt = reader.GetDateTime(14),              // created_at
+            UpdatedAt = reader.GetDateTime(15),              // updated_at
+            CreatedBy = reader.GetString(16),                // created_by
+            IsActive = reader.GetBoolean(17),                // is_active
+            LastHealthCheck = reader.IsDBNull(18) ? null : reader.GetDateTime(18), // last_health_check
+            HealthStatus = Enum.Parse<ConnectionHealthStatus>(reader.GetString(19), true) // health_status
         };
     }
 

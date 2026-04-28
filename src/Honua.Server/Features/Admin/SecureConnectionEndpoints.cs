@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -219,6 +220,7 @@ internal static partial class SecureConnectionEndpoints
                 Port = c.Port,
                 DatabaseName = c.DatabaseName,
                 Username = c.Username,
+                Provider = c.NormalizedProvider,
                 SslRequired = c.SslRequired,
                 SslMode = c.SslMode.ToString(),
                 StorageType = GetStorageClass(c),
@@ -271,6 +273,7 @@ internal static partial class SecureConnectionEndpoints
                 Port = connection.Port,
                 DatabaseName = connection.DatabaseName,
                 Username = connection.Username,
+                Provider = connection.NormalizedProvider,
                 SslRequired = connection.SslRequired,
                 SslMode = connection.SslMode.ToString(),
                 StorageType = GetStorageClass(connection),
@@ -391,6 +394,8 @@ internal static partial class SecureConnectionEndpoints
                     parsedSslMode);
             }
 
+            connection.Provider = DataProviderNames.Normalize(request.Provider);
+
             // Create the connection
             var createdConnection = await registry.CreateConnectionAsync(connection, context.RequestAborted);
 
@@ -403,6 +408,7 @@ internal static partial class SecureConnectionEndpoints
                 Port = createdConnection.Port,
                 DatabaseName = createdConnection.DatabaseName,
                 Username = createdConnection.Username,
+                Provider = createdConnection.NormalizedProvider,
                 SslRequired = createdConnection.SslRequired,
                 SslMode = createdConnection.SslMode.ToString(),
                 StorageType = GetStorageClass(createdConnection),
@@ -612,6 +618,7 @@ internal static partial class SecureConnectionEndpoints
                 Port = port,
                 DatabaseName = databaseName,
                 Username = username,
+                Provider = existing.Provider,
                 SslRequired = sslRequired,
                 SslMode = sslMode,
                 ConnectionStringEncrypted = encryptedConnection,
@@ -637,6 +644,7 @@ internal static partial class SecureConnectionEndpoints
                 Port = saved.Port,
                 DatabaseName = saved.DatabaseName,
                 Username = saved.Username,
+                Provider = saved.NormalizedProvider,
                 SslRequired = saved.SslRequired,
                 SslMode = saved.SslMode.ToString(),
                 StorageType = GetStorageClass(saved),

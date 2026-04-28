@@ -1038,6 +1038,18 @@ internal static class MapLibreToGeoServicesConverter
                     ? widthValue
                     : (double?)StyleDefaults.DefaultOutlineWidth;
 
+                // circle-stroke-opacity is a first-class MapLibre paint property and the
+                // SLD import path emits it separately from circle-stroke-color (so the
+                // alpha is not double-applied at render time). Mirror the polygon outline
+                // branch below by folding the parsed opacity into the outline color before
+                // GeoServices serialization — otherwise a regenerated drawingInfo loses
+                // the SLD stroke-opacity round-trip.
+                if (paint.TryGetProperty("circle-stroke-opacity", out var opacityElement)
+                    && StyleParsingHelpers.TryGetDouble(opacityElement, out var opacity))
+                {
+                    color = color.ApplyOpacity(opacity);
+                }
+
                 return new OutlineStyle(color, width);
             }
 

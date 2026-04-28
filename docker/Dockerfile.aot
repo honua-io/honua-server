@@ -25,7 +25,7 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 # Copy solution and project files first for better layer caching
-COPY Honua.sln Directory.Build.props .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/

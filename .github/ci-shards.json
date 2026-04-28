@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "_comment": "Single source of truth for the Honua.Server.Tests shard matrix. Owned by ADR-0037. Each entry under `shards` carries both routing fields (`paths`) and matrix-runtime fields (`shard_name`, `artifact_suffix`, `log_name`, `timeout_minutes`, `max_cpu_count`, `upload_operator_eval_report`, `upload_odata_evidence`, `filter`). The `targeted-shards` job in ci.yml reads this file, runs scripts/ci/honua-server-targeted-tests.sh to pick the active shards for the diff, and emits a filtered `matrix_include` that ci.yml::server-tests consumes via `strategy.matrix.include: fromJson(...)`. `infrastructure_paths` short-circuits to run_all on first match. `unmapped_source_run_all_prefixes` forces run_all when a changed file under one of those prefixes is not matched by any shard's `paths` — this prevents new feature directories from silently routing to the Core shard whose filter excludes Honua.Server.Tests.Features.*. `default_shards_when_no_match` is only consulted when no source code under those prefixes was touched (e.g. doc-only diffs).",
+  "infrastructure_paths": [
+    "tests/dotnet/Honua.TestKit/",
+    "src/Honua.Core/",
+    "src/Honua.Postgres/",
+    "src/Honua.ServiceDefaults/",
+    "src/Honua.Server/Features/Infrastructure/",
+    "Honua.sln",
+    ".github/",
+    "scripts/ci/"
+  ],
+  "unmapped_source_run_all_prefixes": [
+    "src/Honua.Server/",
+    "src/Honua.DuckDB/",
+    "tests/dotnet/Honua.Server.Tests/"
+  ],
+  "default_shards_when_no_match": ["Core"],
+  "shards": [
+    {
+      "name": "Core",
+      "shard_name": "Core",
+      "artifact_suffix": "core",
+      "log_name": "server-tests-core",
+      "timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests",
+      "paths": [
+        "tests/dotnet/Honua.Server.Tests/Helpers/",
+        "tests/dotnet/Honua.Server.Tests/TestData/",
+        "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs",
+        "tests/dotnet/Honua.Server.Tests/ApiExplorerEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/AttachmentEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs",
+        "tests/dotnet/Honua.Server.Tests/DatabaseMigrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/FeatureServerEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/HealthEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/HealthEndpointsTests.cs",
+        "tests/dotnet/Honua.Server.Tests/LimitsEnforcementTests.cs",
+        "tests/dotnet/Honua.Server.Tests/OgcFeaturesEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/PostgresAttachmentStoreTests.cs",
+        "tests/dotnet/Honua.Server.Tests/PostgresConnectionTests.cs",
+        "tests/dotnet/Honua.Server.Tests/PostgresFeatureStoreGeographyTests.cs",
+        "tests/dotnet/Honua.Server.Tests/PostgresFeatureStoreTests.cs",
+        "tests/dotnet/Honua.Server.Tests/PostgresLayerCatalogTests.cs",
+        "tests/dotnet/Honua.Server.Tests/QueryRelatedRecordsEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/SpatialCorrectnessTests.cs",
+        "tests/dotnet/Honua.Server.Tests/SpatialGeometryValidationTests.cs"
+      ]
+    },
+    {
+      "name": "Admin & Infrastructure",
+      "shard_name": "Admin & Infrastructure",
+      "artifact_suffix": "admin-infra",
+      "log_name": "server-tests-admin-infra",
+      "timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Admin.|FullyQualifiedName~Honua.Server.Tests.Infrastructure.|FullyQualifiedName~Honua.Server.Tests.AdminEndpointTests",
+      "paths": [
+        "src/Honua.Server/Features/Admin/",
+        "tests/dotnet/Honua.Server.Tests/Admin/",
+        "tests/dotnet/Honua.Server.Tests/AdminEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Infrastructure/",
+        "tests/dotnet/Honua.Server.Tests/Features/Admin/",
+        "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/"
+      ]
+    },
+    {
+      "name": "Cloud & Contract",
+      "shard_name": "Cloud & Contract",
+      "artifact_suffix": "cloud-contract",
+      "log_name": "server-tests-cloud-contract",
+      "timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Cog|FullyQualifiedName~Honua.Server.Tests.Contract.",
+      "paths": [
+        "src/Honua.Server/Features/Protocols/Cog/",
+        "tests/dotnet/Honua.Server.Tests/Cloud/",
+        "tests/dotnet/Honua.Server.Tests/Contract/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/"
+      ]
+    },
+    {
+      "name": "Import",
+      "shard_name": "Import",
+      "artifact_suffix": "import",
+      "log_name": "server-tests-import",
+      "timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.",
+      "paths": [
+        "src/Honua.Server/Features/Import/",
+        "tests/dotnet/Honua.Server.Tests/Import/"
+      ]
+    },
+    {
+      "name": "Performance",
+      "shard_name": "Performance",
+      "artifact_suffix": "performance",
+      "log_name": "server-tests-performance",
+      "timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Performance.",
+      "paths": [
+        "tests/dotnet/Honua.Server.Tests/Performance/"
+      ]
+    },
+    {
+      "name": "Comprehensive",
+      "shard_name": "Comprehensive",
+      "artifact_suffix": "comprehensive",
+      "log_name": "server-tests-comprehensive",
+      "timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Comprehensive.",
+      "paths": [
+        "tests/dotnet/Honua.Server.Tests/Comprehensive/"
+      ]
+    },
+    {
+      "name": "Feature APIs",
+      "shard_name": "Feature APIs",
+      "artifact_suffix": "feature-apis",
+      "log_name": "server-tests-feature-apis",
+      "timeout_minutes": 60,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeoServicesSpatialFilterBuilderTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Features|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac|FullyQualifiedName~Honua.Server.Tests.Features.API",
+      "paths": [
+        "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/",
+        "src/Honua.Server/Features/Protocols/Ogc/Api/Features/",
+        "src/Honua.Server/Features/Protocols/Ogc/Classic/Wfs20/",
+        "src/Honua.Server/Features/Protocols/Stac/",
+        "tests/dotnet/Honua.Server.Tests/Features/API/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Features/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Stac/"
+      ]
+    },
+    {
+      "name": "OData",
+      "shard_name": "OData",
+      "artifact_suffix": "odata",
+      "log_name": "server-tests-odata",
+      "timeout_minutes": 35,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": true,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData",
+      "paths": [
+        "src/Honua.Server/Features/Protocols/OData/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/"
+      ]
+    },
+    {
+      "name": "Map and Imagery",
+      "shard_name": "Map and Imagery",
+      "artifact_suffix": "map-imagery",
+      "log_name": "server-tests-map-imagery",
+      "timeout_minutes": 45,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Tiles",
+      "paths": [
+        "src/Honua.Server/Features/Protocols/Ogc/Api/Maps/",
+        "src/Honua.Server/Features/Protocols/Ogc/Api/Tiles/",
+        "src/Honua.Server/Features/Protocols/Ogc/Classic/Wms/",
+        "src/Honua.Server/Features/Protocols/Ogc/Classic/Wmts/",
+        "src/Honua.Server/Features/Protocols/GeoServices/MapServer/",
+        "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/",
+        "src/Honua.Server/Features/Protocols/GeoServices/GeometryService/",
+        "src/Honua.Server/Features/Protocols/Tiles/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Tiles/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wms/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wmts/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Tiles/"
+      ]
+    },
+    {
+      "name": "Infra and Security",
+      "shard_name": "Infra and Security",
+      "artifact_suffix": "infra-security",
+      "log_name": "server-tests-infra-security",
+      "timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling",
+      "paths": [
+        "src/Honua.Server/Features/Caching/",
+        "src/Honua.Server/Features/FileStorage/",
+        "src/Honua.Server/Features/Authorization/",
+        "src/Honua.Server/Features/Security/",
+        "src/Honua.Server/Features/Styling/",
+        "src/Honua.Server/Features/Protocols/GeoServices/Catalog/",
+        "tests/dotnet/Honua.Server.Tests/Features/Authorization/",
+        "tests/dotnet/Honua.Server.Tests/Features/Caching/",
+        "tests/dotnet/Honua.Server.Tests/Features/FileStorage/",
+        "tests/dotnet/Honua.Server.Tests/Features/Security/",
+        "tests/dotnet/Honua.Server.Tests/Features/Styling/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/Catalog/"
+      ]
+    },
+    {
+      "name": "Operator Eval Harness",
+      "shard_name": "Operator Eval Harness",
+      "artifact_suffix": "operator-eval",
+      "log_name": "server-tests-operator-eval",
+      "timeout_minutes": 20,
+      "max_cpu_count": "1",
+      "upload_operator_eval_report": true,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer",
+      "paths": [
+        "src/Honua.Server/Features/Geoprocessing/",
+        "src/Honua.Server/Features/Protocols/Grpc/",
+        "src/Honua.Server/Features/Protocols/Ogc/Api/Processes/",
+        "src/Honua.Server/Features/Protocols/Mcp/",
+        "src/Honua.Server/Features/Protocols/GeoServices/GPServer/",
+        "tests/dotnet/Honua.Server.Tests/Features/Eval/",
+        "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Processes/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/"
+      ]
+    }
+  ]
+}

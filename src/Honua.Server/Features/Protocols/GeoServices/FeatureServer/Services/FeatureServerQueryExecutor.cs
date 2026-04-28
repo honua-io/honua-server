@@ -8,6 +8,7 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Npgsql;
@@ -23,15 +24,18 @@ internal sealed class FeatureServerQueryExecutor
     private readonly IFeatureReader _featureReader;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
     private readonly StreamingQueryFormatter _streamingFormatter;
+    private readonly FeatureProviderQueryRouter? _providerQueryRouter;
 
     public FeatureServerQueryExecutor(
         IFeatureReader featureReader,
         IStreamingFeatureStore streamingFeatureStore,
-        StreamingQueryFormatter streamingFormatter)
+        StreamingQueryFormatter streamingFormatter,
+        FeatureProviderQueryRouter? providerQueryRouter = null)
     {
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         _streamingFeatureStore = streamingFeatureStore ?? throw new ArgumentNullException(nameof(streamingFeatureStore));
         _streamingFormatter = streamingFormatter ?? throw new ArgumentNullException(nameof(streamingFormatter));
+        _providerQueryRouter = providerQueryRouter;
     }
 
     public bool SupportsGeobufOutput => _featureReader is IGeobufFeatureStore;
@@ -40,8 +44,30 @@ internal sealed class FeatureServerQueryExecutor
     public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
         => _featureReader.CountAsync(layerId, query, cancellationToken);
 
+    public async Task<long> CountAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Count, cancellationToken)
+            .ConfigureAwait(false);
+        return await reader.CountAsync(layer.Id, query, cancellationToken).ConfigureAwait(false);
+    }
+
     public Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
         => _featureReader.GetExtentAsync(layerId, query, cancellationToken);
+
+    public async Task<FeatureExtent?> GetExtentAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Extent, cancellationToken)
+            .ConfigureAwait(false);
+        return await reader.GetExtentAsync(layer.Id, query, cancellationToken).ConfigureAwait(false);
+    }
 
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId,
@@ -49,14 +75,43 @@ internal sealed class FeatureServerQueryExecutor
         CancellationToken cancellationToken)
         => _featureReader.QueryStatisticsAsync(layerId, query, cancellationToken);
 
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Statistics, cancellationToken)
+            .ConfigureAwait(false);
+        return await reader.QueryStatisticsAsync(layer.Id, query, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<QueryResult<Feature>> QueryWithValidationAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+        => await QueryWithValidationAsync(_featureReader, layerId, query, cancellationToken).ConfigureAwait(false);
+
+    public async Task<QueryResult<Feature>> QueryWithValidationAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        return await QueryWithValidationAsync(reader, layer.Id, query, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<QueryResult<Feature>> QueryWithValidationAsync(
+        IFeatureReader reader,
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
         try
         {
-            if (ShouldUsePagedQuery(query) && _featureReader is IPagedFeatureReader pagedFeatureReader)
+            if (ShouldUsePagedQuery(query) && reader is IPagedFeatureReader pagedFeatureReader)
             {
                 var pagedResult = await pagedFeatureReader.QueryPageAsync(layerId, query, cancellationToken);
                 return QueryResult<Feature>.Create(
@@ -65,7 +120,7 @@ internal sealed class FeatureServerQueryExecutor
                     hasMoreResults: pagedResult.HasMoreResults);
             }
 
-            return await _featureReader.QueryAsync(layerId, query, cancellationToken);
+            return await reader.QueryAsync(layerId, query, cancellationToken);
         }
         catch (ArgumentException ex)
         {
@@ -92,10 +147,47 @@ internal sealed class FeatureServerQueryExecutor
         bool returnGeometry,
         int? outputSrid,
         CancellationToken cancellationToken)
+        => await QueryRawGeoServicesPointJsonWithValidationAsync(
+            _featureReader,
+            layerId,
+            query,
+            layer,
+            returnGeometry,
+            outputSrid,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<(ReadOnlyMemory<byte> Payload, int Count)> QueryRawGeoServicesPointJsonWithValidationAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        FeatureQuery query,
+        bool returnGeometry,
+        int? outputSrid,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        return await QueryRawGeoServicesPointJsonWithValidationAsync(
+            reader,
+            layer.Id,
+            query,
+            layer,
+            returnGeometry,
+            outputSrid,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<(ReadOnlyMemory<byte> Payload, int Count)> QueryRawGeoServicesPointJsonWithValidationAsync(
+        IFeatureReader reader,
+        int layerId,
+        FeatureQuery query,
+        LayerDefinition layer,
+        bool returnGeometry,
+        int? outputSrid,
+        CancellationToken cancellationToken)
     {
         try
         {
-            if (_featureReader is not IPagedRawGeoServicesFeatureStore rawGeoServicesFeatureStore)
+            if (reader is not IPagedRawGeoServicesFeatureStore rawGeoServicesFeatureStore)
             {
                 throw new InvalidOperationException("Raw GeoServices output is not supported by the configured feature store.");
             }
@@ -280,10 +372,32 @@ internal sealed class FeatureServerQueryExecutor
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
+        => await QueryFlatGeobufWithValidationAsync(
+            _featureReader,
+            layerId,
+            query,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<byte[]?> QueryFlatGeobufWithValidationAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        return await QueryFlatGeobufWithValidationAsync(reader, layer.Id, query, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<byte[]?> QueryFlatGeobufWithValidationAsync(
+        IFeatureReader reader,
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
     {
         try
         {
-            return await _featureReader.QueryFlatGeobufAsync(layerId, query, cancellationToken);
+            return await reader.QueryFlatGeobufAsync(layerId, query, cancellationToken);
         }
         catch (ArgumentException ex)
         {
@@ -307,10 +421,32 @@ internal sealed class FeatureServerQueryExecutor
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
+        => await QueryGeobufWithValidationAsync(
+            _featureReader,
+            layerId,
+            query,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<byte[]?> QueryGeobufWithValidationAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        return await QueryGeobufWithValidationAsync(reader, layer.Id, query, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<byte[]?> QueryGeobufWithValidationAsync(
+        IFeatureReader reader,
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
     {
         try
         {
-            if (_featureReader is not IGeobufFeatureStore geobufFeatureStore)
+            if (reader is not IGeobufFeatureStore geobufFeatureStore)
             {
                 throw new InvalidOperationException("Geobuf output is not supported by the configured feature store.");
             }
@@ -395,7 +531,104 @@ internal sealed class FeatureServerQueryExecutor
         await context.Response.CompleteAsync();
     }
 
+    public async Task StreamQueryAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        FeatureQuery query,
+        QueryParameters queryParams,
+        int? outputSrid,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        if (reader is not IStreamingFeatureStore streamingFeatureStore)
+        {
+            throw new InvalidOperationException("Streaming feature output is not supported by the configured feature store.");
+        }
+
+        await StreamQueryAsync(
+            streamingFeatureStore,
+            layer.Id,
+            query,
+            layer,
+            queryParams,
+            outputSrid,
+            context,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task StreamQueryAsync(
+        IStreamingFeatureStore streamingFeatureStore,
+        int layerId,
+        FeatureQuery query,
+        LayerDefinition layer,
+        QueryParameters queryParams,
+        int? outputSrid,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var preparedStream = await PrepareFeatureStreamAsync(streamingFeatureStore, layerId, query, cancellationToken);
+
+        string[]? outFields = string.IsNullOrEmpty(queryParams.OutFields)
+            ? null
+            : [.. queryParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim())];
+
+        var format = queryParams.F ?? "json";
+        var contentType = format.ToLowerInvariant() switch
+        {
+            "geojson" => "application/geo+json",
+            _ => "application/json"
+        };
+
+        context.Response.ContentType = contentType;
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        EnableChunkedEncodingIfHttp1(context);
+
+        if (string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase))
+        {
+            await _streamingFormatter.StreamAsGeoJsonAsync(
+                preparedStream.Features,
+                layer,
+                queryParams.ReturnGeometry,
+                queryParams.ReturnZ,
+                queryParams.ReturnM,
+                queryParams.GeometryPrecision,
+                queryParams.MaxAllowableOffset,
+                outFields,
+                preparedStream.HasMoreResults,
+                context.Response.BodyWriter,
+                cancellationToken);
+        }
+        else
+        {
+            await _streamingFormatter.StreamAsGeoServicesJsonAsync(
+                preparedStream.Features,
+                layer,
+                queryParams.ReturnGeometry,
+                outputSrid,
+                queryParams.ReturnZ,
+                queryParams.ReturnM,
+                queryParams.GeometryPrecision,
+                queryParams.MaxAllowableOffset,
+                outFields,
+                preparedStream.HasMoreResults,
+                context.Response.BodyWriter,
+                cancellationToken);
+        }
+
+        await context.Response.CompleteAsync();
+    }
+
     private async Task<PreparedFeatureStream> PrepareFeatureStreamAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+        => await PrepareFeatureStreamAsync(_streamingFeatureStore, layerId, query, cancellationToken)
+            .ConfigureAwait(false);
+
+    private static async Task<PreparedFeatureStream> PrepareFeatureStreamAsync(
+        IStreamingFeatureStore streamingFeatureStore,
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -403,7 +636,7 @@ internal sealed class FeatureServerQueryExecutor
         if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
         {
             return new PreparedFeatureStream(
-                _streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken),
+                streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken),
                 HasMoreResults: false);
         }
 
@@ -412,7 +645,7 @@ internal sealed class FeatureServerQueryExecutor
         var probeQuery = query with { Limit = probeLimit };
         var bufferedFeatures = new List<Feature>(probeLimit);
 
-        await foreach (var feature in _streamingFeatureStore.StreamFeaturesAsync(layerId, probeQuery, cancellationToken)
+        await foreach (var feature in streamingFeatureStore.StreamFeaturesAsync(layerId, probeQuery, cancellationToken)
                            .WithCancellation(cancellationToken))
         {
             bufferedFeatures.Add(feature);
@@ -450,6 +683,40 @@ internal sealed class FeatureServerQueryExecutor
         string objectIdFieldName,
         HttpContext context,
         CancellationToken cancellationToken)
+        => await StreamIdsAsync(
+            _streamingFeatureStore,
+            layerId,
+            query,
+            objectIdFieldName,
+            context,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task StreamIdsAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        FeatureQuery query,
+        string objectIdFieldName,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        if (reader is not IStreamingFeatureStore streamingFeatureStore)
+        {
+            throw new InvalidOperationException("Streaming feature output is not supported by the configured feature store.");
+        }
+
+        await StreamIdsAsync(streamingFeatureStore, layer.Id, query, objectIdFieldName, context, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task StreamIdsAsync(
+        IStreamingFeatureStore streamingFeatureStore,
+        int layerId,
+        FeatureQuery query,
+        string objectIdFieldName,
+        HttpContext context,
+        CancellationToken cancellationToken)
     {
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = StatusCodes.Status200OK;
@@ -464,7 +731,7 @@ internal sealed class FeatureServerQueryExecutor
         writer.WriteString("objectIdFieldName", objectIdFieldName);
         writer.WriteStartArray("objectIds");
 
-        var features = _streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
+        var features = streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
         var idsSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
@@ -481,6 +748,50 @@ internal sealed class FeatureServerQueryExecutor
 
         await writer.FlushAsync(cancellationToken);
         await context.Response.CompleteAsync();
+    }
+
+    public async Task<bool> SupportsGeobufOutputAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        return reader is IGeobufFeatureStore;
+    }
+
+    public async Task<bool> SupportsRawGeoServicesPointOutputAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        return reader is IPagedRawGeoServicesFeatureStore;
+    }
+
+    private async Task<IFeatureReader> ResolveReaderAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        FeatureProviderReadOperation operation,
+        CancellationToken cancellationToken)
+    {
+        if (_providerQueryRouter == null || (layer.StorageMapping == null && !service.ConnectionId.HasValue))
+        {
+            return _featureReader;
+        }
+
+        return await _providerQueryRouter
+            .ResolveReaderAsync(service, layer, operation, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static void EnableChunkedEncodingIfHttp1(HttpContext context)
+    {
+        if (context.Request.Protocol.StartsWith("HTTP/1.", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.Headers.ContentLength = null;
+        }
     }
 
     private static bool ShouldUsePagedQuery(FeatureQuery query)

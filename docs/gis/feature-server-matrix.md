@@ -122,18 +122,18 @@ The analytics routes are mapped unconditionally and reach a PostGIS-backed `ISpa
 | --- | --- | --- | --- |
 | Filtering | `where`, `objectIds` | Implemented | ArcGIS SQL parser; objectIds bypass where. |
 | Spatial filters | `geometry`, `geometryType`, `spatialRel`, `distance`, `units` | Implemented | Distance + KNN supported; geometry supports GeoServices JSON or point/envelope CSV. |
-| Spatial reference | `inSR`, `outSR` | Implemented | GeoJSON output requires EPSG:4326; non-4326 `outSR` is rejected for non-special query modes. GeoParquet output requires EPSG:4326 when the response includes a geometry column; non-4326 `outSR` is rejected unless geometry is absent (`returnGeometry=false`, non-geometry layer, or a special query mode). Both formats reproject coordinates to EPSG:4326 when `outSR` is omitted. |
+| Spatial reference | `inSR`, `outSR` | Implemented | GeoJSON output requires EPSG:4326; non-4326 `outSR` is rejected for non-special query modes. GeoParquet and GeoArrow output require EPSG:4326 when the response includes a geometry column; non-4326 `outSR` is rejected unless geometry is absent (`returnGeometry=false`, non-geometry layer, or a special query mode). All three formats reproject coordinates to EPSG:4326 when `outSR` is omitted. |
 | Pagination | `resultOffset`, `resultRecordCount` | Implemented | Validated against limits. |
 | Fields | `outFields` | Implemented | `*` returns all fields. |
 | Sorting | `orderByFields` | Implemented | Validates against layer fields; supports any field with ASC/DESC. |
-| Output flags | `returnGeometry`, `returnIdsOnly`, `returnCountOnly`, `returnExtentOnly`, `returnZ`, `returnM` | Implemented | Standard query outputs supported. `returnZ` and `returnM` are applied by `json`, `geojson`, and `pbf`. `parquet` applies `returnZ` but always strips M values (GeoParquet 1.1.0 only supports XY/XYZ). `fgb` and `geobuf` write raw geometry and do not filter dimensions. |
+| Output flags | `returnGeometry`, `returnIdsOnly`, `returnCountOnly`, `returnExtentOnly`, `returnZ`, `returnM` | Implemented | Standard query outputs supported. `returnZ` and `returnM` are applied by `json`, `geojson`, and `pbf`. `parquet` applies `returnZ` but always strips M values (GeoParquet 1.1.0 only supports XY/XYZ). `arrow` matches `parquet` (honors `returnZ`, always strips M values; `returnM=true` is rejected). `fgb` and `geobuf` write raw geometry and do not filter dimensions. |
 | Distinct | `returnDistinctValues` | Implemented | In-memory distinct over returned features; works best with explicit `outFields`. |
 | Statistics | `outStatistics`, `groupByFieldsForStatistics` | Implemented | Aggregate queries with COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR. Supports GROUP BY on any layer field. |
-| KNN output | `nearestCount`, `returnDistance` | Partial | `returnDistance` only affects KNN queries. The computed `distance` attribute is included in `json`, `geojson`, and `parquet` output; `pbf`, `fgb`, and `geobuf` build their schema from layer fields only and omit runtime-computed attributes. |
+| KNN output | `nearestCount`, `returnDistance` | Partial | `returnDistance` only affects KNN queries. The computed `distance` attribute is included in `json`, `geojson`, `parquet`, and `arrow` output; `pbf`, `fgb`, and `geobuf` build their schema from layer fields only and omit runtime-computed attributes. |
 | Temporal | `time`, `timeRelation` | Implemented | Uses layer timeInfo or first temporal field. |
-| Output format | `f=json`, `f=geojson`, `f=pbf`, `f=fgb`, `f=geobuf`, `f=parquet` | Implemented | Six output formats supported. Binary formats (`fgb`, `geobuf`, `parquet`) also accept `Accept` header negotiation; `f=` takes precedence. See [Output format details](#output-format-details) below. |
+| Output format | `f=json`, `f=geojson`, `f=pbf`, `f=fgb`, `f=geobuf`, `f=parquet`, `f=arrow` | Implemented | Seven output formats supported. Binary formats (`fgb`, `geobuf`, `parquet`, `arrow`) also accept `Accept` header negotiation; `f=` takes precedence. See [Output format details](#output-format-details) below. |
 | Geometry precision | `geometryPrecision` | Implemented | Rounds coordinates to specified decimal places. |
-| Geometry simplification | `maxAllowableOffset` | Implemented | Simplifies geometry to the given tolerance. Applies to `json`, `geojson`, `pbf`, and `parquet`; `fgb` and `geobuf` do not apply it. |
+| Geometry simplification | `maxAllowableOffset` | Implemented | Simplifies geometry to the given tolerance. Applies to `json`, `geojson`, `pbf`, `parquet`, and `arrow`; `fgb` and `geobuf` do not apply it. |
 
 ### Partial / compatibility-only
 
@@ -168,9 +168,10 @@ All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: appl
 | `fgb` | `application/vnd.flatgeobuf` | FlatGeobuf binary. |
 | `geobuf` | `application/geobuf` | Requires a store with native GeoBuf support. |
 | `parquet` | `application/vnd.apache.parquet` | GeoParquet 1.1.0 with WKB-encoded geometry. M values are always stripped (the spec only supports XY/XYZ); `returnZ` is honored. Non-4326 `outSR` is rejected when the response includes a geometry column (CRS metadata cannot be written correctly; tracked as follow-up); allowed when `returnGeometry=false` or the layer has no geometry. When `outSR` is omitted, coordinates are reprojected to EPSG:4326 (matching GeoJSON behavior). CRS metadata omits the `crs` key for EPSG:4326 (spec-compliant OGC:CRS84 default). `bbox` is omitted because the spec defines it as the bounding box of geometries in the file, not the layer extent. |
+| `arrow` | `application/vnd.apache.arrow.stream` | GeoArrow IPC streaming (Arrow Streaming format). Geometry column is encoded as `geoarrow.wkb` extension type with schema-level `geo` metadata mirroring the GeoParquet 1.1.0 column schema. Non-4326 `outSR` is rejected when the response includes a geometry column (rejected for parity with `parquet`); allowed when `returnGeometry=false` or the layer has no geometry. M values are always stripped (`returnM=true` is rejected); `returnZ` is honored. Temporal field mappings intentionally diverge from `parquet`: dates and timestamps are emitted as `Timestamp(ms, "UTC")` rather than `Date32`, and times as `Time64(μs)` rather than `Time32(ms)`, to match the analytics-client conventions used by PyArrow and DuckDB. Runtime-computed attributes (e.g. KNN `distance`) are included alongside layer fields. |
 
-**Binary format limitations** (`fgb`, `geobuf`, `parquet`):
-- `parquet` applies `geometryPrecision`, `maxAllowableOffset`, and `returnZ` before writing WKB. M values are always stripped (GeoParquet 1.1.0 only supports XY/XYZ). `fgb` and `geobuf` still write raw geometry and ignore those parameters.
+**Binary format limitations** (`fgb`, `geobuf`, `parquet`, `arrow`):
+- `parquet` and `arrow` apply `geometryPrecision`, `maxAllowableOffset`, and `returnZ` before writing WKB; M values are always stripped. `fgb` and `geobuf` still write raw geometry and ignore those parameters.
 - `exceededTransferLimit` is not conveyed. Clients should compare the returned feature count against `maxRecordCount` to detect truncation.
 
 ## ApplyEdits parameter coverage (layer `/applyEdits`)
@@ -244,7 +245,7 @@ All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: appl
 | `spatialReference` | Implemented | From service definition. |
 | `initialExtent` / `fullExtent` | Implemented | From service effective extent. |
 | `maxRecordCount` | Implemented | From query limits. |
-| `supportedQueryFormats` | Implemented | Normalized to uppercase and augmented with runtime-supported binary formats (`PBF`, `FGB`, `PARQUET`, and `GEOBUF` when the backing store exposes native GeoBuf output). |
+| `supportedQueryFormats` | Implemented | Normalized to uppercase and augmented with runtime-supported binary formats (`PBF`, `FGB`, `PARQUET`, `ARROW`, and `GEOBUF` when the backing store exposes native GeoBuf output). |
 | `supportsAdvancedQueries` | Implemented | From service definition. |
 | `supportsStatistics` | Implemented | Always true. |
 | `objectIdField` | Implemented | Resolved from layer primary keys or defaults to `objectid`. |
@@ -276,7 +277,7 @@ All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: appl
 | `templates` | Implemented | Empty array (no feature templates configured). |
 | `timeInfo` | Implemented | Start/end time fields, time extent, track ID. |
 | `maxRecordCount` | Implemented | From query limits. |
-| `supportedQueryFormats` | Implemented | Normalized format list plus runtime-supported binary formats (`PBF`, `FGB`, `PARQUET`, and conditional `GEOBUF` when the backing store exposes native GeoBuf output). |
+| `supportedQueryFormats` | Implemented | Normalized format list plus runtime-supported binary formats (`PBF`, `FGB`, `PARQUET`, `ARROW`, and conditional `GEOBUF` when the backing store exposes native GeoBuf output). |
 
 ## Implementation evidence
 

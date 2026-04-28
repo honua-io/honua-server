@@ -20,6 +20,7 @@ namespace Honua.DuckDB.Features.FeatureStore;
 /// query builder produces SQL, data access executes it, cache manager provides metadata.
 /// </remarks>
 internal sealed class DuckDBFeatureStore :
+    IFeatureDataProvider,
     IFeatureReader,
     IGeoJsonFeatureStore,
     IStreamingFeatureStore,
@@ -38,6 +39,18 @@ internal sealed class DuckDBFeatureStore :
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
     }
+
+    /// <inheritdoc />
+    public string ProviderName => DataProviderNames.DuckDb;
+
+    /// <inheritdoc />
+    public FeatureProviderCapabilities Capabilities => FeatureProviderCapabilities.ReadOnlyAnalytical;
+
+    /// <inheritdoc />
+    public IFeatureReader Reader => this;
+
+    /// <inheritdoc />
+    public IFeatureWriter? Writer => null;
 
     #region IFeatureReader
 

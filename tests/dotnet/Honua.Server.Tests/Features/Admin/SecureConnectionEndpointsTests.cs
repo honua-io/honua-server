@@ -112,6 +112,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             Port = 5432,
             DatabaseName = "testdb",
             Username = "testuser",
+            Provider = "PostgreSQL",
             Password = "testpassword123",
             SslRequired = true,
             SslMode = "Require"
@@ -134,6 +135,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.NotNull(apiResponse.Data);
         Assert.Equal(request.Name, apiResponse.Data.Name);
         Assert.Equal(request.Host, apiResponse.Data.Host);
+        Assert.Equal("postgresql", apiResponse.Data.Provider);
         Assert.Equal("managed", apiResponse.Data.StorageType);
 
         // Verify location header

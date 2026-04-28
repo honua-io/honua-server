@@ -15,6 +15,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Architecture Diagrams](ARCHITECTURE_DIAGRAMS.md) — visual system diagrams
 - [ADRs](adr/README.md) — architectural decisions and rationale
 - [Architecture Review Criteria](architecture-criteria.md) — PR review quality gates
+- [Package and Module Governance](package-and-module-governance.md) — central package versions and optional module boundaries
 - [Honua Manifesto](HONUA_MANIFESTO.md) — core principles
 
 ## Design Patterns

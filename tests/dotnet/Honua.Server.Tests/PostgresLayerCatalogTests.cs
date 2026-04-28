@@ -44,6 +44,13 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
                 layer_id integer PRIMARY KEY,
                 layer_name varchar(64) NOT NULL,
                 description text,
+                table_schema text NOT NULL DEFAULT current_schema(),
+                table_name text NOT NULL DEFAULT 'features',
+                primary_key_column text NOT NULL DEFAULT 'objectid',
+                geometry_column text DEFAULT 'geometry',
+                storage_srid integer,
+                temporal_column text,
+                storage_options jsonb NOT NULL DEFAULT '{}'::jsonb,
                 geometry_type varchar(32) NOT NULL,
                 srid integer NOT NULL DEFAULT 4326,
                 min_scale double precision,
@@ -127,6 +134,11 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
         Assert.Equal(4326, layer.SpatialReference.Wkid);
         Assert.True(layer.DefaultVisibility);
         Assert.Equal(3, layer.Fields.Length); // id, name, category fields
+        Assert.NotNull(layer.StorageMapping);
+        Assert.Equal("features", layer.StorageMapping.TableName);
+        Assert.Equal("id", layer.StorageMapping.PrimaryKeyColumn);
+        Assert.Equal("geometry", layer.StorageMapping.GeometryColumn);
+        Assert.Equal(4326, layer.StorageMapping.StorageSrid);
 
         // Check extent
         Assert.NotNull(layer.Extent);

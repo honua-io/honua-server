@@ -181,6 +181,47 @@ public class StyleConversionMatrixTests
     }
 
     [Fact]
+    public void MapLibreToGeoServices_PointWithStrokeOpacity_AppliesAlphaToOutlineColor()
+    {
+        // Regression: SLD import emits circle-stroke-opacity for point Marks as a
+        // separate paint property. ResolveOutline previously read circle-stroke-color
+        // and circle-stroke-width but ignored circle-stroke-opacity, producing an
+        // opaque outline in regenerated GeoServices drawingInfo even though the
+        // stored MapLibre style preserved the alpha. The polygon outline branch
+        // already folded line-opacity into the color; the point branch must do the
+        // same for circle-stroke-opacity.
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string mapLibreJson = """
+        {
+          "layers": [
+            {
+              "type": "circle",
+              "paint": {
+                "circle-color": "#ff7f00",
+                "circle-radius": 5,
+                "circle-stroke-color": "#1f2937",
+                "circle-stroke-width": 2,
+                "circle-stroke-opacity": 0.4
+              }
+            }
+          ]
+        }
+        """;
+
+        var drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer);
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var symbol = doc.RootElement.GetProperty("renderer").GetProperty("symbol");
+        var outline = symbol.GetProperty("outline");
+        var outlineColor = outline.GetProperty("color");
+
+        // 0.4 * 255 ≈ 102 (rounded away from zero); the RGB channels stay intact.
+        Assert.Equal(0x1f, outlineColor[0].GetInt32());
+        Assert.Equal(0x29, outlineColor[1].GetInt32());
+        Assert.Equal(0x37, outlineColor[2].GetInt32());
+        Assert.Equal(102, outlineColor[3].GetInt32());
+    }
+
+    [Fact]
     public void MapLibreToGeoServices_NullFill_MapsEsriNullStyle()
     {
         var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);

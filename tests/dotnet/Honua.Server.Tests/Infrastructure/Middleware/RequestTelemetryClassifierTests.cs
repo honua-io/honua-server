@@ -27,6 +27,8 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/wfs", HonuaTelemetry.Protocols.Wfs20)]
     [InlineData("/stac", HonuaTelemetry.Protocols.Stac)]
     [InlineData("/stac/search", HonuaTelemetry.Protocols.Stac)]
+    [InlineData("/api/v1/tiles/pmtiles/world/42/WebMercatorQuad.pmtiles", HonuaTelemetry.Protocols.PMTiles)]
+    [InlineData("/api/v1/tiles/pmtiles/abcdef", HonuaTelemetry.Protocols.PMTiles)]
     public void ResolveProtocol_KnownSurface_ReturnsExpectedProtocol(string path, string expectedProtocol)
     {
         RequestTelemetryClassifier.ResolveProtocol(new PathString(path)).Should().Be(expectedProtocol);
@@ -104,6 +106,26 @@ public sealed class RequestTelemetryClassifierTests
         context.Request.Path = path;
 
         RequestTelemetryClassifier.ResolveOperation(context).Should().Be(expectedOperation);
+    }
+
+    [Fact]
+    public void ResolveOperation_PMTilesProxyGet_ReturnsRange()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = "/api/v1/tiles/pmtiles/world/42/WebMercatorQuad.pmtiles";
+
+        RequestTelemetryClassifier.ResolveOperation(context).Should().Be("pmtiles.range");
+    }
+
+    [Fact]
+    public void ResolveOperation_PMTilesProxyHead_ReturnsHead()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Head;
+        context.Request.Path = "/api/v1/tiles/pmtiles/world/42/WebMercatorQuad.pmtiles";
+
+        RequestTelemetryClassifier.ResolveOperation(context).Should().Be("pmtiles.head");
     }
 
     [Fact]

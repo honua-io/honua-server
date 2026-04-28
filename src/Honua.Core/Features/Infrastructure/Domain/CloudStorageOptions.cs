@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Tiles.PMTiles;
+
 namespace Honua.Core.Features.Infrastructure.Domain;
 
 /// <summary>
@@ -58,6 +60,46 @@ public sealed record CloudStorageOptions
     /// Interval at which to run automatic cleanup
     /// </summary>
     public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Configuration for the durable PMTiles publish workflow.
+    /// </summary>
+    public PMTilesPublishOptions PMTilesPublish { get; set; } = new();
+}
+
+/// <summary>
+/// Configuration options for the durable PMTiles publish workflow.
+/// Distinct from the temporary admin archive download (which uses
+/// <see cref="CloudStorageOptions.DefaultTimeToLive"/>).
+/// </summary>
+public sealed record PMTilesPublishOptions
+{
+    /// <summary>
+    /// URL strategy used for browser access to published artifacts.
+    /// Defaults to <see cref="PMTilesUrlStrategy.SignedUrl"/> which is safe for
+    /// private buckets without exposing object-storage credentials.
+    /// </summary>
+    public PMTilesUrlStrategy UrlStrategy { get; set; } = PMTilesUrlStrategy.SignedUrl;
+
+    /// <summary>
+    /// Object-key prefix for published PMTiles artifacts. Combined with the
+    /// configured S3 KeyPrefix or Azure BlobPrefix.
+    /// </summary>
+    public string KeyPrefix { get; set; } = "pmtiles";
+
+    /// <summary>
+    /// Lifetime for presigned/SAS URLs returned to clients when
+    /// <see cref="UrlStrategy"/> is <see cref="PMTilesUrlStrategy.SignedUrl"/>.
+    /// Defaults to 7 days, the upper bound for AWS SigV4 IAM presigning.
+    /// </summary>
+    public TimeSpan SignedUrlLifetime { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// Public base URL used to construct artifact access URLs when
+    /// <see cref="UrlStrategy"/> is <see cref="PMTilesUrlStrategy.PublicUrl"/>.
+    /// Required only for that strategy. Should not include a trailing slash.
+    /// </summary>
+    public string? PublicBucketBaseUrl { get; set; }
 }
 
 /// <summary>

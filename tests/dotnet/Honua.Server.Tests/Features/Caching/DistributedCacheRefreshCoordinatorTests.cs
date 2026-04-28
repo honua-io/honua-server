@@ -346,6 +346,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    [FlakyTest("CI-load timing dependence on async failure-bookkeeping settle (commit 398aab8a stabilised; same flake family as TracksSkippedMetrics — watch for regressions). Tracked in #812.")]
     public async Task ProcessRefresh_WithTimeout_TracksFailureMetrics()
     {
         var refreshStarted = new TaskCompletionSource<bool>();

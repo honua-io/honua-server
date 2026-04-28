@@ -26,6 +26,7 @@ using Honua.Server.Features.Protocols.Ogc.Api.Tiles;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Protocols.Tiles;
+using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.Server.Features.Protocols.Ogc.Classic;
 using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.Server.Features.Protocols.Stac;
@@ -75,7 +76,14 @@ internal static class FeatureRegistrationExtensions
         services.AddSpec(configuration);
         services.AddEnhancedAdminServices();
         services.AddOrchestration();
+        services.AddPMTilesProxy();
 
+        return services;
+    }
+
+    private static IServiceCollection AddPMTilesProxy(this IServiceCollection services)
+    {
+        services.AddSingleton<PMTilesProxyService>();
         return services;
     }
 
@@ -95,6 +103,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapOgcClassicEndpoints();
         endpoints.MapAttachmentEndpoints();
         endpoints.MapTileJsonEndpoints();
+        endpoints.MapPMTilesProxyEndpoints();
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcMapsEndpoints();

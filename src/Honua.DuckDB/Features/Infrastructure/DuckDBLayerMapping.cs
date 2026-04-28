@@ -34,11 +34,11 @@ internal sealed class DuckDBLayerMapping
         new Dictionary<string, string>();
 
     /// <summary>Gets the double-quoted table name for safe SQL interpolation.</summary>
-    public string QuotedTableName => $"\"{TableName}\"";
+    public string QuotedTableName => DuckDBExternalSourceSql.QuoteIdentifier(TableName);
 
     /// <summary>Gets the double-quoted geometry column for safe SQL interpolation.</summary>
-    public string QuotedGeometryColumn => $"\"{GeometryColumn}\"";
+    public string QuotedGeometryColumn => DuckDBExternalSourceSql.QuoteIdentifier(GeometryColumn);
 
     /// <summary>Gets the double-quoted object ID column for safe SQL interpolation.</summary>
-    public string QuotedObjectIdColumn => $"\"{ObjectIdColumn}\"";
+    public string QuotedObjectIdColumn => DuckDBExternalSourceSql.QuoteIdentifier(ObjectIdColumn);
 }

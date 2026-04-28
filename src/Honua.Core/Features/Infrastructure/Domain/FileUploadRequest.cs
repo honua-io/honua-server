@@ -51,6 +51,15 @@ public sealed record FileUploadRequest
     public IProgress<UploadProgress>? Progress { get; init; }
 
     /// <summary>
+    /// Optional explicit object key/blob path. When provided, the storage
+    /// provider uses this key instead of generating a random file id and
+    /// the resulting <see cref="CloudFile.FileId"/> equals this value.
+    /// Used by durable publish flows that require deterministic, idempotent
+    /// keys and accept overwrite semantics on republish.
+    /// </summary>
+    public string? ObjectKeyOverride { get; init; }
+
+    /// <summary>
     /// Minimum chunk size for chunked uploads (default: 5MB)
     /// </summary>
     public int ChunkSize { get; init; } = 5 * 1024 * 1024; // 5MB

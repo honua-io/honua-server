@@ -213,6 +213,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             request.Description,
             schema,
             table,
+            primaryKeyColumn.Name,
+            geometryColumn,
             geometryType,
             srid,
             request.Enabled,
@@ -544,6 +546,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         string? description,
         string schema,
         string table,
+        string primaryKeyColumn,
+        string geometryColumn,
         string geometryType,
         int srid,
         bool enabled,
@@ -555,12 +559,15 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 description,
                 table_schema,
                 table_name,
+                primary_key_column,
+                geometry_column,
+                storage_srid,
                 geometry_type,
                 srid,
                 default_visibility,
                 enabled
             )
-            VALUES (@name, @description, @schema, @table, @geometryType, @srid, TRUE, @enabled)
+            VALUES (@name, @description, @schema, @table, @primaryKeyColumn, @geometryColumn, @srid, @geometryType, @srid, TRUE, @enabled)
             RETURNING layer_id;
             """;
 
@@ -569,6 +576,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         command.Parameters.AddWithValue("@description", (object?)description ?? DBNull.Value);
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
+        command.Parameters.AddWithValue("@primaryKeyColumn", primaryKeyColumn);
+        command.Parameters.AddWithValue("@geometryColumn", geometryColumn);
         command.Parameters.AddWithValue("@geometryType", geometryType);
         command.Parameters.AddWithValue("@srid", srid);
         command.Parameters.AddWithValue("@enabled", enabled);

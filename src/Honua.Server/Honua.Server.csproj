@@ -38,51 +38,51 @@
 
 
   <ItemGroup>
-    <PackageReference Include="Asp.Versioning.Http" Version="8.1.1" />
-    <PackageReference Include="AWSSDK.S3" Version="4.0.21.2" />
-    <PackageReference Include="Azure.Identity" Version="1.21.0" />
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
-    <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
-    <PackageReference Include="Grpc.AspNetCore.Server.Reflection" Version="2.76.0" />
-    <PackageReference Include="Grpc.AspNetCore.Web" Version="2.76.0" />
-    <PackageReference Include="Grpc.AspNetCore.HealthChecks" Version="2.76.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.6" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.6" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.6" />
-    <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" Version="10.0.6" />
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.6" />
-    <PackageReference Include="Polly" Version="8.6.6" />
-    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
-    <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
-    <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
-    <PackageReference Include="Serilog.Enrichers.Span" Version="3.1.0" />
-    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="Asp.Versioning.Http" />
+    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.AspNetCore.Server.Reflection" />
+    <PackageReference Include="Grpc.AspNetCore.Web" />
+    <PackageReference Include="Grpc.AspNetCore.HealthChecks" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
+    <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
+    <PackageReference Include="Polly" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Enrichers.Environment" />
+    <PackageReference Include="Serilog.Enrichers.Thread" />
+    <PackageReference Include="Serilog.Enrichers.Span" />
+    <PackageReference Include="Serilog.Formatting.Compact" />
+    <PackageReference Include="Serilog.Sinks.Console" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="NetTopologySuite" Version="2.6.0" />
-    <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" Version="1.2.0" />
-    <PackageReference Include="SkiaSharp" Version="3.119.2" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.2" />
-    <PackageReference Include="Apache.Arrow" Version="22.1.0" />
+    <PackageReference Include="NetTopologySuite" />
+    <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
+    <PackageReference Include="Apache.Arrow" />
     <EmbeddedResource Include="Migrations\*.sql" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Batch" Version="4.0.8.8" />
-    <PackageReference Include="AWSSDK.Lambda" Version="4.0.14.1" />
-    <PackageReference Include="Grpc.Tools" Version="2.80.0" />
-    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.2.27" />
-    <PackageReference Include="AWSSDK.SQS" Version="4.0.2.25" />
-    <PackageReference Include="Azure.Messaging.EventGrid" Version="5.0.0" />
-    <PackageReference Include="Azure.Messaging.EventHubs" Version="5.12.2" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.6" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.6" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.6" />
-    <PackageReference Include="ParquetSharp" Version="23.0.0.1" />
-    <PackageReference Include="Scalar.AspNetCore" Version="2.14.1" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
+    <PackageReference Include="AWSSDK.Batch" />
+    <PackageReference Include="AWSSDK.Lambda" />
+    <PackageReference Include="Grpc.Tools" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" />
+    <PackageReference Include="AWSSDK.SQS" />
+    <PackageReference Include="Azure.Messaging.EventGrid" />
+    <PackageReference Include="Azure.Messaging.EventHubs" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="ParquetSharp" />
+    <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <Content Update="openapi.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

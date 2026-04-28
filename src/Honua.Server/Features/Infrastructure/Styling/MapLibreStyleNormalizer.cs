@@ -558,9 +558,12 @@ internal static class MapLibreStyleNormalizer
     private static bool IsSupportedPaintProperty(string layerType, string property)
         => layerType.ToLowerInvariant() switch
         {
-            "circle" => property is "circle-color" or "circle-opacity" or "circle-radius" or "circle-stroke-color" or "circle-stroke-width",
+            "circle" => property is "circle-color" or "circle-opacity" or "circle-radius" or "circle-stroke-color" or "circle-stroke-opacity" or "circle-stroke-width",
             "fill" => property is "fill-antialias" or "fill-color" or "fill-opacity" or "fill-outline-color",
             "line" => property is "line-color" or "line-dasharray" or "line-opacity" or "line-width",
+            "symbol" => property is "icon-color" or "icon-opacity"
+                or "text-color" or "text-opacity"
+                or "text-halo-color" or "text-halo-width" or "text-halo-blur",
             _ => false
         };
 
@@ -569,20 +572,24 @@ internal static class MapLibreStyleNormalizer
             || (string.Equals(layerType, "line", StringComparison.OrdinalIgnoreCase)
                 && property is "line-cap" or "line-join")
             || (string.Equals(layerType, "symbol", StringComparison.OrdinalIgnoreCase)
-                && property is "icon-image" or "icon-offset" or "icon-rotate" or "icon-size");
+                && property is "icon-image" or "icon-offset" or "icon-rotate" or "icon-size"
+                    or "text-field" or "text-font" or "text-size");
 
     private static bool TryValidateStyleProperty(string property, JsonNode? value, string layerId, out string? error)
     {
         error = null;
         return property switch
         {
-            "circle-color" or "circle-stroke-color" or "fill-color" or "fill-outline-color" or "line-color" =>
+            "circle-color" or "circle-stroke-color" or "fill-color" or "fill-outline-color" or "line-color"
+                or "icon-color" or "text-color" or "text-halo-color" =>
                 TryValidateColorValue(value, property, layerId, out error),
 
-            "circle-opacity" or "fill-opacity" or "line-opacity" =>
+            "circle-opacity" or "circle-stroke-opacity" or "fill-opacity" or "line-opacity"
+                or "icon-opacity" or "text-opacity" =>
                 TryValidateOpacityValue(value, property, layerId, out error),
 
-            "circle-radius" or "circle-stroke-width" or "icon-size" or "line-width" =>
+            "circle-radius" or "circle-stroke-width" or "icon-size" or "line-width"
+                or "text-size" or "text-halo-width" or "text-halo-blur" =>
                 TryValidateNumberValue(value, property, layerId, allowNegative: false, out error),
 
             "icon-rotate" =>
@@ -591,8 +598,11 @@ internal static class MapLibreStyleNormalizer
             "fill-antialias" =>
                 TryValidateBooleanValue(value, property, layerId, out error),
 
-            "icon-image" =>
+            "icon-image" or "text-field" =>
                 TryValidateStringValue(value, property, layerId, out error),
+
+            "text-font" =>
+                TryValidateStringArray(value, property, layerId, out error),
 
             "line-dasharray" =>
                 TryValidateNumberArray(value, property, layerId, requiredLength: null, allowNegative: false, out error),
@@ -896,6 +906,51 @@ internal static class MapLibreStyleNormalizer
 
         error = $"MapLibre style layer '{layerId}' property '{property}' must be one of: {string.Join(", ", allowed)}.";
         return false;
+    }
+
+    private static bool TryValidateStringArray(
+        JsonNode? value,
+        string property,
+        string layerId,
+        out string? error)
+    {
+        error = null;
+        var array = value as JsonArray;
+        if (array is { Count: > 0 }
+            && array[0] is JsonValue firstValue
+            && firstValue.TryGetValue<string>(out var op)
+            && string.Equals(op, "literal", StringComparison.Ordinal))
+        {
+            array = array.Count > 1 ? array[1] as JsonArray : null;
+        }
+
+        if (array is null)
+        {
+            if (IsExpression(value))
+            {
+                return TryValidateExpression(value!, $"layout property '{property}' for MapLibre style layer '{layerId}'", out error);
+            }
+
+            error = $"MapLibre style layer '{layerId}' property '{property}' must be an array of strings.";
+            return false;
+        }
+
+        if (array.Count == 0)
+        {
+            error = $"MapLibre style layer '{layerId}' property '{property}' must contain at least one string.";
+            return false;
+        }
+
+        foreach (var item in array)
+        {
+            if (string.IsNullOrWhiteSpace(TryGetString(item)))
+            {
+                error = $"MapLibre style layer '{layerId}' property '{property}' must contain only non-empty strings.";
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool TryValidateNumberArray(

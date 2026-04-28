@@ -16,10 +16,6 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-  packages: read
-
 env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -126,6 +122,71 @@ jobs:
           echo "Non-test files:"
           echo "$NON_TEST_FILES"
 
+  # Compute the server-tests shard subset for this PR. On push events we always
+  # run every shard (full integration tier on merge-to-trunk). See ADR-0037.
+  # Per ADR-0037 .github/ci-shards.json is the single source of truth for both
+  # the shard routing data (paths) and the matrix-runtime metadata
+  # (artifact_suffix, log_name, timeout_minutes, max_cpu_count, upload flags,
+  # filter). This job emits two outputs:
+  #   - descriptor: the {run_all, shards, reason} structure from the targeted-
+  #     tests script (kept for visibility in logs).
+  #   - matrix_include: a JSON array of matrix entries built from ci-shards.json
+  #     and filtered to the selected shard names. ci.yml::server-tests consumes
+  #     this via `strategy.matrix.include: ${{ fromJson(...) }}` so unselected
+  #     shards never instantiate a runner.
+  targeted-shards:
+    name: Detect Targeted Server-Tests Shards
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    needs: pr-readiness
+    runs-on: ubuntu-latest
+    outputs:
+      descriptor: ${{ steps.compute.outputs.descriptor }}
+      matrix_include: ${{ steps.compute.outputs.matrix_include }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Compute shard descriptor and matrix include
+        id: compute
+        run: |
+          set -euo pipefail
+          all_shards_json=$(jq -c '[.shards[].name]' .github/ci-shards.json)
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=1
+            descriptor=$(scripts/ci/honua-server-targeted-tests.sh --base "origin/${{ github.base_ref }}")
+          else
+            descriptor=$(jq -nc --argjson shards "${all_shards_json}" \
+              '{run_all: true, shards: $shards, reason: "non_pr_event"}')
+          fi
+          echo "Descriptor: ${descriptor}"
+
+          # Build the matrix include list by joining the selected shard names
+          # against the ci-shards.json shard metadata. Drop the routing-only
+          # `paths` field; project the rest verbatim into matrix entries.
+          selected=$(printf '%s' "${descriptor}" | jq -c '.shards')
+          matrix_include=$(jq -c --argjson sel "${selected}" '
+            .shards
+            | map(select(.name as $n | $sel | index($n)))
+            | map({
+                shard_name,
+                artifact_suffix,
+                log_name,
+                timeout_minutes,
+                max_cpu_count,
+                upload_operator_eval_report,
+                upload_odata_evidence,
+                filter
+              })
+          ' .github/ci-shards.json)
+          if [ "$(printf '%s' "${matrix_include}" | jq 'length')" = "0" ]; then
+            echo "::error::matrix_include is empty — targeted-shards selected no shards"
+            exit 1
+          fi
+          echo "matrix_include: ${matrix_include}"
+          echo "descriptor=${descriptor}" >> "$GITHUB_OUTPUT"
+          echo "matrix_include=${matrix_include}" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build & Format Check
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
@@ -217,6 +278,24 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+      - name: Run .NET Tests (Server Fast Tier)
+        # Per ADR-0037 the Fast tier runs across every test project on every
+        # PR, including Honua.Server.Tests. Filtering by Tier=Fast keeps this
+        # step under a few minutes — the [UnitTest] tests in Server.Tests use
+        # NSubstitute / NullLogger / in-memory caches and do not require the
+        # PostgreSQL service. Decoupled from the targeted-shards matrix so a
+        # PR with no matching shard still runs the fast server unit tests.
+        timeout-minutes: 10
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Tier=Fast" \
+            --logger "trx;LogFileName=server-fast-tier.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
         run: |
@@ -239,102 +318,22 @@ jobs:
 
   server-tests:
     name: Server Tests (${{ matrix.shard_name }})
+    # Per ADR-0037 the PR gate runs only the targeted shards selected by
+    # scripts/ci/honua-server-targeted-tests.sh; merge-to-trunk and
+    # workflow_dispatch run the full matrix. The matrix is built dynamically
+    # by `targeted-shards` from .github/ci-shards.json — unselected shards
+    # never instantiate a runner job, so per-shard `if:` gating is no longer
+    # needed. The PR shard step composes its filter with `&Tier!=Slow` so
+    # [EmulatorTest]/[ScaleTest]/[ExternalServiceTest]/[CloudTest] methods
+    # in a shard's namespace stay in nightly-slow-tier.yml.
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, targeted-shards]
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - shard_name: Core
-            artifact_suffix: core
-            log_name: server-tests-core
-            timeout_minutes: 30
-            max_cpu_count: ""
-            upload_operator_eval_report: false
-            upload_odata_evidence: false
-            filter: "FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests"
-          - shard_name: Admin & Infrastructure
-            artifact_suffix: admin-infra
-            log_name: server-tests-admin-infra
-            timeout_minutes: 30
-            max_cpu_count: ""
-            upload_operator_eval_report: false
-            upload_odata_evidence: false
-            filter: "FullyQualifiedName~Honua.Server.Tests.Admin.|FullyQualifiedName~Honua.Server.Tests.Infrastructure.|FullyQualifiedName~Honua.Server.Tests.AdminEndpointTests"
-          - shard_name: Cloud & Contract
-            artifact_suffix: cloud-contract
-            log_name: server-tests-cloud-contract
-            timeout_minutes: 30
-            max_cpu_count: ""
-            upload_operator_eval_report: false
-            upload_odata_evidence: false
-            filter: "FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Cog|FullyQualifiedName~Honua.Server.Tests.Contract."
-          - shard_name: Import
-            artifact_suffix: import
-            log_name: server-tests-import
-            timeout_minutes: 30
-            max_cpu_count: ""
-            upload_operator_eval_report: false
-            upload_odata_evidence: false
-            filter: "FullyQualifiedName~Honua.Server.Tests.Import."
-          - shard_name: Performance
-            artifact_suffix: performance
-            log_name: server-tests-performance
-            timeout_minutes: 20
-            max_cpu_count: ""
-            upload_operator_eval_report: false
-            upload_odata_evidence: false
-            filter: "FullyQualifiedName~Honua.Server.Tests.Performance."
-          - shard_name: Comprehensive
-            artifact_suffix: comprehensive
-            log_name: server-tests-comprehensive
-            timeout_minutes: 30
-            max_cpu_count: ""
-            upload_operator_eval_report: false
-            upload_odata_evidence: false
-            filter: "FullyQualifiedName~Honua.Server.Tests.Comprehensive."
-          - shard_name: Feature APIs
-            artifact_suffix: feature-apis
-            log_name: server-tests-feature-apis
-            timeout_minutes: 45
-            max_cpu_count: ""
-            upload_operator_eval_report: false
-            upload_odata_evidence: false
-            filter: "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeoServicesSpatialFilterBuilderTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Features|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac|FullyQualifiedName~Honua.Server.Tests.Features.API"
-          - shard_name: OData
-            artifact_suffix: odata
-            log_name: server-tests-odata
-            timeout_minutes: 35
-            max_cpu_count: ""
-            upload_operator_eval_report: false
-            upload_odata_evidence: true
-            filter: "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData"
-          - shard_name: Map and Imagery
-            artifact_suffix: map-imagery
-            log_name: server-tests-map-imagery
-            timeout_minutes: 45
-            max_cpu_count: ""
-            upload_operator_eval_report: false
-            upload_odata_evidence: false
-            filter: "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Tiles"
-          - shard_name: Infra and Security
-            artifact_suffix: infra-security
-            log_name: server-tests-infra-security
-            timeout_minutes: 20
-            max_cpu_count: ""
-            upload_operator_eval_report: false
-            upload_odata_evidence: false
-            filter: "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling"
-          - shard_name: Operator Eval Harness
-            artifact_suffix: operator-eval
-            log_name: server-tests-operator-eval
-            timeout_minutes: 20
-            max_cpu_count: "1"
-            upload_operator_eval_report: true
-            upload_odata_evidence: false
-            filter: "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer"
+        include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:
       TESTCONTAINERS_RYUK_DISABLED: false
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
@@ -369,53 +368,6 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
-      - name: Pre-pull Docker images for faster tests
-        shell: bash
-        run: |
-          pull_with_retry() {
-            local image="$1"
-            local required="${2:-true}"
-
-            for attempt in 1 2 3 4 5; do
-              if docker pull --quiet "$image"; then
-                return 0
-              fi
-
-              if [ "$attempt" -eq 5 ]; then
-                if [ "$required" = "true" ]; then
-                  echo "Failed to pull required image $image after $attempt attempts." >&2
-                  return 1
-                fi
-
-                echo "Could not pre-pull optional image $image after $attempt attempts." >&2
-                return 0
-              fi
-
-              sleep_seconds=$((attempt * 5))
-              echo "Pull failed for $image (attempt $attempt/5); retrying in ${sleep_seconds}s..." >&2
-              sleep "$sleep_seconds"
-            done
-          }
-
-          pull_with_retry postgis/postgis:16-3.4 false
-          pull_with_retry postgis/postgis:18-3.6 false
-          pull_with_retry localstack/localstack:3.6.0
-          pull_with_retry mcr.microsoft.com/azure-storage/azurite:3.31.0
-
-      - name: Start emulator containers (Azurite + Localstack)
-        run: |
-          docker compose -f docker/docker-compose.emulators.yml up -d --pull never
-          for i in {1..30}; do
-            if (echo > /dev/tcp/localhost/4566) >/dev/null 2>&1 \
-              && (echo > /dev/tcp/localhost/10000) >/dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Emulators failed to start."
-          docker compose -f docker/docker-compose.emulators.yml ps
-          exit 1
-
       - name: Build server test binaries
         timeout-minutes: 20
         run: |
@@ -427,7 +379,13 @@ jobs:
         shell: bash
         run: |
           set +e
-          filter='${{ matrix.filter }}'
+          # Per ADR-0037 the PR shard lane is the Integration tier; Slow-tagged
+          # tests ([EmulatorTest], [ScaleTest], [ExternalServiceTest],
+          # [CloudTest]) belong to nightly-slow-tier.yml. Compose the matrix
+          # FQN filter with `&Tier!=Slow` here so ci-shards.json stays a pure
+          # FQN→shard map and the tier exclusion lives at a single,
+          # reviewable point.
+          filter="(${{ matrix.filter }})&Tier!=Slow"
           log_file="./tests/TestResults/${{ matrix.log_name }}.log"
           trx_file="${{ matrix.log_name }}.trx"
           extra_args=()
@@ -477,17 +435,13 @@ jobs:
           tier: pr
 
       - name: Upload shard test results
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
-        if: always()
         timeout-minutes: 3
         with:
           name: server-test-results-${{ matrix.artifact_suffix }}
           path: tests/TestResults/
           retention-days: 7
-
-      - name: Stop emulator containers
-        if: always()
-        run: docker compose -f docker/docker-compose.emulators.yml down -v || true
 
   python-integration-tests:
     name: Python Integration Tests
@@ -1250,7 +1204,7 @@ jobs:
     # When a newer run supersedes this one via workflow concurrency, avoid
     # publishing a false failing gate from the cancelled run.
     if: ${{ always() && !cancelled() }}
-    needs: [pr-readiness, changes, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build]
+    needs: [pr-readiness, changes, targeted-shards, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build]
     runs-on: ubuntu-latest
     steps:
       - name: Check required job results

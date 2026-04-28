@@ -5,13 +5,16 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Server.Features.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Eval;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Eval;
@@ -184,16 +187,16 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
     [Operation(Operations.ContractTesting)]
     public async Task Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario()
     {
-        var timeoutFixture = new WebAppFixture();
+        var timeoutFixture = new WebAppFixture()
+            .ReplaceService<IGeoprocessingJobService>(CreateProtocolTimeoutJobService());
 
         try
         {
             await timeoutFixture.InitializeAsync();
-            // Forcing an extreme client-level timeout guarantees the HTTP probes will
-            // surface OperationCanceledException unrelated to the caller's token. The
-            // fix converts that into a Failed(http-timeout) probe instead of aborting
-            // RunAsync.
-            timeoutFixture.Client.Timeout = TimeSpan.FromTicks(1);
+            // The test job service stalls only protocol HTTP submissions, making the
+            // timeout path deterministic even when the real runtime would immediately
+            // return an environmental skip such as Redis unavailable.
+            timeoutFixture.Client.Timeout = TimeSpan.FromMilliseconds(25);
 
             var runner = new EvalRunner(timeoutFixture, new LocalSeedFixtureSource());
             var scenario = EvalScenarioLoader.LoadById("analysis-buffer-places");
@@ -309,6 +312,68 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
             EstimatedArtifactKinds = [ArtifactKind.Scalar]
         }
     };
+
+    private static IGeoprocessingJobService CreateProtocolTimeoutJobService()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService
+            .ValidatePlan(Arg.Any<AnalysisPlan>(), Arg.Any<ClaimsPrincipal>())
+            .Returns(new PlanValidationResult { IsExecutable = true });
+        jobService
+            .DryRunPlan(Arg.Any<AnalysisPlan>(), Arg.Any<ClaimsPrincipal>())
+            .Returns(new DryRunResult
+            {
+                EstimatedDurationSeconds = 1,
+                EstimatedArtifacts = [ArtifactKind.FeatureLayer, ArtifactKind.Report]
+            });
+        jobService
+            .SubmitJobAsync(
+                Arg.Any<AnalysisPlan>(),
+                Arg.Any<string?>(),
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var protocolMetadata = call.ArgAt<IReadOnlyDictionary<string, string>?>(3);
+                var cancellationToken = call.ArgAt<CancellationToken>(4);
+                if (protocolMetadata?.TryGetValue("submittedVia", out var submittedVia) == true
+                    && (string.Equals(submittedVia, "OGC-API-Processes", StringComparison.Ordinal)
+                        || string.Equals(submittedVia, "GPServer", StringComparison.Ordinal)))
+                {
+                    return DelayProtocolSubmitAsync(cancellationToken);
+                }
+
+                return Task.FromResult(CreateQueuedExecutionJobRecord());
+            });
+
+        return jobService;
+    }
+
+    private static async Task<ExecutionJobRecord> DelayProtocolSubmitAsync(CancellationToken cancellationToken)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+        return CreateQueuedExecutionJobRecord();
+    }
+
+    private static ExecutionJobRecord CreateQueuedExecutionJobRecord()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new ExecutionJobRecord
+        {
+            OperationId = $"eval-timeout-{Guid.NewGuid():N}",
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "test",
+                WorkloadName = "operator-eval-timeout"
+            }
+        };
+    }
 
     private sealed class DestructiveOnlyApprovalEvaluator : IOperatorApprovalEvaluator
     {

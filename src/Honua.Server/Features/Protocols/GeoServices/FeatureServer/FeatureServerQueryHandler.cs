@@ -239,6 +239,7 @@ internal sealed class FeatureServerQueryHandler(
             var response = await ExecuteJsonQueryResponseAsync(
                 serviceId,
                 layerId,
+                service,
                 layer,
                 validatedParams,
                 query.Value,
@@ -526,7 +527,7 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var statisticsRows = await _queryExecutor.QueryStatisticsAsync(layerId, statisticsQuery, cancellationToken);
+                var statisticsRows = await _queryExecutor.QueryStatisticsAsync(service, layer, statisticsQuery, cancellationToken);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "statistics", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -552,7 +553,7 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var count = await _queryExecutor.CountAsync(layerId, query, cancellationToken);
+                var count = await _queryExecutor.CountAsync(service, layer, query, cancellationToken);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
                 var safeCount = (int)Math.Min(count, int.MaxValue);
@@ -575,7 +576,7 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var extent = await _queryExecutor.GetExtentAsync(layerId, query, cancellationToken);
+                var extent = await _queryExecutor.GetExtentAsync(service, layer, query, cancellationToken);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
                 extent ??= await ResolveExtentFallbackAsync(context, validatedParams, layer, outputSrid, cancellationToken);
@@ -596,7 +597,8 @@ internal sealed class FeatureServerQueryHandler(
                 if (idsUseStreaming)
                 {
                     await _queryExecutor.StreamIdsAsync(
-                        layerId,
+                        service,
+                        layer,
                         query,
                         objectIdFieldName,
                         context,
@@ -611,7 +613,7 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(layerId, query, cancellationToken);
+                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(service, layer, query, cancellationToken);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -657,7 +659,7 @@ internal sealed class FeatureServerQueryHandler(
                     }
 
                     var fgbStopwatch = Stopwatch.StartNew();
-                    var flatGeobufPayload = await _queryExecutor.QueryFlatGeobufWithValidationAsync(layerId, query, cancellationToken);
+                    var flatGeobufPayload = await _queryExecutor.QueryFlatGeobufWithValidationAsync(service, layer, query, cancellationToken);
                     fgbStopwatch.Stop();
                     FeatureServerLog.QueryExecuted(_logger, "query_fgb", serviceId, layerId, fgbStopwatch.Elapsed.TotalMilliseconds);
 
@@ -678,7 +680,7 @@ internal sealed class FeatureServerQueryHandler(
                             ["returnDistinctValues is not supported when f=geobuf."]);
                     }
 
-                    if (!_queryExecutor.SupportsGeobufOutput)
+                    if (!await _queryExecutor.SupportsGeobufOutputAsync(service, layer, cancellationToken))
                     {
                         return StandardErrorHelpers.CreateBadRequest(
                             context,
@@ -687,7 +689,7 @@ internal sealed class FeatureServerQueryHandler(
                     }
 
                     var geobufStopwatch = Stopwatch.StartNew();
-                    var geobufPayload = await _queryExecutor.QueryGeobufWithValidationAsync(layerId, query, cancellationToken);
+                    var geobufPayload = await _queryExecutor.QueryGeobufWithValidationAsync(service, layer, query, cancellationToken);
                     geobufStopwatch.Stop();
                     FeatureServerLog.QueryExecuted(_logger, "query_geobuf", serviceId, layerId, geobufStopwatch.Elapsed.TotalMilliseconds);
 
@@ -716,13 +718,13 @@ internal sealed class FeatureServerQueryHandler(
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
                 if (CanUseRawGeoServicesPointFastPath(layer, validatedParams, query, outputSrid, format) &&
-                    _queryExecutor.SupportsRawGeoServicesPointOutput)
+                    await _queryExecutor.SupportsRawGeoServicesPointOutputAsync(service, layer, cancellationToken))
                 {
                     var rawStopwatch = Stopwatch.StartNew();
                     var (payload, featureCount) = await _queryExecutor.QueryRawGeoServicesPointJsonWithValidationAsync(
-                        layerId,
-                        query,
+                        service,
                         layer,
+                        query,
                         validatedParams.ReturnGeometry,
                         outputSrid,
                         cancellationToken).ConfigureAwait(false);
@@ -738,7 +740,7 @@ internal sealed class FeatureServerQueryHandler(
                     ? query with { Limit = null, Offset = null }
                     : query;
                 var queryStopwatch = Stopwatch.StartNew();
-                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(layerId, queryForExecution, cancellationToken);
+                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(service, layer, queryForExecution, cancellationToken);
                 queryStopwatch.Stop();
                 var queryOperation = isParquet ? "query_parquet" : isArrow ? "query_arrow" : "query";
                 FeatureServerLog.QueryExecuted(_logger, queryOperation, serviceId, layerId, queryStopwatch.Elapsed.TotalMilliseconds);
@@ -799,9 +801,9 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             await _queryExecutor.StreamQueryAsync(
-                layerId,
-                query,
+                service,
                 layer,
+                query,
                 validatedParams,
                 outputSrid,
                 context,
@@ -890,7 +892,8 @@ internal sealed class FeatureServerQueryHandler(
             return false;
         }
 
-        if (parameters.ReturnZ ||
+        if (!parameters.ReturnGeometry ||
+            parameters.ReturnZ ||
             parameters.ReturnM ||
             parameters.ReturnCentroid ||
             parameters.ReturnDistance ||
@@ -1179,6 +1182,7 @@ internal sealed class FeatureServerQueryHandler(
     private async Task<QueryResponse> ExecuteJsonQueryResponseAsync(
         string serviceId,
         int layerId,
+        ServiceDefinition service,
         LayerDefinition layer,
         QueryParameters validatedParams,
         FeatureQuery query,
@@ -1219,7 +1223,7 @@ internal sealed class FeatureServerQueryHandler(
             };
 
             var stopwatch = Stopwatch.StartNew();
-            var statisticsRows = await _queryExecutor.QueryStatisticsAsync(layerId, statisticsQuery, cancellationToken).ConfigureAwait(false);
+            var statisticsRows = await _queryExecutor.QueryStatisticsAsync(service, layer, statisticsQuery, cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "statistics", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -1237,7 +1241,7 @@ internal sealed class FeatureServerQueryHandler(
         if (validatedParams.ReturnCountOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            var count = await _queryExecutor.CountAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            var count = await _queryExecutor.CountAsync(service, layer, query, cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
             return new QueryResponse
@@ -1250,7 +1254,7 @@ internal sealed class FeatureServerQueryHandler(
         if (validatedParams.ReturnExtentOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            var extent = await _queryExecutor.GetExtentAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            var extent = await _queryExecutor.GetExtentAsync(service, layer, query, cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
             extent ??= await ResolveExtentFallbackAsync(context, validatedParams, layer, outputSrid, cancellationToken).ConfigureAwait(false);
@@ -1264,7 +1268,7 @@ internal sealed class FeatureServerQueryHandler(
         if (validatedParams.ReturnIdsOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(service, layer, query, cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -1298,7 +1302,7 @@ internal sealed class FeatureServerQueryHandler(
             ? query with { Limit = null, Offset = null }
             : query;
         var queryStopwatch = Stopwatch.StartNew();
-        QueryResult<Feature> queryResult = await _queryExecutor.QueryWithValidationAsync(layerId, queryForExecution, cancellationToken).ConfigureAwait(false);
+        QueryResult<Feature> queryResult = await _queryExecutor.QueryWithValidationAsync(service, layer, queryForExecution, cancellationToken).ConfigureAwait(false);
         queryStopwatch.Stop();
         FeatureServerLog.QueryExecuted(_logger, "query", serviceId, layerId, queryStopwatch.Elapsed.TotalMilliseconds);
 

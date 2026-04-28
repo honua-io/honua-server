@@ -26,7 +26,10 @@ public static class OperationRegistry
     // The architecture test AllInterfaceOperationAttributes_ShouldUseRegisteredValues
     // validates that attribute values match entries here, catching any drift.
     private const string Wfs20 = "WFS-2.0";
+    private const string Wfs11 = "WFS-1.1.0";
+    private const string Wfs10 = "WFS-1.0.0";
     private const string Wms13 = "WMS-1.3.0";
+    private const string Wms111 = "WMS-1.1.1";
     private const string Wmts10 = "WMTS-1.0.0";
     private const string ODataV4 = "OData-v4";
     private const string Grpc = "Grpc";
@@ -46,11 +49,22 @@ public static class OperationRegistry
         new(Wfs20, "ListStoredQueries"),
         new(Wfs20, "DescribeStoredQueries"),
 
+        // WFS 1.x read-only compatibility operations (dispatched via GET|POST /wfs?REQUEST=...)
+        new(Wfs11, "GetCapabilities"),
+        new(Wfs11, "DescribeFeatureType"),
+        new(Wfs11, "GetFeature"),
+        new(Wfs10, "GetCapabilities"),
+        new(Wfs10, "DescribeFeatureType"),
+        new(Wfs10, "GetFeature"),
+
         // WMS 1.3.0 operations (dispatched via GET /ogc/services/{id}/wms?REQUEST=...
         // and the GeoServices compatibility /MapServer/WMS alias)
         new(Wms13, "GetCapabilities"),
         new(Wms13, "GetMap"),
         new(Wms13, "GetFeatureInfo"),
+        new(Wms111, "GetCapabilities"),
+        new(Wms111, "GetMap"),
+        new(Wms111, "GetFeatureInfo"),
 
         // WMTS 1.0.0 operations (KVP, RESTful, and GeoServices compatibility aliases)
         new(Wmts10, "GetCapabilities"),

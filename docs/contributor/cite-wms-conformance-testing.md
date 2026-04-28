@@ -2,6 +2,8 @@
 
 This document explains how to run OGC CITE WMS 1.3 tests against Honua Server.
 
+> WMS 1.1.1 conformance is tracked separately in the [Legacy OGC CITE Guide](cite-legacy-ogc-conformance-testing.md). The CITE suite for that version is heavyweight and runs as a documented manual procedure rather than a PR gate.
+
 ## Scope
 
 Current WMS support in Honua targets:

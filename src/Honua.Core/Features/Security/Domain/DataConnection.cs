@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.FeatureStore.Domain;
+
 namespace Honua.Core.Features.Security.Domain;
 
 /// <summary>
@@ -27,6 +29,16 @@ public class DataConnection
     /// Type of database or data source.
     /// </summary>
     public string DatabaseType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Canonical provider engine used to resolve the feature-store implementation.
+    /// </summary>
+    public string Provider { get; set; } = DataProviderNames.Postgis;
+
+    /// <summary>
+    /// Normalized provider engine name used by runtime provider resolution.
+    /// </summary>
+    public string NormalizedProvider => DataProviderNames.Normalize(Provider);
 
     /// <summary>
     /// Whether the connection is encrypted.
@@ -223,7 +235,8 @@ public class DataConnection
             SslMode = sslMode,
             IsEncrypted = true,
             IsActive = true,
-            DatabaseType = "PostgreSQL"
+            DatabaseType = "PostgreSQL",
+            Provider = DataProviderNames.Postgis
         };
     }
 
@@ -343,7 +356,8 @@ public class DataConnection
             SslMode = sslMode,
             IsEncrypted = false, // Secret will be resolved at runtime
             IsActive = true,
-            DatabaseType = "PostgreSQL"
+            DatabaseType = "PostgreSQL",
+            Provider = DataProviderNames.Postgis
         };
     }
 
@@ -398,6 +412,9 @@ public class DataConnection
             return false;
 
         if (string.IsNullOrWhiteSpace(Username))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(NormalizedProvider))
             return false;
 
         // SSL validation

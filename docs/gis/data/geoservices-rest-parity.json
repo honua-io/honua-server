@@ -624,7 +624,7 @@
             "status": "implemented"
           },
           {
-            "name": "f=json, geojson, pbf, fgb, geobuf, parquet",
+            "name": "f=json, geojson, pbf, fgb, geobuf, parquet, arrow",
             "status": "implemented"
           },
           {

@@ -6,6 +6,20 @@ namespace Honua.Core.Security.Tests;
 public sealed class DataConnectionTests
 {
     [Theory]
+    [InlineData(null, "postgis")]
+    [InlineData("", "postgis")]
+    [InlineData("Postgres", "postgis")]
+    [InlineData("PostgreSQL", "postgresql")]
+    [InlineData("sql_server", "sqlserver")]
+    [InlineData("MariaDB", "mysql")]
+    public void NormalizedProvider_ReturnsCanonicalProviderName(string? provider, string expected)
+    {
+        var connection = new DataConnection { Provider = provider ?? string.Empty };
+
+        Assert.Equal(expected, connection.NormalizedProvider);
+    }
+
+    [Theory]
     [InlineData(SslMode.Allow)]
     [InlineData(SslMode.Prefer)]
     public void CreateWithEncryptedCredentialsSslRequiredRejectsFallbackModes(SslMode sslMode)
@@ -45,5 +59,6 @@ public sealed class DataConnectionTests
             sslMode: sslMode);
 
         Assert.Equal(sslMode, connection.SslMode);
+        Assert.Equal("postgis", connection.NormalizedProvider);
     }
 }

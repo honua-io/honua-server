@@ -1335,11 +1335,5 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         [LoggerMessage(1007, LogLevel.Warning, "Failed to serialize cache entry {KeyFamily} {KeyHash}")]
         public static partial void CacheEntrySerializationFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
-
-        [LoggerMessage(1008, LogLevel.Warning, "Failed to track cache key {KeyFamily} {KeyHash} in Redis index.")]
-        public static partial void IndexTrackFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
-
-        [LoggerMessage(1009, LogLevel.Warning, "Failed to remove cache key {KeyFamily} {KeyHash} from Redis index.")]
-        public static partial void IndexRemoveFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
     }
 }
