@@ -723,6 +723,7 @@ internal sealed class FeatureServerQueryHandler(
                         layerId,
                         query,
                         layer,
+                        validatedParams.ReturnGeometry,
                         outputSrid,
                         cancellationToken).ConfigureAwait(false);
                     rawStopwatch.Stop();
@@ -889,8 +890,7 @@ internal sealed class FeatureServerQueryHandler(
             return false;
         }
 
-        if (!parameters.ReturnGeometry ||
-            parameters.ReturnZ ||
+        if (parameters.ReturnZ ||
             parameters.ReturnM ||
             parameters.ReturnCentroid ||
             parameters.ReturnDistance ||

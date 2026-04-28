@@ -235,6 +235,72 @@ public sealed class QueryConcurrencyGateTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task Release_WithModerateSlowLeaseAndQueuePressure_DoesNotReduceAdaptiveLimit()
+    {
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 4,
+            MaxConnectionPoolSize = 4,
+            ConnectionAcquisitionTimeoutSeconds = 5,
+            AdaptiveConcurrencyEnabled = true,
+            AdaptiveConcurrencyMinQueries = 2,
+            AdaptiveConcurrencyInitialQueries = 4,
+            AdaptiveConcurrencyTargetDurationMs = 100,
+            AdaptiveConcurrencyUpdateIntervalMs = 0
+        });
+
+        for (var i = 0; i < 4; i++)
+        {
+            (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        }
+
+        var queued = Enumerable.Range(0, 4)
+            .Select(_ => gate.WaitAsync(CancellationToken.None))
+            .ToArray();
+        await Task.Delay(50);
+
+        gate.GetSnapshot().QueuedWaiters.Should().Be(4);
+
+        gate.Release(TimeSpan.FromMilliseconds(200));
+
+        gate.CurrentLimit.Should().Be(4);
+
+        gate.Release(4);
+        (await Task.WhenAll(queued).WaitAsync(TimeSpan.FromSeconds(1))).Should().OnlyContain(acquired => acquired);
+        gate.Release(4);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Release_WithQueuedWaiter_ReportsQueueWaitEwma()
+    {
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 2,
+            MaxConnectionPoolSize = 2,
+            ConnectionAcquisitionTimeoutSeconds = 1,
+            AdaptiveConcurrencyEnabled = true,
+            AdaptiveConcurrencyMinQueries = 1,
+            AdaptiveConcurrencyInitialQueries = 1,
+            AdaptiveConcurrencyTargetDurationMs = 100,
+            AdaptiveConcurrencyUpdateIntervalMs = 0
+        });
+
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        var queued = gate.WaitAsync(CancellationToken.None);
+        await Task.Delay(50);
+
+        gate.Release(TimeSpan.FromMilliseconds(1));
+        (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
+
+        var snapshot = gate.GetSnapshot();
+        snapshot.QueueWaitEwmaMs.Should().BeGreaterThan(0);
+
+        gate.Release();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Release_WithFastSaturatedLease_IncreasesAdaptiveLimitAndDrainsWaiter()
     {
         var gate = new QueryConcurrencyGate(new ConnectionLimits
@@ -302,6 +368,7 @@ public sealed class QueryConcurrencyGateTests
         snapshot.AvailableSlots.Should().Be(1);
         snapshot.QueuedWaiters.Should().Be(0);
         snapshot.DurationEwmaMs.Should().BeApproximately(1, 0.01);
+        snapshot.QueueWaitEwmaMs.Should().BeGreaterThan(0);
         snapshot.AdjustmentCount.Should().Be(1);
         snapshot.LastAdjustmentDirection.Should().Be("increase");
 

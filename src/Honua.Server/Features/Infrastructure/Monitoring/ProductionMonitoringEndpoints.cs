@@ -666,6 +666,12 @@ internal sealed class QueryAdmissionMetricsResponse
     public required double DurationEwmaMs { get; set; }
 
     /// <summary>
+    /// Gets the observed admission queue wait EWMA in milliseconds.
+    /// </summary>
+    [JsonPropertyName("queueWaitEwmaMs")]
+    public required double QueueWaitEwmaMs { get; set; }
+
+    /// <summary>
     /// Gets the number of logical target-limit changes.
     /// </summary>
     [JsonPropertyName("adjustmentCount")]
@@ -689,6 +695,7 @@ internal sealed class QueryAdmissionMetricsResponse
             QueuedWaiters = snapshot.QueuedWaiters,
             TargetDurationMs = snapshot.TargetDurationMs,
             DurationEwmaMs = snapshot.DurationEwmaMs,
+            QueueWaitEwmaMs = snapshot.QueueWaitEwmaMs,
             AdjustmentCount = snapshot.AdjustmentCount,
             LastAdjustmentDirection = snapshot.LastAdjustmentDirection
         };

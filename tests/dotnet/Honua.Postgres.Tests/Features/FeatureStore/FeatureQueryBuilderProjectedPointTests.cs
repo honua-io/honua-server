@@ -32,7 +32,7 @@ public sealed class FeatureQueryBuilderProjectedPointTests
 
         result.Sql.Should().Contain("WITH point_source AS");
         result.Sql.Should().Contain("projected_points AS");
-        result.Sql.Should().Contain("SELECT DISTINCT ON (cell_x, cell_y) x, y FROM snapped_points ORDER BY cell_x, cell_y");
+        result.Sql.Should().Contain("SELECT AVG(x)::double precision AS x, AVG(y)::double precision AS y FROM snapped_points GROUP BY cell_x, cell_y");
         result.Sql.Should().Contain("FLOOR((x - $2) / $3)::bigint AS cell_x");
         result.Sql.Should().Contain("FLOOR(($4 - y) / $5)::bigint AS cell_y");
         result.Sql.Should().Contain("LIMIT $6");

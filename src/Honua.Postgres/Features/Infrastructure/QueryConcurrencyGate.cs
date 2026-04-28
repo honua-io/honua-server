@@ -12,7 +12,7 @@ namespace Honua.Postgres.Features.Infrastructure;
 internal sealed class QueryConcurrencyGate : IDisposable
 {
     private readonly object _sync = new();
-    private readonly Queue<TaskCompletionSource<bool>> _waiters = new();
+    private readonly Queue<QueuedWaiter> _waiters = new();
     private readonly TimeSpan _acquisitionTimeout;
     private readonly bool _adaptiveEnabled;
     private readonly int _minLimit;
@@ -23,6 +23,7 @@ internal sealed class QueryConcurrencyGate : IDisposable
     private int _inFlight;
     private long _lastAdjustmentTimestamp;
     private double _durationEwmaMs;
+    private double _queueWaitEwmaMs;
     private long _adjustmentCount;
     private int _lastAdjustmentDirection;
     private bool _disposed;
@@ -63,7 +64,7 @@ internal sealed class QueryConcurrencyGate : IDisposable
     /// </summary>
     public async Task<bool> WaitAsync(CancellationToken cancellationToken)
     {
-        TaskCompletionSource<bool> waiter;
+        QueuedWaiter waiter;
 
         lock (_sync)
         {
@@ -75,28 +76,30 @@ internal sealed class QueryConcurrencyGate : IDisposable
                 return true;
             }
 
-            waiter = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            waiter = new QueuedWaiter(
+                new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+                Stopwatch.GetTimestamp());
             _waiters.Enqueue(waiter);
         }
 
         try
         {
-            return await waiter.Task.WaitAsync(_acquisitionTimeout, cancellationToken).ConfigureAwait(false);
+            return await waiter.Completion.Task.WaitAsync(_acquisitionTimeout, cancellationToken).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
-            if (waiter.TrySetCanceled(CancellationToken.None))
+            if (waiter.Completion.TrySetCanceled(CancellationToken.None))
             {
                 return false;
             }
 
-            return await waiter.Task.ConfigureAwait(false);
+            return await waiter.Completion.Task.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            if (!waiter.TrySetCanceled(cancellationToken))
+            if (!waiter.Completion.TrySetCanceled(cancellationToken))
             {
-                return await waiter.Task.ConfigureAwait(false);
+                return await waiter.Completion.Task.ConfigureAwait(false);
             }
 
             throw new OperationCanceledException(cancellationToken);
@@ -180,6 +183,7 @@ internal sealed class QueryConcurrencyGate : IDisposable
                 _waiters.Count,
                 _targetDurationMs,
                 _durationEwmaMs,
+                _queueWaitEwmaMs,
                 _adjustmentCount,
                 FormatAdjustmentDirection(_lastAdjustmentDirection));
         }
@@ -188,7 +192,7 @@ internal sealed class QueryConcurrencyGate : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        TaskCompletionSource<bool>[] waiters;
+        QueuedWaiter[] waiters;
         lock (_sync)
         {
             if (_disposed)
@@ -203,7 +207,7 @@ internal sealed class QueryConcurrencyGate : IDisposable
 
         foreach (var waiter in waiters)
         {
-            waiter.TrySetException(new ObjectDisposedException(nameof(QueryConcurrencyGate)));
+            waiter.Completion.TrySetException(new ObjectDisposedException(nameof(QueryConcurrencyGate)));
         }
     }
 
@@ -254,7 +258,14 @@ internal sealed class QueryConcurrencyGate : IDisposable
         _lastAdjustmentTimestamp = now;
 
         var highWatermark = _targetDurationMs * 1.25;
-        if (_durationEwmaMs > highWatermark && _targetLimit > _minLimit)
+        var queuePressureWatermark = _targetDurationMs * 0.5;
+        var severeHighWatermark = _targetDurationMs * 3.0;
+        var queuedWaiters = _waiters.Count;
+        var queuePressureDominates = queuedWaiters >= _targetLimit || _queueWaitEwmaMs > queuePressureWatermark;
+        var databaseLeaseIsSevere = _durationEwmaMs > severeHighWatermark;
+        if (_durationEwmaMs > highWatermark &&
+            _targetLimit > _minLimit &&
+            (!queuePressureDominates || databaseLeaseIsSevere))
         {
             SetTargetLimitLocked(Math.Max(_minLimit, (int)Math.Floor(_targetLimit * 0.85)));
             return;
@@ -285,11 +296,21 @@ internal sealed class QueryConcurrencyGate : IDisposable
         while (_inFlight < _targetLimit && _waiters.Count > 0)
         {
             var waiter = _waiters.Dequeue();
-            if (waiter.TrySetResult(true))
+            if (waiter.Completion.TrySetResult(true))
             {
+                RecordQueueWaitLocked(waiter.EnqueuedAtTimestamp);
                 _inFlight++;
             }
         }
+    }
+
+    private void RecordQueueWaitLocked(long enqueuedAtTimestamp)
+    {
+        var elapsedTicks = Math.Max(0, Stopwatch.GetTimestamp() - enqueuedAtTimestamp);
+        var waitMs = elapsedTicks * 1000d / Stopwatch.Frequency;
+        _queueWaitEwmaMs = _queueWaitEwmaMs <= 0
+            ? waitMs
+            : (_queueWaitEwmaMs * 0.8) + (waitMs * 0.2);
     }
 
     private static int Clamp(int value, int min, int max)
@@ -314,6 +335,10 @@ internal sealed class QueryConcurrencyGate : IDisposable
     }
 }
 
+internal sealed record QueuedWaiter(
+    TaskCompletionSource<bool> Completion,
+    long EnqueuedAtTimestamp);
+
 internal readonly record struct QueryConcurrencyGateSnapshot(
     bool AdaptiveEnabled,
     int CurrentLimit,
@@ -324,5 +349,6 @@ internal readonly record struct QueryConcurrencyGateSnapshot(
     int QueuedWaiters,
     double TargetDurationMs,
     double DurationEwmaMs,
+    double QueueWaitEwmaMs,
     long AdjustmentCount,
     string LastAdjustmentDirection);

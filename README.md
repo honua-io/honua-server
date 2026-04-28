@@ -147,6 +147,35 @@ ConnectionStrings__Redis="localhost:6379"  # Redis cache
 Cors__AllowedOrigins__0="https://app.example.com"
 ```
 
+**Database admission tuning:**
+```bash
+Limits__Connections__MaxConcurrentQueries=6
+Limits__Connections__MaxConnectionPoolSize=6
+Limits__Connections__MinConnectionPoolSize=2
+Limits__Connections__AdaptiveConcurrencyEnabled=false
+```
+
+Use bounded database admission as the default production posture. `MaxConcurrentQueries` limits
+active database work; `MaxConnectionPoolSize` is the Npgsql pool ceiling. Keep them aligned unless a
+measured profile proves that a larger idle pool helps without increasing active PostGIS pressure.
+Start with the smallest cap that keeps throughput stable and p95/p99 acceptable, then scale
+deliberately with node size and database capacity. Small 4-vCPU benchmark nodes have shown useful
+caps in the 4-6 active-query range; larger pools can overfeed PostGIS and make tail latency worse.
+
+Adaptive admission should be treated as an explicit tuning profile, not the default. When enabled,
+set `AdaptiveConcurrencyMinQueries`, `AdaptiveConcurrencyInitialQueries`,
+`AdaptiveConcurrencyMaxQueries`, `AdaptiveConcurrencyTargetDurationMs`, and
+`AdaptiveConcurrencyUpdateIntervalMs`, then monitor `/monitoring/metrics/connection-pool` for the
+current limit, queued waiters, duration EWMA, queue-wait EWMA when available, and adjustment count.
+Fixed-cap results remain the baseline until adaptive mode repeatedly beats them under the same
+workload and machine state.
+
+For multi-node deployments, size from the shared database budget first and divide that budget across
+nodes. Redis is useful for metadata caching and required for durable job/workflow orchestration, but
+Redis-coordinated query admission is still a research direction; do not add it to the request path
+unless multi-node testing shows local fixed or adaptive caps cannot protect the shared PostGIS
+budget.
+
 Invalid configuration causes a startup failure with a detailed error message.
 
 ## Project Structure
