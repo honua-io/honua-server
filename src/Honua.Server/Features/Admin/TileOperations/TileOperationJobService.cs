@@ -679,6 +679,12 @@ internal sealed partial class TileOperationJobService(
         await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
         TileOperationLog.PublishUploadStart(_logger, current.JobId, objectKey);
 
+        // Pre-check whether the deterministic key already has a prior published
+        // artifact. If it does, our upload is an overwrite of a previously good
+        // publish, so a later access-URL failure must not roll back this key:
+        // doing so would erase the only PMTiles bytes clients currently see.
+        var keyAlreadyExisted = await cloudStorage.ExistsAsync(objectKey, cancellationToken).ConfigureAwait(false);
+
         var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
         {
             Content = archiveStream,
@@ -720,10 +726,25 @@ internal sealed partial class TileOperationJobService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // The durable artifact was just written. Roll it back so a misconfigured
-            // URL strategy or storage glitch never leaves a public/private orphan.
             TileOperationLog.PublishAccessUrlFailed(_logger, current.JobId, artifactId, publishOptions.UrlStrategy, ex);
-            await TryDeletePublishArtifactAsync(cloudStorage, artifactId, current.JobId, cancellationToken).ConfigureAwait(false);
+            if (!keyAlreadyExisted)
+            {
+                // The durable artifact is brand new at this key, so deleting it
+                // only removes the failed upload — there was no prior good copy
+                // to preserve. This keeps a misconfigured PublicUrl / SignedUrl
+                // strategy from leaving an unreferenced orphan.
+                await TryDeletePublishArtifactAsync(cloudStorage, artifactId, current.JobId, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                // The key already had a previously good publish that this upload
+                // overwrote. The new bytes are still valid PMTiles content; only
+                // access-URL generation failed. Leave the artifact in place so
+                // existing clients continue to see PMTiles at this key, and let
+                // the operator re-run publish once the URL strategy is fixed.
+                TileOperationLog.PublishOverwriteRetained(_logger, current.JobId, artifactId, publishOptions.UrlStrategy);
+            }
+
             // Provider exceptions can carry SDK internals, account identifiers, or
             // signed-URL fragments; surface a stable client-safe message and rely
             // on structured logging for the diagnostic detail.

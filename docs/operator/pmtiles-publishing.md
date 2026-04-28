@@ -121,7 +121,12 @@ URLs to the browser. Range requests are routed through the server:
 }
 ```
 
-`accessUrl` is `/api/v1/tiles/pmtiles/{artifactId}`. The proxy endpoint:
+`accessUrl` is the server-root-relative path `/api/v1/tiles/pmtiles/{artifactId}`.
+Browser clients hosted on the same origin as the Honua server can pass it
+straight to `pmtiles.PMTiles(...)`; SDKs running on a different origin should
+resolve the relative form against the configured Honua server origin (e.g.,
+`new URL(descriptor.accessUrl, honuaServerOrigin).toString()`) before handing
+it to the PMTiles client. The proxy endpoint:
 
 * responds to `GET` and `HEAD`. `Accept-Ranges: bytes`, `ETag`, and
   `Last-Modified` are emitted on every response (including `HEAD`)
@@ -138,6 +143,12 @@ URLs to the browser. Range requests are routed through the server:
   `SignedUrl` / `PublicUrl` access or a no-`Range` `GET` against the proxy
   (the latter streams the whole archive as `200 OK`).
 * a `GET` without a `Range` header returns the full archive as `200 OK`
+* returns `404 Not Found` when the underlying object is missing (e.g., the
+  artifact was deleted out-of-band by lifecycle policy or console action, or
+  metadata is cached but the bytes are gone). Both the no-`Range` `GET` path
+  and any `Range` `GET` that has to fall back to the download path surface
+  this consistently as `404`, so callers do not see `500` for a missing
+  object.
 * only serves objects that are tagged as durable PMTiles publish artifacts —
   the resolver requires `Content-Type: application/vnd.pmtiles`, the
   `operation=publish` storage metadata tag set by the publish workflow, and
@@ -198,19 +209,31 @@ The Honua server CORS policy already exposes those response headers for the
 
 The publish path validates strategy-specific configuration **before** uploading
 the durable artifact, and rolls back any object that was just written if access
-URL generation subsequently fails:
+URL generation subsequently fails — but never at the cost of a previously good
+publish:
 
 * `PublicUrl` without `PublicBucketBaseUrl` configured fails the job with a
   pre-flight error and never uploads a file.
 * `SignedUrl` strategy: if the storage provider returns no presigned URL (e.g.,
-  IAM/SAS misconfiguration), the just-uploaded artifact is deleted before the
-  job is marked failed, so a later re-run does not race against an orphan.
+  IAM/SAS misconfiguration), the rollback behavior depends on whether the
+  deterministic key already had a prior publish:
+  * **No prior artifact** (first publish at this key): the just-uploaded
+    artifact is deleted before the job is marked failed, so a later re-run
+    does not race against an orphan.
+  * **Prior artifact existed** (re-publish overwrote a previously good
+    artifact): the new bytes are **left in place** and a
+    `PublishOverwriteRetained` warning (`EventId 9215`) is logged. Deleting
+    would erase the only PMTiles bytes clients can see, turning a transient
+    URL-generation failure into total data loss for the active artifact.
+    The new bytes are still valid PMTiles content; only access-URL
+    generation failed, so existing clients keep working until the operator
+    fixes the URL strategy and re-runs publish.
 * `RangeProxy` does not call out to the storage provider for URL generation, so
   no rollback path is required.
 
-If the rollback delete itself fails the job is still marked failed and a
-warning is emitted with the artifact ID and job ID so operators can reconcile
-the leftover object out-of-band:
+When a rollback delete is attempted but itself fails, the job is still marked
+failed and a warning is emitted with the artifact ID and job ID so operators
+can reconcile the leftover object out-of-band:
 
 * `PublishOrphanCleanupFailed` (`EventId 9212`) when `DeleteAsync` throws.
 * `PublishOrphanCleanupReturnedFalse` (`EventId 9213`) when the provider reports

@@ -74,6 +74,11 @@ internal static class PMTilesProxyEndpoints
                 response.Headers[HeaderNames.ContentRange] = $"bytes */{rangeResult.TotalSize}";
                 return TypedResults.StatusCode(StatusCodes.Status416RangeNotSatisfiable);
 
+            case PMTilesRangeOutcome.NotFound:
+                // Underlying object disappeared between metadata lookup and range
+                // read. Match the no-Range GET fallback below by surfacing 404.
+                return TypedResults.NotFound();
+
             case PMTilesRangeOutcome.Partial:
                 response.Headers[HeaderNames.ContentRange] = $"bytes {rangeResult.Start}-{rangeResult.End}/{rangeResult.TotalSize}";
                 response.StatusCode = StatusCodes.Status206PartialContent;

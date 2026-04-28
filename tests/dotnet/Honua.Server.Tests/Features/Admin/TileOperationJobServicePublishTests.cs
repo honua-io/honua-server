@@ -297,6 +297,58 @@ public sealed class TileOperationJobServicePublishTests
     }
 
     [Fact]
+    public async Task Publish_AccessUrlFailure_OnRepublish_PreservesPriorArtifactAtSameKey()
+    {
+        var presignCalls = 0;
+        var stub = new StubCloudStorage(presignedUrlOverride: fileId =>
+        {
+            presignCalls++;
+            // First call (initial publish) succeeds; second (re-publish) returns null to
+            // simulate a transient SignedUrl generation failure after the upload overwrote
+            // the prior good artifact.
+            return presignCalls == 1
+                ? $"https://signed.example/{fileId}?ttl=3600"
+                : null;
+        });
+        var publishOptions = new PMTilesPublishOptions
+        {
+            UrlStrategy = PMTilesUrlStrategy.SignedUrl,
+            SignedUrlLifetime = TimeSpan.FromHours(1)
+        };
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true, publishOptions: publishOptions);
+        var sut = CreateSut(serviceProvider);
+
+        var request = new TileOperationStartRequest
+        {
+            Operation = "publish",
+            ServiceId = "world",
+            LayerId = 7,
+            MinZoom = 0,
+            MaxZoom = 0,
+            MaxTiles = 1
+        };
+
+        var firstJobId = await sut.StartAsync(request);
+        await sut.ProcessQueuedJobAsync(firstJobId);
+        var firstProgress = await sut.GetAsync(firstJobId);
+        firstProgress!.Status.Should().Be(OperationStatus.Completed);
+        var deterministicKey = firstProgress.PublishedArtifact!.ObjectKey;
+
+        // Second publish hits the same deterministic key, but URL generation fails.
+        var secondJobId = await sut.StartAsync(request);
+        await sut.ProcessQueuedJobAsync(secondJobId);
+        var secondProgress = await sut.GetAsync(secondJobId);
+        secondProgress!.Status.Should().Be(OperationStatus.Failed);
+        secondProgress.ErrorMessage.Should().Be("Publish access URL generation failed.");
+
+        stub.DeletedFileIds.Should().NotContain(deterministicKey,
+            "rollback must not delete a key that already had a previously published artifact, otherwise a transient URL failure causes data loss for clients");
+
+        var stillExists = await stub.GetMetadataAsync(deterministicKey);
+        stillExists.Should().NotBeNull("the artifact bytes at the deterministic key must remain so clients still see PMTiles content while the operator addresses the URL failure");
+    }
+
+    [Fact]
     public async Task Publish_DeterministicKey_OverwritesPreviousArtifact()
     {
         var stub = new StubCloudStorage();

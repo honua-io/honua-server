@@ -178,6 +178,26 @@ public sealed class PMTilesProxyServiceTests
     }
 
     [Fact]
+    public async Task ReadRangeAsync_DownloadFallback_ReturnsNotFound_WhenUnderlyingObjectMissing()
+    {
+        // Simulate metadata still present (e.g., cached) but the underlying object
+        // having been deleted out-of-band. The full-download path returns 404 for
+        // this; the range-read fallback must do the same instead of throwing 500.
+        var stub = new TestCloudStorage();
+        var fileId = stub.AddFile([1, 2, 3, 4, 5, 6, 7, 8]);
+        stub.SimulateOutOfBandDelete(fileId);
+        var sut = new PMTilesProxyService(stub, [], Options.Create(new CloudStorageOptions()));
+
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata;
+        metadata.Should().NotBeNull("metadata is still cached even though the bytes are gone");
+
+        var result = await sut.ReadRangeAsync(metadata!, rangeHeader: "bytes=0-3", CancellationToken.None);
+
+        result.Outcome.Should().Be(PMTilesRangeOutcome.NotFound);
+        result.TotalSize.Should().Be(8);
+    }
+
+    [Fact]
     public async Task ReadRangeAsync_RangeReaderRegistered_DispatchesByProvider()
     {
         var stub = new TestCloudStorage();
@@ -206,6 +226,7 @@ public sealed class PMTilesProxyServiceTests
             ImmutableDictionary<string, string>.Empty.Add("operation", "publish");
 
         private readonly Dictionary<string, (CloudFile File, byte[] Bytes)> _files = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _missingBytes = new(StringComparer.Ordinal);
 
         public CloudStorageProvider Provider => CloudStorageProvider.Local;
 
@@ -231,6 +252,14 @@ public sealed class PMTilesProxyServiceTests
             return fileId;
         }
 
+        /// <summary>
+        /// Marks the bytes for the given file as missing while keeping the
+        /// metadata entry. Mirrors an out-of-band delete (lifecycle expiry,
+        /// console deletion) where <c>GetMetadataAsync</c> still returns the
+        /// stale record but <c>DownloadAsync</c> returns null.
+        /// </summary>
+        public void SimulateOutOfBandDelete(string fileId) => _missingBytes.Add(fileId);
+
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<UploadResult> UploadAsync(ByteArrayUploadRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<UploadProgress?> GetUploadProgressAsync(string uploadId, CancellationToken cancellationToken = default) => Task.FromResult<UploadProgress?>(null);
@@ -238,12 +267,12 @@ public sealed class PMTilesProxyServiceTests
         public Task<IReadOnlyList<UploadProgress>> GetActiveUploadsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<UploadProgress>>([]);
 
         public Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Stream?>(_files.TryGetValue(fileId, out var entry)
+            => Task.FromResult<Stream?>(!_missingBytes.Contains(fileId) && _files.TryGetValue(fileId, out var entry)
                 ? new MemoryStream(entry.Bytes, writable: false)
                 : null);
 
         public Task<byte[]?> DownloadBytesAsync(string fileId, CancellationToken cancellationToken = default)
-            => Task.FromResult<byte[]?>(_files.TryGetValue(fileId, out var entry) ? entry.Bytes : null);
+            => Task.FromResult<byte[]?>(!_missingBytes.Contains(fileId) && _files.TryGetValue(fileId, out var entry) ? entry.Bytes : null);
 
         public Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default) => Task.FromResult(_files.Remove(fileId));
         public Task<BatchUploadResult> UploadBatchAsync(BatchUploadRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();

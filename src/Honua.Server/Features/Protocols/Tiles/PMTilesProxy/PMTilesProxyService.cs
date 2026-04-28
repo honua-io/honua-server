@@ -124,7 +124,7 @@ internal sealed class PMTilesProxyService
 
         var bucket = ResolveBucket(metadata.Provider);
         var reader = _rangeReaders.FirstOrDefault(r => r.Provider == metadata.Provider);
-        byte[] payload;
+        byte[]? payload;
         if (reader != null && !string.IsNullOrEmpty(bucket))
         {
             payload = await reader.ReadRangeAsync(bucket, metadata.StoragePath, start, (int)length, cancellationToken).ConfigureAwait(false);
@@ -132,6 +132,15 @@ internal sealed class PMTilesProxyService
         else
         {
             payload = await ReadRangeViaDownloadAsync(metadata, start, length, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (payload is null)
+        {
+            // Underlying object went missing between metadata lookup and range
+            // read (out-of-band delete, lifecycle expiry, etc.). Surface this
+            // as NotFound so the endpoint returns 404 — matching the no-Range
+            // GET fallback that uses OpenFullAsync — instead of a 500.
+            return PMTilesRangeResult.NotFound(totalSize);
         }
 
         return PMTilesRangeResult.Partial(start, end, totalSize, payload);
@@ -142,14 +151,19 @@ internal sealed class PMTilesProxyService
         return await _cloudStorage.DownloadAsync(artifactId, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<byte[]> ReadRangeViaDownloadAsync(
+    private async Task<byte[]?> ReadRangeViaDownloadAsync(
         CloudFile metadata,
         long start,
         long length,
         CancellationToken cancellationToken)
     {
-        await using var stream = await _cloudStorage.DownloadAsync(metadata.FileId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"PMTiles artifact '{metadata.FileId}' could not be opened.");
+        var stream = await _cloudStorage.DownloadAsync(metadata.FileId, cancellationToken).ConfigureAwait(false);
+        if (stream is null)
+        {
+            return null;
+        }
+
+        await using var _ = stream.ConfigureAwait(false);
 
         if (stream.CanSeek)
         {
@@ -279,11 +293,18 @@ internal sealed record PMTilesRangeResult
         Outcome = PMTilesRangeOutcome.Unsatisfiable,
         TotalSize = totalSize
     };
+
+    public static PMTilesRangeResult NotFound(long totalSize) => new()
+    {
+        Outcome = PMTilesRangeOutcome.NotFound,
+        TotalSize = totalSize
+    };
 }
 
 internal enum PMTilesRangeOutcome
 {
     Full,
     Partial,
-    Unsatisfiable
+    Unsatisfiable,
+    NotFound
 }
