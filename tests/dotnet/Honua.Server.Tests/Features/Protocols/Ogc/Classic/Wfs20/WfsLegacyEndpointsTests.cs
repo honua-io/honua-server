@@ -266,6 +266,8 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<WFS_Capabilities");
         content.Should().Contain("version=\"1.0.0\"");
+        content.Should().Contain("http://schemas.opengis.net/wfs/1.0.0/WFS-capabilities.xsd");
+        content.Should().NotContain("http://schemas.opengis.net/wfs/1.0.0/WFS-basic.xsd");
         content.Should().Contain("<FeatureTypeList>");
         content.Should().Contain("<SRS>EPSG:");
     }

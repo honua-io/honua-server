@@ -208,7 +208,7 @@ internal sealed partial class Wfs20Handler
     {
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
-        sb.AppendLine($"""<WFS_Capabilities xmlns="{LegacyWfsNamespace}" xmlns:ogc="{OgcFilterNamespace}" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" xmlns:xlink="{Wfs20Utilities.XLinkNamespace}" xmlns:xsi="{Wfs20Utilities.XsiNamespace}" version="1.0.0" updateSequence="{Wfs20Utilities.CurrentUpdateSequence}" xsi:schemaLocation="{LegacyWfsNamespace} http://schemas.opengis.net/wfs/1.0.0/WFS-basic.xsd">""");
+        sb.AppendLine($"""<WFS_Capabilities xmlns="{LegacyWfsNamespace}" xmlns:ogc="{OgcFilterNamespace}" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" xmlns:xlink="{Wfs20Utilities.XLinkNamespace}" xmlns:xsi="{Wfs20Utilities.XsiNamespace}" version="1.0.0" updateSequence="{Wfs20Utilities.CurrentUpdateSequence}" xsi:schemaLocation="{LegacyWfsNamespace} http://schemas.opengis.net/wfs/1.0.0/WFS-capabilities.xsd">""");
         sb.AppendLine("  <Service>");
         sb.AppendLine("    <Name>Honua WFS</Name>");
         sb.AppendLine("    <Title>Honua WFS 1.0.0</Title>");
