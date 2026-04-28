@@ -279,6 +279,129 @@ public sealed class SldConversionTests
     }
 
     [UnitTest]
+    public void Convert_AndFilterWithUnsupportedOperand_DropsEntireFilter()
+    {
+        // A AND <unsupported> must render unfiltered, not silently narrow to A.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"" xmlns:ogc=""http://www.opengis.net/ogc"">
+  <NamedLayer><Name>and-mixed</Name><UserStyle><FeatureTypeStyle><Rule>
+    <ogc:Filter>
+      <ogc:And>
+        <ogc:PropertyIsEqualTo><ogc:PropertyName>kind</ogc:PropertyName><ogc:Literal>city</ogc:Literal></ogc:PropertyIsEqualTo>
+        <ogc:BBOX/>
+      </ogc:And>
+    </ogc:Filter>
+    <PolygonSymbolizer><Fill><CssParameter name=""fill"">#abcdef</CssParameter></Fill></PolygonSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        var layer = conversion.Layers.Single();
+        layer.Filter.Should().BeNull("compound filters with an unsupported operand must drop the whole filter to preserve documented unfiltered fallback");
+        conversion.Diagnostics.Should().Contain(d => d.Construct == "BBOX");
+    }
+
+    [UnitTest]
+    public void Convert_OrFilterWithUnsupportedOperand_DropsEntireFilter()
+    {
+        // A OR <unsupported> must render unfiltered, not silently narrow to A.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"" xmlns:ogc=""http://www.opengis.net/ogc"">
+  <NamedLayer><Name>or-mixed</Name><UserStyle><FeatureTypeStyle><Rule>
+    <ogc:Filter>
+      <ogc:Or>
+        <ogc:PropertyIsEqualTo><ogc:PropertyName>kind</ogc:PropertyName><ogc:Literal>city</ogc:Literal></ogc:PropertyIsEqualTo>
+        <ogc:Function name=""strLength""><ogc:PropertyName>name</ogc:PropertyName></ogc:Function>
+      </ogc:Or>
+    </ogc:Filter>
+    <PolygonSymbolizer><Fill><CssParameter name=""fill"">#abcdef</CssParameter></Fill></PolygonSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        var layer = conversion.Layers.Single();
+        layer.Filter.Should().BeNull("compound filters with an unsupported operand must drop the whole filter to preserve documented unfiltered fallback");
+        conversion.Diagnostics.Should().Contain(d => d.Construct == "OgcFunction");
+    }
+
+    [UnitTest]
+    public void Convert_PropertyIsLike_EmitsWarningAndRendersUnfiltered()
+    {
+        // PropertyIsLike has SLD wildcard semantics with no portable MapLibre equivalent.
+        // Treat as unsupported rather than silently coercing wildcards into literal equality.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"" xmlns:ogc=""http://www.opengis.net/ogc"">
+  <NamedLayer><Name>like</Name><UserStyle><FeatureTypeStyle><Rule>
+    <ogc:Filter>
+      <ogc:PropertyIsLike wildCard=""%"" singleChar=""_"" escapeChar=""\\"">
+        <ogc:PropertyName>name</ogc:PropertyName>
+        <ogc:Literal>San %</ogc:Literal>
+      </ogc:PropertyIsLike>
+    </ogc:Filter>
+    <PolygonSymbolizer><Fill><CssParameter name=""fill"">#abcdef</CssParameter></Fill></PolygonSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        var layer = conversion.Layers.Single();
+        layer.Filter.Should().BeNull("PropertyIsLike has no portable MapLibre form; layer must render unfiltered");
+        conversion.Diagnostics.Should().Contain(d => d.Construct == "PropertyIsLike");
+    }
+
+    [UnitTest]
+    public void Export_AnyFilterWithNonLiteralOperand_DropsCompoundFilter()
+    {
+        // Or-of-(supported, unsupported) must drop the whole exported <Filter> rather than
+        // silently narrow it to the supported operand on the export side.
+        var unsupportedOperand = new MapLibreExpression(new[]
+        {
+            new MapLibreExpression("=="),
+            new MapLibreExpression(new[]
+            {
+                new MapLibreExpression("match"),
+                new MapLibreExpression(new[] { new MapLibreExpression("get"), new MapLibreExpression("kind") }),
+                new MapLibreExpression("highway"),
+                new MapLibreExpression("major"),
+                new MapLibreExpression("minor")
+            }),
+            new MapLibreExpression("major")
+        });
+
+        var supportedOperand = new MapLibreExpression(new[]
+        {
+            new MapLibreExpression("=="),
+            new MapLibreExpression(new[] { new MapLibreExpression("get"), new MapLibreExpression("kind") }),
+            new MapLibreExpression("city")
+        });
+
+        var compound = new MapLibreExpression(new[]
+        {
+            new MapLibreExpression("any"),
+            supportedOperand,
+            unsupportedOperand
+        });
+
+        var layer = new MapLibreStyleLayer
+        {
+            Id = "or-mixed",
+            Type = "fill",
+            Filter = compound,
+            Paint = new Dictionary<string, MapLibreExpression>
+            {
+                ["fill-color"] = new MapLibreExpression("#abcdef")
+            }
+        };
+
+        var export = MapLibreToSldConverter.Export(new[] { layer }, "test");
+
+        export.SldXml.Should().NotContain("<ogc:Or", "compound filter must be dropped, not silently narrowed to the supported operand");
+        export.SldXml.Should().NotContain("PropertyIsEqualTo");
+    }
+
+    [UnitTest]
     public void Parse_ExceedingMaxBytes_ThrowsSldParseException()
     {
         var huge = new string('A', 1_048_577);

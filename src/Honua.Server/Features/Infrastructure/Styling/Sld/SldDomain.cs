@@ -94,6 +94,5 @@ internal enum SldFilterComparisonOperator
     LessThan,
     LessThanOrEqual,
     GreaterThan,
-    GreaterThanOrEqual,
-    Like
+    GreaterThanOrEqual
 }

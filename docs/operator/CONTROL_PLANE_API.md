@@ -377,6 +377,8 @@ Content-Type: application/json
 | `/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` | DELETE | Delete metadata resource |
 | `/api/v1/admin/metadata/layers/{layerId}/style` | GET | Get layer style payload |
 | `/api/v1/admin/metadata/layers/{layerId}/style` | PUT | Update layer style payload |
+| `/api/v1/admin/metadata/layers/{layerId}/style/import-sld` | POST | Convert an SLD/SE 1.0 or 1.1 XML document to MapLibre style JSON and store it (admin only, Community edition; 1 MiB body cap). See [SLD Migration Reference](sld-migration.md). |
+| `/api/v1/admin/metadata/layers/{layerId}/style/export-sld` | GET | Export the stored MapLibre style as an `application/xml` SLD 1.0 document. Diagnostic count surfaces in the `X-Sld-Diagnostic-Count` response header. |
 
 ### **SDK Compatibility Handshake**
 

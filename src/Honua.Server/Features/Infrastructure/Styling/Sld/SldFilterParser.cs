@@ -35,28 +35,28 @@ internal static class SldFilterParser
         switch (local)
         {
             case "And":
-            {
-                var operands = element.Elements()
-                    .Select(e => ParseExpression(e, diagnostics, ruleName))
-                    .ToList();
-                return new SldFilterAnd(operands);
-            }
+                {
+                    var operands = element.Elements()
+                        .Select(e => ParseExpression(e, diagnostics, ruleName))
+                        .ToList();
+                    return new SldFilterAnd(operands);
+                }
 
             case "Or":
-            {
-                var operands = element.Elements()
-                    .Select(e => ParseExpression(e, diagnostics, ruleName))
-                    .ToList();
-                return new SldFilterOr(operands);
-            }
+                {
+                    var operands = element.Elements()
+                        .Select(e => ParseExpression(e, diagnostics, ruleName))
+                        .ToList();
+                    return new SldFilterOr(operands);
+                }
 
             case "Not":
-            {
-                var inner = element.Elements().FirstOrDefault();
-                return inner == null
-                    ? new SldFilterUnsupported("Not", "Empty Not predicate.")
-                    : new SldFilterNot(ParseExpression(inner, diagnostics, ruleName));
-            }
+                {
+                    var inner = element.Elements().FirstOrDefault();
+                    return inner == null
+                        ? new SldFilterUnsupported("Not", "Empty Not predicate.")
+                        : new SldFilterNot(ParseExpression(inner, diagnostics, ruleName));
+                }
 
             case "PropertyIsEqualTo":
                 return ParseComparison(element, SldFilterComparisonOperator.Equal, diagnostics, ruleName);
@@ -71,7 +71,14 @@ internal static class SldFilterParser
             case "PropertyIsGreaterThanOrEqualTo":
                 return ParseComparison(element, SldFilterComparisonOperator.GreaterThanOrEqual, diagnostics, ruleName);
             case "PropertyIsLike":
-                return ParseComparison(element, SldFilterComparisonOperator.Like, diagnostics, ruleName);
+                // SLD wildcard semantics (default `%` and `_`, configurable via wildCard/singleChar
+                // attributes) have no portable MapLibre filter equivalent. Treat as unsupported so
+                // the rule renders unfiltered rather than matching the literal pattern string.
+                diagnostics.Add(Unsupported(
+                    "PropertyIsLike",
+                    "PropertyIsLike has no portable MapLibre equivalent; layer renders unfiltered.",
+                    ruleName));
+                return new SldFilterUnsupported("PropertyIsLike", null);
 
             case "PropertyIsBetween":
                 diagnostics.Add(Unsupported(

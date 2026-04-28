@@ -391,45 +391,64 @@ internal static class SldToMapLibreConverter
         switch (filter)
         {
             case SldFilterAnd and:
-            {
-                var operands = new List<MapLibreExpression> { new("all") };
-                foreach (var operand in and.Operands)
                 {
-                    var converted = BuildFilterExpression(operand);
-                    if (converted.HasValue)
+                    if (and.Operands.Count == 0)
                     {
+                        return null;
+                    }
+
+                    var operands = new List<MapLibreExpression> { new("all") };
+                    foreach (var operand in and.Operands)
+                    {
+                        var converted = BuildFilterExpression(operand);
+                        if (!converted.HasValue)
+                        {
+                            // Drop the entire compound filter rather than silently narrow the
+                            // rule to the supported operands. Diagnostic was emitted at parse
+                            // time when the operand is SldFilterUnsupported.
+                            return null;
+                        }
+
                         operands.Add(converted.Value);
                     }
-                }
 
-                return operands.Count > 1 ? new MapLibreExpression(operands.ToArray()) : null;
-            }
+                    return new MapLibreExpression(operands.ToArray());
+                }
 
             case SldFilterOr or:
-            {
-                var operands = new List<MapLibreExpression> { new("any") };
-                foreach (var operand in or.Operands)
                 {
-                    var converted = BuildFilterExpression(operand);
-                    if (converted.HasValue)
+                    if (or.Operands.Count == 0)
                     {
+                        return null;
+                    }
+
+                    var operands = new List<MapLibreExpression> { new("any") };
+                    foreach (var operand in or.Operands)
+                    {
+                        var converted = BuildFilterExpression(operand);
+                        if (!converted.HasValue)
+                        {
+                            // Drop the entire compound filter rather than silently broaden the
+                            // rule by removing an OR operand.
+                            return null;
+                        }
+
                         operands.Add(converted.Value);
                     }
-                }
 
-                return operands.Count > 1 ? new MapLibreExpression(operands.ToArray()) : null;
-            }
+                    return new MapLibreExpression(operands.ToArray());
+                }
 
             case SldFilterNot not:
-            {
-                var inner = BuildFilterExpression(not.Operand);
-                if (!inner.HasValue)
                 {
-                    return null;
-                }
+                    var inner = BuildFilterExpression(not.Operand);
+                    if (!inner.HasValue)
+                    {
+                        return null;
+                    }
 
-                return new MapLibreExpression(new[] { new MapLibreExpression("!"), inner.Value });
-            }
+                    return new MapLibreExpression(new[] { new MapLibreExpression("!"), inner.Value });
+                }
 
             case SldFilterComparison comparison:
                 return BuildComparison(comparison);
@@ -452,7 +471,6 @@ internal static class SldToMapLibreConverter
             SldFilterComparisonOperator.LessThanOrEqual => "<=",
             SldFilterComparisonOperator.GreaterThan => ">",
             SldFilterComparisonOperator.GreaterThanOrEqual => ">=",
-            SldFilterComparisonOperator.Like => "==",
             _ => "=="
         };
 

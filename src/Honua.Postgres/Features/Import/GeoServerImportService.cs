@@ -1285,7 +1285,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 // SLD-to-MapLibre conversion (issue #375).
                 if (style.Format == "sld")
                 {
-                    var conversionWarnings = TryConvertSldStyle(style, request, result, out var converterAvailable);
+                    var conversionWarnings = TryConvertSldStyle(style, request, result, out var converterAvailable, out var shouldSkip);
 
                     if (!converterAvailable)
                     {
@@ -1311,6 +1311,12 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     else
                     {
                         result.Warnings.AddRange(conversionWarnings);
+                        if (shouldSkip)
+                        {
+                            // Conversion errors with UnsupportedStyleBehavior.Skip already incremented
+                            // SkippedCount; skip the import side so the style is not double-counted.
+                            continue;
+                        }
                     }
                 }
 
@@ -1414,15 +1420,20 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     /// <summary>
     /// Invokes the registered <see cref="ISldStyleConverter"/> against the embedded SLD content
     /// when available and returns any warning messages for inclusion in import results.
+    /// When conversion errors combine with <see cref="UnsupportedResourceBehavior.Skip"/>,
+    /// <c>shouldSkip</c> is set to <c>true</c> so the caller can abandon the per-style import
+    /// without double-counting (<see cref="ImportStepResult.SkippedCount"/> is already incremented).
     /// </summary>
-    private List<string> TryConvertSldStyle(
+    internal List<string> TryConvertSldStyle(
         GeoServerStyleInfo style,
         GeoServerImportRequest request,
         ImportStepResult result,
-        out bool converterAvailable)
+        out bool converterAvailable,
+        out bool shouldSkip)
     {
         var warnings = new List<string>();
         converterAvailable = _sldConverter != null;
+        shouldSkip = false;
 
         if (_sldConverter == null)
         {
@@ -1456,6 +1467,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             {
                 Log.StyleSkipped(_logger, style.Name);
                 result.SkippedCount++;
+                shouldSkip = true;
             }
             else
             {
@@ -1583,7 +1595,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         public int StyleCount { get; init; }
     }
 
-    private sealed record ImportStepResult
+    internal sealed record ImportStepResult
     {
         public int SuccessCount { get; set; }
         public int FailureCount { get; set; }

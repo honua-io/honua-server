@@ -425,29 +425,37 @@ internal static class MapLibreToSldConverter
         switch (op)
         {
             case "all":
-            {
-                var element = new XElement(Ogc + "And");
-                AppendOperands(element, expression.Items, diagnostics, layerId);
-                return element.Elements().Any() ? element : null;
-            }
-
-            case "any":
-            {
-                var element = new XElement(Ogc + "Or");
-                AppendOperands(element, expression.Items, diagnostics, layerId);
-                return element.Elements().Any() ? element : null;
-            }
-
-            case "!":
-            {
-                if (expression.Items.Length < 2)
                 {
-                    return null;
+                    var element = new XElement(Ogc + "And");
+                    if (!TryAppendOperands(element, expression.Items, diagnostics, layerId))
+                    {
+                        return null;
+                    }
+
+                    return element.Elements().Any() ? element : null;
                 }
 
-                var inner = ConvertFilterExpression(expression.Items[1], diagnostics, layerId);
-                return inner == null ? null : new XElement(Ogc + "Not", inner);
-            }
+            case "any":
+                {
+                    var element = new XElement(Ogc + "Or");
+                    if (!TryAppendOperands(element, expression.Items, diagnostics, layerId))
+                    {
+                        return null;
+                    }
+
+                    return element.Elements().Any() ? element : null;
+                }
+
+            case "!":
+                {
+                    if (expression.Items.Length < 2)
+                    {
+                        return null;
+                    }
+
+                    var inner = ConvertFilterExpression(expression.Items[1], diagnostics, layerId);
+                    return inner == null ? null : new XElement(Ogc + "Not", inner);
+                }
 
             case "==":
                 return ConvertComparison("PropertyIsEqualTo", expression, diagnostics, layerId);
@@ -471,16 +479,23 @@ internal static class MapLibreToSldConverter
         }
     }
 
-    private static void AppendOperands(XElement target, MapLibreExpression[] items, List<SldConversionDiagnostic> diagnostics, string? layerId)
+    private static bool TryAppendOperands(XElement target, MapLibreExpression[] items, List<SldConversionDiagnostic> diagnostics, string? layerId)
     {
         for (var i = 1; i < items.Length; i++)
         {
             var converted = ConvertFilterExpression(items[i], diagnostics, layerId);
-            if (converted != null)
+            if (converted == null)
             {
-                target.Add(converted);
+                // One of the operands could not be expressed in SLD; the caller must drop
+                // the entire compound filter so the exported document does not silently
+                // narrow (And) or broaden (Or) the original rule semantics.
+                return false;
             }
+
+            target.Add(converted);
         }
+
+        return true;
     }
 
     private static XElement? ConvertComparison(string predicateName, MapLibreExpression expression, List<SldConversionDiagnostic> diagnostics, string? layerId)

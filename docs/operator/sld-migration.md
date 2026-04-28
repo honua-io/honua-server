@@ -43,11 +43,13 @@ Successful (200) response shape:
 }
 ```
 
-When error-severity diagnostics block import, the API returns 422 with the diagnostic list. No partial stylesheet is stored. Malformed or unsafe XML returns 400 with a generic problem detail; raw exception messages are never echoed.
+When error-severity diagnostics block import, the API returns 422 with a `{ "success": false, "message": "SLD import failed; see diagnostics." }` envelope. No partial stylesheet is stored, and the diagnostic count is recorded in the server log via the `SldImportRejected` structured log entry. Surfacing the diagnostic array directly in the 422 body is tracked as a follow-up; for now, callers that need the per-rule reason should retry with verbose logging or capture the conversion log.
+
+Malformed or unsafe XML returns 400 with a generic problem detail; raw exception messages are never echoed. Payloads larger than the 1 MiB cap return 413 before parsing.
 
 ### Export response
 
-A 200 response is `application/xml` containing a complete SLD 1.0 document. The `X-Sld-Diagnostic-Count` header reports the number of diagnostics; the `X-Sld-Diagnostics` header carries the JSON-encoded list when non-empty.
+A 200 response is `application/xml` containing a complete SLD 1.0 document. The `X-Sld-Diagnostic-Count` header reports the number of diagnostics emitted while exporting; the `X-Sld-Diagnostics` header carries the JSON-encoded diagnostic array when the count is non-zero. If the stored MapLibre style cannot be exported (no convertible layers, deserialization failure), the endpoint returns 422 with the `{ "success": false, "message": "..." }` envelope.
 
 ## Supported subset
 
@@ -59,8 +61,8 @@ A 200 response is `application/xml` containing a complete SLD 1.0 document. The 
 | `PolygonSymbolizer` (`Fill` + optional `Stroke`) | `fill` plus `line` outline when `stroke-width` is set | `Displacement` ignored with warning. |
 | `TextSymbolizer` (`Label`, `Font`, `Fill`, `Halo`) | `symbol` | Only `<ogc:PropertyName>` labels are mapped to `{field}`. Functions warn and the label is dropped. |
 | `MinScaleDenominator` / `MaxScaleDenominator` | `minzoom` / `maxzoom` | Web Mercator approximation: `zoom ≈ log2(559082264 / scale)`, clamped to `[0,24]`. Latitude variance is documented in the design brief. |
-| OGC Filter `PropertyIsEqualTo`, `PropertyIsNotEqualTo`, `PropertyIsLessThan*`, `PropertyIsGreaterThan*`, `PropertyIsLike` | MapLibre comparison expressions | `PropertyIsBetween` decomposes into `>= AND <=` when feasible. |
-| `And`, `Or`, `Not` | `["all", ...]`, `["any", ...]`, `["!", ...]` | Empty operands collapse to no filter. |
+| OGC Filter `PropertyIsEqualTo`, `PropertyIsNotEqualTo`, `PropertyIsLessThan*`, `PropertyIsGreaterThan*` | MapLibre comparison expressions | `PropertyIsBetween` decomposes into `>= AND <=` when feasible. |
+| `And`, `Or`, `Not` | `["all", ...]`, `["any", ...]`, `["!", ...]` | If any child operand is unsupported, the entire compound filter is dropped (rule renders unfiltered) so `And`/`Or` semantics are not silently narrowed or broadened. |
 
 ## Unsupported and lossy constructs
 
@@ -71,6 +73,7 @@ The converter never silently drops these — each emits a `Warning` diagnostic, 
 - `ExternalGraphic` with a remote URI (no remote resource is fetched; sprite must be supplied separately)
 - OGC `Function` expressions in filters and labels
 - Spatial/temporal predicates: `BBOX`, `Intersects`, `Contains`, `Within`, `Beyond`, `DWithin`, `After`, `Before`, `During`, etc.
+- `PropertyIsLike` — SLD wildcard semantics (`%`, `_`, configurable via `wildCard`/`singleChar`) have no portable MapLibre filter equivalent; the rule renders unfiltered
 - `PropertyIsNull`
 - `ElseFilter`
 - `LabelPlacement` (only basic placement defaults are honored)
