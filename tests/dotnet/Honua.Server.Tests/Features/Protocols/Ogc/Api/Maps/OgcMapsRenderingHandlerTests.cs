@@ -155,25 +155,6 @@ public class OgcMapsRenderingHandlerTests
 
     [UnitTest]
     [Operation(Operations.Render)]
-    public async Task RenderCollectionMapAsync_DatetimeRequested_ReturnsBadRequest()
-    {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
-
-        var request = new OgcMapRequest
-        {
-            Bbox = "-180,-90,180,90",
-            F = "png",
-            Datetime = "2024-01-01T00:00:00Z"
-        };
-
-        var result = await _handler.RenderCollectionMapAsync(1, request);
-
-        result.Should().BeOfType<BadRequest<string>>();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Render)]
     public async Task RenderCollectionMapAsync_TransparentRequested_ReturnsBadRequest()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())

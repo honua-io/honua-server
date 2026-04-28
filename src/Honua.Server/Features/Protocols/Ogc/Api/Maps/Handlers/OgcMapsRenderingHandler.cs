@@ -745,12 +745,6 @@ internal sealed class OgcMapsRenderingHandler
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(request.Datetime) ||
-                HasExplicitQueryParameter(context, "datetime"))
-            {
-                return (null, "The datetime parameter is not currently supported for OGC API Maps rendering.");
-            }
-
             if (request.Transparent is false || HasExplicitQueryParameter(context, "transparent"))
             {
                 return (null, "The transparent parameter is not currently supported for OGC API Maps rendering.");
