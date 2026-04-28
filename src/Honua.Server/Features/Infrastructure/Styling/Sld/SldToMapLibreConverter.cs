@@ -116,7 +116,15 @@ internal static class SldToMapLibreConverter
             };
             if (point.Size.HasValue)
             {
-                layout["icon-size"] = new MapLibreExpression(point.Size.Value);
+                // SLD Graphic Size is an absolute size in the symbolizer unit (pixels by default
+                // per OGC SE 1.1.0 § 11.3.2). MapLibre icon-size is a scale factor relative to the
+                // sprite's intrinsic dimensions (1.0 = native size). Without sprite metadata we
+                // cannot compute a meaningful scale factor, so omit icon-size and surface a
+                // diagnostic rather than silently mis-scaling the sprite.
+                diagnostics.Add(Warn(
+                    "Graphic.Size",
+                    $"SLD Graphic Size ({point.Size.Value}) is in pixels; MapLibre icon-size is a scale factor. icon-size omitted — provide sprite metadata to set the scale factor.",
+                    ruleName));
             }
 
             if (point.Opacity.HasValue)
@@ -158,12 +166,18 @@ internal static class SldToMapLibreConverter
             circlePaint["circle-opacity"] = new MapLibreExpression(graphicOpacity);
         }
 
-        // MapLibre does not expose a circle-stroke-opacity, so stroke alpha must
-        // ride inside the color (rgba) when SLD specifies a stroke-opacity.
+        // Stroke color and opacity are emitted as separate paint properties
+        // (matching the polygon-fill / line / circle-fill convention).
+        // circle-stroke-opacity is a first-class MapLibre paint property.
         var strokeColor = point.Mark?.Stroke?.Color;
         if (!string.IsNullOrEmpty(strokeColor))
         {
-            circlePaint["circle-stroke-color"] = new MapLibreExpression(NormalizeColor(strokeColor, point.Mark?.Stroke?.Opacity));
+            circlePaint["circle-stroke-color"] = new MapLibreExpression(NormalizeColor(strokeColor, null));
+        }
+
+        if (point.Mark?.Stroke?.Opacity is { } strokeOpacity)
+        {
+            circlePaint["circle-stroke-opacity"] = new MapLibreExpression(strokeOpacity);
         }
 
         if (point.Mark?.Stroke?.Width is { } strokeWidth)

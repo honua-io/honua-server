@@ -68,8 +68,8 @@ A 200 response is `application/xml` containing a complete SLD 1.0 document. The 
 
 | SLD construct | MapLibre layer type | Notes |
 |---|---|---|
-| `PointSymbolizer` / `Mark` (any well-known name) | `circle` | Non-`circle` well-known names emit a `Mark.WellKnownName` warning; sprites are not generated. |
-| `PointSymbolizer` / `ExternalGraphic` | `symbol` | `icon-image` is set to the resource href. Remote URIs are recorded but never fetched. |
+| `PointSymbolizer` / `Mark` (any well-known name) | `circle` | Non-`circle` well-known names emit a `Mark.WellKnownName` warning; sprites are not generated. `Stroke` / `stroke-opacity` round-trip via `circle-stroke-color` and `circle-stroke-opacity` as separate paint properties. |
+| `PointSymbolizer` / `ExternalGraphic` | `symbol` | `icon-image` is set to the resource href. Remote URIs are recorded but never fetched. SLD `<Size>` is in absolute pixels, MapLibre `icon-size` is a scale factor; the converter emits a `Graphic.Size` warning and omits `icon-size` rather than mis-scale the sprite (provide sprite metadata to set the scale factor). |
 | `LineSymbolizer` (`stroke`, `stroke-width`, `stroke-opacity`, `stroke-dasharray`, `stroke-linecap`, `stroke-linejoin`) | `line` | `PerpendicularOffset` ignored with warning. |
 | `PolygonSymbolizer` (`Fill` and/or `Stroke`) | `fill` for the body and a separate `line` for the outline | A `fill` layer is emitted only when the SLD has a `Fill`; otherwise the polygon is exported as a single `line` layer. Outline always lives on the dedicated `line` layer (no `fill-outline-color`) to avoid double-stroking. SLD/SE default `stroke-width` of `1.0` is applied when omitted. `Displacement` ignored with warning. |
 | `TextSymbolizer` (`Label`, `Font`, `Fill`, `Halo`) | `symbol` | Only `<ogc:PropertyName>` labels are mapped to `{field}`. Functions warn and the label is dropped. |
@@ -91,6 +91,7 @@ The converter never silently drops these — each emits a `Warning` diagnostic, 
 - `ElseFilter`
 - `LabelPlacement` (only basic placement defaults are honored)
 - `Graphic.Rotation` (no `icon-rotate` mapping yet)
+- `Graphic.Size` on `ExternalGraphic` — SLD Size is absolute pixels but MapLibre `icon-size` is a scale factor; without sprite intrinsic dimensions the conversion is lossy and `icon-size` is omitted with a warning. Mirror behavior on export: a MapLibre `icon-size` literal warns and is dropped from the SLD `<Graphic>`
 - `Transformation` on `FeatureTypeStyle`
 - `UserLayer`, `NamedStyle` (server-side style references)
 
@@ -98,7 +99,7 @@ The converter never silently drops these — each emits a `Warning` diagnostic, 
 
 - CSS named colors and `#RRGGBB` are passed through.
 - `#AARRGGBB` (alpha-prefixed) is normalized to `rgba(R,G,B,A)`.
-- `<Opacity>` and `fill-opacity` / `stroke-opacity` CSS parameters are emitted as a separate `*-opacity` paint property (`circle-opacity`, `line-opacity`, `fill-opacity`) so MapLibre does not multiply the alpha twice. The exception is point/text stroke and halo, where MapLibre has no `*-stroke-opacity` / `*-halo-opacity` paint property and the opacity must ride inside the color via `rgba()`.
+- `<Opacity>` and `fill-opacity` / `stroke-opacity` CSS parameters are emitted as a separate `*-opacity` paint property (`circle-opacity`, `circle-stroke-opacity`, `line-opacity`, `fill-opacity`) so MapLibre does not multiply the alpha twice. The exception is text halo, where MapLibre has no `text-halo-opacity` paint property and the opacity must ride inside `text-halo-color` via `rgba()`.
 
 ## MapLibre → SLD export limitations
 
@@ -120,9 +121,9 @@ For higher-fidelity export (vendor function emission, GeoServer extension preser
 
 ## GeoServer import service integration
 
-`GeoServerImportService` (in `Honua.Postgres`) injects the optional `ISldStyleConverter` from `Honua.Core.Features.Styling.Abstractions`. When registered (the default in Honua.Server), SLD styles encountered during a GeoServer import are run through the converter and any conversion diagnostics (warnings and errors) are appended to the import warnings list. The `UnsupportedStyleBehavior` import option still gates whether conversion errors fail the import, skip the style, or warn.
+`GeoServerImportService` (in `Honua.Postgres`) injects the optional `ISldStyleConverter` from `Honua.Core.Features.Styling.Abstractions`. When registered (the default in Honua.Server), SLD styles encountered during a GeoServer import are run through the converter and any conversion diagnostics (warnings and errors) are appended to the import warnings list. `UnsupportedStyleBehavior` (`FailImport` / `Skip` / `LogWarning`) consistently gates both conversion errors and missing SLD content (`SldContent` empty / null) — the `Skip` and `FailImport` paths short-circuit the per-style import, while `LogWarning` records the diagnostic and continues.
 
-The bulk import path validates the SLD payload and surfaces diagnostics; it does **not** persist the converted MapLibre JSON to the catalog. Imported style resources carry the note `"SLD validated; apply via per-layer admin SLD endpoint to persist MapLibre style"`. To store the converted style, call `POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld` for each target layer (the admin endpoint is the single canonical persistence path; see [Endpoints](#endpoints)).
+The bulk import path validates the SLD payload and surfaces diagnostics; it does **not** persist the converted MapLibre JSON to the catalog. Imported style resources whose SLD parsed and converted cleanly carry the note `"SLD validated; apply via per-layer admin SLD endpoint to persist MapLibre style"`. When the SLD is missing, fails to convert, or runs without a registered converter (each gated through `UnsupportedStyleBehavior`), the resource note becomes `"SLD not validated; review warnings before applying via per-layer admin SLD endpoint"` so operators can distinguish validated styles from styles that only flowed through with warnings. To store the converted style, call `POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld` for each target layer (the admin endpoint is the single canonical persistence path; see [Endpoints](#endpoints)).
 
 If the converter is not registered (e.g. embedded scenarios that omit Honua.Server), the legacy unsupported-style behavior applies and a warning is recorded so operators see a clear migration path.
 

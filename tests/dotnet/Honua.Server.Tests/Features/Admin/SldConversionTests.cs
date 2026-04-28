@@ -614,6 +614,118 @@ public sealed class SldConversionTests
     }
 
     [UnitTest]
+    public void Parse_PointStrokeWithOpacity_EmitsCircleStrokeOpacityAsSeparatePaintProperty()
+    {
+        // Regression: previously the converter baked SLD point Stroke opacity into the
+        // circle-stroke-color rgba() because it assumed MapLibre had no
+        // circle-stroke-opacity paint property. The MapLibre style spec defines
+        // circle-stroke-opacity as a first-class circle paint property; emitting it
+        // separately keeps the color and opacity orthogonal and round-trippable.
+        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
+  <NamedLayer><Name>points</Name><UserStyle><FeatureTypeStyle><Rule>
+    <PointSymbolizer>
+      <Graphic>
+        <Mark>
+          <WellKnownName>circle</WellKnownName>
+          <Fill><CssParameter name=""fill"">#ff0000</CssParameter></Fill>
+          <Stroke>
+            <CssParameter name=""stroke"">#1f2937</CssParameter>
+            <CssParameter name=""stroke-opacity"">0.4</CssParameter>
+            <CssParameter name=""stroke-width"">2</CssParameter>
+          </Stroke>
+        </Mark>
+        <Size>10</Size>
+      </Graphic>
+    </PointSymbolizer>
+  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+</StyledLayerDescriptor>";
+
+        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
+
+        conversion.HasErrors.Should().BeFalse();
+        var layer = conversion.Layers.Single();
+        layer.Type.Should().Be("circle");
+        layer.Paint!["circle-stroke-color"].StringValue.Should().Be("#1f2937",
+            "stroke color must round-trip without opacity baked into rgba()");
+        layer.Paint["circle-stroke-opacity"].NumberValue.Should().Be(0.4d);
+        layer.Paint["circle-stroke-width"].NumberValue.Should().Be(2d);
+    }
+
+    [UnitTest]
+    public void Export_CircleStrokeOpacity_RoundTripsThroughSld()
+    {
+        // The export side must read circle-stroke-opacity and emit a CssParameter
+        // name="stroke-opacity" inside the Mark Stroke, matching the SLD/SE convention.
+        var layer = new MapLibreStyleLayer
+        {
+            Id = "stroke-with-opacity",
+            Type = "circle",
+            Paint = new Dictionary<string, MapLibreExpression>
+            {
+                ["circle-color"] = new MapLibreExpression("#ff0000"),
+                ["circle-radius"] = new MapLibreExpression(5d),
+                ["circle-stroke-color"] = new MapLibreExpression("#1f2937"),
+                ["circle-stroke-opacity"] = new MapLibreExpression(0.4d),
+                ["circle-stroke-width"] = new MapLibreExpression(2d)
+            }
+        };
+
+        var export = MapLibreToSldConverter.Export(new[] { layer }, "test");
+
+        export.Diagnostics.Should().NotContain(d => d.Severity == SldDiagnosticSeverity.Error);
+        export.SldXml.Should().Contain("name=\"stroke-opacity\"")
+            .And.Contain(">0.4<");
+
+        var roundTrip = SldToMapLibreConverter.Convert(SldParser.Parse(export.SldXml));
+        var roundTripLayer = roundTrip.Layers.Single(l => l.Type == "circle");
+        roundTripLayer.Paint!["circle-stroke-opacity"].NumberValue.Should().Be(0.4d);
+    }
+
+    [UnitTest]
+    public void Parse_ExternalGraphicWithSize_OmitsIconSizeAndEmitsDiagnostic()
+    {
+        // SLD Graphic Size is in absolute pixels (OGC SE 1.1.0 § 11.3.2); MapLibre
+        // icon-size is a scale factor against the sprite's intrinsic size. Without
+        // sprite metadata the conversion is lossy, so omit icon-size and emit a
+        // diagnostic rather than silently scaling the sprite to NxN times its native size.
+        var conversion = ParseAndConvert("external-graphic.xml");
+
+        conversion.HasErrors.Should().BeFalse();
+        conversion.Diagnostics.Should().Contain(d =>
+            d.Construct == "Graphic.Size"
+            && d.Severity == SldDiagnosticSeverity.Warning);
+        var layer = conversion.Layers.Single();
+        layer.Type.Should().Be("symbol");
+        layer.Layout!["icon-image"].StringValue.Should().Be("https://example.com/sprites/marker.png");
+        layer.Layout.Should().NotContainKey("icon-size",
+            "icon-size as a scale factor cannot be derived from SLD Graphic Size in pixels without sprite metadata");
+    }
+
+    [UnitTest]
+    public void Export_IconSize_OmitsSizeAndEmitsDiagnostic()
+    {
+        // Symmetric to the import side: MapLibre icon-size (scale factor) cannot map
+        // back to absolute SLD <Size> without sprite intrinsic dimensions.
+        var layer = new MapLibreStyleLayer
+        {
+            Id = "icon-with-size",
+            Type = "symbol",
+            Layout = new Dictionary<string, MapLibreExpression>
+            {
+                ["icon-image"] = new MapLibreExpression("https://example.com/marker.png"),
+                ["icon-size"] = new MapLibreExpression(2d)
+            }
+        };
+
+        var export = MapLibreToSldConverter.Export(new[] { layer }, "test");
+
+        export.Diagnostics.Should().Contain(d => d.Construct == "icon-size");
+        export.SldXml.Should().Contain("ExternalGraphic")
+            .And.NotContain("<Size", "icon-size is a scale factor; SLD Size requires absolute pixels");
+    }
+
+    [UnitTest]
     public void Parse_ExceedingMaxBytes_ThrowsSldParseException()
     {
         var huge = new string('A', 1_048_577);

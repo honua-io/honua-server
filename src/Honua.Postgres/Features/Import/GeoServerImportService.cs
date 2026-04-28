@@ -1283,9 +1283,16 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             try
             {
                 // SLD-to-MapLibre conversion (issue #375).
+                var sldValidated = false;
                 if (style.Format == "sld")
                 {
-                    var conversionWarnings = TryConvertSldStyle(style, request, result, out var converterAvailable, out var shouldSkip);
+                    var conversionWarnings = TryConvertSldStyle(
+                        style,
+                        request,
+                        result,
+                        out var converterAvailable,
+                        out var shouldSkip,
+                        out sldValidated);
 
                     if (!converterAvailable)
                     {
@@ -1331,7 +1338,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     Name = style.Name,
                     WorkspaceName = style.WorkspaceName,
                     Notes = style.Format == "sld"
-                        ? "SLD validated; apply via per-layer admin SLD endpoint to persist MapLibre style"
+                        ? sldValidated
+                            ? "SLD validated; apply via per-layer admin SLD endpoint to persist MapLibre style"
+                            : "SLD not validated; review warnings before applying via per-layer admin SLD endpoint"
                         : "Imported style"
                 });
 
@@ -1424,20 +1433,24 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     /// <summary>
     /// Invokes the registered <see cref="ISldStyleConverter"/> against the embedded SLD content
     /// when available and returns any warning messages for inclusion in import results.
-    /// When conversion errors combine with <see cref="UnsupportedResourceBehavior.Skip"/>,
+    /// When conversion errors or missing content combine with <see cref="UnsupportedResourceBehavior.Skip"/>,
     /// <c>shouldSkip</c> is set to <c>true</c> so the caller can abandon the per-style import
     /// without double-counting (<see cref="ImportStepResult.SkippedCount"/> is already incremented).
+    /// <c>wasValidated</c> reports whether the converter actually ran and produced no errors;
+    /// callers use it to label the imported resource note.
     /// </summary>
     internal List<string> TryConvertSldStyle(
         GeoServerStyleInfo style,
         GeoServerImportRequest request,
         ImportStepResult result,
         out bool converterAvailable,
-        out bool shouldSkip)
+        out bool shouldSkip,
+        out bool wasValidated)
     {
         var warnings = new List<string>();
         converterAvailable = _sldConverter != null;
         shouldSkip = false;
+        wasValidated = false;
 
         if (_sldConverter == null)
         {
@@ -1446,7 +1459,13 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
         if (string.IsNullOrWhiteSpace(style.SldContent))
         {
-            warnings.Add($"SLD style {style.Name} has no embedded content; conversion skipped.");
+            ApplyUnsupportedStyleBehavior(
+                style,
+                request,
+                result,
+                warnings,
+                $"SLD style {style.Name} has no embedded content; conversion skipped.",
+                out shouldSkip);
             return warnings;
         }
 
@@ -1458,29 +1477,47 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
         if (conversion.HasErrors)
         {
-            var behavior = request.ImportOptions?.UnsupportedStyleBehavior ?? UnsupportedResourceBehavior.LogWarning;
             var firstError = conversion.Errors.Count > 0 ? conversion.Errors[0] : "SLD conversion produced no layers.";
-            var message = $"SLD style {style.Name} could not be converted: {firstError}";
-
-            if (behavior == UnsupportedResourceBehavior.FailImport)
-            {
-                throw new InvalidOperationException(message);
-            }
-
-            if (behavior == UnsupportedResourceBehavior.Skip)
-            {
-                Log.StyleSkipped(_logger, style.Name);
-                result.SkippedCount++;
-                shouldSkip = true;
-            }
-            else
-            {
-                Log.StyleRequiresConversion(_logger, style.Name);
-                warnings.Add(message);
-            }
+            ApplyUnsupportedStyleBehavior(
+                style,
+                request,
+                result,
+                warnings,
+                $"SLD style {style.Name} could not be converted: {firstError}",
+                out shouldSkip);
+            return warnings;
         }
 
+        wasValidated = true;
         return warnings;
+    }
+
+    private void ApplyUnsupportedStyleBehavior(
+        GeoServerStyleInfo style,
+        GeoServerImportRequest request,
+        ImportStepResult result,
+        List<string> warnings,
+        string message,
+        out bool shouldSkip)
+    {
+        shouldSkip = false;
+        var behavior = request.ImportOptions?.UnsupportedStyleBehavior ?? UnsupportedResourceBehavior.LogWarning;
+
+        if (behavior == UnsupportedResourceBehavior.FailImport)
+        {
+            throw new InvalidOperationException(message);
+        }
+
+        if (behavior == UnsupportedResourceBehavior.Skip)
+        {
+            Log.StyleSkipped(_logger, style.Name);
+            result.SkippedCount++;
+            shouldSkip = true;
+            return;
+        }
+
+        Log.StyleRequiresConversion(_logger, style.Name);
+        warnings.Add(message);
     }
 
     private async Task ValidateImportedResourcesAsync(GeoServerImportRequest request, CancellationToken cancellationToken)

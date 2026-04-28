@@ -152,10 +152,11 @@ internal static class MapLibreToSldConverter
         }
 
         var strokeColor = TryGetLiteralString(layer, "circle-stroke-color", diagnostics);
+        var strokeOpacity = TryGetLiteralNumber(layer, "circle-stroke-opacity", diagnostics);
         var strokeWidth = TryGetLiteralNumber(layer, "circle-stroke-width", diagnostics);
-        if (strokeColor != null || strokeWidth.HasValue)
+        if (strokeColor != null || strokeOpacity.HasValue || strokeWidth.HasValue)
         {
-            mark.Add(BuildStroke(strokeColor, null, strokeWidth, null, null, null));
+            mark.Add(BuildStroke(strokeColor, strokeOpacity, strokeWidth, null, null, null));
         }
 
         graphic.Add(mark);
@@ -215,7 +216,13 @@ internal static class MapLibreToSldConverter
             var iconSize = TryGetLiteralNumber(layer, "icon-size", diagnostics, isLayout: true);
             if (iconSize.HasValue)
             {
-                graphic.Add(new XElement(Sld + "Size", FormatNumber(iconSize.Value)));
+                // MapLibre icon-size is a scale factor (1.0 = native size); SLD Graphic Size is
+                // absolute pixels. Without sprite intrinsic dimensions the conversion is lossy,
+                // so omit <Size> and emit a diagnostic rather than emit a wrong absolute value.
+                diagnostics.Add(Warn(
+                    "icon-size",
+                    $"MapLibre icon-size ({FormatNumber(iconSize.Value)}) is a scale factor; SLD Graphic Size requires absolute pixels. <Size> omitted from export.",
+                    layer.Id));
             }
 
             rule.Add(new XElement(Sld + "PointSymbolizer", graphic));

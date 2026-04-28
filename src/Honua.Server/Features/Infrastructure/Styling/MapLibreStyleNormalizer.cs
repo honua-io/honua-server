@@ -558,7 +558,7 @@ internal static class MapLibreStyleNormalizer
     private static bool IsSupportedPaintProperty(string layerType, string property)
         => layerType.ToLowerInvariant() switch
         {
-            "circle" => property is "circle-color" or "circle-opacity" or "circle-radius" or "circle-stroke-color" or "circle-stroke-width",
+            "circle" => property is "circle-color" or "circle-opacity" or "circle-radius" or "circle-stroke-color" or "circle-stroke-opacity" or "circle-stroke-width",
             "fill" => property is "fill-antialias" or "fill-color" or "fill-opacity" or "fill-outline-color",
             "line" => property is "line-color" or "line-dasharray" or "line-opacity" or "line-width",
             "symbol" => property is "icon-color" or "icon-opacity"
@@ -584,7 +584,8 @@ internal static class MapLibreStyleNormalizer
                 or "icon-color" or "text-color" or "text-halo-color" =>
                 TryValidateColorValue(value, property, layerId, out error),
 
-            "circle-opacity" or "fill-opacity" or "line-opacity" or "icon-opacity" or "text-opacity" =>
+            "circle-opacity" or "circle-stroke-opacity" or "fill-opacity" or "line-opacity"
+                or "icon-opacity" or "text-opacity" =>
                 TryValidateOpacityValue(value, property, layerId, out error),
 
             "circle-radius" or "circle-stroke-width" or "icon-size" or "line-width"
