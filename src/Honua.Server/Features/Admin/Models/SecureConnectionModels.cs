@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -48,6 +49,11 @@ public class SecureConnectionSummary
     /// Database username.
     /// </summary>
     public required string Username { get; init; }
+
+    /// <summary>
+    /// Canonical feature-store provider engine for this connection.
+    /// </summary>
+    public required string Provider { get; init; }
 
     /// <summary>
     /// Whether SSL/TLS is required.
@@ -162,6 +168,12 @@ public sealed class CreateSecureConnectionRequest
     [Required]
     [StringLength(64, MinimumLength = 1)]
     public required string Username { get; init; }
+
+    /// <summary>
+    /// Provider engine for this connection.
+    /// </summary>
+    [StringLength(32, MinimumLength = 1)]
+    public string Provider { get; init; } = DataProviderNames.Postgis;
 
     /// <summary>
     /// Database password (used only for encrypted storage, not persisted in logs).

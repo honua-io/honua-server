@@ -6,7 +6,7 @@
 -- integration tests. It is NOT a mirror of the canonical migration set in
 -- src/Honua.Server/Migrations/; the server runs its own migrations at startup.
 -- The schema here is a pragmatic superset/subset: it includes columns from
--- several migrations (001, 002, 003, 005, 007, 009, 011) and adds seed data
+-- several migrations (001, 002, 003, 005, 007, 009, 011, 021) and adds seed data
 -- that migrations do not provide. It intentionally excludes migrations that
 -- are not exercised by CI integration tests:
 --   004 (import functions), 006 (secure connections), 010 (metadata resources),
@@ -36,6 +36,11 @@ CREATE TABLE IF NOT EXISTS honua.layers (
     layer_name TEXT NOT NULL,
     description TEXT,
     table_name TEXT NOT NULL,
+    primary_key_column TEXT NOT NULL DEFAULT 'objectid',
+    geometry_column TEXT DEFAULT 'geometry',
+    storage_srid INT,
+    temporal_column TEXT,
+    storage_options JSONB NOT NULL DEFAULT '{}'::jsonb,
     geometry_type TEXT NOT NULL,
     srid INT NOT NULL DEFAULT 4326,
     extent GEOMETRY(POLYGON, 4326),
@@ -54,6 +59,21 @@ ALTER TABLE IF EXISTS honua.services
 -- Columns from migrations 005, 007, 009, 011 — keep in sync.
 ALTER TABLE IF EXISTS honua.layers
     ADD COLUMN IF NOT EXISTS table_schema TEXT NOT NULL DEFAULT current_schema();
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS primary_key_column TEXT NOT NULL DEFAULT 'objectid';
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS geometry_column TEXT DEFAULT 'geometry';
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS storage_srid INT;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS temporal_column TEXT;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS storage_options JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 ALTER TABLE IF EXISTS honua.layers
     ADD COLUMN IF NOT EXISTS metadata JSONB;

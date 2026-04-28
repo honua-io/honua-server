@@ -20,7 +20,7 @@ RUN apt-get update && \
     rm -f /tmp/dotnet-install.sh && \
     rm -rf /var/lib/apt/lists/*
 
-COPY Honua.sln Directory.Build.props .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/

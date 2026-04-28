@@ -338,6 +338,11 @@ class PostGISFixture:
                         description TEXT,
                         table_schema TEXT NOT NULL DEFAULT current_schema(),
                         table_name TEXT NOT NULL,
+                        primary_key_column TEXT NOT NULL DEFAULT 'objectid',
+                        geometry_column TEXT DEFAULT 'geometry',
+                        storage_srid INT,
+                        temporal_column TEXT,
+                        storage_options JSONB NOT NULL DEFAULT '{}'::jsonb,
                         geometry_type TEXT NOT NULL,
                         srid INT NOT NULL DEFAULT 4326,
                         extent GEOMETRY(POLYGON, 4326),
@@ -352,6 +357,27 @@ class PostGISFixture:
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
+                )
+
+                conn.execute(
+                    "ALTER TABLE IF EXISTS honua.layers "
+                    "ADD COLUMN IF NOT EXISTS primary_key_column TEXT NOT NULL DEFAULT 'objectid';"
+                )
+                conn.execute(
+                    "ALTER TABLE IF EXISTS honua.layers "
+                    "ADD COLUMN IF NOT EXISTS geometry_column TEXT DEFAULT 'geometry';"
+                )
+                conn.execute(
+                    "ALTER TABLE IF EXISTS honua.layers "
+                    "ADD COLUMN IF NOT EXISTS storage_srid INT;"
+                )
+                conn.execute(
+                    "ALTER TABLE IF EXISTS honua.layers "
+                    "ADD COLUMN IF NOT EXISTS temporal_column TEXT;"
+                )
+                conn.execute(
+                    "ALTER TABLE IF EXISTS honua.layers "
+                    "ADD COLUMN IF NOT EXISTS storage_options JSONB NOT NULL DEFAULT '{}'::jsonb;"
                 )
 
                 conn.execute(

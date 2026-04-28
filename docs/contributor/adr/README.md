@@ -39,6 +39,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0032](0032-workflow-orchestration-layer.md) | Workflow Orchestration Layer | Accepted | 2026-04 |
 | [0033](0033-unified-license-format.md) | Unified License Format and Entitlement Architecture | Accepted | 2026-04 |
 | [0034](0034-gdal-honua-driver-delivery-strategy.md) | GDAL/OGR honua Driver Delivery Strategy | Accepted | 2026-04 |
+| [0035](0035-provider-ready-data-source-binding.md) | Provider-Ready Data Source Binding | Accepted | 2026-04 |
 | [0036](0036-mobile-sdk-language-strategy.md) | Mobile SDK Language Strategy | Accepted | 2026-04 |
 
 ## Template

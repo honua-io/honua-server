@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS honua.data_connections (
     port INT NOT NULL DEFAULT 5432,
     database_name VARCHAR(64) NOT NULL,
     username VARCHAR(64) NOT NULL,
+    provider_name TEXT NOT NULL DEFAULT 'postgis',
 
     -- Security settings
     ssl_required BOOLEAN NOT NULL DEFAULT TRUE,
@@ -78,6 +79,7 @@ ON CONFLICT DO NOTHING;
 COMMENT ON TABLE honua.data_connections IS 'Secure registry of database connection configurations with encrypted credentials';
 COMMENT ON TABLE honua.encryption_keys IS 'Encryption key versions for rotating credentials security';
 
+COMMENT ON COLUMN honua.data_connections.provider_name IS 'Canonical provider engine used to resolve feature-store implementation, e.g. postgis, postgresql, sqlserver, mysql, duckdb';
 COMMENT ON COLUMN honua.data_connections.connection_string_encrypted IS 'AES-GCM encrypted PostgreSQL connection string';
 COMMENT ON COLUMN honua.data_connections.secret_ref IS 'Reference to external secret manager (alternative to encrypted storage)';
 COMMENT ON COLUMN honua.data_connections.ssl_required IS 'Enforce SSL/TLS connections for security';
