@@ -82,6 +82,17 @@ curl -H "Accept: application/vnd.apache.parquet" \
   "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=population%20%3E%2010000&outFields=*" --output features.parquet
 ```
 
+**GeoArrow IPC stream output:**
+```bash
+curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=population%20%3E%2010000&outFields=*&f=arrow" --output features.arrows
+```
+
+**GeoArrow via Accept header:**
+```bash
+curl -H "Accept: application/vnd.apache.arrow.stream" \
+  "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=population%20%3E%2010000&outFields=*" --output features.arrows
+```
+
 ### **Add Features**
 
 ```bash
