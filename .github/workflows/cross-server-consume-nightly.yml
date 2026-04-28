@@ -76,7 +76,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/compatibility/cross-server-consume-gap-report.md
           git commit -m "docs: refresh cross-server consume gap report"
-          git push origin HEAD:${GITHUB_REF_NAME}
+          git push origin HEAD:${GITHUB_REF_NAME} || \
+            echo "::warning::Could not push cross-server consume gap report; create a PR manually if needed."
 
       - name: Upload consume artifacts
         if: always()

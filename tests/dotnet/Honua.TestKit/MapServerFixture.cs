@@ -25,6 +25,9 @@ public sealed class MapServerFixture : IAsyncLifetime
     private const int MapServerPort = 80;
     private const string ContainerMapFilePath = "/etc/mapserver/mapserver.map";
 
+    /// <summary>
+    /// Name of the seeded MapServer polygon layer.
+    /// </summary>
     public const string LayerName = "tsunami_zones";
 
     /// <summary>
@@ -32,6 +35,7 @@ public sealed class MapServerFixture : IAsyncLifetime
     /// </summary>
     public string EndpointUrl => _sharedEndpointUrl ?? throw new InvalidOperationException("MapServer fixture not initialized.");
 
+    /// <inheritdoc />
     public async Task InitializeAsync()
     {
         await _sharedLock.WaitAsync().ConfigureAwait(false);
@@ -51,6 +55,7 @@ public sealed class MapServerFixture : IAsyncLifetime
         }
     }
 
+    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         await _sharedLock.WaitAsync().ConfigureAwait(false);

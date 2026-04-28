@@ -16,20 +16,14 @@ namespace Honua.Server.Tests.Features.CrossServerConsume;
 [Protocol(TestProtocols.Wmts10)]
 [Operation(Operations.Consume)]
 [Trait("Suite", "CrossServerConsume")]
-public sealed class CrossServerConsumeMapServerTests : IClassFixture<CrossServerConsumeMapServerFixture>, IDisposable
+public sealed class CrossServerConsumeMapServerTests : IClassFixture<CrossServerConsumeMapServerFixture>
 {
     private const string MapServerWmtsGap = "gap: camptocamp/mapserver:8.0 exposes WMS/WFS but does not include WMTS_SERVER support; add a MapCache-backed reference source for WMTS.";
     private readonly CrossServerConsumeMapServerFixture _mapServer;
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromMinutes(2) };
 
     public CrossServerConsumeMapServerTests(CrossServerConsumeMapServerFixture mapServer)
     {
         _mapServer = mapServer;
-    }
-
-    public void Dispose()
-    {
-        _httpClient.Dispose();
     }
 
     [ExternalServiceTest(CrossServerConsumeTestSupport.ExternalServicesEnv)]
@@ -38,8 +32,8 @@ public sealed class CrossServerConsumeMapServerTests : IClassFixture<CrossServer
     public async Task WmsGetCapabilities_MapServer_ReturnsLayerDocument()
     {
         var document = await CrossServerConsumeTestSupport.GetXmlAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _mapServer.HonuaClient,
+            BuildProxyUrl(
                 _mapServer.EndpointUrl,
                 ("SERVICE", "WMS"),
                 ("REQUEST", "GetCapabilities"),
@@ -55,8 +49,8 @@ public sealed class CrossServerConsumeMapServerTests : IClassFixture<CrossServer
     public async Task WmsGetMap_MapServer_ReturnsImageForKnownLayer()
     {
         var image = await CrossServerConsumeTestSupport.GetImageAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _mapServer.HonuaClient,
+            BuildProxyUrl(
                 _mapServer.EndpointUrl,
                 ("SERVICE", "WMS"),
                 ("VERSION", "1.3.0"),
@@ -78,8 +72,8 @@ public sealed class CrossServerConsumeMapServerTests : IClassFixture<CrossServer
     public async Task WmsGetFeatureInfo_MapServer_ReturnsFeatureInfoPayload()
     {
         await CrossServerConsumeTestSupport.GetTextAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _mapServer.HonuaClient,
+            BuildProxyUrl(
                 _mapServer.EndpointUrl,
                 ("SERVICE", "WMS"),
                 ("VERSION", "1.3.0"),
@@ -104,8 +98,8 @@ public sealed class CrossServerConsumeMapServerTests : IClassFixture<CrossServer
     public async Task WfsGetCapabilities_MapServer_ReturnsFeatureTypeDocument()
     {
         var document = await CrossServerConsumeTestSupport.GetXmlAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _mapServer.HonuaClient,
+            BuildProxyUrl(
                 _mapServer.EndpointUrl,
                 ("SERVICE", "WFS"),
                 ("REQUEST", "GetCapabilities"),
@@ -121,8 +115,8 @@ public sealed class CrossServerConsumeMapServerTests : IClassFixture<CrossServer
     public async Task WfsGetFeature_MapServer_ReturnsExpectedFeatures()
     {
         var document = await CrossServerConsumeTestSupport.GetXmlAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _mapServer.HonuaClient,
+            BuildProxyUrl(
                 _mapServer.EndpointUrl,
                 ("SERVICE", "WFS"),
                 ("VERSION", "2.0.0"),
@@ -148,4 +142,8 @@ public sealed class CrossServerConsumeMapServerTests : IClassFixture<CrossServer
     {
         return Task.CompletedTask;
     }
+
+    private static string BuildProxyUrl(string baseUrl, params (string Name, string Value)[] parameters)
+        => CrossServerConsumeTestSupport.BuildHonuaProxyUrl(
+            CrossServerConsumeTestSupport.BuildUrl(baseUrl, parameters));
 }

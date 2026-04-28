@@ -17,10 +17,9 @@ namespace Honua.Server.Tests.Features.CrossServerConsume;
 [Protocol(TestProtocols.Wmts10)]
 [Operation(Operations.Consume)]
 [Trait("Suite", "CrossServerConsume")]
-public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServerConsumeGeoServerFixture>, IDisposable
+public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServerConsumeGeoServerFixture>
 {
     private readonly CrossServerConsumeGeoServerFixture _geoServer;
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromMinutes(2) };
 
     private string OwsEndpoint => $"{_geoServer.BaseUrl}/geoserver/{GeoServerFixture.CuratedWorkspaceName}/ows";
 
@@ -31,19 +30,14 @@ public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServer
         _geoServer = geoServer;
     }
 
-    public void Dispose()
-    {
-        _httpClient.Dispose();
-    }
-
     [ExternalServiceTest(CrossServerConsumeTestSupport.ExternalServicesEnv)]
     [Protocol(TestProtocols.Wms13)]
     [Operation(Operations.Consume)]
     public async Task WmsGetCapabilities_GeoServer_ReturnsLayerDocument()
     {
         var document = await CrossServerConsumeTestSupport.GetXmlAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _geoServer.HonuaClient,
+            BuildProxyUrl(
                 OwsEndpoint,
                 ("SERVICE", "WMS"),
                 ("REQUEST", "GetCapabilities"),
@@ -59,8 +53,8 @@ public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServer
     public async Task WmsGetMap_GeoServer_ReturnsImageForKnownLayer()
     {
         var image = await CrossServerConsumeTestSupport.GetImageAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _geoServer.HonuaClient,
+            BuildProxyUrl(
                 OwsEndpoint,
                 ("SERVICE", "WMS"),
                 ("VERSION", "1.3.0"),
@@ -83,8 +77,8 @@ public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServer
     public async Task WmsGetFeatureInfo_GeoServer_ReturnsFeatureInfoPayload()
     {
         await CrossServerConsumeTestSupport.GetTextAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _geoServer.HonuaClient,
+            BuildProxyUrl(
                 OwsEndpoint,
                 ("SERVICE", "WMS"),
                 ("VERSION", "1.3.0"),
@@ -109,8 +103,8 @@ public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServer
     public async Task WfsGetCapabilities_GeoServer_ReturnsFeatureTypeDocument()
     {
         var document = await CrossServerConsumeTestSupport.GetXmlAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _geoServer.HonuaClient,
+            BuildProxyUrl(
                 OwsEndpoint,
                 ("SERVICE", "WFS"),
                 ("REQUEST", "GetCapabilities"),
@@ -126,8 +120,8 @@ public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServer
     public async Task WfsGetFeature_GeoServer_ReturnsExpectedFeatures()
     {
         var document = await CrossServerConsumeTestSupport.GetXmlAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _geoServer.HonuaClient,
+            BuildProxyUrl(
                 OwsEndpoint,
                 ("SERVICE", "WFS"),
                 ("VERSION", "2.0.0"),
@@ -144,8 +138,8 @@ public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServer
     public async Task WmtsGetCapabilities_GeoServer_ReturnsLayerDocument()
     {
         var document = await CrossServerConsumeTestSupport.GetXmlAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _geoServer.HonuaClient,
+            BuildProxyUrl(
                 WmtsEndpoint,
                 ("SERVICE", "WMTS"),
                 ("REQUEST", "GetCapabilities"),
@@ -161,8 +155,8 @@ public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServer
     public async Task WmtsGetTile_GeoServer_ReturnsAdvertisedTile()
     {
         var capabilities = await CrossServerConsumeTestSupport.GetXmlAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _geoServer.HonuaClient,
+            BuildProxyUrl(
                 WmtsEndpoint,
                 ("SERVICE", "WMTS"),
                 ("REQUEST", "GetCapabilities"),
@@ -172,8 +166,8 @@ public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServer
             GeoServerFixture.CuratedQualifiedLayerName);
 
         var image = await CrossServerConsumeTestSupport.GetImageAsync(
-            _httpClient,
-            CrossServerConsumeTestSupport.BuildUrl(
+            _geoServer.HonuaClient,
+            BuildProxyUrl(
                 WmtsEndpoint,
                 ("SERVICE", "WMTS"),
                 ("REQUEST", "GetTile"),
@@ -188,4 +182,8 @@ public sealed class CrossServerConsumeGeoServerTests : IClassFixture<CrossServer
 
         image.Should().NotBeEmpty();
     }
+
+    private static string BuildProxyUrl(string baseUrl, params (string Name, string Value)[] parameters)
+        => CrossServerConsumeTestSupport.BuildHonuaProxyUrl(
+            CrossServerConsumeTestSupport.BuildUrl(baseUrl, parameters));
 }

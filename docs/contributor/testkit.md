@@ -167,7 +167,9 @@ export HONUA_TEST_ESRI_PARITY="1"
 Enable the cross-server consume suite — `Honua.TestKit.GeoServerFixture`
 plus `Honua.TestKit.MapServerFixture` (`camptocamp/mapserver:8.0`) drive
 WMS 1.3, WFS 2.0, and WMTS 1.0 reads from Honua-as-client against
-containerized GeoServer and MapServer reference sources:
+containerized GeoServer and MapServer reference sources. The suite routes
+reference-source reads through Honua's Test-environment consume probe endpoint
+instead of fetching the source servers directly from test code:
 
 ```bash
 export HONUA_TEST_CROSS_SERVER_CONSUME="1"

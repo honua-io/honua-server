@@ -28,12 +28,15 @@ internal static class CrossServerConsumeTestSupport
                 $"{Uri.EscapeDataString(parameter.Name)}={Uri.EscapeDataString(parameter.Value)}"));
     }
 
+    internal static string BuildHonuaProxyUrl(string sourceUrl)
+        => BuildUrl("/__test/cross-server-consume/proxy", ("url", sourceUrl));
+
     internal static async Task<XDocument> GetXmlAsync(HttpClient httpClient, string url)
     {
         using var response = await httpClient.GetAsync(url).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, "source server request should succeed: {0}\n{1}", url, body);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "consume request should succeed: {0}\n{1}", url, body);
         body.Should().NotBeNullOrWhiteSpace();
 
         return XDocument.Parse(body);
@@ -44,7 +47,7 @@ internal static class CrossServerConsumeTestSupport
         using var response = await httpClient.GetAsync(url).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, "source server request should succeed: {0}\n{1}", url, body);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "consume request should succeed: {0}\n{1}", url, body);
         body.Should().NotBeNullOrWhiteSpace();
         body.Should().NotContain("ServiceException", "GetFeatureInfo should not return an OGC exception report");
 
@@ -57,7 +60,7 @@ internal static class CrossServerConsumeTestSupport
         var body = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
         var contentType = response.Content.Headers.ContentType?.MediaType;
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, "source server image request should succeed: {0}", url);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "consume image request should succeed: {0}", url);
         contentType.Should().NotBeNull();
         contentType!.Should().StartWith("image/");
         body.Length.Should().BeGreaterThan(100, "source server should return a non-empty image payload");
@@ -172,38 +175,132 @@ internal static class CrossServerConsumeTestSupport
     }
 }
 
+/// <summary>
+/// xUnit fixture that starts the GeoServer reference container and a Honua test host
+/// for cross-server consume checks.
+/// </summary>
 public sealed class CrossServerConsumeGeoServerFixture : IAsyncLifetime
 {
     private readonly GeoServerFixture _geoServer = new(seedCuratedData: true);
+    private readonly WebAppFixture _honua = new();
 
+    /// <summary>
+    /// Gets the base URL of the GeoServer reference instance.
+    /// </summary>
     public string BaseUrl => _geoServer.BaseUrl;
 
-    public Task InitializeAsync()
-        => CrossServerConsumeTestSupport.IsEnabled()
-            ? _geoServer.InitializeAsync()
-            : Task.CompletedTask;
+    /// <summary>
+    /// Gets the Honua HTTP client used to route source-server reads through Honua.
+    /// </summary>
+    public HttpClient HonuaClient => _honua.Client;
 
-    public Task DisposeAsync()
-        => CrossServerConsumeTestSupport.IsEnabled()
-            ? _geoServer.DisposeAsync()
-            : Task.CompletedTask;
+    /// <inheritdoc />
+    public async Task InitializeAsync()
+    {
+        if (!CrossServerConsumeTestSupport.IsEnabled())
+        {
+            return;
+        }
+
+        var geoServerInitialized = false;
+        try
+        {
+            await _geoServer.InitializeAsync().ConfigureAwait(false);
+            geoServerInitialized = true;
+            await _honua.InitializeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            if (geoServerInitialized)
+            {
+                await _geoServer.DisposeAsync().ConfigureAwait(false);
+            }
+
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task DisposeAsync()
+    {
+        if (!CrossServerConsumeTestSupport.IsEnabled())
+        {
+            return;
+        }
+
+        try
+        {
+            await _honua.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            await _geoServer.DisposeAsync().ConfigureAwait(false);
+        }
+    }
 }
 
+/// <summary>
+/// xUnit fixture that starts the MapServer reference container and a Honua test host
+/// for cross-server consume checks.
+/// </summary>
 public sealed class CrossServerConsumeMapServerFixture : IAsyncLifetime
 {
     private readonly MapServerFixture _mapServer = new();
+    private readonly WebAppFixture _honua = new();
 
+    /// <summary>
+    /// Gets the MapServer OGC endpoint URL for the reference mapfile.
+    /// </summary>
     public string EndpointUrl => _mapServer.EndpointUrl;
 
-    public Task InitializeAsync()
-        => CrossServerConsumeTestSupport.IsEnabled()
-            ? _mapServer.InitializeAsync()
-            : Task.CompletedTask;
+    /// <summary>
+    /// Gets the Honua HTTP client used to route source-server reads through Honua.
+    /// </summary>
+    public HttpClient HonuaClient => _honua.Client;
 
-    public Task DisposeAsync()
-        => CrossServerConsumeTestSupport.IsEnabled()
-            ? _mapServer.DisposeAsync()
-            : Task.CompletedTask;
+    /// <inheritdoc />
+    public async Task InitializeAsync()
+    {
+        if (!CrossServerConsumeTestSupport.IsEnabled())
+        {
+            return;
+        }
+
+        var mapServerInitialized = false;
+        try
+        {
+            await _mapServer.InitializeAsync().ConfigureAwait(false);
+            mapServerInitialized = true;
+            await _honua.InitializeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            if (mapServerInitialized)
+            {
+                await _mapServer.DisposeAsync().ConfigureAwait(false);
+            }
+
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task DisposeAsync()
+    {
+        if (!CrossServerConsumeTestSupport.IsEnabled())
+        {
+            return;
+        }
+
+        try
+        {
+            await _honua.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            await _mapServer.DisposeAsync().ConfigureAwait(false);
+        }
+    }
 }
 
 internal sealed record WmtsTileRequest(
