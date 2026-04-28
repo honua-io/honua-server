@@ -522,11 +522,7 @@ public sealed class SpecEndpointsTests
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /v1/spec/apply")]
-    // Tagged Flaky pending #812's `[FlakyTest]` infrastructure: under combined Testcontainers
-    // / fixture load the SSE response headers occasionally settle as null when read mid-stream
-    // (CollectSseEventsAsync sees `Content.Headers.ContentType?.MediaType == null`). The test
-    // passes reliably in isolation. Migrate to `[FlakyTest("...")]` when #812 lands.
-    [Trait("Flaky", "true")]
+    [FlakyTest("SSE response headers occasionally null mid-stream under combined Testcontainers/fixture load — tracked in #812")]
     public async Task Apply_LinearChain_StreamsSseEvents_AndSucceeds()
     {
         using var factory = new TestWebApplicationFactory();

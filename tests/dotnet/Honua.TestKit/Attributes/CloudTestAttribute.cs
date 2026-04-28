@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.TestKit.Constants;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
@@ -10,7 +11,9 @@ namespace Honua.TestKit.Attributes;
 /// <summary>
 /// Marks a test as a real deployed-environment cloud validation check.
 /// Skips execution when required environment variables are not present.
-/// Tier=Slow — included in the nightly slow-tier run. See ADR-0037.
+/// Tier=Slow with Category=Cloud — runs only on a future cloud-dedicated workflow
+/// (real cloud credentials); the existing nightly slow-tier workflow scopes to
+/// Category=Emulator. See ADR-0035.
 /// </summary>
 [TraitDiscoverer("Honua.TestKit.Attributes.CloudTestDiscoverer", "Honua.TestKit")]
 public sealed class CloudTestAttribute : FactAttribute, ITraitAttribute
@@ -41,7 +44,7 @@ public sealed class CloudTestDiscoverer : ITraitDiscoverer
         [
             new KeyValuePair<string, string>("Category", "Integration"),
             new KeyValuePair<string, string>("Category", "Cloud"),
-            new KeyValuePair<string, string>("Tier", "Slow")
+            new KeyValuePair<string, string>("Tier", Tiers.Slow)
         ];
     }
 }

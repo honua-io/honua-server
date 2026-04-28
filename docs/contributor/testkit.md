@@ -283,12 +283,12 @@ maps to the CI schedule defined in ADR-0035 (`docs/contributor/adr/0035-unified-
 | Attribute | Category | Tier | When it runs |
 |-----------|----------|------|--------------|
 | `[UnitTest]` | `Unit` | `Fast` | Every PR (no DB, no HTTP, no Testcontainers). |
-| `[IntegrationTest]` | `Integration` | `Integration` | Targeted shards on PRs; full matrix on merge-to-trunk. |
-| `[ScaleTest]` | `Integration,Scale` | `Slow` | Nightly slow-tier workflow. |
-| `[ExternalServiceTest]` | `Integration,External` | `Slow` | Nightly slow-tier workflow (env vars required). |
-| `[EmulatorTest]` | `Integration,Emulator` | `Slow` | Nightly slow-tier workflow. |
-| `[CloudTest]` | `Integration,Cloud` | `Slow` | Nightly slow-tier workflow against deployed environments. |
-| `[FlakyTest("reason")]` | (additive) | (inherits sibling tier) | Always runs; surfaced separately by `flaky-detection.yml`. |
+| `[IntegrationTest]` | `Integration` | `Integration` | Targeted shards on PRs; full matrix on merge-to-trunk. PR shard step composes `(matrix.filter)&Tier!=Slow` so a Slow-tagged sibling in the same shard namespace skips. |
+| `[EmulatorTest]` | `Integration,Emulator` | `Slow` | `nightly-slow-tier.yml` — runs `Tier=Slow&Category=Emulator` against LocalStack S3 + Azurite + Postgres. |
+| `[ScaleTest]` | `Integration,Scale` | `Slow` | Currently **not** scheduled. Multi-node compose fixtures are tracked as a separate workflow; the trait is in place for the future workflow to opt in. |
+| `[ExternalServiceTest]` | `Integration,External` | `Slow` | Currently **not** scheduled. External service credentials (e.g. Esri Geoportal) are tracked as a separate workflow. |
+| `[CloudTest]` | `Integration,Cloud` | `Slow` | Currently **not** scheduled. Real-cloud credentials are tracked as a separate workflow. |
+| `[FlakyTest("reason")]` | (additive) | (inherits sibling tier) | Always runs on its tier's normal schedule; surfaced separately by `flaky-detection.yml`. |
 
 ```csharp
 [UnitTest]              // Fast, isolated tests

@@ -563,7 +563,13 @@ jobs:
         shell: bash
         run: |
           set +e
-          filter='${{ matrix.filter }}'
+          # Per ADR-0035 the PR shard lane is the Integration tier; Slow-tagged
+          # tests ([EmulatorTest], [ScaleTest], [ExternalServiceTest],
+          # [CloudTest]) belong to nightly-slow-tier.yml. Compose the matrix
+          # FQN filter with `&Tier!=Slow` here so .github/ci-shards.json stays
+          # a pure FQN→shard map (mirrored 1:1 by the parity check) and the
+          # tier exclusion lives at a single, reviewable point.
+          filter="(${{ matrix.filter }})&Tier!=Slow"
           log_file="./tests/TestResults/${{ matrix.log_name }}.log"
           trx_file="${{ matrix.log_name }}.trx"
           extra_args=()

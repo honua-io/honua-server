@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.TestKit.Constants;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
@@ -10,7 +11,9 @@ namespace Honua.TestKit.Attributes;
 /// <summary>
 /// Marks a test as an emulator-backed integration test.
 /// Skips execution when required environment variables are not present.
-/// Tier=Slow — included in the nightly slow-tier run. See ADR-0037.
+/// Tier=Slow with Category=Emulator — runs nightly via
+/// <c>nightly-slow-tier.yml</c> (filter <c>Tier=Slow&amp;Category=Emulator</c>).
+/// See ADR-0035.
 /// </summary>
 [TraitDiscoverer("Honua.TestKit.Attributes.EmulatorTestDiscoverer", "Honua.TestKit")]
 public sealed class EmulatorTestAttribute : FactAttribute, ITraitAttribute
@@ -63,7 +66,7 @@ public sealed class EmulatorTestDiscoverer : ITraitDiscoverer
         [
             new KeyValuePair<string, string>("Category", "Integration"),
             new KeyValuePair<string, string>("Category", "Emulator"),
-            new KeyValuePair<string, string>("Tier", "Slow")
+            new KeyValuePair<string, string>("Tier", Tiers.Slow)
         ];
     }
 }

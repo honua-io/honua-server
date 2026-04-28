@@ -1,9 +1,10 @@
-name: Nightly Slow Tier
+name: Nightly Slow Tier (Emulator)
 
 on:
   schedule:
-    # Slow-tier tests (scale, external services, emulators, cloud) run nightly.
-    # See ADR-0037 for the tier strategy.
+    # Tier=Slow&Category=Emulator: LocalStack S3 + Azurite + Postgres-backed
+    # [EmulatorTest] coverage. Scale/Cloud/External slow subfamilies need
+    # dedicated workflows once their fixtures are wired up. See ADR-0035.
     - cron: '0 4 * * *'
   workflow_dispatch:
     inputs:
@@ -113,7 +114,7 @@ jobs:
           docker compose -f docker/docker-compose.emulators.yml ps
           exit 1
 
-      - name: Verify required slow-tier env vars are set
+      - name: Verify required emulator env vars are set
         if: steps.gate.outputs.skipped != 'true'
         env:
           # Defaults used by [EmulatorTest] are set when missing; just declare
@@ -150,18 +151,24 @@ jobs:
             done
           } >> "$GITHUB_ENV"
 
-      - name: Run slow tier
+      - name: Run slow tier (emulator family)
         if: steps.gate.outputs.skipped != 'true'
         env:
           TESTCONTAINERS_RYUK_DISABLED: false
           TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
         run: |
           mkdir -p ./tests/TestResults
+          # Per ADR-0035 this workflow runs the emulator subfamily of Tier=Slow
+          # (LocalStack S3 + Azurite + Postgres). The Scale/Cloud/External
+          # subfamilies need additional fixtures (multi-node compose, real
+          # cloud credentials, Esri Geoportal) and are tracked as separate
+          # workflows. Filtering by Category=Emulator scopes execution to the
+          # subfamily this runner actually provisions.
           dotnet test ${{ matrix.csproj }} \
             --no-build \
             --no-restore \
             --configuration Release \
-            --filter "Tier=Slow" \
+            --filter "Tier=Slow&Category=Emulator" \
             --logger "trx;LogFileName=slow-tier-${{ matrix.project }}.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults

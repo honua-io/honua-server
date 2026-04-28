@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.TestKit.Constants;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
@@ -25,7 +26,7 @@ public sealed class IntegrationTestDiscoverer : ITraitDiscoverer
         return
         [
             new KeyValuePair<string, string>("Category", "Integration"),
-            new KeyValuePair<string, string>("Tier", "Integration")
+            new KeyValuePair<string, string>("Tier", Tiers.Integration)
         ];
     }
 }

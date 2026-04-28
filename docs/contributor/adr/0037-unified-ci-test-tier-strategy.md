@@ -81,9 +81,9 @@ default mapping. The mapping is documented in
 
 | Event           | Workflow                              | What runs                                                                                             |
 |-----------------|---------------------------------------|-------------------------------------------------------------------------------------------------------|
-| Pull Request    | `ci.yml`                              | Build + format + Architecture tests + Tier=Fast across all projects + targeted Tier=Integration shards via `scripts/ci/honua-server-targeted-tests.sh`. |
-| Merge to trunk  | `ci.yml` (push event)                 | Everything PR runs **plus** the full 11-shard `server-tests` matrix and the Postgres compat matrix.   |
-| Nightly         | `nightly-slow-tier.yml`               | `Tier=Slow` across all projects with required environment variables asserted before the test step.    |
+| Pull Request    | `ci.yml`                              | Build + format + Architecture tests + Tier=Fast across all projects + targeted shards (`server-tests`) composed as `(matrix.filter)&Tier!=Slow` so Slow-tagged tests stay out of the PR lane. |
+| Merge to trunk  | `ci.yml` (push event)                 | Everything PR runs **plus** the full 11-shard `server-tests` matrix and the Postgres compat matrix. The `&Tier!=Slow` exclusion still applies — Slow remains nightly-only. |
+| Nightly (slow)  | `nightly-slow-tier.yml`               | `Tier=Slow&Category=Emulator` (LocalStack S3 + Azurite + Postgres). Scale/Cloud/External slow subfamilies need additional fixtures and are tracked as separate workflows. |
 | Nightly (flake) | `flaky-detection.yml`                 | Re-runs the Integration tier 3× and emits a candidate-flake report.                                   |
 
 `server-tests` is the largest contributor and stays sharded. The shards are
@@ -128,6 +128,15 @@ unfiltered Core / LoadTests / Architecture projects whose contents are
 already Fast-tier). This honours the "Tier=Fast across all projects on every
 PR" contract and prevents a PR with no matching shard from skipping the fast
 server unit tests.
+
+**Slow tests stay out of PR shards.** The `Run server test shard` step in
+`ci.yml` composes the matrix-supplied filter as `(matrix.filter)&Tier!=Slow`
+before invoking `dotnet test`. The `ci-shards.json` mapping and the
+`server-tests` matrix continue to express pure FQN→shard routing (so the
+parity check stays a literal string compare); the Tier exclusion is layered
+in at a single, reviewable point. This prevents `[EmulatorTest]` /
+`[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods sitting in a
+shard's namespace (e.g. `Honua.Server.Tests.Import.*`) from running on PRs.
 
 The targeted entrypoint runs the architecture tests on every PR regardless of
 diff content; that is the gate that catches the #802 class of issue (new
@@ -201,9 +210,18 @@ remove it from the coverage ledger.
 
 - TestKit attribute traits are declared via `ITraitAttribute` and
   `ITraitDiscoverer`. The discoverers return a `KeyValuePair<string,string>`
-  list; the `Tier` value comes from `Honua.TestKit.Constants.Tiers`.
+  list; the `Tier` value comes from `Honua.TestKit.Constants.Tiers`
+  (`Tiers.Fast` / `Tiers.Integration` / `Tiers.Slow`) — discoverers must
+  reference the constants rather than hard-coding the strings so the
+  cross-repo contract stays in one place.
 - `dotnet test --filter "Tier=Fast"` and
   `dotnet test --filter "Tier=Integration"` consume the trait directly.
+  The PR `server-tests` step composes its filter as
+  `(matrix.filter)&Tier!=Slow` so Slow-tagged tests in a shard's namespace
+  (e.g. `[EmulatorTest]` methods inside `Honua.Server.Tests.Import.*`) do not
+  run on PRs. `Tier!=Slow` is preferred over `Tier=Integration` because a
+  significant fraction of Server.Tests methods are still plain `[Fact]`
+  without a Tier trait — those are kept in the PR lane.
 - `FlakyTestAttribute` is `[AttributeUsage(... AllowMultiple = false)]`. A
   test should never be tagged flaky on more than one attribute level — if
   the whole class is flaky, tag the class.
@@ -216,4 +234,14 @@ remove it from the coverage ledger.
 - Any new shard added to the `server-tests` matrix MUST also be added to
   `.github/ci-shards.json` in the same PR. The `Validate shard parity`
   step in the `targeted-shards` job fails the run if a `shard_name`/`filter`
-  pair in `ci.yml` is missing from `ci-shards.json` (or vice-versa).
+  pair in `ci.yml` is missing from `ci-shards.json` (or vice-versa). The
+  parity check compares the FQN-only filter strings; the runtime
+  `&Tier!=Slow` composition is applied uniformly to every shard and is not
+  part of the per-shard filter that ci-shards.json mirrors.
+- `nightly-slow-tier.yml` currently runs `Tier=Slow&Category=Emulator`
+  because LocalStack S3 + Azurite + Postgres are the only fixtures
+  provisioned. The Scale, Cloud, and ExternalService subfamilies need
+  dedicated fixtures (multi-node compose, real cloud credentials, Esri
+  Geoportal) and are tracked as separate workflows; their attributes still
+  emit `Tier=Slow` so a future workflow can opt them in by tightening
+  `Category=`.

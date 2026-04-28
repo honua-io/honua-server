@@ -1,16 +1,31 @@
 #!/usr/bin/env bash
 # Compute the server-tests shard subset to execute on a pull request based on
-# the changed files in the diff. Owned by ADR-0037.
+# the changed files in the diff. Owned by ADR-0035. The shard map and watched
+# prefix lists are sourced from .github/ci-shards.json.
 #
-# Behaviour:
-#   - When the diff touches shared infrastructure (TestKit, Honua.Core,
-#     Honua.Postgres, .github/, scripts/ci/, Honua.sln, src/Honua.ServiceDefaults),
-#     emit {"run_all": true, "shards": ["<every shard>"]}.
-#   - Otherwise, walk every changed file, match it against shard `paths`
-#     prefixes from .github/ci-shards.json, and emit
-#     {"run_all": false, "shards": [...]} with the union.
-#   - When no source paths match (e.g. the diff is documentation-only), emit
-#     {"run_all": false, "shards": ["Core"]} so the smoke shard still runs.
+# Behaviour (in evaluation order):
+#   1. When no files changed (empty diff), emit
+#      {"run_all": true, "reason": "no_changed_files"} so a manual replay still
+#      exercises the full matrix.
+#   2. When the diff touches a path under `infrastructure_paths` in
+#      ci-shards.json (TestKit, Honua.Core, Honua.Postgres,
+#      Honua.ServiceDefaults, src/Honua.Server/Features/Infrastructure/,
+#      Honua.sln, .github/, scripts/ci/), emit
+#      {"run_all": true, "reason": "infrastructure_change"}.
+#   3. Otherwise, walk every changed file, match it against shard `paths`
+#      prefixes, and union the shard names that claim it.
+#   4. When the diff touches a path under `unmapped_source_run_all_prefixes`
+#      (src/Honua.Server/, src/Honua.DuckDB/, tests/dotnet/Honua.Server.Tests/)
+#      that no shard's `paths` claims, emit
+#      {"run_all": true, "reason": "unmapped_source_change"} so a new feature
+#      directory does not silently fall back to the Core shard whose filter
+#      excludes Honua.Server.Tests.Features.*.
+#   5. When the union from step 3 is empty (e.g. doc-only or workflow-only
+#      diffs that did not trigger steps 2 or 4), fall back to
+#      `default_shards_when_no_match` (currently ["Core"]) with reason
+#      "no_path_match" so the smoke shard still runs.
+#   6. Otherwise emit {"run_all": false, "shards": [...], "reason": "targeted"}
+#      with the matched shard set.
 #
 # Usage:
 #   honua-server-targeted-tests.sh                    # auto-detect base ref

@@ -9,7 +9,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 - `ci.yml`: build, formatting verification, tier-aware test dispatch (PRs run only the `targeted-shards` subset emitted by `scripts/ci/honua-server-targeted-tests.sh`; merge-to-trunk runs the full 11-shard `server-tests` matrix — see [Test Tier Strategy](#test-tier-strategy) and [ADR-0035](adr/0035-unified-ci-test-tier-strategy.md)), merge-blocking Esri Leaflet browser compatibility tests, and MCP certification (see [MCP Certification](mcp-certification.md)).
 - `pr-validation.yml`: PR template compliance validation.
 - `load-soak-nightly.yml`: nightly load/soak testing.
-- `nightly-slow-tier.yml`: nightly `Tier=Slow` execution across `Honua.Server.Tests`, `Honua.Postgres.Tests`, and `Honua.Core.Tests` (Scale/External/Emulator/Cloud-tagged tests). Daily 4am UTC.
+- `nightly-slow-tier.yml`: nightly `Tier=Slow&Category=Emulator` execution (`[EmulatorTest]` only) across `Honua.Server.Tests`, `Honua.Postgres.Tests`, and `Honua.Core.Tests`. Daily 4am UTC. Scale/Cloud/External slow subfamilies need dedicated fixtures and are tracked as separate workflows.
 - `flaky-detection.yml`: nightly flake reporting — re-runs the integration tier 3× and uploads a flake-candidate report. Daily 5am UTC. See [ADR-0035](adr/0035-unified-ci-test-tier-strategy.md) for the quarantine workflow.
 - `windows-client-compat-nightly.yml`: nightly/manual Windows client compatibility certification (full CERT-\* matrix: 18 test cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes and reusable evidence pack artifacts.
 - `client-interop-nightly.yml`: nightly real-client interop matrix that exercises Honua against actual GIS clients (QGIS, GDAL/OGR, OpenLayers, Cesium, ArcGIS Pro stub) via the Docker harnesses under `docker/client-compat/`. The workflow diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` (gated by `tests/baselines/client-compat/expected-pairs.json`), refreshes `docs/gis/gap-report.md`, and fails on any baseline `pass` regressing to a non-`pass` status, missing lane envelope, or new `fail` in an unbaselined case. Non-PR-blocking until 30 consecutive nightly passes (#806).
@@ -32,9 +32,9 @@ ADR-0035 defines a `Tier` xUnit trait — `Fast`, `Integration`, or `Slow` — t
 
 | Event | Workflow | Tier scope |
 |---|---|---|
-| Pull Request | `ci.yml` | Foundation tests (Core/Architecture/LoadTests, primarily `Tier=Fast`) plus a `--filter "Tier=Fast"` step against `Honua.Server.Tests` plus the `server-tests` shards selected by `scripts/ci/honua-server-targeted-tests.sh`. |
-| Merge to trunk | `ci.yml` (`push`) | Same as PR plus the **full** 11-shard `server-tests` matrix and the Postgres compat matrix. |
-| Nightly slow tier | `nightly-slow-tier.yml` | `--filter "Tier=Slow"` across `Honua.Server.Tests`, `Honua.Postgres.Tests`, `Honua.Core.Tests`. |
+| Pull Request | `ci.yml` | Foundation tests (Core/Architecture/LoadTests, primarily `Tier=Fast`) plus a `--filter "Tier=Fast"` step against `Honua.Server.Tests` plus the `server-tests` shards selected by `scripts/ci/honua-server-targeted-tests.sh`. The shard step composes its filter as `(matrix.filter)&Tier!=Slow` so `[EmulatorTest]` / `[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods sitting in a shard's namespace are skipped on PRs. |
+| Merge to trunk | `ci.yml` (`push`) | Same as PR plus the **full** 11-shard `server-tests` matrix and the Postgres compat matrix. The `&Tier!=Slow` shard filter still applies — Slow stays nightly-only. |
+| Nightly slow tier | `nightly-slow-tier.yml` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. Scale/Cloud/External slow subfamilies need dedicated workflows. |
 | Nightly flake hunt | `flaky-detection.yml` | Re-runs `--filter "Tier=Integration&Tier!=Slow"` three times and reports inconsistent outcomes (never fails the workflow). |
 
 The Tier=Fast PR step always runs regardless of which shards `targeted-shards` selects, so a PR whose diff matches no integration shard still exercises `[UnitTest]` methods in `Honua.Server.Tests`.
