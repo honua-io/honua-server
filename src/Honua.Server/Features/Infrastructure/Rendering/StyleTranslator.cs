@@ -214,9 +214,15 @@ internal static class StyleTranslator
         var fillColor = ResolveColor(paint, "circle-color", properties, SKColors.Black);
         var fillOpacity = ResolveFloat(paint, "circle-opacity", properties, 1f);
         var strokeColor = ResolveOptionalColor(paint, "circle-stroke-color", properties);
+        var strokeOpacity = ResolveFloat(paint, "circle-stroke-opacity", properties, 1f);
         var strokeWidth = ResolveFloat(paint, "circle-stroke-width", properties, 0f);
 
         fillColor = ApplyOpacity(fillColor, fillOpacity);
+
+        if (strokeColor.HasValue)
+        {
+            strokeColor = ApplyOpacity(strokeColor.Value, strokeOpacity);
+        }
 
         return new ResolvedCircleStyle
         {

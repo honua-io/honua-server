@@ -979,6 +979,151 @@
         }
       }
     },
+    "/metadata/layers/{layerId}/style/import-sld": {
+      "post": {
+        "tags": [
+          "Styles"
+        ],
+        "summary": "Import SLD Layer Style",
+        "description": "Convert an SLD/SE 1.0 or 1.1 XML document to a MapLibre style and persist it as the layer's stored style. Admin-only; available in Community edition (no FeatureCatalog gate). Body is the raw SLD document (capped at 1 MiB; oversized requests return 413). Conversion warnings come back in the success body's diagnostics array; error-severity diagnostics return 422 with the same diagnostic shape under data.diagnostics.",
+        "operationId": "importLayerSldStyle",
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "description": "Layer ID",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            },
+            "text/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Imported and stored MapLibre style with conversion diagnostics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseSldImportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "description": "SLD body exceeds the 1 MiB limit"
+          },
+          "422": {
+            "description": "SLD conversion produced error-severity diagnostics; nothing stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseSldImportFailureResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metadata/layers/{layerId}/style/export-sld": {
+      "get": {
+        "tags": [
+          "Styles"
+        ],
+        "summary": "Export Layer Style as SLD",
+        "description": "Export the layer's stored MapLibre style as SLD 1.0 XML on a best-effort basis. The X-Sld-Diagnostic-Count response header reports how many constructs surfaced during export; X-Sld-Diagnostics carries the JSON-encoded diagnostic array when the count is non-zero. A 422 with data.diagnostics is returned when no MapLibre layer can be expressed in SLD.",
+        "operationId": "exportLayerSldStyle",
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "description": "Layer ID",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SLD 1.0 document",
+            "headers": {
+              "X-Sld-Diagnostic-Count": {
+                "description": "Number of conversion diagnostics emitted during export.",
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              },
+              "X-Sld-Diagnostics": {
+                "description": "JSON-encoded array of SldConversionDiagnostic entries; only present when X-Sld-Diagnostic-Count > 0.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "Stored MapLibre style cannot be expressed as SLD; see diagnostics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseSldImportFailureResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/metadata/layers/{layerId}/suggest-style": {
       "post": {
         "tags": [
@@ -4021,6 +4166,120 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseSldImportResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SldImportResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseSldImportFailureResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SldImportFailureResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SldImportResponse": {
+        "type": "object",
+        "description": "Successful SLD import response carrying the stored MapLibre style and conversion diagnostics.",
+        "properties": {
+          "detectedVersion": {
+            "type": "string",
+            "description": "SLD specification version detected during parsing.",
+            "enum": [
+              "Sld10",
+              "Sld11"
+            ]
+          },
+          "layerCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of MapLibre layers produced by the conversion."
+          },
+          "mapLibreStyle": {
+            "type": "object",
+            "description": "Stored MapLibre v8 style document.",
+            "additionalProperties": true
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SldConversionDiagnostic"
+            }
+          }
+        }
+      },
+      "SldImportFailureResponse": {
+        "type": "object",
+        "description": "Failure payload for SLD import (422) and SLD export (422). Carries the diagnostic list that explains why the request was refused.",
+        "properties": {
+          "detectedVersion": {
+            "type": "string",
+            "nullable": true,
+            "description": "Detected SLD version (when parsing succeeded but conversion failed). Null on the export path."
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SldConversionDiagnostic"
+            }
+          }
+        }
+      },
+      "SldConversionDiagnostic": {
+        "type": "object",
+        "required": [
+          "severity",
+          "construct",
+          "message"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "description": "Warning entries are informational and the import still succeeds. Error entries cause the import or export to fail with 422.",
+            "enum": [
+              "Warning",
+              "Error"
+            ]
+          },
+          "construct": {
+            "type": "string",
+            "description": "Construct that triggered the diagnostic (e.g. VendorOption, ExternalGraphic, OgcFunction, PropertyIsLike)."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable explanation. Never includes raw exception messages or filesystem paths."
+          },
+          "ruleName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional rule name when the diagnostic was emitted while processing a specific SLD Rule."
           }
         }
       },
