@@ -104,7 +104,7 @@ Sources:
 | `size` | Implemented | Honua accepts Esri-style `width,height` dimensions from `1,1` through `4096,4096`; omitted values default to `400,400`. |
 | `pixelType` | Partial | Input is validated, but the export handler does not apply pixel-type conversion. |
 | `mosaicRule` | Partial | Accepts simple tokens (`newest`, `oldest`, `average`, `max`, `min`) or an Esri-style JSON object with `mergeStrategy`/`operation`. Applied only when the request intersects multiple rasters. |
-| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the latest acquisition at or before the supplied timestamp. |
+| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp, then applies the export bbox/window. |
 | `compression` | Partial | Applied to TIFF output only. Supports `None`, `JPEG`, and `LZ77` (`LZ77` maps to GDAL `DEFLATE`); ignored for non-TIFF outputs. |
 
 #### Ignored or not implemented
@@ -133,7 +133,7 @@ Sources:
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
 | `mosaicRule` | Partial | Accepts the same merge-strategy tokens as `exportImage` and is applied when the identify point intersects multiple rasters. |
-| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the latest acquisition at or before the supplied timestamp before running identify. |
+| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp, then applies the identify point. |
 
 #### Ignored or not implemented
 
@@ -151,7 +151,7 @@ Sources:
 | `format` | Implemented | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`; defaults to `png`. |
 | `{level}` / `{row}` / `{col}` | Implemented | Validated as Web Mercator tile coordinates with zoom levels `0-28`. |
 | `mosaicRule` | Partial | Accepts the same merge-strategy tokens as `exportImage` and is applied when multiple rasters overlap the requested tile. |
-| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the latest acquisition at or before the supplied timestamp before rendering the tile. |
+| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp, then applies the tile envelope. |
 
 ### Query (`GET|POST .../ImageServer/query`)
 
@@ -174,7 +174,7 @@ Sources:
 
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
-| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua filters the catalog to the latest `AcquisitionDate` at or before the supplied timestamp. |
+| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua filters the catalog to rasters in the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp. |
 
 #### Ignored or not implemented
 
@@ -201,7 +201,7 @@ Sources:
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
 | `mosaicRule` | Partial | Applied when `rasterIds` is omitted and multiple rasters participate in the selected mosaic. |
-| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the latest acquisition at or before the supplied timestamp before computing statistics/histograms. |
+| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp before computing statistics/histograms. |
 
 #### Ignored or not implemented
 
@@ -239,7 +239,7 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 
 ## Raster mosaic semantics
 
-Honua selects rasters by intersecting the request geometry with raster footprints before rendering, identifying pixels, building tiles, or computing statistics. When no request geometry is supplied, the layer-level mosaic uses all rasters selected by any temporal filter. Single-raster selections use the existing single-raster path; multi-raster selections are composited with PostGIS `ST_Union`.
+Honua selects rasters by intersecting the request geometry with raster footprints before rendering, identifying pixels, building tiles, or computing statistics. When a `time` filter is supplied, the temporal filter is resolved first at the layer level: Honua picks the newest effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the requested instant, then applies the request geometry/window to that batch. When no request geometry is supplied, the layer-level mosaic uses all rasters selected by any temporal filter. Single-raster selections use the existing single-raster path; multi-raster selections are composited with PostGIS `ST_Union`.
 
 Merge strategy resolution is request `mosaicRule` first, then the layer's admin `rasterMosaic.mergeStrategy` default, then `newest`. `mosaicRule` accepts simple tokens or an Esri-style JSON object containing `mergeStrategy` or `operation`. Supported strategies are:
 
@@ -282,7 +282,7 @@ Merge strategy resolution is request `mosaicRule` first, then the layer's admin 
 
 ## Known limitations
 
-- Temporal mosaic uses "newest batch" semantics: when `time` is supplied, Honua selects rasters whose effective acquisition equals the single most-recent acquisition across the layer at or before the requested instant. Rasters from earlier acquisitions are excluded — layers with mixed-date scenes can therefore produce spatial coverage gaps under a timestamp filter. Per-pixel temporal mosaicking (newest-per-area) is deferred follow-up scope.
+- Temporal mosaic uses "newest batch" semantics: when `time` is supplied, Honua selects rasters whose effective acquisition (`AcquisitionDate`, falling back to `CreatedAt`) equals the single most-recent layer-wide acquisition at or before the requested instant, then applies request geometry/windowing. Rasters from earlier acquisitions are excluded — layers with mixed-date scenes can therefore produce spatial coverage gaps under a timestamp filter. Per-pixel temporal mosaicking (newest-per-area) is deferred follow-up scope.
 - The current Honua route shape is layer-scoped: `GET /rest/services/{id}/ImageServer`, where `{id}` is the addressed raster layer identifier rather than a FeatureServer/MapServer-style `{serviceId}`.
 - Raster imports are rejected with `400 Bad Request` when the upload's SRID or band count differs from the layer's existing rasters; ST_Union requires homogeneity, and the guard fires before commit so callers get a structured error rather than a query-time PostGIS failure.
 - Default `exportImage` responses return JSON with a temporary file URL; `f=image` returns rendered bytes inline and does not create a temporary export envelope. Temporary exports are stored through `ITemporaryFileService`, expire after one hour, and use shared cloud file storage instead of node-local disk when the configured `FileStorage` provider is `AwsS3` or `AzureBlob`. Shared cloud-backed temporary files require Redis coordination so quota enforcement remains correct across replicas.

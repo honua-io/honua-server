@@ -1179,7 +1179,7 @@
               "GET /rest/services/{id}/ImageServer/query",
               "POST /rest/services/{id}/ImageServer/query"
             ],
-            "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/AcquisitionDate). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outSR (envelope-only stamping; geometry is NOT reprojected), single-instant time filtering, resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown, outFields projection, orderByFields, pixelSize, and arbitrary geometry/spatialRel filters are not yet honoured."
+            "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/LowPS/HighPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/BandCount/PixelType/AcquisitionDate/CreatedAt). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outSR (envelope-only stamping; geometry is NOT reprojected), single-instant time filtering to the newest layer-wide effective acquisition batch, resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown, outFields projection, orderByFields, pixelSize, and arbitrary geometry/spatialRel filters are not yet honoured."
           },
           {
             "name": "Compute Statistics and Histograms",
@@ -1192,7 +1192,7 @@
               "GET /rest/services/{id}/ImageServer/computeStatisticsHistograms",
               "POST /rest/services/{id}/ImageServer/computeStatisticsHistograms"
             ],
-            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. AOI clipping (geometry/geometryType/renderingRule) and pixelSize are accepted as request fields but not yet applied — analysis always covers the full selected raster or mosaic."
+            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. AOI clipping (geometry/geometryType/renderingRule) and pixelSize are accepted as request fields but not yet applied — analysis always covers the full selected raster or mosaic."
           }
         ],
         "notImplemented": [
@@ -1376,7 +1376,7 @@
           {
             "name": "mosaicRule, time",
             "status": "partial",
-            "notes": "mosaicRule accepts merge-strategy tokens or an Esri-style JSON object and is applied when multiple rasters intersect the request. time accepts a single ISO 8601 instant and selects the latest acquisition at or before the supplied timestamp on Pro editions."
+            "notes": "mosaicRule accepts merge-strategy tokens or an Esri-style JSON object and is applied when multiple rasters intersect the request. time accepts a single ISO 8601 instant on Pro editions; Honua selects the newest layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the timestamp, then applies the export bbox/window."
           }
         ],
         "identify": [
@@ -1398,7 +1398,7 @@
           {
             "name": "mosaicRule, time",
             "status": "partial",
-            "notes": "mosaicRule is applied when the identify point intersects multiple rasters. time accepts a single ISO 8601 instant and selects the latest acquisition at or before the supplied timestamp on Pro editions."
+            "notes": "mosaicRule is applied when the identify point intersects multiple rasters. time accepts a single ISO 8601 instant on Pro editions; Honua selects the newest layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the timestamp, then applies the identify point."
           },
           {
             "name": "renderingRule, pixelSize, returnGeometry",
@@ -1413,7 +1413,7 @@
           {
             "name": "mosaicRule, time",
             "status": "partial",
-            "notes": "mosaicRule is applied when multiple rasters overlap the requested tile. time accepts a single ISO 8601 instant and selects the latest acquisition at or before the supplied timestamp on Pro editions."
+            "notes": "mosaicRule is applied when multiple rasters overlap the requested tile. time accepts a single ISO 8601 instant on Pro editions; Honua selects the newest layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the timestamp, then applies the tile envelope."
           }
         ],
         "query": [
@@ -1455,7 +1455,7 @@
           {
             "name": "time",
             "status": "partial",
-            "notes": "Accepts a single ISO 8601 instant and filters the catalog to the latest AcquisitionDate at or before the supplied timestamp on Pro editions."
+            "notes": "Accepts a single ISO 8601 instant and filters the catalog to rasters in the newest layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the timestamp on Pro editions."
           }
         ],
         "computeStatisticsHistograms": [
@@ -1482,7 +1482,7 @@
           {
             "name": "mosaicRule, time",
             "status": "partial",
-            "notes": "mosaicRule is applied when rasterIds is omitted and multiple rasters participate in the selected mosaic. time accepts a single ISO 8601 instant and selects the latest acquisition at or before the supplied timestamp on Pro editions."
+            "notes": "mosaicRule is applied when rasterIds is omitted and multiple rasters participate in the selected mosaic. time accepts a single ISO 8601 instant on Pro editions; Honua selects the newest layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the timestamp before computing statistics/histograms."
           },
           {
             "name": "geometry, geometryType, renderingRule, pixelSize",
@@ -1519,7 +1519,7 @@
         "The route shape is layer-scoped: /rest/services/{id}/ImageServer.",
         "Metadata, export, identify, tile, and statistics operate on the selected raster mosaic rather than a single primary raster.",
         "Default exportImage responses return JSON with a temporary file URL; f=image returns rendered bytes inline.",
-        "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent acquisition at or before the requested instant, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
+        "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent layer-wide effective acquisition batch (AcquisitionDate, falling back to CreatedAt) at or before the requested instant before applying request geometry, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
         "The query catalog reader applies WHERE/objectIds filters in-memory and does not reproject footprint geometry to outSR.",
         "computeStatisticsHistograms always analyses the full selected raster or mosaic — geometry clipping and renderingRule are not yet honoured.",
         "computeClass currently only validates and plans the raster function chain; it does not yet execute the chain into exportImage / computeStatisticsHistograms.",

@@ -591,7 +591,7 @@
       "datetime": {
         "name": "datetime",
         "in": "query",
-        "description": "RFC 3339 instant or interval used to select temporal raster mosaic frames. Accepts a single instant (e.g. 2024-02-15T00:00:00Z), a closed interval (start/end), and half-open intervals (start/.., ../end). Honua selects the newest acquisition batch within the bounded range and renders rasters from that batch only. Requires Pro edition or higher; Community returns 403 Forbidden.",
+        "description": "RFC 3339 instant or interval used to select temporal raster mosaic frames. Accepts a single instant (e.g. 2024-02-15T00:00:00Z), a closed interval (start/end), and half-open intervals (start/.., ../end). Honua selects the newest effective acquisition batch within the bounded range across the addressed collection or dataset, then applies bbox windowing and renders rasters from that batch only. Requires Pro edition or higher; Community returns 403 Forbidden.",
         "schema": {
           "type": "string"
         }

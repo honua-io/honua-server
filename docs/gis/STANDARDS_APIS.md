@@ -181,7 +181,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 
 **Output formats:** PNG, JPEG, TIFF
 
-**Current scope:** Core map rendering, collection maps, and map tiles. The optional styled-map conformance class is not claimed in MVP.
+**Current scope:** Core map rendering, collection maps, map tiles, and Pro-tier temporal raster mosaic via `datetime` instants and intervals (`start/end`, `../end`, `start/..`). Temporal selection uses the newest effective acquisition batch across the addressed collection or dataset before bbox windowing, so mixed-date scenes can leave coverage gaps until per-pixel temporal mosaicking lands. The optional styled-map conformance class is not claimed in MVP.
 
 **Typical use cases:**
 - Server-rendered maps via open standards
@@ -271,7 +271,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 |-- /computeClass                   (raster function chain validation)
 ```
 
-**Limitations:** `query` filtering still happens in memory after the catalog is read; spatial filters and `orderByFields` are not pushed to PostGIS yet. `computeStatisticsHistograms` does not honour AOI clipping. `legend` uses a fixed viridis ramp keyed off the resolved layer mosaic's band-1 statistics. Temporal raster mosaic accepts single instants only and requires Pro edition licensing. `computeClass` validates and plans `Identity`/`Stretch`/`Clip` chains (max depth 8) but does not execute the chain — the planner is not yet wired into `exportImage`/`identify`. See the [ImageServer Matrix](image-server-matrix.md) for full parameter coverage.
+**Limitations:** `query` filtering still happens in memory after the catalog is read; spatial filters and `orderByFields` are not pushed to PostGIS yet. `computeStatisticsHistograms` does not honour AOI clipping. `legend` uses a fixed viridis ramp keyed off the resolved layer mosaic's band-1 statistics. ImageServer temporal raster mosaic accepts single instants only, requires Pro edition licensing, and selects the newest layer-wide effective acquisition batch before request geometry/windowing. `computeClass` validates and plans `Identity`/`Stretch`/`Clip` chains (max depth 8) but does not execute the chain — the planner is not yet wired into `exportImage`/`identify`. See the [ImageServer Matrix](image-server-matrix.md) for full parameter coverage.
 
 **Typical use cases:**
 - ArcGIS Pro raster rendering
