@@ -1413,6 +1413,7 @@
         "Grpc::geospatial.v1.ProcessService/ValidatePlan",
         "Grpc::geospatial.v1.ProcessService/DryRunPlan",
         "Grpc::geospatial.v1.ProcessService/ExecutePlan",
+        "Grpc::geospatial.v1.ProcessService/ExecutePlanStream",
         "Grpc::geospatial.v1.ProcessService/SubmitJob",
         "Grpc::geospatial.v1.ProcessService/GetJob",
         "Grpc::geospatial.v1.ProcessService/GetJobResult",
@@ -1420,6 +1421,7 @@
       ],
       "stubbed": [
         "Grpc::geospatial.v1.ProcessService/ExecutePlan",
+        "Grpc::geospatial.v1.ProcessService/ExecutePlanStream",
         "Grpc::geospatial.v1.ProcessService/SubmitJob",
         "Grpc::geospatial.v1.ProcessService/GetJobResult"
       ],

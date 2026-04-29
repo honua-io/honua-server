@@ -103,6 +103,30 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         }
     }
 
+    public override Task ExecutePlanStream(
+        Proto.ExecutePlanRequest request,
+        IServerStreamWriter<Proto.ExecutionEvent> responseStream,
+        ServerCallContext context)
+    {
+        EnrichActivity("ExecutePlanStream");
+
+        try
+        {
+            _jobService.EnsureCallerAuthorized(
+                context.GetHttpContext().User,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+
+            throw new RpcException(new Status(
+                StatusCode.Unimplemented,
+                "Streaming plan execution is not yet available. Use SubmitJob for asynchronous execution."));
+        }
+        catch (Exception ex) when (ex is not RpcException)
+        {
+            throw MapToRpcException(ex);
+        }
+    }
+
     public override async Task<Proto.SubmitJobResponse> SubmitJob(
         Proto.SubmitJobRequest request,
         ServerCallContext context)

@@ -96,6 +96,21 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlanStream")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/ExecutePlanStream")]
+    public async Task ExecutePlanStream_ReturnsUnimplemented()
+    {
+        var request = new Proto.ExecutePlanRequest { Plan = CreateValidPlan() };
+
+        using var call = _client!.ExecutePlanStream(request, _headers);
+        var act = async () => await call.ResponseStream.MoveNext(CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unimplemented);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/SubmitJob")]
