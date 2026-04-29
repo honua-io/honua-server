@@ -32,6 +32,10 @@ env:
   # workflow_dispatch `sdk_ref` overrides this value for manual replays.
   MCP_SDK_REF: '404242df3cbf10f707ee9137405bf93b3de0012d'
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   pr-readiness:
     name: PR Mergeability & Freshness

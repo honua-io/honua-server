@@ -1390,7 +1390,7 @@
           "executionLane": "repo:honua-io/geospatial-grpc",
           "evidenceLocations": [
             "https://github.com/honua-io/geospatial-grpc",
-            "src/Honua.Core/Transport/Proto/geospatial/v1/feature_service.proto"
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/feature_service.proto"
           ],
           "ownerRepo": "geospatial-grpc",
           "status": "implemented",
@@ -1444,7 +1444,7 @@
           "executionLane": "repo:honua-io/geospatial-grpc",
           "evidenceLocations": [
             "https://github.com/honua-io/geospatial-grpc",
-            "src/Honua.Core/Transport/Proto/geospatial/v1/process_service.proto"
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/process_service.proto"
           ],
           "ownerRepo": "geospatial-grpc",
           "status": "implemented",
@@ -1678,7 +1678,7 @@
           "executionLane": "repo:honua-io/geospatial-grpc",
           "evidenceLocations": [
             "https://github.com/honua-io/geospatial-grpc",
-            "src/Honua.Core/Transport/Proto/geospatial/v1/spec_service.proto"
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/spec_service.proto"
           ],
           "ownerRepo": "geospatial-grpc",
           "status": "implemented",

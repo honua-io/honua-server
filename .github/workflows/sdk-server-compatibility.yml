@@ -9,6 +9,7 @@ name: SDK Server Compatibility
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: sdk-server-compatibility-${{ github.ref }}
@@ -191,6 +192,18 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Configure GitHub Packages for .NET SDK
+        shell: bash
+        run: |
+          config_file="sdk/honua-sdk-dotnet/NuGet.config"
+          if [[ -f "$config_file" ]] && grep -q 'github-honua' "$config_file"; then
+            dotnet nuget update source github-honua \
+              --configfile "$config_file" \
+              --username "${{ github.actor }}" \
+              --password "${{ github.token }}" \
+              --store-password-in-clear-text
+          fi
 
       - name: Run SDK live compatibility smoke tests
         id: compatibility

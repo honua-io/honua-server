@@ -34,11 +34,12 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 
 ### Proto Ownership
 
-Canonical `.proto` definitions stay in `geospatial-grpc`. `honua-server` may
-consume generated bindings or pinned/vendored snapshots for build mechanics, but
-new services, fields, enum values, and wire-contract changes must be made in
-`geospatial-grpc` first and then synced into this repo. Do not treat
-`src/Honua.Core/Transport/Proto` as the source of truth.
+Canonical `.proto` definitions stay in `geospatial-grpc`. `honua-server`
+consumes generated bindings through the published `Geospatial.Grpc` package.
+New services, fields, enum values, and wire-contract changes must be made in
+`geospatial-grpc` first and then consumed here by updating the package version.
+Do not reintroduce a local `src/Honua.Core/Transport/Proto` source-of-truth
+tree.
 
 ### SDK Consumption
 

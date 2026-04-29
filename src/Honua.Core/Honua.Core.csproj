@@ -35,22 +35,13 @@
     <PackageReference Include="Parquet.Net" />
 
     <!-- gRPC and protocol buffer support -->
+    <PackageReference Include="Geospatial.Grpc" />
+    <PackageReference Include="Grpc.Core.Api" />
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Google.Protobuf" />
-    <PackageReference Include="Grpc.Tools" PrivateAssets="All" />
 
     <!-- Geocoding provider dependencies -->
     <PackageReference Include="AWSSDK.LocationService" />
-
-    <!-- Geospatial gRPC protocols from standard -->
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Generate C# clients from standard gRPC geospatial protocol files -->
-    <Protobuf Include="Transport/Proto/geospatial/v1/*.proto"
-              GrpcServices="Both"
-              ProtoRoot="Transport/Proto"
-              AdditionalProtocArguments="--experimental_allow_proto3_optional" />
   </ItemGroup>
 
   <ItemGroup>

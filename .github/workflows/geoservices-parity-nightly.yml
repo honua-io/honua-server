@@ -10,6 +10,10 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
 
+permissions:
+  contents: read
+  packages: read
+
 concurrency:
   group: geoservices-parity-nightly-${{ github.ref }}
   cancel-in-progress: true

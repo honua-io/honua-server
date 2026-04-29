@@ -8,19 +8,8 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:8a90a473da5205a169
 ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:60eb031b554df75a4b9f358290a2fa15d8961a3bc79b47bb34a00e31f7b78c69
 
 # Build stage
-# Use the Debian SDK image so Grpc.Tools/protoc can run during container builds.
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
-
-# grpc.tools' bundled linux_arm64 protoc segfaults on native ARM runners.
-# Use the distro compiler through the supported PROTOBUF_PROTOC override instead.
-# DL3008 suppression rationale: the SDK base image is digest-pinned, so the protobuf-compiler
-# version is fixed by the upstream snapshot. Pinning here forces a parallel version update on
-# every digest bump.
-# hadolint ignore=DL3008
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends protobuf-compiler && \
-    rm -rf /var/lib/apt/lists/*
 
 # Security: Create non-root build user
 RUN groupadd --gid 1001 --system builduser && \
@@ -50,7 +39,6 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false" && \
     dotnet restore src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
@@ -70,7 +58,6 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false" && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \

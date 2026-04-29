@@ -28,6 +28,10 @@ env:
   DB_PASSWORD: honua_password
   HONUA_LOAD_MAX_FAILURE_RATE: '0.0001'
 
+permissions:
+  contents: read
+  packages: read
+
 concurrency:
   group: load-soak-nightly-${{ github.ref }}
   cancel-in-progress: true

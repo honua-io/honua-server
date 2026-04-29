@@ -7,7 +7,10 @@ Honua keeps package versions centralized and optional capabilities explicit so t
 All NuGet package versions are declared in `Directory.Packages.props` at the repository root. Project files use `PackageReference` only to identify the package and any project-local metadata:
 
 ```xml
-<PackageReference Include="Grpc.Tools" PrivateAssets="All" />
+<PackageReference Include="xunit.runner.visualstudio">
+  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+  <PrivateAssets>all</PrivateAssets>
+</PackageReference>
 ```
 
 Do not add `Version`, `VersionOverride`, or child `<Version>` metadata to a `.csproj` file. When adding or updating a dependency:

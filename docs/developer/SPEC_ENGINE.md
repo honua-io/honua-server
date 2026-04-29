@@ -11,7 +11,8 @@ The engine ships as a mixed REST + gRPC surface:
   `POST /v1/spec/apply`, `POST /v1/spec/cancel`,
   `GET /v1/spec/artifact/{hash}`
 - gRPC: `geospatial.v1.SpecService/{PlanSpec, ApplySpec, CancelApply}`
-  (`src/Honua.Core/Transport/Proto/geospatial/v1/spec_service.proto`)
+  (`geospatial-grpc/geospatial/v1/spec_service.proto`, consumed through
+  `Geospatial.Grpc`)
 
 Both transports share the same orchestrator; apply events (`SpecApplyEvent`)
 are identical on SSE and gRPC server streaming.
@@ -368,5 +369,5 @@ All signals hang off the shared `Honua` meter and activity source (see
 ## Related documents
 
 - [API Examples — Spec Engine](API_EXAMPLES.md#spec-planapply-engine)
-- [Proto: `geospatial/v1/spec_service.proto`](../../src/Honua.Core/Transport/Proto/geospatial/v1/spec_service.proto)
+- [Proto: `geospatial/v1/spec_service.proto`](https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/spec_service.proto)
 - [Public Interface Proof Ledger](../gis/data/public-interface-proof.json) — `spec-engine` entry

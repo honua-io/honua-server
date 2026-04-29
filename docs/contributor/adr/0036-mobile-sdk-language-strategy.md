@@ -67,7 +67,7 @@ Concrete consequences:
   message schemas mirror the canonical server proto field-for-field, but
   the package paths currently diverge: the server hosts
   `geospatial.v1.FeatureService` (defined in
-  `src/Honua.Core/Transport/Proto/geospatial/v1/feature_service.proto` and
+  `geospatial-grpc/geospatial/v1/feature_service.proto` and
   registered by `OperationRegistry.cs`), while both `Honua.Mobile.Sdk` and
   `Honua.Sdk.Grpc` generate clients against the parallel `honua.v1` package.
   Closing the package gap (either re-packaging the mobile/SDK proto under
@@ -181,8 +181,8 @@ production-ready form. Neither choice aligns with the existing
 - **Shared contract surface across `honua-sdk-dotnet` and `honua-mobile`.**
   The mobile SDK has its own gRPC client packaging in `Honua.Mobile.Sdk`
   tuned for mobile, but its message schemas are field-for-field aligned
-  with the canonical server proto (`geospatial.v1` under
-  `src/Honua.Core/Transport/Proto/geospatial/v1/`); no hand-written DTOs
+  with the canonical public proto (`geospatial.v1` under
+  `geospatial-grpc/geospatial/v1/`); no hand-written DTOs
   or FFI shims. The current proto-package divergence (`honua.v1` mobile
   copy vs `geospatial.v1` server canonical) is acknowledged as a Phase-1
   bring-up prerequisite in the roadmap, not as a structural fork.
@@ -223,7 +223,8 @@ prior ADR proposed an alternative.
   gating)
 - ADR-0033: Unified License Format and Entitlement Architecture
 - [Honua Mobile SDK Roadmap](../../developer/mobile-sdk-roadmap.md)
-- Canonical server proto: `src/Honua.Core/Transport/Proto/geospatial/v1/feature_service.proto`
+- Canonical feature proto:
+  `geospatial-grpc/geospatial/v1/feature_service.proto`
   (package `geospatial.v1`); registered handlers in
   `src/Honua.Server/OperationRegistry.cs`. The mobile copy at
   `honua-mobile/proto/honua/v1/feature_service.proto` mirrors the message

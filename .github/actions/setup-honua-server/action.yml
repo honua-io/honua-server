@@ -31,7 +31,7 @@ runs:
   using: 'composite'
   steps:
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5
+      uses: ./.github/actions/setup-dotnet-ci
       with:
         dotnet-version: ${{ inputs.dotnet-version }}
 

@@ -150,8 +150,8 @@ MAUI workload installed and add platform-specific smoke runners.
 - **gRPC proto-package alignment is a Phase 1 prerequisite.** The mobile-owned
   `proto/honua/v1/feature_service.proto` (package `honua.v1`,
   `csharp_namespace = "Honua.Server.Features.Grpc.Proto"`) is a parallel copy
-  of the canonical server proto at
-  `src/Honua.Core/Transport/Proto/geospatial/v1/feature_service.proto`
+  of the canonical public proto at
+  `geospatial-grpc/geospatial/v1/feature_service.proto`
   (package `geospatial.v1`, `csharp_namespace = "Geospatial.V1"`). The message
   schemas match field-for-field today, but the gRPC method paths differ —
   the server registers handlers for `geospatial.v1.FeatureService/*`
@@ -240,8 +240,8 @@ MAUI workload installed and add platform-specific smoke runners.
 - Feature contracts are not covered by that matrix. The gRPC stubs follow
   proto backward-compatibility conventions: additive changes only within a
   major, breaking changes ride a new proto package version. Today the
-  canonical server proto is `geospatial.v1` (under
-  `src/Honua.Core/Transport/Proto/geospatial/v1/`) while both `Honua.Sdk.Grpc`
+  canonical feature proto is `geospatial.v1` (under
+  `geospatial-grpc/geospatial/v1/`) while both `Honua.Sdk.Grpc`
   and the mobile-owned `proto/honua/v1/` consume a parallel `honua.v1`
   package; the message schemas match but the package paths diverge, and
   closing that gap is scoped into Phase 1 (see the proto-alignment
@@ -305,8 +305,10 @@ These are explicitly deferred and tracked separately:
 - ADR-0018: Source-Generated JSON Serialization for AOT Compatibility
 - `AGENTS.md`: Honua repository map, protocol adapter architecture,
   cross-cutting concerns
-- Canonical server proto: `src/Honua.Core/Transport/Proto/geospatial/v1/feature_service.proto`
-  (package `geospatial.v1`); registered handlers enumerated in
+- Canonical feature proto:
+  [`geospatial/v1/feature_service.proto`](https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/feature_service.proto)
+  (package `geospatial.v1`); generated .NET bindings are consumed through
+  `Geospatial.Grpc`, and registered server handlers are enumerated in
   `src/Honua.Server/OperationRegistry.cs`.
 - [`honua-io/honua-mobile`](https://github.com/honua-io/honua-mobile): the
   mobile SDK repo itself — `Honua.Mobile.Sdk` / `Honua.Mobile.Field` /
