@@ -22,3 +22,13 @@ runs:
         key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
         restore-keys: |
           ${{ github.repository }}-${{ runner.os }}-nuget-
+
+    - name: Configure GitHub Packages
+      shell: bash
+      run: |
+        if [[ -f NuGet.config ]] && grep -q 'github-honua' NuGet.config; then
+          dotnet nuget update source github-honua \
+            --username "${{ github.actor }}" \
+            --password "${{ github.token }}" \
+            --store-password-in-clear-text
+        fi

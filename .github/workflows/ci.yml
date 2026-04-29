@@ -1,8 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches: [trunk]
+  schedule:
+    # Full integration lane. PR CI is selective; release workflows own
+    # packaging/publishing smoke.
+    - cron: '0 9 * * *'
   pull_request:
     branches: [trunk]
   workflow_dispatch:
@@ -84,6 +86,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       non_test_changes: ${{ steps.filter.outputs.non_test_changes }}
+      integration_changes: ${{ steps.filter.outputs.integration_changes }}
+      integration_reason: ${{ steps.filter.outputs.integration_reason }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -95,35 +99,58 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch origin ${{ github.base_ref }} --depth=1
             echo "range=origin/${{ github.base_ref }}...${{ github.sha }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual runs: diff against trunk so AOT/Docker gates are not
-            # silently skipped due to github.event.before being undefined.
+          else
             git fetch origin trunk --depth=1
             echo "range=origin/trunk...${{ github.sha }}" >> $GITHUB_OUTPUT
-          else
-            echo "range=${{ github.event.before }}...${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Check for non-test changes
         id: filter
         run: |
           CHANGED_FILES=$(git diff --name-only "${{ steps.diff.outputs.range }}" || true)
-          NON_TEST_FILES=$(echo "$CHANGED_FILES" | grep -Ev '^(tests/|test/)' | sed '/^$/d' || true)
 
-          if [ -z "$NON_TEST_FILES" ]; then
-            echo "non_test_changes=false" >> $GITHUB_OUTPUT
-          else
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "non_test_changes=true" >> $GITHUB_OUTPUT
+            echo "integration_changes=true" >> "$GITHUB_OUTPUT"
+            echo "integration_reason=scheduled_or_manual_full_ci" >> "$GITHUB_OUTPUT"
+            INTEGRATION_FILES="<full integration event>"
+          else
+            # PRs that only touch docs, CI/publish plumbing, package metadata,
+            # or NuGet source configuration do not need the full integration
+            # fanout. Scheduled/manual CI still runs the full lane.
+            NON_TEST_FILES=$(echo "$CHANGED_FILES" | grep -Ev '^(tests/|test/)' | sed '/^$/d' || true)
+            if [ -z "$NON_TEST_FILES" ]; then
+              echo "non_test_changes=false" >> $GITHUB_OUTPUT
+            else
+              echo "non_test_changes=true" >> $GITHUB_OUTPUT
+            fi
+
+            INTEGRATION_FILES=$(
+              printf '%s\n' "$CHANGED_FILES" \
+                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/ci\.yml$|workflows/nuget-publish\.yml$|workflows/pr-validation\.yml$|workflows/trunk-sanity\.yml$)|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
+                | sed '/^$/d' || true
+            )
+
+            if [ -z "$INTEGRATION_FILES" ]; then
+              echo "integration_changes=false" >> "$GITHUB_OUTPUT"
+              echo "integration_reason=ci_package_or_docs_only" >> "$GITHUB_OUTPUT"
+            else
+              echo "integration_changes=true" >> "$GITHUB_OUTPUT"
+              echo "integration_reason=runtime_or_test_changes" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
           echo "Changed files:"
           echo "$CHANGED_FILES"
           echo ""
           echo "Non-test files:"
-          echo "$NON_TEST_FILES"
+          echo "${NON_TEST_FILES:-<full integration event>}"
+          echo ""
+          echo "Integration-triggering files:"
+          echo "${INTEGRATION_FILES:-<none>}"
 
-  # Compute the server-tests shard subset for this PR. On push events we always
-  # run every shard (full integration tier on merge-to-trunk). See ADR-0037.
+  # Compute the server-tests shard subset for this PR. Scheduled/manual full
+  # integration runs execute every shard. See ADR-0037.
   # Per ADR-0037 .github/ci-shards.json is the single source of truth for both
   # the shard routing data (paths) and the matrix-runtime metadata
   # (artifact_suffix, log_name, timeout_minutes, max_cpu_count, upload flags,
@@ -157,7 +184,7 @@ jobs:
             descriptor=$(scripts/ci/honua-server-targeted-tests.sh --base "origin/${{ github.base_ref }}")
           else
             descriptor=$(jq -nc --argjson shards "${all_shards_json}" \
-              '{run_all: true, shards: $shards, reason: "non_pr_event"}')
+              '{run_all: true, shards: $shards, reason: "scheduled_or_manual_full_ci"}')
           fi
           echo "Descriptor: ${descriptor}"
 
@@ -214,9 +241,9 @@ jobs:
 
   dotnet-foundation-tests:
     name: .NET Foundation Tests
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 35
     services:
       postgres:
@@ -319,16 +346,16 @@ jobs:
   server-tests:
     name: Server Tests (${{ matrix.shard_name }})
     # Per ADR-0037 the PR gate runs only the targeted shards selected by
-    # scripts/ci/honua-server-targeted-tests.sh; merge-to-trunk and
-    # workflow_dispatch run the full matrix. The matrix is built dynamically
+    # scripts/ci/honua-server-targeted-tests.sh; scheduled/manual full runs
+    # execute the full matrix. The matrix is built dynamically
     # by `targeted-shards` from .github/ci-shards.json — unselected shards
     # never instantiate a runner job, so per-shard `if:` gating is no longer
     # needed. The PR shard step composes its filter with `&Tier!=Slow` so
     # [EmulatorTest]/[ScaleTest]/[ExternalServiceTest]/[CloudTest] methods
     # in a shard's namespace stay in nightly-slow-tier.yml.
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, targeted-shards]
+    needs: [build, changes, targeted-shards]
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
@@ -445,9 +472,9 @@ jobs:
 
   python-integration-tests:
     name: Python Integration Tests
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 25
     env:
       TESTCONTAINERS_RYUK_DISABLED: false
@@ -507,9 +534,9 @@ jobs:
 
   js-typecheck:
     name: JavaScript Type Check
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
@@ -556,9 +583,9 @@ jobs:
 
   js-integration-tests:
     name: JavaScript Integration Tests
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 15
     services:
       postgres:
@@ -635,9 +662,9 @@ jobs:
 
   esri-leaflet-browser-tests:
     name: Esri Leaflet Browser Tests
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 15
     services:
       postgres:
@@ -704,9 +731,9 @@ jobs:
 
   maplibre-compat:
     name: MapLibre GL JS Browser Compatibility
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 15
     services:
       postgres:
@@ -781,9 +808,9 @@ jobs:
 
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, test-all, core-package-compatibility, postgres-compat]
+    needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
     outputs:
       # Matrix job: GHA keeps the last-finishing leg's output.
@@ -957,9 +984,9 @@ jobs:
 
   postgres-compat:
     name: Postgres Compatibility (${{ matrix.pg_image }})
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 30
     strategy:
       # Report every PG version's status independently so a PG 16 regression does
@@ -1037,13 +1064,24 @@ jobs:
           cd package-test
           dotnet new console
 
-          # Add local package source
           PACKAGE_SOURCE="$(realpath ../packages)"
-          dotnet nuget add source "$PACKAGE_SOURCE" --name local-packages
+          cat > NuGet.config <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <add key="local-packages" value="${PACKAGE_SOURCE}" />
+            </packageSources>
+            <packageSourceMapping>
+              <packageSource key="local-packages">
+                <package pattern="Honua.Core" />
+              </packageSource>
+            </packageSourceMapping>
+          </configuration>
+          EOF
 
           # Add package under test
           VERSION=$(basename "$(ls ../packages/Honua.Core*.nupkg | head -1)" | sed -E 's/^Honua\.Core\.([0-9A-Za-z.-]+)\.nupkg$/\1/')
-          dotnet add package Honua.Core --source "$PACKAGE_SOURCE" --version "$VERSION"
+          dotnet add package Honua.Core --version "$VERSION"
 
           # Test build
           dotnet build --configuration Release
@@ -1055,7 +1093,7 @@ jobs:
 
   aot-build:
     name: AOT Build Verification
-    if: ${{ success() && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 20
@@ -1097,7 +1135,7 @@ jobs:
 
   docker-build:
     name: Docker Build & Integration Test
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes]
     timeout-minutes: 15
