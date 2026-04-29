@@ -84,6 +84,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       non_test_changes: ${{ steps.filter.outputs.non_test_changes }}
+      integration_changes: ${{ steps.filter.outputs.integration_changes }}
+      integration_reason: ${{ steps.filter.outputs.integration_reason }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -116,11 +118,36 @@ jobs:
             echo "non_test_changes=true" >> $GITHUB_OUTPUT
           fi
 
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "integration_changes=true" >> "$GITHUB_OUTPUT"
+            echo "integration_reason=non_pr_event" >> "$GITHUB_OUTPUT"
+          else
+            # PRs that only touch docs, CI/publish plumbing, package metadata,
+            # or NuGet source configuration do not need the full integration
+            # fanout. Merge-to-trunk still runs the full lane.
+            INTEGRATION_FILES=$(
+              printf '%s\n' "$CHANGED_FILES" \
+                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/ci\.yml$|workflows/nuget-publish\.yml$|workflows/pr-validation\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
+                | sed '/^$/d' || true
+            )
+
+            if [ -z "$INTEGRATION_FILES" ]; then
+              echo "integration_changes=false" >> "$GITHUB_OUTPUT"
+              echo "integration_reason=ci_package_or_docs_only" >> "$GITHUB_OUTPUT"
+            else
+              echo "integration_changes=true" >> "$GITHUB_OUTPUT"
+              echo "integration_reason=runtime_or_test_changes" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
           echo "Changed files:"
           echo "$CHANGED_FILES"
           echo ""
           echo "Non-test files:"
           echo "$NON_TEST_FILES"
+          echo ""
+          echo "Integration-triggering files:"
+          echo "${INTEGRATION_FILES:-<non-PR event or none>}"
 
   # Compute the server-tests shard subset for this PR. On push events we always
   # run every shard (full integration tier on merge-to-trunk). See ADR-0037.
@@ -214,9 +241,9 @@ jobs:
 
   dotnet-foundation-tests:
     name: .NET Foundation Tests
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 35
     services:
       postgres:
@@ -326,9 +353,9 @@ jobs:
     # needed. The PR shard step composes its filter with `&Tier!=Slow` so
     # [EmulatorTest]/[ScaleTest]/[ExternalServiceTest]/[CloudTest] methods
     # in a shard's namespace stay in nightly-slow-tier.yml.
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, targeted-shards]
+    needs: [build, changes, targeted-shards]
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
@@ -445,9 +472,9 @@ jobs:
 
   python-integration-tests:
     name: Python Integration Tests
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 25
     env:
       TESTCONTAINERS_RYUK_DISABLED: false
@@ -507,9 +534,9 @@ jobs:
 
   js-typecheck:
     name: JavaScript Type Check
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
@@ -556,9 +583,9 @@ jobs:
 
   js-integration-tests:
     name: JavaScript Integration Tests
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 15
     services:
       postgres:
@@ -635,9 +662,9 @@ jobs:
 
   esri-leaflet-browser-tests:
     name: Esri Leaflet Browser Tests
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 15
     services:
       postgres:
@@ -704,9 +731,9 @@ jobs:
 
   maplibre-compat:
     name: MapLibre GL JS Browser Compatibility
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 15
     services:
       postgres:
@@ -781,9 +808,9 @@ jobs:
 
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, test-all, core-package-compatibility, postgres-compat]
+    needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
     outputs:
       # Matrix job: GHA keeps the last-finishing leg's output.
@@ -957,9 +984,9 @@ jobs:
 
   postgres-compat:
     name: Postgres Compatibility (${{ matrix.pg_image }})
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
     timeout-minutes: 30
     strategy:
       # Report every PG version's status independently so a PG 16 regression does
@@ -1066,7 +1093,7 @@ jobs:
 
   aot-build:
     name: AOT Build Verification
-    if: ${{ success() && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 20
@@ -1108,7 +1135,7 @@ jobs:
 
   docker-build:
     name: Docker Build & Integration Test
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes]
     timeout-minutes: 15
