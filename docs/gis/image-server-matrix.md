@@ -94,23 +94,23 @@ Sources:
 | `bboxSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. |
 | `format` | Partial | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`. Esri formats such as `png8`, `png24`, `bmp`, and `gif` are not supported. |
 | `interpolation` | Implemented | Parsed into raster resampling behavior. |
-| `compressionQuality` | Implemented | Validated to `1-100`. |
+| `compressionQuality` | Implemented | Validated to `0-100`. Applied as JPEG `QUALITY` for JPEG output and as `JPEG_QUALITY` when TIFF compression is `JPEG`. |
 | `f` | Partial | Supports `json`, `pjson`, and `image` (inline rendered bytes with the format-specific media type). `html` is not supported. |
 
 #### Partial or behavior differences
 
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
-| `size` | Partial | Honua accepts a single integer and treats it as output width, deriving proportional height from raster aspect ratio. Esri expects `width,height`. |
+| `size` | Implemented | Honua accepts Esri-style `width,height` dimensions from `1,1` through `4096,4096`; omitted values default to `400,400`. |
 | `pixelType` | Partial | Input is validated, but the export handler does not apply pixel-type conversion. |
 | `mosaicRule` | Partial | Accepts simple tokens (`newest`, `oldest`, `average`, `max`, `min`) or an Esri-style JSON object with `mergeStrategy`/`operation`. Applied only when the request intersects multiple rasters. |
 | `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the latest acquisition at or before the supplied timestamp. |
+| `compression` | Partial | Applied to TIFF output only. Supports `None`, `JPEG`, and `LZ77` (`LZ77` maps to GDAL `DEFLATE`); ignored for non-TIFF outputs. |
 
 #### Ignored or not implemented
 
 | Esri parameter | Notes |
 | --- | --- |
-| `compression` | Validated to `0-100`, but the export handler currently drops the value and does not map it to TIFF compression behavior. |
 | `bandIds` | Accepted by the request model but not applied by the export handler. |
 | `renderingRule` | Accepted by the request model but not applied. |
 | `noData` | Accepted by the request model but not applied. |
@@ -237,6 +237,20 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 | `renderingRule` (or `rasterFunction` alias) | Implemented | JSON-encoded raster function chain document. Required. |
 | `f` | Partial | Only `json` and `pjson` are supported. |
 
+## Raster mosaic semantics
+
+Honua selects rasters by intersecting the request geometry with raster footprints before rendering, identifying pixels, building tiles, or computing statistics. When no request geometry is supplied, the layer-level mosaic uses all rasters selected by any temporal filter. Single-raster selections use the existing single-raster path; multi-raster selections are composited with PostGIS `ST_Union`.
+
+Merge strategy resolution is request `mosaicRule` first, then the layer's admin `rasterMosaic.mergeStrategy` default, then `newest`. `mosaicRule` accepts simple tokens or an Esri-style JSON object containing `mergeStrategy` or `operation`. Supported strategies are:
+
+| Strategy | Effect |
+| --- | --- |
+| `newest` | Newer rasters win overlapping pixels (`ST_Union(..., 'LAST')` ordered by acquisition/creation time). |
+| `oldest` | Older rasters win overlapping pixels (`ST_Union(..., 'FIRST')`). |
+| `average` | Overlapping pixels are averaged (`ST_Union(..., 'MEAN')`). |
+| `max` | Overlapping pixels keep the maximum value (`ST_Union(..., 'MAX')`). |
+| `min` | Overlapping pixels keep the minimum value (`ST_Union(..., 'MIN')`). |
+
 ## Metadata response coverage (`GET .../ImageServer`)
 
 ### Implemented
@@ -271,7 +285,7 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 - Temporal mosaic uses "newest batch" semantics: when `time` is supplied, Honua selects rasters whose effective acquisition equals the single most-recent acquisition across the layer at or before the requested instant. Rasters from earlier acquisitions are excluded — layers with mixed-date scenes can therefore produce spatial coverage gaps under a timestamp filter. Per-pixel temporal mosaicking (newest-per-area) is deferred follow-up scope.
 - The current Honua route shape is layer-scoped: `GET /rest/services/{id}/ImageServer`, where `{id}` is the addressed raster layer identifier rather than a FeatureServer/MapServer-style `{serviceId}`.
 - Raster imports are rejected with `400 Bad Request` when the upload's SRID or band count differs from the layer's existing rasters; ST_Union requires homogeneity, and the guard fires before commit so callers get a structured error rather than a query-time PostGIS failure.
-- Export responses always return JSON with a temporary file URL. Temporary exports are stored through `ITemporaryFileService`, expire after one hour, and use shared cloud file storage instead of node-local disk when the configured `FileStorage` provider is `AwsS3` or `AzureBlob`. Shared cloud-backed temporary files require Redis coordination so quota enforcement remains correct across replicas.
+- Default `exportImage` responses return JSON with a temporary file URL; `f=image` returns rendered bytes inline and does not create a temporary export envelope. Temporary exports are stored through `ITemporaryFileService`, expire after one hour, and use shared cloud file storage instead of node-local disk when the configured `FileStorage` provider is `AwsS3` or `AzureBlob`. Shared cloud-backed temporary files require Redis coordination so quota enforcement remains correct across replicas.
 - Catalog filtering still happens in memory after the raster catalog is read; arbitrary geometry filters and `orderByFields` are not pushed to PostGIS yet.
 - `exportImage` and `identify` accept more request fields than they currently honor. Unsupported fields are intentionally documented here so they are not mistaken for full parity.
 - Rendered `exportImage`/`tile` byte output still depends on the PostGIS raster output drivers configured in the database.

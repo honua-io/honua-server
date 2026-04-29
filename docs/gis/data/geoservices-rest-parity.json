@@ -1104,6 +1104,7 @@
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
+          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerMosaicHelpers.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerLegendSwatchBuilder.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs"
         ],
@@ -1112,6 +1113,7 @@
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerParameterValidationTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerErrorHandlingTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerEndpointsTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerMosaicIntegrationTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerLegendHandlerTests.cs",
@@ -1140,7 +1142,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}"
             ],
-            "notes": "Supports png, jpeg, and tiff tile output."
+            "notes": "Supports png, jpeg, and tiff tile output. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy."
           }
         ],
         "partial": [
@@ -1340,7 +1342,7 @@
           {
             "name": "bbox, imageSR, bboxSR, interpolation, compressionQuality",
             "status": "implemented",
-            "notes": "CRS inputs for `imageSR` and `bboxSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases."
+            "notes": "CRS inputs for `imageSR` and `bboxSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. compressionQuality is validated to 0-100 and maps to JPEG QUALITY or TIFF JPEG_QUALITY when applicable."
           },
           {
             "name": "format",
@@ -1350,12 +1352,12 @@
           {
             "name": "f",
             "status": "partial",
-            "notes": "Only json and pjson are supported."
+            "notes": "Supports json, pjson, and image. f=image returns rendered bytes inline with the format-specific media type; html is not supported."
           },
           {
             "name": "size",
-            "status": "partial",
-            "notes": "Honua accepts a single integer width and derives height from aspect ratio."
+            "status": "implemented",
+            "notes": "Accepts Esri-style width,height dimensions from 1,1 through 4096,4096; omitted values default to 400,400."
           },
           {
             "name": "pixelType",
@@ -1364,8 +1366,8 @@
           },
           {
             "name": "compression",
-            "status": "ignored",
-            "notes": "Validated to 0-100 but not mapped to RasterQuery.TiffCompression."
+            "status": "partial",
+            "notes": "Applied to TIFF output only. Supports None, JPEG, and LZ77; LZ77 maps to GDAL DEFLATE. Ignored for non-TIFF outputs."
           },
           {
             "name": "bandIds, renderingRule, noData, noDataInterpretation",
@@ -1407,13 +1409,18 @@
           {
             "name": "format, level, row, col",
             "status": "implemented"
+          },
+          {
+            "name": "mosaicRule, time",
+            "status": "partial",
+            "notes": "mosaicRule is applied when multiple rasters overlap the requested tile. time accepts a single ISO 8601 instant and selects the latest acquisition at or before the supplied timestamp on Pro editions."
           }
         ],
         "query": [
           {
             "name": "where",
             "status": "partial",
-            "notes": "Parsed via the shared GeoServices SQL filter parser and applied in-memory against catalog metadata fields (OBJECTID, Name, MinPS, MaxPS, LowPS, HighPS, CenterX, CenterY, ZOrder, Shape_Length, Shape_Area, AcquisitionDate). Limited to 2000 characters; spatial WHERE pushdown is not yet supported."
+            "notes": "Parsed via the shared GeoServices SQL filter parser and applied in-memory against catalog metadata fields (OBJECTID, Name, MinPS, MaxPS, LowPS, HighPS, CenterX, CenterY, ZOrder, Shape_Length, Shape_Area, BandCount, PixelType, AcquisitionDate, CreatedAt). Limited to 2000 characters; spatial WHERE pushdown is not yet supported."
           },
           {
             "name": "objectIds",
@@ -1492,7 +1499,7 @@
           {
             "name": "renderingRule",
             "status": "ignored",
-            "notes": "Classification overrides through a custom rendering rule are not honoured — swatches are always derived from a fixed 5-class equal-interval ramp keyed off the layer's primary raster band-1 statistics."
+            "notes": "Classification overrides through a custom rendering rule are not honoured — swatches are always derived from a fixed 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics."
           }
         ],
         "computeClass": [
@@ -1511,7 +1518,8 @@
       "knownLimitations": [
         "The route shape is layer-scoped: /rest/services/{id}/ImageServer.",
         "Metadata, export, identify, tile, and statistics operate on the selected raster mosaic rather than a single primary raster.",
-        "Export responses always return JSON with a temporary file URL.",
+        "Default exportImage responses return JSON with a temporary file URL; f=image returns rendered bytes inline.",
+        "Temporal mosaic uses newest-batch semantics: a time filter selects rasters from the single most-recent acquisition at or before the requested instant, so mixed-date scenes can leave spatial coverage gaps until per-pixel temporal mosaicking is implemented.",
         "The query catalog reader applies WHERE/objectIds filters in-memory and does not reproject footprint geometry to outSR.",
         "computeStatisticsHistograms always analyses the full selected raster or mosaic — geometry clipping and renderingRule are not yet honoured.",
         "computeClass currently only validates and plans the raster function chain; it does not yet execute the chain into exportImage / computeStatisticsHistograms.",

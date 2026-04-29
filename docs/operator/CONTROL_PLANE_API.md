@@ -201,6 +201,8 @@ Content-Type: application/json
 | `/api/v1/admin/services/{serviceName}/timeinfo` | PUT | Update service-level temporal metadata |
 | `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | PUT | Patch layer-level access policy, time info, and raster mosaic defaults |
 
+Layer metadata updates accept `rasterMosaic.mergeStrategy` for ImageServer mosaic defaults. Allowed values are `newest`, `oldest`, `average`, `max`, and `min` (case-insensitive); stored values are normalized to lowercase. An empty string clears the layer default, a missing or `null` field preserves the existing value, and unknown values return `400 Bad Request`.
+
 ---
 
 ## **Data Import (Minimal Example)**

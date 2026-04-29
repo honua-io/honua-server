@@ -131,13 +131,17 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
                     FROM source
                     WHERE {{rangePredicate}}
                 ),
-                filtered AS (
-                    SELECT rast, effective_acquisition, created_at, id
+                filtered AS MATERIALIZED (
+                    SELECT raster, effective_acquisition, created_at, id
                     FROM source
-                    WHERE effective_acquisition = (SELECT target_acquisition FROM selected_time)
+                    WHERE effective_acquisition = (SELECT target_acquisition FROM selected_time){{selectionPredicate}}
+                ),
+                windowed AS (
+                    SELECT {{rasterExpr}} AS rast, effective_acquisition, created_at, id
+                    FROM filtered
                 )
                 """;
-            sourceTimeFilter = "filtered";
+            sourceTimeFilter = "windowed";
             if (hasUpper)
             {
                 extraParams.Add(("@timestampTo", request.DateTime!.Value.UtcDateTime));
@@ -149,13 +153,18 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         }
         else
         {
-            timeCte = """
-                filtered AS (
-                    SELECT rast, effective_acquisition, created_at, id
+            timeCte = $$"""
+                filtered AS MATERIALIZED (
+                    SELECT raster, effective_acquisition, created_at, id
                     FROM source
+                    WHERE TRUE{{selectionPredicate}}
+                ),
+                windowed AS (
+                    SELECT {{rasterExpr}} AS rast, effective_acquisition, created_at, id
+                    FROM filtered
                 )
                 """;
-            sourceTimeFilter = "filtered";
+            sourceTimeFilter = "windowed";
         }
 
         // Build parameterized layer_id IN clause
@@ -174,12 +183,12 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             WITH source AS (
-                SELECT {rasterExpr} AS rast,
+                SELECT raster,
                        id,
                        created_at,
                        COALESCE(acquisition_date, created_at) AS effective_acquisition
                 FROM {_rasterDataTable}
-                WHERE layer_id IN ({string.Join(", ", layerParams)}){selectionPredicate}
+                WHERE layer_id IN ({string.Join(", ", layerParams)})
             ),
             {timeCte},
             merged AS (

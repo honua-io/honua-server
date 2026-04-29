@@ -90,7 +90,8 @@ internal sealed class PostgresRasterStore : IRasterStore
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        var whereClauses = new List<string> { "layer_id = @layerId" };
+        const string layerWhereClause = "layer_id = @layerId";
+        var candidateWhereClauses = new List<string> { layerWhereClause };
         var parameters = new List<(string Name, object Value)> { ("@layerId", layerId) };
 
         if (query.Geometry is { Length: > 0 })
@@ -99,7 +100,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 ? "ST_Transform(ST_GeomFromWKB(@selectionGeom, @selectionGeomSrid), ST_SRID(raster))"
                 : "ST_GeomFromWKB(@selectionGeom, ST_SRID(raster))";
 
-            whereClauses.Add($"ST_Intersects(ST_ConvexHull(raster), {geometryExpr})");
+            candidateWhereClauses.Add($"ST_Intersects(ST_ConvexHull(raster), {geometryExpr})");
             parameters.Add(("@selectionGeom", query.Geometry));
             if (query.GeometrySrid.HasValue)
             {
@@ -111,11 +112,12 @@ internal sealed class PostgresRasterStore : IRasterStore
         var timestampWhereClause = string.Empty;
         if (query.Timestamp.HasValue)
         {
-            timestampCte = """
+            timestampCte = $"""
                 , selected_time AS (
-                    SELECT MAX(effective_acquisition) AS target_acquisition
-                    FROM candidate
-                    WHERE effective_acquisition <= @timestamp
+                    SELECT MAX(COALESCE(acquisition_date, created_at)) AS target_acquisition
+                    FROM {_rasterDataTable}
+                    WHERE {layerWhereClause}
+                      AND COALESCE(acquisition_date, created_at) <= @timestamp
                 )
                 """;
             timestampWhereClause = "WHERE effective_acquisition = (SELECT target_acquisition FROM selected_time)";
@@ -142,7 +144,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                        updated_at,
                        COALESCE(acquisition_date, created_at) AS effective_acquisition
                 FROM {_rasterDataTable}
-                WHERE {string.Join("\n  AND ", whereClauses)}
+                WHERE {string.Join("\n  AND ", candidateWhereClauses)}
             )
             {timestampCte}
             SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
