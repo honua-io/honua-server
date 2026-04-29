@@ -4,9 +4,6 @@ name: SDK Server Compatibility
 
 'on':
   workflow_dispatch:
-  push:
-    branches:
-      - trunk
   schedule:
     - cron: '35 8 * * 1'
 

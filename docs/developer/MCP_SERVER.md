@@ -71,7 +71,7 @@ HONUA_BASE_URL="https://honua.example.com" HONUA_TRANSPORT="grpc-web" node dist/
 
 > **Not yet active.** The server-side CI jobs and seed data are landed, but the SDK-side certification scripts (`test:certification`, `test:certification:artifact`, `test:llm-smoke`) are not yet present in `honua-sdk-js` `trunk`. Until those scripts land, the CI jobs skip with a warning annotation and **no certification artifacts are produced**. See [Known gaps](#known-gaps).
 
-Once the SDK-side scripts are available, Honua's CI will run an MCP certification lane on every push and pull request to `trunk` (and on manual dispatch). The suite exercises all 6 tools and 2 resources across both `grpc-web` and `rest` transports. When the `test:certification:artifact` script is also present, the lane produces machine-readable (JSON) and human-readable (Markdown) evidence artifacts; if only `test:certification` is landed, tests run but a CI warning notes the missing artifacts.
+Once the SDK-side scripts are available, Honua's CI will run an MCP certification lane on pull requests to `trunk` and in scheduled/manual full integration runs. The suite exercises all 6 tools and 2 resources across both `grpc-web` and `rest` transports. When the `test:certification:artifact` script is also present, the lane produces machine-readable (JSON) and human-readable (Markdown) evidence artifacts; if only `test:certification` is landed, tests run but a CI warning notes the missing artifacts.
 
 | Area | What is tested |
 |------|----------------|

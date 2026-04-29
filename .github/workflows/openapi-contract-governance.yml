@@ -11,16 +11,6 @@ on:
       - 'src/Honua.Server/Features/Infrastructure/Authentication/**'
       - 'scripts/ci/validate-openapi-contracts.sh'
       - '.github/workflows/openapi-contract-governance.yml'
-  push:
-    branches:
-      - trunk
-      - main
-    paths:
-      - 'docs/developer/api-specs/**'
-      - 'src/Honua.Server/Features/Admin/**'
-      - 'src/Honua.Server/Features/Infrastructure/Authentication/**'
-      - 'scripts/ci/validate-openapi-contracts.sh'
-      - '.github/workflows/openapi-contract-governance.yml'
   workflow_dispatch:
 
 permissions:

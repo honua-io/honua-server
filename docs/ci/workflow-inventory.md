@@ -1,17 +1,18 @@
 # CI Workflow Inventory
 
 > Canonical inventory of all GitHub Actions workflows across the Honua project.
-> Last updated: 2026-04-27 (ticket #809)
+> Last updated: 2026-04-29
 
 ## honua-server
 
 | Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
 |---|---|---|---|---|---|
-| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate; per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` to pick the shards a diff exercises and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)` so PRs only instantiate runners for selected shards (the full 11-shard matrix runs on `push`/dispatch). The shard test step composes its filter as `(matrix.filter)&Tier!=Slow` so `[EmulatorTest]` / `[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods sitting in a shard's namespace skip on PRs and trunk pushes; PR shards therefore do not provision LocalStack/Azurite. Includes the merge-blocking operator eval harness lane (`Features.Eval|Features.Geoprocessing|Features.Protocols.Ogc.Api.Processes|Features.Protocols.Grpc|Features.Protocols.Mcp|Features.Protocols.GeoServices.GPServer`) and uploads `operator-eval-report` plus STAC and Esri Leaflet client-compat artifacts |
+| `ci.yml` | CI | PR + nightly | `pull_request`, `schedule`, `workflow_dispatch` | Yes | Core build, test, architecture gate; per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` to pick the shards a diff exercises and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)` so PRs only instantiate runners for selected shards. The full 11-shard matrix runs only on scheduled/manual full integration runs. The shard test step composes its filter as `(matrix.filter)&Tier!=Slow` so `[EmulatorTest]` / `[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods sitting in a shard's namespace skip on PRs; PR shards therefore do not provision LocalStack/Azurite. Includes the merge-blocking operator eval harness lane (`Features.Eval|Features.Geoprocessing|Features.Protocols.Ogc.Api.Processes|Features.Protocols.Grpc|Features.Protocols.Mcp|Features.Protocols.GeoServices.GPServer`) and uploads `operator-eval-report` plus STAC and Esri Leaflet client-compat artifacts |
 | `pr-validation.yml` | PR Validation | PR | `pull_request` | Yes | Template compliance check |
-| `openapi-contract-governance.yml` | OpenAPI Contract Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to API surface |
-| `control-plane-sdk-governance.yml` | Control Plane SDK Governance | PR + release | `pull_request`, `push`, `workflow_dispatch`, `release` | Yes (PR jobs) | PR governance separate from release publishing |
-| `parity-scorecard-governance.yml` | Parity Scorecard Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to parity/baseline assets |
+| `openapi-contract-governance.yml` | OpenAPI Contract Governance | PR | `pull_request`, `workflow_dispatch` | Yes | Path-scoped to API surface |
+| `control-plane-sdk-governance.yml` | Control Plane SDK Governance | PR + release | `pull_request`, `workflow_dispatch`, `release` | Yes (PR jobs) | PR governance separate from release publishing |
+| `parity-scorecard-governance.yml` | Parity Scorecard Governance | PR | `pull_request`, `workflow_dispatch` | Yes | Path-scoped to parity/baseline assets |
+| `trunk-sanity.yml` | Trunk Sanity | PR-adjacent sanity | `push` (trunk), `workflow_dispatch` | No | Cheap post-merge restore/build only; heavy CI does not run on merge-to-trunk pushes |
 | `cite-conformance.yml` | OGC CITE Conformance (Features) | nightly | `schedule`, `workflow_dispatch` | No | Weekly Monday 6am UTC |
 | `cite-tiles-conformance.yml` | OGC API Tiles CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Tuesday 6am UTC |
 | `cite-wfs20-conformance.yml` | WFS 2.0 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Monday 3am UTC |
@@ -25,18 +26,18 @@
 | `cross-server-consume-nightly.yml` | Cross-Server Consume Nightly | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:00am UTC; runs Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers via the Test-environment `/__test/cross-server-consume/proxy` endpoint, uploads TRX/report artifacts, and best-effort commits the refreshed gap report (warns instead of failing if push is blocked) |
 | `windows-client-compat-nightly.yml` | Windows Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:15am UTC; full CERT-\* matrix (18 test cases × 4 protocol lanes: FeatureServer, OGC Features, MapServer, OData) with per-protocol `.cert.json` envelopes under `certification/`, plus `overall-summary.json`, per-lane transcripts, and `pack/`; supports `--profile smoke` (11-check MVP) and `--profile full` (default) |
 | `pyqgis-client-compat-nightly.yml` | PyQGIS Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:30am UTC; PyQGIS desktop client compatibility using real QGIS providers against `client-compat-v1.sql`; produces `desktop-qgis-ogc-features.cert.json` and `desktop-qgis-wfs.cert.json` envelopes |
-| `sdk-server-compatibility.yml` | SDK Server Compatibility | nightly | `push` (trunk), `schedule`, `workflow_dispatch` | No | Manifest-driven last-3 server refs x last-3 SDK sets matrix from `docs/developer/sdk-compatibility-versions.json`; runs live compatibility smoke checks through checked-out `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`, validates admin compatibility metadata plus seeded FeatureServer and OGC API Features surfaces, uploads per-cell JSON evidence, and publishes `sdk-compatibility-matrix-<run-id>` with supported-cell regression failure |
+| `sdk-server-compatibility.yml` | SDK Server Compatibility | nightly | `schedule`, `workflow_dispatch` | No | Manifest-driven last-3 server refs x last-3 SDK sets matrix from `docs/developer/sdk-compatibility-versions.json`; runs live compatibility smoke checks through checked-out `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`, validates admin compatibility metadata plus seeded FeatureServer and OGC API Features surfaces, uploads per-cell JSON evidence, and publishes `sdk-compatibility-matrix-<run-id>` with supported-cell regression failure |
 | `client-interop-nightly.yml` | Real-Client Interop Matrix (Nightly) | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:00am UTC; runs the docker/client-compat matrix (`gdal`, `pyqgis`, `openlayers`, `cesium`, `arcgis-stub`) via Docker harnesses, diffs the per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` (gated by `expected-pairs.json`), refreshes `docs/gis/gap-report.md`, and fails strict mode on any baseline `pass`→non-`pass` regression, missing lane envelope, missing expected-pair, or new `fail` in an unbaselined case. Promote to PR-blocking once 30 consecutive nightly passes are observed (#806) |
 | `gdal-driver-e2e.yml` | GDAL Driver End-to-End | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:45am UTC; runs `ogrinfo` + `ogr2ogr` against honua-server using GDAL's built-in `OAPIF:` stand-in driver. Tracks ADR-0034; swaps to `HONUA:` once the `honua-gdal` plugin ships |
 | `load-soak-nightly.yml` | Load/Soak Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled load/soak tests |
 | `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | nightly | `schedule`, `workflow_dispatch` | No | Daily 4:00am UTC; runs `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Postgres.Tests`, and `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack S3 + Azurite are provisioned exclusively by `EmulatorFixture` (Testcontainers); Postgres comes from a GitHub Actions service container. Asserts `HONUA_TEST_DB_URL` before dispatch so a missing connection string fails loudly. The Scale/Cloud/External slow subfamilies (`[ScaleTest]`, `[CloudTest]`, `[ExternalServiceTest]`) need dedicated fixtures (multi-node compose, real cloud credentials, Esri Geoportal) and are tracked as separate workflows. ADR-0037 |
 | `flaky-detection.yml` | Flaky Test Detection | nightly | `schedule`, `workflow_dispatch` | No | Daily 5:00am UTC; re-runs `--filter "Tier=Integration&Tier!=Slow"` three times against a fresh runner, parses TRX output, and uploads `flaky-detection-report` (JSON + per-iteration TRX) plus a `$GITHUB_STEP_SUMMARY` table of inconsistent tests. Always exits 0 — flake detection is a reporting concern, not a gate. ADR-0037 |
 | `security-nightly.yml` | Security Nightly | nightly | `schedule`, `workflow_dispatch` | No | Consolidated NuGet vulnerability scan, Trivy filesystem scan, and container security scan (Hadolint, Trivy, structure tests, runtime constraints) |
-| `codeql.yml` | CodeQL | nightly | `push` (trunk), `schedule` | No | Default-branch + weekly schedule |
+| `codeql.yml` | CodeQL | nightly | `schedule` | No | Weekly security analysis |
 | `nightly-container-build.yml` | Nightly Container Build | nightly | `schedule`, `workflow_dispatch` | No | Scheduled container build |
 | `nuget-publish.yml` | NuGet Publish | release | `push`, `workflow_dispatch` | No | Release-only publishing |
-| `deploy.yml` | Deploy | deploy | `push`, `workflow_dispatch` | No | Environment promotion |
-| `deploy-platform-images.yml` | Deploy Platform Images | deploy | `push`, `workflow_dispatch` | No | Platform image deployment |
+| `deploy.yml` | Deploy | deploy | `push` (tags), `workflow_dispatch` | No | Environment promotion |
+| `deploy-platform-images.yml` | Deploy Platform Images | deploy | `push` (tags), `workflow_dispatch` | No | Platform image deployment |
 | `reusable-sdk-pr-gate.yml` | SDK PR Gate | PR | `workflow_call` | Yes (via caller) | Reusable gate for honua-sdk-js and honua-sdk-dotnet |
 | `cloud-post-apply-validation.yml` | Cloud Post-Apply Validation | deploy | `workflow_call`, `workflow_dispatch` | No | Post-deploy validation |
 
@@ -75,7 +76,7 @@ Additionally, `cite-conformance.yml` (already schedule-only) had dead PR comment
 
 ### CodeQL moved off PR path
 
-`codeql.yml` no longer triggers on `pull_request`. It runs on `push` to trunk and on a weekly schedule. This avoids adding a slow, non-deterministic security scan to every PR cycle.
+`codeql.yml` no longer triggers on `pull_request` or merge-to-trunk push. It runs on a weekly schedule. This avoids adding a slow, non-deterministic security scan to routine PR or merge cycles.
 
 ### PR template and validation redesigned
 

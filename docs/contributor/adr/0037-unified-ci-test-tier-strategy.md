@@ -82,7 +82,8 @@ default mapping. The mapping is documented in
 | Event           | Workflow                              | What runs                                                                                             |
 |-----------------|---------------------------------------|-------------------------------------------------------------------------------------------------------|
 | Pull Request    | `ci.yml`                              | Build + format + Architecture tests + Tier=Fast across all projects + targeted shards (`server-tests`) composed as `(matrix.filter)&Tier!=Slow` so Slow-tagged tests stay out of the PR lane. |
-| Merge to trunk  | `ci.yml` (push event)                 | Everything PR runs **plus** the full 11-shard `server-tests` matrix and the Postgres compat matrix. The `&Tier!=Slow` exclusion still applies — Slow remains nightly-only. |
+| Merge to trunk  | `trunk-sanity.yml`                    | Restore and build only. Heavy integration coverage comes from PR gates plus scheduled/manual full integration runs. |
+| Full integration | `ci.yml` (schedule / workflow_dispatch) | Full 11-shard `server-tests` matrix and the Postgres compat matrix. The `&Tier!=Slow` exclusion still applies — Slow remains nightly-only. |
 | Nightly (slow)  | `nightly-slow-tier.yml`               | `Tier=Slow&Category=Emulator` (LocalStack S3 + Azurite + Postgres). Scale/Cloud/External slow subfamilies need additional fixtures and are tracked as separate workflows. |
 | Nightly (flake) | `flaky-detection.yml`                 | Re-runs the Integration tier 3× and emits a candidate-flake report.                                   |
 

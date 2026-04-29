@@ -127,7 +127,7 @@ jobs:
 
             INTEGRATION_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/ci\.yml$|workflows/nuget-publish\.yml$|workflows/pr-validation\.yml$|workflows/trunk-sanity\.yml$)|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
+                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$)|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
                 | sed '/^$/d' || true
             )
 
