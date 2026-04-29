@@ -32,6 +32,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 - [OGC API Features](specifications/ogc-api-features-coverage.md) — Parts [1](specifications/ogc-api-features-part1-core.md), [2](specifications/ogc-api-features-part2-crs.md), [3](specifications/ogc-api-features-part3-filtering.md)
 - [OGC API Tiles](specifications/ogc-api-tiles-coverage.md)
 - [OGC API Processes](specifications/ogc-api-processes-coverage.md) — async geoprocessing adapter over canonical runtime
+- [WCS 2.0.1](specifications/wcs-2.0.1-coverage.md) — raw raster/coverage export over the shared raster store
 - [OData v4](specifications/odata-v4-coverage.md)
 
 ## Compatibility

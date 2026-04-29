@@ -65,6 +65,12 @@ internal static class RequestTelemetryClassifier
             return HonuaTelemetry.Protocols.OgcMaps;
         }
 
+        if (value.StartsWith("/ogc/services/", StringComparison.OrdinalIgnoreCase) &&
+            value.EndsWith("/wcs", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.Wcs20;
+        }
+
         if (value.StartsWith("/rest/services/", StringComparison.OrdinalIgnoreCase) &&
             value.Contains("/MapServer/", StringComparison.OrdinalIgnoreCase) &&
             value.EndsWith("/wmts", StringComparison.OrdinalIgnoreCase))
@@ -77,6 +83,13 @@ internal static class RequestTelemetryClassifier
             value.EndsWith("/wms", StringComparison.OrdinalIgnoreCase))
         {
             return HonuaTelemetry.Protocols.OgcMaps;
+        }
+
+        if (value.StartsWith("/rest/services/", StringComparison.OrdinalIgnoreCase) &&
+            value.Contains("/ImageServer/", StringComparison.OrdinalIgnoreCase) &&
+            value.EndsWith("/wcs", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.Wcs20;
         }
 
         if (value.Contains("/GeometryServer", StringComparison.OrdinalIgnoreCase))
@@ -189,6 +202,12 @@ internal static class RequestTelemetryClassifier
             path.EndsWith("/wms", StringComparison.OrdinalIgnoreCase))
         {
             return ResolveMapServerOgcOperation(context, "wms");
+        }
+
+        if (path.StartsWith("/ogc/services/", StringComparison.OrdinalIgnoreCase) &&
+            path.EndsWith("/wcs", StringComparison.OrdinalIgnoreCase))
+        {
+            return ResolveQueryRequestOperation(context, "wcs");
         }
 
         if (path.Contains("/FeatureServer", StringComparison.OrdinalIgnoreCase))
@@ -371,6 +390,11 @@ internal static class RequestTelemetryClassifier
 
         if (path.Contains("/ImageServer", StringComparison.OrdinalIgnoreCase))
         {
+            if (path.Contains("/WCS", StringComparison.OrdinalIgnoreCase))
+            {
+                return ResolveQueryRequestOperation(context, "wcs");
+            }
+
             if (path.Contains("/exportImage", StringComparison.OrdinalIgnoreCase))
             {
                 return "exportImage";

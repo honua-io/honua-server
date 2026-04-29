@@ -22,7 +22,7 @@ public sealed record CatalogMetadata
 
     /// <summary>
     /// Protocols enabled for this service. When null, all protocols are enabled.
-    /// Valid values: "FeatureServer", "MapServer", "OgcFeatures", "Wfs20", "OData", "Grpc".
+    /// Valid values include "FeatureServer", "MapServer", "ImageServer", "OgcFeatures", "Wfs20", "Wms", "Wmts", "Wcs", "OData", "Grpc", and "Stac".
     /// </summary>
     public string[]? EnabledProtocols { get; init; }
 

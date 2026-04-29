@@ -31,6 +31,7 @@ public static class OperationRegistry
     private const string Wms13 = "WMS-1.3.0";
     private const string Wms111 = "WMS-1.1.1";
     private const string Wmts10 = "WMTS-1.0.0";
+    private const string Wcs201 = "WCS-2.0.1";
     private const string ODataV4 = "OData-v4";
     private const string Grpc = "Grpc";
     private const string Mcp = "Mcp";
@@ -70,6 +71,11 @@ public static class OperationRegistry
         new(Wmts10, "GetCapabilities"),
         new(Wmts10, "GetTile"),
         new(Wmts10, "GetFeatureInfo"),
+
+        // WCS 2.0.1 operations (KVP via ImageServer and service-scoped OGC aliases)
+        new(Wcs201, "GetCapabilities"),
+        new(Wcs201, "DescribeCoverage"),
+        new(Wcs201, "GetCoverage"),
 
         // OData operation families that share routes with query-option or payload dispatch
         new(ODataV4, "Metadata"),

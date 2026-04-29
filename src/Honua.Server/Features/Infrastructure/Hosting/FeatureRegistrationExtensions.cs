@@ -28,6 +28,7 @@ using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Protocols.Tiles;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.Server.Features.Protocols.Ogc.Classic;
+using Honua.Server.Features.Protocols.Ogc.Classic.Wcs20;
 using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.Server.Features.Protocols.Stac;
 using Honua.Server.Features.Reporting;
@@ -59,6 +60,7 @@ internal static class FeatureRegistrationExtensions
         services.AddOgcMaps();
         services.AddOgcProcesses(configuration);
         services.AddWfs20(configuration);
+        services.AddWcs20();
         services.AddOData();
         services.AddGeometryService();
         services.AddHonuaGrpc(configuration);
@@ -110,6 +112,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapOgcProcessesEndpoints();
         endpoints.MapOgcTilesEndpoints();
         endpoints.MapWfs20Endpoints();
+        endpoints.MapWcs20Endpoints();
         endpoints.MapODataEndpoints();
         endpoints.MapGeometryServiceEndpoints();
         endpoints.MapStacEndpoints();

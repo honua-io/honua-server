@@ -61,6 +61,7 @@ Sources:
 | Esri child resource | Esri path | Honua status | Notes |
 | --- | --- | --- | --- |
 | Legend | `.../ImageServer/legend` | Partial | `GET /rest/services/{id}/ImageServer/legend` returns Esri-shaped `layers[].legend[]` swatches as base64 PNGs (`image/png`). The MVP renders a fixed 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics (`min`, `max`); per-layer renderer persistence and classification overrides via `renderingRule` are not yet honoured. Only `f=json`/`f=pjson` is accepted. |
+| WCS | `.../ImageServer/WCS` | Partial | `GET /rest/services/{id}/ImageServer/WCS` and `GET /ogc/services/{serviceId}/wcs` expose WCS 2.0.1 KVP `GetCapabilities`, `DescribeCoverage`, and `GetCoverage` over the primary raster. Supports `image/tiff`, `image/png`, `image/jpeg`, spatial subset, and output CRS; range subset, scaling, temporal/multidimensional slicing, and WCS-specific mosaic selection are not yet implemented. |
 
 ### Not implemented
 

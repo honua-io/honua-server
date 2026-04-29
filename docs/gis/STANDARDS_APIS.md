@@ -255,6 +255,33 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 
 ---
 
+## **WCS 2.0.1**
+
+**Best for**: Raw raster and coverage values for science, elevation, and remote-sensing workflows
+
+**Endpoint structure:**
+```
+/rest/services/{id}/ImageServer/WCS
+|-- ?service=WCS&request=GetCapabilities&version=2.0.1
+|-- ?service=WCS&request=DescribeCoverage&coverageId={layerId}
+|-- ?service=WCS&request=GetCoverage&coverageId={layerId}&format=image/tiff
+
+/ogc/services/{serviceId}/wcs
+|-- ?service=WCS&request=GetCapabilities&version=2.0.1
+|-- ?service=WCS&request=GetCoverage&coverageId={layerId}&subset=Long(min,max)&subset=Lat(min,max)
+```
+
+**Output formats:** `image/tiff` (default), `image/png`, `image/jpeg`
+
+**Limitations:** WCS is a thin KVP adapter over the existing raster store. `GetCoverage` uses the primary raster for the addressed layer and returns buffered `RasterResult.Data` bytes. Range subset/band selection, scaling extensions, XML POST bodies, polygon trims, NetCDF, temporal/multidimensional slicing, and WCS-specific multi-raster mosaic selection are deferred. See [WCS 2.0.1 Coverage](specifications/wcs-2.0.1-coverage.md) for parameter details and examples.
+
+**Typical use cases:**
+- GeoTIFF coverage export for science and elevation tools
+- Spatially subsetted raw raster extracts
+- Migration paths for GeoServer WCS consumers
+
+---
+
 ## **GeoServices REST ImageServer**
 
 **Best for**: Esri raster/image workflows
