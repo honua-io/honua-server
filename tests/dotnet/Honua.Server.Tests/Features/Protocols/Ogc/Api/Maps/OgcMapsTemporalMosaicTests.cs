@@ -118,6 +118,31 @@ public sealed class OgcMapsTemporalMosaicTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /ogc/maps/map")]
+    [Operation(Operations.Render)]
+    public async Task GetDatasetMap_WithOpenStartInterval_PassesEndOnlyToRenderer()
+    {
+        var renderer = new StubRasterMapRenderer();
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, renderer).ConfigureAwait(false);
+        try
+        {
+            var expectedEnd = DateTimeOffset.Parse("2024-03-31T23:59:59Z", CultureInfo.InvariantCulture);
+            var response = await fixture.Client.GetAsync(
+                $"/ogc/maps/map?collections={WebAppFixture.TestLayerId}" +
+                "&bbox=0,0,4,2&width=64&height=32&f=png&datetime=../2024-03-31T23:59:59Z");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            renderer.LastDatasetRequest.Should().NotBeNull();
+            renderer.LastDatasetRequest!.Value.DateTimeFrom.Should().BeNull();
+            renderer.LastDatasetRequest!.Value.DateTime.Should().Be(expectedEnd);
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     [Operation(Operations.Render)]
     public async Task GetCollectionMap_WithOpenEndInterval_PassesStartOnlyToRenderer()
@@ -232,6 +257,7 @@ public sealed class OgcMapsTemporalMosaicTests
     private sealed class StubRasterMapRenderer : IRasterMapRenderer
     {
         public MapRenderRequest? LastCollectionRequest { get; private set; }
+        public MapRenderRequest? LastDatasetRequest { get; private set; }
 
         public Task<RasterResult> RenderCollectionMapAsync(
             int layerId,
@@ -253,7 +279,17 @@ public sealed class OgcMapsTemporalMosaicTests
             int[] layerIds,
             MapRenderRequest request,
             CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+        {
+            LastDatasetRequest = request;
+            return Task.FromResult(new RasterResult
+            {
+                Data = [0x89, 0x50, 0x4E, 0x47],
+                ContentType = "image/png",
+                Width = request.Width,
+                Height = request.Height,
+                Srid = request.Crs ?? request.BoundingBoxCrs ?? 4326
+            });
+        }
 
         public Task<RasterResult> RenderStyledMapAsync(
             int layerId,

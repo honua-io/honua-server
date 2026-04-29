@@ -81,6 +81,23 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithPathTraversalPatternInQueryParameter_ReturnsBadRequest()
+    {
+        var where = Uri.EscapeDataString("../etc/passwd");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/test/FeatureServer/1/query?where={where}&f=json");
+        request.Headers.Add("X-API-Key", AdminPassword);
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Path traversal attempt detected");
+    }
 }
 
 [Collection("Database")]

@@ -55,6 +55,33 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ImportAsync_WithMismatchedLayerBandCount_ReturnsFailureAndRollsBack()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterImportServiceTests));
+        var filePath = await CreatePngRasterFileAsync();
+        try
+        {
+            await CreateRasterImportSchemaAsync(schemaName);
+            await InsertLayerAsync(schemaName);
+            await InsertConstantRasterAsync(schemaName, "existing-two-band", srid: 4326, bandCount: 2);
+
+            var service = CreateService(schemaName);
+            var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
+
+            result.Success.Should().BeFalse();
+            result.ErrorMessage.Should().Contain("requires raster homogeneity");
+            result.ErrorMessage.Should().Contain("Expected SRID=4326, BandCount=2");
+            result.ErrorMessage.Should().Contain("upload has SRID=4326, BandCount=1");
+            (await CountLayerRastersAsync(schemaName)).Should().Be(1);
+        }
+        finally
+        {
+            TryDeleteFile(filePath);
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ImportAsync_WhenLayerAlreadyContainsHeterogeneousRasters_ReturnsFailureAndRollsBack()
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterImportServiceTests));
@@ -72,6 +99,33 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             result.Success.Should().BeFalse();
             result.ErrorMessage.Should().Contain("already contains heterogeneous rasters");
             result.ErrorMessage.Should().Contain("SRID range 3857..4326");
+            (await CountLayerRastersAsync(schemaName)).Should().Be(2);
+        }
+        finally
+        {
+            TryDeleteFile(filePath);
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportAsync_WhenLayerAlreadyContainsHeterogeneousBandCounts_ReturnsFailureAndRollsBack()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterImportServiceTests));
+        var filePath = await CreatePngRasterFileAsync();
+        try
+        {
+            await CreateRasterImportSchemaAsync(schemaName);
+            await InsertLayerAsync(schemaName);
+            await InsertConstantRasterAsync(schemaName, "existing-one-band", srid: 4326, bandCount: 1);
+            await InsertConstantRasterAsync(schemaName, "existing-two-band", srid: 4326, bandCount: 2);
+
+            var service = CreateService(schemaName);
+            var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
+
+            result.Success.Should().BeFalse();
+            result.ErrorMessage.Should().Contain("already contains heterogeneous rasters");
+            result.ErrorMessage.Should().Contain("BandCount range 1..2");
             (await CountLayerRastersAsync(schemaName)).Should().Be(2);
         }
         finally

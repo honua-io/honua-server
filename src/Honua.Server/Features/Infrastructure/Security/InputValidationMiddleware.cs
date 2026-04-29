@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
@@ -203,7 +204,9 @@ internal sealed class InputValidationMiddleware
             }
 
             // Path traversal detection
-            if (_options.DetectPathTraversal && _pathTraversalPattern.IsMatch(value))
+            if (_options.DetectPathTraversal &&
+                !ShouldSkipPathTraversalInspection(request, paramType, name, value) &&
+                _pathTraversalPattern.IsMatch(value))
             {
                 return InputValidationResult.Invalid($"Path traversal attempt detected in {paramType} parameter '{name}'");
             }
@@ -245,6 +248,35 @@ internal sealed class InputValidationMiddleware
     private static bool ShouldSkipLdapInspection(HttpRequest request, string paramType, string name)
         => IsODataSystemQueryOption(request, paramType, name) ||
            IsProtocolFilterQueryOption(request, paramType, name);
+
+    private static bool ShouldSkipPathTraversalInspection(HttpRequest request, string paramType, string name, string value)
+        => IsOgcDatetimeQueryOption(request, paramType, name) &&
+           IsOgcOpenStartDatetimeInterval(value);
+
+    private static bool IsOgcOpenStartDatetimeInterval(string value)
+    {
+        // OGC API datetime uses "../end" for an open-start interval. Keep this
+        // exception narrower than the full datetime grammar so generic path values
+        // such as "../etc/passwd" are still rejected before endpoint dispatch.
+        var parts = value.Split('/', StringSplitOptions.TrimEntries);
+        return parts is ["..", var end] &&
+               DateTimeOffset.TryParse(
+                   end,
+                   CultureInfo.InvariantCulture,
+                   DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                   out _);
+    }
+
+    private static bool IsOgcDatetimeQueryOption(HttpRequest request, string paramType, string name)
+    {
+        if (!paramType.Equals("query", StringComparison.Ordinal) ||
+            !name.Equals("datetime", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return request.Path.Value?.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) == true;
+    }
 
     private static bool IsODataSystemQueryOption(HttpRequest request, string paramType, string name)
     {
