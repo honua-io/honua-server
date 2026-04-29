@@ -100,7 +100,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                     .Append(", x, y, ");
                 sql.Append(CultureInfo.InvariantCulture, $"FLOOR((x - ${originXParam}) / ${cellWidthParam})::bigint AS cell_x, ");
                 sql.Append(CultureInfo.InvariantCulture, $"FLOOR((${originYParam} - y) / ${cellHeightParam})::bigint AS cell_y ");
-                sql.Append("FROM projected_points) SELECT DISTINCT ON (cell_x, cell_y) x, y FROM snapped_points ORDER BY cell_x, cell_y, objectid");
+                sql.Append("FROM projected_points) SELECT AVG(x)::double precision AS x, AVG(y)::double precision AS y FROM snapped_points GROUP BY cell_x, cell_y");
             }
             else
             {

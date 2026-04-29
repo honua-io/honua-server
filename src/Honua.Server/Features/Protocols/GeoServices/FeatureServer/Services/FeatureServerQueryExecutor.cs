@@ -144,6 +144,7 @@ internal sealed class FeatureServerQueryExecutor
         int layerId,
         FeatureQuery query,
         LayerDefinition layer,
+        bool returnGeometry,
         int? outputSrid,
         CancellationToken cancellationToken)
         => await QueryRawGeoServicesPointJsonWithValidationAsync(
@@ -151,6 +152,7 @@ internal sealed class FeatureServerQueryExecutor
             layerId,
             query,
             layer,
+            returnGeometry,
             outputSrid,
             cancellationToken).ConfigureAwait(false);
 
@@ -158,6 +160,7 @@ internal sealed class FeatureServerQueryExecutor
         ServiceDefinition service,
         LayerDefinition layer,
         FeatureQuery query,
+        bool returnGeometry,
         int? outputSrid,
         CancellationToken cancellationToken)
     {
@@ -168,6 +171,7 @@ internal sealed class FeatureServerQueryExecutor
             layer.Id,
             query,
             layer,
+            returnGeometry,
             outputSrid,
             cancellationToken).ConfigureAwait(false);
     }
@@ -177,6 +181,7 @@ internal sealed class FeatureServerQueryExecutor
         int layerId,
         FeatureQuery query,
         LayerDefinition layer,
+        bool returnGeometry,
         int? outputSrid,
         CancellationToken cancellationToken)
     {
@@ -192,7 +197,7 @@ internal sealed class FeatureServerQueryExecutor
                 query,
                 cancellationToken).ConfigureAwait(false);
 
-            return (CreateRawGeoServicesPointPayload(result, layer, outputSrid), result.Items.Length);
+            return (CreateRawGeoServicesPointPayload(result, layer, returnGeometry, outputSrid), result.Items.Length);
         }
         catch (ArgumentException ex)
         {
@@ -215,6 +220,7 @@ internal sealed class FeatureServerQueryExecutor
     private static ReadOnlyMemory<byte> CreateRawGeoServicesPointPayload(
         PagedQueryResult<RawGeoServicesFeature> result,
         LayerDefinition layer,
+        bool returnGeometry,
         int? outputSrid)
     {
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
@@ -244,17 +250,20 @@ internal sealed class FeatureServerQueryExecutor
             writer.WritePropertyName("attributes");
             WriteRawGeoServicesAttributes(writer, feature, allowedAttributeNames, objectIdFieldName);
 
-            writer.WritePropertyName("geometry");
-            if (feature.X.HasValue && feature.Y.HasValue)
+            if (returnGeometry)
             {
-                writer.WriteStartObject();
-                writer.WriteNumber("x", feature.X.Value);
-                writer.WriteNumber("y", feature.Y.Value);
-                writer.WriteEndObject();
-            }
-            else
-            {
-                writer.WriteNullValue();
+                writer.WritePropertyName("geometry");
+                if (feature.X.HasValue && feature.Y.HasValue)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteNumber("x", feature.X.Value);
+                    writer.WriteNumber("y", feature.Y.Value);
+                    writer.WriteEndObject();
+                }
+                else
+                {
+                    writer.WriteNullValue();
+                }
             }
 
             writer.WriteEndObject();

@@ -1069,14 +1069,28 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <configuration>
             <packageSources>
+              <clear />
               <add key="local-packages" value="${PACKAGE_SOURCE}" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
             </packageSources>
             <packageSourceMapping>
               <packageSource key="local-packages">
                 <package pattern="Honua.Core" />
               </packageSource>
+              <packageSource key="nuget.org">
+                <package pattern="*" />
+              </packageSource>
             </packageSourceMapping>
           </configuration>
+          EOF
+
+          # Keep the temporary consumer independent from repository CPM.
+          cat > Directory.Packages.props <<EOF
+          <Project>
+            <PropertyGroup>
+              <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+            </PropertyGroup>
+          </Project>
           EOF
 
           # Add package under test

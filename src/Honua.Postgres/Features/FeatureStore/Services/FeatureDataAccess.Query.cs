@@ -99,7 +99,7 @@ internal sealed partial class FeatureDataAccess
                 cancellationToken).ConfigureAwait(false);
 
             var capacity = featureQuery.Limit is > 0 and < int.MaxValue
-                ? featureQuery.Limit.Value
+                ? Math.Min(featureQuery.Limit.Value, 1024)
                 : 256;
             var points = new List<ProjectedPoint>(capacity);
             await using var reader = await command.ExecuteReaderAsync(

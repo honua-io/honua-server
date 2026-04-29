@@ -217,6 +217,7 @@ public sealed class FeatureServerQueryExecutorTests
             7,
             new FeatureQuery { Limit = 1 },
             CreatePointLayerWithCustomObjectId(),
+            returnGeometry: true,
             outputSrid: null,
             CancellationToken.None);
 
@@ -247,6 +248,7 @@ public sealed class FeatureServerQueryExecutorTests
             7,
             new FeatureQuery { Limit = 1 },
             CreatePointLayer(),
+            returnGeometry: true,
             outputSrid: null,
             CancellationToken.None);
 
@@ -256,6 +258,38 @@ public sealed class FeatureServerQueryExecutorTests
             .GetProperty("features")[0]
             .GetProperty("attributes");
         attributes.GetProperty(FieldNames.ObjectId).GetInt64().Should().Be(42);
+    }
+
+    [Fact]
+    public async Task QueryRawGeoServicesPointJsonWithValidationAsync_WhenReturnGeometryFalse_OmitsGeometry()
+    {
+        var featureReader = Substitute.For<IFeatureReader, IPagedRawGeoServicesFeatureStore>();
+        var rawStore = (IPagedRawGeoServicesFeatureStore)featureReader;
+        var rawFeatures = ImmutableArray.Create(
+            RawGeoServicesFeature.Create(
+                42,
+                "123",
+                """{"id":999,"name":"alpha"}""",
+                1.5,
+                2.5));
+        rawStore.QueryGeoServicesRawPointPageAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PagedQueryResult<RawGeoServicesFeature>.Create(rawFeatures)));
+
+        var sut = CreateSut(featureReader);
+
+        var (payload, count) = await sut.QueryRawGeoServicesPointJsonWithValidationAsync(
+            7,
+            new FeatureQuery { Limit = 1 },
+            CreatePointLayerWithCustomObjectId(),
+            returnGeometry: false,
+            outputSrid: null,
+            CancellationToken.None);
+
+        count.Should().Be(1);
+        using var document = JsonDocument.Parse(payload);
+        var feature = document.RootElement.GetProperty("features")[0];
+        feature.GetProperty("attributes").GetProperty("id").GetInt64().Should().Be(123);
+        feature.TryGetProperty("geometry", out _).Should().BeFalse();
     }
 
     [Fact]

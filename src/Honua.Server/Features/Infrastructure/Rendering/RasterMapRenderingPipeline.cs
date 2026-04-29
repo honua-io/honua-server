@@ -748,56 +748,49 @@ internal static class RasterMapRenderingPipeline
             return;
         }
 
-        var rented = ArrayPool<SKPoint>.Shared.Rent(points.Length);
+        var projectedPoints = new SKPoint[points.Length];
 
-        try
+        for (var i = 0; i < points.Length; i++)
         {
-            for (var i = 0; i < points.Length; i++)
-            {
-                rented[i] = transform(points[i].X, points[i].Y);
-            }
+            projectedPoints[i] = transform(points[i].X, points[i].Y);
+        }
 
-            if (points.Length >= PointGeneralizationThreshold)
-            {
-                using var circlePaint = CreateBatchedCirclePaint(
-                    circleStyle.FillColor,
-                    Math.Max(1f, circleStyle.Radius * 2f));
-                DrawPointBatch(canvas, rented, points.Length, circlePaint);
-
-                if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
-                {
-                    using var strokePaint = CreateBatchedCirclePaint(
-                        circleStyle.StrokeColor.Value,
-                        Math.Max(1f, (circleStyle.Radius * 2f) + circleStyle.StrokeWidth));
-                    DrawPointBatch(canvas, rented, points.Length, strokePaint);
-                }
-
-                return;
-            }
-
-            using var fillPaint = new SKPaint
-            {
-                Style = SKPaintStyle.Fill,
-                Color = circleStyle.FillColor,
-                IsAntialias = true
-            };
-            DrawCircleLoop(canvas, rented, points.Length, circleStyle.Radius, fillPaint);
+        if (points.Length >= PointGeneralizationThreshold)
+        {
+            using var circlePaint = CreateBatchedCirclePaint(
+                circleStyle.FillColor,
+                Math.Max(1f, circleStyle.Radius * 2f));
+            DrawPointBatch(canvas, projectedPoints, points.Length, circlePaint);
 
             if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
             {
-                using var strokePaint = new SKPaint
-                {
-                    Style = SKPaintStyle.Stroke,
-                    Color = circleStyle.StrokeColor.Value,
-                    StrokeWidth = circleStyle.StrokeWidth,
-                    IsAntialias = true
-                };
-                DrawCircleLoop(canvas, rented, points.Length, circleStyle.Radius, strokePaint);
+                using var strokePaint = CreateBatchedCirclePaint(
+                    circleStyle.StrokeColor.Value,
+                    Math.Max(1f, (circleStyle.Radius * 2f) + circleStyle.StrokeWidth));
+                DrawPointBatch(canvas, projectedPoints, points.Length, strokePaint);
             }
+
+            return;
         }
-        finally
+
+        using var fillPaint = new SKPaint
         {
-            ArrayPool<SKPoint>.Shared.Return(rented);
+            Style = SKPaintStyle.Fill,
+            Color = circleStyle.FillColor,
+            IsAntialias = true
+        };
+        DrawCircleLoop(canvas, projectedPoints, points.Length, circleStyle.Radius, fillPaint);
+
+        if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
+        {
+            using var strokePaint = new SKPaint
+            {
+                Style = SKPaintStyle.Stroke,
+                Color = circleStyle.StrokeColor.Value,
+                StrokeWidth = circleStyle.StrokeWidth,
+                IsAntialias = true
+            };
+            DrawCircleLoop(canvas, projectedPoints, points.Length, circleStyle.Radius, strokePaint);
         }
     }
     internal static int? TryParseSrid(string? sr)

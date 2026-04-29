@@ -32,6 +32,21 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 | `geospatial-grpc` | Public | Open geospatial gRPC protocol definitions for feature services, spatial types, and forms. |
 | `geobench` | Public | Benchmark suite for Honua. |
 
+### Proto Ownership
+
+Canonical `.proto` definitions stay in `geospatial-grpc`. `honua-server` may
+consume generated bindings or pinned/vendored snapshots for build mechanics, but
+new services, fields, enum values, and wire-contract changes must be made in
+`geospatial-grpc` first and then synced into this repo. Do not treat
+`src/Honua.Core/Transport/Proto` as the source of truth.
+
+### SDK Consumption
+
+When server-side tools or tests need .NET SDK client behavior, consume
+`Honua.Sdk.*` through published, versioned NuGet packages. Do not copy SDK
+source into this repo. Avoid long-lived sibling `ProjectReference` links to
+`honua-sdk-dotnet`; temporary local references need an explicit removal issue.
+
 ## GitHub Issue Policy
 
 When the user asks to create a ticket, issue, or GitHub issue:

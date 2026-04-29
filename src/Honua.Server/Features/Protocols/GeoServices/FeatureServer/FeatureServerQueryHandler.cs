@@ -725,6 +725,7 @@ internal sealed class FeatureServerQueryHandler(
                         service,
                         layer,
                         query,
+                        validatedParams.ReturnGeometry,
                         outputSrid,
                         cancellationToken).ConfigureAwait(false);
                     rawStopwatch.Stop();
