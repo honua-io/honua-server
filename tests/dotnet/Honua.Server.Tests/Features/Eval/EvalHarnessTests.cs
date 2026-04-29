@@ -137,14 +137,14 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
     /// <summary>
     /// An approval-gated scenario must still exercise the canonical DryRun contract
     /// (a Read operation that does not enforce executability or approval) while only
-    /// SubmitPlanJob is skipped because it is the RPC that actually enforces the
+    /// SubmitJob is skipped because it is the RPC that actually enforces the
     /// approval gate. Without the split, DryRun would record a synthetic skip and the
     /// harness would never observe a real artifact-kind mismatch against the seeded
     /// runtime for approval-gated plans.
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
-    public async Task ApprovalRequiredScenario_RunsDryRun_SkipsOnlySubmitPlanJob()
+    public async Task ApprovalRequiredScenario_RunsDryRun_SkipsOnlySubmitJob()
     {
         var approvalFixture = new WebAppFixture()
             .ConfigureServices(services =>
@@ -166,9 +166,9 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
                 because: "DryRun is authorized as a Read operation and must still run against approval-gated plans");
             dryRun.Reason.Should().BeNull();
 
-            var submit = result.Stages.Single(stage => stage.Stage == EvalStageKind.SubmitPlanJob);
+            var submit = result.Stages.Single(stage => stage.Stage == EvalStageKind.SubmitJob);
             submit.Status.Should().Be(EvalStageStatus.Skipped,
-                because: "SubmitPlanJob is the execution-only RPC that enforces EnsureApproved");
+                because: "SubmitJob is the execution-only RPC that enforces EnsureApproved");
             submit.Reason.Should().Be("plan-approval-required");
         }
         finally

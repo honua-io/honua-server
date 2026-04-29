@@ -22,19 +22,21 @@ public sealed class GeoprocessingConversionHelpersTests
     [UnitTest]
     public void ToDomainPlan_WithValidProto_ConvertsPlanFields()
     {
-        var proto = new Proto.AnalysisPlan
+        var proto = new Proto.ExecutionPlan
         {
             PlanId = "plan-1",
-            IntentId = "intent-1"
+            SpecVersion = "intent-1"
         };
-        proto.Steps.Add(new Proto.AnalysisPlanStep
+        proto.Steps.Add(new Proto.PlanStep
         {
             StepId = "step-1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "buffer"
+            Kind = "geoprocess",
+            Inputs =
+            {
+                ["processId"] = GeoprocessingConversionHelpers.ToProtoParameterValue("buffer")
+            }
         });
-        proto.Outputs.Add(Proto.ArtifactKind.FeatureLayer);
-        proto.Warnings.Add("test-warning");
+        proto.ExpectedOutputs.Add("feature_layer");
 
         var result = GeoprocessingConversionHelpers.ToDomainPlan(proto);
 
@@ -45,25 +47,25 @@ public sealed class GeoprocessingConversionHelpersTests
         result.Steps[0].Kind.Should().Be(AnalysisPlanStepKind.Geoprocess);
         result.Steps[0].ProcessId.Should().Be("buffer");
         result.Outputs.Should().ContainSingle().Which.Should().Be(ArtifactKind.FeatureLayer);
-        result.Warnings.Should().ContainSingle().Which.Should().Be("test-warning");
+        result.Warnings.Should().BeEmpty();
     }
 
     [UnitTest]
     public void ToDomainPlan_WithStepInputs_ConvertsDictionary()
     {
-        var proto = new Proto.AnalysisPlan
+        var proto = new Proto.ExecutionPlan
         {
             PlanId = "plan-1",
-            IntentId = "intent-1"
+            SpecVersion = "intent-1"
         };
-        var step = new Proto.AnalysisPlanStep
+        var step = new Proto.PlanStep
         {
             StepId = "step-1",
-            Kind = Proto.PlanStepKind.QueryFeatures
+            Kind = "query_features"
         };
-        step.Inputs["layer"] = "parcels";
-        step.Inputs["where"] = "area > 100";
-        step.DependsOn.Add("step-0");
+        step.Inputs["layer"] = GeoprocessingConversionHelpers.ToProtoParameterValue("parcels");
+        step.Inputs["where"] = GeoprocessingConversionHelpers.ToProtoParameterValue("area > 100");
+        step.Dependencies.Add("step-0");
         proto.Steps.Add(step);
 
         var result = GeoprocessingConversionHelpers.ToDomainPlan(proto);
@@ -76,10 +78,10 @@ public sealed class GeoprocessingConversionHelpersTests
     [UnitTest]
     public void ToDomainPlan_WithEmptySteps_ReturnsEmptyList()
     {
-        var proto = new Proto.AnalysisPlan
+        var proto = new Proto.ExecutionPlan
         {
             PlanId = "plan-1",
-            IntentId = "intent-1"
+            SpecVersion = "intent-1"
         };
 
         var result = GeoprocessingConversionHelpers.ToDomainPlan(proto);
@@ -112,12 +114,13 @@ public sealed class GeoprocessingConversionHelpersTests
 
         var response = GeoprocessingConversionHelpers.ToProtoValidatePlanResponse(result);
 
-        response.IsExecutable.Should().BeFalse();
-        response.RequiresApproval.Should().BeTrue();
-        response.Violations.Should().HaveCount(1);
-        response.Violations[0].Code.Should().Be("MISSING_FIELD");
-        response.Violations[0].FieldPath.Should().Be("plan.steps[0].process_id");
-        response.Warnings.Should().ContainSingle().Which.Should().Be("Some warning");
+        response.Valid.Should().BeFalse();
+        response.Issues.Should().HaveCount(2);
+        response.Issues[0].Message.Should().Be("Field is required");
+        response.Issues[0].Field.Should().Be("plan.steps[0].process_id");
+        response.Issues[0].Severity.Should().Be(Proto.IssueSeverity.Error);
+        response.Issues[1].Message.Should().Be("Some warning");
+        response.Issues[1].Severity.Should().Be(Proto.IssueSeverity.Warning);
     }
 
     // -----------------------------------------------------------------------
@@ -136,11 +139,12 @@ public sealed class GeoprocessingConversionHelpersTests
 
         var response = GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result);
 
-        response.EstimatedDurationSeconds.Should().Be(42.5);
-        response.EstimatedArtifacts.Should().HaveCount(2);
-        response.EstimatedArtifacts[0].Should().Be(Proto.ArtifactKind.FeatureLayer);
-        response.EstimatedArtifacts[1].Should().Be(Proto.ArtifactKind.Map);
-        response.SideEffects.Should().ContainSingle().Which.Should().Be("Creates temporary layer");
+        response.Valid.Should().BeTrue();
+        response.Result.EstimatedDurationSeconds.Should().Be(43);
+        response.Result.EstimatedArtifacts.Should().HaveCount(2);
+        response.Result.EstimatedArtifacts[0].ArtifactClass.Should().Be(Proto.ArtifactClass.FeatureLayer);
+        response.Result.EstimatedArtifacts[1].ArtifactClass.Should().Be(Proto.ArtifactClass.Map);
+        response.Result.SideEffects.Should().ContainSingle().Which.Description.Should().Be("Creates temporary layer");
     }
 
     // -----------------------------------------------------------------------
@@ -169,14 +173,12 @@ public sealed class GeoprocessingConversionHelpersTests
             }
         };
 
-        var proto = GeoprocessingConversionHelpers.ToProtoExecutionJob(job);
+        var proto = GeoprocessingConversionHelpers.ToProtoGetJobResponse(job);
 
         proto.JobId.Should().Be("job-1");
-        proto.Status.Should().Be(Proto.JobStatus.Running);
-        proto.PercentComplete.Should().Be(50.0);
-        proto.CurrentPhase.Should().Be("Executing step 2");
-        proto.HasCompletedAt.Should().BeFalse();
-        proto.HasErrorMessage.Should().BeFalse();
+        proto.State.Should().Be(Proto.JobState.Running);
+        proto.Progress.ProgressPercent.Should().Be(50);
+        proto.Progress.Message.Should().Be("Executing step 2");
     }
 
     [UnitTest]
@@ -200,11 +202,10 @@ public sealed class GeoprocessingConversionHelpersTests
             }
         };
 
-        var proto = GeoprocessingConversionHelpers.ToProtoExecutionJob(job);
+        var proto = GeoprocessingConversionHelpers.ToProtoGetJobResponse(job);
 
-        proto.Status.Should().Be(Proto.JobStatus.Failed);
-        proto.HasCompletedAt.Should().BeTrue();
-        proto.ErrorMessage.Should().Be("Step 2 failed");
+        proto.State.Should().Be(Proto.JobState.Failed);
+        proto.Progress.UpdatedAt.Should().Be(now.ToUnixTimeMilliseconds());
     }
 
     // -----------------------------------------------------------------------
@@ -216,19 +217,19 @@ public sealed class GeoprocessingConversionHelpersTests
     {
         var statuses = new[]
         {
-            (ExecutionJobStatus.Queued, Proto.JobStatus.Queued),
-            (ExecutionJobStatus.Provisioning, Proto.JobStatus.Provisioning),
-            (ExecutionJobStatus.Running, Proto.JobStatus.Running),
-            (ExecutionJobStatus.Succeeded, Proto.JobStatus.Succeeded),
-            (ExecutionJobStatus.Failed, Proto.JobStatus.Failed),
-            (ExecutionJobStatus.Cancelled, Proto.JobStatus.Cancelled)
+            (ExecutionJobStatus.Queued, Proto.JobState.Validated),
+            (ExecutionJobStatus.Provisioning, Proto.JobState.Running),
+            (ExecutionJobStatus.Running, Proto.JobState.Running),
+            (ExecutionJobStatus.Succeeded, Proto.JobState.Completed),
+            (ExecutionJobStatus.Failed, Proto.JobState.Failed),
+            (ExecutionJobStatus.Cancelled, Proto.JobState.Cancelled)
         };
 
         foreach (var (domain, expected) in statuses)
         {
             var job = CreateMinimalJob(domain);
-            var proto = GeoprocessingConversionHelpers.ToProtoExecutionJob(job);
-            proto.Status.Should().Be(expected, $"domain {domain} should map to proto {expected}");
+            var proto = GeoprocessingConversionHelpers.ToProtoGetJobResponse(job);
+            proto.State.Should().Be(expected, $"domain {domain} should map to proto {expected}");
         }
     }
 

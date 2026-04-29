@@ -65,6 +65,12 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
             ValidateProtoStructure(request.Plan);
             var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
+            var validation = _jobService.ValidatePlan(domainPlan, context.GetHttpContext().User);
+            if (!validation.IsExecutable)
+            {
+                return Task.FromResult(GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(validation));
+            }
+
             var result = _jobService.DryRunPlan(domainPlan, context.GetHttpContext().User);
             return Task.FromResult(GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result));
         }
@@ -89,7 +95,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
             throw new RpcException(new Status(
                 StatusCode.Unimplemented,
-                "Synchronous plan execution is not yet available. Use SubmitPlanJob for asynchronous execution."));
+                "Synchronous plan execution is not yet available. Use SubmitJob for asynchronous execution."));
         }
         catch (Exception ex) when (ex is not RpcException)
         {
@@ -97,11 +103,11 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         }
     }
 
-    public override async Task<Proto.ExecutionJob> SubmitPlanJob(
-        Proto.SubmitPlanJobRequest request,
+    public override async Task<Proto.SubmitJobResponse> SubmitJob(
+        Proto.SubmitJobRequest request,
         ServerCallContext context)
     {
-        EnrichActivity("SubmitPlanJob");
+        EnrichActivity("SubmitJob");
 
         try
         {
@@ -112,13 +118,11 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
             ValidateProtoStructure(request.Plan);
             var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
-            var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
-                ? null
-                : request.IdempotencyKey;
+            var idempotencyKey = ResolveIdempotencyKey(request.Context);
             var jobRecord = await _jobService.SubmitJobAsync(
                 domainPlan, idempotencyKey,
                 context.GetHttpContext().User, null, context.CancellationToken).ConfigureAwait(false);
-            return GeoprocessingConversionHelpers.ToProtoExecutionJob(jobRecord);
+            return GeoprocessingConversionHelpers.ToProtoSubmitJobResponse(jobRecord);
         }
         catch (Exception ex) when (ex is not RpcException)
         {
@@ -126,7 +130,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         }
     }
 
-    public override async Task<Proto.ExecutionJob> GetJob(
+    public override async Task<Proto.GetJobResponse> GetJob(
         Proto.GetJobRequest request,
         ServerCallContext context)
     {
@@ -136,7 +140,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         {
             var job = await _jobService.GetJobAsync(
                 request.JobId, context.GetHttpContext().User, context.CancellationToken).ConfigureAwait(false);
-            return GeoprocessingConversionHelpers.ToProtoExecutionJob(job);
+            return GeoprocessingConversionHelpers.ToProtoGetJobResponse(job);
         }
         catch (Exception ex) when (ex is not RpcException)
         {
@@ -144,17 +148,17 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         }
     }
 
-    public override async Task<Proto.AnalysisResultPackage> GetJobResults(
-        Proto.GetJobResultsRequest request,
+    public override async Task<Proto.GetJobResultResponse> GetJobResult(
+        Proto.GetJobResultRequest request,
         ServerCallContext context)
     {
-        EnrichActivity("GetJobResults");
+        EnrichActivity("GetJobResult");
 
         try
         {
             var results = await _jobService.GetJobResultsAsync(
                 request.JobId, context.GetHttpContext().User, context.CancellationToken).ConfigureAwait(false);
-            return GeoprocessingConversionHelpers.ToProtoResultPackage(results);
+            return GeoprocessingConversionHelpers.ToProtoGetJobResultResponse(request.JobId, results);
         }
         catch (Exception ex) when (ex is not RpcException)
         {
@@ -172,7 +176,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         {
             await _jobService.CancelJobAsync(
                 request.JobId, context.GetHttpContext().User, context.CancellationToken).ConfigureAwait(false);
-            return new Proto.CancelJobResponse();
+            return new Proto.CancelJobResponse { JobId = request.JobId, State = Proto.JobState.Cancelled };
         }
         catch (Exception ex) when (ex is not RpcException)
         {
@@ -184,30 +188,47 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
     // Helpers
     // -----------------------------------------------------------------------
 
-    private static void ValidateProtoStructure(Proto.AnalysisPlan? plan)
+    private static void ValidateProtoStructure(Proto.ExecutionPlan? plan)
     {
         if (plan == null)
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "Analysis plan is required."));
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Execution plan is required."));
         }
 
         foreach (var step in plan.Steps)
         {
-            if (step.Kind is Proto.PlanStepKind.Unspecified || !Enum.IsDefined(step.Kind))
+            if (string.IsNullOrWhiteSpace(step.Kind))
             {
                 throw new RpcException(new Status(StatusCode.InvalidArgument,
                     $"Step '{step.StepId}' has unsupported step kind '{step.Kind}'."));
             }
         }
 
-        foreach (var output in plan.Outputs)
+        foreach (var output in plan.ExpectedOutputs)
         {
-            if (output is Proto.ArtifactKind.Unspecified || !Enum.IsDefined(output))
+            if (string.IsNullOrWhiteSpace(output))
             {
                 throw new RpcException(new Status(StatusCode.InvalidArgument,
                     $"Unsupported artifact kind '{output}'."));
             }
         }
+    }
+
+    private static string? ResolveIdempotencyKey(Proto.ExecutionContext? executionContext)
+    {
+        if (executionContext?.Metadata.TryGetValue("idempotency_key", out var snakeCaseKey) == true
+            && !string.IsNullOrWhiteSpace(snakeCaseKey))
+        {
+            return snakeCaseKey;
+        }
+
+        if (executionContext?.Metadata.TryGetValue("idempotencyKey", out var camelCaseKey) == true
+            && !string.IsNullOrWhiteSpace(camelCaseKey))
+        {
+            return camelCaseKey;
+        }
+
+        return null;
     }
 
     private static RpcException MapToRpcException(Exception ex) => ex switch

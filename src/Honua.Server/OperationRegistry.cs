@@ -95,9 +95,9 @@ public static class OperationRegistry
         new(Grpc, "geospatial.v1.ProcessService/ValidatePlan"),
         new(Grpc, "geospatial.v1.ProcessService/DryRunPlan"),
         new(Grpc, "geospatial.v1.ProcessService/ExecutePlan"),
-        new(Grpc, "geospatial.v1.ProcessService/SubmitPlanJob"),
+        new(Grpc, "geospatial.v1.ProcessService/SubmitJob"),
         new(Grpc, "geospatial.v1.ProcessService/GetJob"),
-        new(Grpc, "geospatial.v1.ProcessService/GetJobResults"),
+        new(Grpc, "geospatial.v1.ProcessService/GetJobResult"),
         new(Grpc, "geospatial.v1.ProcessService/CancelJob"),
 
         // gRPC SpecService methods (geospatial.v1.SpecService)

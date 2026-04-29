@@ -417,7 +417,7 @@ public sealed class GeoprocessingJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
     public async Task GetJobResults_WithStoredResultPackage_ReturnsStoredPackage()
     {
         var record = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded) with
@@ -450,7 +450,7 @@ public sealed class GeoprocessingJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
     public async Task GetJobResults_WithSucceededTerminalJob_SynthesizesAndPersistsPackage()
     {
         var record = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded) with
@@ -498,7 +498,7 @@ public sealed class GeoprocessingJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
     public async Task GetJobResults_WithCancelledTerminalJob_SynthesizesCancelledPackage()
     {
         var record = CreateJobRecord("job-1", ExecutionJobStatus.Cancelled) with

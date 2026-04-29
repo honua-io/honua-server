@@ -77,8 +77,8 @@ public sealed class GrpcProcessServiceTests
 
         var response = await _sut.ValidatePlan(request, CreateCallContext());
 
-        response.IsExecutable.Should().BeTrue();
-        response.Violations.Should().BeEmpty();
+        response.Valid.Should().BeTrue();
+        response.Issues.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -88,18 +88,19 @@ public sealed class GrpcProcessServiceTests
     {
         var request = new Proto.ValidatePlanRequest
         {
-            Plan = new Proto.AnalysisPlan
+            Plan = new Proto.ExecutionPlan
             {
                 PlanId = "",
-                IntentId = "intent-1"
+                SpecVersion = "intent-1",
+                WorkflowFamily = Proto.WorkflowFamily.Analyze
             }
         };
         request.Plan.Steps.Add(CreateValidStep());
 
         var response = await _sut.ValidatePlan(request, CreateCallContext());
 
-        response.IsExecutable.Should().BeFalse();
-        response.Violations.Should().ContainSingle(v => v.Code == "EMPTY_PLAN_ID");
+        response.Valid.Should().BeFalse();
+        response.Issues.Should().ContainSingle(v => v.Message == "Plan identifier is required.");
     }
 
     [UnitTest]
@@ -109,17 +110,18 @@ public sealed class GrpcProcessServiceTests
     {
         var request = new Proto.ValidatePlanRequest
         {
-            Plan = new Proto.AnalysisPlan
+            Plan = new Proto.ExecutionPlan
             {
                 PlanId = "plan-1",
-                IntentId = "intent-1"
+                SpecVersion = "intent-1",
+                WorkflowFamily = Proto.WorkflowFamily.Analyze
             }
         };
 
         var response = await _sut.ValidatePlan(request, CreateCallContext());
 
-        response.IsExecutable.Should().BeFalse();
-        response.Violations.Should().ContainSingle(v => v.Code == "EMPTY_STEPS");
+        response.Valid.Should().BeFalse();
+        response.Issues.Should().ContainSingle(v => v.Message == "Plan must contain at least one step.");
     }
 
     [UnitTest]
@@ -138,7 +140,7 @@ public sealed class GrpcProcessServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public async Task ValidatePlan_WhenApprovalRequired_SetsRequiresApproval()
+    public async Task ValidatePlan_WhenApprovalRequired_StillReturnsCanonicalValidation()
     {
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
@@ -151,7 +153,8 @@ public sealed class GrpcProcessServiceTests
 
         var response = await _sut.ValidatePlan(request, CreateCallContext());
 
-        response.RequiresApproval.Should().BeTrue();
+        response.Valid.Should().BeTrue();
+        response.Issues.Should().BeEmpty();
     }
 
     // -----------------------------------------------------------------------
@@ -164,58 +167,57 @@ public sealed class GrpcProcessServiceTests
     public async Task DryRunPlan_WithValidPlan_ReturnsEstimation()
     {
         var plan = CreateValidPlan();
-        plan.Outputs.Add(Proto.ArtifactKind.FeatureLayer);
+        plan.ExpectedOutputs.Add("feature_layer");
 
         var request = new Proto.DryRunPlanRequest { Plan = plan };
 
         var response = await _sut.DryRunPlan(request, CreateCallContext());
 
-        response.EstimatedDurationSeconds.Should().Be(0);
-        response.EstimatedArtifacts.Should().ContainSingle(a => a == Proto.ArtifactKind.FeatureLayer);
+        response.Valid.Should().BeTrue();
+        response.Result.EstimatedDurationSeconds.Should().Be(0);
+        response.Result.EstimatedArtifacts.Should().ContainSingle(a => a.ArtifactClass == Proto.ArtifactClass.FeatureLayer);
     }
 
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/DryRunPlan")]
-    public async Task DryRunPlan_WithUnknownProcessId_ThrowsInvalidArgument()
+    public async Task DryRunPlan_WithUnknownProcessId_ReturnsValidationIssues()
     {
-        var plan = new Proto.AnalysisPlan { PlanId = "plan-1", IntentId = "intent-1" };
-        plan.Steps.Add(new Proto.AnalysisPlanStep
+        var plan = CreatePlan();
+        plan.Steps.Add(new Proto.PlanStep
         {
             StepId = "step-1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "does.not.exist"
+            Kind = "geoprocess",
+            Inputs = { ["processId"] = ToProtoParameterValue("does.not.exist") }
         });
 
         var request = new Proto.DryRunPlanRequest { Plan = plan };
 
-        var act = async () => await _sut.DryRunPlan(request, CreateCallContext());
+        var response = await _sut.DryRunPlan(request, CreateCallContext());
 
-        var ex = await act.Should().ThrowAsync<RpcException>();
-        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        ex.Which.Status.Detail.Should().Contain("UNKNOWN_PROCESS");
+        response.Valid.Should().BeFalse();
+        response.Issues.Should().ContainSingle(issue => issue.Message.Contains("does.not.exist", StringComparison.Ordinal));
     }
 
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/DryRunPlan")]
-    public async Task DryRunPlan_WithMissingRequiredParameter_ThrowsInvalidArgument()
+    public async Task DryRunPlan_WithMissingRequiredParameter_ReturnsValidationIssues()
     {
-        var plan = new Proto.AnalysisPlan { PlanId = "plan-1", IntentId = "intent-1" };
-        plan.Steps.Add(new Proto.AnalysisPlanStep
+        var plan = CreatePlan();
+        plan.Steps.Add(new Proto.PlanStep
         {
             StepId = "step-1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "geometry.buffer"
+            Kind = "geoprocess",
+            Inputs = { ["processId"] = ToProtoParameterValue("geometry.buffer") }
         });
 
         var request = new Proto.DryRunPlanRequest { Plan = plan };
 
-        var act = async () => await _sut.DryRunPlan(request, CreateCallContext());
+        var response = await _sut.DryRunPlan(request, CreateCallContext());
 
-        var ex = await act.Should().ThrowAsync<RpcException>();
-        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        ex.Which.Status.Detail.Should().Contain("MISSING_REQUIRED_PARAMETER");
+        response.Valid.Should().BeFalse();
+        response.Issues.Should().Contain(issue => issue.Message.Contains("required", StringComparison.OrdinalIgnoreCase));
     }
 
     // -----------------------------------------------------------------------
@@ -256,27 +258,23 @@ public sealed class GrpcProcessServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // SubmitPlanJob
+    // SubmitJob
     // -----------------------------------------------------------------------
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_WithValidPlan_CreatesJobAndReturns()
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_WithValidPlan_CreatesJobAndReturns()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
-        var request = new Proto.SubmitPlanJobRequest
-        {
-            Plan = CreateValidPlan(),
-            IdempotencyKey = "idem-key-1"
-        };
+        var request = CreateSubmitJobRequest(CreateValidPlan(), "idem-key-1");
 
-        var response = await _sut.SubmitPlanJob(request, CreateCallContext());
+        var response = await _sut.SubmitJob(request, CreateCallContext());
 
         response.JobId.Should().NotBeNullOrWhiteSpace();
-        response.Status.Should().Be(Proto.JobStatus.Queued);
+        response.State.Should().Be(Proto.JobState.Validated);
         await _jobStore.Received(1).TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
         await _progressStore.Received(1).SetProgressAsync(
@@ -286,21 +284,17 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_WhenRequestIsCancelled_ThrowsCancelled()
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_WhenRequestIsCancelled_ThrowsCancelled()
     {
         using var cts = new CancellationTokenSource();
         cts.Cancel();
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromCanceled<bool>(cts.Token));
 
-        var request = new Proto.SubmitPlanJobRequest
-        {
-            Plan = CreateValidPlan(),
-            IdempotencyKey = "idem-cancelled"
-        };
+        var request = CreateSubmitJobRequest(CreateValidPlan(), "idem-cancelled");
 
-        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext(cts.Token));
+        var act = async () => await _sut.SubmitJob(request, CreateCallContext(cts.Token));
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.Cancelled);
@@ -323,7 +317,7 @@ public sealed class GrpcProcessServiceTests
         var response = await _sut.GetJob(request, CreateCallContext());
 
         response.JobId.Should().Be("job-123");
-        response.Status.Should().Be(Proto.JobStatus.Running);
+        response.State.Should().Be(Proto.JobState.Running);
     }
 
     [UnitTest]
@@ -355,20 +349,20 @@ public sealed class GrpcProcessServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // GetJobResults
+    // GetJobResult
     // -----------------------------------------------------------------------
 
     [UnitTest]
     [Operation(Operations.Query)]
-    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
-    public async Task GetJobResults_WithNonTerminalJob_ThrowsFailedPrecondition()
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
+    public async Task GetJobResult_WithNonTerminalJob_ThrowsFailedPrecondition()
     {
         var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Running);
         _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
 
-        var request = new Proto.GetJobResultsRequest { JobId = "job-123" };
+        var request = new Proto.GetJobResultRequest { JobId = "job-123" };
 
-        var act = async () => await _sut.GetJobResults(request, CreateCallContext());
+        var act = async () => await _sut.GetJobResult(request, CreateCallContext());
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
@@ -376,8 +370,8 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
-    public async Task GetJobResults_WithTerminalJob_ReturnsResultPackage()
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
+    public async Task GetJobResult_WithTerminalJob_ReturnsResultPackage()
     {
         var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Succeeded) with
         {
@@ -402,13 +396,13 @@ public sealed class GrpcProcessServiceTests
         _resultPackageStore.GetAsync("job-123", Arg.Any<CancellationToken>())
             .Returns((AnalysisResultPackage?)null);
 
-        var request = new Proto.GetJobResultsRequest { JobId = "job-123" };
+        var request = new Proto.GetJobResultRequest { JobId = "job-123" };
 
-        var response = await _sut.GetJobResults(request, CreateCallContext());
+        var response = await _sut.GetJobResult(request, CreateCallContext());
 
-        response.ResultPackageId.Should().Be("job-123:v5");
-        response.Status.Should().Be(Proto.WorkflowStatus.Completed);
-        response.Artifacts.Should().ContainSingle();
+        response.Result.ResultId.Should().Be("job-123:v5");
+        response.Result.Status.Should().Be(Proto.JobState.Completed);
+        response.Result.Artifacts.Should().ContainSingle();
     }
 
     // -----------------------------------------------------------------------
@@ -496,16 +490,17 @@ public sealed class GrpcProcessServiceTests
     {
         var request = new Proto.ValidatePlanRequest
         {
-            Plan = new Proto.AnalysisPlan
+            Plan = new Proto.ExecutionPlan
             {
                 PlanId = "plan-1",
-                IntentId = "intent-1"
+                SpecVersion = "intent-1",
+                WorkflowFamily = Proto.WorkflowFamily.Analyze
             }
         };
-        request.Plan.Steps.Add(new Proto.AnalysisPlanStep
+        request.Plan.Steps.Add(new Proto.PlanStep
         {
             StepId = "step-bad",
-            Kind = Proto.PlanStepKind.Unspecified
+            Kind = ""
         });
 
         var act = async () => await _sut.ValidatePlan(request, CreateCallContext());
@@ -520,7 +515,7 @@ public sealed class GrpcProcessServiceTests
     public async Task DryRunPlan_WithUnspecifiedArtifactKind_ThrowsInvalidArgument()
     {
         var plan = CreateValidPlan();
-        plan.Outputs.Add(Proto.ArtifactKind.Unspecified);
+        plan.ExpectedOutputs.Add("");
 
         var request = new Proto.DryRunPlanRequest { Plan = plan };
 
@@ -569,24 +564,20 @@ public sealed class GrpcProcessServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // SubmitPlanJob – idempotency
+    // SubmitJob – idempotency
     // -----------------------------------------------------------------------
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_StoresProgressInQueuedState()
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_StoresProgressInQueuedState()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
-        var request = new Proto.SubmitPlanJobRequest
-        {
-            Plan = CreateValidPlan(),
-            IdempotencyKey = "idem-progress"
-        };
+        var request = CreateSubmitJobRequest(CreateValidPlan(), "idem-progress");
 
-        await _sut.SubmitPlanJob(request, CreateCallContext());
+        await _sut.SubmitJob(request, CreateCallContext());
 
         await _progressStore.Received(1).SetProgressAsync(
             Arg.Any<string>(),
@@ -600,18 +591,14 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_WithDuplicateIdempotencyKey_ReturnsExistingJob()
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_WithDuplicateIdempotencyKey_ReturnsExistingJob()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
         var plan = CreateValidPlan();
-        var request = new Proto.SubmitPlanJobRequest
-        {
-            Plan = plan,
-            IdempotencyKey = "idem-key-dup"
-        };
+        var request = CreateSubmitJobRequest(plan, "idem-key-dup");
 
         var existingRecord = CreateTestJobRecord("placeholder", ExecutionJobStatus.Queued);
         existingRecord = existingRecord with
@@ -625,7 +612,7 @@ public sealed class GrpcProcessServiceTests
 
         _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(existingRecord);
 
-        var response = await _sut.SubmitPlanJob(request, CreateCallContext());
+        var response = await _sut.SubmitJob(request, CreateCallContext());
 
         response.Should().NotBeNull();
         await _progressStore.DidNotReceive().SetProgressAsync(
@@ -635,8 +622,8 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_WithMismatchedIdempotencyKey_ThrowsAlreadyExists()
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_WithMismatchedIdempotencyKey_ThrowsAlreadyExists()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(false);
@@ -653,13 +640,9 @@ public sealed class GrpcProcessServiceTests
 
         _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(existingRecord);
 
-        var request = new Proto.SubmitPlanJobRequest
-        {
-            Plan = CreateValidPlan(),
-            IdempotencyKey = "idem-key-dup"
-        };
+        var request = CreateSubmitJobRequest(CreateValidPlan(), "idem-key-dup");
 
-        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+        var act = async () => await _sut.SubmitJob(request, CreateCallContext());
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.AlreadyExists);
@@ -667,19 +650,20 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_WithEmptyPlanId_ThrowsInvalidArgument()
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_WithEmptyPlanId_ThrowsInvalidArgument()
     {
-        var plan = new Proto.AnalysisPlan
+        var plan = new Proto.ExecutionPlan
         {
             PlanId = "",
-            IntentId = "intent-1"
+            SpecVersion = "intent-1",
+            WorkflowFamily = Proto.WorkflowFamily.Analyze
         };
         plan.Steps.Add(CreateValidStep());
 
-        var request = new Proto.SubmitPlanJobRequest { Plan = plan, IdempotencyKey = "idem-1" };
+        var request = CreateSubmitJobRequest(plan, "idem-1");
 
-        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+        var act = async () => await _sut.SubmitJob(request, CreateCallContext());
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
@@ -688,18 +672,19 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_WithNoSteps_ThrowsInvalidArgument()
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_WithNoSteps_ThrowsInvalidArgument()
     {
-        var plan = new Proto.AnalysisPlan
+        var plan = new Proto.ExecutionPlan
         {
             PlanId = "plan-1",
-            IntentId = "intent-1"
+            SpecVersion = "intent-1",
+            WorkflowFamily = Proto.WorkflowFamily.Analyze
         };
 
-        var request = new Proto.SubmitPlanJobRequest { Plan = plan, IdempotencyKey = "idem-1" };
+        var request = CreateSubmitJobRequest(plan, "idem-1");
 
-        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+        var act = async () => await _sut.SubmitJob(request, CreateCallContext());
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
@@ -712,28 +697,28 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
     public void Fingerprint_AmbiguousDelimiterValues_ProduceDifferentHashes()
     {
-        var planA = new Proto.AnalysisPlan { PlanId = "p", IntentId = "i" };
-        var stepA = new Proto.AnalysisPlanStep
+        var planA = CreatePlan("p", "i");
+        var stepA = new Proto.PlanStep
         {
             StepId = "s1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "buffer"
+            Kind = "geoprocess"
         };
-        stepA.Inputs.Add("k", "a>b");
+        SetProcessId(stepA, "buffer");
+        stepA.Inputs["k"] = ToProtoParameterValue("a>b");
         planA.Steps.Add(stepA);
 
-        var planB = new Proto.AnalysisPlan { PlanId = "p", IntentId = "i" };
-        var stepB = new Proto.AnalysisPlanStep
+        var planB = CreatePlan("p", "i");
+        var stepB = new Proto.PlanStep
         {
             StepId = "s1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "buffer"
+            Kind = "geoprocess"
         };
-        stepB.Inputs.Add("k", "a");
-        stepB.DependsOn.Add("b");
+        SetProcessId(stepB, "buffer");
+        stepB.Inputs["k"] = ToProtoParameterValue("a");
+        stepB.Dependencies.Add("b");
         planB.Steps.Add(stepB);
 
         var fpA = ComputeExpectedFingerprint(planA);
@@ -744,29 +729,29 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
     public void Fingerprint_ReorderedDependsOn_ProducesSameHash()
     {
-        var planA = new Proto.AnalysisPlan { PlanId = "p", IntentId = "i" };
-        var stepA = new Proto.AnalysisPlanStep
+        var planA = CreatePlan("p", "i");
+        var stepA = new Proto.PlanStep
         {
             StepId = "s1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "buffer"
+            Kind = "geoprocess"
         };
-        stepA.DependsOn.Add("dep-a");
-        stepA.DependsOn.Add("dep-b");
+        SetProcessId(stepA, "buffer");
+        stepA.Dependencies.Add("dep-a");
+        stepA.Dependencies.Add("dep-b");
         planA.Steps.Add(stepA);
 
-        var planB = new Proto.AnalysisPlan { PlanId = "p", IntentId = "i" };
-        var stepB = new Proto.AnalysisPlanStep
+        var planB = CreatePlan("p", "i");
+        var stepB = new Proto.PlanStep
         {
             StepId = "s1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "buffer"
+            Kind = "geoprocess"
         };
-        stepB.DependsOn.Add("dep-b");
-        stepB.DependsOn.Add("dep-a");
+        SetProcessId(stepB, "buffer");
+        stepB.Dependencies.Add("dep-b");
+        stepB.Dependencies.Add("dep-a");
         planB.Steps.Add(stepB);
 
         var fpA = ComputeExpectedFingerprint(planA);
@@ -798,20 +783,16 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_WhenApprovalRequired_ThrowsFailedPrecondition()
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_WhenApprovalRequired_ThrowsFailedPrecondition()
     {
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(ApprovalRequirement.Required("policy-1", "destructive-action"));
 
-        var request = new Proto.SubmitPlanJobRequest
-        {
-            Plan = CreateValidPlan(),
-            IdempotencyKey = "idem-key-1"
-        };
+        var request = CreateSubmitJobRequest(CreateValidPlan(), "idem-key-1");
 
-        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+        var act = async () => await _sut.SubmitJob(request, CreateCallContext());
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
@@ -820,16 +801,16 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_Unauthorized_ThrowsPermissionDenied()
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_Unauthorized_ThrowsPermissionDenied()
     {
         _authEvaluator
             .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(AccessDecision.Forbidden()));
 
-        var request = new Proto.SubmitPlanJobRequest { Plan = CreateValidPlan() };
+        var request = new Proto.SubmitJobRequest { Plan = CreateValidPlan() };
 
-        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+        var act = async () => await _sut.SubmitJob(request, CreateCallContext());
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
@@ -850,16 +831,17 @@ public sealed class GrpcProcessServiceTests
 
         var request = new Proto.ValidatePlanRequest
         {
-            Plan = new Proto.AnalysisPlan
+            Plan = new Proto.ExecutionPlan
             {
                 PlanId = "plan-1",
-                IntentId = "intent-1"
+                SpecVersion = "intent-1",
+                WorkflowFamily = Proto.WorkflowFamily.Analyze
             }
         };
-        request.Plan.Steps.Add(new Proto.AnalysisPlanStep
+        request.Plan.Steps.Add(new Proto.PlanStep
         {
             StepId = "step-bad",
-            Kind = Proto.PlanStepKind.Unspecified
+            Kind = ""
         });
 
         var act = async () => await _sut.ValidatePlan(request, CreateCallContext());
@@ -871,28 +853,29 @@ public sealed class GrpcProcessServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
     {
         _authEvaluator
             .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(AccessDecision.RequiresAuth()));
 
-        var request = new Proto.SubmitPlanJobRequest
+        var request = new Proto.SubmitJobRequest
         {
-            Plan = new Proto.AnalysisPlan
+            Plan = new Proto.ExecutionPlan
             {
                 PlanId = "plan-1",
-                IntentId = "intent-1"
+                SpecVersion = "intent-1",
+                WorkflowFamily = Proto.WorkflowFamily.Analyze
             }
         };
-        request.Plan.Steps.Add(new Proto.AnalysisPlanStep
+        request.Plan.Steps.Add(new Proto.PlanStep
         {
             StepId = "step-bad",
-            Kind = Proto.PlanStepKind.Unspecified
+            Kind = ""
         });
 
-        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+        var act = async () => await _sut.SubmitJob(request, CreateCallContext());
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated,
@@ -903,27 +886,53 @@ public sealed class GrpcProcessServiceTests
     // Helpers
     // -----------------------------------------------------------------------
 
-    private static Proto.AnalysisPlan CreateValidPlan()
+    private static Proto.ExecutionPlan CreateValidPlan()
     {
-        var plan = new Proto.AnalysisPlan
-        {
-            PlanId = "plan-1",
-            IntentId = "intent-1"
-        };
+        var plan = CreatePlan();
         plan.Steps.Add(CreateValidStep());
         return plan;
     }
 
-    private static Proto.AnalysisPlanStep CreateValidStep()
+    private static Proto.ExecutionPlan CreatePlan(string planId = "plan-1", string specVersion = "intent-1")
         => new()
         {
-            StepId = "step-1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "geometry.buffer",
-            Inputs = { { "wkb", "AAAA" }, { "srid", "4326" }, { "distance", "100" } }
+            PlanId = planId,
+            SpecVersion = specVersion,
+            WorkflowFamily = Proto.WorkflowFamily.Analyze
         };
 
-    private static string ComputeExpectedFingerprint(Proto.AnalysisPlan protoPlan)
+    private static Proto.PlanStep CreateValidStep()
+    {
+        var step = new Proto.PlanStep
+        {
+            StepId = "step-1",
+            Kind = "geoprocess"
+        };
+        SetProcessId(step, "geometry.buffer");
+        step.Inputs["wkb"] = ToProtoParameterValue("AAAA");
+        step.Inputs["srid"] = ToProtoParameterValue("4326");
+        step.Inputs["distance"] = ToProtoParameterValue("100");
+        return step;
+    }
+
+    private static Proto.SubmitJobRequest CreateSubmitJobRequest(Proto.ExecutionPlan plan, string idempotencyKey)
+    {
+        var request = new Proto.SubmitJobRequest
+        {
+            Plan = plan,
+            Context = new Proto.ExecutionContext()
+        };
+        request.Context.Metadata["idempotency_key"] = idempotencyKey;
+        return request;
+    }
+
+    private static void SetProcessId(Proto.PlanStep step, string processId)
+        => step.Inputs["processId"] = ToProtoParameterValue(processId);
+
+    private static Proto.ParameterValue ToProtoParameterValue(string value)
+        => new() { StringValue = value };
+
+    private static string ComputeExpectedFingerprint(Proto.ExecutionPlan protoPlan)
     {
         var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(protoPlan);
 

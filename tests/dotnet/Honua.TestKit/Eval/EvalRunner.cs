@@ -73,7 +73,7 @@ public sealed class EvalRunner
         // GeoprocessingJobService.DryRunPlan only enforces plan-structure and
         // catalog validity). It does not gate on executability or approval, so
         // DryRun still runs for scenarios that expect IsExecutable=false or
-        // RequiresApproval=true. Only SubmitPlanJob enforces those gates via
+        // RequiresApproval=true. Only SubmitJob enforces those gates via
         // EnsurePlanExecutable / EnsureApproved, so only it is skipped here.
         var dryRunOutcome = await RunDryRunAsync(scenario, client, domainPlan, grpcHeaders, cancellationToken)
             .ConfigureAwait(false);
@@ -87,18 +87,18 @@ public sealed class EvalRunner
         var submitSkip = ResolveSubmitSkipReason(scenario.ExpectedOutcome, validateOutcome);
         if (submitSkip is { } skip)
         {
-            stages.Add(BuildSkipOutcome(EvalStageKind.SubmitPlanJob, skip.Reason, skip.Detail));
+            stages.Add(BuildSkipOutcome(EvalStageKind.SubmitJob, skip.Reason, skip.Detail));
         }
         else
         {
-            var submitOutcome = await RunSubmitPlanJobAsync(scenario, client, domainPlan, grpcHeaders, cancellationToken)
+            var submitOutcome = await RunSubmitJobAsync(scenario, client, domainPlan, grpcHeaders, cancellationToken)
                 .ConfigureAwait(false);
             stages.Add(submitOutcome.Stage);
         }
 
         stages.Add(BuildSkipOutcome(EvalStageKind.PollJob,
             "execution-engine-pending", "Execution engine not yet wired (see #732)."));
-        stages.Add(BuildSkipOutcome(EvalStageKind.GetJobResults,
+        stages.Add(BuildSkipOutcome(EvalStageKind.GetJobResult,
             "execution-engine-pending", "Result-package retrieval requires the execution engine."));
 
         stages.Add(BuildModeScopedStage(scenario, EvalStageKind.ComposeMapPackage,
@@ -237,26 +237,14 @@ public sealed class EvalRunner
             var response = await client.ValidatePlanAsync(request, headers, cancellationToken: cancellationToken);
             stopwatch.Stop();
 
-            if (response.IsExecutable != scenario.ExpectedOutcome.IsExecutable)
+            if (response.Valid != scenario.ExpectedOutcome.IsExecutable)
             {
                 return (new EvalStageOutcome
                 {
                     Stage = EvalStageKind.ValidatePlan,
                     Status = EvalStageStatus.Failed,
                     Reason = "is-executable-mismatch",
-                    Detail = $"Expected IsExecutable={scenario.ExpectedOutcome.IsExecutable} but got {response.IsExecutable} with {response.Violations.Count} violations.",
-                    ElapsedMs = stopwatch.ElapsedMilliseconds
-                }, response);
-            }
-
-            if (response.RequiresApproval != scenario.ExpectedOutcome.RequiresApproval)
-            {
-                return (new EvalStageOutcome
-                {
-                    Stage = EvalStageKind.ValidatePlan,
-                    Status = EvalStageStatus.Failed,
-                    Reason = "requires-approval-mismatch",
-                    Detail = $"Expected RequiresApproval={scenario.ExpectedOutcome.RequiresApproval} but got {response.RequiresApproval}.",
+                    Detail = $"Expected IsExecutable={scenario.ExpectedOutcome.IsExecutable} but got {response.Valid} with {response.Issues.Count} issues.",
                     ElapsedMs = stopwatch.ElapsedMilliseconds
                 }, response);
             }
@@ -307,8 +295,8 @@ public sealed class EvalRunner
             stopwatch.Stop();
 
             var expected = scenario.ExpectedOutcome.EstimatedArtifactKinds;
-            var mapped = response.EstimatedArtifacts
-                .Select(k => (Proto: k, Domain: EvalProtoMap.ToDomainArtifactKind(k)))
+            var mapped = response.Result.EstimatedArtifacts
+                .Select(k => (Proto: k.ArtifactClass, Domain: EvalProtoMap.ToDomainArtifactKind(k.ArtifactClass)))
                 .ToArray();
 
             var unknownProtoKinds = mapped.Where(x => x.Domain is null).Select(x => x.Proto).ToArray();
@@ -425,56 +413,57 @@ public sealed class EvalRunner
         };
     }
 
-    private async Task<(EvalStageOutcome Stage, Proto.ExecutionJob? Job)> RunSubmitPlanJobAsync(
+    private async Task<(EvalStageOutcome Stage, Proto.SubmitJobResponse? Job)> RunSubmitJobAsync(
         EvalScenario scenario,
         Proto.ProcessService.ProcessServiceClient client,
         AnalysisPlan domainPlan,
         Metadata headers,
         CancellationToken cancellationToken)
     {
-        using var activity = ActivitySource.StartActivity("eval.stage.submit_plan_job");
+        using var activity = ActivitySource.StartActivity("eval.stage.submit_job");
         activity?.SetTag("eval.scenario.id", scenario.Id);
         activity?.SetTag("eval.protocol", "grpc");
 
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var request = new Proto.SubmitPlanJobRequest
+            var request = new Proto.SubmitJobRequest
             {
                 Plan = ToProtoPlan(domainPlan),
-                IdempotencyKey = $"eval-{scenario.Id}-{Guid.NewGuid():N}"
+                Context = new Proto.ExecutionContext()
             };
+            request.Context.Metadata["idempotency_key"] = $"eval-{scenario.Id}-{Guid.NewGuid():N}";
 
-            var job = await client.SubmitPlanJobAsync(request, headers, cancellationToken: cancellationToken);
+            var job = await client.SubmitJobAsync(request, headers, cancellationToken: cancellationToken);
             stopwatch.Stop();
 
             if (string.IsNullOrWhiteSpace(job.JobId))
             {
                 return (new EvalStageOutcome
                 {
-                    Stage = EvalStageKind.SubmitPlanJob,
+                    Stage = EvalStageKind.SubmitJob,
                     Status = EvalStageStatus.Failed,
                     Reason = "missing-job-id",
-                    Detail = "SubmitPlanJob returned an empty JobId.",
+                    Detail = "SubmitJob returned an empty JobId.",
                     ElapsedMs = stopwatch.ElapsedMilliseconds
                 }, job);
             }
 
-            if (job.Status is not Proto.JobStatus.Queued and not Proto.JobStatus.Provisioning)
+            if (job.State is not Proto.JobState.Validated and not Proto.JobState.Running)
             {
                 return (new EvalStageOutcome
                 {
-                    Stage = EvalStageKind.SubmitPlanJob,
+                    Stage = EvalStageKind.SubmitJob,
                     Status = EvalStageStatus.Failed,
                     Reason = "unexpected-initial-status",
-                    Detail = $"Expected queued/provisioning initial status but got {job.Status}.",
+                    Detail = $"Expected queued/provisioning initial state but got {job.State}.",
                     ElapsedMs = stopwatch.ElapsedMilliseconds
                 }, job);
             }
 
             return (new EvalStageOutcome
             {
-                Stage = EvalStageKind.SubmitPlanJob,
+                Stage = EvalStageKind.SubmitJob,
                 Status = EvalStageStatus.Passed,
                 ElapsedMs = stopwatch.ElapsedMilliseconds
             }, job);
@@ -488,10 +477,10 @@ public sealed class EvalRunner
             stopwatch.Stop();
             return (new EvalStageOutcome
             {
-                Stage = EvalStageKind.SubmitPlanJob,
+                Stage = EvalStageKind.SubmitJob,
                 Status = EvalStageStatus.Skipped,
                 Reason = "redis-unavailable",
-                Detail = "Durable job store not configured; SubmitPlanJob requires Redis.",
+                Detail = "Durable job store not configured; SubmitJob requires Redis.",
                 ElapsedMs = stopwatch.ElapsedMilliseconds
             }, null);
         }
@@ -500,7 +489,7 @@ public sealed class EvalRunner
             stopwatch.Stop();
             return (new EvalStageOutcome
             {
-                Stage = EvalStageKind.SubmitPlanJob,
+                Stage = EvalStageKind.SubmitJob,
                 Status = EvalStageStatus.Failed,
                 Reason = $"grpc-{ex.StatusCode}".ToLowerInvariant(),
                 Detail = ex.Status.Detail,
@@ -526,11 +515,11 @@ public sealed class EvalRunner
             };
         }
 
-        if (response.IsExecutable != expectedExecutable)
+        if (response.Valid != expectedExecutable)
         {
-            var actualOutcome = response.IsExecutable
+            var actualOutcome = response.Valid
                 ? "executable"
-                : $"rejected:{response.Violations.Count}-violations";
+                : $"rejected:{response.Issues.Count}-issues";
             return new EvalProtocolProbe
             {
                 Protocol = Constants.Protocols.Grpc,
@@ -544,9 +533,9 @@ public sealed class EvalRunner
         {
             Protocol = Constants.Protocols.Grpc,
             Assertion = "plan-shape-accepted",
-            Outcome = response.IsExecutable
+            Outcome = response.Valid
                 ? "matched-acceptance"
-                : $"matched-rejection:{response.Violations.Count}-violations",
+                : $"matched-rejection:{response.Issues.Count}-issues",
             Status = EvalStageStatus.Passed
         };
     }
@@ -817,18 +806,18 @@ public sealed class EvalRunner
             return null;
         }
 
-        if (!expected.IsExecutable && !validateOutcome.Response.IsExecutable)
+        if (!expected.IsExecutable && !validateOutcome.Response.Valid)
         {
             return new ExecutionSkipReason(
                 "plan-non-executable",
-                "Scenario expected IsExecutable=false; skipping SubmitPlanJob because the canonical runtime rejects non-executable plans via EnsurePlanExecutable.");
+                "Scenario expected IsExecutable=false; skipping SubmitJob because the canonical runtime rejects non-executable plans via EnsurePlanExecutable.");
         }
 
-        if (expected.RequiresApproval && validateOutcome.Response.RequiresApproval)
+        if (expected.RequiresApproval)
         {
             return new ExecutionSkipReason(
                 "plan-approval-required",
-                "Scenario expected RequiresApproval=true; skipping SubmitPlanJob because SubmitPlanJob enforces the approval gate via EnsureApproved.");
+                "Scenario expected RequiresApproval=true; skipping SubmitJob because approval is enforced at submission time.");
         }
 
         return null;
@@ -913,17 +902,18 @@ public sealed class EvalRunner
         };
     }
 
-    private static Proto.AnalysisPlan ToProtoPlan(AnalysisPlan plan)
+    private static Proto.ExecutionPlan ToProtoPlan(AnalysisPlan plan)
     {
-        var proto = new Proto.AnalysisPlan
+        var proto = new Proto.ExecutionPlan
         {
             PlanId = plan.PlanId,
-            IntentId = plan.IntentId
+            SpecVersion = plan.IntentId,
+            WorkflowFamily = Proto.WorkflowFamily.Analyze
         };
 
         foreach (var step in plan.Steps)
         {
-            var protoStep = new Proto.AnalysisPlanStep
+            var protoStep = new Proto.PlanStep
             {
                 StepId = step.StepId,
                 Kind = EvalProtoMap.ToProtoPlanStepKind(step.Kind)
@@ -931,21 +921,21 @@ public sealed class EvalRunner
 
             if (step.ProcessId != null)
             {
-                protoStep.ProcessId = step.ProcessId;
+                protoStep.Inputs["processId"] = EvalProtoMap.ToProtoParameterValue(step.ProcessId);
             }
 
             foreach (var (key, value) in step.Inputs)
             {
-                protoStep.Inputs[key] = value;
+                protoStep.Inputs[key] = EvalProtoMap.ToProtoParameterValue(value);
             }
 
-            protoStep.DependsOn.AddRange(step.DependsOn);
+            protoStep.Dependencies.AddRange(step.DependsOn);
             proto.Steps.Add(protoStep);
         }
 
         foreach (var output in plan.Outputs)
         {
-            proto.Outputs.Add(EvalProtoMap.ToProtoArtifactKind(output));
+            proto.ExpectedOutputs.Add(EvalProtoMap.ToProtoArtifactKind(output));
         }
 
         return proto;

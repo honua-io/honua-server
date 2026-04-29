@@ -14,46 +14,50 @@ namespace Honua.TestKit.Eval;
 internal static class EvalProtoMap
 {
     /// <summary>
-    /// Maps a proto <see cref="Proto.ArtifactKind"/> to the domain enum, or returns
+    /// Maps a proto <see cref="Proto.ArtifactClass"/> to the domain enum, or returns
     /// <c>null</c> when the proto enum has no domain counterpart. Callers record the
     /// unknown value as a deterministic stage failure rather than throwing so the
     /// eval report is always emitted.
     /// </summary>
-    public static ArtifactKind? ToDomainArtifactKind(Proto.ArtifactKind kind) => kind switch
+    public static ArtifactKind? ToDomainArtifactKind(Proto.ArtifactClass kind) => kind switch
     {
-        Proto.ArtifactKind.Scalar => ArtifactKind.Scalar,
-        Proto.ArtifactKind.FeatureLayer => ArtifactKind.FeatureLayer,
-        Proto.ArtifactKind.Table => ArtifactKind.Table,
-        Proto.ArtifactKind.Raster => ArtifactKind.Raster,
-        Proto.ArtifactKind.File => ArtifactKind.File,
-        Proto.ArtifactKind.Report => ArtifactKind.Report,
-        Proto.ArtifactKind.Map => ArtifactKind.Map,
-        Proto.ArtifactKind.AppBundle => ArtifactKind.AppBundle,
+        Proto.ArtifactClass.Scalar => ArtifactKind.Scalar,
+        Proto.ArtifactClass.FeatureLayer => ArtifactKind.FeatureLayer,
+        Proto.ArtifactClass.Table => ArtifactKind.Table,
+        Proto.ArtifactClass.Raster => ArtifactKind.Raster,
+        Proto.ArtifactClass.File => ArtifactKind.File,
+        Proto.ArtifactClass.Report => ArtifactKind.Report,
+        Proto.ArtifactClass.Map => ArtifactKind.Map,
+        Proto.ArtifactClass.AppBundle => ArtifactKind.AppBundle,
         _ => null
     };
 
-    /// <summary>Maps a domain <see cref="ArtifactKind"/> to the proto enum.</summary>
-    public static Proto.ArtifactKind ToProtoArtifactKind(ArtifactKind kind) => kind switch
+    /// <summary>Maps a domain <see cref="ArtifactKind"/> to the canonical output token.</summary>
+    public static string ToProtoArtifactKind(ArtifactKind kind) => kind switch
     {
-        ArtifactKind.Scalar => Proto.ArtifactKind.Scalar,
-        ArtifactKind.FeatureLayer => Proto.ArtifactKind.FeatureLayer,
-        ArtifactKind.Table => Proto.ArtifactKind.Table,
-        ArtifactKind.Raster => Proto.ArtifactKind.Raster,
-        ArtifactKind.File => Proto.ArtifactKind.File,
-        ArtifactKind.Report => Proto.ArtifactKind.Report,
-        ArtifactKind.Map => Proto.ArtifactKind.Map,
-        ArtifactKind.AppBundle => Proto.ArtifactKind.AppBundle,
-        _ => Proto.ArtifactKind.Unspecified
+        ArtifactKind.Scalar => "scalar",
+        ArtifactKind.FeatureLayer => "feature_layer",
+        ArtifactKind.Table => "table",
+        ArtifactKind.Raster => "raster",
+        ArtifactKind.File => "file",
+        ArtifactKind.Report => "report",
+        ArtifactKind.Map => "map",
+        ArtifactKind.AppBundle => "app_bundle",
+        _ => ""
     };
 
-    /// <summary>Maps a domain <see cref="AnalysisPlanStepKind"/> to the proto enum.</summary>
-    public static Proto.PlanStepKind ToProtoPlanStepKind(AnalysisPlanStepKind kind) => kind switch
+    /// <summary>Maps a domain <see cref="AnalysisPlanStepKind"/> to the canonical step kind token.</summary>
+    public static string ToProtoPlanStepKind(AnalysisPlanStepKind kind) => kind switch
     {
-        AnalysisPlanStepKind.QueryFeatures => Proto.PlanStepKind.QueryFeatures,
-        AnalysisPlanStepKind.Geoprocess => Proto.PlanStepKind.Geoprocess,
-        AnalysisPlanStepKind.Aggregate => Proto.PlanStepKind.Aggregate,
-        AnalysisPlanStepKind.RenderMap => Proto.PlanStepKind.RenderMap,
-        AnalysisPlanStepKind.Export => Proto.PlanStepKind.Export,
-        _ => Proto.PlanStepKind.Unspecified
+        AnalysisPlanStepKind.QueryFeatures => "query_features",
+        AnalysisPlanStepKind.Geoprocess => "geoprocess",
+        AnalysisPlanStepKind.Aggregate => "aggregate",
+        AnalysisPlanStepKind.RenderMap => "render_map",
+        AnalysisPlanStepKind.Export => "export",
+        _ => ""
     };
+
+    /// <summary>Maps a string input into the canonical parameter value envelope.</summary>
+    public static Proto.ParameterValue ToProtoParameterValue(string value)
+        => new() { StringValue = value };
 }

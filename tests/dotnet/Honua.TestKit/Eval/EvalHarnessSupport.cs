@@ -31,7 +31,7 @@ internal static class EvalHarnessSupport
         ArgumentNullException.ThrowIfNull(results);
 
         return results.Any(result => result.Stages.Any(stage =>
-            stage.Stage == EvalStageKind.SubmitPlanJob &&
+            stage.Stage == EvalStageKind.SubmitJob &&
             stage.Status == EvalStageStatus.Passed));
     }
 }

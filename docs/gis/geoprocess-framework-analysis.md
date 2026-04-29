@@ -137,7 +137,7 @@ Honua's canonical model supports both modes:
 
 - **Synchronous**: `ProcessService.ExecutePlan` (currently stubbed, returns
   `Unimplemented` — to be completed in #721)
-- **Asynchronous**: `ProcessService.SubmitPlanJob` → `ExecutionJob` with status
+- **Asynchronous**: `ProcessService.SubmitJob` → `ExecutionJob` with status
   polling via `GetJob`. The durable job orchestration substrate
   ([ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md))
   defines the claim/heartbeat/retry/cancellation contracts that this path will
@@ -337,9 +337,9 @@ REST contract. Key mappings:
 | Service root / task list | `CatalogService` process definitions |
 | Task parameters | Process definition inputs → Esri GP type descriptors |
 | `/{task}/execute` | Reserved for synchronous GP tasks; not published on the current generic built-in GPServer surface |
-| `/{task}/submitJob` | `ProcessService.SubmitPlanJob` (async) |
+| `/{task}/submitJob` | `ProcessService.SubmitJob` (async) |
 | `/{task}/jobs/{jobId}` | `ProcessService.GetJob` → `ExecutionJobRecord` |
-| `/{task}/jobs/{jobId}/results/{paramName}` | `ProcessService.GetJobResults` → individual `ArtifactRef` from `AnalysisResultPackage.Artifacts` |
+| `/{task}/jobs/{jobId}/results/{paramName}` | `ProcessService.GetJobResult` → individual `ArtifactRef` from `AnalysisResultPackage.Artifacts` |
 | `/{task}/jobs/{jobId}/cancel` | `ProcessService.CancelJob` |
 | Job status values | `ExecutionJobStatus` → Esri status string (see state matrix) |
 | Job messages | `GeoprocessingProgress` events + `AnalysisResultPackage.Errors` |
