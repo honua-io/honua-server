@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-04-13",
+  "lastReviewed": "2026-04-29",
   "canonicalDocs": {
     "landingPage": "docs/gis/geoservices-rest-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
@@ -1074,7 +1074,8 @@
         "query (raster catalog features)",
         "computeStatisticsHistograms",
         "legend",
-        "computeClass (raster function chain validation)"
+        "computeClass (raster function chain validation)",
+        "WCS 2.0.1 KVP"
       ],
       "knownGaps": [
         "queryBoundary",
@@ -1088,6 +1089,7 @@
         "renderingRule honoured by exportImage/identify/legend",
         "raster function executor (computeClass currently validates only)",
         "multidimensional cube ingestion",
+        "WCS range subset/band selection/scaling/temporal extensions",
         "WMTS",
         "richer image child resources"
       ],
@@ -1106,7 +1108,9 @@
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerMosaicHelpers.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerLegendSwatchBuilder.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs"
+          "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs",
+          "src/Honua.Server/Features/Protocols/Ogc/Classic/Wcs20/Wcs20Endpoints.cs",
+          "src/Honua.Server/Features/Protocols/Ogc/Classic/Wcs20/Wcs20Handler.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerBasicTests.cs",
@@ -1117,7 +1121,8 @@
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerLegendHandlerTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerAnalyzeHandlerTests.cs"
+          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerAnalyzeHandlerTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wcs20/Wcs20EndpointsTests.cs"
         ]
       },
       "operations": {
@@ -1318,6 +1323,15 @@
               "GET /rest/services/{id}/ImageServer/legend"
             ],
             "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). The MVP renders a fixed 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics; per-layer renderer persistence and renderingRule overrides are not yet honoured. Only f=json/f=pjson is accepted."
+          },
+          {
+            "name": "WCS",
+            "esriPath": "/rest/services/{id}/ImageServer/WCS",
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/WCS",
+              "GET /ogc/services/{serviceId}/wcs"
+            ],
+            "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, and optional OUTPUTCRS. Range subset, scaling, temporal/multidimensional slicing, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
           }
         ],
         "notImplemented": [
@@ -1513,6 +1527,23 @@
             "status": "partial",
             "notes": "Only json and pjson are supported."
           }
+        ],
+        "wcs": [
+          {
+            "name": "GetCapabilities",
+            "status": "implemented",
+            "notes": "Returns WCS 2.0.1 XML with OWS service metadata, operations metadata, WCS service metadata, and Contents coverage summaries. ACCEPTVERSIONS, ACCEPTFORMATS, and SECTIONS are validated."
+          },
+          {
+            "name": "DescribeCoverage",
+            "status": "implemented",
+            "notes": "Accepts repeated or comma-separated bare integer COVERAGEID values and returns GML 3.2 bounds/grid metadata plus gmlcov rangeType band metadata."
+          },
+          {
+            "name": "GetCoverage",
+            "status": "partial",
+            "notes": "Accepts exactly one bare integer COVERAGEID. Supports image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, and OUTPUTCRS over the primary raster. Known unsupported WCS extensions return 501 OWS ExceptionReport XML; unknown GetCoverage parameters return 400."
+          }
         ]
       },
       "knownLimitations": [
@@ -1526,6 +1557,7 @@
         "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
         "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
         "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",
+        "WCS GetCoverage uses the selected layer's primary raster and opts out of exact response output caching for ad hoc coverage trims.",
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
         "Honua does not currently expose ImageServer WMTS or offline tile export."
       ]

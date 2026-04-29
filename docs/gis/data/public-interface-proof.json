@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-04-25T00:00:00Z",
+  "updatedUtc": "2026-04-29T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -655,6 +655,69 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "wcs-2.0.1",
+      "displayName": "WCS 2.0.1",
+      "surfaceKind": "nested-standard",
+      "protocol": "WCS 2.0.1",
+      "canonicalIdentifier": "/rest/services/{id}/ImageServer/WCS + /ogc/services/{serviceId}/wcs",
+      "parentSurfaceId": "image-server",
+      "endpointPrefixes": [
+        "/ogc/services/{serviceId}/wcs"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/ImageServer/WCS"
+      ],
+      "operationKeys": [
+        "WCS-2.0.1::GetCapabilities",
+        "WCS-2.0.1::DescribeCoverage",
+        "WCS-2.0.1::GetCoverage"
+      ],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#377",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "WCS 2.0.1 endpoint integration tests cover capabilities, coverage description, coverage export bytes, and OWS exception responses.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wcs20/Wcs20EndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#377",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "WCS coverage docs and ImageServer parity matrix describe the supported KVP operations, formats, CRS handling, cache posture, and deferred extensions.",
+          "executionLane": "release:docs-review",
+          "evidenceLocations": [
+            "docs/gis/specifications/wcs-2.0.1-coverage.md",
+            "docs/gis/image-server-matrix.md",
+            "docs/gis/data/geoservices-rest-parity.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#377",
           "versionCaptureRule": null
         }
       ]

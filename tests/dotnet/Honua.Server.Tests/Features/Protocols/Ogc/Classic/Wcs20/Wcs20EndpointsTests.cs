@@ -129,6 +129,42 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs_DescribeCoverage_ServiceRouteUnknownService_ReturnsServiceNotFoundException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/services/missing/wcs?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("<ows:ExceptionReport");
+        content.Should().Contain("exceptionCode=\"NoApplicableCode\"");
+        content.Should().Contain("Service 'missing' was not found.");
+        content.Should().NotContain("exceptionCode=\"NoSuchCoverage\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs_GetCoverage_ServiceRouteUnknownService_ReturnsServiceNotFoundException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/services/missing/wcs?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("<ows:ExceptionReport");
+        content.Should().Contain("exceptionCode=\"NoApplicableCode\"");
+        content.Should().Contain("Service 'missing' was not found.");
+        content.Should().NotContain("exceptionCode=\"NoSuchCoverage\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
     public async Task Wcs_GetCoverage_UnsupportedFormat_ReturnsOwsException()

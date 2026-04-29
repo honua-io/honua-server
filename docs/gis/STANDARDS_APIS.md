@@ -14,6 +14,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 | **Power BI/Excel** | OData v4 | `/odata` | BI integration |
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
+| **Science/elevation coverage workflows** | WCS 2.0.1 | `/rest/services/{id}/ImageServer/WCS` or `/ogc/services/{serviceId}/wcs` | Raw raster/coverage values |
 | **Esri geometry operations** | Geometry Service | `/rest/services/geometry` | Buffer, simplify, project, intersect, union, clip, difference, area, length |
 | **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility over the canonical runtime |
 | **Geoprocessing (OGC)** | OGC API Processes | `/ogc/processes` | Standards-based async geoprocessing |
@@ -271,9 +272,9 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 |-- ?service=WCS&request=GetCoverage&coverageId={layerId}&subset=Long(min,max)&subset=Lat(min,max)
 ```
 
-**Output formats:** `image/tiff` (default), `image/png`, `image/jpeg`
+**Output formats:** `image/tiff` (default), `image/png`, `image/jpeg` (`image/geotiff`, `tif`/`tiff`, `png`, `jpg`/`jpeg` aliases are accepted)
 
-**Limitations:** WCS is a thin KVP adapter over the existing raster store. `GetCoverage` uses the primary raster for the addressed layer and returns buffered `RasterResult.Data` bytes. Range subset/band selection, scaling extensions, XML POST bodies, polygon trims, NetCDF, temporal/multidimensional slicing, and WCS-specific multi-raster mosaic selection are deferred. See [WCS 2.0.1 Coverage](specifications/wcs-2.0.1-coverage.md) for parameter details and examples.
+**Limitations:** WCS is a thin KVP adapter over the existing raster store. It only lists and serves WCS-enabled raster layers visible to the caller. `GetCoverage` uses the primary raster for the addressed layer, returns buffered `RasterResult.Data` bytes, and opts out of exact response output caching for ad hoc trims. Range subset/band selection, scaling extensions, XML POST bodies, polygon trims, NetCDF, temporal/multidimensional slicing, and WCS-specific multi-raster mosaic selection are deferred. See [WCS 2.0.1 Coverage](specifications/wcs-2.0.1-coverage.md) for parameter details and examples.
 
 **Typical use cases:**
 - GeoTIFF coverage export for science and elevation tools

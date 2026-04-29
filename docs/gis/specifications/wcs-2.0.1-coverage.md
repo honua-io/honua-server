@@ -9,7 +9,7 @@ GET /rest/services/{id}/ImageServer/WCS
 GET /ogc/services/{serviceId}/wcs
 ```
 
-The ImageServer route is layer-scoped and uses `{id}` as the bare integer coverage ID. The service-scoped OGC route lists and serves raster-backed layers in the named service that are visible to the caller and enabled for WCS.
+The ImageServer route is layer-scoped and uses `{id}` as the bare integer coverage ID. Both routes only expose layers that are enabled for WCS, visible to the caller, and backed by a primary raster in `IRasterStore`.
 
 ## Operations
 
@@ -29,6 +29,14 @@ Common parameters:
 | `VERSION` | Optional | Only `2.0.1` is supported. |
 | `REQUEST` | Optional for capabilities | Defaults to `GetCapabilities` when omitted. |
 
+`GetCapabilities`:
+
+| Parameter | Status | Notes |
+| --- | --- | --- |
+| `ACCEPTVERSIONS` | Optional | Comma-separated version negotiation. Requests must include `2.0.1` when supplied. |
+| `ACCEPTFORMATS` | Optional | Supports `application/xml`, `text/xml`, or `*/*`. |
+| `SECTIONS` | Optional | Comma-separated section filter. Supports `ServiceIdentification`, `ServiceProvider`, `OperationsMetadata`, `ServiceMetadata`, `Contents`, or `All`. |
+
 `DescribeCoverage`:
 
 | Parameter | Status | Notes |
@@ -41,12 +49,12 @@ Common parameters:
 | --- | --- | --- |
 | `COVERAGEID` | Required | Exactly one bare integer layer ID. |
 | `FORMAT` | Optional | Defaults to `image/tiff`. Supported values: `image/tiff`, `image/geotiff`, `tiff`, `tif`, `image/png`, `png`, `image/jpeg`, `jpg`, `jpeg`. |
-| `SUBSET` | Optional | WCS trim syntax `axis(low,high)`. Supported axes: `x`, `y`, `E`, `N`, `Long`, `Lat`. One-axis trims fill the other axis from the raster extent. |
+| `SUBSET` | Optional | WCS trim syntax `axis(low,high)`. Supported horizontal axes: `x`, `E`, `Long`, `Lon`; supported vertical axes: `y`, `N`, `Lat`. One-axis trims fill the other axis from the raster extent. |
 | `BBOX` | Optional | Convenience trim alias: `xmin,ymin,xmax,ymax`. Do not combine with `SUBSET`. |
 | `SUBSETTINGCRS` / `BBOXCRS` | Optional | Parsed by the shared CRS parser. Defaults to the raster native CRS. |
 | `OUTPUTCRS` | Optional | Parsed by the shared CRS parser and passed to `RasterQuery.OutputSrid`. |
 
-Unsupported WCS extensions fail with OWS `ExceptionReport` XML instead of being ignored. Deferred parameters include `RANGESUBSET`, scaling parameters, interpolation parameters, `MEDIATYPE`, `datetime`/`TIME`, XML POST bodies, polygon trims, NetCDF, and multi-dimensional coverage slicing.
+Known unsupported WCS `GetCoverage` extensions return `501` OWS `ExceptionReport` XML instead of being ignored. Unknown `GetCoverage` parameters return `400 InvalidParameterValue`. Deferred parameters include `RANGESUBSET`, scaling parameters, interpolation parameters, `MEDIATYPE`, `datetime`/`TIME`, XML POST bodies, polygon trims, NetCDF, and multi-dimensional coverage slicing.
 
 ## Examples
 
@@ -62,7 +70,7 @@ Unsupported WCS extensions fail with OWS `ExceptionReport` XML instead of being 
 
 WCS is for raw coverage export. ImageServer remains the Esri-compatible raster surface for service metadata, rendering, identify, catalog query, tiles, statistics, histograms, and legend. OGC API Maps remains the modern OGC rendered-map surface. All three surfaces reuse the same raster store and raster query/export infrastructure.
 
-`GetCoverage` returns the buffered `RasterResult.Data` byte array from the existing raster store. Large-raster streaming, range subset/band selection, scaling extensions, temporal/multidimensional coverage, strict schema-safe coverage aliases, and multi-raster WCS mosaic selection are follow-up scope.
+`GetCoverage` returns the buffered `RasterResult.Data` byte array from the existing raster store. The WCS routes opt out of response output caching because ad hoc coverage trims are high-cardinality; callers should rely on tile/cache-hinted surfaces for seeded raster delivery. Large-raster streaming, range subset/band selection, scaling extensions, temporal/multidimensional coverage, strict schema-safe coverage aliases, and multi-raster WCS mosaic selection are follow-up scope.
 
 ## Errors
 

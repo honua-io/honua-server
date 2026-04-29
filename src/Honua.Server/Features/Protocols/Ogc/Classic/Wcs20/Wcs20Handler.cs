@@ -221,7 +221,12 @@ internal sealed class Wcs20Handler
         foreach (var coverageId in coverageIds)
         {
             var coverage = await ResolveCoverageAsync(context, scope, coverageId, cancellationToken).ConfigureAwait(false);
-            if (coverage is null)
+            if (coverage.Error is not null)
+            {
+                return coverage.Error;
+            }
+
+            if (coverage.Coverage is null)
             {
                 Wcs20Log.CoverageNotFound(_logger, coverageId.ToString(CultureInfo.InvariantCulture));
                 return Wcs20ErrorResults.CreateNotFound(
@@ -230,7 +235,7 @@ internal sealed class Wcs20Handler
                     Wcs20Utilities.Parameters.CoverageId);
             }
 
-            if (!TryBuildCoverageDescription(coverage.Value, out var description, out var metadataError))
+            if (!TryBuildCoverageDescription(coverage.Coverage.Value, out var description, out var metadataError))
             {
                 return Wcs20ErrorResults.CreateInternalServerError(metadataError ?? "Coverage metadata is incomplete.");
             }
@@ -279,7 +284,12 @@ internal sealed class Wcs20Handler
 
         var coverageId = coverageIds[0];
         var coverage = await ResolveCoverageAsync(context, scope, coverageId, cancellationToken).ConfigureAwait(false);
-        if (coverage is null)
+        if (coverage.Error is not null)
+        {
+            return coverage.Error;
+        }
+
+        if (coverage.Coverage is null)
         {
             Wcs20Log.CoverageNotFound(_logger, coverageId.ToString(CultureInfo.InvariantCulture));
             return Wcs20ErrorResults.CreateNotFound(
@@ -299,7 +309,7 @@ internal sealed class Wcs20Handler
                 Wcs20Utilities.Parameters.Format);
         }
 
-        if (!TryResolveCoverageQuery(context.Request.Query, coverage.Value.Raster, outputFormat, out var query, out var queryError))
+        if (!TryResolveCoverageQuery(context.Request.Query, coverage.Coverage.Value.Raster, outputFormat, out var query, out var queryError))
         {
             Wcs20Log.ValidationFailed(_logger, Wcs20Utilities.Operations.GetCoverage, queryError.Detail);
             return Wcs20ErrorResults.CreateBadRequest(queryError.ExceptionCode, queryError.Detail, queryError.Locator);
@@ -311,8 +321,8 @@ internal sealed class Wcs20Handler
             .WithTag("honua.output.format", formatContentType);
 
         var result = await _rasterStore.ExportImageAsync(
-            coverage.Value.Layer.Id,
-            coverage.Value.Raster.Id,
+            coverage.Coverage.Value.Layer.Id,
+            coverage.Coverage.Value.Raster.Id,
             query,
             cancellationToken).ConfigureAwait(false);
 
@@ -382,7 +392,7 @@ internal sealed class Wcs20Handler
         return new CoverageListResult(coverages, null);
     }
 
-    private async Task<WcsCoverage?> ResolveCoverageAsync(
+    private async Task<CoverageResolutionResult> ResolveCoverageAsync(
         HttpContext context,
         Wcs20RouteScope scope,
         int coverageId,
@@ -392,18 +402,23 @@ internal sealed class Wcs20Handler
         {
             if (coverageId != scope.LayerId!.Value)
             {
-                return null;
+                return new CoverageResolutionResult(null, null);
             }
 
             var result = await ResolveLayerScopedCoverageAsync(context, coverageId, failOnAccessDenied: false, cancellationToken)
                 .ConfigureAwait(false);
-            return result.Coverage;
+            return new CoverageResolutionResult(result.Coverage, result.Error);
         }
 
         var service = await ResolveServiceAsync(context, scope, cancellationToken).ConfigureAwait(false);
-        if (service.Error is not null || service.Service is null)
+        if (service.Error is not null)
         {
-            return null;
+            return new CoverageResolutionResult(null, service.Error);
+        }
+
+        if (service.Service is null)
+        {
+            return new CoverageResolutionResult(null, null);
         }
 
         var layer = service.Service.GetLayer(coverageId);
@@ -411,11 +426,13 @@ internal sealed class Wcs20Handler
             !IsLayerWcsEnabled(layer) ||
             !AccessPolicyHelpers.IsLayerAccessible(context, layer, service.Service))
         {
-            return null;
+            return new CoverageResolutionResult(null, null);
         }
 
         var raster = await GetPrimaryRasterWithExtentAsync(coverageId, cancellationToken).ConfigureAwait(false);
-        return raster is null ? null : new WcsCoverage(layer, raster.Value, service.Service);
+        return raster is null
+            ? new CoverageResolutionResult(null, null)
+            : new CoverageResolutionResult(new WcsCoverage(layer, raster.Value, service.Service), null);
     }
 
     private async Task<LayerCoverageResult> ResolveLayerScopedCoverageAsync(
@@ -1406,6 +1423,8 @@ internal sealed class Wcs20Handler
             Encoding.UTF8);
 
     private readonly record struct CoverageListResult(IReadOnlyList<WcsCoverage> Coverages, IResult? Error);
+
+    private readonly record struct CoverageResolutionResult(WcsCoverage? Coverage, IResult? Error);
 
     private readonly record struct LayerCoverageResult(WcsCoverage? Coverage, IResult? Error);
 
