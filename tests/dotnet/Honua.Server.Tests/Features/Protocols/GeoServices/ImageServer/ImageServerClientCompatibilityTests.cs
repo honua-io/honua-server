@@ -150,6 +150,8 @@ public sealed class ImageServerClientCompatibilityTests
             .Returns(rasterInfo);
         store.ListRastersAsync(TestLayerId, Arg.Any<CancellationToken>())
             .Returns([rasterInfo]);
+        store.QueryRastersAsync(TestLayerId, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
+            .Returns([rasterInfo]);
         store.GetExtentAsync(TestLayerId, 100, Arg.Any<CancellationToken>())
             .Returns(extent);
         store.ExportImageAsync(TestLayerId, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
