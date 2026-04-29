@@ -46,6 +46,9 @@ runs:
         file: ./Dockerfile
         push: false
         tags: ${{ inputs.server-image-tag }}
+        secrets: |
+          github_actor=${{ github.actor }}
+          github_token=${{ github.token }}
         cache-from: type=local,src=/tmp/.buildx-cache
         cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 

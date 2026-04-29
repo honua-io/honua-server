@@ -75,6 +75,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
           cache-from: type=gha,scope=nightly-aot-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=nightly-aot-${{ matrix.arch }}
           provenance: true
@@ -139,6 +142,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
           cache-from: type=gha,scope=nightly-jit-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=nightly-jit-${{ matrix.arch }}
           provenance: true

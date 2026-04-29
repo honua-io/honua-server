@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: write   # baseline-diff job commits gap-report.md
+  packages: read
   pull-requests: read
 
 concurrency:
@@ -119,12 +120,27 @@ jobs:
       - name: Build honua + lane image and run
         id: run
         shell: bash
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          set +e
+          set -e
           mkdir -p docker/client-compat/output/${{ matrix.lane }}
+
+          DOCKER_BUILDKIT=1 docker build \
+            --secret id=github_actor,env=GITHUB_ACTOR \
+            --secret id=github_token,env=GITHUB_TOKEN \
+            -t honua-server:client-compat \
+            .
+
           docker compose -f docker/client-compat/compose.yml \
             --profile ${{ matrix.lane }} \
-            up --build --abort-on-container-exit \
+            build seed ${{ matrix.lane }}
+
+          set +e
+          docker compose -f docker/client-compat/compose.yml \
+            --profile ${{ matrix.lane }} \
+            up --no-build --abort-on-container-exit \
             --exit-code-from ${{ matrix.lane }} \
             ${{ matrix.lane }}
           exit_code=$?

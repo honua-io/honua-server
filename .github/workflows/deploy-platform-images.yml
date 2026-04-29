@@ -101,6 +101,7 @@ jobs:
             sbom: true
     permissions:
       contents: read
+      packages: read
       security-events: write
     steps:
       - name: Checkout
@@ -259,6 +260,9 @@ jobs:
           push: true
           tags: ${{ steps.arch_tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
           cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
           provenance: ${{ matrix.provenance }}

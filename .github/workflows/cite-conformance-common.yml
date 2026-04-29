@@ -59,6 +59,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   cite:
@@ -80,6 +81,9 @@ jobs:
           push: false
           load: true
           tags: honua-server:latest
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
           cache-from: type=gha,scope=cite-${{ inputs.suite }}
           cache-to: type=gha,mode=max,scope=cite-${{ inputs.suite }}
 

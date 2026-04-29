@@ -50,7 +50,9 @@ docs/
 
 # CI/CD
 .github/
-scripts/
+scripts/*
+!scripts/docker/
+!scripts/docker/restore-dotnet-with-github-packages.sh
 
 # Local artifacts not needed for app image builds
 tests/

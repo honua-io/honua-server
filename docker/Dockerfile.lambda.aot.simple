@@ -13,7 +13,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends clang lld zlib1g-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY Honua.sln Directory.Build.props Directory.Packages.props .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
@@ -21,12 +22,15 @@ COPY src/Honua.Server/*.csproj src/Honua.Server/
 
 ARG TARGETARCH
 
-RUN case "${TARGETARCH:-amd64}" in \
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
+    --mount=type=secret,id=github_token \
+    case "${TARGETARCH:-amd64}" in \
       amd64) RUNTIME_ID="linux-x64" ;; \
       arm64) RUNTIME_ID="linux-arm64" ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    dotnet restore src/Honua.Server/Honua.Server.csproj \
+    sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID"
 
