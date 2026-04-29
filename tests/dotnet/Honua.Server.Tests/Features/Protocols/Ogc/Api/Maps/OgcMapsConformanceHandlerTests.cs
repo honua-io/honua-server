@@ -80,11 +80,11 @@ public class OgcMapsConformanceHandlerTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public async Task GetConformanceAsync_DoesNotOverclaimDatetimeConformance()
+    public async Task GetConformanceAsync_IncludesDatetimeConformance()
     {
         var result = await _handler.GetConformanceAsync();
 
-        result.ConformsTo.Should().NotContain(
+        result.ConformsTo.Should().Contain(
             "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime");
     }
 

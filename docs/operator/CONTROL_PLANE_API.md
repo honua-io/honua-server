@@ -199,7 +199,9 @@ Content-Type: application/json
 | `/api/v1/admin/services/{serviceName}/mapserver` | PUT | Update MapServer defaults/limits for a service |
 | `/api/v1/admin/services/{serviceName}/access-policy` | PUT | Update service access policy (read/write role + anonymous controls) |
 | `/api/v1/admin/services/{serviceName}/timeinfo` | PUT | Update service-level temporal metadata |
-| `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | PUT | Patch layer-level access policy and time info |
+| `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | PUT | Patch layer-level access policy, time info, and raster mosaic defaults |
+
+Layer metadata updates accept `rasterMosaic.mergeStrategy` for ImageServer mosaic defaults. Allowed values are `newest`, `oldest`, `average`, `max`, and `min` (case-insensitive); stored values are normalized to lowercase. An empty string clears the layer default, a missing or `null` field preserves the existing value, and unknown values return `400 Bad Request`.
 
 ---
 
@@ -347,7 +349,9 @@ The artifact includes:
 | `/api/v1/admin/import/raster` | POST | Import a raster file (GeoTIFF, PNG world-file, JPEG world-file) into PostGIS |
 | `/api/v1/admin/import/raster/formats` | GET | List supported raster file formats and extensions |
 
-Raster import accepts multipart form-data with a primary raster file and optional sidecar files (`.pgw`/`.jgw`/`.tfw`/`.wld` for georeferencing, `.prj` for CRS). GeoTIFF files contain embedded georeferencing; PNG and JPEG formats require a world file. An explicit `srid` field can override CRS detection.
+Raster import accepts multipart form-data with a primary raster file and optional sidecar files (`.pgw`/`.jgw`/`.tfw`/`.wld` for georeferencing, `.prj` for CRS). GeoTIFF files contain embedded georeferencing; PNG and JPEG formats require a world file. An explicit `srid` field can override CRS detection. Optional `acquisitionDate` stores a per-raster timestamp used by ImageServer and OGC temporal mosaic selection, and `tileZoomLevels` controls which cache levels are pre-generated.
+
+Per-layer mosaic homogeneity is enforced at import: subsequent uploads to a layer must share the SRID and band count of the layer's first raster. Mismatched uploads return `400 Bad Request` with a structured message (`Layer {id} requires raster homogeneity for mosaic compositing. Expected SRID=…, BandCount=…; upload has SRID=…, BandCount=…`) and the transaction is rolled back before commit.
 
 ---
 

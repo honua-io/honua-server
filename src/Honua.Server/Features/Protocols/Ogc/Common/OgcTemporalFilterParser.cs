@@ -16,9 +16,13 @@ internal static class OgcTemporalFilterParser
         out string? errorMessage)
     {
         temporalFilter = null;
-        errorMessage = null;
 
-        if (string.IsNullOrWhiteSpace(datetime))
+        if (!TryParseRange(datetime, out var start, out var end, out errorMessage))
+        {
+            return false;
+        }
+
+        if (start is null && end is null)
         {
             return true;
         }
@@ -30,9 +34,39 @@ internal static class OgcTemporalFilterParser
         }
         var resolvedField = temporalField!;
 
+        temporalFilter = new TemporalFilter
+        {
+            PropertyName = resolvedField.Name,
+            PropertyType = resolvedField.Type == FieldType.Date ? TemporalPropertyType.Date : TemporalPropertyType.DateTime,
+            Start = start,
+            End = end
+        };
+
+        return true;
+    }
+
+    /// <summary>
+    /// Parses an OGC API datetime parameter (RFC 3339 instant or interval) into a
+    /// (start, end) pair without requiring a layer. Supported forms: instant,
+    /// <c>start/end</c>, <c>../end</c>, <c>start/..</c>. For an instant T both
+    /// <paramref name="start"/> and <paramref name="end"/> are set to T.
+    /// </summary>
+    public static bool TryParseRange(
+        string? datetime,
+        out DateTimeOffset? start,
+        out DateTimeOffset? end,
+        out string? errorMessage)
+    {
+        start = null;
+        end = null;
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(datetime))
+        {
+            return true;
+        }
+
         var parts = datetime.Split('/', StringSplitOptions.TrimEntries);
-        DateTimeOffset? start = null;
-        DateTimeOffset? end = null;
 
         if (parts.Length == 1)
         {
@@ -44,8 +78,10 @@ internal static class OgcTemporalFilterParser
 
             start = instant;
             end = instant;
+            return true;
         }
-        else if (parts.Length == 2)
+
+        if (parts.Length == 2)
         {
             if (!string.IsNullOrWhiteSpace(parts[0]) && parts[0] != "..")
             {
@@ -68,22 +104,24 @@ internal static class OgcTemporalFilterParser
 
                 end = parsedEnd;
             }
-        }
-        else
-        {
-            errorMessage = "Invalid datetime parameter.";
-            return false;
+
+            if (start is null && end is null)
+            {
+                errorMessage = "Invalid datetime parameter.";
+                return false;
+            }
+
+            if (start is { } s && end is { } e && s > e)
+            {
+                errorMessage = "Invalid datetime parameter.";
+                return false;
+            }
+
+            return true;
         }
 
-        temporalFilter = new TemporalFilter
-        {
-            PropertyName = resolvedField.Name,
-            PropertyType = resolvedField.Type == FieldType.Date ? TemporalPropertyType.Date : TemporalPropertyType.DateTime,
-            Start = start,
-            End = end
-        };
-
-        return true;
+        errorMessage = "Invalid datetime parameter.";
+        return false;
     }
 
     private static bool TryParseDateTimeOffset(string value, out DateTimeOffset parsed)

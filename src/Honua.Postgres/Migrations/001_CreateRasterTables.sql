@@ -9,7 +9,10 @@ CREATE EXTENSION IF NOT EXISTS postgis_raster;
 -- Ensure the honua schema exists (matches application default from SchemaSearchPath.QualifyTable)
 CREATE SCHEMA IF NOT EXISTS honua;
 
--- Create raster_data table for storing raster datasets
+-- Create raster_data table for storing raster datasets.
+-- NOTE: acquisition_date and its supporting indexes are added by 002_AddRasterAcquisitionDate.sql
+-- (kept out of this migration so existing deployments that ran 001 before the column existed
+-- still pick up the change via 002).
 CREATE TABLE IF NOT EXISTS honua.raster_data (
     id BIGSERIAL PRIMARY KEY,
     layer_id INTEGER NOT NULL,

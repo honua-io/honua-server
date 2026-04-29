@@ -74,6 +74,12 @@ internal sealed class ImageServerCatalogQueryHandler
                     parseError ?? "Invalid query parameter.");
             }
 
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, query.Time);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
             ImageServerCatalogPage page;
             try
             {
@@ -140,6 +146,12 @@ internal sealed class ImageServerCatalogQueryHandler
             }
         }
 
+        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var time, out var timeError))
+        {
+            error = timeError;
+            return false;
+        }
+
         if (!TryParseInt(GetString(values, "resultOffset"), out var offset, defaultValue: 0))
         {
             error = "resultOffset must be a non-negative integer.";
@@ -177,6 +189,7 @@ internal sealed class ImageServerCatalogQueryHandler
             Where = where,
             ObjectIds = objectIds,
             OutputSrid = outputSrid,
+            Time = time,
             Offset = offset,
             Limit = limit,
             ReturnGeometry = returnGeometry,
@@ -269,7 +282,10 @@ internal sealed class ImageServerCatalogQueryHandler
             ["ZOrder"] = item.ZOrder,
             ["Shape_Length"] = item.ShapeLength,
             ["Shape_Area"] = item.ShapeArea,
+            ["BandCount"] = item.BandCount,
+            ["PixelType"] = item.PixelType,
             ["AcquisitionDate"] = item.AcquisitionDate?.ToUnixTimeMilliseconds(),
+            ["CreatedAt"] = item.CreatedAt.ToUnixTimeMilliseconds(),
         };
 
         CatalogQueryGeometry? geometry = null;
@@ -312,7 +328,10 @@ internal sealed class ImageServerCatalogQueryHandler
             new Field { Name = "ZOrder", Type = "esriFieldTypeInteger", Alias = "ZOrder" },
             new Field { Name = "Shape_Length", Type = "esriFieldTypeDouble", Alias = "Shape_Length" },
             new Field { Name = "Shape_Area", Type = "esriFieldTypeDouble", Alias = "Shape_Area" },
+            new Field { Name = "BandCount", Type = "esriFieldTypeInteger", Alias = "BandCount" },
+            new Field { Name = "PixelType", Type = "esriFieldTypeString", Alias = "PixelType", Nullable = true },
             new Field { Name = "AcquisitionDate", Type = "esriFieldTypeDate", Alias = "AcquisitionDate", Nullable = true },
+            new Field { Name = "CreatedAt", Type = "esriFieldTypeDate", Alias = "CreatedAt" },
         ];
     }
 

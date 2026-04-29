@@ -93,7 +93,10 @@ public class ImageServerCatalogQueryHandlerTests
             "ZOrder",
             "Shape_Length",
             "Shape_Area",
+            "BandCount",
+            "PixelType",
             "AcquisitionDate",
+            "CreatedAt",
         ]);
         jsonResult.Value.GeometryType.Should().Be("esriGeometryPolygon");
         jsonResult.Value.ObjectIdFieldName.Should().Be("OBJECTID");
@@ -117,6 +120,9 @@ public class ImageServerCatalogQueryHandlerTests
         feature.Attributes["Name"].Should().Be("scene-a");
         feature.Attributes["CenterX"].Should().Be(0.0);
         feature.Attributes["CenterY"].Should().Be(0.0);
+        feature.Attributes["BandCount"].Should().Be(1);
+        feature.Attributes["PixelType"].Should().Be("8BUI");
+        feature.Attributes["CreatedAt"].Should().Be(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
         feature.Geometry.Should().NotBeNull();
         feature.Geometry!.Rings.Should().HaveCount(1);
     }
@@ -284,6 +290,29 @@ public class ImageServerCatalogQueryHandlerTests
         jsonResult!.Value!.Features.Should().HaveCount(2);
         jsonResult.Value.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().BeEquivalentTo([200L, 300L]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_WhereClause_FiltersByBandCountAndPixelType()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "single-band"),
+            CreateRaster(200, "multi-band", bandCount: 3, pixelType: "16BUI"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["where"] = "BandCount = 3 AND PixelType = '16BUI'",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Features.Should().HaveCount(1);
+        jsonResult.Value.Features[0].Attributes["OBJECTID"].Should().Be(200L);
     }
 
     [UnitTest]
@@ -535,15 +564,17 @@ public class ImageServerCatalogQueryHandlerTests
         double yMin = -1,
         double xMax = 1,
         double yMax = 1,
-        int srid = 4326) => new()
+        int srid = 4326,
+        int bandCount = 1,
+        string pixelType = "8BUI") => new()
         {
             Id = id,
             LayerId = 1,
             Name = name,
             Width = 256,
             Height = 256,
-            BandCount = 1,
-            PixelType = "8BUI",
+            BandCount = bandCount,
+            PixelType = pixelType,
             Srid = srid,
             GeoTransform = [xMin, (xMax - xMin) / 256, 0, yMax, 0, -(yMax - yMin) / 256],
             Extent = new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = srid },

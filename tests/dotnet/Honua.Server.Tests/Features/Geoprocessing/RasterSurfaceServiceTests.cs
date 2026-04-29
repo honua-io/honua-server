@@ -190,6 +190,7 @@ public sealed class RasterSurfaceServiceTests : IAsyncLifetime
                 name VARCHAR(255) NOT NULL,
                 description TEXT,
                 raster raster NOT NULL,
+                acquisition_date TIMESTAMPTZ,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ,
                 width INTEGER GENERATED ALWAYS AS (ST_Width(raster)) STORED,

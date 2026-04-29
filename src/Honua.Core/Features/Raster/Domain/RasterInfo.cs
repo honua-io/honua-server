@@ -65,6 +65,12 @@ public readonly record struct RasterInfo
     public RasterExtent? Extent { get; init; }
 
     /// <summary>
+    /// Acquisition timestamp associated with the raster content.
+    /// Falls back to <see cref="CreatedAt"/> when the source dataset does not declare one.
+    /// </summary>
+    public DateTimeOffset? AcquisitionDate { get; init; }
+
+    /// <summary>
     /// Creation timestamp.
     /// </summary>
     public DateTimeOffset CreatedAt { get; init; }

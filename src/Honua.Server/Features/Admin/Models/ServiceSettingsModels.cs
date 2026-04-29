@@ -121,6 +121,9 @@ internal sealed class LayerMetadataResponse
 
     /// <summary>Temporal metadata for the layer.</summary>
     public TimeInfoResponse? TimeInfo { get; init; }
+
+    /// <summary>Raster mosaic defaults for the layer.</summary>
+    public RasterMosaicResponse? RasterMosaic { get; init; }
 }
 
 /// <summary>
@@ -133,6 +136,27 @@ internal sealed class UpdateLayerMetadataRequest
 
     /// <summary>Time info updates.</summary>
     public UpdateTimeInfoRequest? TimeInfo { get; init; }
+
+    /// <summary>Raster mosaic updates.</summary>
+    public UpdateRasterMosaicRequest? RasterMosaic { get; init; }
+}
+
+/// <summary>
+/// Raster mosaic defaults surfaced through the admin layer metadata API.
+/// </summary>
+internal sealed class RasterMosaicResponse
+{
+    /// <summary>Default merge strategy for overlapping rasters.</summary>
+    public string? MergeStrategy { get; init; }
+}
+
+/// <summary>
+/// Request to update raster mosaic defaults for a layer.
+/// </summary>
+internal sealed class UpdateRasterMosaicRequest
+{
+    /// <summary>Default merge strategy. Empty string clears the value.</summary>
+    public string? MergeStrategy { get; init; }
 }
 
 /// <summary>

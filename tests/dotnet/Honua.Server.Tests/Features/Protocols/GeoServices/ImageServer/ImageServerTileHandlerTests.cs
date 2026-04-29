@@ -121,7 +121,7 @@ public class ImageServerTileHandlerTests
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
-            .GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+            .QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -130,8 +130,8 @@ public class ImageServerTileHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns((RasterInfo?)null);
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
@@ -146,8 +146,8 @@ public class ImageServerTileHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetImageTileAsync(1, 100, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
             .Returns((RasterResult?)null);
 
@@ -165,8 +165,8 @@ public class ImageServerTileHandlerTests
         var tileData = new byte[] { 0x89, 0x50, 0x4E, 0x47 }; // PNG header
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetImageTileAsync(1, 100, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
             .Returns(new RasterResult
             {
@@ -194,8 +194,8 @@ public class ImageServerTileHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetImageTileAsync(1, 100, level, row, col, RasterFormat.PNG, Arg.Any<CancellationToken>())
             .Returns(new RasterResult
             {

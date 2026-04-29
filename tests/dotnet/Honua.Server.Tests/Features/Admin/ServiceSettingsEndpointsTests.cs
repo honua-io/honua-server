@@ -226,6 +226,75 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithRasterMosaicPayload_ReturnsUpdatedMergeStrategy()
+    {
+        var body = """
+            {
+              "rasterMosaic": {
+                "mergeStrategy": "max"
+              }
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        var data = document.RootElement.GetProperty("data");
+
+        data.GetProperty("rasterMosaic").GetProperty("mergeStrategy").GetString().Should().Be("max");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithMixedCaseMergeStrategy_NormalizesToCanonical()
+    {
+        var body = """
+            {
+              "rasterMosaic": {
+                "mergeStrategy": "Average"
+              }
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        var data = document.RootElement.GetProperty("data");
+
+        data.GetProperty("rasterMosaic").GetProperty("mergeStrategy").GetString().Should().Be("average");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithUnknownMergeStrategy_ReturnsBadRequest()
+    {
+        var body = """
+            {
+              "rasterMosaic": {
+                "mergeStrategy": "averagge"
+              }
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("newest").And.Contain("oldest").And.Contain("average").And.Contain("max").And.Contain("min");
+    }
+
+    [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/protocols")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer")]
     public async Task UpdateProtocols_DisableFeatureServer_BlocksFeatureServerServiceMetadata()

@@ -6,109 +6,26 @@ using System.Data.Common;
 using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Postgres.Features.Raster;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using Npgsql;
 
 namespace Honua.Postgres.Tests.Features.Raster;
 
 [Collection("Database")]
-public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
+public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
 {
-    private const int LayerId = 9001;
+    private const int LayerId = 9002;
 
     [IntegrationTest]
-    public async Task RenderCollectionMapAsync_WhenRasterTableIsMissing_ReturnsEmptyRasterResult()
+    public async Task QueryRastersAsync_WithTimestampAndGeometry_UsesLayerSnapshotBeforeGeometryFilter()
     {
-        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterMapRendererTests));
-        try
-        {
-            var renderer = new PostgresRasterMapRenderer(
-                new FixtureConnectionProvider(fixture.DataSource),
-                NullLogger<PostgresRasterMapRenderer>.Instance,
-                schemaName);
-
-            var result = await renderer.RenderCollectionMapAsync(
-                0,
-                new MapRenderRequest
-                {
-                    BoundingBox = new[] { -180d, -90d, 180d, 90d },
-                    BoundingBoxCrs = 4326,
-                    Crs = 4326,
-                    Width = 256,
-                    Height = 256,
-                    Format = RasterFormat.PNG
-                });
-
-            result.Data.Should().BeEmpty();
-            result.ContentType.Should().Be("image/png");
-            result.Width.Should().Be(256);
-            result.Height.Should().Be(256);
-            result.Srid.Should().Be(4326);
-        }
-        finally
-        {
-            await fixture.DropSchemaAsync(schemaName);
-        }
-    }
-
-    [IntegrationTest]
-    public async Task RenderCollectionMapAsync_WithInstantUpperBound_SelectsNewestRasterBeforeTimestamp()
-    {
-        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterMapRendererTests));
-        try
-        {
-            await CreateRasterTableAsync(schemaName);
-            await InsertRasterAsync(
-                schemaName,
-                "february",
-                DateTimeOffset.Parse("2024-02-01T00:00:00Z", CultureInfo.InvariantCulture),
-                11);
-            await InsertRasterAsync(
-                schemaName,
-                "march",
-                DateTimeOffset.Parse("2024-03-01T00:00:00Z", CultureInfo.InvariantCulture),
-                22);
-
-            var renderer = new PostgresRasterMapRenderer(
-                new FixtureConnectionProvider(fixture.DataSource),
-                NullLogger<PostgresRasterMapRenderer>.Instance,
-                schemaName);
-
-            var result = await renderer.RenderCollectionMapAsync(
-                LayerId,
-                new MapRenderRequest
-                {
-                    BoundingBox = new[] { 0d, 0d, 1d, 1d },
-                    BoundingBoxCrs = 4326,
-                    Crs = 4326,
-                    Width = 1,
-                    Height = 1,
-                    Format = RasterFormat.PNG,
-                    DateTime = DateTimeOffset.Parse("2024-02-15T00:00:00Z", CultureInfo.InvariantCulture),
-                    DateTimeFrom = null
-                });
-
-            result.Data.Should().NotBeEmpty();
-            result.ContentType.Should().Be("image/png");
-            result.Width.Should().Be(1);
-            result.Height.Should().Be(1);
-            result.Srid.Should().Be(4326);
-        }
-        finally
-        {
-            await fixture.DropSchemaAsync(schemaName);
-        }
-    }
-
-    [IntegrationTest]
-    public async Task RenderCollectionMapAsync_WithDatetimeAndBbox_UsesUnwindowedLayerSnapshot()
-    {
-        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterMapRendererTests));
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
         try
         {
             await CreateRasterTableAsync(schemaName);
@@ -116,42 +33,37 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
                 schemaName,
                 "older-local",
                 DateTimeOffset.Parse("2024-02-01T00:00:00Z", CultureInfo.InvariantCulture),
-                11,
                 upperLeftX: 0,
                 upperLeftY: 1);
             await InsertRasterAsync(
                 schemaName,
                 "newer-remote",
                 DateTimeOffset.Parse("2024-03-01T00:00:00Z", CultureInfo.InvariantCulture),
-                22,
                 upperLeftX: 10,
                 upperLeftY: 1);
 
-            var renderer = new PostgresRasterMapRenderer(
+            var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
-                NullLogger<PostgresRasterMapRenderer>.Instance,
+                NullLogger<PostgresRasterStore>.Instance,
                 schemaName);
+            var localSelection = new RasterSelectionQuery
+            {
+                Geometry = CreateEnvelopeWkb(0, 0, 1, 1),
+                GeometrySrid = 4326
+            };
 
-            var result = await renderer.RenderCollectionMapAsync(
+            var currentSelection = await store.QueryRastersAsync(LayerId, localSelection).ConfigureAwait(false);
+            currentSelection.Should().ContainSingle().Which.Name.Should().Be("older-local");
+
+            var temporalSelection = await store.QueryRastersAsync(
                 LayerId,
-                new MapRenderRequest
+                localSelection with
                 {
-                    BoundingBox = new[] { 0d, 0d, 1d, 1d },
-                    BoundingBoxCrs = 4326,
-                    Crs = 4326,
-                    Width = 1,
-                    Height = 1,
-                    Format = RasterFormat.PNG,
-                    DateTime = DateTimeOffset.Parse("2024-04-01T00:00:00Z", CultureInfo.InvariantCulture),
-                    DateTimeFrom = null
-                });
+                    Timestamp = DateTimeOffset.Parse("2024-04-01T00:00:00Z", CultureInfo.InvariantCulture)
+                }).ConfigureAwait(false);
 
-            result.Data.Should().BeEmpty(
-                "the newest layer snapshot before the datetime has no raster in the requested bbox");
-            result.ContentType.Should().Be("image/png");
-            result.Width.Should().Be(1);
-            result.Height.Should().Be(1);
-            result.Srid.Should().Be(4326);
+            temporalSelection.Should().BeEmpty(
+                "the newest layer snapshot before the timestamp has no raster in the requested geometry");
         }
         finally
         {
@@ -170,7 +82,13 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
                 name VARCHAR(255) NOT NULL,
                 raster raster NOT NULL,
                 acquisition_date TIMESTAMPTZ,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ,
+                width INTEGER GENERATED ALWAYS AS (ST_Width(raster)) STORED,
+                height INTEGER GENERATED ALWAYS AS (ST_Height(raster)) STORED,
+                band_count INTEGER GENERATED ALWAYS AS (ST_NumBands(raster)) STORED,
+                pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
+                srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
             );
             """;
         await command.ExecuteNonQueryAsync();
@@ -180,9 +98,8 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
         string schemaName,
         string name,
         DateTimeOffset acquisitionDate,
-        int value,
-        double upperLeftX = 0,
-        double upperLeftY = 1)
+        double upperLeftX,
+        double upperLeftY)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);
         await using var command = connection.CreateCommand();
@@ -193,7 +110,7 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
                    ST_AddBand(
                        ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, 1, -1, 0, 0, 4326),
                        '8BUI'::text,
-                       @value,
+                       7,
                        NULL
                    ),
                    @acquisitionDate,
@@ -201,12 +118,24 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
             """;
         command.Parameters.AddWithValue("layerId", LayerId);
         command.Parameters.AddWithValue("name", name);
-        command.Parameters.AddWithValue("value", value);
         command.Parameters.AddWithValue("upperLeftX", upperLeftX);
         command.Parameters.AddWithValue("upperLeftY", upperLeftY);
         command.Parameters.AddWithValue("acquisitionDate", acquisitionDate.UtcDateTime);
         command.Parameters.AddWithValue("createdAt", acquisitionDate.UtcDateTime);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY)
+    {
+        var factory = new GeometryFactory();
+        return new WKBWriter().Write(factory.CreatePolygon(
+        [
+            new Coordinate(minX, minY),
+            new Coordinate(maxX, minY),
+            new Coordinate(maxX, maxY),
+            new Coordinate(minX, maxY),
+            new Coordinate(minX, minY)
+        ]));
     }
 
     private sealed class FixtureConnectionProvider(NpgsqlDataSource dataSource) : IDatabaseConnectionProvider

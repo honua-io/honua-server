@@ -55,6 +55,11 @@ public sealed record RasterImportRequest
     public string? PrjFileContent { get; init; }
 
     /// <summary>
+    /// Optional acquisition timestamp associated with the imported raster content.
+    /// </summary>
+    public DateTimeOffset? AcquisitionDate { get; init; }
+
+    /// <summary>
     /// Zoom levels for tile pre-generation. Empty to skip tile generation.
     /// </summary>
     public int[] TileZoomLevels { get; init; } = [0, 1, 2, 3, 4, 5, 6, 7, 8];

@@ -96,6 +96,7 @@ sql:
           name VARCHAR(255) NOT NULL,
           description TEXT,
           raster raster NOT NULL,
+          acquisition_date TIMESTAMPTZ,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ,
           width INTEGER GENERATED ALWAYS AS (ST_Width(raster)) STORED,
@@ -107,6 +108,10 @@ sql:
       );
   - "CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id ON honua.raster_data(layer_id);"
   - "CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id_id ON honua.raster_data(layer_id, id);"
+  - "CREATE INDEX IF NOT EXISTS idx_raster_data_acquisition_date ON honua.raster_data(acquisition_date);"
+  - "CREATE INDEX IF NOT EXISTS idx_raster_data_layer_acquisition ON honua.raster_data(layer_id, acquisition_date DESC, created_at DESC, id DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_raster_data_raster_gist ON honua.raster_data USING GIST (ST_ConvexHull(raster));"
+  - "CREATE INDEX IF NOT EXISTS idx_raster_data_envelope ON honua.raster_data USING GIST (ST_Envelope(raster));"
   - |
       CREATE TABLE IF NOT EXISTS honua.raster_statistics (
           id BIGSERIAL PRIMARY KEY,

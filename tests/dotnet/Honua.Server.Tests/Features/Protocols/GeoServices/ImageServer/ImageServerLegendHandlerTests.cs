@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
 /// <summary>
 /// Tests for <see cref="ImageServerLegendHandler"/>. The handler builds a
-/// 5-class equal-interval legend over the layer's primary raster statistics.
+/// 5-class equal-interval legend over the layer raster statistics.
 /// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerLegendHandlerTests
@@ -55,12 +55,12 @@ public class ImageServerLegendHandlerTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public async Task GetLegendAsync_NoPrimaryRaster_ReturnsNotFound()
+    public async Task GetLegendAsync_NoRasters_ReturnsNotFound()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns((RasterInfo?)null);
+        _rasterStore.ListRastersAsync(default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
         var context = CreateImageServerContext();
         var result = await _handler.GetLegendAsync(context, 1, CancellationToken.None);
@@ -150,8 +150,8 @@ public class ImageServerLegendHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.ListRastersAsync(default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterStatistics>());
 
@@ -172,8 +172,8 @@ public class ImageServerLegendHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns<Task<RasterInfo?>>(_ => throw new InvalidOperationException("boom"));
+        _rasterStore.ListRastersAsync(default, default)
+            .ReturnsForAnyArgs(_ => Task.FromException<RasterInfo[]>(new InvalidOperationException("boom")));
 
         var context = CreateImageServerContext();
         var result = await _handler.GetLegendAsync(context, 1, CancellationToken.None);
@@ -186,8 +186,8 @@ public class ImageServerLegendHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.ListRastersAsync(default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
             .Returns(new[]
             {

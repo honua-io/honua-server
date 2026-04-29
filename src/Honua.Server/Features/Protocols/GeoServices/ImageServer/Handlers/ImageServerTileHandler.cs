@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
@@ -81,28 +82,61 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif, cog.");
             }
 
-            // Resolve the primary raster without scanning the entire layer.
-            var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
+            if (!ImageServerMosaicHelpers.TryParseTime(context.Request.Query["time"], out var timestamp, out var timeError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
+            }
+
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
+            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(
+                layer.Metadata,
+                context.Request.Query["mosaicRule"]);
+
+            var tileGeometry = CreateTileEnvelope(level, row, col);
+            var selectedRasters = await _rasterStore.QueryRastersAsync(
+                layerId,
+                new RasterSelectionQuery
+                {
+                    Geometry = tileGeometry,
+                    GeometrySrid = 3857,
+                    Timestamp = timestamp
+                },
+                cancellationToken);
 
             ImageServerLog.ImageTileRequested(_logger, layerId, level, row, col);
 
-            if (primaryRaster is null && _cogTileResolver == null)
+            if (selectedRasters.Length == 0 && _cogTileResolver == null)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
-            if (primaryRaster is not null)
+            if (selectedRasters.Length > 0)
             {
                 // Get the image tile from PostGIS
-                var tileResult = await _rasterStore.GetImageTileAsync(
-                    layerId,
-                    primaryRaster.Value.Id,
-                    level,
-                    row,
-                    col,
-                    rasterFormat,
-                    cancellationToken);
+                var tileResult = selectedRasters.Length == 1
+                    ? await _rasterStore.GetImageTileAsync(
+                        layerId,
+                        selectedRasters[0].Id,
+                        level,
+                        row,
+                        col,
+                        rasterFormat,
+                        cancellationToken)
+                    : await _rasterStore.GetMosaicImageTileAsync(
+                        layerId,
+                        selectedRasters.Select(r => r.Id).ToArray(),
+                        mergeStrategy,
+                        level,
+                        row,
+                        col,
+                        rasterFormat,
+                        cancellationToken);
 
                 if (tileResult != null)
                 {
@@ -147,5 +181,16 @@ internal sealed class ImageServerTileHandler
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the image tile.");
         }
+    }
+
+    private static byte[] CreateTileEnvelope(int level, int row, int col)
+    {
+        const double worldExtent = 20037508.342789244;
+        var tileSpan = (worldExtent * 2d) / (1 << level);
+        var minX = -worldExtent + (col * tileSpan);
+        var maxX = minX + tileSpan;
+        var maxY = worldExtent - (row * tileSpan);
+        var minY = maxY - tileSpan;
+        return ImageServerMosaicHelpers.CreateEnvelopeGeometry(minX, minY, maxX, maxY);
     }
 }

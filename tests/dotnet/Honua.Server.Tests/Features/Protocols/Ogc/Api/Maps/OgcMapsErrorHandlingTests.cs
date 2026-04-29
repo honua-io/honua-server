@@ -108,19 +108,6 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_DatetimeParameter_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90&datetime=2024-01-01T00:00:00Z&f=png");
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("datetime parameter is not currently supported");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Render)]
-    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     public async Task GetCollectionMap_TransparentParameter_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(

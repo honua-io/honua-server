@@ -142,6 +142,22 @@ public class ImageServerBasicTests : IAsyncLifetime
                 Srid = 4326,
                 CreatedAt = DateTimeOffset.UtcNow
             });
+        rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(new[]
+            {
+                new RasterInfo
+                {
+                    Id = 100,
+                    LayerId = TestLayerId,
+                    Name = "test-raster",
+                    Width = 1024,
+                    Height = 1024,
+                    BandCount = 3,
+                    PixelType = "8BUI",
+                    Srid = 4326,
+                    CreatedAt = DateTimeOffset.UtcNow
+                }
+            });
         rasterStore.ExportImageAsync(TestLayerId, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
             .Returns(new RasterResult
             {

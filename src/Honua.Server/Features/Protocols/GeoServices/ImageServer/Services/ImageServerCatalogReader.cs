@@ -64,7 +64,13 @@ internal sealed class ImageServerCatalogItem
 
     public double ShapeArea { get; init; }
 
+    public int BandCount { get; init; }
+
+    public required string PixelType { get; init; }
+
     public DateTimeOffset? AcquisitionDate { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
 
     /// <summary>
     /// Footprint expressed as ring coordinates in the raster's native SRID. The MVP does
@@ -94,6 +100,8 @@ internal sealed class ImageServerCatalogQuery
     public int Offset { get; init; }
 
     public int Limit { get; init; }
+
+    public DateTimeOffset? Time { get; init; }
 
     public bool ReturnGeometry { get; init; } = true;
 
@@ -156,6 +164,26 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         foreach (var raster in rasters)
         {
             projected.Add((ProjectRaster(raster, includeGeometry), raster));
+        }
+
+        if (query.Time.HasValue)
+        {
+            var selectedAcquisition = projected
+                .Select(p => p.Item.AcquisitionDate)
+                .Where(t => t.HasValue && t.Value <= query.Time.Value)
+                .OrderByDescending(t => t)
+                .FirstOrDefault();
+
+            if (selectedAcquisition.HasValue)
+            {
+                projected = projected
+                    .Where(p => p.Item.AcquisitionDate == selectedAcquisition)
+                    .ToList();
+            }
+            else
+            {
+                projected.Clear();
+            }
         }
 
         // Apply objectIds filter (cheap; usually provided alongside or instead of where).
@@ -291,7 +319,10 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             ZOrder = 0,
             ShapeLength = shapeLength,
             ShapeArea = shapeArea,
-            AcquisitionDate = raster.CreatedAt,
+            BandCount = raster.BandCount,
+            PixelType = raster.PixelType,
+            AcquisitionDate = raster.AcquisitionDate ?? raster.CreatedAt,
+            CreatedAt = raster.CreatedAt,
             FootprintRings = rings,
             FootprintSrid = extent?.Srid
         };

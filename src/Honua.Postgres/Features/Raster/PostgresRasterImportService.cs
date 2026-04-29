@@ -43,6 +43,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     private static readonly byte[] _pngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
     // JPEG SOI marker: 0xFF 0xD8
     private static readonly byte[] _jpegSoiMarker = [0xFF, 0xD8];
+    // Stable namespace for PostgreSQL two-key advisory locks used by raster imports.
+    private const int RasterImportLayerLockNamespace = 0x0484_5221;
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsDetectionService _crsDetectionService;
@@ -106,6 +108,9 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             long rasterId;
             try
             {
+                await AcquireLayerImportLockAsync(
+                    connection, transaction, request.LayerId, cancellationToken).ConfigureAwait(false);
+
                 rasterId = await InsertRasterDataAsync(
                     connection, transaction, request, fileBytes, cancellationToken).ConfigureAwait(false);
 
@@ -131,6 +136,18 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                 }
 
                 PostgresRasterImportLog.RasterIngested(_logger, rasterId, width, height, bandCount, srid);
+
+                // Per-layer SRID and band-count homogeneity guard. ST_Union (used by mosaic
+                // export/identify/tile/statistics paths) requires all rasters in a layer to share
+                // the same SRID and band count; otherwise PostGIS aborts with an opaque error at
+                // query time. Reject the upload before commit so callers see a structured 400.
+                // Inner catch block handles the rollback; do not roll back here.
+                var homogeneityError = await CheckLayerHomogeneityAsync(
+                    connection, transaction, request.LayerId, rasterId, srid, bandCount, cancellationToken).ConfigureAwait(false);
+                if (homogeneityError != null)
+                {
+                    throw new ArgumentException(homogeneityError);
+                }
 
                 // Phase 3: Compute band statistics
                 ReportProgress(progress, operationId, startedAt, RasterImportPhase.ComputingStatistics, OperationStatus.Processing,
@@ -366,8 +383,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         if (request.Srid.HasValue && request.Format is SupportedRasterFormat.GeoTiff or SupportedRasterFormat.CloudOptimizedGeoTiff)
         {
             command.CommandText = $"""
-                INSERT INTO {_rasterDataTable} (layer_id, name, description, raster)
-                VALUES (@layerId, @name, @description,
+                INSERT INTO {_rasterDataTable} (layer_id, name, description, acquisition_date, raster)
+                VALUES (@layerId, @name, @description, @acquisitionDate,
                     ST_SetSRID(ST_FromGDALRaster(@rasterData), @srid))
                 RETURNING id
                 """;
@@ -376,8 +393,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         else
         {
             command.CommandText = $"""
-                INSERT INTO {_rasterDataTable} (layer_id, name, description, raster)
-                VALUES (@layerId, @name, @description, ST_FromGDALRaster(@rasterData))
+                INSERT INTO {_rasterDataTable} (layer_id, name, description, acquisition_date, raster)
+                VALUES (@layerId, @name, @description, @acquisitionDate, ST_FromGDALRaster(@rasterData))
                 RETURNING id
                 """;
         }
@@ -385,10 +402,26 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         command.AddParameter("@layerId", request.LayerId);
         command.AddParameter("@name", request.Name);
         command.AddParameter("@description", (object?)request.Description ?? DBNull.Value);
+        command.AddParameter("@acquisitionDate", (object?)request.AcquisitionDate ?? DBNull.Value);
         command.AddParameter("@rasterData", fileBytes);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return (long)result!;
+    }
+
+    private static async Task AcquireLayerImportLockAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT pg_advisory_xact_lock(@namespace, @layerId);";
+        command.AddParameter("@namespace", RasterImportLayerLockNamespace);
+        command.AddParameter("@layerId", layerId);
+
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<(int Width, int Height, int BandCount, int Srid)> ReadRasterMetadataAsync(
@@ -417,6 +450,73 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             reader.GetInt32(reader.GetOrdinal("height")),
             reader.GetInt32(reader.GetOrdinal("band_count")),
             reader.GetInt32(reader.GetOrdinal("srid")));
+    }
+
+    /// <summary>
+    /// Verifies the newly inserted raster shares the layer's canonical SRID and band count.
+    /// Returns null on success or a client-safe error message describing the mismatch.
+    /// First raster in a layer always passes (it sets the canonical values). Layers that
+    /// already contain heterogeneous data (e.g. seeded outside the import path) are also
+    /// rejected so callers see the real invariant violation rather than an opaque ST_Union
+    /// failure at query time.
+    /// </summary>
+    private async Task<string?> CheckLayerHomogeneityAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        int layerId,
+        long newRasterId,
+        int newSrid,
+        int newBandCount,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"""
+            SELECT COUNT(*) AS existing_count,
+                   MIN(srid) AS min_srid,
+                   MAX(srid) AS max_srid,
+                   MIN(band_count) AS min_bands,
+                   MAX(band_count) AS max_bands
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND id <> @newRasterId
+            """;
+        command.AddParameter("@layerId", layerId);
+        command.AddParameter("@newRasterId", newRasterId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var existingCount = reader.GetInt64(0);
+        if (existingCount == 0)
+        {
+            return null;
+        }
+
+        var minSrid = reader.GetInt32(1);
+        var maxSrid = reader.GetInt32(2);
+        var minBands = reader.GetInt32(3);
+        var maxBands = reader.GetInt32(4);
+
+        if (minSrid != maxSrid || minBands != maxBands)
+        {
+            PostgresRasterImportLog.HomogeneityRejected(_logger, layerId, newSrid, newBandCount, minSrid, minBands);
+            return $"Layer {layerId} already contains heterogeneous rasters " +
+                   $"(SRID range {minSrid}..{maxSrid}, BandCount range {minBands}..{maxBands}). " +
+                   "Mosaic compositing requires homogeneity; reload the layer with consistent inputs.";
+        }
+
+        if (minSrid == newSrid && minBands == newBandCount)
+        {
+            return null;
+        }
+
+        PostgresRasterImportLog.HomogeneityRejected(_logger, layerId, newSrid, newBandCount, minSrid, minBands);
+        return $"Layer {layerId} requires raster homogeneity for mosaic compositing. " +
+               $"Expected SRID={minSrid}, BandCount={minBands}; " +
+               $"upload has SRID={newSrid}, BandCount={newBandCount}.";
     }
 
     private async Task ApplyWorldFileGeoReferencingAsync(

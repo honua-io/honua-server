@@ -62,6 +62,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                    ST_YMin(ST_Envelope(raster)) AS ymin,
                    ST_XMax(ST_Envelope(raster)) AS xmax,
                    ST_YMax(ST_Envelope(raster)) AS ymax,
+                   acquisition_date,
                    created_at, updated_at
             FROM {_rasterDataTable}
             WHERE layer_id = @layerId AND id = @rasterId
@@ -79,6 +80,95 @@ internal sealed class PostgresRasterStore : IRasterStore
         var info = ReadRasterInfo(reader);
         PostgresRasterLog.RasterInfoRetrieved(_logger, layerId, rasterId, info.Width, info.Height);
         return info;
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterInfo[]> QueryRastersAsync(
+        int layerId,
+        RasterSelectionQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        const string layerWhereClause = "layer_id = @layerId";
+        var candidateWhereClauses = new List<string> { layerWhereClause };
+        var parameters = new List<(string Name, object Value)> { ("@layerId", layerId) };
+
+        if (query.Geometry is { Length: > 0 })
+        {
+            var geometryExpr = query.GeometrySrid.HasValue
+                ? "ST_Transform(ST_GeomFromWKB(@selectionGeom, @selectionGeomSrid), ST_SRID(raster))"
+                : "ST_GeomFromWKB(@selectionGeom, ST_SRID(raster))";
+
+            candidateWhereClauses.Add($"ST_Intersects(ST_ConvexHull(raster), {geometryExpr})");
+            parameters.Add(("@selectionGeom", query.Geometry));
+            if (query.GeometrySrid.HasValue)
+            {
+                parameters.Add(("@selectionGeomSrid", query.GeometrySrid.Value));
+            }
+        }
+
+        var timestampCte = string.Empty;
+        var timestampWhereClause = string.Empty;
+        if (query.Timestamp.HasValue)
+        {
+            timestampCte = $"""
+                , selected_time AS (
+                    SELECT MAX(COALESCE(acquisition_date, created_at)) AS target_acquisition
+                    FROM {_rasterDataTable}
+                    WHERE {layerWhereClause}
+                      AND COALESCE(acquisition_date, created_at) <= @timestamp
+                )
+                """;
+            timestampWhereClause = "WHERE effective_acquisition = (SELECT target_acquisition FROM selected_time)";
+            parameters.Add(("@timestamp", query.Timestamp.Value.UtcDateTime));
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH candidate AS (
+                SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
+                       ST_BandNoDataValue(raster, 1) AS nodata_value,
+                       ST_UpperLeftX(raster) AS upper_left_x,
+                       ST_ScaleX(raster) AS scale_x,
+                       ST_SkewX(raster) AS skew_x,
+                       ST_UpperLeftY(raster) AS upper_left_y,
+                       ST_SkewY(raster) AS skew_y,
+                       ST_ScaleY(raster) AS scale_y,
+                       ST_XMin(ST_Envelope(raster)) AS xmin,
+                       ST_YMin(ST_Envelope(raster)) AS ymin,
+                       ST_XMax(ST_Envelope(raster)) AS xmax,
+                       ST_YMax(ST_Envelope(raster)) AS ymax,
+                       acquisition_date,
+                       created_at,
+                       updated_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
+                FROM {_rasterDataTable}
+                WHERE {string.Join("\n  AND ", candidateWhereClauses)}
+            )
+            {timestampCte}
+            SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
+                   nodata_value, upper_left_x, scale_x, skew_x, upper_left_y, skew_y, scale_y,
+                   xmin, ymin, xmax, ymax, acquisition_date, created_at, updated_at
+            FROM candidate
+            {timestampWhereClause}
+            ORDER BY effective_acquisition DESC, created_at DESC, id DESC
+            """;
+
+        foreach (var (name, value) in parameters)
+        {
+            AddParameter(command, name, value);
+        }
+
+        var rasters = new List<RasterInfo>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rasters.Add(ReadRasterInfo(reader));
+        }
+
+        PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Count);
+        return rasters.ToArray();
     }
 
     /// <inheritdoc />
@@ -294,6 +384,196 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     /// <inheritdoc />
+    public async Task<RasterResult> ExportMosaicAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        RasterQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = query.OutputFormat.ToContentType(),
+                Width = query.OutputWidth ?? 0,
+                Height = query.OutputHeight ?? 0
+            };
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var formatName = query.OutputFormat.ToGdalDriverName();
+        if (!_allowedOutputFormats.Contains(formatName))
+        {
+            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
+        }
+
+        var sourceRasterExpr = "raster";
+        var postMergeRasterExpr = "rast";
+        var extraParams = new List<(string Name, object Value)>
+        {
+            ("@layerId", layerId),
+            ("@rasterIds", rasterIds)
+        };
+
+        if (query.ClipRegion is { } clip)
+        {
+            if (clip.Srid.HasValue && clip.Srid.Value > 0)
+            {
+                sourceRasterExpr = $"ST_Clip({sourceRasterExpr}, ST_Transform(ST_GeomFromWKB(@clipGeom, @clipSrid), ST_SRID(raster)))";
+                extraParams.Add(("@clipSrid", clip.Srid.Value));
+            }
+            else
+            {
+                sourceRasterExpr = $"ST_Clip({sourceRasterExpr}, ST_GeomFromWKB(@clipGeom, ST_SRID(raster)))";
+            }
+
+            extraParams.Add(("@clipGeom", clip.Geometry));
+        }
+
+        if (query.OutputWidth is > 0 && query.OutputHeight is > 0)
+        {
+            postMergeRasterExpr = $"ST_Resize({postMergeRasterExpr}, @outputWidth, @outputHeight)";
+            extraParams.Add(("@outputWidth", query.OutputWidth.Value));
+            extraParams.Add(("@outputHeight", query.OutputHeight.Value));
+        }
+        else if (query.PixelSize is { } pixelSize)
+        {
+            var algorithm = query.ResamplingAlgorithm switch
+            {
+                ResamplingAlgorithm.NearestNeighbor => "NearestNeighbor",
+                ResamplingAlgorithm.Bilinear => "Bilinear",
+                ResamplingAlgorithm.Bicubic => "Cubic",
+                ResamplingAlgorithm.Lanczos => "Lanczos",
+                _ => "NearestNeighbor"
+            };
+            if (!_allowedResamplingAlgorithms.Contains(algorithm))
+            {
+                throw new ArgumentException($"Unsupported resampling algorithm: {algorithm}");
+            }
+
+            postMergeRasterExpr = $"ST_Rescale({postMergeRasterExpr}, @pixelW, @pixelH, '{algorithm}')";
+            extraParams.Add(("@pixelW", pixelSize.Width));
+            extraParams.Add(("@pixelH", pixelSize.Height));
+        }
+
+        if (query.OutputSrid.HasValue && query.OutputSrid.Value > 0)
+        {
+            postMergeRasterExpr = $"ST_Transform({postMergeRasterExpr}, @outputSrid)";
+            extraParams.Add(("@outputSrid", query.OutputSrid.Value));
+        }
+
+        var creationOptionsClause = "";
+        var effectiveFormat = formatName;
+        const int exportBlockSize = 512;
+        if (formatName == "COG")
+        {
+            (effectiveFormat, creationOptionsClause) = await ResolveCogOptionsAsync(
+                connection, blockSize: exportBlockSize, layerId, rasterIds[0],
+                includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            source AS (
+                SELECT {sourceRasterExpr} AS rast,
+                       id,
+                       created_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId
+                  AND id IN (SELECT raster_id FROM requested)
+            ),
+            merged AS (
+                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                FROM source
+                WHERE rast IS NOT NULL
+            ),
+            transformed AS (
+                SELECT {postMergeRasterExpr} AS rast
+                FROM merged
+                WHERE rast IS NOT NULL
+            )
+            SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
+                   ST_Width(rast) AS width,
+                   ST_Height(rast) AS height,
+                   ST_SRID(rast) AS srid,
+                   ST_NumBands(rast) AS band_count,
+                   ST_BandPixelType(rast, 1) AS pixel_type,
+                   ST_XMin(ST_Envelope(rast)) AS xmin,
+                   ST_YMin(ST_Envelope(rast)) AS ymin,
+                   ST_XMax(ST_Envelope(rast)) AS xmax,
+                   ST_YMax(ST_Envelope(rast)) AS ymax
+            FROM transformed
+            """;
+
+        foreach (var (name, value) in extraParams)
+        {
+            AddParameter(command, name, value);
+        }
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = query.OutputFormat.ToContentType(),
+                Width = query.OutputWidth ?? 0,
+                Height = query.OutputHeight ?? 0
+            };
+        }
+
+        var dataOrd = reader.GetOrdinal("data");
+        var widthOrd = reader.GetOrdinal("width");
+        var heightOrd = reader.GetOrdinal("height");
+        var sridOrd = reader.GetOrdinal("srid");
+        var bandCountOrd = reader.GetOrdinal("band_count");
+        var pixelTypeOrd = reader.GetOrdinal("pixel_type");
+        var xminOrd = reader.GetOrdinal("xmin");
+        var yminOrd = reader.GetOrdinal("ymin");
+        var xmaxOrd = reader.GetOrdinal("xmax");
+        var ymaxOrd = reader.GetOrdinal("ymax");
+
+        var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        var width = reader.IsDBNull(widthOrd) ? query.OutputWidth ?? 0 : reader.GetInt32(widthOrd);
+        var height = reader.IsDBNull(heightOrd) ? query.OutputHeight ?? 0 : reader.GetInt32(heightOrd);
+        var srid = reader.IsDBNull(sridOrd) ? query.OutputSrid : reader.GetInt32(sridOrd);
+        var bandCount = reader.IsDBNull(bandCountOrd) ? 0 : reader.GetInt32(bandCountOrd);
+        var pixelType = reader.IsDBNull(pixelTypeOrd) ? null : reader.GetString(pixelTypeOrd);
+
+        return new RasterResult
+        {
+            Data = data,
+            ContentType = query.OutputFormat.ToContentType(),
+            Width = width,
+            Height = height,
+            Srid = srid,
+            BandCount = bandCount,
+            PixelType = pixelType,
+            Extent = reader.IsDBNull(xminOrd) || reader.IsDBNull(yminOrd) || reader.IsDBNull(xmaxOrd) || reader.IsDBNull(ymaxOrd)
+                ? null
+                : new RasterExtent
+                {
+                    XMin = reader.GetDouble(xminOrd),
+                    YMin = reader.GetDouble(yminOrd),
+                    XMax = reader.GetDouble(xmaxOrd),
+                    YMax = reader.GetDouble(ymaxOrd),
+                    Srid = srid
+                }
+        };
+    }
+
+    /// <inheritdoc />
     public async Task<PixelValueResult> IdentifyAsync(int layerId, long rasterId, double x, double y, int? srid = null, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -333,6 +613,91 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         PostgresRasterLog.PixelValueIdentified(_logger, layerId, rasterId, x, y, hasData, bandValues.Count);
+
+        return new PixelValueResult
+        {
+            X = x,
+            Y = y,
+            Srid = srid,
+            BandValues = bandValues,
+            HasData = hasData
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<PixelValueResult> IdentifyMosaicAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        double x,
+        double y,
+        int? srid = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return new PixelValueResult
+            {
+                X = x,
+                Y = y,
+                Srid = srid,
+                BandValues = new Dictionary<int, object?>(),
+                HasData = false
+            };
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var pointSrid = srid ?? 4326;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            source AS (
+                SELECT raster AS rast,
+                       id,
+                       created_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId
+                  AND id IN (SELECT raster_id FROM requested)
+            ),
+            merged AS (
+                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                FROM source
+                WHERE rast IS NOT NULL
+            )
+            SELECT band, val
+            FROM merged,
+                 LATERAL generate_series(1, ST_NumBands(rast)) AS band,
+                 LATERAL ST_Value(rast, band,
+                    ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(rast))
+                 ) AS val
+            WHERE rast IS NOT NULL
+            ORDER BY band
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterIds", rasterIds);
+        AddParameter(command, "@x", x);
+        AddParameter(command, "@y", y);
+        AddParameter(command, "@pointSrid", pointSrid);
+
+        var bandValues = new Dictionary<int, object?>();
+        var hasData = false;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var band = reader.GetInt32(0);
+            var val = reader.IsDBNull(1) ? null : (object?)reader.GetDouble(1);
+            bandValues[band] = val;
+            if (val != null)
+            {
+                hasData = true;
+            }
+        }
 
         return new PixelValueResult
         {
@@ -438,6 +803,92 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     /// <inheritdoc />
+    public async Task<RasterResult?> GetMosaicImageTileAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        int level,
+        int row,
+        int col,
+        RasterFormat format = RasterFormat.PNG,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return null;
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var formatName = format.ToGdalDriverName();
+        if (!_allowedOutputFormats.Contains(formatName))
+        {
+            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
+        }
+
+        var effectiveTileFormat = formatName;
+        var tileCreationOptions = "";
+        if (formatName == "COG")
+        {
+            (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
+                connection, blockSize: 256, layerId, rasterIds[0],
+                includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            tile_bounds AS (
+                SELECT ST_TileEnvelope(@level, @col, @row) AS geom
+            ),
+            source AS (
+                SELECT ST_Clip(raster, ST_Transform(tb.geom, ST_SRID(raster))) AS rast,
+                       id,
+                       created_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
+                FROM {_rasterDataTable}, tile_bounds tb
+                WHERE layer_id = @layerId
+                  AND id IN (SELECT raster_id FROM requested)
+                  AND ST_Intersects(ST_ConvexHull(raster), ST_Transform(tb.geom, ST_SRID(raster)))
+            ),
+            merged AS (
+                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                FROM source
+                WHERE rast IS NOT NULL
+            ),
+            resized AS (
+                SELECT ST_Resize(rast, 256, 256) AS rast
+                FROM merged
+                WHERE rast IS NOT NULL
+            )
+            SELECT ST_AsGDALRaster(rast, '{effectiveTileFormat}'{tileCreationOptions}) AS data
+            FROM resized
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterIds", rasterIds);
+        AddParameter(command, "@level", level);
+        AddParameter(command, "@col", col);
+        AddParameter(command, "@row", row);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (result is not byte[] data || data.Length == 0)
+        {
+            return null;
+        }
+
+        return new RasterResult
+        {
+            Data = data,
+            ContentType = format.ToContentType(),
+            Width = 256,
+            Height = 256,
+            Srid = 3857
+        };
+    }
+
+    /// <inheritdoc />
     public async Task<RasterStatistics[]> GetStatisticsAsync(int layerId, long rasterId, int[]? bands = null, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -525,6 +976,81 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     /// <inheritdoc />
+    public async Task<RasterStatistics[]> GetMosaicStatisticsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        int[]? bands = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return Array.Empty<RasterStatistics>();
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH requested AS (
+                SELECT unnest(@rasterIds) AS raster_id
+            ),
+            source AS (
+                SELECT raster AS rast,
+                       id,
+                       created_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId
+                  AND id IN (SELECT raster_id FROM requested)
+            ),
+            merged AS (
+                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                FROM source
+                WHERE rast IS NOT NULL
+            )
+            SELECT band,
+                   (stats).min AS min_value,
+                   (stats).max AS max_value,
+                   (stats).mean AS mean_value,
+                   (stats).stddev AS std_dev,
+                   (stats).count AS valid_count
+            FROM (
+                SELECT generate_series(1, ST_NumBands(rast)) AS band,
+                       ST_SummaryStats(rast, generate_series(1, ST_NumBands(rast))) AS stats
+                FROM merged
+                WHERE rast IS NOT NULL
+            ) sub
+            ORDER BY band
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@rasterIds", rasterIds);
+
+        var stats = new List<RasterStatistics>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            stats.Add(new RasterStatistics
+            {
+                Band = reader.GetInt32(0),
+                MinValue = reader.IsDBNull(1) ? null : reader.GetDouble(1),
+                MaxValue = reader.IsDBNull(2) ? null : reader.GetDouble(2),
+                MeanValue = reader.IsDBNull(3) ? null : reader.GetDouble(3),
+                StandardDeviation = reader.IsDBNull(4) ? null : reader.GetDouble(4),
+                ValidPixelCount = reader.IsDBNull(5) ? 0 : reader.GetInt64(5),
+                NoDataPixelCount = 0
+            });
+        }
+
+        if (bands != null)
+        {
+            stats = stats.Where(s => bands.Contains(s.Band)).ToList();
+        }
+
+        return stats.ToArray();
+    }
+
+    /// <inheritdoc />
     public async Task<RasterExtent?> GetExtentAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -577,10 +1103,11 @@ internal sealed class PostgresRasterStore : IRasterStore
                    ST_YMin(ST_Envelope(raster)) AS ymin,
                    ST_XMax(ST_Envelope(raster)) AS xmax,
                    ST_YMax(ST_Envelope(raster)) AS ymax,
+                   acquisition_date,
                    created_at, updated_at
             FROM {_rasterDataTable}
             WHERE layer_id = @layerId
-            ORDER BY created_at DESC
+            ORDER BY COALESCE(acquisition_date, created_at) DESC, created_at DESC, id DESC
             LIMIT 1
             """;
         AddParameter(command, "@layerId", layerId);
@@ -739,6 +1266,177 @@ internal sealed class PostgresRasterStore : IRasterStore
             }
 
             // Trim trailing slots if PostGIS produced fewer bins than requested.
+            if (index < binCount)
+            {
+                Array.Resize(ref counts, index);
+            }
+
+            results.Add(new RasterHistogram
+            {
+                Band = band,
+                BinCount = counts.Length,
+                Min = double.IsNaN(overallMin) ? 0 : overallMin,
+                Max = double.IsNaN(overallMax) ? 0 : overallMax,
+                Counts = counts
+            });
+        }
+
+        return results.ToArray();
+    }
+
+    /// <inheritdoc />
+    public async Task<RasterHistogram[]> GetMosaicHistogramsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        int[]? bands = null,
+        int binCount = 256,
+        CancellationToken cancellationToken = default)
+    {
+        if (rasterIds.Length == 0)
+        {
+            return Array.Empty<RasterHistogram>();
+        }
+
+        if (binCount <= 0)
+        {
+            binCount = 256;
+        }
+        else if (binCount > 1024)
+        {
+            binCount = 1024;
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        int[] effectiveBands;
+        if (bands is { Length: > 0 })
+        {
+            effectiveBands = bands;
+        }
+        else
+        {
+            await using var bandsCommand = connection.CreateCommand();
+            bandsCommand.CommandText = $"""
+                WITH requested AS (
+                    SELECT unnest(@rasterIds) AS raster_id
+                ),
+                source AS (
+                    SELECT raster AS rast,
+                           id,
+                           created_at,
+                           COALESCE(acquisition_date, created_at) AS effective_acquisition
+                    FROM {_rasterDataTable}
+                    WHERE layer_id = @layerId
+                      AND id IN (SELECT raster_id FROM requested)
+                ),
+                merged AS (
+                    SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                    FROM source
+                    WHERE rast IS NOT NULL
+                )
+                SELECT ST_NumBands(rast)
+                FROM merged
+                WHERE rast IS NOT NULL
+                """;
+            AddParameter(bandsCommand, "@layerId", layerId);
+            AddParameter(bandsCommand, "@rasterIds", rasterIds);
+            var bandCountResult = await bandsCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (bandCountResult is null or DBNull)
+            {
+                return Array.Empty<RasterHistogram>();
+            }
+
+            var totalBands = Convert.ToInt32(bandCountResult, System.Globalization.CultureInfo.InvariantCulture);
+            effectiveBands = new int[totalBands];
+            for (var i = 0; i < totalBands; i++)
+            {
+                effectiveBands[i] = i + 1;
+            }
+        }
+
+        var results = new List<RasterHistogram>(effectiveBands.Length);
+        foreach (var band in effectiveBands)
+        {
+            await using var histogramCommand = connection.CreateCommand();
+            histogramCommand.CommandText = $"""
+                WITH requested AS (
+                    SELECT unnest(@rasterIds) AS raster_id
+                ),
+                source AS (
+                    SELECT raster AS rast,
+                           id,
+                           created_at,
+                           COALESCE(acquisition_date, created_at) AS effective_acquisition
+                    FROM {_rasterDataTable}
+                    WHERE layer_id = @layerId
+                      AND id IN (SELECT raster_id FROM requested)
+                ),
+                merged AS (
+                    SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                    FROM source
+                    WHERE rast IS NOT NULL
+                )
+                SELECT (h).min AS bin_min,
+                       (h).max AS bin_max,
+                       (h).count AS bin_count
+                FROM (
+                    SELECT ST_Histogram(rast, @band, @binCount, false) AS h
+                    FROM merged
+                    WHERE rast IS NOT NULL
+                ) sub
+                """;
+            AddParameter(histogramCommand, "@layerId", layerId);
+            AddParameter(histogramCommand, "@rasterIds", rasterIds);
+            AddParameter(histogramCommand, "@band", band);
+            AddParameter(histogramCommand, "@binCount", binCount);
+
+            var counts = new long[binCount];
+            double overallMin = double.NaN;
+            double overallMax = double.NaN;
+            var index = 0;
+
+            try
+            {
+                await using var histogramReader = await histogramCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await histogramReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    var binMin = histogramReader.IsDBNull(0) ? double.NaN : histogramReader.GetDouble(0);
+                    var binMax = histogramReader.IsDBNull(1) ? double.NaN : histogramReader.GetDouble(1);
+                    var count = histogramReader.IsDBNull(2) ? 0L : Convert.ToInt64(histogramReader.GetValue(2), System.Globalization.CultureInfo.InvariantCulture);
+
+                    if (index < counts.Length)
+                    {
+                        counts[index] = count;
+                    }
+
+                    if (index == 0)
+                    {
+                        overallMin = binMin;
+                    }
+
+                    if (!double.IsNaN(binMax))
+                    {
+                        overallMax = binMax;
+                    }
+
+                    index++;
+                }
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                PostgresRasterLog.HistogramFailed(_logger, ex, layerId, rasterIds[0], band);
+                results.Add(new RasterHistogram
+                {
+                    Band = band,
+                    BinCount = 0,
+                    Min = 0,
+                    Max = 0,
+                    Counts = Array.Empty<long>()
+                });
+                continue;
+            }
+
             if (index < binCount)
             {
                 Array.Resize(ref counts, index);
@@ -1045,10 +1743,11 @@ internal sealed class PostgresRasterStore : IRasterStore
                    ST_YMin(ST_Envelope(raster)) AS ymin,
                    ST_XMax(ST_Envelope(raster)) AS xmax,
                    ST_YMax(ST_Envelope(raster)) AS ymax,
+                   acquisition_date,
                    created_at, updated_at
             FROM {_rasterDataTable}
             WHERE layer_id = @layerId
-            ORDER BY created_at DESC
+            ORDER BY COALESCE(acquisition_date, created_at) DESC, created_at DESC, id DESC
             """;
         AddParameter(command, "@layerId", layerId);
 
@@ -1089,6 +1788,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var yminOrd = reader.GetOrdinal("ymin");
         var xmaxOrd = reader.GetOrdinal("xmax");
         var ymaxOrd = reader.GetOrdinal("ymax");
+        var acquisitionDateOrd = reader.GetOrdinal("acquisition_date");
         var createdAtOrd = reader.GetOrdinal("created_at");
         var updatedOrd = reader.GetOrdinal("updated_at");
 
@@ -1122,8 +1822,22 @@ internal sealed class PostgresRasterStore : IRasterStore
                 YMax = reader.GetDouble(ymaxOrd),
                 Srid = reader.GetInt32(sridOrd)
             },
+            AcquisitionDate = reader.IsDBNull(acquisitionDateOrd) ? null : reader.GetDateTime(acquisitionDateOrd),
             CreatedAt = reader.GetDateTime(createdAtOrd),
             ModifiedAt = reader.IsDBNull(updatedOrd) ? null : reader.GetDateTime(updatedOrd)
+        };
+    }
+
+    private static string CreateMosaicAggregateExpression(RasterMergeStrategy mergeStrategy)
+    {
+        return mergeStrategy switch
+        {
+            RasterMergeStrategy.Newest => "ST_Union(rast, 'LAST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC)",
+            RasterMergeStrategy.Oldest => "ST_Union(rast, 'FIRST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC)",
+            RasterMergeStrategy.Average => "ST_Union(rast, 'MEAN')",
+            RasterMergeStrategy.Max => "ST_Union(rast, 'MAX')",
+            RasterMergeStrategy.Min => "ST_Union(rast, 'MIN')",
+            _ => "ST_Union(rast, 'LAST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC)"
         };
     }
 

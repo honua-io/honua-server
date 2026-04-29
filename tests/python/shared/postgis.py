@@ -474,6 +474,7 @@ class PostGISFixture:
                         name VARCHAR(255) NOT NULL,
                         description TEXT,
                         raster raster NOT NULL,
+                        acquisition_date TIMESTAMPTZ,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMPTZ,
                         width INTEGER GENERATED ALWAYS AS (ST_Width(raster)) STORED,
@@ -529,6 +530,8 @@ class PostGISFixture:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id ON honua.raster_data(layer_id);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id_id ON honua.raster_data(layer_id, id);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_data_acquisition_date ON honua.raster_data(acquisition_date);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_data_layer_acquisition ON honua.raster_data(layer_id, acquisition_date DESC, created_at DESC, id DESC);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_statistics_raster_data_id ON honua.raster_statistics(raster_data_id);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_tiles_lookup ON honua.raster_tiles(raster_data_id, zoom_level, tile_x, tile_y);")
 

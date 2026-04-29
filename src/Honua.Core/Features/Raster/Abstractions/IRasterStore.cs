@@ -21,6 +21,27 @@ public interface IRasterStore
     Task<RasterInfo?> GetRasterInfoAsync(int layerId, long rasterId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Queries rasters in a layer using optional spatial and temporal filters.
+    /// Returned rasters are ordered from newest acquisition to oldest.
+    /// </summary>
+    /// <remarks>
+    /// When <see cref="RasterSelectionQuery.Timestamp"/> is set, the implementation uses
+    /// "newest batch" semantics: it returns only rasters whose effective acquisition equals
+    /// the single most-recent acquisition at or before the requested instant. Rasters from
+    /// earlier acquisitions are excluded even when they cover areas the newer batch does not.
+    /// Layers with mixed-date scenes can therefore produce spatial coverage gaps when a
+    /// timestamp filter is applied; per-pixel temporal mosaicking is deferred follow-up scope.
+    /// </remarks>
+    /// <param name="layerId">Layer identifier to query.</param>
+    /// <param name="query">Selection filters to apply before mosaic building.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Matching raster metadata rows.</returns>
+    Task<RasterInfo[]> QueryRastersAsync(
+        int layerId,
+        RasterSelectionQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Exports raster data with optional clipping, reprojection, and resampling.
     /// Equivalent to Esri Image Server exportImage operation.
     /// </summary>
@@ -30,6 +51,16 @@ public interface IRasterStore
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Processed raster data in the requested format</returns>
     Task<RasterResult> ExportImageAsync(int layerId, long rasterId, RasterQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Exports a composited layer mosaic built from the requested raster identifiers.
+    /// </summary>
+    Task<RasterResult> ExportMosaicAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        RasterQuery query,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Identifies pixel values at a specific geographic point.
@@ -45,6 +76,18 @@ public interface IRasterStore
     Task<PixelValueResult> IdentifyAsync(
         int layerId,
         long rasterId,
+        double x,
+        double y,
+        int? srid = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Identifies pixel values against a composited layer mosaic.
+    /// </summary>
+    Task<PixelValueResult> IdentifyMosaicAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
         double x,
         double y,
         int? srid = null,
@@ -72,6 +115,19 @@ public interface IRasterStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Generates a tile from a composited layer mosaic.
+    /// </summary>
+    Task<RasterResult?> GetMosaicImageTileAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        int level,
+        int row,
+        int col,
+        RasterFormat format = RasterFormat.PNG,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Calculates statistics for raster bands.
     /// </summary>
     /// <param name="layerId">Layer identifier containing the raster</param>
@@ -82,6 +138,16 @@ public interface IRasterStore
     Task<RasterStatistics[]> GetStatisticsAsync(
         int layerId,
         long rasterId,
+        int[]? bands = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Calculates statistics for a composited layer mosaic.
+    /// </summary>
+    Task<RasterStatistics[]> GetMosaicStatisticsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
         int[]? bands = null,
         CancellationToken cancellationToken = default);
 
@@ -122,6 +188,17 @@ public interface IRasterStore
     Task<RasterHistogram[]> GetHistogramsAsync(
         int layerId,
         long rasterId,
+        int[]? bands = null,
+        int binCount = 256,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Computes histograms for a composited layer mosaic.
+    /// </summary>
+    Task<RasterHistogram[]> GetMosaicHistogramsAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
         int[]? bands = null,
         int binCount = 256,
         CancellationToken cancellationToken = default);

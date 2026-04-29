@@ -138,7 +138,10 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
             "ZORDER" => item.ZOrder,
             "SHAPE_LENGTH" => item.ShapeLength,
             "SHAPE_AREA" => item.ShapeArea,
+            "BANDCOUNT" or "NUM_BANDS" => item.BandCount,
+            "PIXELTYPE" or "PIXEL_TYPE" => item.PixelType,
             "ACQUISITIONDATE" => item.AcquisitionDate?.UtcDateTime,
+            "CREATEDAT" or "CREATED_AT" => item.CreatedAt.UtcDateTime,
             _ => throw new ImageServerCatalogFilterException(
                 $"Unknown raster catalog field '{propertyName}'.")
         };

@@ -97,9 +97,21 @@ public readonly record struct MapRenderRequest
     public string? BackgroundColor { get; init; }
 
     /// <summary>
-    /// Temporal filter for time-enabled layers.
+    /// Upper bound (inclusive) of the temporal filter for time-enabled layers. For an
+    /// instant datetime, this is the requested timestamp. For an OGC datetime interval
+    /// (e.g. <c>start/end</c> or <c>../end</c>), this is the end value; <c>null</c>
+    /// indicates an unbounded upper end (e.g. <c>start/..</c>).
     /// </summary>
     public DateTimeOffset? DateTime { get; init; }
+
+    /// <summary>
+    /// Lower bound (inclusive) of the temporal filter for time-enabled layers. OGC
+    /// datetime instants leave this unset so renderers can apply newest-at-or-before
+    /// semantics using <see cref="DateTime"/>. For OGC datetime intervals (e.g.
+    /// <c>start/end</c> or <c>start/..</c>), this is the start value; <c>null</c>
+    /// indicates an unbounded lower end (e.g. <c>../end</c>).
+    /// </summary>
+    public DateTimeOffset? DateTimeFrom { get; init; }
 
     /// <summary>
     /// Quality settings for compressed formats (1-100).

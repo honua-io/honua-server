@@ -5,6 +5,8 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -17,6 +19,7 @@ using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.Ogc.Api.Maps;
 using Honua.Server.Features.Protocols.Ogc.Api.Maps.Models;
+using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
@@ -112,6 +115,12 @@ internal sealed class OgcMapsRenderingHandler
             {
                 OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
                 return CreateBadRequestResult(context, validationError!);
+            }
+
+            var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
+            if (editionError != null)
+            {
+                return editionError;
             }
 
             OgcMapsLog.CollectionMapRenderStarted(_logger, layerId, renderRequest.Value.Width, renderRequest.Value.Height);
@@ -324,6 +333,12 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
+            var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
             OgcMapsLog.DatasetMapRenderStarted(_logger, resolvedLayerCount, renderRequest.Value.Width, renderRequest.Value.Height);
 
             // Render the dataset map
@@ -427,6 +442,12 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
+            var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
             OgcMapsLog.StyledMapRenderStarted(_logger, layerId, styleId, renderRequest.Value.Width, renderRequest.Value.Height);
 
             // Render the styled map
@@ -471,6 +492,30 @@ internal sealed class OgcMapsRenderingHandler
         => context is not null
             ? StandardErrorHelpers.CreateBadRequest(context, message)
             : Results.BadRequest(message);
+
+    private static IResult? RequireProEditionForDatetime(HttpContext? context, MapRenderRequest renderRequest)
+    {
+        if (context == null || (!renderRequest.DateTime.HasValue && !renderRequest.DateTimeFrom.HasValue))
+        {
+            return null;
+        }
+
+        var licenseProvider = context.RequestServices.GetService<ILicenseStatusProvider>();
+        if (licenseProvider == null)
+        {
+            return null;
+        }
+
+        var edition = licenseProvider.GetCurrentStatus().Edition;
+        if (edition >= HonuaEdition.Pro)
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateForbidden(
+            context,
+            $"Temporal raster mosaic requires the Pro edition or higher. Current edition: {edition}.");
+    }
 
     /// <summary>
     /// Creates a not-found result using StandardErrorHelpers when context is available,
@@ -701,12 +746,6 @@ internal sealed class OgcMapsRenderingHandler
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(request.Datetime) ||
-                HasExplicitQueryParameter(context, "datetime"))
-            {
-                return (null, "The datetime parameter is not currently supported for OGC API Maps rendering.");
-            }
-
             if (request.Transparent is false || HasExplicitQueryParameter(context, "transparent"))
             {
                 return (null, "The transparent parameter is not currently supported for OGC API Maps rendering.");
@@ -802,16 +841,21 @@ internal sealed class OgcMapsRenderingHandler
                 return (null, $"Invalid background color: '{request.BackgroundColor}'. Expected 0xRRGGBB hex format.");
             }
 
-            // Parse datetime using invariant culture to avoid ambiguous date formats
-            DateTimeOffset? datetime = null;
+            // Parse datetime as an OGC API instant or interval (RFC 3339).
+            DateTimeOffset? datetimeFrom = null;
+            DateTimeOffset? datetimeTo = null;
             if (!string.IsNullOrEmpty(request.Datetime))
             {
-                if (!DateTimeOffset.TryParse(request.Datetime, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedDateTime))
+                var isDatetimeInterval = request.Datetime.Contains('/', StringComparison.Ordinal);
+                if (!OgcTemporalFilterParser.TryParseRange(request.Datetime, out datetimeFrom, out datetimeTo, out var datetimeError))
                 {
-                    return (null, $"Invalid datetime format: '{request.Datetime}'. Use ISO 8601 format.");
+                    return (null, $"Invalid datetime format: '{request.Datetime}'. {datetimeError ?? "Use an RFC 3339 instant or interval (start/end, ../end, start/..)."}");
                 }
 
-                datetime = parsedDateTime;
+                if (!isDatetimeInterval)
+                {
+                    datetimeFrom = null;
+                }
             }
 
             return (new MapRenderRequest
@@ -824,7 +868,8 @@ internal sealed class OgcMapsRenderingHandler
                 Format = format.Value,
                 Transparent = request.Transparent ?? true,
                 BackgroundColor = request.BackgroundColor,
-                DateTime = datetime,
+                DateTime = datetimeTo,
+                DateTimeFrom = datetimeFrom,
                 Quality = request.Quality
             }, null);
         }

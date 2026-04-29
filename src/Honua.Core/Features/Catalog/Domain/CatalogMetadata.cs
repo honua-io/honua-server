@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Raster.Domain;
+
 namespace Honua.Core.Features.Catalog.Domain;
 
 /// <summary>
@@ -33,6 +35,11 @@ public sealed record CatalogMetadata
     /// Optional STAC-specific metadata used when exposing the resource through the STAC API.
     /// </summary>
     public StacCatalogMetadata? Stac { get; init; }
+
+    /// <summary>
+    /// Optional raster mosaic defaults for layers backed by multiple rasters.
+    /// </summary>
+    public RasterMosaicSettings? RasterMosaic { get; init; }
 }
 
 /// <summary>
@@ -151,4 +158,16 @@ public sealed record LayerTimeInfo
     /// Optional track identifier field for temporal visualization.
     /// </summary>
     public string? TrackIdField { get; init; }
+}
+
+/// <summary>
+/// Layer-level defaults used when building a raster mosaic.
+/// </summary>
+public sealed record RasterMosaicSettings
+{
+    /// <summary>
+    /// Default merge strategy applied to overlapping rasters.
+    /// Valid values: newest, oldest, average, max, min.
+    /// </summary>
+    public string? MergeStrategy { get; init; }
 }

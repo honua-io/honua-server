@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
+using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
@@ -70,14 +72,6 @@ internal sealed class ImageServerExportHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
-            if (primaryRaster is null)
-            {
-                ImageServerLog.NoRastersFound(_logger, layerId);
-                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
-            }
-            var primaryRasterInfo = primaryRaster.Value;
-
             if (!TryParseExportParameters(request, out var exportQuery, out var parseError))
             {
                 ImageServerLog.InvalidExportParameters(_logger, layerId, parseError.Detail);
@@ -85,6 +79,35 @@ internal sealed class ImageServerExportHandler
                     ? StandardErrorHelpers.CreateNotImplemented(context, parseError.Detail)
                     : StandardErrorHelpers.CreateBadRequest(context, parseError.Detail);
             }
+
+            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeError))
+            {
+                ImageServerLog.InvalidExportParameters(_logger, layerId, timeError ?? "Invalid time parameter");
+                return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
+            }
+
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
+            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, request.MosaicRule);
+            var selectionQuery = new RasterSelectionQuery
+            {
+                Geometry = exportQuery.ClipRegion?.Geometry,
+                GeometrySrid = exportQuery.ClipRegion?.Srid,
+                Timestamp = timestamp,
+            };
+
+            var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
+            if (selectedRasters.Length == 0)
+            {
+                ImageServerLog.NoRastersFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+            }
+
+            var aggregateExtent = ImageServerMosaicHelpers.ComputeAggregateExtent(selectedRasters);
 
             var outputFormat = exportQuery.OutputFormat.ToString();
             ImageServerLog.ExportImageStarted(
@@ -94,7 +117,14 @@ internal sealed class ImageServerExportHandler
                 exportQuery.OutputHeight ?? DefaultOutputDimension,
                 outputFormat);
 
-            var result = await _rasterStore.ExportImageAsync(layerId, primaryRasterInfo.Id, exportQuery, cancellationToken);
+            var result = selectedRasters.Length == 1
+                ? await _rasterStore.ExportImageAsync(layerId, selectedRasters[0].Id, exportQuery, cancellationToken)
+                : await _rasterStore.ExportMosaicAsync(
+                    layerId,
+                    selectedRasters.Select(r => r.Id).ToArray(),
+                    mergeStrategy,
+                    exportQuery,
+                    cancellationToken);
 
             if (WantsInlineImageResponse(request.F))
             {
@@ -110,8 +140,11 @@ internal sealed class ImageServerExportHandler
                 principal: context.User,
                 cancellationToken: cancellationToken);
 
-            var extent = result.Extent;
-            extent ??= await _rasterStore.GetExtentAsync(layerId, primaryRasterInfo.Id, cancellationToken);
+            var extent = result.Extent ?? aggregateExtent;
+            if (extent == null && selectedRasters.Length == 1)
+            {
+                extent = await _rasterStore.GetExtentAsync(layerId, selectedRasters[0].Id, cancellationToken);
+            }
 
             var exportResponse = new ExportImageResponse
             {
@@ -171,14 +204,6 @@ internal sealed class ImageServerExportHandler
             {
                 error = new ExportParameterParseError(
                     "renderingRule is not implemented on this service.",
-                    IsNotImplemented: true);
-                return false;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.MosaicRule))
-            {
-                error = new ExportParameterParseError(
-                    "mosaicRule is not implemented on this service.",
                     IsNotImplemented: true);
                 return false;
             }
