@@ -19,6 +19,7 @@ using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.Ogc.Api.Maps;
 using Honua.Server.Features.Protocols.Ogc.Api.Maps.Models;
+using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
@@ -116,7 +117,7 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
-            var editionError = RequireProEditionForDatetime(context, renderRequest.Value.DateTime);
+            var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
             if (editionError != null)
             {
                 return editionError;
@@ -332,7 +333,7 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
-            var editionError = RequireProEditionForDatetime(context, renderRequest.Value.DateTime);
+            var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
             if (editionError != null)
             {
                 return editionError;
@@ -441,7 +442,7 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
-            var editionError = RequireProEditionForDatetime(context, renderRequest.Value.DateTime);
+            var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
             if (editionError != null)
             {
                 return editionError;
@@ -492,9 +493,9 @@ internal sealed class OgcMapsRenderingHandler
             ? StandardErrorHelpers.CreateBadRequest(context, message)
             : Results.BadRequest(message);
 
-    private static IResult? RequireProEditionForDatetime(HttpContext? context, DateTimeOffset? timestamp)
+    private static IResult? RequireProEditionForDatetime(HttpContext? context, MapRenderRequest renderRequest)
     {
-        if (context == null || !timestamp.HasValue)
+        if (context == null || (!renderRequest.DateTime.HasValue && !renderRequest.DateTimeFrom.HasValue))
         {
             return null;
         }
@@ -840,16 +841,15 @@ internal sealed class OgcMapsRenderingHandler
                 return (null, $"Invalid background color: '{request.BackgroundColor}'. Expected 0xRRGGBB hex format.");
             }
 
-            // Parse datetime using invariant culture to avoid ambiguous date formats
-            DateTimeOffset? datetime = null;
+            // Parse datetime as an OGC API instant or interval (RFC 3339).
+            DateTimeOffset? datetimeFrom = null;
+            DateTimeOffset? datetimeTo = null;
             if (!string.IsNullOrEmpty(request.Datetime))
             {
-                if (!DateTimeOffset.TryParse(request.Datetime, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedDateTime))
+                if (!OgcTemporalFilterParser.TryParseRange(request.Datetime, out datetimeFrom, out datetimeTo, out var datetimeError))
                 {
-                    return (null, $"Invalid datetime format: '{request.Datetime}'. Use ISO 8601 format.");
+                    return (null, $"Invalid datetime format: '{request.Datetime}'. {datetimeError ?? "Use an RFC 3339 instant or interval (start/end, ../end, start/..)."}");
                 }
-
-                datetime = parsedDateTime;
             }
 
             return (new MapRenderRequest
@@ -862,7 +862,8 @@ internal sealed class OgcMapsRenderingHandler
                 Format = format.Value,
                 Transparent = request.Transparent ?? true,
                 BackgroundColor = request.BackgroundColor,
-                DateTime = datetime,
+                DateTime = datetimeTo,
+                DateTimeFrom = datetimeFrom,
                 Quality = request.Quality
             }, null);
         }

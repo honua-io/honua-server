@@ -11,6 +11,15 @@ Until that is stable, Honua enforces Maps conformance with a dedicated integrati
 - `tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/OgcMapsConformanceTests.cs`
 - `tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/OgcMapsBasicTests.cs`
 - `tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/OgcMapsConformanceHandlerTests.cs`
+- `tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/OgcMapsTemporalMosaicTests.cs`
+
+## Conformance Classes Advertised
+
+`OgcMapsConformanceHandler` declares the following classes (verified by `OgcMapsConformanceHandlerTests`):
+
+- `…/conf/core`, `…/conf/collection-map`, `…/conf/dataset-map`, `…/conf/collections-selection`
+- `…/conf/datetime` — temporal raster mosaic via the `datetime` query parameter on `/ogc/maps/collections/{id}/map` and `/ogc/maps/map`. Accepts an RFC 3339 instant (`2024-02-15T00:00:00Z`), a closed interval (`start/end`), or half-open intervals (`../end`, `start/..`); Honua selects the newest acquisition batch within the bounded range. Pro+ editions evaluate the timestamp; Community returns `403 Forbidden`. Inverted intervals (start > end) and unparsable values return `400 Bad Request`.
+- `…/conf/crs`, `…/conf/png`, `…/conf/jpeg`, `…/conf/tiff`, `…/conf/scaling`
 
 ## Local Run
 

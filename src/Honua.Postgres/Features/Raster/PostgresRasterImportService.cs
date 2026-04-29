@@ -43,6 +43,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     private static readonly byte[] _pngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
     // JPEG SOI marker: 0xFF 0xD8
     private static readonly byte[] _jpegSoiMarker = [0xFF, 0xD8];
+    // Stable namespace for PostgreSQL two-key advisory locks used by raster imports.
+    private const int RasterImportLayerLockNamespace = 0x0484_5221;
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsDetectionService _crsDetectionService;
@@ -106,6 +108,9 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             long rasterId;
             try
             {
+                await AcquireLayerImportLockAsync(
+                    connection, transaction, request.LayerId, cancellationToken).ConfigureAwait(false);
+
                 rasterId = await InsertRasterDataAsync(
                     connection, transaction, request, fileBytes, cancellationToken).ConfigureAwait(false);
 
@@ -402,6 +407,21 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return (long)result!;
+    }
+
+    private static async Task AcquireLayerImportLockAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT pg_advisory_xact_lock(@namespace, @layerId);";
+        command.AddParameter("@namespace", RasterImportLayerLockNamespace);
+        command.AddParameter("@layerId", layerId);
+
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<(int Width, int Height, int BandCount, int Srid)> ReadRasterMetadataAsync(

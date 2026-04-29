@@ -108,13 +108,28 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 
         var timeCte = string.Empty;
         var sourceTimeFilter = string.Empty;
-        if (request.DateTime.HasValue)
+        var hasUpper = request.DateTime.HasValue;
+        var hasLower = request.DateTimeFrom.HasValue;
+        if (hasUpper || hasLower)
         {
-            timeCte = """
+            // Newest-batch within the OGC datetime instant or interval. The instant case
+            // collapses to start = end = T (equivalent to "<= T"). Open-ended intervals
+            // null out the corresponding bound.
+            var upperPredicate = hasUpper ? "effective_acquisition <= @timestampTo" : null;
+            var lowerPredicate = hasLower ? "effective_acquisition >= @timestampFrom" : null;
+            var rangePredicate = (upperPredicate, lowerPredicate) switch
+            {
+                ({ } u, { } l) => $"{l} AND {u}",
+                ({ } u, null) => u,
+                (null, { } l) => l,
+                _ => "TRUE"
+            };
+
+            timeCte = $$"""
                 selected_time AS (
                     SELECT MAX(effective_acquisition) AS target_acquisition
                     FROM source
-                    WHERE effective_acquisition <= @timestamp
+                    WHERE {{rangePredicate}}
                 ),
                 filtered AS (
                     SELECT rast, effective_acquisition, created_at, id
@@ -123,7 +138,14 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
                 )
                 """;
             sourceTimeFilter = "filtered";
-            extraParams.Add(("@timestamp", request.DateTime.Value.UtcDateTime));
+            if (hasUpper)
+            {
+                extraParams.Add(("@timestampTo", request.DateTime!.Value.UtcDateTime));
+            }
+            if (hasLower)
+            {
+                extraParams.Add(("@timestampFrom", request.DateTimeFrom!.Value.UtcDateTime));
+            }
         }
         else
         {

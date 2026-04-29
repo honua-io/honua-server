@@ -58,6 +58,143 @@ public sealed class OgcMapsTemporalMosaicTests
             (await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false)).Should().NotBeEmpty();
             renderer.LastCollectionRequest.Should().NotBeNull();
             renderer.LastCollectionRequest!.Value.DateTime.Should().Be(expectedTimestamp);
+            renderer.LastCollectionRequest!.Value.DateTimeFrom.Should().Be(expectedTimestamp);
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    [Operation(Operations.Render)]
+    public async Task GetCollectionMap_WithBoundedDatetimeInterval_PassesStartAndEndToRenderer()
+    {
+        var renderer = new StubRasterMapRenderer();
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, renderer).ConfigureAwait(false);
+        try
+        {
+            var expectedStart = DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture);
+            var expectedEnd = DateTimeOffset.Parse("2024-03-31T23:59:59Z", CultureInfo.InvariantCulture);
+            var response = await fixture.Client.GetAsync(
+                $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
+                "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=2024-01-01T00:00:00Z/2024-03-31T23:59:59Z");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            renderer.LastCollectionRequest.Should().NotBeNull();
+            renderer.LastCollectionRequest!.Value.DateTimeFrom.Should().Be(expectedStart);
+            renderer.LastCollectionRequest!.Value.DateTime.Should().Be(expectedEnd);
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    [Operation(Operations.Render)]
+    public async Task GetCollectionMap_WithOpenStartInterval_PassesEndOnlyToRenderer()
+    {
+        var renderer = new StubRasterMapRenderer();
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, renderer).ConfigureAwait(false);
+        try
+        {
+            var expectedEnd = DateTimeOffset.Parse("2024-03-31T23:59:59Z", CultureInfo.InvariantCulture);
+            var response = await fixture.Client.GetAsync(
+                $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
+                "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=../2024-03-31T23:59:59Z");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            renderer.LastCollectionRequest.Should().NotBeNull();
+            renderer.LastCollectionRequest!.Value.DateTimeFrom.Should().BeNull();
+            renderer.LastCollectionRequest!.Value.DateTime.Should().Be(expectedEnd);
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    [Operation(Operations.Render)]
+    public async Task GetCollectionMap_WithOpenEndInterval_PassesStartOnlyToRenderer()
+    {
+        var renderer = new StubRasterMapRenderer();
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, renderer).ConfigureAwait(false);
+        try
+        {
+            var expectedStart = DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture);
+            var response = await fixture.Client.GetAsync(
+                $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
+                "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=2024-01-01T00:00:00Z/..");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            renderer.LastCollectionRequest.Should().NotBeNull();
+            renderer.LastCollectionRequest!.Value.DateTimeFrom.Should().Be(expectedStart);
+            renderer.LastCollectionRequest!.Value.DateTime.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    [Operation(Operations.Render)]
+    public async Task GetCollectionMap_WithDatetimeIntervalOnCommunityEdition_ReturnsForbidden()
+    {
+        var fixture = await CreateFixtureAsync(HonuaEdition.Community).ConfigureAwait(false);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
+                "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=2024-01-01T00:00:00Z/..");
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    [Operation(Operations.Render)]
+    public async Task GetCollectionMap_WithMalformedDatetime_ReturnsBadRequest()
+    {
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro).ConfigureAwait(false);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
+                "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=not-a-datetime");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    [Operation(Operations.Render)]
+    public async Task GetCollectionMap_WithInvertedDatetimeInterval_ReturnsBadRequest()
+    {
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro).ConfigureAwait(false);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
+                "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=2024-12-01T00:00:00Z/2024-01-01T00:00:00Z");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
         finally
         {
