@@ -113,8 +113,8 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         if (hasUpper || hasLower)
         {
             // Newest-batch within the OGC datetime instant or interval. The instant case
-            // collapses to start = end = T (equivalent to "<= T"). Open-ended intervals
-            // null out the corresponding bound.
+            // is represented as an upper bound only (equivalent to "<= T"). Open-ended
+            // intervals null out the corresponding bound.
             var upperPredicate = hasUpper ? "effective_acquisition <= @timestampTo" : null;
             var lowerPredicate = hasLower ? "effective_acquisition >= @timestampFrom" : null;
             var rangePredicate = (upperPredicate, lowerPredicate) switch

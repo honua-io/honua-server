@@ -105,10 +105,11 @@ public readonly record struct MapRenderRequest
     public DateTimeOffset? DateTime { get; init; }
 
     /// <summary>
-    /// Lower bound (inclusive) of the temporal filter for time-enabled layers. For an
-    /// instant datetime, this is the same as <see cref="DateTime"/>. For an OGC datetime
-    /// interval (e.g. <c>start/end</c> or <c>start/..</c>), this is the start value;
-    /// <c>null</c> indicates an unbounded lower end (e.g. <c>../end</c>).
+    /// Lower bound (inclusive) of the temporal filter for time-enabled layers. OGC
+    /// datetime instants leave this unset so renderers can apply newest-at-or-before
+    /// semantics using <see cref="DateTime"/>. For OGC datetime intervals (e.g.
+    /// <c>start/end</c> or <c>start/..</c>), this is the start value; <c>null</c>
+    /// indicates an unbounded lower end (e.g. <c>../end</c>).
     /// </summary>
     public DateTimeOffset? DateTimeFrom { get; init; }
 

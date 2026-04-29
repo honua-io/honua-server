@@ -846,9 +846,15 @@ internal sealed class OgcMapsRenderingHandler
             DateTimeOffset? datetimeTo = null;
             if (!string.IsNullOrEmpty(request.Datetime))
             {
+                var isDatetimeInterval = request.Datetime.Contains('/', StringComparison.Ordinal);
                 if (!OgcTemporalFilterParser.TryParseRange(request.Datetime, out datetimeFrom, out datetimeTo, out var datetimeError))
                 {
                     return (null, $"Invalid datetime format: '{request.Datetime}'. {datetimeError ?? "Use an RFC 3339 instant or interval (start/end, ../end, start/..)."}");
+                }
+
+                if (!isDatetimeInterval)
+                {
+                    datetimeFrom = null;
                 }
             }
 

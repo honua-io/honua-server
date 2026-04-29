@@ -58,7 +58,7 @@ public sealed class OgcMapsTemporalMosaicTests
             (await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false)).Should().NotBeEmpty();
             renderer.LastCollectionRequest.Should().NotBeNull();
             renderer.LastCollectionRequest!.Value.DateTime.Should().Be(expectedTimestamp);
-            renderer.LastCollectionRequest!.Value.DateTimeFrom.Should().Be(expectedTimestamp);
+            renderer.LastCollectionRequest!.Value.DateTimeFrom.Should().BeNull();
         }
         finally
         {
