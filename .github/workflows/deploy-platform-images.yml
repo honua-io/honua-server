@@ -2,7 +2,6 @@ name: Build & Publish Platform Images
 
 on:
   push:
-    branches: [trunk]
     tags: ["v*"]
   workflow_dispatch:
 

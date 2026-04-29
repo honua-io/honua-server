@@ -6,14 +6,14 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 ## Core Workflows
 
-- `ci.yml`: build, formatting verification, tier-aware test dispatch (PRs run only the `targeted-shards` subset emitted by `scripts/ci/honua-server-targeted-tests.sh`; merge-to-trunk runs the full 11-shard `server-tests` matrix — see [Test Tier Strategy](#test-tier-strategy) and [ADR-0037](adr/0037-unified-ci-test-tier-strategy.md)), merge-blocking Esri Leaflet browser compatibility tests, and MCP certification (see [MCP Certification](mcp-certification.md)).
+- `ci.yml`: build, formatting verification, tier-aware test dispatch (PRs run only the `targeted-shards` subset emitted by `scripts/ci/honua-server-targeted-tests.sh`; scheduled/manual full integration runs the full 11-shard `server-tests` matrix — see [Test Tier Strategy](#test-tier-strategy) and [ADR-0037](adr/0037-unified-ci-test-tier-strategy.md)), merge-blocking Esri Leaflet browser compatibility tests, and MCP certification (see [MCP Certification](mcp-certification.md)).
 - `pr-validation.yml`: PR template compliance validation.
 - `load-soak-nightly.yml`: nightly load/soak testing.
 - `nightly-slow-tier.yml`: nightly `Tier=Slow&Category=Emulator` execution (`[EmulatorTest]` only) across `Honua.Server.Tests`, `Honua.Postgres.Tests`, and `Honua.Core.Tests`. Daily 4am UTC. Scale/Cloud/External slow subfamilies need dedicated fixtures and are tracked as separate workflows.
 - `flaky-detection.yml`: nightly flake reporting — re-runs the integration tier 3× and uploads a flake-candidate report. Daily 5am UTC. See [ADR-0037](adr/0037-unified-ci-test-tier-strategy.md) for the quarantine workflow.
 - `windows-client-compat-nightly.yml`: nightly/manual Windows client compatibility certification (full CERT-\* matrix: 18 test cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes and reusable evidence pack artifacts.
 - `client-interop-nightly.yml`: nightly real-client interop matrix that exercises Honua against actual GIS clients (QGIS, GDAL/OGR, OpenLayers, Cesium, ArcGIS Pro stub) via the Docker harnesses under `docker/client-compat/`. The workflow diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` (gated by `tests/baselines/client-compat/expected-pairs.json`), refreshes `docs/gis/gap-report.md`, and fails on any baseline `pass` regressing to a non-`pass` status, missing lane envelope, or new `fail` in an unbaselined case. Non-PR-blocking until 30 consecutive nightly passes (#806).
-- `codeql.yml`: static analysis (nightly + trunk push; not PR-blocking).
+- `codeql.yml`: static analysis (nightly; not PR-blocking).
 - `container-security.yml`: container security scanning (nightly).
 - `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wfs20-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`, `cite-kml22-conformance.yml`, `cite-gml32-conformance.yml`, `cite-gpkg12-conformance.yml`, `ogc-maps-conformance.yml`: OGC conformance testing (nightly; not PR-blocking).
 - `openapi-contract-governance.yml`: Admin/control-plane OpenAPI contract validation and breaking-change checks.
@@ -24,7 +24,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`pr-readiness`, `changes`, `targeted-shards`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `esri-leaflet-browser-tests`, `maplibre-compat`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`). Configure it as a required status check in branch protection to gate PRs on a single job.
 
-The `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` to pick the active shards for the diff, then projects the selection into a JSON `matrix_include` array drawn from `.github/ci-shards.json` (the single source of truth for both shard routing and matrix-runtime metadata). The `server-tests` job declares its matrix as `strategy.matrix.include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}`, so **unselected shards never instantiate a runner job** — there is no per-shard checkout, build, or Postgres service container cost for shards a PR did not select. On `push` to `trunk` and `workflow_dispatch` the descriptor is forced to `run_all: true`, so all eleven entries appear in `matrix_include` and run.
+The `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` to pick the active shards for the diff, then projects the selection into a JSON `matrix_include` array drawn from `.github/ci-shards.json` (the single source of truth for both shard routing and matrix-runtime metadata). The `server-tests` job declares its matrix as `strategy.matrix.include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}`, so **unselected shards never instantiate a runner job** — there is no per-shard checkout, build, or Postgres service container cost for shards a PR did not select. On scheduled full CI and `workflow_dispatch` the descriptor is forced to `run_all: true`, so all eleven entries appear in `matrix_include` and run.
 
 ## Test Tier Strategy
 
@@ -33,7 +33,8 @@ ADR-0037 defines a `Tier` xUnit trait — `Fast`, `Integration`, or `Slow` — t
 | Event | Workflow | Tier scope |
 |---|---|---|
 | Pull Request | `ci.yml` | Foundation tests (Core/Architecture/LoadTests, primarily `Tier=Fast`) plus a `--filter "Tier=Fast"` step against `Honua.Server.Tests` plus the `server-tests` shards selected by `scripts/ci/honua-server-targeted-tests.sh`. The shard step composes its filter as `(matrix.filter)&Tier!=Slow` so `[EmulatorTest]` / `[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods sitting in a shard's namespace are skipped on PRs. |
-| Merge to trunk | `ci.yml` (`push`) | Same as PR plus the **full** 11-shard `server-tests` matrix and the Postgres compat matrix. The `&Tier!=Slow` shard filter still applies — Slow stays nightly-only. |
+| Merge to trunk | `trunk-sanity.yml` | Restore and build only. Heavy CI is already covered by PR gates and scheduled/manual full integration runs. |
+| Scheduled/manual full integration | `ci.yml` (`schedule` / `workflow_dispatch`) | Full 11-shard `server-tests` matrix and the Postgres compat matrix. The `&Tier!=Slow` shard filter still applies — Slow stays nightly-only. |
 | Nightly slow tier | `nightly-slow-tier.yml` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. Scale/Cloud/External slow subfamilies need dedicated workflows. |
 | Nightly flake hunt | `flaky-detection.yml` | Re-runs `--filter "Tier=Integration&Tier!=Slow"` three times and reports inconsistent outcomes (never fails the workflow). |
 

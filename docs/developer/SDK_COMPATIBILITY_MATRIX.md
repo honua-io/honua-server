@@ -57,8 +57,8 @@ temporary trunk-lineage commit refs with release tags as soon as the release
 process publishes them.
 
 The `sdk-server-compatibility.yml` workflow flattens this manifest into a
-`fail-fast: false` GitHub Actions matrix on `push` to `trunk`, manual dispatch,
-and the weekly schedule. It publishes per-cell JSON evidence plus a
+`fail-fast: false` GitHub Actions matrix on manual dispatch and the weekly
+schedule. It publishes per-cell JSON evidence plus a
 `sdk-compatibility-matrix-<run-id>` artifact containing a Markdown table and
 machine-readable summary.
 

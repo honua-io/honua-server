@@ -2,9 +2,7 @@ name: CodeQL
 
 on:
   # Tier: nightly — CodeQL is non-deterministic and slow for routine PRs.
-  # Runs on default branch push and weekly schedule. See docs/ci/gate-model.md.
-  push:
-    branches: [trunk]
+  # Runs on a weekly schedule. See docs/ci/gate-model.md.
   schedule:
     # Run weekly on Monday at 00:00 UTC
     - cron: '0 0 * * 1'

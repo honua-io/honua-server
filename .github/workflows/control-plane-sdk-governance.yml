@@ -9,14 +9,6 @@ on:
       - 'docs/developer/api-specs/admin-api.json'
       - 'scripts/sdk/generate-control-plane-sdks.sh'
       - '.github/workflows/control-plane-sdk-governance.yml'
-  push:
-    branches:
-      - trunk
-      - main
-    paths:
-      - 'docs/developer/api-specs/admin-api.json'
-      - 'scripts/sdk/generate-control-plane-sdks.sh'
-      - '.github/workflows/control-plane-sdk-governance.yml'
   workflow_dispatch:
     inputs:
       sdk_version:

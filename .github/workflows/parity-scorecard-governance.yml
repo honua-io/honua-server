@@ -12,17 +12,6 @@ on:
       - 'scripts/ci/check-parity-scorecard-baseline-sync.sh'
       - '.github/workflows/geoservices-parity-nightly.yml'
       - '.github/workflows/parity-scorecard-governance.yml'
-  push:
-    branches:
-      - trunk
-      - main
-    paths:
-      - 'tests/dotnet/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
-      - 'tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
-      - 'scripts/ci/check-parity-scorecard-regression.sh'
-      - 'scripts/ci/check-parity-scorecard-baseline-sync.sh'
-      - '.github/workflows/geoservices-parity-nightly.yml'
-      - '.github/workflows/parity-scorecard-governance.yml'
   workflow_dispatch:
 
 permissions:
