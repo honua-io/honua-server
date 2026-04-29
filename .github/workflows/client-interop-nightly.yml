@@ -109,7 +109,7 @@ jobs:
           echo '{ "features": { "buildkit": true } }' > ~/.docker/config.json
 
       - name: Cache docker buildx layers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/.buildx-cache
           key: client-compat-${{ matrix.lane }}-${{ hashFiles(format('docker/client-compat/{0}/**', matrix.lane)) }}

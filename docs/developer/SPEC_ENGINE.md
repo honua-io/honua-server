@@ -7,7 +7,8 @@ events and serves cache hits without re-invoking the compute backend.
 
 The engine ships as a mixed REST + gRPC surface:
 
-- REST: `POST /v1/spec/plan`, `POST /v1/spec/apply`, `POST /v1/spec/cancel`,
+- REST: `POST /v1/spec/validate`, `POST /v1/spec/plan`,
+  `POST /v1/spec/apply`, `POST /v1/spec/cancel`,
   `GET /v1/spec/artifact/{hash}`
 - gRPC: `geospatial.v1.SpecService/{PlanSpec, ApplySpec, CancelApply}`
   (`src/Honua.Core/Transport/Proto/geospatial/v1/spec_service.proto`)
@@ -39,6 +40,66 @@ Each `nodes[*]` entry:
 | `canonicalFragment` | Canonicalised JSON fragment used as the hash input. When omitted the engine hashes sorted `parameters` + `sourcePins` instead. |
 | `sourcePins` | Optional declared source pins. When absent, mutable sources emit `mutable-source-no-pin`. |
 | `nondeterministic` | Surfaces `nondeterministic-op` during plan. |
+
+## POST /v1/spec/validate
+
+Parses and validates either spec DSL source text or canonical spec JSON. The
+endpoint always returns a `200 OK` validation envelope for syntactically
+readable specs; malformed request envelopes return `400 invalid-request-body`.
+
+```bash
+curl -X POST http://localhost:8080/v1/spec/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "grammar \"v1.0\"\nsource hospitals { type = \"layer\", ref = \"catalog:layer:1\" }",
+    "includeCanonicalJson": true
+  }'
+```
+
+Response:
+
+```json
+{
+  "isValid": true,
+  "diagnostics": [],
+  "canonicalJson": "{\"$schema\":\"https://honua.io/spec/grammar/v1.0/spec.json\",...}",
+  "grammar": "v1.0",
+  "operatorCapabilityVersion": "v1.0"
+}
+```
+
+Clients may submit canonical JSON instead of text by sending exactly one
+`spec` object:
+
+```json
+{
+  "spec": {
+    "grammar": "v1.0",
+    "sources": [{ "id": "hospitals", "type": "layer", "ref": "catalog:layer:1" }],
+    "compute": [{ "id": "broken", "op": "does_not_exist" }]
+  }
+}
+```
+
+Validation diagnostics use the grammar diagnostic names
+(`UnknownOperator`, `TypeMismatch`, `MissingRequiredParameter`,
+`UnsupportedGrammarVersion`, etc.) plus source spans when available:
+
+```json
+{
+  "isValid": false,
+  "diagnostics": [
+    {
+      "code": "UnknownOperator",
+      "severity": "error",
+      "message": "Unknown operator 'does_not_exist'. Registered operators: filter, spatial_join, buffer, reproject, zonal_stats, slope.",
+      "span": { "line": 4, "column": 8, "offset": 112, "length": 14 }
+    }
+  ],
+  "grammar": "v1.0",
+  "operatorCapabilityVersion": "v1.0"
+}
+```
 
 ## POST /v1/spec/plan
 

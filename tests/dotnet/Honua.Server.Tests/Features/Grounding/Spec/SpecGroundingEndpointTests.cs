@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
@@ -189,6 +190,54 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GroundingMutate)]
     [Endpoint("POST /v1/grounding/spec/mutate")]
+    public async Task Mutate_CanonicalSpecWithOutOfRangeNumber_ReturnsProblemDetails()
+    {
+        using var response = await _client.PostAsync(
+            "/v1/grounding/spec/mutate",
+            new StringContent(
+                """
+                {
+                  "spec": {
+                    "grammar": "v1.0",
+                    "sources": [
+                      {
+                        "id": "zones",
+                        "type": "layer",
+                        "ref": "catalog:layer:4"
+                      }
+                    ],
+                    "compute": [
+                      {
+                        "id": "broken",
+                        "op": "buffer",
+                        "params": {
+                          "distance": {
+                            "kind": "distance",
+                            "unit": "m",
+                            "value": 1e400
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "turn": "use zones"
+                }
+                """,
+                Encoding.UTF8,
+                "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        root.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
+        root.GetProperty("detail").GetString().Should().Contain("numeric values must be finite");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GroundingMutate)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
     public async Task Mutate_MissingUnitClarification_ExposesNauticalMilesCandidate()
     {
         using var harness = new SpecGroundingHarness(SpecGroundingTestSupport.CreateLayer(4, "Zones"));
@@ -267,6 +316,53 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
             .Should().Contain(["sources", "compute", "outputs"]);
         sections.Should().OnlyContain(section =>
             CountSentences(section.GetProperty("text").GetString() ?? string.Empty) <= 2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GroundingSummarize)]
+    [Endpoint("POST /v1/grounding/spec/summarize")]
+    public async Task Summarize_CanonicalSpecWithOutOfRangeNumber_ReturnsProblemDetails()
+    {
+        using var response = await _client.PostAsync(
+            "/v1/grounding/spec/summarize",
+            new StringContent(
+                """
+                {
+                  "spec": {
+                    "grammar": "v1.0",
+                    "sources": [
+                      {
+                        "id": "zones",
+                        "type": "layer",
+                        "ref": "catalog:layer:4"
+                      }
+                    ],
+                    "compute": [
+                      {
+                        "id": "broken",
+                        "op": "buffer",
+                        "params": {
+                          "distance": {
+                            "kind": "distance",
+                            "unit": "m",
+                            "value": 1e400
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+                """,
+                Encoding.UTF8,
+                "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        root.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
+        root.GetProperty("detail").GetString().Should().Contain("numeric values must be finite");
     }
 
     private static int CountSentences(string text)
