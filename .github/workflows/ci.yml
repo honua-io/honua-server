@@ -1,8 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches: [trunk]
+  schedule:
+    # Full integration lane. PR CI is selective; release workflows own
+    # packaging/publishing smoke.
+    - cron: '0 9 * * *'
   pull_request:
     branches: [trunk]
   workflow_dispatch:
@@ -97,37 +99,35 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch origin ${{ github.base_ref }} --depth=1
             echo "range=origin/${{ github.base_ref }}...${{ github.sha }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual runs: diff against trunk so AOT/Docker gates are not
-            # silently skipped due to github.event.before being undefined.
+          else
             git fetch origin trunk --depth=1
             echo "range=origin/trunk...${{ github.sha }}" >> $GITHUB_OUTPUT
-          else
-            echo "range=${{ github.event.before }}...${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Check for non-test changes
         id: filter
         run: |
           CHANGED_FILES=$(git diff --name-only "${{ steps.diff.outputs.range }}" || true)
-          NON_TEST_FILES=$(echo "$CHANGED_FILES" | grep -Ev '^(tests/|test/)' | sed '/^$/d' || true)
-
-          if [ -z "$NON_TEST_FILES" ]; then
-            echo "non_test_changes=false" >> $GITHUB_OUTPUT
-          else
-            echo "non_test_changes=true" >> $GITHUB_OUTPUT
-          fi
 
           if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "non_test_changes=true" >> $GITHUB_OUTPUT
             echo "integration_changes=true" >> "$GITHUB_OUTPUT"
-            echo "integration_reason=non_pr_event" >> "$GITHUB_OUTPUT"
+            echo "integration_reason=scheduled_or_manual_full_ci" >> "$GITHUB_OUTPUT"
+            INTEGRATION_FILES="<full integration event>"
           else
             # PRs that only touch docs, CI/publish plumbing, package metadata,
             # or NuGet source configuration do not need the full integration
-            # fanout. Merge-to-trunk still runs the full lane.
+            # fanout. Scheduled/manual CI still runs the full lane.
+            NON_TEST_FILES=$(echo "$CHANGED_FILES" | grep -Ev '^(tests/|test/)' | sed '/^$/d' || true)
+            if [ -z "$NON_TEST_FILES" ]; then
+              echo "non_test_changes=false" >> $GITHUB_OUTPUT
+            else
+              echo "non_test_changes=true" >> $GITHUB_OUTPUT
+            fi
+
             INTEGRATION_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/ci\.yml$|workflows/nuget-publish\.yml$|workflows/pr-validation\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
+                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/ci\.yml$|workflows/nuget-publish\.yml$|workflows/pr-validation\.yml$|workflows/trunk-sanity\.yml$)|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
                 | sed '/^$/d' || true
             )
 
@@ -144,13 +144,13 @@ jobs:
           echo "$CHANGED_FILES"
           echo ""
           echo "Non-test files:"
-          echo "$NON_TEST_FILES"
+          echo "${NON_TEST_FILES:-<full integration event>}"
           echo ""
           echo "Integration-triggering files:"
-          echo "${INTEGRATION_FILES:-<non-PR event or none>}"
+          echo "${INTEGRATION_FILES:-<none>}"
 
-  # Compute the server-tests shard subset for this PR. On push events we always
-  # run every shard (full integration tier on merge-to-trunk). See ADR-0037.
+  # Compute the server-tests shard subset for this PR. Scheduled/manual full
+  # integration runs execute every shard. See ADR-0037.
   # Per ADR-0037 .github/ci-shards.json is the single source of truth for both
   # the shard routing data (paths) and the matrix-runtime metadata
   # (artifact_suffix, log_name, timeout_minutes, max_cpu_count, upload flags,
@@ -184,7 +184,7 @@ jobs:
             descriptor=$(scripts/ci/honua-server-targeted-tests.sh --base "origin/${{ github.base_ref }}")
           else
             descriptor=$(jq -nc --argjson shards "${all_shards_json}" \
-              '{run_all: true, shards: $shards, reason: "non_pr_event"}')
+              '{run_all: true, shards: $shards, reason: "scheduled_or_manual_full_ci"}')
           fi
           echo "Descriptor: ${descriptor}"
 
@@ -346,8 +346,8 @@ jobs:
   server-tests:
     name: Server Tests (${{ matrix.shard_name }})
     # Per ADR-0037 the PR gate runs only the targeted shards selected by
-    # scripts/ci/honua-server-targeted-tests.sh; merge-to-trunk and
-    # workflow_dispatch run the full matrix. The matrix is built dynamically
+    # scripts/ci/honua-server-targeted-tests.sh; scheduled/manual full runs
+    # execute the full matrix. The matrix is built dynamically
     # by `targeted-shards` from .github/ci-shards.json — unselected shards
     # never instantiate a runner job, so per-shard `if:` gating is no longer
     # needed. The PR shard step composes its filter with `&Tier!=Slow` so
