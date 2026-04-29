@@ -46,7 +46,7 @@ fi
 
 # ── Build image ─────────────────────────────────────────────────────────────
 echo -e "${YELLOW}Building Honua Server image...${NC}"
-if ! docker build -t honua-server:latest . > /dev/null 2>&1; then
+if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest . > /dev/null 2>&1; then
     echo -e "${RED}Docker build failed${NC}"
     exit 1
 fi

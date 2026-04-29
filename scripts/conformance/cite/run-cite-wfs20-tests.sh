@@ -110,7 +110,7 @@ if [[ "${HONUA_CITE_SKIP_BUILD:-false}" == "true" ]]; then
 else
     # Build Honua Server image
     echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
-    if ! docker build -t honua-server:latest .; then
+    if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
         echo -e "${RED}❌ Failed to build Honua Server Docker image${NC}"
         exit 1
     fi
