@@ -1,97 +1,183 @@
 name: Publish Honua.Core Package
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'  # Triggers on version tags like v1.0.0
   workflow_dispatch:
     inputs:
       version:
-        description: 'Package version to publish'
+        description: "Package version to publish"
         required: true
         type: string
+      dry_run:
+        description: "Run validation only (skip publish)"
+        required: false
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "honua-core-v*"
+      - "v*.*.*"
 
 env:
-  DOTNET_VERSION: '10.0.x'
-  NUGET_SOURCE: 'https://api.nuget.org/v3/index.json'
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
 
 concurrency:
-  group: nuget-publish-${{ github.ref }}
+  group: honua-core-package-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-and-publish:
-    name: Build and Publish Honua.Core
+  package-smoke:
+    name: Package Smoke
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-
+    permissions:
+      contents: read
+      packages: read
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v5
-      with:
-        fetch-depth: 0
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-    - name: Setup .NET
-      uses: ./.github/actions/setup-dotnet-ci
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Determine Version
-      id: version
-      run: |
-        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-          VERSION="${{ github.event.inputs.version }}"
-        else
-          VERSION="${GITHUB_REF#refs/tags/v}"
-        fi
-        echo "version=${VERSION}" >> $GITHUB_OUTPUT
-        echo "Publishing version: ${VERSION}"
+      - name: Resolve package version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            package_version="${{ github.event.inputs.version }}"
+          elif [[ "${GITHUB_REF_NAME}" == honua-core-v* ]]; then
+            package_version="${GITHUB_REF_NAME#honua-core-v}"
+          else
+            package_version="${GITHUB_REF_NAME#v}"
+          fi
 
-    - name: Restore Dependencies
-      run: dotnet restore
+          if [[ -z "${package_version}" ]]; then
+            echo "Package version is required."
+            exit 1
+          fi
 
-    - name: Build Honua.Core
-      run: |
-        dotnet build src/Honua.Core/Honua.Core.csproj --configuration Release --no-restore
-    
-    - name: Pack Honua.Core
-      run: |
-        dotnet pack src/Honua.Core/Honua.Core.csproj \
-          --configuration Release \
-          --no-build \
-          --output ./packages \
-          -p:Version=${{ steps.version.outputs.version }} \
-          -p:PackageVersion=${{ steps.version.outputs.version }} \
-          -p:AssemblyVersion=${{ steps.version.outputs.version }} \
-          -p:FileVersion=${{ steps.version.outputs.version }}
+          echo "PACKAGE_VERSION=${package_version}" >> "${GITHUB_ENV}"
+          echo "Publishing version: ${package_version}"
 
-    - name: List Packages
-      run: ls -la ./packages/
+      - name: Restore dependencies
+        run: dotnet restore Honua.sln
 
-    - name: Publish to NuGet.org
-      run: |
-        for package in ./packages/*.nupkg; do
-          echo "Publishing $package"
-          dotnet nuget push "$package" \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
-            --source ${{ env.NUGET_SOURCE }} \
+      - name: Build Honua.Core
+        run: dotnet build src/Honua.Core/Honua.Core.csproj --configuration Release --no-restore /p:TreatWarningsAsErrors=true
+
+      - name: Pack Honua.Core
+        run: |
+          mkdir -p nupkgs
+          dotnet pack src/Honua.Core/Honua.Core.csproj \
+            --configuration Release \
+            --no-build \
+            --output nupkgs \
+            -p:PackageVersion="${PACKAGE_VERSION}" \
+            -p:Version="${PACKAGE_VERSION}"
+
+      - name: Package install smoke
+        shell: bash
+        run: |
+          smoke_dir="$(mktemp -d)"
+          trap 'rm -rf "${smoke_dir}"' EXIT
+
+          dotnet new console --framework net10.0 --output "${smoke_dir}"
+
+          pushd "${smoke_dir}" >/dev/null
+
+          cat > NuGet.config <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="local-core" value="${GITHUB_WORKSPACE}/nupkgs" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+              <add key="github-honua" value="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" />
+            </packageSources>
+            <packageSourceCredentials>
+              <github-honua>
+                <add key="Username" value="${{ github.actor }}" />
+                <add key="ClearTextPassword" value="${{ secrets.GITHUB_TOKEN }}" />
+              </github-honua>
+            </packageSourceCredentials>
+            <packageSourceMapping>
+              <packageSource key="local-core">
+                <package pattern="Honua.Core" />
+              </packageSource>
+              <packageSource key="github-honua">
+                <package pattern="Geospatial.Grpc" />
+                <package pattern="Honua.Mobile.*" />
+                <package pattern="Honua.Sdk.*" />
+              </packageSource>
+              <packageSource key="nuget.org">
+                <package pattern="*" />
+              </packageSource>
+            </packageSourceMapping>
+          </configuration>
+          EOF
+
+          dotnet add package Honua.Core --version "${PACKAGE_VERSION}"
+
+          cat > Program.cs <<'EOF'
+          using Honua.Core.Models;
+
+          _ = new SpatialReference { WKID = 4326 };
+          _ = new Envelope
+          {
+              XMin = -158,
+              YMin = 21,
+              XMax = -157,
+              YMax = 22,
+              SpatialReference = new SpatialReference { WKID = 4326 }
+          };
+          EOF
+
+          dotnet build --configuration Release /p:TreatWarningsAsErrors=true
+
+          popd >/dev/null
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: honua-core-${{ github.run_id }}-packages
+          path: nupkgs/*.nupkg
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Dry-run summary
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' }}
+        shell: bash
+        run: |
+          echo "Dry run complete. Built packages:" >> "${GITHUB_STEP_SUMMARY}"
+          ls -1 nupkgs/*.nupkg >> "${GITHUB_STEP_SUMMARY}"
+
+  publish:
+    name: Publish to GitHub Packages
+    needs: package-smoke
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: honua-core-${{ github.run_id }}-packages
+          path: nupkgs
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Publish to GitHub Packages
+        run: |
+          dotnet nuget push nupkgs/*.nupkg \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key "${{ secrets.GITHUB_TOKEN }}" \
             --skip-duplicate
-        done
-
-    - name: Upload Packages as Artifacts
-      uses: actions/upload-artifact@v7
-      with:
-        name: nuget-packages-${{ steps.version.outputs.version }}
-        path: ./packages/*.nupkg
-        retention-days: 30
-
-    - name: Create Release
-      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v3
-      with:
-        files: ./packages/*.nupkg
-        generate_release_notes: true
-        make_latest: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
