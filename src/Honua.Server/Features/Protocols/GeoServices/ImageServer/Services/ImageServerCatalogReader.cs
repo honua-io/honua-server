@@ -64,7 +64,13 @@ internal sealed class ImageServerCatalogItem
 
     public double ShapeArea { get; init; }
 
+    public int BandCount { get; init; }
+
+    public required string PixelType { get; init; }
+
     public DateTimeOffset? AcquisitionDate { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
 
     /// <summary>
     /// Footprint expressed as ring coordinates in the raster's native SRID. The MVP does
@@ -313,7 +319,10 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             ZOrder = 0,
             ShapeLength = shapeLength,
             ShapeArea = shapeArea,
+            BandCount = raster.BandCount,
+            PixelType = raster.PixelType,
             AcquisitionDate = raster.AcquisitionDate ?? raster.CreatedAt,
+            CreatedAt = raster.CreatedAt,
             FootprintRings = rings,
             FootprintSrid = extent?.Srid
         };

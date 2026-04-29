@@ -282,7 +282,10 @@ internal sealed class ImageServerCatalogQueryHandler
             ["ZOrder"] = item.ZOrder,
             ["Shape_Length"] = item.ShapeLength,
             ["Shape_Area"] = item.ShapeArea,
+            ["BandCount"] = item.BandCount,
+            ["PixelType"] = item.PixelType,
             ["AcquisitionDate"] = item.AcquisitionDate?.ToUnixTimeMilliseconds(),
+            ["CreatedAt"] = item.CreatedAt.ToUnixTimeMilliseconds(),
         };
 
         CatalogQueryGeometry? geometry = null;
@@ -325,7 +328,10 @@ internal sealed class ImageServerCatalogQueryHandler
             new Field { Name = "ZOrder", Type = "esriFieldTypeInteger", Alias = "ZOrder" },
             new Field { Name = "Shape_Length", Type = "esriFieldTypeDouble", Alias = "Shape_Length" },
             new Field { Name = "Shape_Area", Type = "esriFieldTypeDouble", Alias = "Shape_Area" },
+            new Field { Name = "BandCount", Type = "esriFieldTypeInteger", Alias = "BandCount" },
+            new Field { Name = "PixelType", Type = "esriFieldTypeString", Alias = "PixelType", Nullable = true },
             new Field { Name = "AcquisitionDate", Type = "esriFieldTypeDate", Alias = "AcquisitionDate", Nullable = true },
+            new Field { Name = "CreatedAt", Type = "esriFieldTypeDate", Alias = "CreatedAt" },
         ];
     }
 

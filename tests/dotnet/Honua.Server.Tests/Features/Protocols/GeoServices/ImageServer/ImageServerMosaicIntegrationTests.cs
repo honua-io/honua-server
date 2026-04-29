@@ -45,6 +45,14 @@ public sealed class ImageServerMosaicIntegrationTests
                 RasterIntegrationTestData.WestAcquisition.ToUnixTimeMilliseconds(),
                 RasterIntegrationTestData.EastAcquisition.ToUnixTimeMilliseconds(),
                 RasterIntegrationTestData.OverlapAcquisition.ToUnixTimeMilliseconds());
+
+            foreach (var feature in features.EnumerateArray())
+            {
+                var attributes = feature.GetProperty("attributes");
+                attributes.GetProperty("BandCount").GetInt32().Should().Be(1);
+                attributes.GetProperty("PixelType").GetString().Should().Be("32BF");
+                attributes.GetProperty("CreatedAt").GetInt64().Should().BeGreaterThan(0);
+            }
         }
         finally
         {
