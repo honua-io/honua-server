@@ -1090,6 +1090,7 @@
         "raster function executor (computeClass currently validates only)",
         "multidimensional cube ingestion",
         "WCS range subset/band selection/scaling/temporal extensions",
+        "full WCS CRS advertisement beyond the minimal EPSG:4326 capabilities extension",
         "WMTS",
         "richer image child resources"
       ],
@@ -1331,7 +1332,7 @@
               "GET /rest/services/{id}/ImageServer/WCS",
               "GET /ogc/services/{serviceId}/wcs"
             ],
-            "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, and optional OUTPUTCRS. Range subset, scaling, temporal/multidimensional slicing, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
+            "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, and optional OUTPUTCRS. The capabilities CRS extension is minimal (EPSG:4326); DescribeCoverage reports the native coverage CRS. Range subset, scaling, temporal/multidimensional slicing, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
           }
         ],
         "notImplemented": [
@@ -1532,7 +1533,7 @@
           {
             "name": "GetCapabilities",
             "status": "implemented",
-            "notes": "Returns WCS 2.0.1 XML with OWS service metadata, operations metadata, WCS service metadata, and Contents coverage summaries. ACCEPTVERSIONS, ACCEPTFORMATS, and SECTIONS are validated."
+            "notes": "Returns WCS 2.0.1 XML with OWS service metadata, operations metadata, WCS service metadata, and Contents coverage summaries. ACCEPTVERSIONS, ACCEPTFORMATS, and SECTIONS are validated. The WCS ServiceMetadata CRS extension currently advertises EPSG:4326 only; DescribeCoverage is authoritative for each coverage's native CRS."
           },
           {
             "name": "DescribeCoverage",
@@ -1542,7 +1543,7 @@
           {
             "name": "GetCoverage",
             "status": "partial",
-            "notes": "Accepts exactly one bare integer COVERAGEID. Supports image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, and OUTPUTCRS over the primary raster. Known unsupported WCS extensions return 501 OWS ExceptionReport XML; unknown GetCoverage parameters return 400."
+            "notes": "Accepts exactly one bare integer COVERAGEID. Supports image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, and OUTPUTCRS over the primary raster. Single-axis SUBSET fills the omitted axis from the stored raster extent, so non-native SUBSETTINGCRS/BBOXCRS callers should supply both axes or use BBOX. Known unsupported WCS extensions return 501 OWS ExceptionReport XML; unknown GetCoverage parameters return 400."
           }
         ]
       },
@@ -1558,6 +1559,8 @@
         "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
         "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",
         "WCS GetCoverage uses the selected layer's primary raster and opts out of exact response output caching for ad hoc coverage trims.",
+        "WCS GetCapabilities advertises a minimal EPSG:4326 CRS extension; clients should use DescribeCoverage for native coverage CRS metadata.",
+        "WCS single-axis SUBSET fills the omitted axis from the stored raster extent; callers using a non-native SUBSETTINGCRS/BBOXCRS should supply both axes or use BBOX.",
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
         "Honua does not currently expose ImageServer WMTS or offline tile export."
       ]

@@ -708,7 +708,7 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "WCS coverage docs and ImageServer parity matrix describe the supported KVP operations, formats, CRS handling, cache posture, and deferred extensions.",
+          "proofMechanism": "WCS coverage docs and ImageServer parity matrix describe the supported KVP operations, formats, CRS handling and CRS-advertisement caveats, cache posture, error behavior, and deferred extensions.",
           "executionLane": "release:docs-review",
           "evidenceLocations": [
             "docs/gis/specifications/wcs-2.0.1-coverage.md",

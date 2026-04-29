@@ -9,13 +9,13 @@ GET /rest/services/{id}/ImageServer/WCS
 GET /ogc/services/{serviceId}/wcs
 ```
 
-The ImageServer route is layer-scoped and uses `{id}` as the bare integer coverage ID. Both routes only expose layers that are enabled for WCS, visible to the caller, and backed by a primary raster in `IRasterStore`.
+The ImageServer route is layer-scoped and uses `{id}` as the bare integer coverage ID. Both routes only expose layers that are enabled for WCS, visible to the caller, and backed by a primary raster in `IRasterStore`. When `CatalogMetadata.EnabledProtocols` is set, include `Wcs`; a null protocol list keeps the default "all protocols enabled" behavior.
 
 ## Operations
 
 | Operation | Status | Notes |
 | --- | --- | --- |
-| `GetCapabilities` | Implemented | Returns WCS 2.0.1 XML with OWS service metadata, operations metadata, WCS service metadata, and `wcs:Contents` coverage summaries. |
+| `GetCapabilities` | Implemented | Returns WCS 2.0.1 XML with OWS service metadata, operations metadata, WCS service metadata, and `wcs:Contents` coverage summaries. The `wcs:crsSupported` extension is currently a minimal EPSG:4326 declaration; use `DescribeCoverage` for each coverage's native CRS. |
 | `DescribeCoverage` | Implemented | Accepts one or more repeated or comma-separated bare integer `COVERAGEID` values. Returns GML 3.2 bounds/grid metadata and `gmlcov:rangeType` band metadata. |
 | `GetCoverage` | Implemented | Returns raw raster bytes from `IRasterStore.ExportImageAsync` for one coverage ID. Supports format, optional spatial trim, and optional output CRS. |
 
@@ -49,9 +49,9 @@ Common parameters:
 | --- | --- | --- |
 | `COVERAGEID` | Required | Exactly one bare integer layer ID. |
 | `FORMAT` | Optional | Defaults to `image/tiff`. Supported values: `image/tiff`, `image/geotiff`, `tiff`, `tif`, `image/png`, `png`, `image/jpeg`, `jpg`, `jpeg`. |
-| `SUBSET` | Optional | WCS trim syntax `axis(low,high)`. Supported horizontal axes: `x`, `E`, `Long`, `Lon`; supported vertical axes: `y`, `N`, `Lat`. One-axis trims fill the other axis from the raster extent. |
+| `SUBSET` | Optional | WCS trim syntax `axis(low,high)`. Supported horizontal axes: `x`, `E`, `Long`, `Lon`; supported vertical axes: `y`, `N`, `Lat`. One-axis trims fill the other axis from the stored raster extent and are intended as a native-CRS convenience. When `SUBSETTINGCRS`/`BBOXCRS` differs from the native raster CRS, provide both axes or use `BBOX`. |
 | `BBOX` | Optional | Convenience trim alias: `xmin,ymin,xmax,ymax`. Do not combine with `SUBSET`. |
-| `SUBSETTINGCRS` / `BBOXCRS` | Optional | Parsed by the shared CRS parser. Defaults to the raster native CRS. |
+| `SUBSETTINGCRS` / `BBOXCRS` | Optional | Parsed by the shared CRS parser. Defaults to the raster native CRS. When both are supplied, they must identify the same CRS. |
 | `OUTPUTCRS` | Optional | Parsed by the shared CRS parser and passed to `RasterQuery.OutputSrid`. |
 
 Known unsupported WCS `GetCoverage` extensions return `501` OWS `ExceptionReport` XML instead of being ignored. Unknown `GetCoverage` parameters return `400 InvalidParameterValue`. Deferred parameters include `RANGESUBSET`, scaling parameters, interpolation parameters, `MEDIATYPE`, `datetime`/`TIME`, XML POST bodies, polygon trims, NetCDF, and multi-dimensional coverage slicing.
@@ -74,4 +74,4 @@ WCS is for raw coverage export. ImageServer remains the Esri-compatible raster s
 
 ## Errors
 
-Invalid requests return OWS 2.0 `ExceptionReport` XML with a stable exception code such as `MissingParameterValue`, `InvalidParameterValue`, `InvalidAxisLabel`, `InvalidSubsetting`, `VersionNegotiationFailed`, `OperationNotSupported`, `NoSuchCoverage`, or `NoApplicableCode`. Responses do not expose SQL, stack traces, filesystem paths, connection strings, or provider internals.
+Invalid requests return OWS 2.0 `ExceptionReport` XML with a stable exception code such as `MissingParameterValue`, `InvalidParameterValue`, `InvalidAxisLabel`, `InvalidSubsetting`, `VersionNegotiationFailed`, `OperationNotSupported`, `NoSuchCoverage`, or `NoApplicableCode`. Unknown coverage IDs return `404 NoSuchCoverage`. On the service-scoped route, missing services and service access failures preserve the service-level OWS error instead of being converted to `NoSuchCoverage`. Responses do not expose SQL, stack traces, filesystem paths, connection strings, or provider internals.
