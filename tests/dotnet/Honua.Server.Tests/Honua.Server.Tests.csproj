@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="Apache.Arrow" />
     <PackageReference Include="FlatGeobuf" />
+    <PackageReference Include="Geospatial.Grpc" />
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Grpc.Net.Client.Web" />
     <PackageReference Include="Mapsui" />

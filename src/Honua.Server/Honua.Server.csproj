@@ -42,6 +42,8 @@
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="Geospatial.Grpc" />
+    <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.AspNetCore" />
     <PackageReference Include="Grpc.AspNetCore.Server.Reflection" />
     <PackageReference Include="Grpc.AspNetCore.Web" />

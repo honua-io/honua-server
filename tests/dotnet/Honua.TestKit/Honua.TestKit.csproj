@@ -14,6 +14,7 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="FluentAssertions.Json" />
     <PackageReference Include="FsCheck.Xunit" />
+    <PackageReference Include="Geospatial.Grpc" />
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Grpc.Net.Client.Web" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />

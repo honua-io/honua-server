@@ -34,12 +34,6 @@
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
     <PackageReference Include="Parquet.Net" />
 
-    <!-- gRPC and protocol buffer support -->
-    <PackageReference Include="Geospatial.Grpc" />
-    <PackageReference Include="Grpc.Core.Api" />
-    <PackageReference Include="Grpc.Net.Client" />
-    <PackageReference Include="Google.Protobuf" />
-
     <!-- Geocoding provider dependencies -->
     <PackageReference Include="AWSSDK.LocationService" />
   </ItemGroup>
