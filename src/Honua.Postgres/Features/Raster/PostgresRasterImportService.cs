@@ -435,7 +435,10 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     /// <summary>
     /// Verifies the newly inserted raster shares the layer's canonical SRID and band count.
     /// Returns null on success or a client-safe error message describing the mismatch.
-    /// First raster in a layer always passes (it sets the canonical values).
+    /// First raster in a layer always passes (it sets the canonical values). Layers that
+    /// already contain heterogeneous data (e.g. seeded outside the import path) are also
+    /// rejected so callers see the real invariant violation rather than an opaque ST_Union
+    /// failure at query time.
     /// </summary>
     private async Task<string?> CheckLayerHomogeneityAsync(
         DbConnection connection,
@@ -449,11 +452,13 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = $"""
-            SELECT srid, band_count
+            SELECT COUNT(*) AS existing_count,
+                   MIN(srid) AS min_srid,
+                   MAX(srid) AS max_srid,
+                   MIN(band_count) AS min_bands,
+                   MAX(band_count) AS max_bands
             FROM {_rasterDataTable}
             WHERE layer_id = @layerId AND id <> @newRasterId
-            ORDER BY id ASC
-            LIMIT 1
             """;
         command.AddParameter("@layerId", layerId);
         command.AddParameter("@newRasterId", newRasterId);
@@ -464,17 +469,33 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             return null;
         }
 
-        var existingSrid = reader.GetInt32(0);
-        var existingBands = reader.GetInt32(1);
-
-        if (existingSrid == newSrid && existingBands == newBandCount)
+        var existingCount = reader.GetInt64(0);
+        if (existingCount == 0)
         {
             return null;
         }
 
-        PostgresRasterImportLog.HomogeneityRejected(_logger, layerId, newSrid, newBandCount, existingSrid, existingBands);
+        var minSrid = reader.GetInt32(1);
+        var maxSrid = reader.GetInt32(2);
+        var minBands = reader.GetInt32(3);
+        var maxBands = reader.GetInt32(4);
+
+        if (minSrid != maxSrid || minBands != maxBands)
+        {
+            PostgresRasterImportLog.HomogeneityRejected(_logger, layerId, newSrid, newBandCount, minSrid, minBands);
+            return $"Layer {layerId} already contains heterogeneous rasters " +
+                   $"(SRID range {minSrid}..{maxSrid}, BandCount range {minBands}..{maxBands}). " +
+                   "Mosaic compositing requires homogeneity; reload the layer with consistent inputs.";
+        }
+
+        if (minSrid == newSrid && minBands == newBandCount)
+        {
+            return null;
+        }
+
+        PostgresRasterImportLog.HomogeneityRejected(_logger, layerId, newSrid, newBandCount, minSrid, minBands);
         return $"Layer {layerId} requires raster homogeneity for mosaic compositing. " +
-               $"Expected SRID={existingSrid}, BandCount={existingBands}; " +
+               $"Expected SRID={minSrid}, BandCount={minBands}; " +
                $"upload has SRID={newSrid}, BandCount={newBandCount}.";
     }
 

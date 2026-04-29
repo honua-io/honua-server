@@ -1153,7 +1153,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{id}/ImageServer/exportImage"
             ],
-            "notes": "Returns a JSON envelope with a temporary href. f=image byte streaming is not supported."
+            "notes": "Default response is a JSON envelope with a temporary href; f=image streams the rendered bytes inline with the format-specific media type."
           },
           {
             "name": "Identify",

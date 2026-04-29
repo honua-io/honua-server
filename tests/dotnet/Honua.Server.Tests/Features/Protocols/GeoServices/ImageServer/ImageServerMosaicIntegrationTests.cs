@@ -191,6 +191,28 @@ public sealed class ImageServerMosaicIntegrationTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    [Operation(Operations.Export)]
+    public async Task ExportImage_AsInlineJpegMosaic_AppliesCompressionQuality()
+    {
+        var fixture = await CreateFixtureAsync().ConfigureAwait(false);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage" +
+                "?bbox=0,0,4,2&size=64,32&format=jpg&compressionQuality=40&f=image");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
+            (await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false)).Should().NotBeEmpty();
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query, Operations.PerformanceTesting)]
     public async Task QueryRasters_ForTenOverlappingRasters_CompletesWithinTwoSeconds()
     {

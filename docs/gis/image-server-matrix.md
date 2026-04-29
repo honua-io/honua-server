@@ -25,7 +25,7 @@ Sources:
 
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Export Image | `/rest/services/{serviceName}/ImageServer/exportImage` | GET | Partial | `GET /rest/services/{id}/ImageServer/exportImage` | Returns a JSON envelope with a temporary `href` to the rendered image. Spatially intersecting rasters are exported as a mosaic, with optional `mosaicRule` and single-instant `time` support. `f=image` byte streaming is not supported. |
+| Export Image | `/rest/services/{serviceName}/ImageServer/exportImage` | GET | Partial | `GET /rest/services/{id}/ImageServer/exportImage` | Default response is a JSON envelope with a temporary `href` to the rendered image. `f=image` returns the rendered bytes inline with the format-specific media type. Spatially intersecting rasters are exported as a mosaic, with optional `mosaicRule` and single-instant `time` support. |
 | Identify | `/rest/services/{serviceName}/ImageServer/identify` | GET | Partial | `GET /rest/services/{id}/ImageServer/identify` | Supports point-only identify requests and JSON responses. When multiple rasters overlap the identify point, Honua returns the mosaic value and can include all participating catalog items. Several Esri response-shaping and raster-processing parameters remain unsupported. |
 | Query | `/rest/services/{serviceName}/ImageServer/query` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/query` | Returns the layer's raster catalog as Esri-compatible features with `OBJECTID`, footprint geometry, pixel-size attributes, and `AcquisitionDate`. Supports `where`, `objectIds`, `outSR`, `time`, `resultOffset`, `resultRecordCount`, and the `returnGeometry`/`returnIdsOnly`/`returnCountOnly`/`returnExtentOnly` shaping flags. The MVP applies WHERE filters via the GeoServices SQL parser in-memory and does not reproject footprint geometry — `outSR` is honoured for the response envelope only. |
 | Compute Statistics and Histograms | `/rest/services/{serviceName}/ImageServer/computeStatisticsHistograms` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/computeStatisticsHistograms` | Returns per-band statistics and histograms for one or more rasters in the catalog. Supports `rasterIds` (catalog object IDs), the Honua-specific `bandIds` selector, `mosaicRule`, single-instant `time`, and `histogramParameters.size` for bin count. AOI clipping via `geometry`/`geometryType` is not yet honoured — analysis always covers the full selected raster or mosaic. |
@@ -95,7 +95,7 @@ Sources:
 | `format` | Partial | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`. Esri formats such as `png8`, `png24`, `bmp`, and `gif` are not supported. |
 | `interpolation` | Implemented | Parsed into raster resampling behavior. |
 | `compressionQuality` | Implemented | Validated to `1-100`. |
-| `f` | Partial | Only `json` and `pjson` are supported. `html` and `image` are not supported. |
+| `f` | Partial | Supports `json`, `pjson`, and `image` (inline rendered bytes with the format-specific media type). `html` is not supported. |
 
 #### Partial or behavior differences
 

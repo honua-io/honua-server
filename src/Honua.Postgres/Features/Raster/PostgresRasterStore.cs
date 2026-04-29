@@ -472,6 +472,10 @@ internal sealed class PostgresRasterStore : IRasterStore
                 connection, blockSize: exportBlockSize, layerId, rasterIds[0],
                 includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
         }
+        else
+        {
+            creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
+        }
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
