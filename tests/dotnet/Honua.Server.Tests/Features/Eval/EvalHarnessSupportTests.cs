@@ -40,7 +40,7 @@ public sealed class EvalHarnessSupportTests
                 [
                     new EvalStageOutcome
                     {
-                        Stage = EvalStageKind.SubmitPlanJob,
+                        Stage = EvalStageKind.SubmitJob,
                         Status = EvalStageStatus.Passed
                     }
                 ]
@@ -62,7 +62,7 @@ public sealed class EvalHarnessSupportTests
                 [
                     new EvalStageOutcome
                     {
-                        Stage = EvalStageKind.SubmitPlanJob,
+                        Stage = EvalStageKind.SubmitJob,
                         Status = EvalStageStatus.Skipped,
                         Reason = "redis-unavailable"
                     }

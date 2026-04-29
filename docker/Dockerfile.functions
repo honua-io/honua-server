@@ -13,14 +13,15 @@ ENV DOTNET_ROOT=/usr/share/dotnet
 ENV PATH="${DOTNET_ROOT}:${PATH}"
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates protobuf-compiler wget && \
+    apt-get install -y --no-install-recommends ca-certificates wget && \
     wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && \
     bash /tmp/dotnet-install.sh --channel 10.0 --install-dir "$DOTNET_ROOT" && \
     ln -sf "$DOTNET_ROOT/dotnet" /usr/bin/dotnet && \
     rm -f /tmp/dotnet-install.sh && \
     rm -rf /var/lib/apt/lists/*
 
-COPY Honua.sln Directory.Build.props Directory.Packages.props .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
@@ -29,13 +30,14 @@ COPY src/Honua.Server/*.csproj src/Honua.Server/
 ARG TARGETARCH
 
 RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
+    --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
       amd64) RUNTIME_ID="linux-x64" ;; \
       arm64) RUNTIME_ID="linux-arm64" ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    export PROTOBUF_PROTOC=/usr/bin/protoc && \
-    dotnet restore src/Honua.Server/Honua.Server.csproj \
+    sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID"
 
@@ -48,10 +50,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       arm64) RUNTIME_ID="linux-arm64" ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
+      --no-restore \
       --self-contained true \
       --output /out/app \
       -p:RuntimeIdentifier="$RUNTIME_ID" \

@@ -72,7 +72,6 @@
   <ItemGroup>
     <PackageReference Include="AWSSDK.Batch" />
     <PackageReference Include="AWSSDK.Lambda" />
-    <PackageReference Include="Grpc.Tools" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" />
     <PackageReference Include="AWSSDK.SQS" />
     <PackageReference Include="Azure.Messaging.EventGrid" />

@@ -2838,24 +2838,26 @@ public sealed class ProcessCatalogTests
     {
         var sut = CreateServiceWithCatalog();
 
-        var plan = new Proto.AnalysisPlan
+        var plan = new Proto.ExecutionPlan
         {
             PlanId = "plan-1",
-            IntentId = "intent-1"
+            SpecVersion = "intent-1",
+            WorkflowFamily = Proto.WorkflowFamily.Analyze
         };
-        plan.Steps.Add(new Proto.AnalysisPlanStep
+        var step = new Proto.PlanStep
         {
             StepId = "step-1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "nonexistent.op"
-        });
+            Kind = "geoprocess"
+        };
+        step.Inputs["processId"] = ToProtoParameterValue("nonexistent.op");
+        plan.Steps.Add(step);
 
         var response = await sut.ValidatePlan(
             new Proto.ValidatePlanRequest { Plan = plan },
             CreateCallContext());
 
-        response.IsExecutable.Should().BeFalse();
-        response.Violations.Should().Contain(v => v.Code == "UNKNOWN_PROCESS");
+        response.Valid.Should().BeFalse();
+        response.Issues.Should().Contain(v => v.Message.Contains("not in the catalog", StringComparison.OrdinalIgnoreCase));
     }
 
     [UnitTest]
@@ -2865,24 +2867,26 @@ public sealed class ProcessCatalogTests
     {
         var sut = CreateServiceWithCatalog();
 
-        var plan = new Proto.AnalysisPlan
+        var plan = new Proto.ExecutionPlan
         {
             PlanId = "plan-1",
-            IntentId = "intent-1"
+            SpecVersion = "intent-1",
+            WorkflowFamily = Proto.WorkflowFamily.Analyze
         };
-        plan.Steps.Add(new Proto.AnalysisPlanStep
+        var step = new Proto.PlanStep
         {
             StepId = "step-1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "geometry.buffer"
-        });
+            Kind = "geoprocess"
+        };
+        step.Inputs["processId"] = ToProtoParameterValue("geometry.buffer");
+        plan.Steps.Add(step);
 
         var response = await sut.ValidatePlan(
             new Proto.ValidatePlanRequest { Plan = plan },
             CreateCallContext());
 
-        response.IsExecutable.Should().BeFalse();
-        response.Violations.Should().Contain(v => v.Code == "MISSING_REQUIRED_PARAMETER");
+        response.Valid.Should().BeFalse();
+        response.Issues.Should().Contain(v => v.Message.Contains("required", StringComparison.OrdinalIgnoreCase));
     }
 
     // -----------------------------------------------------------------------
@@ -2911,6 +2915,9 @@ public sealed class ProcessCatalogTests
             jobService,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance);
     }
+
+    private static Proto.ParameterValue ToProtoParameterValue(string value)
+        => new() { StringValue = value };
 
     private static TestServerCallContext CreateCallContext()
     {

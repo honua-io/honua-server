@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
   actions: read
   checks: write
 
@@ -96,6 +97,9 @@ jobs:
         push: false
         load: true
         tags: honua-server:latest
+        secrets: |
+          github_actor=${{ github.actor }}
+          github_token=${{ github.token }}
         cache-from: type=gha,scope=cite-wfs20
         cache-to: type=gha,mode=max,scope=cite-wfs20
 

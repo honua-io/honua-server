@@ -179,7 +179,7 @@ Honua uses a layered caching approach:
 The durable job orchestration substrate provides queuing, claim/heartbeat
 liveness, retry, cancellation, progress reporting, and structured execution
 logs for geoprocessing, ETL, and tile-cache workloads. Submission endpoints
-(gRPC `ProcessService.SubmitPlanJob`, OGC API Processes `/execute`, GPServer
+(gRPC `ProcessService.SubmitJob`, OGC API Processes `/execute`, GPServer
 `submitJob`) resolve an optional `ExecutionWorkloadOptions` entry from the
 `ControlPlane:ExecutionWorkloads` catalog. When a matching workload is
 configured, the job spec inherits the workload's `Backend`, `TargetKind`,

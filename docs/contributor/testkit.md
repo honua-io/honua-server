@@ -464,11 +464,11 @@ run. If the loader cannot locate a scenario under either root it also raises
 
 `EvalRunner` executes each scenario through a fixed stage sequence:
 `CaptureIntent` → `CompilePlan` → `ValidatePlan` → `DryRun` → `ProtocolParity`
-→ `SubmitPlanJob` → `PollJob` → `GetJobResults` → `ComposeMapPackage` →
+→ `SubmitJob` → `PollJob` → `GetJobResult` → `ComposeMapPackage` →
 `ComposeAppPackage` → `PromoteDeployment`. Stages whose upstream capability is
 not yet wired (execution engine, publish surface, package composition, deploy
 promotion) report `Skipped` with a reason rather than failing — only `Failed`
-stages break the gate today. `SubmitPlanJob` also degrades to
+stages break the gate today. `SubmitJob` also degrades to
 `Skipped(redis-unavailable)` when the durable Redis-backed job store is absent,
 which keeps local/dev runs honest instead of treating infrastructure gaps as
 contract failures.
@@ -481,11 +481,11 @@ runs for scenarios that expect `isExecutable: false` or
 `requiresApproval: true`, and the resulting `DryRun` outcome is scored against
 the scenario's declared `estimatedArtifactKinds` just like any other scenario.
 
-Only `SubmitPlanJob` enforces the execution-only invariants through
+Only `SubmitJob` enforces the execution-only invariants through
 `EnsurePlanExecutable` (rejects non-executable plans as `InvalidArgument`) and
 `EnsureApproved` (rejects approval-gated plans as `FailedPrecondition`). When a
 scenario intentionally expects one of those rejections and `ValidatePlan`
-matches that expectation, `SubmitPlanJob` is recorded as
+matches that expectation, `SubmitJob` is recorded as
 `Skipped(plan-non-executable)` or `Skipped(plan-approval-required)` rather
 than invoking the RPC that is contractually guaranteed to reject. This keeps
 negative scenarios expressible without polluting the gate with false failures.
@@ -541,7 +541,7 @@ pinned to `reportSchemaVersion = "1"` (`EvalReportSchema.Version`) and
 includes:
 
 - `environment` — `corpusSource`, `corpusVersion`, `corpusPath`,
-  `redisAvailable` (derived from observed successful `SubmitPlanJob` stages)
+  `redisAvailable` (derived from observed successful `SubmitJob` stages)
 - `scenarios[]` — id, mode, overall `status`
   (`Passed` / `Failed` / `PassedWithSkips`), per-stage outcomes, protocol parity
   probes, elapsed ms

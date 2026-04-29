@@ -61,7 +61,7 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
         var response = await _client!.ValidatePlanAsync(request, _headers);
 
         response.Should().NotBeNull();
-        response.IsExecutable.Should().BeTrue();
+        response.Valid.Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -71,14 +71,14 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
     public async Task DryRunPlan_WithValidPlan_ReturnsEstimation()
     {
         var plan = CreateValidPlan();
-        plan.Outputs.Add(Proto.ArtifactKind.FeatureLayer);
+        plan.ExpectedOutputs.Add("feature_layer");
 
         var request = new Proto.DryRunPlanRequest { Plan = plan };
 
         var response = await _client!.DryRunPlanAsync(request, _headers);
 
         response.Should().NotBeNull();
-        response.EstimatedArtifacts.Should().ContainSingle(a => a == Proto.ArtifactKind.FeatureLayer);
+        response.Result.EstimatedArtifacts.Should().ContainSingle(a => a.ArtifactClass == Proto.ArtifactClass.FeatureLayer);
     }
 
     [IntegrationTest]
@@ -96,22 +96,38 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.Create)]
-    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
-    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/SubmitPlanJob")]
-    public async Task SubmitPlanJob_ThroughPipeline_ReturnsExpectedResponse()
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlanStream")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/ExecutePlanStream")]
+    public async Task ExecutePlanStream_ReturnsUnimplemented()
     {
-        var request = new Proto.SubmitPlanJobRequest
+        var request = new Proto.ExecutePlanRequest { Plan = CreateValidPlan() };
+
+        using var call = _client!.ExecutePlanStream(request, _headers);
+        var act = async () => await call.ResponseStream.MoveNext(CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unimplemented);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_ThroughPipeline_ReturnsExpectedResponse()
+    {
+        var request = new Proto.SubmitJobRequest
         {
             Plan = CreateValidPlan(),
-            IdempotencyKey = $"integ-{Guid.NewGuid():N}"
+            Context = new Proto.ExecutionContext()
         };
+        request.Context.Metadata["idempotency_key"] = $"integ-{Guid.NewGuid():N}";
 
         try
         {
-            var response = await _client!.SubmitPlanJobAsync(request, _headers);
+            var response = await _client!.SubmitJobAsync(request, _headers);
             response.JobId.Should().NotBeNullOrWhiteSpace();
-            response.Status.Should().Be(Proto.JobStatus.Queued);
+            response.State.Should().Be(Proto.JobState.Validated);
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Unavailable)
         {
@@ -135,13 +151,13 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
-    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
-    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/GetJobResults")]
-    public async Task GetJobResults_WithEmptyJobId_ReturnsInvalidArgument()
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ProcessService/GetJobResult")]
+    public async Task GetJobResult_WithEmptyJobId_ReturnsInvalidArgument()
     {
-        var request = new Proto.GetJobResultsRequest { JobId = "" };
+        var request = new Proto.GetJobResultRequest { JobId = "" };
 
-        var act = async () => await _client!.GetJobResultsAsync(request, _headers);
+        var act = async () => await _client!.GetJobResultAsync(request, _headers);
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
@@ -161,20 +177,24 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
         ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
 
-    private static Proto.AnalysisPlan CreateValidPlan()
+    private static Proto.ExecutionPlan CreateValidPlan()
     {
-        var plan = new Proto.AnalysisPlan
+        var plan = new Proto.ExecutionPlan
         {
             PlanId = "integ-plan-1",
-            IntentId = "integ-intent-1"
+            SpecVersion = "integ-intent-1",
+            WorkflowFamily = Proto.WorkflowFamily.Analyze
         };
-        plan.Steps.Add(new Proto.AnalysisPlanStep
+        var step = new Proto.PlanStep
         {
             StepId = "step-1",
-            Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "geometry.buffer",
-            Inputs = { { "wkb", "AAAA" }, { "srid", "4326" }, { "distance", "100" } }
-        });
+            Kind = "geoprocess"
+        };
+        step.Inputs["processId"] = new Proto.ParameterValue { StringValue = "geometry.buffer" };
+        step.Inputs["wkb"] = new Proto.ParameterValue { StringValue = "AAAA" };
+        step.Inputs["srid"] = new Proto.ParameterValue { StringValue = "4326" };
+        step.Inputs["distance"] = new Proto.ParameterValue { StringValue = "100" };
+        plan.Steps.Add(step);
         return plan;
     }
 }

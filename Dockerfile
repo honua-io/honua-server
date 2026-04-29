@@ -8,26 +8,16 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:8a90a473da5205a169
 ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:60eb031b554df75a4b9f358290a2fa15d8961a3bc79b47bb34a00e31f7b78c69
 
 # Build stage
-# Use the Debian SDK image so Grpc.Tools/protoc can run during container builds.
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
-
-# grpc.tools' bundled linux_arm64 protoc segfaults on native ARM runners.
-# Use the distro compiler through the supported PROTOBUF_PROTOC override instead.
-# DL3008 suppression rationale: the SDK base image is digest-pinned, so the protobuf-compiler
-# version is fixed by the upstream snapshot. Pinning here forces a parallel version update on
-# every digest bump.
-# hadolint ignore=DL3008
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends protobuf-compiler && \
-    rm -rf /var/lib/apt/lists/*
 
 # Security: Create non-root build user
 RUN groupadd --gid 1001 --system builduser && \
     useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin builduser
 
 # Copy solution and project files first for better layer caching
-COPY Honua.sln Directory.Build.props Directory.Packages.props .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
@@ -45,16 +35,20 @@ ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
 # word-split into separate `-p:` arguments. Quoting collapses them into a single (invalid) argument.
 # hadolint ignore=SC2086
 RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
+    --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
         amd64) RUNTIME_ID="linux-musl-x64" ;; \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false" && \
-    dotnet restore src/Honua.Server/Honua.Server.csproj \
+    sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
-      $EXTRA_MSBUILD_ARGS
+      $EXTRA_MSBUILD_ARGS && \
+    if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
+      sh scripts/docker/restore-dotnet-with-github-packages.sh samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj; \
+    fi
 
 # Copy source code
 COPY . .
@@ -70,11 +64,11 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false" && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
+      --no-restore \
       --self-contained false \
       --output /app \
       -p:PublishAot=false \
@@ -84,6 +78,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
       dotnet publish samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj \
         --configuration "$CONFIGURATION" \
+        --no-restore \
         --output /tmp/stac-ops-demo && \
       mkdir -p /app/wwwroot/samples && \
       cp -a /tmp/stac-ops-demo/wwwroot/samples/stac-ops /app/wwwroot/samples/; \

@@ -12,6 +12,7 @@ env:
 
 permissions:
   contents: write
+  packages: read
 
 concurrency:
   group: cross-server-consume-nightly-${{ github.ref }}

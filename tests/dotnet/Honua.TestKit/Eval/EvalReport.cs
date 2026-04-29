@@ -199,13 +199,13 @@ public enum EvalStageKind
     ProtocolParity,
 
     /// <summary>Submit the plan for asynchronous execution.</summary>
-    SubmitPlanJob,
+    SubmitJob,
 
     /// <summary>Poll the execution job until it reaches a terminal state.</summary>
     PollJob,
 
     /// <summary>Retrieve and validate the result package shape.</summary>
-    GetJobResults,
+    GetJobResult,
 
     /// <summary>Compose and validate the map package binding.</summary>
     ComposeMapPackage,

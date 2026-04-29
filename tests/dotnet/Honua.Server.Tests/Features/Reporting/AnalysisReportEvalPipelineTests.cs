@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Reporting;
 /// Uses the same scenario the end-to-end harness loads
 /// (<c>analysis-buffer-places</c>) and asserts that a result package matching
 /// its expected artifact shape round-trips through the reporting pipeline.
-/// The existing eval runner explicitly skips <c>GetJobResults</c> pending the
+/// The existing eval runner explicitly skips <c>GetJobResult</c> pending the
 /// execution engine; this test is the thin-slice replacement that gates the
 /// reporting pipeline against the scenario contract until that stage is wired.
 /// </summary>

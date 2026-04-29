@@ -32,6 +32,10 @@ env:
   # workflow_dispatch `sdk_ref` overrides this value for manual replays.
   MCP_SDK_REF: '404242df3cbf10f707ee9137405bf93b3de0012d'
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   pr-readiness:
     name: PR Mergeability & Freshness
@@ -1056,7 +1060,13 @@ jobs:
 
       - name: Build Honua.Core package
         run: |
-          dotnet pack src/Honua.Core/Honua.Core.csproj --configuration Release --output ./packages --no-restore
+          package_version="0.0.0-ci.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          dotnet pack src/Honua.Core/Honua.Core.csproj \
+            --configuration Release \
+            --output ./packages \
+            --no-restore \
+            -p:PackageVersion="${package_version}" \
+            -p:Version="${package_version}"
 
       - name: Test package integration
         run: |
@@ -1072,10 +1082,20 @@ jobs:
               <clear />
               <add key="local-packages" value="${PACKAGE_SOURCE}" />
               <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+              <add key="github-honua" value="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" />
             </packageSources>
+            <packageSourceCredentials>
+              <github-honua>
+                <add key="Username" value="${{ github.actor }}" />
+                <add key="ClearTextPassword" value="${{ secrets.GITHUB_TOKEN }}" />
+              </github-honua>
+            </packageSourceCredentials>
             <packageSourceMapping>
               <packageSource key="local-packages">
                 <package pattern="Honua.Core" />
+              </packageSource>
+              <packageSource key="github-honua">
+                <package pattern="Geospatial.Grpc" />
               </packageSource>
               <packageSource key="nuget.org">
                 <package pattern="*" />
@@ -1196,6 +1216,9 @@ jobs:
           push: false
           load: true
           tags: honua-server:test
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

@@ -160,6 +160,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: cloud-post-apply-validation-${{ github.ref }}

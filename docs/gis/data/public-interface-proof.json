@@ -1390,7 +1390,7 @@
           "executionLane": "repo:honua-io/geospatial-grpc",
           "evidenceLocations": [
             "https://github.com/honua-io/geospatial-grpc",
-            "src/Honua.Core/Transport/Proto/geospatial/v1/feature_service.proto"
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/feature_service.proto"
           ],
           "ownerRepo": "geospatial-grpc",
           "status": "implemented",
@@ -1413,15 +1413,17 @@
         "Grpc::geospatial.v1.ProcessService/ValidatePlan",
         "Grpc::geospatial.v1.ProcessService/DryRunPlan",
         "Grpc::geospatial.v1.ProcessService/ExecutePlan",
-        "Grpc::geospatial.v1.ProcessService/SubmitPlanJob",
+        "Grpc::geospatial.v1.ProcessService/ExecutePlanStream",
+        "Grpc::geospatial.v1.ProcessService/SubmitJob",
         "Grpc::geospatial.v1.ProcessService/GetJob",
-        "Grpc::geospatial.v1.ProcessService/GetJobResults",
+        "Grpc::geospatial.v1.ProcessService/GetJobResult",
         "Grpc::geospatial.v1.ProcessService/CancelJob"
       ],
       "stubbed": [
         "Grpc::geospatial.v1.ProcessService/ExecutePlan",
-        "Grpc::geospatial.v1.ProcessService/SubmitPlanJob",
-        "Grpc::geospatial.v1.ProcessService/GetJobResults"
+        "Grpc::geospatial.v1.ProcessService/ExecutePlanStream",
+        "Grpc::geospatial.v1.ProcessService/SubmitJob",
+        "Grpc::geospatial.v1.ProcessService/GetJobResult"
       ],
       "proofs": [
         {
@@ -1444,7 +1446,7 @@
           "executionLane": "repo:honua-io/geospatial-grpc",
           "evidenceLocations": [
             "https://github.com/honua-io/geospatial-grpc",
-            "src/Honua.Core/Transport/Proto/geospatial/v1/process_service.proto"
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/process_service.proto"
           ],
           "ownerRepo": "geospatial-grpc",
           "status": "implemented",
@@ -1678,7 +1680,7 @@
           "executionLane": "repo:honua-io/geospatial-grpc",
           "evidenceLocations": [
             "https://github.com/honua-io/geospatial-grpc",
-            "src/Honua.Core/Transport/Proto/geospatial/v1/spec_service.proto"
+            "https://github.com/honua-io/geospatial-grpc/blob/main/geospatial/v1/spec_service.proto"
           ],
           "ownerRepo": "geospatial-grpc",
           "status": "implemented",

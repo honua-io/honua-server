@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 env:
   DOTNET_VERSION: '10.0.x'
@@ -31,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
       issues: write
     steps:
       - name: Checkout
@@ -208,6 +210,9 @@ jobs:
           context: .
           load: true
           tags: ${{ env.IMAGE_NAME }}:security-test
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
           cache-from: type=gha,scope=security-jit
           cache-to: type=gha,mode=max,scope=security-jit
 
