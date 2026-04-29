@@ -1037,13 +1037,24 @@ jobs:
           cd package-test
           dotnet new console
 
-          # Add local package source
           PACKAGE_SOURCE="$(realpath ../packages)"
-          dotnet nuget add source "$PACKAGE_SOURCE" --name local-packages
+          cat > NuGet.config <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <add key="local-packages" value="${PACKAGE_SOURCE}" />
+            </packageSources>
+            <packageSourceMapping>
+              <packageSource key="local-packages">
+                <package pattern="Honua.Core" />
+              </packageSource>
+            </packageSourceMapping>
+          </configuration>
+          EOF
 
           # Add package under test
           VERSION=$(basename "$(ls ../packages/Honua.Core*.nupkg | head -1)" | sed -E 's/^Honua\.Core\.([0-9A-Za-z.-]+)\.nupkg$/\1/')
-          dotnet add package Honua.Core --source "$PACKAGE_SOURCE" --version "$VERSION"
+          dotnet add package Honua.Core --version "$VERSION"
 
           # Test build
           dotnet build --configuration Release
