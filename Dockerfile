@@ -45,7 +45,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
-      $EXTRA_MSBUILD_ARGS
+      $EXTRA_MSBUILD_ARGS && \
+    if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
+      sh scripts/docker/restore-dotnet-with-github-packages.sh samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj; \
+    fi
 
 # Copy source code
 COPY . .
@@ -65,6 +68,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
+      --no-restore \
       --self-contained false \
       --output /app \
       -p:PublishAot=false \
@@ -74,6 +78,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
       dotnet publish samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj \
         --configuration "$CONFIGURATION" \
+        --no-restore \
         --output /tmp/stac-ops-demo && \
       mkdir -p /app/wwwroot/samples && \
       cp -a /tmp/stac-ops-demo/wwwroot/samples/stac-ops /app/wwwroot/samples/; \
