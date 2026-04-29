@@ -68,6 +68,30 @@ public sealed class DependencyRulesTests
     }
 
     [ArchitectureTest]
+    public void Core_ShouldNotOwnPortableGrpcTransportSurface()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var forbiddenDirectories = new[]
+        {
+            Path.Combine(repositoryRoot, "src", "Honua.Core", "Transport", "Clients"),
+            Path.Combine(repositoryRoot, "src", "Honua.Core", "Transport", "Converters"),
+            Path.Combine(repositoryRoot, "src", "Honua.Core", "Transport", "Proto")
+        };
+
+        forbiddenDirectories
+            .Where(Directory.Exists)
+            .SelectMany(directory => Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            .Should()
+            .BeEmpty("portable gRPC clients/converters belong in Honua.Sdk.* and canonical proto definitions stay in geospatial-grpc");
+
+        var coreProject = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Honua.Core", "Honua.Core.csproj"));
+        coreProject.Should().NotContain("Geospatial.Grpc", "Honua.Core should not own generated gRPC bindings");
+        coreProject.Should().NotContain("Grpc.Net.Client", "gRPC client behavior belongs in Honua.Sdk.Grpc");
+        coreProject.Should().NotContain("Grpc.Core.Api", "server gRPC protocol adapters should depend on gRPC directly");
+        coreProject.Should().NotContain("Google.Protobuf", "protobuf mapping should stay in protocol adapters or SDK packages");
+    }
+
+    [ArchitectureTest]
     public void ClassicOgcProtocols_ShouldNotDependOn_GeoServicesProtocols()
     {
         var serverAssembly = typeof(EndpointRegistry).Assembly;
