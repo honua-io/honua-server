@@ -72,6 +72,7 @@
 - [ADRs](contributor/adr/README.md)
 - [TestKit](contributor/testkit.md)
 - [Public Interface Quality Model](contributor/public-interface-quality-model.md)
+- [OGC Certification Path](contributor/ogc-certification-path.md)
 - [Release Checklist](contributor/RELEASE_CHECKLIST.md)
 
 ## Security
