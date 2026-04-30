@@ -405,7 +405,35 @@
             ]
           },
           "extent": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "spatial": {
+                "type": "object",
+                "properties": {
+                  "bbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "storageCrsBbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "crs": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           },
           "links": {
             "type": "array",
@@ -421,12 +449,6 @@
           },
           "storageCrs": {
             "type": "string"
-          },
-          "storageCrsBbox": {
-            "type": "array",
-            "items": {
-              "type": "number"
-            }
           },
           "grid": {
             "type": "object"

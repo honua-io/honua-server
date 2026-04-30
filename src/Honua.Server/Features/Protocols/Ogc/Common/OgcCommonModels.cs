@@ -255,6 +255,12 @@ public sealed record SpatialExtent
     public required ImmutableArray<ImmutableArray<double>> BoundingBox { get; init; }
 
     /// <summary>
+    /// Bounding box coordinates expressed in the collection storage CRS.
+    /// </summary>
+    [JsonPropertyName("storageCrsBbox")]
+    public ImmutableArray<ImmutableArray<double>>? StorageCrsBoundingBox { get; init; }
+
+    /// <summary>
     /// Coordinate reference system identifier.
     /// </summary>
     [JsonPropertyName("crs")]

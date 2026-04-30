@@ -42,9 +42,6 @@ internal sealed record OgcCoverageCollection
     [JsonPropertyName("storageCrs")]
     public string? StorageCrs { get; init; }
 
-    [JsonPropertyName("storageCrsBbox")]
-    public ImmutableArray<double>? StorageCrsBbox { get; init; }
-
     [JsonPropertyName("grid")]
     public CoverageGrid? Grid { get; init; }
 

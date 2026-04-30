@@ -12,6 +12,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 | **MapServer REST** | Map rendering | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri SDKs |
 | **STAC API** | Catalog discovery and item search | `/stac` | STAC browsers, catalog tooling |
 | **OGC API Features** | Standards compliance | `/ogc/features` | QGIS, MapLibre |
+| **OGC API Coverages** | Modern raster/coverage access | `/ogc/coverages` | OGC coverage clients, GDAL/QGIS-style workflows |
 | **OGC API Processes** | Async geoprocessing | `/ogc/processes` | OGC-compliant process clients |
 | **Spec Plan/Apply Engine** | Terraform-style spec execution with content-hash caching | `/v1/spec/*` + `geospatial.v1.SpecService` | Deployment tooling, AI agents |
 | **OData v4** | Business intelligence | `/odata` | Excel, Power BI |
@@ -23,6 +24,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 - [MapServer REST](#mapserver-rest)
 - [STAC API](#stac-api)
 - [OGC API Features](#ogc-api-features)
+- [OGC API Coverages](#ogc-api-coverages)
 - [OGC API Processes](#ogc-api-processes)
 - [Spec Plan/Apply Engine](#spec-planapply-engine)
 - [OData v4](#odata-v4-api)
@@ -417,6 +419,56 @@ The other OGC analytics mirrors are:
 - `POST /ogc/features/collections/{collectionId}/buffer-aggregate`
 
 As with the FeatureServer mirror, `numberReturned` equals `features.length` after truncation, and `metadata.maxOutputRows` is populated for density and cluster hull mode while remaining `null` for per-feature clusters, spatial join, and buffer aggregate. Per-feature cluster and spatial-join rows keep `properties.objectId` plus nested `properties.attributes`; spatial join also exposes `matchCount` and any array-valued `carryFields`, buffer aggregate dissolved rows expose `featureCount`, and density rows expose `cellId`, `featureCount`, and optional `weight`.
+
+---
+
+## **OGC API Coverages**
+
+Collection IDs are numeric raster layer IDs. Only accessible layers enabled for `OGC-API-Coverages` and backed by a primary raster appear in collection discovery.
+
+### **Discover Coverage Collections**
+
+```bash
+curl "http://localhost:8080/ogc/coverages/collections"
+```
+
+Collection objects include `itemType: "coverage"`, CRS/storage CRS metadata, extent, grid/domain metadata when known, default `band_N` fields, and links to the collection schema and coverage bytes.
+
+### **Inspect Selectable Bands**
+
+```bash
+curl "http://localhost:8080/ogc/coverages/collections/0/schema"
+```
+
+The schema exposes selectable raster bands as `band_1`, `band_2`, and so on. Use those names in the `properties` query parameter.
+
+### **Retrieve a GeoTIFF Clip**
+
+```bash
+curl -o coverage.tif \
+  "http://localhost:8080/ogc/coverages/collections/0/coverage?bbox=-122.5,37.7,-122.3,37.9"
+```
+
+GeoTIFF is the default coverage encoding. The response includes `Content-Bbox` when the raster export reports an extent, and `Content-Crs` when the output CRS is not WGS 84.
+
+### **Select Bands, Reproject, and Resize**
+
+```bash
+curl -o coverage.tif \
+  "http://localhost:8080/ogc/coverages/collections/0/coverage?properties=band_3,band_1&crs=EPSG:3857&scale-size=Lon(512),Lat(512)"
+```
+
+Use only one of `resolution`, `scale-factor`, or `scale-size` per request.
+
+### **Request PNG by Negotiation**
+
+```bash
+curl -H "Accept: image/png" \
+  -o coverage.png \
+  "http://localhost:8080/ogc/coverages/collections/0/coverage"
+```
+
+`f=png` is equivalent. Unsupported coverage options such as `datetime`, `subset`, `scale-axes`, NetCDF, and JPEG return a clear `400` problem response.
 
 ---
 

@@ -44,6 +44,14 @@ Collection discovery only returns layers that are accessible to the caller, enab
 | `subset` | Deferred | Returns `400`; use `bbox` for MVP spatial subsetting. |
 | `scale-axes` | Deferred | Returns `400`; use `resolution`, `scale-factor`, or `scale-size`. |
 
+Only one scaling control is allowed per coverage request. `scale-size` accepts values from 1 through 8192 for each axis.
+
+## Response Contract
+
+Coverage bytes return `200 OK` with `image/tiff` for GeoTIFF or `image/png` for PNG. When the raster result reports an extent, Honua emits `Content-Bbox` as `xmin,ymin,xmax,ymax`. When the output CRS is not WGS 84, Honua emits `Content-Crs` as an EPSG URI. Coverage responses also include a `Link` header with `self`, GeoTIFF alternate, and PNG alternate links.
+
+Validation failures return the shared Honua problem response with `400 Bad Request`. An unsupported `Accept` header returns `406 Not Acceptable`. Unknown or inaccessible collections return `404 Not Found`; unexpected server failures return `500` with sanitized detail.
+
 ## Examples
 
 ```bash

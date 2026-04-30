@@ -15,6 +15,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
 | **Science/elevation coverage workflows** | WCS 2.0.1 | `/rest/services/{id}/ImageServer/WCS` or `/ogc/services/{serviceId}/wcs` | Raw raster/coverage values |
+| **Modern OGC coverage workflows** | OGC API Coverages | `/ogc/coverages` | REST/JSON raster coverage discovery and export |
 | **Esri geometry operations** | Geometry Service | `/rest/services/geometry` | Buffer, simplify, project, intersect, union, clip, difference, area, length |
 | **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility over the canonical runtime |
 | **Geoprocessing (OGC)** | OGC API Processes | `/ogc/processes` | Standards-based async geoprocessing |
@@ -188,6 +189,36 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 - Server-rendered maps via open standards
 - Dynamic map image generation without Esri dependencies
 - OGC-compliant map rendering workflows
+
+---
+
+## **OGC API Coverages**
+
+**Best for**: Modern OGC raster coverage discovery, metadata, and raw coverage export
+
+**Endpoint structure:**
+```
+/ogc/coverages
+|-- /
+|-- /conformance
+|-- /api
+|-- /openapi.json
+|-- /collections
+|-- /collections/{id}
+|-- /collections/{id}/schema
+|-- /collections/{id}/coverage
+```
+
+**Output formats:** JSON/HTML for metadata; `image/tiff` GeoTIFF by default for coverage bytes; `image/png` via `f=png` or `Accept: image/png`.
+
+**Current scope:** Accessible raster-backed collections only. Collection documents include `itemType: "coverage"`, CRS/storage CRS fields, extent, grid/domain metadata when known, default band fields, schema links, and coverage links. Coverage retrieval supports `bbox`, `bbox-crs`, output `crs`, `properties=band_N,...`, and one scaling control (`resolution`, `scale-factor`, or `scale-size`). Response headers include `Content-Bbox` when the raster result reports an extent, `Content-Crs` for non-WGS 84 output, and `Link` alternates for GeoTIFF/PNG.
+
+**Limitations:** This is a thin REST/JSON adapter over the shared primary-raster export pipeline. Collection listing, collection metadata, schema, and coverage bytes are not output-cached because they are access-filtered or high-cardinality. `datetime`, `subset`, `scale-axes`, NetCDF, JPEG, CoverageJSON, multipart responses, per-scene catalog selection, and tiled coverage delivery are deferred. See [OGC API Coverages Coverage](specifications/ogc-api-coverages-coverage.md) for parameter details and examples.
+
+**Typical use cases:**
+- GeoTIFF coverage export through modern OGC APIs
+- REST/JSON coverage metadata discovery
+- Band selection and reprojection over existing raster layers
 
 ---
 

@@ -589,10 +589,8 @@ internal sealed class OgcCoveragesHandler
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
 
-        var extent = await CreateExtentAsync(raster, storageSrid, cancellationToken).ConfigureAwait(false);
-        var storageBbox = raster.Extent.HasValue
-            ? ImmutableArray.Create(raster.Extent.Value.XMin, raster.Extent.Value.YMin, raster.Extent.Value.XMax, raster.Extent.Value.YMax)
-            : (ImmutableArray<double>?)null;
+        var storageBbox = CreateStorageBoundingBox(raster);
+        var extent = await CreateExtentAsync(raster, storageSrid, storageBbox, cancellationToken).ConfigureAwait(false);
 
         return new OgcCoverageCollection
         {
@@ -604,14 +602,17 @@ internal sealed class OgcCoveragesHandler
             Links = links.ToImmutable(),
             Crs = crs,
             StorageCrs = storageCrs,
-            StorageCrsBbox = storageBbox,
             Grid = CreateGrid(raster),
             Domain = CreateDomain(raster),
             DefaultFields = CreateDefaultFields(raster)
         };
     }
 
-    private async Task<Extent?> CreateExtentAsync(RasterInfo raster, int storageSrid, CancellationToken cancellationToken)
+    private async Task<Extent?> CreateExtentAsync(
+        RasterInfo raster,
+        int storageSrid,
+        ImmutableArray<ImmutableArray<double>>? storageBbox,
+        CancellationToken cancellationToken)
     {
         if (raster.Extent is not { } rasterExtent)
         {
@@ -630,6 +631,7 @@ internal sealed class OgcCoveragesHandler
                         rasterExtent.YMin,
                         rasterExtent.XMax,
                         rasterExtent.YMax)),
+                    StorageCrsBoundingBox = storageBbox,
                     Crs = CreateEpsgUri(storageSrid)
                 }
             };
@@ -641,9 +643,17 @@ internal sealed class OgcCoveragesHandler
             Spatial = new SpatialExtent
             {
                 BoundingBox = ImmutableArray.Create(ImmutableArray.Create(minLon, minLat, maxLon, maxLat)),
+                StorageCrsBoundingBox = storageBbox,
                 Crs = SpatialReferenceHelpers.Crs84Uri
             }
         };
+    }
+
+    private static ImmutableArray<ImmutableArray<double>>? CreateStorageBoundingBox(RasterInfo raster)
+    {
+        return raster.Extent is { } extent
+            ? ImmutableArray.Create(ImmutableArray.Create(extent.XMin, extent.YMin, extent.XMax, extent.YMax))
+            : null;
     }
 
     private async Task<(double MinLon, double MinLat, double MaxLon, double MaxLat)?> TransformExtentToCrs84Async(

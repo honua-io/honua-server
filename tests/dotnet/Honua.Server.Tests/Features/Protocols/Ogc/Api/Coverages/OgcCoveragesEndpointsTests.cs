@@ -76,8 +76,14 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         var collection = collectionDocument.RootElement;
         collection.GetProperty("itemType").GetString().Should().Be("coverage");
         collection.GetProperty("storageCrs").GetString().Should().Contain("4326");
-        collection.GetProperty("extent").GetProperty("spatial").GetProperty("bbox").EnumerateArray()
+        collection.TryGetProperty("storageCrsBbox", out _).Should().BeFalse();
+
+        var spatialExtent = collection.GetProperty("extent").GetProperty("spatial");
+        spatialExtent.GetProperty("bbox").EnumerateArray()
             .Should().ContainSingle();
+        var storageCrsBbox = spatialExtent.GetProperty("storageCrsBbox").EnumerateArray().ToArray();
+        storageCrsBbox.Should().ContainSingle();
+        storageCrsBbox[0].EnumerateArray().Should().HaveCount(4);
         collection.GetProperty("grid").GetProperty("width").GetInt32().Should().Be(64);
         collection.GetProperty("defaultFields").EnumerateArray().Select(field => field.GetString())
             .Should().Equal("band_1", "band_2", "band_3");
