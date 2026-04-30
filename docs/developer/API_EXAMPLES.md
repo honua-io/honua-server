@@ -17,6 +17,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 | **Spec Plan/Apply Engine** | Terraform-style spec execution with content-hash caching | `/v1/spec/*` + `geospatial.v1.SpecService` | Deployment tooling, AI agents |
 | **OData v4** | Business intelligence | `/odata` | Excel, Power BI |
 | **Vector Tiles** | High-performance maps | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, Leaflet |
+| **Terrain-RGB Tiles** | Web terrain/elevation | `/terrain/{datasetId}/tile.json` | MapLibre/Mapbox `raster-dem` clients |
 
 ## Table of Contents
 
@@ -29,6 +30,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 - [Spec Plan/Apply Engine](#spec-planapply-engine)
 - [OData v4](#odata-v4-api)
 - [Vector Tiles (MVT)](#vector-tiles-mvt)
+- [Terrain-RGB Elevation Tiles](#terrain-rgb-elevation-tiles)
 - [Error Handling](#error-handling)
 - [Related Documentation](#related-documentation)
 
@@ -670,6 +672,76 @@ const map = new maplibregl.Map({
   }
 });
 ```
+
+---
+
+## **Terrain-RGB Elevation Tiles**
+
+### **TileJSON metadata**
+
+```bash
+curl "http://localhost:8080/terrain/0/tile.json"
+```
+
+**Example JSON response (trimmed):**
+```json
+{
+  "tilejson": "3.0.0",
+  "scheme": "xyz",
+  "tiles": ["http://localhost:8080/terrain/0/{z}/{x}/{y}.png"],
+  "minzoom": 0,
+  "maxzoom": 22,
+  "format": "terrain-rgb",
+  "encoding": {
+    "type": "mapbox-terrain-rgb",
+    "formula": "elevationMeters = -10000 + ((R * 256 * 256 + G * 256 + B) * 0.1)",
+    "units": "meters",
+    "tileSize": 256
+  },
+  "source": {
+    "datasetId": "0",
+    "layerId": 0,
+    "rasterCount": 1,
+    "sourceCrs": "EPSG:3857",
+    "verticalUnitAssumption": "Source values are encoded as meters when no vertical unit is declared."
+  },
+  "noData": {
+    "terrainRgbSentinelMeters": -10000,
+    "terrainRgbSentinel": [0, 0, 0]
+  },
+  "supported": true,
+  "unsupportedReasons": []
+}
+```
+
+### **Download one Terrain-RGB tile**
+
+```bash
+curl "http://localhost:8080/terrain/0/0/0/0.png" --output terrain.png
+```
+
+Tiles are 256x256 `image/png` responses in WebMercator XYZ coordinates. They use the Mapbox Terrain-RGB formula and encode source no-data or uncovered pixels as opaque RGB `[0,0,0]`, which decodes to `-10000m`.
+
+### **MapLibre source snippet**
+
+```json
+{
+  "sources": {
+    "dem": {
+      "type": "raster-dem",
+      "url": "http://localhost:8080/terrain/0/tile.json",
+      "encoding": "mapbox",
+      "tileSize": 256
+    }
+  },
+  "terrain": {
+    "source": "dem",
+    "exaggeration": 1
+  }
+}
+```
+
+`datasetId` can be a numeric layer id or a layer collection name. Tile requests return `400` for zoom or tile-matrix validation failures, `404` for missing datasets or layers without raster sources, and `422` for unsupported DEM sources such as missing CRS or multi-band rasters.
 
 ---
 

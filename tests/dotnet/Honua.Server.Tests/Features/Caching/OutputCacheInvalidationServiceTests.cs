@@ -106,6 +106,7 @@ public sealed class OutputCacheInvalidationServiceTests
 
         await outputCacheStore.Received().EvictByTagAsync("service-metadata", Arg.Any<CancellationToken>());
         await outputCacheStore.Received().EvictByTagAsync("tiles", Arg.Any<CancellationToken>());
+        await outputCacheStore.Received().EvictByTagAsync("terrain", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:layer:1:*", Arg.Any<CancellationToken>());
     }

@@ -60,6 +60,7 @@ internal sealed partial class OutputCacheInvalidationService
             tags.Add("tiles");
             tags.Add("layer-metadata");
             tags.Add("layer-styles");
+            tags.Add("terrain");
             tags.Add("ogc-maps");
             responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(layerId.Value));
             responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(layerId.Value));
