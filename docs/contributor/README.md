@@ -30,6 +30,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Python Integration Tests](testing-python.md) — pytest OGC and FeatureServer tests
 - [JavaScript Integration Tests](testing-javascript.md) — Vitest protocol coverage plus Playwright Esri Leaflet browser compatibility tests
 - [Shared Seed Data](test-seed-data.md) — YAML seed format for cross-language tests
+- [OGC Certification Path](ogc-certification-path.md) — formal certification decision, evidence taxonomy, and current baseline results
 - [CITE OGC Features](cite-conformance-testing.md) — OGC API Features conformance
 - [CITE OGC Tiles](cite-tiles-conformance-testing.md) — OGC API Tiles conformance
 - [OGC API Maps Conformance](ogc-maps-conformance-testing.md) — OGC API Maps conformance gate
