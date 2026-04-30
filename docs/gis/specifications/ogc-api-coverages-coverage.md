@@ -48,7 +48,7 @@ Only one scaling control is allowed per coverage request. Scaling requests must 
 
 ## Response Contract
 
-Coverage bytes return `200 OK` with `image/tiff` for GeoTIFF or `image/png` for PNG. When the raster result reports an extent, Honua emits `Content-Bbox` as `xmin,ymin,xmax,ymax`. When the output CRS is not WGS 84, Honua emits `Content-Crs` as an EPSG URI. Coverage responses also include a `Link` header with `self`, GeoTIFF alternate, and PNG alternate links.
+Coverage bytes return `200 OK` with `image/tiff` for GeoTIFF or `image/png` for PNG. When the raster result reports an extent, Honua emits `Content-Bbox` as `xmin,ymin,xmax,ymax`. When the output CRS is not WGS 84, Honua emits `Content-Crs` as an OGC CRS URI-reference such as `<https://www.opengis.net/def/crs/EPSG/0/3857>`. Coverage responses also include a `Link` header with `self`, GeoTIFF alternate, and PNG alternate links.
 
 Collection metadata keeps the storage CRS bounding box inside `extent.spatial.storageCrsBbox`; there is no top-level `storageCrsBbox` property on coverage collection documents.
 

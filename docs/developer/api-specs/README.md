@@ -50,6 +50,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 - Retrieve coverage bytes as GeoTIFF by default or PNG by negotiation
 - Spatially subset with `bbox` and reproject with `crs`
 - Select bands with `properties=band_1,band_3`
+- Resize with one of `resolution`, `scale-factor`, or `scale-size`; derived outputs are capped at 8192 pixels per axis
 
 See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-coverage.md) document for supported parameters and MVP deferrals.
 

@@ -211,7 +211,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Positive output pixel size as one value or width,height. The derived output must not exceed 8192 pixels on either axis."
+            "description": "Positive output pixel size as one value or width,height. The derived output must not exceed 8192 pixels on either axis, checked against the requested bbox when supplied and otherwise against coverage extent or native grid metadata."
           },
           {
             "name": "scale-factor",
@@ -220,7 +220,7 @@
               "type": "number",
               "exclusiveMinimum": 0
             },
-            "description": "Positive multiplier for the native pixel size. The derived output must not exceed 8192 pixels on either axis."
+            "description": "Positive multiplier for the native pixel size. The derived output must not exceed 8192 pixels on either axis, checked against the requested bbox when supplied and otherwise against coverage extent or native grid metadata."
           },
           {
             "name": "scale-size",
@@ -258,7 +258,7 @@
                 }
               },
               "Content-Crs": {
-                "description": "Result CRS when the result SRID is not 4326.",
+                "description": "Result CRS URI-reference when the result SRID is not 4326.",
                 "schema": {
                   "type": "string"
                 }

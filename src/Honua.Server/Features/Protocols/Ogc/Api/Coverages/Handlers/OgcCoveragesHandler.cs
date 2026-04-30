@@ -1346,7 +1346,7 @@ internal sealed class OgcCoveragesHandler
         var resultSrid = outputCrs?.Srid ?? result.Srid;
         if (resultSrid.HasValue && resultSrid.Value != SpatialReference.WGS84.Wkid)
         {
-            context.Response.Headers.Append("Content-Crs", CreateEpsgUri(resultSrid.Value));
+            context.Response.Headers.Append("Content-Crs", FormatContentCrsHeader(resultSrid.Value));
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -1375,6 +1375,9 @@ internal sealed class OgcCoveragesHandler
 
     private static string CreateEpsgUri(int srid)
         => FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{srid}");
+
+    private static string FormatContentCrsHeader(int srid)
+        => FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid}>");
 
     private static int ResolveStorageSrid(LayerDefinition layer, RasterInfo raster)
         => raster.Extent?.Srid ?? raster.Srid ?? layer.SpatialReference.Wkid;

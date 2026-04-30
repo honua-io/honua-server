@@ -449,7 +449,7 @@ curl -o coverage.tif \
   "http://localhost:8080/ogc/coverages/collections/0/coverage?bbox=-122.5,37.7,-122.3,37.9"
 ```
 
-GeoTIFF is the default coverage encoding. The response includes `Content-Bbox` when the raster export reports an extent, and `Content-Crs` when the output CRS is not WGS 84.
+GeoTIFF is the default coverage encoding. The response includes `Content-Bbox` when the raster export reports an extent, and `Content-Crs` as an OGC CRS URI-reference when the output CRS is not WGS 84.
 
 ### **Select Bands, Reproject, and Resize**
 

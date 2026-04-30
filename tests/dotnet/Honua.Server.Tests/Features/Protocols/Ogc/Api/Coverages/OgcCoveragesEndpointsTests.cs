@@ -125,7 +125,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("Content-Crs", out var contentCrs).Should().BeTrue();
-        contentCrs!.Single().Should().Contain("3857");
+        contentCrs!.Single().Should().Be("<https://www.opengis.net/def/crs/EPSG/0/3857>");
 
         _exportQueries.Should().ContainSingle();
         var query = _exportQueries.Single();

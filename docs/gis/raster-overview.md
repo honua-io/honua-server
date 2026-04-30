@@ -11,8 +11,8 @@ by issue `#381`.
 | Raster upload and import | Shipped (`#517`) | Admin import accepts GeoTIFF/COG files and PNG/JPEG rasters with world-file sidecars, then loads them into the PostGIS raster store. |
 | COG registration, direct serving, and export support | Shipped (`#519`) | Admin COG registration is available for cloud-hosted COGs. ImageServer tile requests can fall back to registered COGs when PostGIS has no tile. Shared raster export/conversion paths can request COG output. |
 | Multi-raster mosaic and raster catalog completion | Remaining (`#522`) | MVP layer-level raster selection and simple PostGIS mosaic rendering exist, but full mosaic dataset/raster catalog behavior remains the remaining implementation child. |
-| WCS protocol adapter | Follow-on (`#377`) | WCS should adapt to the shared raster backend; it is not part of this umbrella closeout. |
-| OGC API Coverages protocol adapter | Follow-on (`#521`) | OGC API Coverages should adapt to the shared raster backend beside WCS. |
+| WCS protocol adapter | Shipped (`#377`) | WCS adapts to the shared raster backend for primary-raster `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`. |
+| OGC API Coverages protocol adapter | Shipped (`#521`) | OGC API Coverages adapts to the shared raster backend for REST/JSON coverage discovery, schema metadata, and GeoTIFF/PNG coverage retrieval. |
 
 ## Raster upload and import
 
@@ -112,16 +112,17 @@ Persisted metadata stores overview summaries today; tile offset arrays may
 still require a cloud scan on cold cache.
 
 The shipped paths preserve observable signals for raster import progress, COG
-registration, metadata scans, direct COG tile serving, unsupported compression,
-and non-web-mercator CRS warnings.
+registration, metadata scans, direct COG tile serving, OGC API Coverages exports,
+unsupported compression, and non-web-mercator CRS warnings. OGC API Coverages
+collection list/detail, schema, and coverage byte routes are not output-cached;
+only bounded metadata resources such as landing, conformance, and OpenAPI use
+output-cache policies.
 
 ## Remaining roadmap
 
 | Issue | Scope |
 | --- | --- |
 | `#522` | Complete true multi-raster mosaic dataset behavior and raster catalog workflows beyond the MVP layer-level selection/composition paths. |
-| `#377` | Add the WCS protocol adapter over the shared raster backend. |
-| `#521` | Add the OGC API Coverages protocol adapter over the shared raster backend. |
 | Future child if prioritized | Add async/background raster import queueing separate from `#522`. |
 
 Protocol follow-ons must stay as thin adapters over the shared raster store,
