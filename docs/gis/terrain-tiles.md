@@ -43,7 +43,7 @@ the source catalog has no vertical CRS information.
   "scheme": "xyz",
   "tiles": ["https://example.com/terrain/0/{z}/{x}/{y}.png"],
   "minzoom": 0,
-  "maxzoom": 22,
+  "maxzoom": 18,
   "bounds": [-180, -85.0511, 180, 85.0511],
   "center": [0, 0, 0],
   "format": "terrain-rgb",
@@ -84,10 +84,13 @@ the source catalog has no vertical CRS information.
 }
 ```
 
-`bounds`, `center`, `sourceCrs`, and `sourceExtent` are nullable when the source
-CRS or extent cannot be resolved. Metadata can still return `200 OK` with
-`supported: false` and `unsupportedReasons` populated so clients and operators
-can diagnose why tile requests would fail.
+`minzoom` and `maxzoom` reflect the configured `Limits:Tiles` range; the default
+maximum is 18. `bounds`, `center`, and `sourceExtent` are nullable when the
+source CRS or extent cannot be transformed. `sourceSrid` and `sourceCrs` reflect
+the stored raster SRID when available; unsupported SRIDs such as `0` are reported
+through `supported: false` and `unsupportedReasons`. Metadata can still return
+`200 OK` with `supported: false` so clients and operators can diagnose why tile
+requests would fail.
 
 ## Source requirements
 

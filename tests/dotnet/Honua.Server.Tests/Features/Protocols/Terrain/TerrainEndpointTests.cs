@@ -282,17 +282,37 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /terrain/{datasetId}/tile.json")]
+    public async Task GetTerrainMetadata_WithUnknownSourceCrs_DoesNotAdvertiseInvalidEpsgCode()
+    {
+        await ReplaceLayerWithUnknownCrsRasterAsync();
+
+        var response = await _fixture.Client.GetAsync("/terrain/0/tile.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+        var root = json.RootElement;
+
+        root.GetProperty("supported").GetBoolean().Should().BeFalse();
+        root.GetProperty("unsupportedReasons").EnumerateArray()
+            .Select(static reason => reason.GetString())
+            .Should().Contain(static reason => reason != null && reason.Contains("CRS", StringComparison.OrdinalIgnoreCase));
+        root.GetProperty("bounds").ValueKind.Should().Be(JsonValueKind.Null);
+
+        var source = root.GetProperty("source");
+        source.GetProperty("sourceSrid").ValueKind.Should().Be(JsonValueKind.Null);
+        source.GetProperty("sourceCrs").ValueKind.Should().Be(JsonValueKind.Null);
+        source.GetProperty("sourceExtent").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_WithUnknownSourceCrs_ReturnsUnprocessableEntity()
     {
-        await ReplaceLayerRasterSqlAsync("""
-            ST_AddBand(
-                ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, @scaleX, @scaleY, 0, 0, 0),
-                '32BF'::text,
-                10,
-                NULL)
-            """);
+        await ReplaceLayerWithUnknownCrsRasterAsync();
 
         var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.png");
 
@@ -317,6 +337,15 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
                 AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
                 Srid: 3857));
+
+    private Task ReplaceLayerWithUnknownCrsRasterAsync()
+        => ReplaceLayerRasterSqlAsync("""
+            ST_AddBand(
+                ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, @scaleX, @scaleY, 0, 0, 0),
+                '32BF'::text,
+                10,
+                NULL)
+            """);
 
     private async Task ReplaceLayerRasterSqlAsync(string rasterSql)
     {

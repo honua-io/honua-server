@@ -58,7 +58,7 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
         }
 
         var unsupportedReasons = GetUnsupportedReasons(rasters);
-        var sourceSrid = ResolveSingleValue(rasters.Select(static raster => raster.Srid));
+        var sourceSrid = ResolveSourceSrid(rasters);
         var bandCount = ResolveSingleValue(rasters.Select(static raster => (int?)raster.BandCount));
         var pixelType = ResolveSingleValue(rasters.Select(static raster => raster.PixelType));
         var noDataValue = ResolveSingleValue(rasters.Select(static raster => raster.NoDataValue));
@@ -397,6 +397,16 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return distinct.Length == 1 ? distinct[0] : null;
+    }
+
+    private static int? ResolveSourceSrid(RasterInfo[] rasters)
+    {
+        if (rasters.Any(static raster => raster.Srid is not > 0))
+        {
+            return null;
+        }
+
+        return ResolveSingleValue(rasters.Select(static raster => raster.Srid));
     }
 
     private static RasterExtent? ComputeAggregateExtent(RasterInfo[] rasters, int sourceSrid)

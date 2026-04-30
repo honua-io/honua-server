@@ -217,6 +217,7 @@ internal static class TerrainEndpoints
         var center = bounds == null
             ? null
             : new[] { (bounds[0] + bounds[2]) / 2.0, (bounds[1] + bounds[3]) / 2.0, (double)minZoom };
+        var sourceSrid = metadata.SourceSrid is > 0 ? metadata.SourceSrid.Value : (int?)null;
 
         return new TerrainMetadataResponse
         {
@@ -234,9 +235,9 @@ internal static class TerrainEndpoints
                 LayerId = layer.Id,
                 RasterIds = metadata.RasterIds,
                 RasterCount = metadata.RasterCount,
-                SourceSrid = metadata.SourceSrid,
-                SourceCrs = metadata.SourceSrid.HasValue ? $"EPSG:{metadata.SourceSrid.Value}" : null,
-                SourceExtent = metadata.SourceExtent is { } extent
+                SourceSrid = sourceSrid,
+                SourceCrs = sourceSrid.HasValue ? $"EPSG:{sourceSrid.Value}" : null,
+                SourceExtent = sourceSrid.HasValue && metadata.SourceExtent is { } extent
                     ? new TerrainExtentMetadata
                     {
                         XMin = extent.XMin,

@@ -176,7 +176,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Tiles",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Terrain|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Tiles",
       "paths": [
         "src/Honua.Server/Features/Protocols/Ogc/Api/Maps/",
         "src/Honua.Server/Features/Protocols/Ogc/Api/Tiles/",
@@ -185,6 +185,7 @@
         "src/Honua.Server/Features/Protocols/GeoServices/MapServer/",
         "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/",
         "src/Honua.Server/Features/Protocols/GeoServices/GeometryService/",
+        "src/Honua.Server/Features/Protocols/Terrain/",
         "src/Honua.Server/Features/Protocols/Tiles/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Tiles/",
@@ -193,6 +194,7 @@
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Terrain/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Tiles/"
       ]
     },
