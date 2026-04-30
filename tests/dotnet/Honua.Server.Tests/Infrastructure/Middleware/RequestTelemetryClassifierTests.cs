@@ -30,6 +30,8 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/rest/services/0/ImageServer/WCS", HonuaTelemetry.Protocols.Wcs20)]
     [InlineData("/stac", HonuaTelemetry.Protocols.Stac)]
     [InlineData("/stac/search", HonuaTelemetry.Protocols.Stac)]
+    [InlineData("/terrain/0/tile.json", HonuaTelemetry.Protocols.Terrain)]
+    [InlineData("/terrain/0/0/0/0.png", HonuaTelemetry.Protocols.Terrain)]
     [InlineData("/api/v1/tiles/pmtiles/world/42/WebMercatorQuad.pmtiles", HonuaTelemetry.Protocols.PMTiles)]
     [InlineData("/api/v1/tiles/pmtiles/abcdef", HonuaTelemetry.Protocols.PMTiles)]
     public void ResolveProtocol_KnownSurface_ReturnsExpectedProtocol(string path, string expectedProtocol)
@@ -113,6 +115,8 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/stac/collections/1/items", "items")]
     [InlineData("/stac/collections/1/items/abc", "item")]
     [InlineData("/stac/search", "search.get")]
+    [InlineData("/terrain/0/tile.json", "terrain.metadata")]
+    [InlineData("/terrain/0/0/0/0.png", "terrain.tile")]
     public void ResolveOperation_KnownSurface_ReturnsExpectedOperation(string path, string expectedOperation)
     {
         var context = new DefaultHttpContext();

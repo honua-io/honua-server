@@ -335,6 +335,23 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("mvt-tiles", "metadata");
             });
 
+            // Terrain TileJSON-compatible metadata caching policy
+            options.AddPolicy("TerrainMetadata", policy =>
+            {
+                policy.Expire(ttl.TerrainMetadata);
+                policy.SetVaryByRouteValue("datasetId");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("terrain", "metadata");
+            });
+
+            // Terrain-RGB finite grid tile caching policy
+            options.AddPolicy("TerrainTile", policy =>
+            {
+                policy.Expire(ttl.TerrainTile);
+                policy.SetVaryByRouteValue("datasetId", "z", "x", "y");
+                policy.Tag("terrain", "tiles");
+            });
+
             // Layer style caching policy
             options.AddPolicy("LayerStyle", policy =>
             {

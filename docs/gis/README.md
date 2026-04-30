@@ -19,6 +19,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 - [Data Modeling Guide](DATA_MODELING_GUIDE.md) — Spatial data modeling best practices
 - [FileGDB Import](FILEGDB_IMPORT_WORKFLOW.md) — File Geodatabase packaging and upload
 - [Raster Overview](raster-overview.md) — Raster import, COG registration/direct serving, and remaining mosaic/catalog roadmap status
+- [Terrain-RGB Tiles](terrain-tiles.md) — DEM/raster elevation tiles for MapLibre/Mapbox `raster-dem` clients
 
 ## Protocol Coverage
 

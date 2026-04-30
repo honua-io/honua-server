@@ -160,6 +160,16 @@ public sealed class OutputCacheTtlOptions
     public TimeSpan TileJson { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// Terrain metadata cache duration. Default: 10 minutes.
+    /// </summary>
+    public TimeSpan TerrainMetadata { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Terrain tile cache duration. Default: 1 hour.
+    /// </summary>
+    public TimeSpan TerrainTile { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
     /// Layer style cache duration. Default: 10 minutes.
     /// </summary>
     public TimeSpan LayerStyle { get; set; } = TimeSpan.FromMinutes(10);

@@ -371,6 +371,8 @@ public static class EndpointRegistry
         new("GET", "/tiles/{layerId}/{z}/{x}/{y}.mvt"),
         new("GET", "/tiles/{layerId}/h3/{z}/{x}/{y}.mvt"),
         new("GET", "/tiles/{layerId}/tile.json"),
+        new("GET", "/terrain/{datasetId}/tile.json"),
+        new("GET", "/terrain/{datasetId}/{z}/{x}/{y}.png"),
         new("GET", "/api/styles/{layerId}.json"),
 
         // Durable PMTiles publish range proxy (#845).

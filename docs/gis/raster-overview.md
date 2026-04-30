@@ -10,6 +10,7 @@ by issue `#381`.
 | --- | --- | --- |
 | Raster upload and import | Shipped (`#517`) | Admin import accepts GeoTIFF/COG files and PNG/JPEG rasters with world-file sidecars, then loads them into the PostGIS raster store. |
 | COG registration, direct serving, and export support | Shipped (`#519`) | Admin COG registration is available for cloud-hosted COGs. ImageServer tile requests can fall back to registered COGs when PostGIS has no tile. Shared raster export/conversion paths can request COG output. |
+| Terrain-RGB elevation tiles | Shipped (`#839`) | Registered single-band DEM/raster sources can be served through `/terrain/{datasetId}/tile.json` and `/terrain/{datasetId}/{z}/{x}/{y}.png` for MapLibre/Mapbox `raster-dem` clients. |
 | Multi-raster mosaic and raster catalog completion | Remaining (`#522`) | MVP layer-level raster selection and simple PostGIS mosaic rendering exist, but full mosaic dataset/raster catalog behavior remains the remaining implementation child. |
 | WCS protocol adapter | Shipped (`#377`) | WCS adapts to the shared raster backend for primary-raster `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`. |
 | OGC API Coverages protocol adapter | Shipped (`#521`) | OGC API Coverages adapts to the shared raster backend for REST/JSON coverage discovery, schema metadata, and GeoTIFF/PNG coverage retrieval. |
@@ -98,6 +99,22 @@ Direct COG tile resolution is designed for web-map tile alignment. EPSG:3857 is
 the expected CRS for directly serving web tiles. EPSG:4326 COG metadata can be
 read, but clients may need protocol-specific handling. Other SRIDs are logged
 as potentially problematic for web clients.
+
+## Terrain-RGB elevation tiles
+
+Terrain-RGB is available as a server-owned elevation tile surface over the
+registered PostGIS raster source for a layer:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /terrain/{datasetId}/tile.json` | TileJSON 3.0 metadata with Honua source and no-data extensions. |
+| `GET /terrain/{datasetId}/{z}/{x}/{y}.png` | 256x256 WebMercator XYZ Terrain-RGB PNG tile. |
+
+Terrain v1 expects one numeric source elevation band, a usable CRS/SRID, and a
+consistent source CRS across the dataset. Source no-data and uncovered pixels
+are encoded as opaque Terrain-RGB `[0, 0, 0]` (`-10000m`), including tiles that
+are entirely outside raster coverage. See [Terrain-RGB Elevation Tiles](terrain-tiles.md)
+for the client contract.
 
 ## Cache and observability behavior
 

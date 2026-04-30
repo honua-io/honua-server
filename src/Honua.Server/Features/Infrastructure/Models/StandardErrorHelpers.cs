@@ -138,6 +138,23 @@ internal static class StandardErrorHelpers
     }
 
     /// <summary>
+    /// Creates an Unprocessable Entity error response.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Unprocessable Entity response.</returns>
+    internal static IResult CreateUnprocessableEntity(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status422UnprocessableEntity,
+            "Unprocessable Entity",
+            detail,
+            additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
     /// Creates a Service Unavailable error response.
     /// </summary>
     /// <param name="context">The HTTP context for protocol detection.</param>

@@ -28,6 +28,11 @@ internal static class RequestTelemetryClassifier
             return HonuaTelemetry.Protocols.PMTiles;
         }
 
+        if (StartsWithPathSegment(value, "/terrain"))
+        {
+            return HonuaTelemetry.Protocols.Terrain;
+        }
+
         if (StartsWithPathSegment(value, "/ogc/tiles"))
         {
             return HonuaTelemetry.Protocols.OgcTiles;
@@ -180,6 +185,13 @@ internal static class RequestTelemetryClassifier
             return string.Equals(method, HttpMethods.Head, StringComparison.OrdinalIgnoreCase)
                 ? "pmtiles.head"
                 : "pmtiles.range";
+        }
+
+        if (StartsWithPathSegment(path, "/terrain"))
+        {
+            return path.EndsWith("/tile.json", StringComparison.OrdinalIgnoreCase)
+                ? "terrain.metadata"
+                : "terrain.tile";
         }
 
         if (path.StartsWith("/rest/services/Utilities/PrintingTools/GPServer", StringComparison.OrdinalIgnoreCase))
