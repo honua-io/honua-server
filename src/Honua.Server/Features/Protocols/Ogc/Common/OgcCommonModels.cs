@@ -179,6 +179,16 @@ public static class RelationTypes
     public const string Queryables = "http://www.opengis.net/def/rel/ogc/1.0/queryables";
 
     /// <summary>
+    /// Indicates the link target provides a JSON Schema document.
+    /// </summary>
+    public const string Schema = "http://www.opengis.net/def/rel/ogc/1.0/schema";
+
+    /// <summary>
+    /// Indicates the link target provides a coverage representation.
+    /// </summary>
+    public const string Coverage = "http://www.opengis.net/def/rel/ogc/1.0/coverage";
+
+    /// <summary>
     /// Indicates the link target provides a tilesets list for vector tiles.
     /// </summary>
     public const string TilesetsVector = "http://www.opengis.net/def/rel/ogc/1.0/tilesets-vector";
@@ -243,6 +253,12 @@ public sealed record SpatialExtent
     /// </summary>
     [JsonPropertyName("bbox")]
     public required ImmutableArray<ImmutableArray<double>> BoundingBox { get; init; }
+
+    /// <summary>
+    /// Bounding box coordinates expressed in the collection storage CRS.
+    /// </summary>
+    [JsonPropertyName("storageCrsBbox")]
+    public ImmutableArray<ImmutableArray<double>>? StorageCrsBoundingBox { get; init; }
 
     /// <summary>
     /// Coordinate reference system identifier.

@@ -105,6 +105,11 @@ public static class Protocols
     public const string OgcApiMaps = "OGC-API-Maps";
 
     /// <summary>
+    /// OGC API - Coverages (Part 1: Core).
+    /// </summary>
+    public const string OgcApiCoverages = "OGC-API-Coverages";
+
+    /// <summary>
     /// GeoServices REST service directory and root metadata endpoints.
     /// </summary>
     public const string GeoservicesCatalog = "GeoservicesCatalog";

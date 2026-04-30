@@ -742,6 +742,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.FeatureServerJsonContext.Default,
         Honua.Server.Features.Protocols.GeoServices.ImageServer.Models.ImageServerJsonContext.Default,
         Honua.Server.Features.Protocols.OData.Models.ODataJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Coverages.Models.OgcCoveragesJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Features.OgcJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Maps.Models.OgcMapsJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Tiles.OgcTilesJsonContext.Default,
@@ -918,6 +919,7 @@ if (serveApiDocs)
             .WithTitle("Honua API Explorer")
             .WithTheme(ScalarTheme.BluePlanet)
             .AddDocument("features", "OGC API Features", "/openapi.json", isDefault: true)
+            .AddDocument("coverages", "OGC API Coverages", "/ogc/coverages/openapi.json")
             .AddDocument("tiles", "OGC API Tiles", "/ogc/tiles/openapi.json")
             .AddDocument("maps", "OGC API Maps", "/ogc/maps/openapi.json")
             .AddDocument("processes", "OGC API Processes", "/ogc/processes/openapi.json")

@@ -38,6 +38,11 @@ internal static class RequestTelemetryClassifier
             return HonuaTelemetry.Protocols.OgcMaps;
         }
 
+        if (StartsWithPathSegment(value, "/ogc/coverages"))
+        {
+            return HonuaTelemetry.Protocols.OgcCoverages;
+        }
+
         if (StartsWithPathSegment(value, "/ogc/processes"))
         {
             return HonuaTelemetry.Protocols.OgcProcesses;
@@ -623,6 +628,42 @@ internal static class RequestTelemetryClassifier
                         _ => "query"
                     };
             }
+        }
+
+        if (StartsWithPathSegment(path, "/ogc/coverages"))
+        {
+            if (string.Equals(path, "/ogc/coverages", StringComparison.OrdinalIgnoreCase))
+            {
+                return "landing";
+            }
+
+            if (path.EndsWith("/conformance", StringComparison.OrdinalIgnoreCase))
+            {
+                return "conformance";
+            }
+
+            if (path.EndsWith("/api", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith("/openapi.json", StringComparison.OrdinalIgnoreCase))
+            {
+                return "api";
+            }
+
+            if (path.EndsWith("/collections", StringComparison.OrdinalIgnoreCase))
+            {
+                return "collections";
+            }
+
+            if (path.EndsWith("/schema", StringComparison.OrdinalIgnoreCase))
+            {
+                return "schema";
+            }
+
+            if (path.EndsWith("/coverage", StringComparison.OrdinalIgnoreCase))
+            {
+                return "coverage";
+            }
+
+            return "collection";
         }
 
         if (StartsWithPathSegment(path, "/ogc/tiles"))

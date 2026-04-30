@@ -252,6 +252,9 @@ public static class HonuaTelemetry
         /// <summary>OGC API Maps.</summary>
         public const string OgcMaps = "OGC-Maps";
 
+        /// <summary>OGC API Coverages.</summary>
+        public const string OgcCoverages = "OGC-Coverages";
+
         /// <summary>OGC API Processes.</summary>
         public const string OgcProcesses = "OGC-Processes";
 

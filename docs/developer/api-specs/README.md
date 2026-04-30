@@ -38,6 +38,27 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 {% swagger src="ogc-api-tiles.json" %}
 {% endswagger %}
 
+### **OGC API Coverages**
+**Protocol**: OGC API Coverages
+**Base URL**: `/ogc/coverages`
+**OpenAPI Spec**: [ogc-api-coverages.json](ogc-api-coverages.json)
+**Runtime Spec**: `https://your-honua-server.com/ogc/coverages/openapi.json`
+
+**What you can do**:
+- Discover raster coverage collections
+- Inspect collection spatial extent, CRS, grid/domain metadata, and selectable band fields
+- Negotiate metadata as JSON or HTML with `f=json|html` or `Accept`
+- Retrieve coverage bytes as GeoTIFF by default or PNG by negotiation
+- Spatially subset with `bbox` and reproject with `crs`
+- Select bands with `properties=band_1,band_3`
+- Resize with one of `resolution`, `scale-factor`, or `scale-size`; derived outputs are capped at 8192 pixels per axis
+- Follow coverage response `Link` alternates that preserve the request query while switching between GeoTIFF and PNG
+
+See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-coverage.md) document for supported parameters and MVP deferrals.
+
+{% swagger src="ogc-api-coverages.json" %}
+{% endswagger %}
+
 ### **OGC API Processes**
 **Protocol**: OGC API Processes Part 1 — Core
 **Base URL**: `/ogc/processes`
@@ -118,6 +139,9 @@ curl https://your-honua-server.com/openapi.json
 
 # OGC API Tiles
 curl https://your-honua-server.com/ogc/tiles/openapi.json
+
+# OGC API Coverages
+curl https://your-honua-server.com/ogc/coverages/openapi.json
 
 # OGC API Processes
 curl https://your-honua-server.com/ogc/processes/openapi.json

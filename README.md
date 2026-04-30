@@ -71,6 +71,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | GeoServices REST MapServer | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri Leaflet, Esri map clients |
 | GeoServices REST ImageServer | `/rest/services/{id}/ImageServer` | ArcGIS raster/image workflows |
 | OGC WCS 2.0.1 | `/rest/services/{id}/ImageServer/WCS`, `/ogc/services/{serviceId}/wcs` | Science, elevation, and coverage clients |
+| OGC API Coverages | `/ogc/coverages` | Modern OGC raster/coverage clients |
 | GeoServices REST Geometry Service | `/rest/services/geometry` | Esri-compatible geometry operations |
 | GeoServices REST GPServer | `/rest/services/{id}/GPServer` | ArcGIS Pro, Esri geoprocessing SDKs (async submit, job status, cancel; synchronous execute pending) |
 | MCP Operator JSON-RPC | `/mcp` | AI agents, operator automation, MCP clients |
@@ -87,6 +88,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
+| OpenAPI (OGC Coverages) | `/ogc/coverages/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Processes) | `/ogc/processes/openapi.json` | Any HTTP client |
 | API Explorer (Scalar) | `/docs` | Browser *(dev mode or `HONUA_SERVE_API_DOCS=true`)* |
 | Health | `/healthz/live`, `/healthz/ready` | Load balancers, orchestrators |
@@ -97,7 +99,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 
-**Raster and coverage access** — ImageServer export/identify/tile/catalog/statistics/legend routes plus WCS 2.0.1 `GetCapabilities`, `DescribeCoverage`, and `GetCoverage` over WCS-enabled raster layers.
+**Raster and coverage access** — ImageServer export/identify/tile/catalog/statistics/legend routes, WCS 2.0.1 `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`, plus OGC API Coverages discovery/schema/coverage retrieval over enabled raster layers.
 
 **Geometry operations** — GeoServices Geometry Service endpoints for buffer, simplify, project, intersect, union, clip, difference, area, and length.
 
