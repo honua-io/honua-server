@@ -1,0 +1,115 @@
+services:
+  honua-server:
+    image: honua-server:latest
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    ports:
+      - "${HONUA_CITE_WCS20_SERVER_PORT:-8092}:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - PUBLIC_BASE_URL=http://honua-server:8080
+      - HostValidation__AllowedHosts__0=honua-server
+      - HostValidation__AllowedHosts__1=localhost
+      - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
+      - ConnectionStrings__DefaultConnection=Server=postgres;Port=5432;Database=honua_cite_wcs;User Id=postgres;Password=cite_password;
+      - ConnectionStrings__honua=Server=postgres;Port=5432;Database=honua_cite_wcs;User Id=postgres;Password=cite_password;
+      - ConnectionStrings__Redis=redis:6379
+      - Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security
+      - Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cite-wcs20-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/healthz/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      - POSTGRES_DB=honua_cite_wcs
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=cite_password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    ports:
+      - "${HONUA_CITE_WCS20_POSTGRES_PORT:-5438}:5432"
+    networks:
+      - cite-wcs20-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d honua_cite_wcs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly no
+    networks:
+      - cite-wcs20-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cite-engine:
+    image: ogccite/ets-wcs20:1.22-teamengine-6.0.0-RC2
+    ports:
+      - "${HONUA_CITE_WCS20_TEAMENGINE_PORT:-8086}:8080"
+    environment:
+      - JAVA_OPTS=-Xmx2g -DTE_BASE=/root/te_base
+      - TEAMENGINE_BASE_URL=http://cite-engine:8080/teamengine
+    volumes:
+      - cite-wcs20-logs:/root/te_base/users/cite/logs
+      - ./config:/cite-config:ro
+    networks:
+      - cite-wcs20-network
+    depends_on:
+      honua-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/teamengine"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  cite-runner:
+    image: ogccite/ets-wcs20:1.22-teamengine-6.0.0-RC2
+    user: "0:0"
+    environment:
+      - WCS_ENDPOINT=http://honua-server:8080/ogc/services/cite/wcs
+      - WCS_CAPABILITIES_URL=http://honua-server:8080/ogc/services/cite/wcs?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1
+      - TEST_PROFILE=${CITE_PROFILE:-core}
+      - HOST_UID=${HOST_UID:-1000}
+      - HOST_GID=${HOST_GID:-1000}
+    command: ["/scripts/execute-wcs20-tests.sh"]
+    volumes:
+      - ../../../cite-wcs20-results:/results
+      - ../shared/scripts:/scripts:ro
+      - ./config:/cite-config:ro
+    networks:
+      - cite-wcs20-network
+    depends_on:
+      cite-engine:
+        condition: service_healthy
+      honua-server:
+        condition: service_healthy
+    profiles:
+      - test
+
+volumes:
+  cite-wcs20-logs:
+    driver: local
+
+networks:
+  cite-wcs20-network:
+    driver: bridge
