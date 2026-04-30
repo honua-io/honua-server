@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<values xmlns:parsers="http://www.occamlab.com/te/parsers">
+  <parsers:session>
+    <parsers:test>ets-wcs20-1.22</parsers:test>
+    <parsers:profile>core</parsers:profile>
+  </parsers:session>
+  <value key="url">http://honua-server:8080/ogc/services/cite/wcs?SERVICE=WCS&amp;REQUEST=GetCapabilities&amp;VERSION=2.0.1</value>
+  <value key="core">core</value>
+  <value key="ext_post">false</value>
+  <value key="ext_proc">false</value>
+  <value key="ext_scal">false</value>
+  <value key="ext_int">false</value>
+  <value key="ext_rsub">false</value>
+  <value key="ext_crs">false</value>
+  <value key="profile_eowcs">false</value>
+</values>

@@ -1,0 +1,42 @@
+name: OGC WCS 2.0 CITE Conformance Tests
+
+on:
+  # Tier: nightly — conformance suites are external and heavyweight.
+  # This workflow is intentionally manual/scheduled only and is not a PR/push gate.
+  schedule:
+    - cron: '30 7 * * 3'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'WCS CITE test profile'
+        required: false
+        default: 'core'
+        type: choice
+        options:
+          - core
+          - crs
+          - extensions
+          - full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cite-wcs20-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cite:
+    uses: ./.github/workflows/cite-conformance-common.yml
+    with:
+      suite: wcs20
+      display-name: WCS 2.0
+      runner-script: ./scripts/conformance/cite/run-cite-wcs20-tests.sh
+      results-dir: cite-wcs20-results
+      summary-file: cite-wcs20-summary.md
+      timeout-seconds: 3600
+      job-timeout-minutes: 75
+      cite-profile: ${{ inputs.profile || 'core' }}
+      extra-artifact-paths: |
+        docker/cite/wcs20/config/
+        docker/cite/wcs20/seed.sql
