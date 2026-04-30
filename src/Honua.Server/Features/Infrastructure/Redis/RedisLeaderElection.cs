@@ -253,7 +253,7 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         // Redis/network responsiveness.
         if (_isLeader && IsUsingRedis)
         {
-            _ = ReleaseLeadershipOnDisposeAsync();
+            _ = Task.Run(ReleaseLeadershipOnDisposeAsync);
         }
 
         UpdateLeadershipStatus(false);

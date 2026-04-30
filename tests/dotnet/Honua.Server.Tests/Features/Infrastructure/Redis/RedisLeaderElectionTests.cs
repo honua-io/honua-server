@@ -182,16 +182,22 @@ public sealed class RedisLeaderElectionTests : IDisposable
     [UnitTest]
     public async Task Dispose_WhenLeader_ReleasesLeadershipBeforeDisposal()
     {
+        var releaseStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
         _mockDatabase.Setup(db => db.LockTakeAsync("test-key", It.IsAny<RedisValue>(), It.IsAny<TimeSpan>()))
             .ReturnsAsync(true);
         _mockDatabase.Setup(db => db.LockReleaseAsync("test-key", It.IsAny<RedisValue>()))
-            .ReturnsAsync(true);
+            .Returns(() =>
+            {
+                releaseStarted.TrySetResult(true);
+                return Task.FromResult(true);
+            });
 
         var election = CreateElection("test-key");
         await election.TryAcquireOrExtendLeadershipAsync();
 
         election.Dispose();
-        await Task.Delay(50);
+        await releaseStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
         _mockDatabase.Verify(
             db => db.LockReleaseAsync("test-key", It.IsAny<RedisValue>()),
@@ -201,12 +207,18 @@ public sealed class RedisLeaderElectionTests : IDisposable
     [UnitTest]
     public async Task Dispose_WhenReleaseDoesNotComplete_ReturnsAfterTimeout()
     {
+        var releaseStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
         _mockDatabase.Setup(db => db.LockTakeAsync("test-key", It.IsAny<RedisValue>(), It.IsAny<TimeSpan>()))
             .ReturnsAsync(true);
 
-        var hangingRelease = new TaskCompletionSource<bool>();
+        var hangingRelease = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _mockDatabase.Setup(db => db.LockReleaseAsync("test-key", It.IsAny<RedisValue>()))
-            .Returns(hangingRelease.Task);
+            .Returns(() =>
+            {
+                releaseStarted.TrySetResult(true);
+                return hangingRelease.Task;
+            });
 
         var election = CreateElection("test-key");
         await election.TryAcquireOrExtendLeadershipAsync();
@@ -216,6 +228,7 @@ public sealed class RedisLeaderElectionTests : IDisposable
         stopwatch.Stop();
 
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+        await releaseStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
         _mockDatabase.Verify(
             db => db.LockReleaseAsync("test-key", It.IsAny<RedisValue>()),
             Times.Once);
