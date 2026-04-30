@@ -40,7 +40,9 @@ The CITE test suite validates that Honua Server correctly implements the OGC WFS
 WFS 2.0 CITE tests run automatically:
 - Weekly via scheduled workflow
 - Manually via workflow dispatch
-- On pull requests that modify WFS 2.0 implementation
+
+The workflow is a nightly-tier conformance lane. Pull request and push triggers
+were removed in #485 because TEAM Engine suites are external and heavyweight.
 
 ## Test Profiles
 
@@ -122,6 +124,48 @@ For WFS 2.0 conformance runs:
 - **KVP Encoding**: 100% pass rate (required)
 - **Filter Encoding**: 90%+ pass rate (advanced filters optional)
 - **Transactional WFS**: 95%+ pass rate (if enabled)
+
+### 2026-04-30 Failure Triage
+
+The latest retained scheduled artifact at triage time was GitHub Actions run
+`24978795599` (`wfs20-cite-results-basic-22`), which reported 240 total tests,
+174 passed, 28 failed, and 38 skipped in `testng-results.xml`. The retained
+markdown summary incorrectly counted skipped tests as failures and reported 66
+failed. Issue #870 fixes the bounded service behavior defects identified
+directly from that artifact:
+
+- `GetCapabilities` without `SERVICE=WFS` now returns a WFS exception report
+  instead of a successful capabilities document.
+- `GetFeature` and `GetPropertyValue` advertise and accept `resolve=local` as a
+  local no-op alongside `resolve=none`.
+- WFS capabilities declare the `xsd` namespace and advertise only FES 2.0
+  schema-valid temporal operator names.
+- WFS capabilities no longer advertise the non-schema `EnvelopeIntersects`
+  spatial operator, while the parser can still accept it from existing clients.
+- Unknown unqualified `RESOURCEID` values now return an empty feature collection
+  instead of a malformed-identifier exception.
+- DateTime attributes stored as JSON strings are emitted in the XML Schema
+  offset lexical form used elsewhere by WFS XML output.
+- Temporal filters with `gml:TimePeriod` operands accept UTC `Z` instants for
+  `After` and `Before` request predicates.
+- Stored-query management is truthfully de-advertised: Honua supports
+  `ListStoredQueries`, `DescribeStoredQueries`, and the mandatory
+  `GetFeatureById` stored query, but does not advertise `CreateStoredQuery`,
+  `DropStoredQuery`, or `ManageStoredQueries`.
+- Feature versioning is truthfully de-advertised through
+  `ImplementsFeatureVersioning=FALSE` and `ImplementsVersionNav=FALSE`, while
+  transactional Insert/Update/Delete behavior remains advertised through
+  `ImplementsTransactionalWFS=TRUE`.
+- Disabled WFS/FES optional conformance constraints no longer list `TRUE` in
+  `ows:AllowedValues`, matching how the ETS decides whether optional suites are
+  implemented.
+- The WFS CITE summary parser now records skipped tests separately from failed
+  tests.
+
+The WFS 2.0 lane is still not certification-ready until a rerun proves the fixed
+groups are cleared. This PR scope closes the bounded follow-ups #871, #872, and
+#873 by de-advertising unsupported optional behavior and adding regressions for
+the temporal-period request path.
 
 ## Troubleshooting
 

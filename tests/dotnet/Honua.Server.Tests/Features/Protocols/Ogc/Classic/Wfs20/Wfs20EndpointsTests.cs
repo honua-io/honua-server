@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
@@ -69,15 +70,47 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
-    public async Task Wfs_GetCapabilities_WithoutServiceParameter_ReturnsXml()
+    public async Task Wfs_GetCapabilities_DeAdvertisesUnsupportedStoredQueryAndVersioningConformance()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var document = XDocument.Parse(content);
+        var operations = document
+            .Descendants()
+            .Where(element => element.Name.LocalName == "Operation")
+            .Select(element => element.Attribute("name")?.Value)
+            .Where(name => name is not null)
+            .ToArray();
+
+        operations.Should().Contain("ListStoredQueries");
+        operations.Should().Contain("DescribeStoredQueries");
+        operations.Should().NotContain("CreateStoredQuery");
+        operations.Should().NotContain("DropStoredQuery");
+
+        AssertFalseConstraintDoesNotAdvertiseTrue(document, "ManageStoredQueries");
+        AssertFalseConstraintDoesNotAdvertiseTrue(document, "ImplementsFeatureVersioning");
+        AssertFalseConstraintDoesNotAdvertiseTrue(document, "ImplementsVersionNav");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    public async Task Wfs_GetCapabilities_WithoutServiceParameter_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?REQUEST=GetCapabilities&VERSION=2.0.0");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-        content.Should().Contain("WFS_Capabilities");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"MissingParameterValue\"");
+        content.Should().Contain("locator=\"service\"");
     }
 
     [IntegrationTest]
@@ -350,6 +383,21 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_DateTimeStringAttribute_UsesXmlSchemaOffsetLexicalForm()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<honua:timestamp>2023-01-02T00:00:00+00:00</honua:timestamp>");
+        content.Should().NotContain("<honua:timestamp>2023-01-02T00:00:00Z</honua:timestamp>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_Gml4326Output_UsesLatitudeLongitudeCoordinates()
     {
         var response = await _fixture.Client.GetAsync(
@@ -511,6 +559,22 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_UnknownUnqualifiedResourceId_ReturnsEmptyFeatureCollection()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test-not-found");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("FeatureCollection");
+        content.Should().Contain("numberMatched=\"0\"");
+        content.Should().Contain("numberReturned=\"0\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetPropertyValue")]
     public async Task Wfs_GetPropertyValue_MissingValueReference_ReturnsExceptionReport()
     {
@@ -565,6 +629,41 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=LockFeature&VERSION=2.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    public async Task Wfs_CreateStoredQuery_WhenManagementNotAdvertised_ReturnsOperationNotSupported()
+    {
+        const string requestBody = """
+            <wfs:CreateStoredQuery service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0" />
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs_DropStoredQuery_WhenManagementNotAdvertised_ReturnsOperationNotSupported()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=DropStoredQuery&VERSION=2.0.0&STOREDQUERY_ID=urn:honua:test");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
@@ -1353,6 +1452,86 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_Post_GetFeature_AfterTimePeriodWithUtcZ_ReturnsLaterFeatures()
+    {
+        const string requestBody = """
+            <wfs:GetFeature service="WFS" version="2.0.0" outputFormat="application/geo+json" count="10"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2">
+              <wfs:Query typeNames="test_layer">
+                <fes:Filter>
+                  <fes:After>
+                    <fes:ValueReference>timestamp</fes:ValueReference>
+                    <gml:TimePeriod>
+                      <gml:beginPosition>2023-01-01T00:00:00Z</gml:beginPosition>
+                      <gml:endPosition>2023-01-10T00:00:00Z</gml:endPosition>
+                    </gml:TimePeriod>
+                  </fes:After>
+                </fes:Filter>
+              </wfs:Query>
+            </wfs:GetFeature>
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+
+        var names = ReadGeoJsonFeatureNames(responseBody);
+        names.Should().Contain("Third Feature");
+        names.Should().Contain("Fifth Feature");
+        names.Should().NotContain("Test Feature");
+        names.Should().NotContain("Another Feature");
+        names.Should().NotContain("Fourth Feature");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_Post_GetFeature_BeforeTimePeriodWithUtcZ_ReturnsEarlierFeatures()
+    {
+        const string requestBody = """
+            <wfs:GetFeature service="WFS" version="2.0.0" outputFormat="application/geo+json" count="10"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2">
+              <wfs:Query typeNames="test_layer">
+                <fes:Filter>
+                  <fes:Before>
+                    <fes:ValueReference>timestamp</fes:ValueReference>
+                    <gml:TimePeriod>
+                      <gml:beginPosition>2023-01-10T00:00:00Z</gml:beginPosition>
+                      <gml:endPosition>2023-01-31T00:00:00Z</gml:endPosition>
+                    </gml:TimePeriod>
+                  </fes:Before>
+                </fes:Filter>
+              </wfs:Query>
+            </wfs:GetFeature>
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+
+        var names = ReadGeoJsonFeatureNames(responseBody);
+        names.Should().Contain("Test Feature");
+        names.Should().Contain("Another Feature");
+        names.Should().Contain("Fourth Feature");
+        names.Should().NotContain("Third Feature");
+        names.Should().NotContain("Fifth Feature");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetPropertyValue")]
     public async Task Wfs_GetPropertyValue_WithGeoJsonOutput_ReturnsFeatureCollection()
@@ -1385,15 +1564,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetPropertyValue")]
-    public async Task Wfs_GetPropertyValue_WithUnsupportedResolve_ReturnsExceptionReport()
+    public async Task Wfs_GetPropertyValue_WithLocalResolve_ReturnsValueCollection()
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&RESOLVE=local");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
-        content.Should().Contain("locator=\"resolve\"");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("ValueCollection");
     }
 
     [IntegrationTest]
@@ -1438,6 +1616,42 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
         responseBody.Should().Contain("ValueCollection");
+    }
+
+    private static void AssertFalseConstraintDoesNotAdvertiseTrue(XDocument document, string name)
+    {
+        var constraint = document
+            .Descendants()
+            .Single(element => element.Name.LocalName == "Constraint" &&
+                               element.Attribute("name")?.Value == name);
+
+        constraint.Descendants()
+            .Where(element => element.Name.LocalName == "DefaultValue")
+            .Select(element => element.Value.Trim())
+            .Should()
+            .ContainSingle()
+            .Which
+            .Should()
+            .Be("FALSE");
+
+        var allowedValues = constraint
+            .Descendants()
+            .Where(element => element.Name.LocalName == "Value")
+            .Select(element => element.Value.Trim())
+            .ToArray();
+
+        allowedValues.Should().Contain("FALSE");
+        allowedValues.Should().NotContain("TRUE");
+    }
+
+    private static string?[] ReadGeoJsonFeatureNames(string responseBody)
+    {
+        using var document = JsonDocument.Parse(responseBody);
+        return document.RootElement
+            .GetProperty("features")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("properties").GetProperty("name").GetString())
+            .ToArray();
     }
 
     private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)

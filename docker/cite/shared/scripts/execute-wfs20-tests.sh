@@ -257,6 +257,7 @@ cat > "$RESULTS_DIR/cite-compliance-report.xml" << EOF_REPORT
         <testsRun>$TOTAL</testsRun>
         <testsPassed>$PASSED</testsPassed>
         <testsFailed>$FAILED</testsFailed>
+        <testsSkipped>$SKIPPED</testsSkipped>
         <profile>$TEST_PROFILE</profile>
         <timestamp>$(date -Iseconds)</timestamp>
     </summary>

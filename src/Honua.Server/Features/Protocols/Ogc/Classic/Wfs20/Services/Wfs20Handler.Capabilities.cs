@@ -387,7 +387,7 @@ internal sealed partial class Wfs20Handler
                     CreateParameter("resourceId", allowAnyValue: true),
                     CreateParameter("propertyName", allowAnyValue: true),
                     CreateParameter("srsName", allowAnyValue: true),
-                    CreateParameter("resolve", "none")
+                    CreateParameter("resolve", "none", "local")
                 ]),
                 CreateOperation(Wfs20Utilities.Operations.GetPropertyValue, wfsUrl,
                 [
@@ -404,7 +404,7 @@ internal sealed partial class Wfs20Handler
                     CreateParameter("bbox", allowAnyValue: true),
                     CreateParameter("resourceId", allowAnyValue: true),
                     CreateParameter("srsName", allowAnyValue: true),
-                    CreateParameter("resolve", "none")
+                    CreateParameter("resolve", "none", "local")
                 ]),
                 CreateOperation(Wfs20Utilities.Operations.Transaction, wfsUrl,
                 [
@@ -482,7 +482,10 @@ internal sealed partial class Wfs20Handler
         return new Constraint
         {
             Name = name,
-            AllowedValues = new AllowedValues { Values = ["TRUE", "FALSE"] },
+            AllowedValues = new AllowedValues
+            {
+                Values = defaultValue ? ["TRUE", "FALSE"] : ["FALSE"]
+            },
             DefaultValue = defaultValue ? "TRUE" : "FALSE"
         };
     }
@@ -619,7 +622,6 @@ internal sealed partial class Wfs20Handler
                         new Models.SpatialOperator { Name = "Overlaps" },
                         new Models.SpatialOperator { Name = "Disjoint" },
                         new Models.SpatialOperator { Name = "Equals" },
-                        new Models.SpatialOperator { Name = "EnvelopeIntersects" },
 
                         // Distance operators
                         new Models.SpatialOperator { Name = "DWithin" },
@@ -645,22 +647,21 @@ internal sealed partial class Wfs20Handler
                 {
                     Operators =
                     [
-                        // All supported temporal operators per OGC Filter Encoding 2.0 / CQL2.
+                        // FES 2.0 schema-valid temporal operator names supported by the runtime.
                         new Models.TemporalOperator { Name = "After" },
                         new Models.TemporalOperator { Name = "Before" },
+                        new Models.TemporalOperator { Name = "Begins" },
+                        new Models.TemporalOperator { Name = "BegunBy" },
+                        new Models.TemporalOperator { Name = "TContains" },
                         new Models.TemporalOperator { Name = "During" },
-                        new Models.TemporalOperator { Name = "Contains" },
-                        new Models.TemporalOperator { Name = "Equals" },
-                        new Models.TemporalOperator { Name = "Disjoint" },
-                        new Models.TemporalOperator { Name = "Intersects" },
+                        new Models.TemporalOperator { Name = "TEquals" },
+                        new Models.TemporalOperator { Name = "TOverlaps" },
                         new Models.TemporalOperator { Name = "Meets" },
                         new Models.TemporalOperator { Name = "MetBy" },
-                        new Models.TemporalOperator { Name = "Overlaps" },
                         new Models.TemporalOperator { Name = "OverlappedBy" },
-                        new Models.TemporalOperator { Name = "Starts" },
-                        new Models.TemporalOperator { Name = "StartedBy" },
-                        new Models.TemporalOperator { Name = "Finishes" },
-                        new Models.TemporalOperator { Name = "FinishedBy" }
+                        new Models.TemporalOperator { Name = "EndedBy" },
+                        new Models.TemporalOperator { Name = "Ends" },
+                        new Models.TemporalOperator { Name = "AnyInteracts" }
                     ]
                 }
             },
@@ -676,7 +677,10 @@ internal sealed partial class Wfs20Handler
         return new FesConstraint
         {
             Name = name,
-            AllowedValues = new AllowedValues { Values = ["TRUE", "FALSE"] },
+            AllowedValues = new AllowedValues
+            {
+                Values = defaultValue ? ["TRUE", "FALSE"] : ["FALSE"]
+            },
             DefaultValue = defaultValue ? "TRUE" : "FALSE"
         };
     }

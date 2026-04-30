@@ -357,6 +357,44 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
+    public void Translate_TemporalBeforeWithPeriod_UsesOnlyPeriodStartParameter()
+    {
+        var start = new DateTimeOffset(2023, 01, 10, 0, 0, 0, TimeSpan.Zero);
+        var end = new DateTimeOffset(2023, 01, 31, 0, 0, 0, TimeSpan.Zero);
+        var interval = new IntervalLiteral(
+            new Literal(start, LiteralType.DateTime),
+            new Literal(end, LiteralType.DateTime));
+        var predicate = new TemporalPredicate(
+            TemporalOperator.Before,
+            new PropertyReference("timestamp"),
+            interval);
+
+        var result = _translator.Translate(predicate, _layer);
+
+        result.Sql.Should().Be("\"timestamp\" < @p0");
+        result.Parameters.Should().ContainSingle().Which.Should().Be(start);
+    }
+
+    [Fact]
+    public void Translate_TemporalAfterWithPeriod_UsesOnlyPeriodEndParameter()
+    {
+        var start = new DateTimeOffset(2023, 01, 01, 0, 0, 0, TimeSpan.Zero);
+        var end = new DateTimeOffset(2023, 01, 10, 0, 0, 0, TimeSpan.Zero);
+        var interval = new IntervalLiteral(
+            new Literal(start, LiteralType.DateTime),
+            new Literal(end, LiteralType.DateTime));
+        var predicate = new TemporalPredicate(
+            TemporalOperator.After,
+            new PropertyReference("timestamp"),
+            interval);
+
+        var result = _translator.Translate(predicate, _layer);
+
+        result.Sql.Should().Be("\"timestamp\" > @p0");
+        result.Parameters.Should().ContainSingle().Which.Should().Be(end);
+    }
+
+    [Fact]
     public void Translate_TemporalPredicateOnTimeOnlyField_ThrowsArgumentException()
     {
         var interval = new IntervalLiteral(

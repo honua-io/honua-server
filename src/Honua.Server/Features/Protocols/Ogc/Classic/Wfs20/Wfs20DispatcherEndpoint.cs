@@ -750,8 +750,15 @@ internal static class Wfs20DispatcherEndpoint
     private static WfsValidationError? ValidateCapabilitiesRequestParameters(WfsRequestParameters parameters)
     {
         var service = parameters.Get(Wfs20Utilities.ParameterNames.Service);
-        if (!string.IsNullOrWhiteSpace(service) &&
-            !string.Equals(service, Wfs20Utilities.ServiceType, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(service))
+        {
+            return new WfsValidationError(
+                "MissingParameterValue",
+                "service",
+                "Missing required 'service' parameter.");
+        }
+
+        if (!string.Equals(service, Wfs20Utilities.ServiceType, StringComparison.OrdinalIgnoreCase))
         {
             return new WfsValidationError(
                 "InvalidParameterValue",
@@ -921,7 +928,8 @@ internal static class Wfs20DispatcherEndpoint
     {
         var resolve = parameters.Get(Wfs20Utilities.ParameterNames.Resolve);
         if (string.IsNullOrWhiteSpace(resolve) ||
-            string.Equals(resolve, "none", StringComparison.OrdinalIgnoreCase))
+            string.Equals(resolve, "none", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(resolve, "local", StringComparison.OrdinalIgnoreCase))
         {
             if (parameters.Contains(Wfs20Utilities.ParameterNames.ResolveDepth))
             {
@@ -945,7 +953,7 @@ internal static class Wfs20DispatcherEndpoint
         return new WfsValidationError(
             "InvalidParameterValue",
             "resolve",
-            "Only resolve=none is supported by this WFS endpoint.");
+            "Only resolve=none and resolve=local are supported by this WFS endpoint.");
     }
 
     private static WfsValidationError? ValidateXmlQueries(WfsRequestParameters parameters, HttpContext context)

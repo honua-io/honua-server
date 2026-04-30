@@ -23,6 +23,7 @@ HONUA_CITE_WFS20_POSTGRES_PORT="${HONUA_CITE_WFS20_POSTGRES_PORT:-5433}"
 export HONUA_CITE_WFS20_POSTGRES_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
+SKIPPED_TESTS=0
 TOTAL_TESTS=0
 
 echo -e "${BLUE}🧪 OGC WFS 2.0 CITE Conformance Tests${NC}"
@@ -295,16 +296,21 @@ if [[ -f "$CITE_RESULTS_DIR/cite-compliance-report.xml" ]]; then
     # Parse the XML report
     if command -v xmlstarlet &> /dev/null; then
         PASSED_TESTS=$(xmlstarlet sel -t -v "//testsPassed" "$CITE_RESULTS_DIR/cite-compliance-report.xml" 2>/dev/null || echo "0")
+        FAILED_TESTS=$(xmlstarlet sel -t -v "//testsFailed" "$CITE_RESULTS_DIR/cite-compliance-report.xml" 2>/dev/null || echo "0")
+        SKIPPED_TESTS=$(xmlstarlet sel -t -v "//testsSkipped" "$CITE_RESULTS_DIR/cite-compliance-report.xml" 2>/dev/null || echo "0")
         TOTAL_TESTS=$(xmlstarlet sel -t -v "//testsRun" "$CITE_RESULTS_DIR/cite-compliance-report.xml" 2>/dev/null || echo "0")
         COMPLIANCE_STATUS=$(xmlstarlet sel -t -v "//status" "$CITE_RESULTS_DIR/cite-compliance-report.xml" 2>/dev/null || echo "UNKNOWN")
     else
         # Fallback to grep if xmlstarlet is not available
         PASSED_TESTS=$(grep -o "<testsPassed>[0-9]*</testsPassed>" "$CITE_RESULTS_DIR/cite-compliance-report.xml" 2>/dev/null | grep -o "[0-9]*" || echo "0")
+        FAILED_TESTS=$(grep -o "<testsFailed>[0-9]*</testsFailed>" "$CITE_RESULTS_DIR/cite-compliance-report.xml" 2>/dev/null | grep -o "[0-9]*" || echo "0")
+        SKIPPED_TESTS=$(grep -o "<testsSkipped>[0-9]*</testsSkipped>" "$CITE_RESULTS_DIR/cite-compliance-report.xml" 2>/dev/null | grep -o "[0-9]*" || echo "0")
         TOTAL_TESTS=$(grep -o "<testsRun>[0-9]*</testsRun>" "$CITE_RESULTS_DIR/cite-compliance-report.xml" 2>/dev/null | grep -o "[0-9]*" || echo "0")
         COMPLIANCE_STATUS=$(grep -o "<status>[^<]*</status>" "$CITE_RESULTS_DIR/cite-compliance-report.xml" 2>/dev/null | sed 's/<[^>]*>//g' || echo "UNKNOWN")
     fi
 
-    FAILED_TESTS=$((TOTAL_TESTS - PASSED_TESTS))
+    FAILED_TESTS=${FAILED_TESTS:-0}
+    SKIPPED_TESTS=${SKIPPED_TESTS:-0}
 else
     echo "No CITE compliance report found - checking cite-runner logs..."
 
@@ -313,6 +319,7 @@ else
         PASSED_TESTS=$(grep "Tests Passed:" "$CITE_RESULTS_DIR/cite-runner.log" 2>/dev/null | tail -1 | grep -o "[0-9]*/[0-9]*" | cut -d'/' -f1 || echo "0")
         TOTAL_TESTS=$(grep "Tests Passed:" "$CITE_RESULTS_DIR/cite-runner.log" 2>/dev/null | tail -1 | grep -o "[0-9]*/[0-9]*" | cut -d'/' -f2 || echo "0")
         FAILED_TESTS=$((TOTAL_TESTS - PASSED_TESTS))
+        SKIPPED_TESTS=0
 
         if grep -q "FULL WFS 2.0 CITE COMPLIANCE ACHIEVED" "$CITE_RESULTS_DIR/cite-runner.log" 2>/dev/null; then
             COMPLIANCE_STATUS="COMPLIANT"
@@ -340,6 +347,7 @@ cat > "$CITE_RESULTS_DIR/cite-summary.md" << EOF
 - **Total Tests**: $TOTAL_TESTS
 - **Passed**: $PASSED_TESTS
 - **Failed**: $FAILED_TESTS
+- **Skipped**: $SKIPPED_TESTS
 - **Success Rate**: $(( TOTAL_TESTS > 0 ? (PASSED_TESTS * 100) / TOTAL_TESTS : 0 ))%
 - **Compliance Status**: $COMPLIANCE_STATUS
 
@@ -424,6 +432,8 @@ echo -e "\n${BLUE}🎯 WFS 2.0 CITE Conformance Results${NC}"
 echo "========================================"
 echo "Profile: $PROFILE"
 echo "Tests Passed: $PASSED_TESTS/$TOTAL_TESTS"
+echo "Tests Failed: $FAILED_TESTS"
+echo "Tests Skipped: $SKIPPED_TESTS"
 echo "Compliance Status: $COMPLIANCE_STATUS"
 echo "Execution Time: ${TEST_DURATION}s"
 

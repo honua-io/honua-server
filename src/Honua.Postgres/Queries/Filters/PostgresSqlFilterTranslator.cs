@@ -327,6 +327,50 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
     private string TranslateTemporal(TemporalPredicate temporal, LayerDefinition layer)
     {
+        if (temporal.Operator == TemporalOperator.Before)
+        {
+            return TranslateTemporalBoundaryComparison(
+                temporal.Left,
+                temporal.Right,
+                layer,
+                TemporalBoundary.End,
+                TemporalBoundary.Start,
+                "<");
+        }
+
+        if (temporal.Operator == TemporalOperator.After)
+        {
+            return TranslateTemporalBoundaryComparison(
+                temporal.Left,
+                temporal.Right,
+                layer,
+                TemporalBoundary.Start,
+                TemporalBoundary.End,
+                ">");
+        }
+
+        if (temporal.Operator == TemporalOperator.Meets)
+        {
+            return TranslateTemporalBoundaryComparison(
+                temporal.Left,
+                temporal.Right,
+                layer,
+                TemporalBoundary.End,
+                TemporalBoundary.Start,
+                "=");
+        }
+
+        if (temporal.Operator == TemporalOperator.MetBy)
+        {
+            return TranslateTemporalBoundaryComparison(
+                temporal.Left,
+                temporal.Right,
+                layer,
+                TemporalBoundary.Start,
+                TemporalBoundary.End,
+                "=");
+        }
+
         var left = TranslateTemporalExpression(temporal.Left, layer);
         var right = TranslateTemporalExpression(temporal.Right, layer);
 
@@ -347,8 +391,6 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
         return temporal.Operator switch
         {
-            TemporalOperator.Before => $"{leftEnd} < {rightStart}",
-            TemporalOperator.After => $"{leftStart} > {rightEnd}",
             TemporalOperator.Equals => $"({leftStart} = {rightStart} AND {leftEnd} = {rightEnd})",
             TemporalOperator.Disjoint => $"({leftEnd} < {rightStart} OR {leftStart} > {rightEnd})",
             TemporalOperator.Intersects => $"NOT ({leftEnd} < {rightStart} OR {leftStart} > {rightEnd})",
@@ -358,12 +400,32 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             TemporalOperator.StartedBy => $"({leftStart} = {rightStart} AND {leftEnd} > {rightEnd})",
             TemporalOperator.Finishes => $"({leftEnd} = {rightEnd} AND {leftStart} > {rightStart})",
             TemporalOperator.FinishedBy => $"({leftEnd} = {rightEnd} AND {leftStart} < {rightStart})",
-            TemporalOperator.Meets => $"{leftEnd} = {rightStart}",
-            TemporalOperator.MetBy => $"{leftStart} = {rightEnd}",
             TemporalOperator.Overlaps => $"({leftStart} < {rightStart} AND {leftEnd} > {rightStart} AND {leftEnd} < {rightEnd})",
             TemporalOperator.OverlappedBy => $"({rightStart} < {leftStart} AND {rightEnd} > {leftStart} AND {rightEnd} < {leftEnd})",
             _ => throw new NotSupportedException($"Temporal operator {temporal.Operator}")
         };
+    }
+
+    private string TranslateTemporalBoundaryComparison(
+        FilterExpression leftExpression,
+        FilterExpression rightExpression,
+        LayerDefinition layer,
+        TemporalBoundary leftBoundary,
+        TemporalBoundary rightBoundary,
+        string sqlOperator)
+    {
+        var left = TranslateTemporalBoundary(leftExpression, layer, leftBoundary);
+        var right = TranslateTemporalBoundary(rightExpression, layer, rightBoundary);
+
+        var leftSql = left.Sql;
+        var rightSql = right.Sql;
+        if (left.Kind != right.Kind)
+        {
+            leftSql = CastTemporal(leftSql, left.Kind, TemporalKind.Timestamp);
+            rightSql = CastTemporal(rightSql, right.Kind, TemporalKind.Timestamp);
+        }
+
+        return $"{leftSql} {sqlOperator} {rightSql}";
     }
 
     private string TranslateArrayPredicate(ArrayPredicate array, LayerDefinition layer)
@@ -829,6 +891,37 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         }
     }
 
+    private TemporalBound TranslateTemporalBoundary(
+        FilterExpression expression,
+        LayerDefinition layer,
+        TemporalBoundary boundary)
+    {
+        if (expression is IntervalLiteral interval)
+        {
+            var kind = interval.Start?.Type == LiteralType.Date || interval.End?.Type == LiteralType.Date
+                ? TemporalKind.Date
+                : TemporalKind.Timestamp;
+            var literal = boundary == TemporalBoundary.Start ? interval.Start : interval.End;
+            var sql = literal == null
+                ? CreateOpenTemporalBoundarySql(kind, boundary)
+                : TranslateLiteral(literal);
+
+            return new TemporalBound(sql, kind);
+        }
+
+        var bounds = TranslateTemporalExpression(expression, layer);
+        return new TemporalBound(
+            boundary == TemporalBoundary.Start
+                ? NormalizeTemporalStart(bounds)
+                : NormalizeTemporalEnd(bounds),
+            bounds.Kind);
+    }
+
+    private static string CreateOpenTemporalBoundarySql(TemporalKind kind, TemporalBoundary boundary)
+        => kind == TemporalKind.Date
+            ? boundary == TemporalBoundary.Start ? "'-infinity'::date" : "'infinity'::date"
+            : boundary == TemporalBoundary.Start ? "'-infinity'::timestamptz" : "'infinity'::timestamptz";
+
     private static void EnsureTemporalCompatibility(TemporalOperator op, TemporalBounds left, TemporalBounds right)
     {
         if (op is TemporalOperator.Contains or TemporalOperator.During or TemporalOperator.FinishedBy or
@@ -890,6 +983,16 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         bool IsInterval,
         bool OpenStart,
         bool OpenEnd);
+
+    private sealed record TemporalBound(
+        string Sql,
+        TemporalKind Kind);
+
+    private enum TemporalBoundary
+    {
+        Start,
+        End
+    }
 
     private enum TemporalKind
     {

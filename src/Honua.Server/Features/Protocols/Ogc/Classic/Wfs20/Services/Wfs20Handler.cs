@@ -1299,6 +1299,11 @@ internal sealed partial class Wfs20Handler
 
             if (!long.TryParse(candidate, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
             {
+                if (prefix.Length == 0)
+                {
+                    continue;
+                }
+
                 throw new WfsQueryException(
                     "InvalidParameterValue",
                     $"resourceId '{rawResourceId}' is malformed.",
@@ -1717,7 +1722,7 @@ internal sealed partial class Wfs20Handler
                 foreach (var field in GetProjectedAttributeFields(descriptor.Layer, query))
                 {
                     row[field.Name] = feature.Attributes.TryGetValue(field.Name, out var value)
-                        ? ConvertToInvariantString(value)
+                        ? ConvertFieldValueToInvariantString(value, field)
                         : null;
                 }
 
@@ -1835,7 +1840,7 @@ internal sealed partial class Wfs20Handler
                 foreach (var field in GetProjectedAttributeFields(plan.Descriptor.Layer, plan.Query))
                 {
                     row[field.Name] = feature.Attributes.TryGetValue(field.Name, out var value)
-                        ? ConvertToInvariantString(value)
+                        ? ConvertFieldValueToInvariantString(value, field)
                         : null;
                 }
 
@@ -1920,7 +1925,7 @@ internal sealed partial class Wfs20Handler
                     var value = ExtractValue(feature, queryResult.Plan.ValueReference);
                     if (value is not null)
                     {
-                        writer.WriteString(ConvertToInvariantString(value));
+                        writer.WriteString(ConvertValueReferenceToInvariantString(value, queryResult.Plan.ValueReference));
                     }
                     writer.WriteEndElement();
                 }
@@ -2045,7 +2050,7 @@ internal sealed partial class Wfs20Handler
                 FeatureNamespacePrefix,
                 XmlConvert.EncodeLocalName(field.Name),
                 FeatureNamespaceUri);
-            writer.WriteString(ConvertToInvariantString(value));
+            writer.WriteString(ConvertFieldValueToInvariantString(value, field));
             writer.WriteEndElement();
         }
 
@@ -2106,7 +2111,7 @@ internal sealed partial class Wfs20Handler
             attributes.TryGetValue(field.Name, out var value) &&
             value is not null)
         {
-            valueText = ConvertToInvariantString(value);
+            valueText = ConvertFieldValueToInvariantString(value, field);
             if (!string.IsNullOrWhiteSpace(valueText))
             {
                 return true;
@@ -2179,8 +2184,10 @@ internal sealed partial class Wfs20Handler
         var isGeometry = layer.GeometryField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true;
         var isFeatureId = layer.PrimaryKeyField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true ||
                           resolvedName.Equals("objectid", StringComparison.OrdinalIgnoreCase);
+        var field = layer.AttributeFields.FirstOrDefault(candidate =>
+            candidate.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase));
 
-        return new ValueReferenceResolution(valueReference, resolvedName, isGeometry, isFeatureId);
+        return new ValueReferenceResolution(valueReference, resolvedName, isGeometry, isFeatureId, field);
     }
 
     private static object? ExtractValue(Feature feature, ValueReferenceResolution valueReference)
@@ -2460,6 +2467,39 @@ internal sealed partial class Wfs20Handler
         };
     }
 
+    private static string ConvertValueReferenceToInvariantString(object? value, ValueReferenceResolution valueReference)
+        => valueReference.Field is { } field
+            ? ConvertFieldValueToInvariantString(value, field)
+            : ConvertToInvariantString(value);
+
+    private static string ConvertFieldValueToInvariantString(object? value, FieldDefinition field)
+    {
+        if (value is string text)
+        {
+            return field.Type switch
+            {
+                FieldType.DateTime when DateTimeOffset.TryParse(
+                    text,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out var dateTimeOffset) => FormatXmlDateTimeOffset(dateTimeOffset),
+                FieldType.Date when DateOnly.TryParse(
+                    text,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var dateOnly) => dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                FieldType.Time when TimeOnly.TryParse(
+                    text,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var timeOnly) => timeOnly.ToString("HH:mm:ss.fffffff", CultureInfo.InvariantCulture),
+                _ => text
+            };
+        }
+
+        return ConvertToInvariantString(value);
+    }
+
     private static string FormatXmlDateTime(DateTime value)
     {
         if (value.Kind == DateTimeKind.Unspecified)
@@ -2685,7 +2725,8 @@ internal sealed partial class Wfs20Handler
         string RequestedName,
         string CanonicalName,
         bool IsGeometry,
-        bool IsFeatureId);
+        bool IsFeatureId,
+        FieldDefinition? Field);
 
     private sealed class WfsQueryException(
         string exceptionCode,

@@ -50,19 +50,18 @@ public class Wfs20StandardsComplianceIntegrationTests
         temporalOps.Select(op => op.Name).Should().BeEquivalentTo(
             "After",
             "Before",
+            "Begins",
+            "BegunBy",
+            "TContains",
             "During",
-            "Contains",
-            "Equals",
-            "Disjoint",
-            "Intersects",
+            "TEquals",
+            "TOverlaps",
             "Meets",
             "MetBy",
-            "Overlaps",
             "OverlappedBy",
-            "Starts",
-            "StartedBy",
-            "Finishes",
-            "FinishedBy");
+            "EndedBy",
+            "Ends",
+            "AnyInteracts");
     }
 
     [Fact]

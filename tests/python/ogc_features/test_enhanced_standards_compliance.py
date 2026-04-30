@@ -14,6 +14,35 @@ from shared.temporal_operator_compliance import ALL_TEMPORAL_COMPLIANCE_CASES
 from shared.spatial_function_compliance import ALL_SPATIAL_FUNCTION_CASES
 
 
+SCHEMA_VALID_FES_TEMPORAL_OPERATORS = {
+    "After",
+    "Before",
+    "Begins",
+    "BegunBy",
+    "TContains",
+    "During",
+    "TEquals",
+    "TOverlaps",
+    "Meets",
+    "MetBy",
+    "OverlappedBy",
+    "EndedBy",
+    "Ends",
+    "AnyInteracts",
+}
+
+
+def _wfs_get_capabilities(http_client: httpx.Client) -> httpx.Response:
+    return http_client.get(
+        "/wfs",
+        params={
+            "SERVICE": "WFS",
+            "VERSION": "2.0.0",
+            "REQUEST": "GetCapabilities",
+        },
+    )
+
+
 def _constraint_defaults(root: ET.Element) -> Dict[str, str]:
     ns = {"fes": "http://www.opengis.net/fes/2.0"}
     defaults: Dict[str, str] = {}
@@ -41,7 +70,7 @@ class TestEnhancedStandardsCompliance:
         self, http_client: httpx.Client
     ):
         """Test that WFS GetCapabilities returns enhanced FilterCapabilities."""
-        response = http_client.get("/wfs", params={"request": "GetCapabilities"})
+        response = _wfs_get_capabilities(http_client)
         assert response.status_code == 200
 
         # Parse XML response
@@ -88,8 +117,8 @@ class TestEnhancedStandardsCompliance:
     def test_wfs_enhanced_temporal_operators_advertised(
         self, http_client: httpx.Client
     ):
-        """Test that all enhanced temporal operators are advertised in capabilities."""
-        response = http_client.get("/wfs", params={"request": "GetCapabilities"})
+        """Test that schema-valid FES temporal operators are advertised in capabilities."""
+        response = _wfs_get_capabilities(http_client)
         assert response.status_code == 200
 
         root = ET.fromstring(response.content)
@@ -99,18 +128,10 @@ class TestEnhancedStandardsCompliance:
         temporal_ops = root.findall(".//fes:TemporalOperator", ns)
         advertised_ops = {op.attrib["name"] for op in temporal_ops}
 
-        # Verify all Allen interval operators are present
-        expected_ops = {
-            "After", "Before", "During", "Contains", "Equals", "Disjoint",
-            "Intersects", "Meets", "MetBy", "Overlaps", "OverlappedBy",
-            "Starts", "StartedBy", "Finishes", "FinishedBy"
-        }
-
-        for op in expected_ops:
+        for op in SCHEMA_VALID_FES_TEMPORAL_OPERATORS:
             assert op in advertised_ops, f"Missing temporal operator: {op}"
 
-        # Should have at least 15 temporal operators for full Allen compliance
-        assert len(advertised_ops) >= 15, f"Should advertise at least 15 temporal operators, got {len(advertised_ops)}"
+        assert len(advertised_ops) >= len(SCHEMA_VALID_FES_TEMPORAL_OPERATORS)
 
     @pytest.mark.integration
     @pytest.mark.ogc
@@ -118,7 +139,7 @@ class TestEnhancedStandardsCompliance:
         self, http_client: httpx.Client
     ):
         """Test that unsupported FES functions are not advertised in capabilities."""
-        response = http_client.get("/wfs", params={"request": "GetCapabilities"})
+        response = _wfs_get_capabilities(http_client)
         assert response.status_code == 200
 
         root = ET.fromstring(response.content)
@@ -137,7 +158,7 @@ class TestEnhancedStandardsCompliance:
         self, http_client: httpx.Client
     ):
         """Test FES function conformance flags match the WFS runtime surface."""
-        response = http_client.get("/wfs", params={"request": "GetCapabilities"})
+        response = _wfs_get_capabilities(http_client)
         assert response.status_code == 200
 
         root = ET.fromstring(response.content)
@@ -211,7 +232,7 @@ class TestEnhancedStandardsCompliance:
         self, http_client: httpx.Client
     ):
         """Calculate overall OGC compliance score from capabilities."""
-        response = http_client.get("/wfs", params={"request": "GetCapabilities"})
+        response = _wfs_get_capabilities(http_client)
         assert response.status_code == 200
 
         root = ET.fromstring(response.content)
@@ -236,9 +257,10 @@ class TestEnhancedStandardsCompliance:
         # Temporal operator coverage (2 checks)
         total_checks += 2
         temporal_ops = root.findall(".//fes:TemporalOperator", ns)
+        temporal_names = {op.attrib["name"] for op in temporal_ops}
         if len(temporal_ops) >= 10:
             passed_checks += 1
-        if len(temporal_ops) >= 15:
+        if SCHEMA_VALID_FES_TEMPORAL_OPERATORS.issubset(temporal_names):
             passed_checks += 1
 
         # Spatial operator coverage (2 checks)

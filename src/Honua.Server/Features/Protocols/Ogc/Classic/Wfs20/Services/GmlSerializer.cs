@@ -75,7 +75,7 @@ internal sealed class GmlSerializer : IGmlSerializer
             collection.Add(new XAttribute("numberReturned", numberReturned.Value.ToString(CultureInfo.InvariantCulture)));
         }
 
-        collection.Add(new XAttribute("timeStamp", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture)));
+        collection.Add(new XAttribute("timeStamp", FormatXmlDateTimeOffset(DateTimeOffset.UtcNow)));
 
         // Add feature members
         foreach (var feature in features)
@@ -116,8 +116,8 @@ internal sealed class GmlSerializer : IGmlSerializer
         return value switch
         {
             string s => s,
-            DateTime dt => dt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture),
-            DateTimeOffset dto => dto.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture),
+            DateTime dt => FormatXmlDateTime(dt),
+            DateTimeOffset dto => FormatXmlDateTimeOffset(dto),
             decimal d => d.ToString(CultureInfo.InvariantCulture),
             double db => db.ToString(CultureInfo.InvariantCulture),
             float f => f.ToString(CultureInfo.InvariantCulture),
@@ -125,5 +125,24 @@ internal sealed class GmlSerializer : IGmlSerializer
             null => string.Empty,
             _ => value.ToString() ?? string.Empty
         };
+    }
+
+    private static string FormatXmlDateTime(DateTime value)
+    {
+        if (value.Kind == DateTimeKind.Unspecified)
+        {
+            return value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+
+        return FormatXmlDateTimeOffset(new DateTimeOffset(value.ToUniversalTime(), TimeSpan.Zero));
+    }
+
+    private static string FormatXmlDateTimeOffset(DateTimeOffset value)
+    {
+        var normalized = value.ToUniversalTime();
+        var format = normalized.Millisecond == 0
+            ? "yyyy-MM-dd'T'HH:mm:sszzz"
+            : "yyyy-MM-dd'T'HH:mm:ss.fffzzz";
+        return normalized.ToString(format, CultureInfo.InvariantCulture);
     }
 }

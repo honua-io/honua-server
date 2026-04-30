@@ -61,6 +61,11 @@ internal static class Wfs20Utilities
     public const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
 
     /// <summary>
+    /// XML Schema namespace
+    /// </summary>
+    public const string XsdNamespace = "http://www.w3.org/2001/XMLSchema";
+
+    /// <summary>
     /// Supported WFS 2.0 operations
     /// </summary>
     public static class Operations
