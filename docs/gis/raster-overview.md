@@ -114,7 +114,9 @@ registered PostGIS raster source for a layer:
 Terrain v1 expects one numeric source elevation band, a usable CRS/SRID, and a
 consistent source CRS across the dataset. Source no-data and uncovered pixels
 are encoded as opaque Terrain-RGB `[0, 0, 0]` (`-10000m`), including tiles that
-are entirely outside raster coverage. See [Terrain-RGB Elevation Tiles](terrain-tiles.md)
+are entirely outside raster coverage. When overlapping rasters exist, terrain
+tiles use the layer's `rasterMosaic.mergeStrategy` default and do not accept a
+per-request mosaic override. See [Terrain-RGB Elevation Tiles](terrain-tiles.md)
 for the client contract.
 
 ## Cache and observability behavior
@@ -133,10 +135,12 @@ still require a cloud scan on cold cache.
 
 The shipped paths preserve observable signals for raster import progress, COG
 registration, metadata scans, direct COG tile serving, OGC API Coverages exports,
-unsupported compression, and non-web-mercator CRS warnings. OGC API Coverages
-collection list/detail, schema, and coverage byte routes are not output-cached;
-only bounded metadata resources such as landing, conformance, and OpenAPI use
-output-cache policies.
+unsupported compression, non-web-mercator CRS warnings, and Terrain-RGB
+metadata/tile requests. OGC API Coverages collection list/detail, schema, and
+coverage byte routes are not output-cached; only bounded metadata resources
+such as landing, conformance, and OpenAPI use output-cache policies. Terrain
+tile generation spans include layer, dataset, `z/x/y`, selected raster count,
+output bytes, and all-no-data status.
 
 ## Remaining roadmap
 

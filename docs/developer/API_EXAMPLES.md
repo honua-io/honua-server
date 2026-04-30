@@ -720,7 +720,7 @@ curl "http://localhost:8080/terrain/0/tile.json"
 curl "http://localhost:8080/terrain/0/0/0/0.png" --output terrain.png
 ```
 
-Tiles are 256x256 `image/png` responses in WebMercator XYZ coordinates. They use the Mapbox Terrain-RGB formula and encode source no-data or uncovered pixels as opaque RGB `[0,0,0]`, which decodes to `-10000m`. TileJSON `minzoom` and `maxzoom` come from the configured `Limits:Tiles` range.
+Tiles are 256x256 `image/png` responses in WebMercator XYZ coordinates. They use the Mapbox Terrain-RGB formula and encode source no-data or uncovered pixels as opaque RGB `[0,0,0]`, which decodes to `-10000m`. TileJSON `minzoom` and `maxzoom` come from the configured `Limits:Tiles` range. When multiple rasters overlap, Terrain uses the layer's `rasterMosaic.mergeStrategy` default (`newest`, `oldest`, `average`, `max`, or `min`); the Terrain tile route does not accept a per-request `mosaicRule`.
 
 ### **MapLibre source snippet**
 

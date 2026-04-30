@@ -19,6 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.Terrain;
 public sealed class TerrainEndpointTests : IAsyncLifetime
 {
     private const double WebMercatorExtent = 20037508.342789244;
+    private const int UnregisteredSrid = 999999;
 
     private readonly WebAppFixture _fixture = new();
 
@@ -290,21 +291,19 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync("/terrain/0/tile.json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-        var root = json.RootElement;
+        await AssertUnsupportedCrsMetadataAsync(response);
+    }
 
-        root.GetProperty("supported").GetBoolean().Should().BeFalse();
-        root.GetProperty("unsupportedReasons").EnumerateArray()
-            .Select(static reason => reason.GetString())
-            .Should().Contain(static reason => reason != null && reason.Contains("CRS", StringComparison.OrdinalIgnoreCase));
-        root.GetProperty("bounds").ValueKind.Should().Be(JsonValueKind.Null);
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /terrain/{datasetId}/tile.json")]
+    public async Task GetTerrainMetadata_WithUnregisteredPositiveSourceCrs_DoesNotAdvertiseInvalidEpsgCode()
+    {
+        await ReplaceLayerWithUnregisteredCrsRasterAsync();
 
-        var source = root.GetProperty("source");
-        source.GetProperty("sourceSrid").ValueKind.Should().Be(JsonValueKind.Null);
-        source.GetProperty("sourceCrs").ValueKind.Should().Be(JsonValueKind.Null);
-        source.GetProperty("sourceExtent").ValueKind.Should().Be(JsonValueKind.Null);
+        var response = await _fixture.Client.GetAsync("/terrain/0/tile.json");
+
+        await AssertUnsupportedCrsMetadataAsync(response);
     }
 
     [IntegrationTest]
@@ -313,6 +312,20 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     public async Task GetTerrainTile_WithUnknownSourceCrs_ReturnsUnprocessableEntity()
     {
         await ReplaceLayerWithUnknownCrsRasterAsync();
+
+        var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("CRS");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
+    public async Task GetTerrainTile_WithUnregisteredPositiveSourceCrs_ReturnsUnprocessableEntity()
+    {
+        await ReplaceLayerWithUnregisteredCrsRasterAsync();
 
         var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.png");
 
@@ -342,6 +355,15 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         => ReplaceLayerRasterSqlAsync("""
             ST_AddBand(
                 ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, @scaleX, @scaleY, 0, 0, 0),
+                '32BF'::text,
+                10,
+                NULL)
+            """);
+
+    private Task ReplaceLayerWithUnregisteredCrsRasterAsync()
+        => ReplaceLayerRasterSqlAsync($$"""
+            ST_AddBand(
+                ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, @scaleX, @scaleY, 0, 0, {{UnregisteredSrid}}),
                 '32BF'::text,
                 10,
                 NULL)
@@ -386,6 +408,25 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         var data = await response.Content.ReadAsByteArrayAsync();
         data.Length.Should().BeGreaterThan(0);
         return SKBitmap.Decode(data) ?? throw new InvalidOperationException("PNG response could not be decoded.");
+    }
+
+    private static async Task AssertUnsupportedCrsMetadataAsync(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+        var root = json.RootElement;
+
+        root.GetProperty("supported").GetBoolean().Should().BeFalse();
+        root.GetProperty("unsupportedReasons").EnumerateArray()
+            .Select(static reason => reason.GetString())
+            .Should().Contain(static reason => reason != null && reason.Contains("CRS", StringComparison.OrdinalIgnoreCase));
+        root.GetProperty("bounds").ValueKind.Should().Be(JsonValueKind.Null);
+
+        var source = root.GetProperty("source");
+        source.GetProperty("sourceSrid").ValueKind.Should().Be(JsonValueKind.Null);
+        source.GetProperty("sourceCrs").ValueKind.Should().Be(JsonValueKind.Null);
+        source.GetProperty("sourceExtent").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     private static void AssertTerrainPixel(SKBitmap bitmap, int x, int y, double elevationMeters)

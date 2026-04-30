@@ -30,17 +30,20 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
     };
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly ICrsRegistry _crsRegistry;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<PostgresTerrainTileService> _logger;
     private readonly string _rasterDataTable;
 
     public PostgresTerrainTileService(
         IDatabaseConnectionProvider connectionProvider,
+        ICrsRegistry crsRegistry,
         IRasterStore rasterStore,
         ILogger<PostgresTerrainTileService> logger,
         string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
@@ -57,8 +60,9 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
             return null;
         }
 
-        var unsupportedReasons = GetUnsupportedReasons(rasters);
-        var sourceSrid = ResolveSourceSrid(rasters);
+        var candidateSourceSrid = ResolveSourceSrid(rasters);
+        var sourceSrid = await ResolveSupportedSourceSridAsync(candidateSourceSrid, cancellationToken).ConfigureAwait(false);
+        var unsupportedReasons = GetUnsupportedReasons(rasters, candidateSourceSrid, sourceSrid);
         var bandCount = ResolveSingleValue(rasters.Select(static raster => (int?)raster.BandCount));
         var pixelType = ResolveSingleValue(rasters.Select(static raster => raster.PixelType));
         var noDataValue = ResolveSingleValue(rasters.Select(static raster => raster.NoDataValue));
@@ -352,7 +356,19 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
         ];
     }
 
-    private static string[] GetUnsupportedReasons(RasterInfo[] rasters)
+    private async Task<int?> ResolveSupportedSourceSridAsync(int? sourceSrid, CancellationToken cancellationToken)
+    {
+        if (!sourceSrid.HasValue)
+        {
+            return null;
+        }
+
+        return await _crsRegistry.IsSridSupportedAsync(sourceSrid.Value, cancellationToken).ConfigureAwait(false)
+            ? sourceSrid
+            : null;
+    }
+
+    private static string[] GetUnsupportedReasons(RasterInfo[] rasters, int? candidateSourceSrid, int? sourceSrid)
     {
         var reasons = new List<string>();
 
@@ -364,6 +380,10 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
         if (rasters.Select(static raster => raster.Srid).Distinct().Count() > 1)
         {
             reasons.Add("Terrain-RGB v1 requires one source CRS per dataset.");
+        }
+        else if (candidateSourceSrid.HasValue && !sourceSrid.HasValue)
+        {
+            reasons.Add("Source raster CRS is not registered or supported.");
         }
 
         if (rasters.Any(static raster => raster.BandCount != 1))

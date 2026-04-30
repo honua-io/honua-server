@@ -60,6 +60,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ITerrainTileService>(provider =>
             new PostgresTerrainTileService(
                 provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<ICrsRegistry>(),
                 provider.GetRequiredService<IRasterStore>(),
                 provider.GetRequiredService<ILogger<PostgresTerrainTileService>>(),
                 schemaName));

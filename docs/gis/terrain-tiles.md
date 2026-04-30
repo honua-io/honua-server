@@ -106,6 +106,15 @@ Unsupported sources return `422 Unprocessable Entity` for tile requests with a
 standard problem response. Missing datasets or layers without raster sources
 return `404`.
 
+## Multi-raster overlap behavior
+
+When multiple registered rasters overlap inside the addressed layer, Terrain-RGB
+uses the layer metadata default `rasterMosaic.mergeStrategy`. Supported values
+are `newest`, `oldest`, `average`, `max`, and `min`; if the layer does not
+declare a strategy, Terrain defaults to `newest`. The Terrain routes do not
+accept a per-request `mosaicRule` override, so clients should treat the TileJSON
+URL and tile URL as stable dataset views controlled by layer metadata.
+
 ## Response status contract
 
 | Request | Success | Error cases |
@@ -119,13 +128,22 @@ Tile requests validate `z/x/y` against WebMercator XYZ bounds and the configured
 tile zoom limits from `Limits:Tiles`. Metadata and tile responses are output
 cache eligible through the `TerrainMetadata` and `TerrainTile` policies.
 
-The HTTP `Cache-Control` header uses `TileOptions:CacheMaxAge`. Metadata cache
+The HTTP `Cache-Control` header uses `TileOptions:CacheMaxAge`. Server-side
+output-cache lifetimes are configured separately with `OutputCache:TerrainMetadata`
+and `OutputCache:TerrainTile` (defaults: 10 minutes and 1 hour). Metadata cache
 keys vary by `datasetId` and `Accept`; tile cache keys vary by `datasetId`,
 `z`, `x`, and `y`. Layer/raster invalidation and admin service, collection, or
 all-cache invalidation evict the shared `terrain` output-cache tag, clearing
-cached Terrain TileJSON and tile responses after raster imports or other
-dataset-scoped changes. Terrain-RGB stays on finite tile-grid keys instead of
-arbitrary spatial window response caching.
+cached Terrain TileJSON and tile responses after raster imports, mosaic default
+changes, or other dataset-scoped changes. Terrain-RGB stays on finite tile-grid
+keys instead of arbitrary spatial window response caching.
+
+## Observability
+
+Terrain requests are classified under the `Terrain` protocol with
+`terrain.metadata` and `terrain.tile` operations. Tile generation spans include
+the layer id, dataset/collection id, `z/x/y`, selected raster count, output
+byte size, and whether the tile was entirely no-data.
 
 ## Client use
 
