@@ -39,8 +39,9 @@ that as a separate `honua-server` child ticket rather than adding it to `#522`.
 
 Successful imports report progress through the universal progress store when it
 is available and invalidate layer output cache entries after the import
-commits. Imported rasters must remain homogeneous per layer for SRID and band
-count because the shared mosaic paths depend on PostGIS `ST_Union`.
+commits, including Terrain-RGB metadata and tile entries tagged with `terrain`.
+Imported rasters must remain homogeneous per layer for SRID and band count
+because the shared mosaic paths depend on PostGIS `ST_Union`.
 
 ## Cloud raster and COG serving
 
@@ -119,8 +120,10 @@ for the client contract.
 ## Cache and observability behavior
 
 Raster import invalidates the affected layer's output-cache entries after a
-successful commit. It does not enable exact response caching for arbitrary
-raster windows.
+successful commit, including the `terrain` tag used by Terrain-RGB TileJSON and
+finite-grid tile policies. Admin service, collection, and all-cache invalidation
+also evict the same terrain tag. It does not enable exact response caching for
+arbitrary raster windows.
 
 COG metadata uses an in-memory cache keyed as `cog:metadata:{id}` with a
 30-minute sliding expiration. `DELETE /api/v1/admin/cloud-rasters/{id}` and

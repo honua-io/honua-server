@@ -44,6 +44,7 @@ public sealed class OutputCacheInvalidationServiceTests
         await outputCacheStore.Received().EvictByTagAsync("layer-styles", Arg.Any<CancellationToken>());
         await outputCacheStore.Received().EvictByTagAsync("ogc-maps", Arg.Any<CancellationToken>());
         await outputCacheStore.Received().EvictByTagAsync("stac-metadata", Arg.Any<CancellationToken>());
+        await outputCacheStore.Received().EvictByTagAsync("terrain", Arg.Any<CancellationToken>());
 
         await metadataCache.Received().RemoveAsync(ScopedKey("services:all"), Arg.Any<CancellationToken>());
         await metadataCache.Received().RemoveAsync(ScopedKey("layers:all"), Arg.Any<CancellationToken>());
@@ -156,6 +157,7 @@ public sealed class OutputCacheInvalidationServiceTests
     [Operation(Operations.Cache)]
     public async Task InvalidateCollectionAsync_WithNamedCollection_EvictsNumericAndNameAliases()
     {
+        var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
         var layerCatalog = Substitute.For<ILayerCatalog>();
         layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
@@ -165,10 +167,11 @@ public sealed class OutputCacheInvalidationServiceTests
         services.AddScoped(_ => layerCatalog);
         var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
-        var sut = new OutputCacheInvalidationService(null, responseCache, null, scopeFactory, null, logger);
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, null, scopeFactory, null, logger);
 
         await sut.InvalidateCollectionAsync("Named Layer", CancellationToken.None);
 
+        await outputCacheStore.Received().EvictByTagAsync("terrain", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:42:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:named_layer:*", Arg.Any<CancellationToken>());
     }

@@ -98,7 +98,8 @@ internal sealed partial class OutputCacheInvalidationService
             "ogc-metadata",
             "ogc-tiles",
             "ogc-maps",
-            "mvt-tiles"
+            "mvt-tiles",
+            "terrain"
         };
         foreach (var resolvedCollectionId in collectionIds)
         {
@@ -143,7 +144,8 @@ internal sealed partial class OutputCacheInvalidationService
             "ogc-tiles",
             "ogc-maps",
             "stac-metadata",
-            "mvt-tiles"
+            "mvt-tiles",
+            "terrain"
         };
 
         if (!string.IsNullOrWhiteSpace(normalizedServiceId))

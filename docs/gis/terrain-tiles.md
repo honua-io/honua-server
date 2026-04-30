@@ -116,9 +116,13 @@ Tile requests validate `z/x/y` against WebMercator XYZ bounds and the configured
 tile zoom limits from `Limits:Tiles`. Metadata and tile responses are output
 cache eligible through the `TerrainMetadata` and `TerrainTile` policies.
 
-The HTTP `Cache-Control` header uses `TileOptions:CacheMaxAge`. Cache keys vary
-by dataset id and tile coordinates, keeping Terrain-RGB on finite tile-grid keys
-instead of arbitrary spatial window response caching.
+The HTTP `Cache-Control` header uses `TileOptions:CacheMaxAge`. Metadata cache
+keys vary by `datasetId` and `Accept`; tile cache keys vary by `datasetId`,
+`z`, `x`, and `y`. Layer/raster invalidation and admin service, collection, or
+all-cache invalidation evict the shared `terrain` output-cache tag, clearing
+cached Terrain TileJSON and tile responses after raster imports or other
+dataset-scoped changes. Terrain-RGB stays on finite tile-grid keys instead of
+arbitrary spatial window response caching.
 
 ## Client use
 
