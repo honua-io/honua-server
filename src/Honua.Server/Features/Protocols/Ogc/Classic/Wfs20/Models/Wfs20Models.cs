@@ -27,6 +27,7 @@ public sealed class WfsCapabilities : IXmlNamespaceProvider
             new XmlQualifiedName("gml", Wfs20Utilities.GmlNamespace),
             new XmlQualifiedName("honua", "http://honua.io/wfs"),
             new XmlQualifiedName("xlink", Wfs20Utilities.XLinkNamespace),
+            new XmlQualifiedName("xsd", Wfs20Utilities.XsdNamespace),
             new XmlQualifiedName("xsi", Wfs20Utilities.XsiNamespace),
         });
 

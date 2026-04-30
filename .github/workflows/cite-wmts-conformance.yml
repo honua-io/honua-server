@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: cite-wmts-conformance-${{ github.ref }}

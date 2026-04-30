@@ -120,6 +120,42 @@ public sealed class Fes20ParserTests
     }
 
     [UnitTest]
+    public void ParseFilter_Fes20TemporalOperatorNames_MapToRuntimeOperators()
+    {
+        var cases = new Dictionary<string, TemporalOperator>
+        {
+            ["Begins"] = TemporalOperator.Starts,
+            ["BegunBy"] = TemporalOperator.StartedBy,
+            ["TContains"] = TemporalOperator.Contains,
+            ["TEquals"] = TemporalOperator.Equals,
+            ["TOverlaps"] = TemporalOperator.Overlaps,
+            ["EndedBy"] = TemporalOperator.FinishedBy,
+            ["Ends"] = TemporalOperator.Finishes,
+            ["AnyInteracts"] = TemporalOperator.Intersects
+        };
+
+        foreach (var (operatorName, expected) in cases)
+        {
+            var filterXml = $$"""
+                <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+                  <fes:{{operatorName}}>
+                    <fes:ValueReference>timestamp</fes:ValueReference>
+                    <gml:TimePeriod>
+                      <gml:beginPosition>2024-02-01T07:00:00Z</gml:beginPosition>
+                      <gml:endPosition>2024-02-02T07:00:00Z</gml:endPosition>
+                    </gml:TimePeriod>
+                  </fes:{{operatorName}}>
+                </fes:Filter>
+                """;
+
+            var result = Fes20Parser.ParseFilter(filterXml);
+
+            result.Should().BeOfType<TemporalPredicate>()
+                .Which.Operator.Should().Be(expected);
+        }
+    }
+
+    [UnitTest]
     public void ParseFilter_BboxWithDatelineCrossing_ReturnsMultiPolygonGeometry()
     {
         const string filterXml = """

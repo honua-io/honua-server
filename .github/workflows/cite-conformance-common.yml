@@ -93,43 +93,75 @@ jobs:
           sudo apt-get install -y curl jq
 
       - name: Run ${{ inputs.display-name }} CITE conformance tests
+        id: run-suite
         env:
           CITE_PROFILE: ${{ inputs.cite-profile }}
           HONUA_CITE_SKIP_BUILD: 'true'
         run: |
+          set +e
           timeout ${{ inputs.timeout-seconds }} ${{ inputs.runner-script }} \
-            --profile "$CITE_PROFILE" --verbose || cite_exit_code=$?
+            --profile "$CITE_PROFILE" --verbose
+          cite_exit_code=$?
+          set -e
 
-          if [[ ${cite_exit_code:-0} -eq 124 ]]; then
+          echo "exit_code=$cite_exit_code" >> "$GITHUB_OUTPUT"
+
+          if [[ $cite_exit_code -eq 124 ]]; then
+            echo "timed_out=true" >> "$GITHUB_OUTPUT"
             echo "CITE tests timed out after ${{ inputs.timeout-seconds }} seconds"
-            exit 1
-          elif [[ ${cite_exit_code:-0} -ne 0 ]]; then
-            echo "CITE tests failed with exit code: ${cite_exit_code:-0}"
-            exit 1
+          else
+            echo "timed_out=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ $cite_exit_code -ne 0 ]]; then
+            echo "CITE tests finished with exit code: $cite_exit_code"
           fi
 
       - name: Run suite validation command
-        if: inputs.validation-command != ''
+        if: always() && inputs.validation-command != ''
         run: ${{ inputs.validation-command }}
 
       - name: Parse CITE results
         id: parse-results
+        if: always()
         run: |
           summary="${{ inputs.results-dir }}/${{ inputs.summary-file }}"
-          if [ -f "$summary" ]; then
-            TOTAL_TESTS=$(grep "Total Tests" "$summary" | grep -o '[0-9]\+' || echo "0")
-            PASSED_TESTS=$(grep "Passed" "$summary" | grep -o '[0-9]\+' | head -1 || echo "0")
-            FAILED_TESTS=$(grep "Failed" "$summary" | grep -o '[0-9]\+' | head -1 || echo "0")
-            SUCCESS_RATE=$(grep "Success Rate" "$summary" | grep -o '[0-9]\+' || echo "0")
+          TOTAL_TESTS=0
+          PASSED_TESTS=0
+          FAILED_TESTS=0
+          SKIPPED_TESTS=0
+          CANTTELL_TESTS=0
+          SUCCESS_RATE=0
 
-            echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
-            echo "passed_tests=$PASSED_TESTS" >> $GITHUB_OUTPUT
-            echo "failed_tests=$FAILED_TESTS" >> $GITHUB_OUTPUT
-            echo "success_rate=$SUCCESS_RATE" >> $GITHUB_OUTPUT
+          extract_summary_count() {
+            label="$1"
+            awk -F: -v label="$label" '
+              index($0, "**" label "**") {
+                gsub(/[^0-9]/, "", $2)
+                print $2
+                exit
+              }
+            ' "$summary"
+          }
+
+          if [ -f "$summary" ]; then
+            TOTAL_TESTS=$(extract_summary_count "Total Tests")
+            PASSED_TESTS=$(extract_summary_count "Passed")
+            FAILED_TESTS=$(extract_summary_count "Failed")
+            SKIPPED_TESTS=$(extract_summary_count "Skipped")
+            CANTTELL_TESTS=$(extract_summary_count "CantTell")
+            SUCCESS_RATE=$(extract_summary_count "Success Rate")
             echo "results_available=true" >> $GITHUB_OUTPUT
           else
             echo "results_available=false" >> $GITHUB_OUTPUT
           fi
+
+          echo "total_tests=${TOTAL_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "passed_tests=${PASSED_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "failed_tests=${FAILED_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "skipped_tests=${SKIPPED_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "canttell_tests=${CANTTELL_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "success_rate=${SUCCESS_RATE:-0}" >> $GITHUB_OUTPUT
 
       - name: Upload CITE test results
         uses: actions/upload-artifact@v7
@@ -143,14 +175,31 @@ jobs:
           retention-days: 30
 
       - name: Fail on conformance issues
-        if: steps.parse-results.outputs.results_available != 'true' || steps.parse-results.outputs.failed_tests != '0'
+        if: |
+          steps.run-suite.outputs.timed_out == 'true' ||
+          steps.run-suite.outputs.exit_code != '0' ||
+          steps.parse-results.outputs.results_available != 'true' ||
+          steps.parse-results.outputs.total_tests == '0' ||
+          steps.parse-results.outputs.failed_tests != '0' ||
+          steps.parse-results.outputs.skipped_tests != '0' ||
+          steps.parse-results.outputs.canttell_tests != '0'
         run: |
           if [[ "${{ steps.parse-results.outputs.results_available }}" != "true" ]]; then
             echo "${{ inputs.display-name }} CITE conformance results were not produced"
             exit 1
           fi
 
-          echo "${{ inputs.display-name }} CITE conformance tests failed"
+          if [[ "${{ steps.run-suite.outputs.timed_out }}" == "true" ]]; then
+            echo "${{ inputs.display-name }} CITE conformance tests timed out"
+          elif [[ "${{ steps.run-suite.outputs.exit_code }}" != "0" ]]; then
+            echo "${{ inputs.display-name }} CITE runner exited with status ${{ steps.run-suite.outputs.exit_code }}"
+          else
+            echo "${{ inputs.display-name }} CITE conformance tests failed"
+          fi
+
+          echo "Total tests: ${{ steps.parse-results.outputs.total_tests }}"
           echo "Failed tests: ${{ steps.parse-results.outputs.failed_tests }}"
+          echo "Skipped tests: ${{ steps.parse-results.outputs.skipped_tests }}"
+          echo "CantTell tests: ${{ steps.parse-results.outputs.canttell_tests }}"
           echo "Review the test results and fix conformance issues"
           exit 1

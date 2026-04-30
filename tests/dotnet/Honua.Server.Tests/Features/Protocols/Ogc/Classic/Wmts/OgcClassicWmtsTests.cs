@@ -72,7 +72,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG::3857</ows:SupportedCRS>");
+        content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
         content.Should().Contain("<WellKnownScaleSet>urn:ogc:def:wkss:OGC:1.0:GoogleMapsCompatible</WellKnownScaleSet>");
     }
 
@@ -259,7 +259,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG::3857</ows:SupportedCRS>");
+        content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
         content.Should().Contain("<TileMatrix>1</TileMatrix>");
         content.Should().Contain("<MaxTileRow>1</MaxTileRow>");
         content.Should().Contain("<MaxTileCol>1</MaxTileCol>");

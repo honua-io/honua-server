@@ -69,15 +69,17 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
-    public async Task Wfs_GetCapabilities_WithoutServiceParameter_ReturnsXml()
+    public async Task Wfs_GetCapabilities_WithoutServiceParameter_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?REQUEST=GetCapabilities&VERSION=2.0.0");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-        content.Should().Contain("WFS_Capabilities");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"MissingParameterValue\"");
+        content.Should().Contain("locator=\"service\"");
     }
 
     [IntegrationTest]
@@ -350,6 +352,21 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_DateTimeStringAttribute_UsesXmlSchemaOffsetLexicalForm()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<honua:timestamp>2023-01-02T00:00:00+00:00</honua:timestamp>");
+        content.Should().NotContain("<honua:timestamp>2023-01-02T00:00:00Z</honua:timestamp>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_Gml4326Output_UsesLatitudeLongitudeCoordinates()
     {
         var response = await _fixture.Client.GetAsync(
@@ -506,6 +523,22 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"RESOURCEID\"");
         content.Should().Contain("is malformed");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_UnknownUnqualifiedResourceId_ReturnsEmptyFeatureCollection()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test-not-found");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("FeatureCollection");
+        content.Should().Contain("numberMatched=\"0\"");
+        content.Should().Contain("numberReturned=\"0\"");
     }
 
     [IntegrationTest]
@@ -1385,15 +1418,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetPropertyValue")]
-    public async Task Wfs_GetPropertyValue_WithUnsupportedResolve_ReturnsExceptionReport()
+    public async Task Wfs_GetPropertyValue_WithLocalResolve_ReturnsValueCollection()
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&RESOLVE=local");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
-        content.Should().Contain("locator=\"resolve\"");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("ValueCollection");
     }
 
     [IntegrationTest]

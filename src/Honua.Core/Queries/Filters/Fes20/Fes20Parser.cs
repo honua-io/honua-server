@@ -130,7 +130,9 @@ public static class Fes20Parser
             "Beyond" => ParseBeyond(element),
 
             // Temporal operators
-            "After" or "Before" or "During" or "Meets" or "MetBy" or "OverlappedBy" or
+            "After" or "Before" or "Begins" or "BegunBy" or "During" or "TContains" or
+                "TEquals" or "TOverlaps" or "AnyInteracts" or "EndedBy" or "Ends" or
+                "Meets" or "MetBy" or "OverlappedBy" or
                 "Starts" or "StartedBy" or "Finishes" or "FinishedBy" => ParseTemporal(element),
 
             // Resource identifier
@@ -462,19 +464,27 @@ public static class Fes20Parser
         {
             "After" => TemporalOperator.After,
             "Before" => TemporalOperator.Before,
+            "Begins" => TemporalOperator.Starts,
+            "BegunBy" => TemporalOperator.StartedBy,
             "Contains" => TemporalOperator.Contains,
             "Disjoint" => TemporalOperator.Disjoint,
             "During" => TemporalOperator.During,
             "Equals" => TemporalOperator.Equals,
+            "EndedBy" => TemporalOperator.FinishedBy,
+            "Ends" => TemporalOperator.Finishes,
             "FinishedBy" => TemporalOperator.FinishedBy,
             "Finishes" => TemporalOperator.Finishes,
             "Intersects" => TemporalOperator.Intersects,
             "Meets" => TemporalOperator.Meets,
             "MetBy" => TemporalOperator.MetBy,
+            "AnyInteracts" => TemporalOperator.Intersects,
             "OverlappedBy" => TemporalOperator.OverlappedBy,
             "Overlaps" => TemporalOperator.Overlaps,
             "StartedBy" => TemporalOperator.StartedBy,
             "Starts" => TemporalOperator.Starts,
+            "TContains" => TemporalOperator.Contains,
+            "TEquals" => TemporalOperator.Equals,
+            "TOverlaps" => TemporalOperator.Overlaps,
             _ => throw new Fes20ParseException($"Unsupported temporal operator {operatorName}")
         };
 

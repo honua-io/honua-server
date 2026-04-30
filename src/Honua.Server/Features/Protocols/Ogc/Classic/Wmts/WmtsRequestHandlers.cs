@@ -1259,7 +1259,7 @@ internal static class WmtsRequestHandlers
 
             sb.AppendLine("    <TileMatrixSet>");
             sb.AppendLine("      <ows:Identifier>WebMercatorQuad</ows:Identifier>");
-            sb.AppendLine("      <ows:SupportedCRS>urn:ogc:def:crs:EPSG::3857</ows:SupportedCRS>");
+            sb.AppendLine("      <ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
             sb.AppendLine("      <WellKnownScaleSet>urn:ogc:def:wkss:OGC:1.0:GoogleMapsCompatible</WellKnownScaleSet>");
 
             for (var z = 0; z <= wmtsMaxZoom; z++)

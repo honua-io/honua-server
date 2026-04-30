@@ -24,19 +24,18 @@ public class Wfs20FilterCapabilitiesComplianceTests
         operatorNames.Should().BeEquivalentTo(
             "After",
             "Before",
+            "Begins",
+            "BegunBy",
+            "TContains",
             "During",
-            "Contains",
-            "Equals",
-            "Disjoint",
-            "Intersects",
+            "TEquals",
+            "TOverlaps",
             "Meets",
             "MetBy",
-            "Overlaps",
             "OverlappedBy",
-            "Starts",
-            "StartedBy",
-            "Finishes",
-            "FinishedBy");
+            "EndedBy",
+            "Ends",
+            "AnyInteracts");
     }
 
     [Fact]
@@ -108,13 +107,13 @@ public class Wfs20FilterCapabilitiesComplianceTests
                      "Overlaps",
                      "Disjoint",
                      "Equals",
-                     "EnvelopeIntersects",
                      "DWithin",
                      "Beyond"
                  })
         {
             spatialOperators.Should().Contain(expected);
         }
+        spatialOperators.Should().NotContain("EnvelopeIntersects");
         spatialOperators.Should().NotContain("Relate");
     }
 

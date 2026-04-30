@@ -25,19 +25,18 @@ public class Wfs20CapabilitiesXmlValidationTests
                  {
                      "After",
                      "Before",
+                     "Begins",
+                     "BegunBy",
+                     "TContains",
                      "During",
-                     "Contains",
-                     "Equals",
-                     "Disjoint",
-                     "Intersects",
+                     "TEquals",
+                     "TOverlaps",
                      "Meets",
                      "MetBy",
-                     "Overlaps",
                      "OverlappedBy",
-                     "Starts",
-                     "StartedBy",
-                     "Finishes",
-                     "FinishedBy"
+                     "EndedBy",
+                     "Ends",
+                     "AnyInteracts"
                  })
         {
             xml.Should().Contain($"name=\"{expected}\"");
@@ -73,6 +72,7 @@ public class Wfs20CapabilitiesXmlValidationTests
         xml.Should().Contain("Temporal_Capabilities");
         xml.Should().Contain("xmlns:fes=");
         xml.Should().Contain("xmlns:gml=");
+        xml.Should().Contain("xmlns:xsd=");
 
         var xmlDoc = new XmlDocument();
         var parseAction = () => xmlDoc.LoadXml(xml);

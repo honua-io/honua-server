@@ -34,19 +34,18 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         operatorNames.Should().BeEquivalentTo(
             "After",
             "Before",
+            "Begins",
+            "BegunBy",
+            "TContains",
             "During",
-            "Contains",
-            "Equals",
-            "Disjoint",
-            "Intersects",
+            "TEquals",
+            "TOverlaps",
             "Meets",
             "MetBy",
-            "Overlaps",
             "OverlappedBy",
-            "Starts",
-            "StartedBy",
-            "Finishes",
-            "FinishedBy");
+            "EndedBy",
+            "Ends",
+            "AnyInteracts");
     }
 
     [Fact]
@@ -116,9 +115,9 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         spatialOperatorNames.Should().Contain("Overlaps");
         spatialOperatorNames.Should().Contain("Disjoint");
         spatialOperatorNames.Should().Contain("Equals");
-        spatialOperatorNames.Should().Contain("EnvelopeIntersects");
         spatialOperatorNames.Should().Contain("DWithin");
         spatialOperatorNames.Should().Contain("Beyond");
+        spatialOperatorNames.Should().NotContain("EnvelopeIntersects");
         spatialOperatorNames.Should().NotContain("Relate");
 
         var geometryNames = geometryOperands.Select(op => op.Name.Name).ToList();
