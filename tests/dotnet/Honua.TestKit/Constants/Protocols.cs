@@ -125,6 +125,11 @@ public static class Protocols
     public const string Wfs20 = "WFS-2.0";
 
     /// <summary>
+    /// OGC WCS 2.0.1 protocol.
+    /// </summary>
+    public const string Wcs201 = "WCS-2.0.1";
+
+    /// <summary>
     /// OGC WFS 1.1.0 compatibility protocol.
     /// </summary>
     public const string Wfs11 = "WFS-1.1.0";

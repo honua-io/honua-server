@@ -408,8 +408,10 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/MapServer/WMS"),
         new("GET", "/ogc/services/{serviceId}/wmts"),
         new("GET", "/ogc/services/{serviceId}/wms"),
+        new("GET", "/ogc/services/{serviceId}/wcs"),
 
         new("GET", "/rest/services/{id}/ImageServer"),
+        new("GET", "/rest/services/{id}/ImageServer/WCS"),
         new("GET", "/rest/services/{id}/ImageServer/exportImage"),
         new("POST", "/rest/services/{id}/ImageServer/exportImage"),
         new("GET", "/rest/services/{id}/ImageServer/identify"),

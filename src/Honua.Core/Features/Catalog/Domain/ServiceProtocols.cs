@@ -38,6 +38,9 @@ public static class ServiceProtocols
     /// <summary>OGC Web Map Tile Service protocol.</summary>
     public const string Wmts = "Wmts";
 
+    /// <summary>OGC Web Coverage Service 2.0 protocol.</summary>
+    public const string Wcs = "Wcs";
+
     /// <summary>OData v4 protocol.</summary>
     public const string OData = "OData";
 
@@ -62,6 +65,7 @@ public static class ServiceProtocols
         Wfs20,
         Wms,
         Wmts,
+        Wcs,
         OData,
         Grpc,
         Stac

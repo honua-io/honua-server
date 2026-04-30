@@ -25,6 +25,8 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/ogc/processes", HonuaTelemetry.Protocols.OgcProcesses)]
     [InlineData("/ogc/services/test/wms", HonuaTelemetry.Protocols.OgcMaps)]
     [InlineData("/wfs", HonuaTelemetry.Protocols.Wfs20)]
+    [InlineData("/ogc/services/test/wcs", HonuaTelemetry.Protocols.Wcs20)]
+    [InlineData("/rest/services/0/ImageServer/WCS", HonuaTelemetry.Protocols.Wcs20)]
     [InlineData("/stac", HonuaTelemetry.Protocols.Stac)]
     [InlineData("/stac/search", HonuaTelemetry.Protocols.Stac)]
     [InlineData("/api/v1/tiles/pmtiles/world/42/WebMercatorQuad.pmtiles", HonuaTelemetry.Protocols.PMTiles)]
@@ -36,6 +38,7 @@ public sealed class RequestTelemetryClassifierTests
 
     [Theory]
     [InlineData("/wfs2")]
+    [InlineData("/wcs2")]
     [InlineData("/ogc/tilesets")]
     [InlineData("/ogc/mapsheet")]
     [InlineData("/ogc/processes2")]
@@ -50,6 +53,7 @@ public sealed class RequestTelemetryClassifierTests
 
     [Theory]
     [InlineData("/wfs2")]
+    [InlineData("/wcs2")]
     [InlineData("/ogc/tilesets")]
     [InlineData("/ogc/mapsheet")]
     [InlineData("/ogc/processes2")]
@@ -169,6 +173,17 @@ public sealed class RequestTelemetryClassifierTests
         context.Request.QueryString = new QueryString("?service=WFS&request=GetFeature");
 
         RequestTelemetryClassifier.ResolveOperation(context).Should().Be("wfs.getfeature");
+    }
+
+    [Fact]
+    public void ResolveOperation_WcsRequest_UsesRequestName()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = "/rest/services/0/ImageServer/WCS";
+        context.Request.QueryString = new QueryString("?service=WCS&request=GetCoverage");
+
+        RequestTelemetryClassifier.ResolveOperation(context).Should().Be("wcs.getcoverage");
     }
 
     [Theory]
