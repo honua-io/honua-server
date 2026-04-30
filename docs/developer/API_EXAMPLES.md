@@ -432,7 +432,7 @@ Collection IDs are numeric raster layer IDs. Only accessible layers enabled for 
 curl "http://localhost:8080/ogc/coverages/collections"
 ```
 
-Collection objects include `itemType: "coverage"`, `crs`, `storageCrs`, `extent.spatial.bbox`, `extent.spatial.storageCrsBbox` when known, grid/domain metadata, default `band_N` fields, and links to the collection schema and coverage bytes.
+Collection objects include `itemType: "coverage"`, supported output `crs` values, `storageCrs`, `extent.spatial.bbox`, `extent.spatial.storageCrsBbox` when known, grid/domain metadata, default `band_N` fields, and links to the collection schema and coverage bytes.
 
 ### **Inspect Selectable Bands**
 

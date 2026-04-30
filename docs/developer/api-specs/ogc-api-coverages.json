@@ -14,6 +14,11 @@
     "/": {
       "get": {
         "summary": "Landing page",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MetadataFormat"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Landing page",
@@ -32,6 +37,11 @@
     "/conformance": {
       "get": {
         "summary": "Conformance declaration",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MetadataFormat"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Conformance classes",
@@ -50,6 +60,11 @@
     "/api": {
       "get": {
         "summary": "OpenAPI document",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OpenApiFormat"
+          }
+        ],
         "responses": {
           "200": {
             "description": "OpenAPI document",
@@ -63,6 +78,11 @@
     "/openapi.json": {
       "get": {
         "summary": "OpenAPI document",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OpenApiFormat"
+          }
+        ],
         "responses": {
           "200": {
             "description": "OpenAPI document",
@@ -76,6 +96,11 @@
     "/collections": {
       "get": {
         "summary": "List coverage collections",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MetadataFormat"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Accessible raster coverage collections",
@@ -103,6 +128,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/CollectionId"
+          },
+          {
+            "$ref": "#/components/parameters/MetadataFormat"
           }
         ],
         "responses": {
@@ -135,6 +163,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/CollectionId"
+          },
+          {
+            "$ref": "#/components/parameters/MetadataFormat"
           }
         ],
         "responses": {
@@ -187,7 +218,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "CRS identifier for bbox coordinates."
+            "description": "CRS identifier for bbox coordinates. Must resolve to one of the collection's advertised CRS identifiers."
           },
           {
             "name": "crs",
@@ -195,7 +226,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Output CRS identifier."
+            "description": "Output CRS identifier. Must resolve to one of the collection's advertised CRS identifiers."
           },
           {
             "name": "properties",
@@ -262,6 +293,12 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "Link": {
+                "description": "Self and alternate coverage payload links for GeoTIFF and PNG representations.",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
@@ -304,6 +341,29 @@
         "schema": {
           "type": "string"
         }
+      },
+      "MetadataFormat": {
+        "name": "f",
+        "in": "query",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "json",
+            "html"
+          ]
+        },
+        "description": "Metadata representation. Defaults to JSON when no explicit format or Accept header is supplied."
+      },
+      "OpenApiFormat": {
+        "name": "f",
+        "in": "query",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "json"
+          ]
+        },
+        "description": "OpenAPI document representation. Defaults to application/vnd.oai.openapi+json;version=3.0."
       }
     },
     "responses": {

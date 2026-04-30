@@ -47,6 +47,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 **What you can do**:
 - Discover raster coverage collections
 - Inspect collection spatial extent, CRS, grid/domain metadata, and selectable band fields
+- Negotiate metadata as JSON or HTML with `f=json|html` or `Accept`
 - Retrieve coverage bytes as GeoTIFF by default or PNG by negotiation
 - Spatially subset with `bbox` and reproject with `crs`
 - Select bands with `properties=band_1,band_3`

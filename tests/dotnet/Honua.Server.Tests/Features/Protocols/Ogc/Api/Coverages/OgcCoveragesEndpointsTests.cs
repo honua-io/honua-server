@@ -77,6 +77,12 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         collection.GetProperty("itemType").GetString().Should().Be("coverage");
         collection.GetProperty("storageCrs").GetString().Should().Contain("4326");
         collection.TryGetProperty("storageCrsBbox", out _).Should().BeFalse();
+        var crsValues = collection.GetProperty("crs").EnumerateArray()
+            .Select(crs => crs.GetString())
+            .ToArray();
+        crsValues.Should().Contain("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+        crsValues.Should().Contain("http://www.opengis.net/def/crs/EPSG/0/4326");
+        crsValues.Should().Contain("http://www.opengis.net/def/crs/EPSG/0/3857");
 
         var spatialExtent = collection.GetProperty("extent").GetProperty("spatial");
         spatialExtent.GetProperty("bbox").EnumerateArray()
@@ -126,6 +132,13 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("Content-Crs", out var contentCrs).Should().BeTrue();
         contentCrs!.Single().Should().Be("<https://www.opengis.net/def/crs/EPSG/0/3857>");
+        response.Headers.TryGetValues("Link", out var links).Should().BeTrue();
+        var decodedLinks = Uri.UnescapeDataString(links!.Single());
+        decodedLinks.Should().Contain("properties=band_3,band_1");
+        decodedLinks.Should().Contain("crs=EPSG:3857");
+        decodedLinks.Should().Contain("scale-size=Lon(32),Lat(16)");
+        decodedLinks.Should().Contain("f=geotiff");
+        decodedLinks.Should().Contain("f=png");
 
         _exportQueries.Should().ContainSingle();
         var query = _exportQueries.Single();
@@ -149,6 +162,8 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             ("f=netcdf", "NetCDF"),
             ("properties=missing", "missing"),
             ("crs=EPSG:0", "crs"),
+            ("crs=EPSG:999999", "Unsupported CRS"),
+            ("bbox=-122.5,37.7,-122.3,37.9&bbox-crs=EPSG:999999", "Unsupported CRS"),
             ("bbox=-122.5,37.7,-122.3", "bbox"),
             ("resolution=0.000001", "8192"),
             ("scale-factor=0.001", "8192")

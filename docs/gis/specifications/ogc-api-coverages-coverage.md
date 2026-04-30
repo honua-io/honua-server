@@ -28,14 +28,16 @@ Collection discovery only returns layers that are accessible to the caller, enab
 | Collection schema | Implemented | Returns JSON Schema properties named `band_1`, `band_2`, etc. for `properties` field selection. |
 | Coverage retrieval | Implemented | Returns GeoTIFF by default, or PNG by `f=png` / `Accept: image/png`, through the shared raster export pipeline. |
 
+Metadata resources (`/`, `/conformance`, `/collections`, collection metadata, and schema) accept `f=json` or `f=html` plus `Accept` negotiation. The OpenAPI document accepts `f=json`; coverage bytes use the coverage-specific `f` values listed below.
+
 ## Coverage Retrieval Parameters
 
 | Parameter | Status | Notes |
 | --- | --- | --- |
 | `f` | Implemented | `geotiff`, `tiff`, `tif`, `image/tiff`, `png`, or `image/png`. NetCDF and JPEG fail clearly with `400`. |
 | `bbox` | Implemented | Spatial subset as `xmin,ymin,xmax,ymax`. Defaults to CRS84 axis order unless `bbox-crs` is supplied. |
-| `bbox-crs` | Implemented | Parsed by the shared CRS parser. Supports CRS84, EPSG URIs/URNs, `EPSG:{code}`, and bare SRIDs. |
-| `crs` | Implemented | Output CRS. Passed to `RasterQuery.OutputSrid`; results whose SRID is not 4326 include `Content-Crs`. |
+| `bbox-crs` | Implemented | Must resolve to one of the CRS identifiers advertised by collection metadata. Supports CRS84, EPSG URIs/URNs, `EPSG:{code}`, and bare SRIDs. |
+| `crs` | Implemented | Output CRS from the collection's supported CRS list. Passed to `RasterQuery.OutputSrid`; results whose SRID is not 4326 include `Content-Crs`. |
 | `properties` | Implemented | Comma-separated band field names such as `band_3,band_1`. Order is preserved and duplicate or out-of-range bands are rejected. |
 | `resolution` | Implemented | Positive pixel size as one value or `x,y`. Maps to `RasterQuery.PixelSize` when the derived output stays within the per-axis limit. |
 | `scale-factor` | Implemented | Positive multiplier over native pixel size when grid metadata is available and the derived output stays within the per-axis limit. |
@@ -50,7 +52,7 @@ Only one scaling control is allowed per coverage request. Scaling requests must 
 
 Coverage bytes return `200 OK` with `image/tiff` for GeoTIFF or `image/png` for PNG. When the raster result reports an extent, Honua emits `Content-Bbox` as `xmin,ymin,xmax,ymax`. When the output CRS is not WGS 84, Honua emits `Content-Crs` as an OGC CRS URI-reference such as `<https://www.opengis.net/def/crs/EPSG/0/3857>`. Coverage responses also include a `Link` header with `self`, GeoTIFF alternate, and PNG alternate links.
 
-Collection metadata keeps the storage CRS bounding box inside `extent.spatial.storageCrsBbox`; there is no top-level `storageCrsBbox` property on coverage collection documents.
+Collection metadata advertises the supported output CRS identifiers in `crs`, including CRS84, EPSG:4326, EPSG:3857, and the storage CRS when available. The storage CRS bounding box stays inside `extent.spatial.storageCrsBbox`; there is no top-level `storageCrsBbox` property on coverage collection documents.
 
 Validation failures return the shared Honua problem response with `400 Bad Request`. An unsupported `Accept` header returns `406 Not Acceptable`. Unknown or inaccessible collections return `404 Not Found`; unexpected server failures return `500` with sanitized detail.
 

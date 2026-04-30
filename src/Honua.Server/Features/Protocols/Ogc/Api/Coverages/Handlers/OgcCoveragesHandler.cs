@@ -15,9 +15,11 @@ using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Protocols.Ogc.Api.Coverages;
 using Honua.Server.Features.Protocols.Ogc.Api.Coverages.Models;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -55,21 +57,28 @@ internal sealed class OgcCoveragesHandler
             "subset");
 
     private static readonly string[] SupportedCoverageMediaTypes = [GeoTiffContentType, PngContentType];
+    private static readonly ImmutableArray<string> DefaultCoverageCrsIdentifiers =
+        ImmutableArray.Create(
+            SpatialReferenceHelpers.Crs84Uri,
+            CreateEpsgUri(SpatialReference.WGS84.Wkid),
+            CreateEpsgUri(3857));
 
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterStore _rasterStore;
     private readonly ICoordinateTransformService _coordinateTransformService;
+    private readonly ICrsRegistry _crsRegistry;
     private readonly ILogger<OgcCoveragesHandler> _logger;
 
     public OgcCoveragesHandler(
-        ILayerCatalog layerCatalog,
-        IRasterStore rasterStore,
-        ICoordinateTransformService coordinateTransformService,
+        OgcCoveragesDependencies dependencies,
         ILogger<OgcCoveragesHandler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
-        _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
-        _coordinateTransformService = coordinateTransformService ?? throw new ArgumentNullException(nameof(coordinateTransformService));
+        ArgumentNullException.ThrowIfNull(dependencies);
+
+        _layerCatalog = dependencies.LayerCatalog;
+        _rasterStore = dependencies.RasterStore;
+        _coordinateTransformService = dependencies.CoordinateTransformService;
+        _crsRegistry = dependencies.CrsRegistry;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -417,10 +426,14 @@ internal sealed class OgcCoveragesHandler
                 return resolution.Error;
             }
 
+            var storageSrid = ResolveStorageSrid(resolution.Layer!, resolution.Raster!.Value);
+            var supportedCrs = await GetSupportedCoverageCrsDefinitionsAsync(storageSrid, cancellationToken)
+                .ConfigureAwait(false);
             if (!TryCreateCoverageQuery(
                     context,
                     f,
                     resolution.Raster!.Value,
+                    supportedCrs,
                     out var rasterQuery,
                     out var negotiatedFormat,
                     out var outputCrs,
@@ -585,8 +598,10 @@ internal sealed class OgcCoveragesHandler
 
         var storageSrid = ResolveStorageSrid(layer, raster);
         var storageCrs = CreateEpsgUri(storageSrid);
-        var crs = ImmutableArray.Create(SpatialReferenceHelpers.Crs84Uri, storageCrs)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        var supportedCrs = await GetSupportedCoverageCrsDefinitionsAsync(storageSrid, cancellationToken)
+            .ConfigureAwait(false);
+        var crs = supportedCrs.Keys
+            .OrderBy(static uri => uri, StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
 
         var storageBbox = CreateStorageBoundingBox(raster);
@@ -823,6 +838,7 @@ internal sealed class OgcCoveragesHandler
         HttpContext context,
         string? f,
         RasterInfo raster,
+        IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
         out RasterQuery rasterQuery,
         out CoverageFormat negotiatedFormat,
         out CrsDefinition? outputCrs,
@@ -844,12 +860,12 @@ internal sealed class OgcCoveragesHandler
 
         var query = new RasterQuery { OutputFormat = negotiatedFormat.Format };
 
-        if (!TryApplyBbox(context, ref query, out error))
+        if (!TryApplyBbox(context, supportedCrs, ref query, out error))
         {
             return false;
         }
 
-        if (!TryApplyOutputCrs(context, ref query, out outputCrs, out error))
+        if (!TryApplyOutputCrs(context, supportedCrs, ref query, out outputCrs, out error))
         {
             return false;
         }
@@ -937,7 +953,11 @@ internal sealed class OgcCoveragesHandler
         }
     }
 
-    private static bool TryApplyBbox(HttpContext context, ref RasterQuery query, out string error)
+    private static bool TryApplyBbox(
+        HttpContext context,
+        IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
+        ref RasterQuery query,
+        out string error)
     {
         error = string.Empty;
         var bbox = OgcCommonUtilities.GetQueryValue(context.Request, "bbox");
@@ -947,9 +967,9 @@ internal sealed class OgcCoveragesHandler
         }
 
         var bboxCrsValue = OgcCommonUtilities.GetQueryValue(context.Request, "bbox-crs") ?? SpatialReferenceHelpers.Crs84Uri;
-        if (!SpatialReferenceHelpers.TryParseCrsDefinition(bboxCrsValue, out var bboxCrs))
+        if (!TryResolveSupportedCrs(bboxCrsValue, "bbox-crs", supportedCrs, out var bboxCrs, out var crsError))
         {
-            error = "bbox-crs must be a supported CRS identifier.";
+            error = crsError ?? "bbox-crs must be a supported CRS identifier.";
             return false;
         }
 
@@ -972,6 +992,7 @@ internal sealed class OgcCoveragesHandler
 
     private static bool TryApplyOutputCrs(
         HttpContext context,
+        IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
         ref RasterQuery query,
         out CrsDefinition? outputCrs,
         out string error)
@@ -984,15 +1005,82 @@ internal sealed class OgcCoveragesHandler
             return true;
         }
 
-        if (!SpatialReferenceHelpers.TryParseCrsDefinition(crsValue, out var crs))
+        if (!TryResolveSupportedCrs(crsValue, "crs", supportedCrs, out var crs, out var crsError))
         {
-            error = "crs must be a supported CRS identifier.";
+            error = crsError ?? "crs must be a supported CRS identifier.";
             return false;
         }
 
         outputCrs = crs;
         query = query with { OutputSrid = crs.Srid };
         return true;
+    }
+
+    private async Task<IReadOnlyDictionary<string, CrsDefinition>> GetSupportedCoverageCrsDefinitionsAsync(
+        int storageSrid,
+        CancellationToken cancellationToken)
+    {
+        var definitions = new Dictionary<string, CrsDefinition>(StringComparer.OrdinalIgnoreCase);
+        foreach (var crsIdentifier in DefaultCoverageCrsIdentifiers)
+        {
+            await AddResolvedCrsDefinitionAsync(definitions, crsIdentifier, cancellationToken).ConfigureAwait(false);
+        }
+
+        await AddResolvedCrsDefinitionAsync(definitions, CreateEpsgUri(storageSrid), cancellationToken).ConfigureAwait(false);
+        return definitions;
+    }
+
+    private async ValueTask AddResolvedCrsDefinitionAsync(
+        Dictionary<string, CrsDefinition> definitions,
+        string crsIdentifier,
+        CancellationToken cancellationToken)
+    {
+        var definition = await _crsRegistry.ResolveAsync(crsIdentifier, cancellationToken).ConfigureAwait(false);
+        if (definition.HasValue)
+        {
+            definitions[definition.Value.Uri] = definition.Value;
+        }
+    }
+
+    private static bool TryResolveSupportedCrs(
+        string? crs,
+        string parameterName,
+        IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
+        out CrsDefinition definition,
+        out string? error)
+    {
+        definition = default;
+
+        if (string.IsNullOrWhiteSpace(crs))
+        {
+            return supportedCrs.TryGetValue(SpatialReferenceHelpers.Crs84Uri, out definition)
+                ? Success(out error)
+                : Failure($"{parameterName} default CRS84 is not supported.", out error);
+        }
+
+        if (!SpatialReferenceHelpers.TryParseCrsDefinition(crs, out var parsedDefinition))
+        {
+            return Failure($"{parameterName} must be a supported CRS identifier.", out error);
+        }
+
+        if (supportedCrs.TryGetValue(parsedDefinition.Uri, out definition))
+        {
+            return Success(out error);
+        }
+
+        return Failure($"Unsupported CRS '{crs}'.", out error);
+
+        static bool Success(out string? error)
+        {
+            error = null;
+            return true;
+        }
+
+        static bool Failure(string message, out string? error)
+        {
+            error = message;
+            return false;
+        }
     }
 
     private static bool TryApplyProperties(
@@ -1352,9 +1440,28 @@ internal sealed class OgcCoveragesHandler
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var collectionSegment = Uri.EscapeDataString(collectionId);
         var basePath = $"{baseUrl}/ogc/coverages/collections/{collectionSegment}/coverage";
+        var geoTiffLink = BuildCoverageAlternateLink(context, basePath, "geotiff");
+        var pngLink = BuildCoverageAlternateLink(context, basePath, "png");
         context.Response.Headers.Append(
             "Link",
-            $"<{basePath}{context.Request.QueryString}>; rel=\"self\"; type=\"{format.ContentType}\", <{basePath}?f=geotiff>; rel=\"alternate\"; type=\"{GeoTiffContentType}\", <{basePath}?f=png>; rel=\"alternate\"; type=\"{PngContentType}\"");
+            $"<{basePath}{context.Request.QueryString}>; rel=\"self\"; type=\"{format.ContentType}\", <{geoTiffLink}>; rel=\"alternate\"; type=\"{GeoTiffContentType}\", <{pngLink}>; rel=\"alternate\"; type=\"{PngContentType}\"");
+    }
+
+    private static string BuildCoverageAlternateLink(HttpContext context, string basePath, string format)
+    {
+        var query = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, values) in context.Request.Query)
+        {
+            if (string.Equals(key, "f", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            query[key] = values.Count > 0 ? values[0] : string.Empty;
+        }
+
+        query["f"] = format;
+        return QueryHelpers.AddQueryString(basePath, query);
     }
 
     private static ImmutableArray<string> CreateDefaultFields(RasterInfo raster)

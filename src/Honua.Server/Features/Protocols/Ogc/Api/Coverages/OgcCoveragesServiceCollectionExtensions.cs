@@ -17,6 +17,7 @@ internal static class OgcCoveragesServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddScoped<OgcCoveragesDependencies>();
         services.AddScoped<OgcCoveragesHandler>();
 
         return services;
