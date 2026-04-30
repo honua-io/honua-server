@@ -210,7 +210,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Spatial subset as xmin,ymin,xmax,ymax. Coordinates are CRS84 unless bbox-crs is supplied."
+            "description": "Spatial subset as xmin,ymin,xmax,ymax. Coordinates are CRS84 unless bbox-crs is supplied; geographic antimeridian crossings are represented with east/west clip polygons."
           },
           {
             "name": "bbox-crs",
@@ -242,7 +242,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Positive output pixel size as one value or width,height. The derived output must not exceed 8192 pixels on either axis, checked against the requested bbox when supplied and otherwise against coverage extent or native grid metadata."
+            "description": "Positive native/storage CRS pixel size as one value or width,height. Maps to RasterQuery.PixelSize before output reprojection. The derived output must not exceed 8192 pixels on either axis, checked in storage CRS against the requested bbox when supplied and otherwise against coverage extent or native grid metadata."
           },
           {
             "name": "scale-factor",
@@ -251,7 +251,7 @@
               "type": "number",
               "exclusiveMinimum": 0
             },
-            "description": "Positive multiplier for the native pixel size. The derived output must not exceed 8192 pixels on either axis, checked against the requested bbox when supplied and otherwise against coverage extent or native grid metadata."
+            "description": "Positive multiplier for the native pixel size. The derived output must not exceed 8192 pixels on either axis, checked in storage CRS against the requested bbox when supplied and otherwise against coverage extent or native grid metadata."
           },
           {
             "name": "scale-size",
@@ -295,7 +295,7 @@
                 }
               },
               "Link": {
-                "description": "Self and alternate coverage payload links for GeoTIFF and PNG representations.",
+                "description": "Self and alternate coverage payload links for GeoTIFF and PNG representations. Alternate links preserve non-f query parameters from the request and set f for the target encoding.",
                 "schema": {
                   "type": "string"
                 }

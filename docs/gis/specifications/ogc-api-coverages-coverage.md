@@ -35,22 +35,22 @@ Metadata resources (`/`, `/conformance`, `/collections`, collection metadata, an
 | Parameter | Status | Notes |
 | --- | --- | --- |
 | `f` | Implemented | `geotiff`, `tiff`, `tif`, `image/tiff`, `png`, or `image/png`. NetCDF and JPEG fail clearly with `400`. |
-| `bbox` | Implemented | Spatial subset as `xmin,ymin,xmax,ymax`. Defaults to CRS84 axis order unless `bbox-crs` is supplied. |
+| `bbox` | Implemented | Spatial subset as `xmin,ymin,xmax,ymax`. Defaults to CRS84 axis order unless `bbox-crs` is supplied. Geographic antimeridian crossings are represented with east/west clip polygons. |
 | `bbox-crs` | Implemented | Must resolve to one of the CRS identifiers advertised by collection metadata. Supports CRS84, EPSG URIs/URNs, `EPSG:{code}`, and bare SRIDs. |
 | `crs` | Implemented | Output CRS from the collection's supported CRS list. Passed to `RasterQuery.OutputSrid`; results whose SRID is not 4326 include `Content-Crs`. |
 | `properties` | Implemented | Comma-separated band field names such as `band_3,band_1`. Order is preserved and duplicate or out-of-range bands are rejected. |
-| `resolution` | Implemented | Positive pixel size as one value or `x,y`. Maps to `RasterQuery.PixelSize` when the derived output stays within the per-axis limit. |
+| `resolution` | Implemented | Positive native/storage CRS pixel size as one value or `x,y`. Maps to `RasterQuery.PixelSize` before output reprojection when the derived output stays within the per-axis limit. |
 | `scale-factor` | Implemented | Positive multiplier over native pixel size when grid metadata is available and the derived output stays within the per-axis limit. |
 | `scale-size` | Implemented | Output size as `width,height` or `x(width),y(height)` / `Lon(width),Lat(height)`. |
 | `datetime` | Deferred | Returns `400`; temporal/multidimensional coverage selection is follow-up scope. |
 | `subset` | Deferred | Returns `400`; use `bbox` for MVP spatial subsetting. |
 | `scale-axes` | Deferred | Returns `400`; use `resolution`, `scale-factor`, or `scale-size`. |
 
-Only one scaling control is allowed per coverage request. Scaling requests must not exceed 8192 pixels on either axis. `scale-size` enforces that directly; `resolution` and `scale-factor` are checked against the requested `bbox` when present, otherwise the coverage extent or native grid metadata.
+Only one scaling control is allowed per coverage request. Scaling requests must not exceed 8192 pixels on either axis. `scale-size` enforces that directly; `resolution` and `scale-factor` are checked in the raster storage CRS against the requested `bbox` when present, otherwise the coverage extent or native grid metadata. Use `scale-size` for fixed output dimensions when requesting a different output `crs`.
 
 ## Response Contract
 
-Coverage bytes return `200 OK` with `image/tiff` for GeoTIFF or `image/png` for PNG. When the raster result reports an extent, Honua emits `Content-Bbox` as `xmin,ymin,xmax,ymax`. When the output CRS is not WGS 84, Honua emits `Content-Crs` as an OGC CRS URI-reference such as `<https://www.opengis.net/def/crs/EPSG/0/3857>`. Coverage responses also include a `Link` header with `self`, GeoTIFF alternate, and PNG alternate links.
+Coverage bytes return `200 OK` with `image/tiff` for GeoTIFF or `image/png` for PNG. When the raster result reports an extent, Honua emits `Content-Bbox` as `xmin,ymin,xmax,ymax`. When the output CRS is not WGS 84, Honua emits `Content-Crs` as an OGC CRS URI-reference such as `<https://www.opengis.net/def/crs/EPSG/0/3857>`. Coverage responses also include a `Link` header with `self`, GeoTIFF alternate, and PNG alternate links. Alternate links preserve the current coverage query parameters and replace only `f`, so clients can switch encodings without dropping `bbox`, `crs`, `properties`, or scaling selections.
 
 Collection metadata advertises the supported output CRS identifiers in `crs`, including CRS84, EPSG:4326, EPSG:3857, and the storage CRS when available. The storage CRS bounding box stays inside `extent.spatial.storageCrsBbox`; there is no top-level `storageCrsBbox` property on coverage collection documents.
 

@@ -458,7 +458,8 @@ curl -o coverage.tif \
   "http://localhost:8080/ogc/coverages/collections/0/coverage?properties=band_3,band_1&crs=EPSG:3857&scale-size=Lon(512),Lat(512)"
 ```
 
-Use only one of `resolution`, `scale-factor`, or `scale-size` per request. Scaling requests are capped at 8192 pixels on either axis.
+Use only one of `resolution`, `scale-factor`, or `scale-size` per request. Scaling requests are capped at 8192 pixels on either axis. `resolution` uses native/storage CRS pixel units; use `scale-size` for fixed output dimensions with a different output `crs`.
+Coverage response `Link` alternates preserve the current subset, CRS, band, and scaling query parameters while switching `f` between GeoTIFF and PNG.
 
 ### **Request PNG by Negotiation**
 

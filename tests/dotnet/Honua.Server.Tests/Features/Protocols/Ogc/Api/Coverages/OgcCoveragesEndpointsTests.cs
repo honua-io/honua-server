@@ -11,6 +11,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using NetTopologySuite.IO;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages;
@@ -119,6 +120,60 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         _exportQueries.Should().ContainSingle();
         _exportQueries.Single().OutputFormat.Should().Be(RasterFormat.TIFF);
         _exportQueries.Single().ClipRegion.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverages_GetCoverage_AntimeridianBbox_UsesSplitClipGeometry()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?bbox=170,-10,-170,10");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        _exportQueries.Should().ContainSingle();
+
+        var clip = _exportQueries.Single().ClipRegion;
+        clip.Should().NotBeNull();
+        clip!.Value.Srid.Should().Be(4326);
+        var geometry = new WKBReader().Read(clip.Value.Geometry);
+        geometry.GeometryType.Should().Be("MultiPolygon");
+        geometry.NumGeometries.Should().Be(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverages_GetCoverage_ProjectedBboxScaling_UsesStorageCrsUnits()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?bbox=-13650000,4530000,-13600000,4570000&bbox-crs=EPSG:3857&crs=EPSG:3857&resolution=0.003125");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        _exportQueries.Should().ContainSingle();
+        var resolutionQuery = _exportQueries.Single();
+        resolutionQuery.OutputSrid.Should().Be(3857);
+        resolutionQuery.ClipRegion.Should().NotBeNull();
+        resolutionQuery.ClipRegion!.Value.Srid.Should().Be(3857);
+        resolutionQuery.PixelSize.Should().NotBeNull();
+        resolutionQuery.PixelSize!.Value.Width.Should().BeApproximately(0.003125, 0.000000001);
+        resolutionQuery.PixelSize.Value.Height.Should().BeApproximately(0.003125, 0.000000001);
+
+        _exportQueries.Clear();
+        response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?bbox=-13650000,4530000,-13600000,4570000&bbox-crs=EPSG:3857&scale-factor=1");
+
+        content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        _exportQueries.Should().ContainSingle();
+        var scaleFactorQuery = _exportQueries.Single();
+        scaleFactorQuery.ClipRegion.Should().NotBeNull();
+        scaleFactorQuery.ClipRegion!.Value.Srid.Should().Be(3857);
+        scaleFactorQuery.PixelSize.Should().NotBeNull();
+        scaleFactorQuery.PixelSize!.Value.Width.Should().BeApproximately(0.003125, 0.000000001);
+        scaleFactorQuery.PixelSize.Value.Height.Should().BeApproximately(0.003125, 0.000000001);
     }
 
     [IntegrationTest]

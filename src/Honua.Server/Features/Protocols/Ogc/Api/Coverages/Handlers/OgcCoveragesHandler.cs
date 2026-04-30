@@ -447,6 +447,22 @@ internal sealed class OgcCoveragesHandler
                     : StandardErrorHelpers.CreateBadRequest(context, queryError);
             }
 
+            var scalingResult = await TryApplyScalingAsync(
+                    context,
+                    resolution.Raster.Value,
+                    supportedCrs,
+                    storageSrid,
+                    rasterQuery,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!scalingResult.Success)
+            {
+                OgcCoveragesLog.ValidationFailed(_logger, collectionId, scalingResult.Error);
+                return StandardErrorHelpers.CreateBadRequest(context, scalingResult.Error);
+            }
+
+            rasterQuery = scalingResult.Query;
+
             telemetry
                 .WithTag(HonuaTelemetry.Tags.LayerId, resolution.Layer!.Id)
                 .WithTag("honua.coverage.id", collectionId)
@@ -875,11 +891,6 @@ internal sealed class OgcCoveragesHandler
             return false;
         }
 
-        if (!TryApplyScaling(context, raster, ref query, out error))
-        {
-            return false;
-        }
-
         rasterQuery = query;
         return true;
     }
@@ -986,7 +997,7 @@ internal sealed class OgcCoveragesHandler
             return false;
         }
 
-        query = query with { ClipRegion = CreateClipRegion(new Envelope(minX, maxX, minY, maxY), bboxCrs.Srid) };
+        query = query with { ClipRegion = CreateClipRegion(minX, minY, maxX, maxY, bboxCrs) };
         return true;
     }
 
@@ -1135,9 +1146,14 @@ internal sealed class OgcCoveragesHandler
         return true;
     }
 
-    private static bool TryApplyScaling(HttpContext context, RasterInfo raster, ref RasterQuery query, out string error)
+    private async ValueTask<ScalingResult> TryApplyScalingAsync(
+        HttpContext context,
+        RasterInfo raster,
+        IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
+        int storageSrid,
+        RasterQuery query,
+        CancellationToken cancellationToken)
     {
-        error = string.Empty;
         var scalingParameters = 0;
         if (context.Request.Query.ContainsKey("resolution"))
         {
@@ -1156,8 +1172,7 @@ internal sealed class OgcCoveragesHandler
 
         if (scalingParameters > 1)
         {
-            error = "Use only one of resolution, scale-factor, or scale-size.";
-            return false;
+            return ScalingResult.Failure("Use only one of resolution, scale-factor, or scale-size.");
         }
 
         var resolution = OgcCommonUtilities.GetQueryValue(context.Request, "resolution");
@@ -1165,18 +1180,24 @@ internal sealed class OgcCoveragesHandler
         {
             if (!TryParseResolution(resolution, out var pixelWidth, out var pixelHeight))
             {
-                error = "resolution must be a positive number or two positive comma-separated numbers.";
-                return false;
+                return ScalingResult.Failure("resolution must be a positive number or two positive comma-separated numbers.");
             }
 
             var requestedPixelSize = new PixelSize { Width = pixelWidth, Height = pixelHeight };
-            if (!TryValidateDerivedScaleSize(context, raster, requestedPixelSize, out error))
+            var validationError = await ValidateDerivedScaleSizeAsync(
+                    context,
+                    raster,
+                    supportedCrs,
+                    storageSrid,
+                    requestedPixelSize,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (validationError is not null)
             {
-                return false;
+                return ScalingResult.Failure(validationError);
             }
 
-            query = query with { PixelSize = requestedPixelSize };
-            return true;
+            return ScalingResult.Successful(query with { PixelSize = requestedPixelSize });
         }
 
         var scaleFactor = OgcCommonUtilities.GetQueryValue(context.Request, "scale-factor");
@@ -1186,15 +1207,13 @@ internal sealed class OgcCoveragesHandler
                 !double.IsFinite(factor) ||
                 factor <= 0)
             {
-                error = "scale-factor must be a positive number.";
-                return false;
+                return ScalingResult.Failure("scale-factor must be a positive number.");
             }
 
             var nativePixelSize = ResolveNativePixelSize(raster);
             if (!nativePixelSize.HasValue)
             {
-                error = "scale-factor requires coverage pixel size metadata.";
-                return false;
+                return ScalingResult.Failure("scale-factor requires coverage pixel size metadata.");
             }
 
             var requestedPixelSize = new PixelSize
@@ -1202,13 +1221,20 @@ internal sealed class OgcCoveragesHandler
                 Width = nativePixelSize.Value.Width * factor,
                 Height = nativePixelSize.Value.Height * factor
             };
-            if (!TryValidateDerivedScaleSize(context, raster, requestedPixelSize, out error))
+            var validationError = await ValidateDerivedScaleSizeAsync(
+                    context,
+                    raster,
+                    supportedCrs,
+                    storageSrid,
+                    requestedPixelSize,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (validationError is not null)
             {
-                return false;
+                return ScalingResult.Failure(validationError);
             }
 
-            query = query with { PixelSize = requestedPixelSize };
-            return true;
+            return ScalingResult.Successful(query with { PixelSize = requestedPixelSize });
         }
 
         var scaleSize = OgcCommonUtilities.GetQueryValue(context.Request, "scale-size");
@@ -1216,14 +1242,13 @@ internal sealed class OgcCoveragesHandler
         {
             if (!TryParseScaleSize(scaleSize, out var width, out var height))
             {
-                error = $"scale-size must be width,height or axis size pairs such as x(512),y(512), with values from 1 to {MaxScaleSize.ToString(CultureInfo.InvariantCulture)}.";
-                return false;
+                return ScalingResult.Failure($"scale-size must be width,height or axis size pairs such as x(512),y(512), with values from 1 to {MaxScaleSize.ToString(CultureInfo.InvariantCulture)}.");
             }
 
-            query = query with { OutputWidth = width, OutputHeight = height };
+            return ScalingResult.Successful(query with { OutputWidth = width, OutputHeight = height });
         }
 
-        return true;
+        return ScalingResult.Successful(query);
     }
 
     private static bool TryParseResolution(string value, out double pixelWidth, out double pixelHeight)
@@ -1297,53 +1322,57 @@ internal sealed class OgcCoveragesHandler
                parsed is > 0 and <= MaxScaleSize;
     }
 
-    private static bool TryValidateDerivedScaleSize(
+    private async ValueTask<string?> ValidateDerivedScaleSizeAsync(
         HttpContext context,
         RasterInfo raster,
+        IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
+        int storageSrid,
         PixelSize pixelSize,
-        out string error)
+        CancellationToken cancellationToken)
     {
-        error = string.Empty;
         if (!IsFinitePositive(pixelSize.Width) || !IsFinitePositive(pixelSize.Height))
         {
-            error = "resolution and scale-factor must resolve to positive finite pixel sizes.";
-            return false;
+            return "resolution and scale-factor must resolve to positive finite pixel sizes.";
         }
 
-        if (!TryResolveRequestedScaleExtentSize(context, raster, out var extentWidth, out var extentHeight))
+        var scaleExtentSize = await ResolveRequestedScaleExtentSizeAsync(
+                context,
+                raster,
+                supportedCrs,
+                storageSrid,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!scaleExtentSize.HasValue)
         {
-            error = "resolution and scale-factor require coverage extent or pixel size metadata.";
-            return false;
+            return "resolution and scale-factor require coverage extent or pixel size metadata.";
         }
 
-        var outputWidth = Math.Ceiling(extentWidth / pixelSize.Width);
-        var outputHeight = Math.Ceiling(extentHeight / pixelSize.Height);
+        var outputWidth = Math.Ceiling(scaleExtentSize.Value.Width / pixelSize.Width);
+        var outputHeight = Math.Ceiling(scaleExtentSize.Value.Height / pixelSize.Height);
         if (!IsFinitePositive(outputWidth) ||
             !IsFinitePositive(outputHeight) ||
             outputWidth > MaxScaleSize ||
             outputHeight > MaxScaleSize)
         {
-            error = $"resolution and scale-factor must not request more than {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Use a coarser resolution, a larger scale-factor, or scale-size.";
-            return false;
+            return $"resolution and scale-factor must not request more than {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Use a coarser resolution, a larger scale-factor, or scale-size.";
         }
 
-        return true;
+        return null;
     }
 
-    private static bool TryResolveRequestedScaleExtentSize(
+    private async ValueTask<(double Width, double Height)?> ResolveRequestedScaleExtentSizeAsync(
         HttpContext context,
         RasterInfo raster,
-        out double extentWidth,
-        out double extentHeight)
+        IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
+        int storageSrid,
+        CancellationToken cancellationToken)
     {
-        extentWidth = 0;
-        extentHeight = 0;
-
+        var storageCrs = ResolveStorageCrsDefinition(storageSrid);
         var bbox = OgcCommonUtilities.GetQueryValue(context.Request, "bbox");
         if (!string.IsNullOrWhiteSpace(bbox))
         {
             var bboxCrsValue = OgcCommonUtilities.GetQueryValue(context.Request, "bbox-crs") ?? SpatialReferenceHelpers.Crs84Uri;
-            if (!SpatialReferenceHelpers.TryParseCrsDefinition(bboxCrsValue, out var bboxCrs) ||
+            if (!TryResolveSupportedCrs(bboxCrsValue, "bbox-crs", supportedCrs, out var bboxCrs, out _) ||
                 !RasterParsingHelpers.TryParseBoundingBox(
                     bbox,
                     bboxCrs.AxisOrder,
@@ -1353,33 +1382,146 @@ internal sealed class OgcCoveragesHandler
                     out var maxX,
                     out var maxY))
             {
-                return false;
+                return null;
             }
 
-            extentWidth = maxX - minX;
-            extentHeight = maxY - minY;
-            return IsFinitePositive(extentWidth) && IsFinitePositive(extentHeight);
+            var scaleExtent = await TransformExtentForScaleValidationAsync(
+                    minX,
+                    minY,
+                    maxX,
+                    maxY,
+                    bboxCrs,
+                    storageCrs,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return scaleExtent.HasValue && IsFinitePositive(scaleExtent.Value.Width) && IsFinitePositive(scaleExtent.Value.Height)
+                ? scaleExtent
+                : null;
         }
 
         if (raster.Extent is { } extent)
         {
-            extentWidth = Math.Abs(extent.XMax - extent.XMin);
-            extentHeight = Math.Abs(extent.YMax - extent.YMin);
-            if (IsFinitePositive(extentWidth) && IsFinitePositive(extentHeight))
+            var extentSrid = extent.Srid.GetValueOrDefault(storageSrid);
+            var transformedExtent = extentSrid == storageSrid
+                ? (MinX: extent.XMin, MinY: extent.YMin, MaxX: extent.XMax, MaxY: extent.YMax)
+                : await _coordinateTransformService.TransformExtentAsync(
+                        extent.XMin,
+                        extent.YMin,
+                        extent.XMax,
+                        extent.YMax,
+                        extentSrid,
+                        storageSrid,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            if (transformedExtent.HasValue)
             {
-                return true;
+                var extentWidth = CalculateAxisSpan(transformedExtent.Value.MinX, transformedExtent.Value.MaxX, storageCrs.IsGeographic);
+                var extentHeight = Math.Abs(transformedExtent.Value.MaxY - transformedExtent.Value.MinY);
+                if (IsFinitePositive(extentWidth) && IsFinitePositive(extentHeight))
+                {
+                    return (extentWidth, extentHeight);
+                }
             }
         }
 
         var nativePixelSize = ResolveNativePixelSize(raster);
         if (nativePixelSize.HasValue && raster.Width > 0 && raster.Height > 0)
         {
-            extentWidth = nativePixelSize.Value.Width * raster.Width;
-            extentHeight = nativePixelSize.Value.Height * raster.Height;
-            return IsFinitePositive(extentWidth) && IsFinitePositive(extentHeight);
+            var extentWidth = nativePixelSize.Value.Width * raster.Width;
+            var extentHeight = nativePixelSize.Value.Height * raster.Height;
+            return IsFinitePositive(extentWidth) && IsFinitePositive(extentHeight)
+                ? (extentWidth, extentHeight)
+                : null;
         }
 
-        return false;
+        return null;
+    }
+
+    private async ValueTask<(double Width, double Height)?> TransformExtentForScaleValidationAsync(
+        double minX,
+        double minY,
+        double maxX,
+        double maxY,
+        CrsDefinition sourceCrs,
+        CrsDefinition storageCrs,
+        CancellationToken cancellationToken)
+    {
+        if (sourceCrs.Srid == storageCrs.Srid)
+        {
+            return (
+                CalculateAxisSpan(minX, maxX, storageCrs.IsGeographic),
+                Math.Abs(maxY - minY));
+        }
+
+        if (sourceCrs.IsGeographic && minX > maxX)
+        {
+            var east = await _coordinateTransformService.TransformExtentAsync(
+                    minX,
+                    minY,
+                    180.0,
+                    maxY,
+                    sourceCrs.Srid,
+                    storageCrs.Srid,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var west = await _coordinateTransformService.TransformExtentAsync(
+                    -180.0,
+                    minY,
+                    maxX,
+                    maxY,
+                    sourceCrs.Srid,
+                    storageCrs.Srid,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!east.HasValue || !west.HasValue)
+            {
+                return null;
+            }
+
+            var eastWidth = CalculateAxisSpan(east.Value.MinX, east.Value.MaxX, storageCrs.IsGeographic);
+            var westWidth = CalculateAxisSpan(west.Value.MinX, west.Value.MaxX, storageCrs.IsGeographic);
+            var height = Math.Max(
+                Math.Abs(east.Value.MaxY - east.Value.MinY),
+                Math.Abs(west.Value.MaxY - west.Value.MinY));
+            return (eastWidth + westWidth, height);
+        }
+
+        var transformed = await _coordinateTransformService.TransformExtentAsync(
+                minX,
+                minY,
+                maxX,
+                maxY,
+                sourceCrs.Srid,
+                storageCrs.Srid,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!transformed.HasValue)
+        {
+            return null;
+        }
+
+        return (
+            CalculateAxisSpan(transformed.Value.MinX, transformed.Value.MaxX, storageCrs.IsGeographic),
+            Math.Abs(transformed.Value.MaxY - transformed.Value.MinY));
+    }
+
+    private static double CalculateAxisSpan(double minX, double maxX, bool isGeographic)
+    {
+        if (isGeographic && minX > maxX)
+        {
+            return (180.0 - minX) + (maxX + 180.0);
+        }
+
+        return Math.Abs(maxX - minX);
+    }
+
+    private static CrsDefinition ResolveStorageCrsDefinition(int storageSrid)
+    {
+        return SpatialReferenceHelpers.TryParseCrsDefinition(
+                storageSrid.ToString(CultureInfo.InvariantCulture),
+                out var definition)
+            ? definition
+            : new CrsDefinition(CreateEpsgUri(storageSrid), storageSrid, AxisOrder.EastNorth, false);
     }
 
     private static bool IsFinitePositive(double value)
@@ -1400,10 +1542,45 @@ internal sealed class OgcCoveragesHandler
         return null;
     }
 
-    private static RasterClipRegion CreateClipRegion(Envelope envelope, int srid)
+    private static RasterClipRegion CreateClipRegion(
+        double minX,
+        double minY,
+        double maxX,
+        double maxY,
+        CrsDefinition crs)
     {
-        var factory = new GeometryFactory();
-        var geometry = factory.ToGeometry(envelope);
+        var factory = new GeometryFactory(new PrecisionModel(), crs.Srid);
+        Geometry geometry;
+        if (crs.IsGeographic && minX > maxX)
+        {
+            var eastPolygon = factory.CreatePolygon(
+            [
+                new Coordinate(minX, minY),
+                new Coordinate(180.0, minY),
+                new Coordinate(180.0, maxY),
+                new Coordinate(minX, maxY),
+                new Coordinate(minX, minY)
+            ]);
+            var westPolygon = factory.CreatePolygon(
+            [
+                new Coordinate(-180.0, minY),
+                new Coordinate(maxX, minY),
+                new Coordinate(maxX, maxY),
+                new Coordinate(-180.0, maxY),
+                new Coordinate(-180.0, minY)
+            ]);
+            geometry = factory.CreateMultiPolygon([eastPolygon, westPolygon]);
+        }
+        else
+        {
+            geometry = factory.ToGeometry(new Envelope(minX, maxX, minY, maxY));
+        }
+
+        return CreateClipRegion(geometry, crs.Srid);
+    }
+
+    private static RasterClipRegion CreateClipRegion(Geometry geometry, int srid)
+    {
         var writer = new WKBWriter();
         return new RasterClipRegion
         {
@@ -1533,6 +1710,13 @@ internal sealed class OgcCoveragesHandler
         var workers = Enumerable.Range(0, workerCount).Select(_ => RunWorkerAsync());
         await Task.WhenAll(workers).ConfigureAwait(false);
         return results.ToImmutableArray();
+    }
+
+    private readonly record struct ScalingResult(bool Success, RasterQuery Query, string Error)
+    {
+        public static ScalingResult Successful(RasterQuery query) => new(true, query, string.Empty);
+
+        public static ScalingResult Failure(string error) => new(false, default, error);
     }
 
     private readonly record struct CoverageFormat(RasterFormat Format, string ContentType, string QueryValue);
