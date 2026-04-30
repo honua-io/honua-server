@@ -19,7 +19,7 @@ Sources:
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Service metadata | `/rest/services/{serviceName}/ImageServer` | GET | Implemented | `GET /rest/services/{id}/ImageServer` | Returns metadata for the addressed layer mosaic, including aggregate extent/time metadata when multiple rasters are present. Metadata responses are cached with the `ImageServerMetadata` output-cache policy. |
-| Image tile | `/rest/services/{serviceName}/ImageServer/tile/{level}/{row}/{col}` | GET | Implemented | `GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}` | Returns raster map tiles. Supports `png` (default), `jpeg`, and `tiff` output; zoom levels are limited to `0-28`. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy. |
+| Image tile | `/rest/services/{serviceName}/ImageServer/tile/{level}/{row}/{col}` | GET | Implemented | `GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}` | Returns raster map tiles. Supports `png` (default), `jpeg`, and `tiff` output; zoom levels are limited to `0-28`. When multiple PostGIS rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy. If no PostGIS tile is produced, Pro edition can fall back to a registered cloud-hosted COG for the layer. |
 
 ### Partial
 
@@ -236,6 +236,21 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 | --- | --- | --- |
 | `renderingRule` (or `rasterFunction` alias) | Implemented | JSON-encoded raster function chain document. Required. |
 | `f` | Partial | Only `json` and `pjson` are supported. |
+
+## Honua admin raster surfaces
+
+These admin endpoints are shipped raster/COG capabilities, but they are not
+Esri ImageServer operations. The Esri `Add Rasters`, `Uploads`, full mosaic
+dataset operations, and raster catalog item child resources remain marked
+according to their own ImageServer parity status above.
+
+| Admin surface | Methods | Notes |
+| --- | --- | --- |
+| `/api/v1/admin/import/raster` | POST | Imports a GeoTIFF/COG file or a PNG/JPEG raster with world-file sidecars into PostGIS. The path is synchronous, bounded by `Limits:Imports:MaxSyncImportSize`, reports progress when the universal progress store is available, and invalidates layer output cache entries after a successful import. |
+| `/api/v1/admin/import/raster/formats` | GET | Lists supported raster file extensions and sidecar expectations for GeoTIFF, PNG world-file, and JPEG world-file imports. |
+| `/api/v1/admin/cloud-rasters` | POST, GET | Registers or lists cloud-hosted COGs for a layer. Direct range-read serving currently supports `AwsS3` and `AzureBlob`; `Local` and Google Cloud Storage are not valid shipped direct-serving providers. |
+| `/api/v1/admin/cloud-rasters/{id}` | GET, DELETE | Reads or unregisters one COG registration. Delete evicts the registration's `cog:metadata:{id}` in-memory metadata cache entry. |
+| `/api/v1/admin/cloud-rasters/{id}/refresh` | POST | Re-scans COG metadata from cloud storage, warns on unsupported direct-serving compression and non-web-map CRS cases, persists refreshed metadata, and evicts stale in-memory metadata. |
 
 ## Raster mosaic semantics
 
