@@ -15,7 +15,7 @@ The ImageServer route is layer-scoped and uses `{id}` as the bare integer covera
 
 | Operation | Status | Notes |
 | --- | --- | --- |
-| `GetCapabilities` | Implemented | Returns WCS 2.0.1 XML with OWS service metadata, operations metadata, WCS service metadata, and `wcs:Contents` coverage summaries. The `wcs:crsSupported` extension is currently a minimal EPSG:4326 declaration; use `DescribeCoverage` for each coverage's native CRS. |
+| `GetCapabilities` | Implemented | Returns WCS 2.0.1 XML with OWS service metadata, operations metadata, WCS service metadata, `wcs:crsSupported` entries derived from visible coverage native CRSs, and `wcs:Contents` coverage summaries. |
 | `DescribeCoverage` | Implemented | Accepts one or more repeated or comma-separated bare integer `COVERAGEID` values. Returns GML 3.2 bounds/grid metadata and `gmlcov:rangeType` band metadata. |
 | `GetCoverage` | Implemented | Returns raw raster bytes from `IRasterStore.ExportImageAsync` for one coverage ID. Supports format, optional spatial trim, and optional output CRS. |
 
@@ -49,7 +49,7 @@ Common parameters:
 | --- | --- | --- |
 | `COVERAGEID` | Required | Exactly one bare integer layer ID. |
 | `FORMAT` | Optional | Defaults to `image/tiff`. Supported values: `image/tiff`, `image/geotiff`, `tiff`, `tif`, `image/png`, `png`, `image/jpeg`, `jpg`, `jpeg`. |
-| `SUBSET` | Optional | WCS trim syntax `axis(low,high)`. Supported horizontal axes: `x`, `E`, `Long`, `Lon`; supported vertical axes: `y`, `N`, `Lat`. One-axis trims fill the other axis from the stored raster extent and are intended as a native-CRS convenience. When `SUBSETTINGCRS`/`BBOXCRS` differs from the native raster CRS, provide both axes or use `BBOX`. |
+| `SUBSET` | Optional | WCS trim syntax `axis(low,high)`. Supported horizontal axes: `x`, `E`, `Long`, `Lon`; supported vertical axes: `y`, `N`, `Lat`. One-axis trims fill the other axis from the stored raster extent and are allowed only when `SUBSETTINGCRS`/`BBOXCRS` matches the native raster CRS. When using a non-native subsetting CRS, provide both axes or use `BBOX`. |
 | `BBOX` | Optional | Convenience trim alias: `xmin,ymin,xmax,ymax`. Do not combine with `SUBSET`. |
 | `SUBSETTINGCRS` / `BBOXCRS` | Optional | Parsed by the shared CRS parser. Defaults to the raster native CRS. When both are supplied, they must identify the same CRS. |
 | `OUTPUTCRS` | Optional | Parsed by the shared CRS parser and passed to `RasterQuery.OutputSrid`. |

@@ -626,12 +626,19 @@ internal sealed class Wcs20Handler
 
         if (IncludesSection(sections, "ServiceMetadata"))
         {
-            rootChildren.Add(new XElement(Wcs + "ServiceMetadata",
+            var serviceMetadataChildren = new List<object>
+            {
                 new XElement(Wcs + "formatSupported", Wcs20Utilities.TiffContentType),
                 new XElement(Wcs + "formatSupported", Wcs20Utilities.PngContentType),
-                new XElement(Wcs + "formatSupported", Wcs20Utilities.JpegContentType),
-                new XElement(Wcs + "Extension",
-                    new XElement(Wcs + "crsSupported", "http://www.opengis.net/def/crs/EPSG/0/4326"))));
+                new XElement(Wcs + "formatSupported", Wcs20Utilities.JpegContentType)
+            };
+            var supportedCrsElements = BuildSupportedCrsElements(coverages).ToArray();
+            if (supportedCrsElements.Length > 0)
+            {
+                serviceMetadataChildren.Add(new XElement(Wcs + "Extension", supportedCrsElements));
+            }
+
+            rootChildren.Add(new XElement(Wcs + "ServiceMetadata", serviceMetadataChildren));
         }
 
         if (IncludesSection(sections, "Contents"))
@@ -689,6 +696,38 @@ internal sealed class Wcs20Handler
         => new(Ows + "Parameter",
             new XAttribute("name", name),
             new XElement(Ows + "AnyValue"));
+
+    private static IEnumerable<XElement> BuildSupportedCrsElements(IReadOnlyCollection<WcsCoverage> coverages)
+    {
+        var seenSrids = new HashSet<int>();
+        foreach (var coverage in coverages)
+        {
+            var srid = ResolveCoverageDescriptionSrid(coverage);
+            if (srid.HasValue && seenSrids.Add(srid.Value))
+            {
+                yield return new XElement(Wcs + "crsSupported", CreateEpsgUri(srid.Value));
+            }
+        }
+    }
+
+    private static int? ResolveCoverageDescriptionSrid(WcsCoverage coverage)
+    {
+        if (coverage.Raster.Srid is { } rasterSrid && rasterSrid > 0)
+        {
+            return rasterSrid;
+        }
+
+        if (coverage.Raster.Extent is { } extent &&
+            extent.Srid is { } extentSrid &&
+            extentSrid > 0)
+        {
+            return extentSrid;
+        }
+
+        return coverage.Layer.SpatialReference.Wkid > 0
+            ? coverage.Layer.SpatialReference.Wkid
+            : null;
+    }
 
     private static XElement BuildCoverageSummary(WcsCoverage coverage)
     {
@@ -995,10 +1034,30 @@ internal sealed class Wcs20Handler
             {
                 error = new WcsParameterError(
                     Wcs20Utilities.ExceptionCodes.InvalidAxisLabel,
-                    $"Unsupported SUBSET axis label '{axis}'. Supported labels are x, y, E, N, Long, and Lat.",
+                    $"Unsupported SUBSET axis label '{axis}'. Supported labels are x, y, E, N, Long, Lon, and Lat.",
                     Wcs20Utilities.Parameters.Subset);
                 return false;
             }
+        }
+
+        var hasXAxis = minX.HasValue;
+        var hasYAxis = minY.HasValue;
+        if (!hasXAxis && !hasYAxis)
+        {
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                "SUBSET must include at least one supported axis.",
+                Wcs20Utilities.Parameters.Subset);
+            return false;
+        }
+
+        if (hasXAxis != hasYAxis && !IsNativeSubsettingCrs(raster, subsettingCrs))
+        {
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                "Single-axis SUBSET requires SUBSETTINGCRS or BBOXCRS to match the coverage native CRS.",
+                Wcs20Utilities.Parameters.Subset);
+            return false;
         }
 
         var resolvedMinX = minX ?? extent.XMin;
@@ -1015,6 +1074,12 @@ internal sealed class Wcs20Handler
             Wcs20Utilities.Parameters.Subset,
             out envelope,
             out error);
+    }
+
+    private static bool IsNativeSubsettingCrs(RasterInfo raster, CrsDefinition subsettingCrs)
+    {
+        var nativeSrid = raster.Extent?.Srid ?? raster.Srid;
+        return nativeSrid == subsettingCrs.Srid;
     }
 
     private static bool TryParseSingleSubset(

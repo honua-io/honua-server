@@ -70,6 +70,37 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCapabilities_WithProjectedRaster_AdvertisesNativeCoverageCrs()
+    {
+        var raster = CreateRasterInfo() with
+        {
+            Srid = 3857,
+            GeoTransform = [-13625505, 262.578125, 0, 4551210, 0, -220],
+            Extent = new RasterExtent
+            {
+                XMin = -13625505,
+                YMin = 4537132,
+                XMax = -13608700,
+                YMax = 4551210,
+                Srid = 3857
+            }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<wcs:crsSupported>http://www.opengis.net/def/crs/EPSG/0/3857</wcs:crsSupported>");
+        content.Should().NotContain("<wcs:crsSupported>http://www.opengis.net/def/crs/EPSG/0/4326</wcs:crsSupported>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
     public async Task Wcs_DescribeCoverage_WithBareIntegerCoverageId_ReturnsCoverageDescription()
@@ -191,6 +222,22 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("exceptionCode=\"InvalidSubsetting\"");
         content.Should().Contain("locator=\"SUBSET\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_SingleAxisSubsetWithNonNativeSubsettingCrs_ReturnsInvalidSubsettingException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&SUBSET=Long(-122.4,-122.3)&SUBSETTINGCRS=EPSG:3857");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidSubsetting\"");
+        content.Should().Contain("locator=\"SUBSET\"");
+        _exportQueries.Should().BeEmpty();
     }
 
     private static void ConfigureRasterStore(IRasterStore rasterStore, List<RasterQuery> exportQueries)
