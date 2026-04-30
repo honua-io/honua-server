@@ -202,7 +202,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
     [Operation(Operations.Cache)]
     public async Task ProcessRefresh_TracksSuccessMetrics()
     {
-        var refreshed = new TaskCompletionSource<bool>();
+        var refreshed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var performanceMonitor = Substitute.For<IPerformanceMonitor>();
         var operationScope = Substitute.For<IOperationScope>();
         operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
@@ -220,7 +220,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
         coordinator.TryEnqueueRefresh("layer:1", _ =>
         {
-            refreshed.SetResult(true);
+            refreshed.TrySetResult(true);
             return Task.CompletedTask;
         });
 
@@ -231,8 +231,14 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         var completed = await Task.WhenAny(refreshed.Task, Task.Delay(TimeSpan.FromSeconds(5)));
         completed.Should().Be(refreshed.Task, "the refresh callback should have been invoked");
 
-        // Wait for metrics to be recorded
-        await Task.Delay(100);
+        // Poll for the success bookkeeping to settle instead of a fixed wait.
+        // The refresh callback signals before the background task records metrics,
+        // and that gap can exceed 100ms under CI load.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTime.UtcNow < deadline && coordinator.SuccessCount == 0)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
 
         coordinator.SuccessCount.Should().Be(1);
         coordinator.FailureCount.Should().Be(0);

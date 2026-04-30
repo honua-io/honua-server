@@ -13,6 +13,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 | **Server-rendered maps (OGC)** | OGC API Maps | `/ogc/maps` | Standards-based rendered map images |
 | **Power BI/Excel** | OData v4 | `/odata` | BI integration |
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
+| **Web terrain/elevation** | Terrain-RGB | `/terrain/{datasetId}/tile.json` | MapLibre/Mapbox `raster-dem` clients |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
 | **Science/elevation coverage workflows** | WCS 2.0.1 | `/rest/services/{id}/ImageServer/WCS` or `/ogc/services/{serviceId}/wcs` | Raw raster/coverage values |
 | **Modern OGC coverage workflows** | OGC API Coverages | `/ogc/coverages` | REST/JSON raster coverage discovery and export |
@@ -311,6 +312,29 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 - GeoTIFF coverage export for science and elevation tools
 - Spatially subsetted raw raster extracts
 - Migration paths for GeoServer WCS consumers
+
+---
+
+## **Terrain-RGB Elevation Tiles**
+
+**Best for**: Web terrain visualization and hillshade/extrusion clients that consume Mapbox-compatible Terrain-RGB through MapLibre or Mapbox `raster-dem` sources
+
+**Endpoint structure:**
+```
+/terrain/{datasetId}/tile.json
+/terrain/{datasetId}/{z}/{x}/{y}.png
+```
+
+**Output formats:** TileJSON 3.0 metadata (`application/json`) and 256x256 opaque Terrain-RGB PNG tiles (`image/png`) in WebMercator XYZ coordinates.
+
+**Contract notes:** `datasetId` accepts a numeric layer id or a layer collection name. The Terrain protocol must be enabled on the service or layer metadata; omitted `EnabledProtocols` means Terrain is enabled by default with the rest of the protocol set. Tile requests validate zoom and `z/x/y` against configured `Limits:Tiles` and WebMercator matrix bounds. Missing datasets or layers with no raster source return `404`; unsupported DEM sources return `422` with a problem response.
+
+Terrain v1 expects registered PostGIS rasters with one numeric elevation band, one usable source CRS/SRID, and a consistent CRS across the dataset. Source no-data and uncovered pixels are encoded as Terrain-RGB `[0,0,0]`, which decodes to `-10000m`; fully uncovered but otherwise valid tiles return an all-sentinel PNG instead of `404`. Metadata reports TileJSON bounds/center, source CRS/extent when available, raster ids/count, band/pixel details, vertical unit/datum when declared, the meter-unit assumption, and unsupported reasons when the source cannot be tiled. When multiple rasters overlap, Terrain uses the layer's `rasterMosaic.mergeStrategy` default (`newest`, `oldest`, `average`, `max`, or `min`) and does not accept a per-request `mosaicRule`. Terrain metadata cache entries vary by `datasetId` and `Accept`; tile cache entries vary by `datasetId/z/x/y`; both are evicted through layer/raster plus admin service/collection/all invalidation. Terrain requests are classified as `terrain.metadata` and `terrain.tile` operations for telemetry. See [Terrain-RGB Elevation Tiles](terrain-tiles.md) for the full response contract.
+
+**Typical use cases:**
+- MapLibre GL JS `raster-dem` terrain sources
+- Web terrain exaggeration, hillshade, and elevation inspection
+- Lightweight DEM serving without client-side terrain generation
 
 ---
 

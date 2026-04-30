@@ -10,6 +10,7 @@ by issue `#381`.
 | --- | --- | --- |
 | Raster upload and import | Shipped (`#517`) | Admin import accepts GeoTIFF/COG files and PNG/JPEG rasters with world-file sidecars, then loads them into the PostGIS raster store. |
 | COG registration, direct serving, and export support | Shipped (`#519`) | Admin COG registration is available for cloud-hosted COGs. ImageServer tile requests can fall back to registered COGs when PostGIS has no tile. Shared raster export/conversion paths can request COG output. |
+| Terrain-RGB elevation tiles | Shipped (`#839`) | Registered single-band DEM/raster sources can be served through `/terrain/{datasetId}/tile.json` and `/terrain/{datasetId}/{z}/{x}/{y}.png` for MapLibre/Mapbox `raster-dem` clients. |
 | Multi-raster mosaic and raster catalog completion | Remaining (`#522`) | MVP layer-level raster selection and simple PostGIS mosaic rendering exist, but full mosaic dataset/raster catalog behavior remains the remaining implementation child. |
 | WCS protocol adapter | Shipped (`#377`) | WCS adapts to the shared raster backend for primary-raster `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`. |
 | OGC API Coverages protocol adapter | Shipped (`#521`) | OGC API Coverages adapts to the shared raster backend for REST/JSON coverage discovery, schema metadata, and GeoTIFF/PNG coverage retrieval. |
@@ -38,8 +39,9 @@ that as a separate `honua-server` child ticket rather than adding it to `#522`.
 
 Successful imports report progress through the universal progress store when it
 is available and invalidate layer output cache entries after the import
-commits. Imported rasters must remain homogeneous per layer for SRID and band
-count because the shared mosaic paths depend on PostGIS `ST_Union`.
+commits, including Terrain-RGB metadata and tile entries tagged with `terrain`.
+Imported rasters must remain homogeneous per layer for SRID and band count
+because the shared mosaic paths depend on PostGIS `ST_Union`.
 
 ## Cloud raster and COG serving
 
@@ -99,11 +101,31 @@ the expected CRS for directly serving web tiles. EPSG:4326 COG metadata can be
 read, but clients may need protocol-specific handling. Other SRIDs are logged
 as potentially problematic for web clients.
 
+## Terrain-RGB elevation tiles
+
+Terrain-RGB is available as a server-owned elevation tile surface over the
+registered PostGIS raster source for a layer:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /terrain/{datasetId}/tile.json` | TileJSON 3.0 metadata with Honua source and no-data extensions. |
+| `GET /terrain/{datasetId}/{z}/{x}/{y}.png` | 256x256 WebMercator XYZ Terrain-RGB PNG tile. |
+
+Terrain v1 expects one numeric source elevation band, a usable CRS/SRID, and a
+consistent source CRS across the dataset. Source no-data and uncovered pixels
+are encoded as opaque Terrain-RGB `[0, 0, 0]` (`-10000m`), including tiles that
+are entirely outside raster coverage. When overlapping rasters exist, terrain
+tiles use the layer's `rasterMosaic.mergeStrategy` default and do not accept a
+per-request mosaic override. See [Terrain-RGB Elevation Tiles](terrain-tiles.md)
+for the client contract.
+
 ## Cache and observability behavior
 
 Raster import invalidates the affected layer's output-cache entries after a
-successful commit. It does not enable exact response caching for arbitrary
-raster windows.
+successful commit, including the `terrain` tag used by Terrain-RGB TileJSON and
+finite-grid tile policies. Admin service, collection, and all-cache invalidation
+also evict the same terrain tag. It does not enable exact response caching for
+arbitrary raster windows.
 
 COG metadata uses an in-memory cache keyed as `cog:metadata:{id}` with a
 30-minute sliding expiration. `DELETE /api/v1/admin/cloud-rasters/{id}` and
@@ -113,10 +135,12 @@ still require a cloud scan on cold cache.
 
 The shipped paths preserve observable signals for raster import progress, COG
 registration, metadata scans, direct COG tile serving, OGC API Coverages exports,
-unsupported compression, and non-web-mercator CRS warnings. OGC API Coverages
-collection list/detail, schema, and coverage byte routes are not output-cached;
-only bounded metadata resources such as landing, conformance, and OpenAPI use
-output-cache policies.
+unsupported compression, non-web-mercator CRS warnings, and Terrain-RGB
+metadata/tile requests. OGC API Coverages collection list/detail, schema, and
+coverage byte routes are not output-cached; only bounded metadata resources
+such as landing, conformance, and OpenAPI use output-cache policies. Terrain
+tile generation spans include layer, dataset, `z/x/y`, selected raster count,
+output bytes, and all-no-data status.
 
 ## Remaining roadmap
 

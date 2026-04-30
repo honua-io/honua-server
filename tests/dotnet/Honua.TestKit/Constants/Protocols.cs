@@ -60,6 +60,11 @@ public static class Protocols
     public const string Mvt = "MVT";
 
     /// <summary>
+    /// Terrain-RGB elevation tiles.
+    /// </summary>
+    public const string Terrain = "Terrain";
+
+    /// <summary>
     /// Health and monitoring endpoints.
     /// </summary>
     public const string Health = "Health";

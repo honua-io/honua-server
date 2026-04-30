@@ -323,7 +323,7 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         // on Redis/network responsiveness.
         if (_isLeader && _useRedis)
         {
-            _ = ReleaseLeadershipOnDisposeAsync();
+            _ = Task.Run(ReleaseLeadershipOnDisposeAsync);
         }
 
         _disposed = true;

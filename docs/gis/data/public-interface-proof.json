@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-04-29T00:00:00Z",
+  "updatedUtc": "2026-04-30T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -1471,6 +1471,50 @@
           "status": "implemented",
           "linkedTicket": "#464",
           "versionCaptureRule": "Record the exact MapLibre GL JS version, run date, and immutable MVT .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        }
+      ]
+    },
+    {
+      "surfaceId": "terrain-rgb-tiles",
+      "displayName": "Terrain-RGB elevation tiles",
+      "surfaceKind": "http-route-family",
+      "protocol": "Terrain-RGB",
+      "canonicalIdentifier": "/terrain/{datasetId}/tile.json + /terrain/{datasetId}/{z}/{x}/{y}.png",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/terrain/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus terrain endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Terrain/TerrainEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#839",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Terrain-RGB generation, clipping, all-sentinel no-data, invalid request handling, unsupported source validation, metadata, cache headers, and content headers are covered by endpoint and encoding tests",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Terrain/TerrainEndpointTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Raster/TerrainRgbEncodingTests.cs",
+            "docs/gis/terrain-tiles.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#839",
+          "versionCaptureRule": null
         }
       ]
     },

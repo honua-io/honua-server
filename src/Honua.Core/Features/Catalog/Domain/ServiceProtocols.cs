@@ -53,6 +53,9 @@ public static class ServiceProtocols
     /// <summary>STAC (SpatioTemporal Asset Catalog) protocol.</summary>
     public const string Stac = "Stac";
 
+    /// <summary>Terrain-RGB elevation tile protocol.</summary>
+    public const string Terrain = "Terrain";
+
     /// <summary>
     /// All supported protocol identifiers.
     /// </summary>
@@ -72,7 +75,8 @@ public static class ServiceProtocols
         Wcs,
         OData,
         Grpc,
-        Stac
+        Stac,
+        Terrain
     ];
 
     /// <summary>

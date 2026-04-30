@@ -8,11 +8,11 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.5-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), classic OGC WMS/WFS/WCS/WMTS, STAC API, OGC API (Features, Maps, Tiles, Processes), OData v4, and vector tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads.
+**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), classic OGC WMS/WFS/WCS/WMTS, STAC API, OGC API (Features, Maps, Tiles, Processes), OData v4, vector tiles, and Terrain-RGB elevation tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads.
 
 ## Why Honua
 
-- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), classic OGC WMS/WFS/WCS/WMTS compatibility, STAC API, OGC API Features/Maps/Tiles/Processes, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
+- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), classic OGC WMS/WFS/WCS/WMTS compatibility, STAC API, OGC API Features/Maps/Tiles/Processes, OData v4, MVT, and Terrain-RGB. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
 - **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
 - **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf (`.fgb`), File Geodatabase (`.gdb.zip`), and GeoParquet (`.parquet`, `.geoparquet`) directly. Import from live Esri REST services or public object URLs for migration.
 - **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.
@@ -83,6 +83,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | OData v4 | `/odata` | Excel, Power BI, Tableau, SAP |
 | Vector Tiles (MVT) | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, OpenLayers, Leaflet, Mapbox GL |
 | TileJSON | `/tiles/{layerId}/tile.json` | MapLibre |
+| Terrain-RGB Elevation Tiles | `/terrain/{datasetId}/tile.json`, `/terrain/{datasetId}/{z}/{x}/{y}.png` | MapLibre/Mapbox `raster-dem` clients |
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
 | Admin API | `/api/v1/admin` | Standalone Admin UI, automation scripts |
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
@@ -100,6 +101,8 @@ Please use these forms instead of blank issues so reports include enough detail 
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 
 **Raster and coverage access** — ImageServer export/identify/tile/catalog/statistics/legend routes, WCS 2.0.1 `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`, plus OGC API Coverages discovery/schema/coverage retrieval over enabled raster layers.
+
+**Terrain elevation tiles** — server-generated Terrain-RGB metadata and 256x256 WebMercator XYZ PNG tiles from registered single-band DEM/raster sources. TileJSON is available at `/terrain/{datasetId}/tile.json`; no-data and uncovered pixels encode as `[0,0,0]` (`-10000m`).
 
 **Geometry operations** — GeoServices Geometry Service endpoints for buffer, simplify, project, intersect, union, clip, difference, area, and length.
 

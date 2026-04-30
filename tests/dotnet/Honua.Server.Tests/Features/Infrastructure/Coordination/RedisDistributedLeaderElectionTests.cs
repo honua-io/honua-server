@@ -311,6 +311,8 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
     public async Task Dispose_ReleasesLeadershipGracefully()
     {
         var election = CreateRedisBackedElection();
+        var releaseStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
         _database.Setup(db => db.StringSetAsync(
                 "test-leader-key",
                 It.IsAny<RedisValue>(),
@@ -321,14 +323,17 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
                 It.IsAny<string>(),
                 It.IsAny<RedisKey[]>(),
                 It.IsAny<RedisValue[]>()))
-            .ReturnsAsync(RedisResult.Create((RedisValue)"1"));
+            .Returns(() =>
+            {
+                releaseStarted.TrySetResult(true);
+                return Task.FromResult(RedisResult.Create((RedisValue)"1"));
+            });
 
         await election.TryAcquireLeadershipAsync();
         election.IsLeader.Should().BeTrue();
 
         election.Dispose();
-
-        await Task.Delay(50);
+        await releaseStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
         _database.Verify(db => db.ScriptEvaluateAsync(
             It.IsAny<string>(),
@@ -341,7 +346,8 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
     public async Task Dispose_WhenReleaseDoesNotComplete_ReturnsAfterTimeout()
     {
         var election = CreateRedisBackedElection();
-        var hangingRelease = new TaskCompletionSource<RedisResult>();
+        var releaseStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hangingRelease = new TaskCompletionSource<RedisResult>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         _database.Setup(db => db.StringSetAsync(
                 "test-leader-key",
@@ -353,7 +359,11 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
                 It.IsAny<string>(),
                 It.IsAny<RedisKey[]>(),
                 It.IsAny<RedisValue[]>()))
-            .Returns(hangingRelease.Task);
+            .Returns(() =>
+            {
+                releaseStarted.TrySetResult(true);
+                return hangingRelease.Task;
+            });
 
         await election.TryAcquireLeadershipAsync();
 
@@ -362,6 +372,7 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
         stopwatch.Stop();
 
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+        await releaseStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
         _database.Verify(db => db.ScriptEvaluateAsync(
             It.IsAny<string>(),
             It.IsAny<RedisKey[]>(),

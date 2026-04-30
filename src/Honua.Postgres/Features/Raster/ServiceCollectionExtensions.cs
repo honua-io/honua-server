@@ -57,6 +57,14 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<ILogger<PostgresSurfaceAnalysisService>>(),
                 schemaName));
 
+        services.AddScoped<ITerrainTileService>(provider =>
+            new PostgresTerrainTileService(
+                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<ICrsRegistry>(),
+                provider.GetRequiredService<IRasterStore>(),
+                provider.GetRequiredService<ILogger<PostgresTerrainTileService>>(),
+                schemaName));
+
         return services;
     }
 }

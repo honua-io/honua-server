@@ -32,6 +32,7 @@ using Honua.Server.Features.Protocols.Ogc.Classic;
 using Honua.Server.Features.Protocols.Ogc.Classic.Wcs20;
 using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.Server.Features.Protocols.Stac;
+using Honua.Server.Features.Protocols.Terrain;
 using Honua.Server.Features.Reporting;
 using Honua.Server.Features.Spec;
 using Honua.Server.Features.StaticMap;
@@ -71,6 +72,7 @@ internal static class FeatureRegistrationExtensions
         services.AddNlQuery(configuration);
         services.AddStac();
         services.AddStaticMap();
+        services.AddTerrain();
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
         services.AddAnalysisReporting(configuration);
@@ -107,6 +109,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapOgcClassicEndpoints();
         endpoints.MapAttachmentEndpoints();
         endpoints.MapTileJsonEndpoints();
+        endpoints.MapTerrainEndpoints();
         endpoints.MapPMTilesProxyEndpoints();
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcCoveragesEndpoints();

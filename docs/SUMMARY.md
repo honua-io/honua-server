@@ -27,6 +27,8 @@
 - [Protocols Overview](gis/STANDARDS_APIS.md)
 - [Data Modeling Guide](gis/DATA_MODELING_GUIDE.md)
 - [FileGDB Import](gis/FILEGDB_IMPORT_WORKFLOW.md)
+- [Raster Overview](gis/raster-overview.md)
+- [Terrain-RGB Tiles](gis/terrain-tiles.md)
 - [Known Limitations](gis/MVP_COMPATIBILITY_CONTRACT.md)
 - [Cross-Server Consume Gap Report](compatibility/cross-server-consume-gap-report.md)
 - Tutorials
