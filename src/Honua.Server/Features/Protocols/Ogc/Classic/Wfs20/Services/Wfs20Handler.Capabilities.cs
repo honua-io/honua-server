@@ -482,7 +482,10 @@ internal sealed partial class Wfs20Handler
         return new Constraint
         {
             Name = name,
-            AllowedValues = new AllowedValues { Values = ["TRUE", "FALSE"] },
+            AllowedValues = new AllowedValues
+            {
+                Values = defaultValue ? ["TRUE", "FALSE"] : ["FALSE"]
+            },
             DefaultValue = defaultValue ? "TRUE" : "FALSE"
         };
     }
@@ -674,7 +677,10 @@ internal sealed partial class Wfs20Handler
         return new FesConstraint
         {
             Name = name,
-            AllowedValues = new AllowedValues { Values = ["TRUE", "FALSE"] },
+            AllowedValues = new AllowedValues
+            {
+                Values = defaultValue ? ["TRUE", "FALSE"] : ["FALSE"]
+            },
             DefaultValue = defaultValue ? "TRUE" : "FALSE"
         };
     }

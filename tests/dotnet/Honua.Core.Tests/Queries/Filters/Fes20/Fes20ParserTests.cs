@@ -156,6 +156,39 @@ public sealed class Fes20ParserTests
     }
 
     [UnitTest]
+    public void ParseFilter_AfterTimePeriodWithUtcZ_ReturnsDateTimeIntervalLiteral()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:After>
+                <fes:ValueReference>timestamp</fes:ValueReference>
+                <gml:TimePeriod>
+                  <gml:beginPosition>2024-02-01T07:00:00Z</gml:beginPosition>
+                  <gml:endPosition>2024-03-01T06:00:00Z</gml:endPosition>
+                </gml:TimePeriod>
+              </fes:After>
+            </fes:Filter>
+            """;
+
+        var result = Fes20Parser.ParseFilter(filterXml);
+
+        var temporal = result.Should().BeOfType<TemporalPredicate>().Subject;
+        temporal.Operator.Should().Be(TemporalOperator.After);
+        temporal.Left.Should().BeOfType<PropertyReference>().Which.PropertyName.Should().Be("timestamp");
+
+        var interval = temporal.Right.Should().BeOfType<IntervalLiteral>().Subject;
+        interval.Start.Should().NotBeNull();
+        var start = interval.Start!;
+        start.Type.Should().Be(LiteralType.DateTime);
+        start.Value.Should().Be(new DateTimeOffset(2024, 2, 1, 7, 0, 0, TimeSpan.Zero));
+
+        interval.End.Should().NotBeNull();
+        var end = interval.End!;
+        end.Type.Should().Be(LiteralType.DateTime);
+        end.Value.Should().Be(new DateTimeOffset(2024, 3, 1, 6, 0, 0, TimeSpan.Zero));
+    }
+
+    [UnitTest]
     public void ParseFilter_BboxWithDatelineCrossing_ReturnsMultiPolygonGeometry()
     {
         const string filterXml = """
