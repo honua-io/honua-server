@@ -1081,7 +1081,13 @@ internal sealed class OgcCoveragesHandler
                 return false;
             }
 
-            query = query with { PixelSize = new PixelSize { Width = pixelWidth, Height = pixelHeight } };
+            var requestedPixelSize = new PixelSize { Width = pixelWidth, Height = pixelHeight };
+            if (!TryValidateDerivedScaleSize(context, raster, requestedPixelSize, out error))
+            {
+                return false;
+            }
+
+            query = query with { PixelSize = requestedPixelSize };
             return true;
         }
 
@@ -1103,14 +1109,17 @@ internal sealed class OgcCoveragesHandler
                 return false;
             }
 
-            query = query with
+            var requestedPixelSize = new PixelSize
             {
-                PixelSize = new PixelSize
-                {
-                    Width = nativePixelSize.Value.Width * factor,
-                    Height = nativePixelSize.Value.Height * factor
-                }
+                Width = nativePixelSize.Value.Width * factor,
+                Height = nativePixelSize.Value.Height * factor
             };
+            if (!TryValidateDerivedScaleSize(context, raster, requestedPixelSize, out error))
+            {
+                return false;
+            }
+
+            query = query with { PixelSize = requestedPixelSize };
             return true;
         }
 
@@ -1199,6 +1208,94 @@ internal sealed class OgcCoveragesHandler
         return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed) &&
                parsed is > 0 and <= MaxScaleSize;
     }
+
+    private static bool TryValidateDerivedScaleSize(
+        HttpContext context,
+        RasterInfo raster,
+        PixelSize pixelSize,
+        out string error)
+    {
+        error = string.Empty;
+        if (!IsFinitePositive(pixelSize.Width) || !IsFinitePositive(pixelSize.Height))
+        {
+            error = "resolution and scale-factor must resolve to positive finite pixel sizes.";
+            return false;
+        }
+
+        if (!TryResolveRequestedScaleExtentSize(context, raster, out var extentWidth, out var extentHeight))
+        {
+            error = "resolution and scale-factor require coverage extent or pixel size metadata.";
+            return false;
+        }
+
+        var outputWidth = Math.Ceiling(extentWidth / pixelSize.Width);
+        var outputHeight = Math.Ceiling(extentHeight / pixelSize.Height);
+        if (!IsFinitePositive(outputWidth) ||
+            !IsFinitePositive(outputHeight) ||
+            outputWidth > MaxScaleSize ||
+            outputHeight > MaxScaleSize)
+        {
+            error = $"resolution and scale-factor must not request more than {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Use a coarser resolution, a larger scale-factor, or scale-size.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveRequestedScaleExtentSize(
+        HttpContext context,
+        RasterInfo raster,
+        out double extentWidth,
+        out double extentHeight)
+    {
+        extentWidth = 0;
+        extentHeight = 0;
+
+        var bbox = OgcCommonUtilities.GetQueryValue(context.Request, "bbox");
+        if (!string.IsNullOrWhiteSpace(bbox))
+        {
+            var bboxCrsValue = OgcCommonUtilities.GetQueryValue(context.Request, "bbox-crs") ?? SpatialReferenceHelpers.Crs84Uri;
+            if (!SpatialReferenceHelpers.TryParseCrsDefinition(bboxCrsValue, out var bboxCrs) ||
+                !RasterParsingHelpers.TryParseBoundingBox(
+                    bbox,
+                    bboxCrs.AxisOrder,
+                    bboxCrs.IsGeographic,
+                    out var minX,
+                    out var minY,
+                    out var maxX,
+                    out var maxY))
+            {
+                return false;
+            }
+
+            extentWidth = maxX - minX;
+            extentHeight = maxY - minY;
+            return IsFinitePositive(extentWidth) && IsFinitePositive(extentHeight);
+        }
+
+        if (raster.Extent is { } extent)
+        {
+            extentWidth = Math.Abs(extent.XMax - extent.XMin);
+            extentHeight = Math.Abs(extent.YMax - extent.YMin);
+            if (IsFinitePositive(extentWidth) && IsFinitePositive(extentHeight))
+            {
+                return true;
+            }
+        }
+
+        var nativePixelSize = ResolveNativePixelSize(raster);
+        if (nativePixelSize.HasValue && raster.Width > 0 && raster.Height > 0)
+        {
+            extentWidth = nativePixelSize.Value.Width * raster.Width;
+            extentHeight = nativePixelSize.Value.Height * raster.Height;
+            return IsFinitePositive(extentWidth) && IsFinitePositive(extentHeight);
+        }
+
+        return false;
+    }
+
+    private static bool IsFinitePositive(double value)
+        => double.IsFinite(value) && value > 0;
 
     private static PixelSize? ResolveNativePixelSize(RasterInfo raster)
     {

@@ -432,7 +432,7 @@ Collection IDs are numeric raster layer IDs. Only accessible layers enabled for 
 curl "http://localhost:8080/ogc/coverages/collections"
 ```
 
-Collection objects include `itemType: "coverage"`, CRS/storage CRS metadata, extent, grid/domain metadata when known, default `band_N` fields, and links to the collection schema and coverage bytes.
+Collection objects include `itemType: "coverage"`, `crs`, `storageCrs`, `extent.spatial.bbox`, `extent.spatial.storageCrsBbox` when known, grid/domain metadata, default `band_N` fields, and links to the collection schema and coverage bytes.
 
 ### **Inspect Selectable Bands**
 
@@ -458,7 +458,7 @@ curl -o coverage.tif \
   "http://localhost:8080/ogc/coverages/collections/0/coverage?properties=band_3,band_1&crs=EPSG:3857&scale-size=Lon(512),Lat(512)"
 ```
 
-Use only one of `resolution`, `scale-factor`, or `scale-size` per request.
+Use only one of `resolution`, `scale-factor`, or `scale-size` per request. Scaling requests are capped at 8192 pixels on either axis.
 
 ### **Request PNG by Negotiation**
 

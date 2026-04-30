@@ -149,7 +149,9 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             ("f=netcdf", "NetCDF"),
             ("properties=missing", "missing"),
             ("crs=EPSG:0", "crs"),
-            ("bbox=-122.5,37.7,-122.3", "bbox")
+            ("bbox=-122.5,37.7,-122.3", "bbox"),
+            ("resolution=0.000001", "8192"),
+            ("scale-factor=0.001", "8192")
         };
 
         foreach (var (query, expectedDetail) in invalidRequests)
