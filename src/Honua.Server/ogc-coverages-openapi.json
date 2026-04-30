@@ -1,0 +1,501 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Honua OGC API Coverages",
+    "description": "OGC API Coverages implementation for raster coverage discovery, schema metadata, and coverage retrieval.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/ogc/coverages"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Landing page",
+        "responses": {
+          "200": {
+            "description": "Landing page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LandingPage"
+                }
+              },
+              "text/html": {}
+            }
+          }
+        }
+      }
+    },
+    "/conformance": {
+      "get": {
+        "summary": "Conformance declaration",
+        "responses": {
+          "200": {
+            "description": "Conformance classes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConformanceDeclaration"
+                }
+              },
+              "text/html": {}
+            }
+          }
+        }
+      }
+    },
+    "/api": {
+      "get": {
+        "summary": "OpenAPI document",
+        "responses": {
+          "200": {
+            "description": "OpenAPI document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.0": {}
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "OpenAPI document",
+        "responses": {
+          "200": {
+            "description": "OpenAPI document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.0": {}
+            }
+          }
+        }
+      }
+    },
+    "/collections": {
+      "get": {
+        "summary": "List coverage collections",
+        "responses": {
+          "200": {
+            "description": "Accessible raster coverage collections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageCollections"
+                }
+              },
+              "text/html": {}
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/collections/{collectionId}": {
+      "get": {
+        "summary": "Get coverage collection metadata",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CollectionId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coverage collection metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageCollection"
+                }
+              },
+              "text/html": {}
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/collections/{collectionId}/schema": {
+      "get": {
+        "summary": "Get coverage schema",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CollectionId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coverage field-selection schema",
+            "content": {
+              "application/schema+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSchema"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSchema"
+                }
+              },
+              "text/html": {}
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/collections/{collectionId}/coverage": {
+      "get": {
+        "summary": "Get coverage data",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CollectionId"
+          },
+          {
+            "name": "bbox",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Spatial subset as xmin,ymin,xmax,ymax. Coordinates are CRS84 unless bbox-crs is supplied."
+          },
+          {
+            "name": "bbox-crs",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "CRS identifier for bbox coordinates."
+          },
+          {
+            "name": "crs",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Output CRS identifier."
+          },
+          {
+            "name": "properties",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated band fields, for example band_1,band_3."
+          },
+          {
+            "name": "resolution",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Positive output pixel size as one value or width,height."
+          },
+          {
+            "name": "scale-factor",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "description": "Positive multiplier for the native pixel size."
+          },
+          {
+            "name": "scale-size",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Output size as width,height or axis-size pairs such as x(512),y(512)."
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "geotiff",
+                "tiff",
+                "tif",
+                "png"
+              ]
+            },
+            "description": "Coverage encoding. Defaults to GeoTIFF when no explicit format or Accept header is supplied."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coverage payload",
+            "headers": {
+              "Content-Bbox": {
+                "description": "Result coverage bounding box.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Crs": {
+                "description": "Result CRS when not CRS84.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "image/tiff": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "406": {
+            "$ref": "#/components/responses/NotAcceptable"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "CollectionId": {
+        "name": "collectionId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid request"
+      },
+      "NotFound": {
+        "description": "Coverage collection was not found"
+      },
+      "NotAcceptable": {
+        "description": "Requested representation is not acceptable"
+      },
+      "ServerError": {
+        "description": "Server error"
+      }
+    },
+    "schemas": {
+      "LandingPage": {
+        "type": "object",
+        "required": [
+          "title",
+          "links"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          }
+        }
+      },
+      "ConformanceDeclaration": {
+        "type": "object",
+        "required": [
+          "conformsTo"
+        ],
+        "properties": {
+          "conformsTo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          }
+        }
+      },
+      "CoverageCollections": {
+        "type": "object",
+        "required": [
+          "collections",
+          "links"
+        ],
+        "properties": {
+          "collections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageCollection"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          }
+        }
+      },
+      "CoverageCollection": {
+        "type": "object",
+        "required": [
+          "id",
+          "itemType",
+          "links"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "itemType": {
+            "type": "string",
+            "enum": [
+              "coverage"
+            ]
+          },
+          "extent": {
+            "type": "object"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          },
+          "crs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "storageCrs": {
+            "type": "string"
+          },
+          "storageCrsBbox": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "grid": {
+            "type": "object"
+          },
+          "domain": {
+            "type": "object"
+          },
+          "defaultFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CoverageSchema": {
+        "type": "object",
+        "required": [
+          "type",
+          "properties"
+        ],
+        "properties": {
+          "$schema": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "Link": {
+        "type": "object",
+        "required": [
+          "href"
+        ],
+        "properties": {
+          "href": {
+            "type": "string",
+            "format": "uri-reference"
+          },
+          "rel": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "templated": {
+            "type": "boolean"
+          },
+          "hreflang": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

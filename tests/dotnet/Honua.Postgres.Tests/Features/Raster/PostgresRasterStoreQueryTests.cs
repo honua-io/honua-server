@@ -71,6 +71,38 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task ExportImageAsync_WithBandSelection_ExportsRequestedBandCount()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertMultiBandRasterAsync(schemaName);
+            var store = new PostgresRasterStore(
+                new FixtureConnectionProvider(fixture.DataSource),
+                NullLogger<PostgresRasterStore>.Instance,
+                schemaName);
+
+            var result = await store.ExportImageAsync(
+                    LayerId,
+                    rasterId,
+                    new RasterQuery
+                    {
+                        OutputFormat = RasterFormat.TIFF,
+                        Bands = [2]
+                    })
+                .ConfigureAwait(false);
+
+            result.Data.Should().NotBeEmpty();
+            result.BandCount.Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private async Task CreateRasterTableAsync(string schemaName)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);
@@ -123,6 +155,33 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         command.Parameters.AddWithValue("acquisitionDate", acquisitionDate.UtcDateTime);
         command.Parameters.AddWithValue("createdAt", acquisitionDate.UtcDateTime);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task<long> InsertMultiBandRasterAsync(string schemaName)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   'multi-band',
+                   ST_AddBand(
+                       ST_AddBand(
+                           ST_MakeEmptyRaster(2, 2, 0, 2, 1, -1, 0, 0, 4326),
+                           '8BUI'::text,
+                           10,
+                           NULL
+                       ),
+                       '8BUI'::text,
+                       20,
+                       NULL
+                   ),
+                   NOW(),
+                   NOW()
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        return (long)(await command.ExecuteScalarAsync().ConfigureAwait(false))!;
     }
 
     private static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY)

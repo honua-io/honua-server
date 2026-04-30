@@ -1062,6 +1062,63 @@
       ]
     },
     {
+      "surfaceId": "ogc-api-coverages",
+      "displayName": "OGC API Coverages",
+      "surfaceKind": "http-route-family",
+      "protocol": "OGC API Coverages",
+      "canonicalIdentifier": "/ogc/coverages",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/ogc/coverages"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Coverages/OgcCoveragesEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#521",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "OpenAPI spec stays aligned with the registered surface",
+          "executionLane": "ci:architecture",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Architecture.Tests/OpenApiDriftTests.cs",
+            "src/Honua.Server/ogc-coverages-openapi.json",
+            "docs/developer/api-specs/ogc-api-coverages.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#521",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "OGC API Coverages route contract and implemented support matrix are documented with targeted endpoint coverage",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "docs/gis/specifications/ogc-api-coverages-coverage.md",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Coverages/OgcCoveragesEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#521",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "ogc-api-maps-and-static-rendering",
       "displayName": "OGC API Maps and static rendering",
       "surfaceKind": "http-route-family",

@@ -62,6 +62,7 @@ internal static class ProtocolRequestClassifier
         path.StartsWithSegments("/ogc/features") ||
         path.StartsWithSegments("/ogc/tiles") ||
         path.StartsWithSegments("/ogc/maps") ||
+        path.StartsWithSegments("/ogc/coverages") ||
         path.StartsWithSegments("/collections");
 
     internal static bool IsWfs(PathString path) => path.StartsWithSegments("/wfs");

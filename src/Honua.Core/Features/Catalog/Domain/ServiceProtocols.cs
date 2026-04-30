@@ -26,6 +26,9 @@ public static class ServiceProtocols
     /// <summary>OGC API Maps protocol.</summary>
     public const string OgcApiMaps = "OGC-API-Maps";
 
+    /// <summary>OGC API Coverages protocol.</summary>
+    public const string OgcApiCoverages = "OGC-API-Coverages";
+
     /// <summary>OGC API Tiles protocol.</summary>
     public const string OgcApiTiles = "OGC-API-Tiles";
 
@@ -61,6 +64,7 @@ public static class ServiceProtocols
         GPServer,
         OgcFeatures,
         OgcApiMaps,
+        OgcApiCoverages,
         OgcApiTiles,
         Wfs20,
         Wms,

@@ -19,6 +19,7 @@ using Honua.Server.Features.Protocols.GeoServices.MapServer;
 using Honua.Server.Features.Protocols.Mcp;
 using Honua.Server.Features.NlQuery;
 using Honua.Server.Features.Protocols.OData;
+using Honua.Server.Features.Protocols.Ogc.Api.Coverages;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Protocols.Ogc.Api.Maps;
 using Honua.Server.Features.Protocols.Ogc.Api.Processes;
@@ -56,6 +57,7 @@ internal static class FeatureRegistrationExtensions
         services.AddCogServices(configuration);
         services.AddImageServer();
         services.AddMapServer();
+        services.AddOgcCoverages();
         services.AddOgcFeatures(configuration);
         services.AddOgcMaps();
         services.AddOgcProcesses(configuration);
@@ -107,6 +109,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapTileJsonEndpoints();
         endpoints.MapPMTilesProxyEndpoints();
         endpoints.MapStyleEndpoints();
+        endpoints.MapOgcCoveragesEndpoints();
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcMapsEndpoints();
         endpoints.MapOgcProcessesEndpoints();

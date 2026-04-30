@@ -202,6 +202,17 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@clipGeom", clip.Geometry));
         }
 
+        if (query.Bands is { Length: > 0 } bands)
+        {
+            if (bands.Any(static band => band <= 0))
+            {
+                throw new ArgumentException("Raster band numbers must be positive.", nameof(query));
+            }
+
+            rasterExpr = $"ST_Band({rasterExpr}, @bands)";
+            extraParams.Add(("@bands", bands));
+        }
+
         // 2. Resize to output dimensions if specified
         if (query.OutputWidth is > 0 && query.OutputHeight is > 0)
         {
