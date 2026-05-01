@@ -168,11 +168,13 @@ callers that need the absolute total should use `CountAsync`.
 
 ## Observability
 
-- Activity source: `Honua.SqlServer.FeatureStore` — emits spans for `select`, `count`,
-  `extent` operations with the `layer.id` tag.
-- Logging: source-generated structured events under category
-  `Honua.SqlServer.Features.FeatureStore.Services.SqlServerFeatureLog`. The provider does
-  not emit raw SQL exception messages or connection strings.
+- Activity source: `Honua.SqlServer.FeatureStore` — emits spans named
+  `sqlserver.feature.select`, `sqlserver.feature.count`, and `sqlserver.feature.extent`,
+  each tagged with `layer.id`.
+- Logging: source-generated structured events (`SqlServerFeatureLog`) emitted under the
+  `Honua.SqlServer.Features.FeatureStore.Services.SqlServerFeatureDataAccess` category
+  (event ids `7000` for prepared queries, `7001` for unsupported-operation rejections).
+  The provider does not emit raw SQL exception messages or connection strings.
 
 ## Testing
 

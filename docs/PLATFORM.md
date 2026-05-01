@@ -1,6 +1,6 @@
 # Honua Platform Overview
 
-Honua is a cloud-native geospatial feature server. It publishes, queries, edits, and renders spatial data through industry-standard protocols — enabling ArcGIS Pro, QGIS, MapLibre, Power BI, Excel, and custom applications to connect to the same data source simultaneously. The primary provider is PostgreSQL/PostGIS (full read/write). An embedded DuckDB provider supports read-only analytical and reference workloads without external database infrastructure.
+Honua is a cloud-native geospatial feature server. It publishes, queries, edits, and renders spatial data through industry-standard protocols — enabling ArcGIS Pro, QGIS, MapLibre, Power BI, Excel, and custom applications to connect to the same data source simultaneously. The primary provider is PostgreSQL/PostGIS (full read/write). An embedded DuckDB provider supports read-only analytical and reference workloads without external database infrastructure. An additional read-only SQL Server provider (`geometry`/`geography`) plugs in alongside the primary backend for enterprise data sources standardized on Microsoft SQL Server.
 
 ## Architecture
 
@@ -41,7 +41,7 @@ Honua is a cloud-native geospatial feature server. It publishes, queries, edits,
 
 ## Protocols at a Glance
 
-Honua serves multiple protocols from a single dataset. No ETL, no data duplication. Both the PostGIS and DuckDB providers expose the same protocol surface for read operations.
+Honua serves multiple protocols from a single dataset. No ETL, no data duplication. PostGIS, DuckDB, and SQL Server providers all expose the same protocol surface for read operations; only PostGIS supports writes today.
 
 | Protocol | Primary Clients | Use Case |
 |---|---|---|
@@ -81,6 +81,8 @@ Honua serves multiple protocols from a single dataset. No ETL, no data duplicati
 ```
 
 The DuckDB provider serves pre-built `.duckdb` files containing data prepared offline (e.g. from GeoParquet, Shapefile, or CSV imports). It supports feature queries, spatial filters, statistics, and GeoJSON/streaming export, but not editing, MVT, H3, native WFS GML output, or replica/extract workflows. See the [DuckDB Provider Guide](operator/duckdb-provider.md) for configuration and limitations.
+
+The SQL Server provider exposes existing `geometry`/`geography` tables as read-only feature layers without copying data into PostGIS. It supports feature query, count, extent, and pagination, but not editing, statistics, top-features, date/value/H3 bins, temporal extents, or native MVT/FlatGeobuf/Geobuf/GML output (which fall back to the in-process formatter). See the [SQL Server Provider Guide](operator/sqlserver-provider.md) for supported versions, configuration, and limitations.
 
 ## Key Capabilities
 
