@@ -80,8 +80,12 @@ with the canonical entry but do not collide.
 | `colorblind-safe` | Remaps the distinct fill/line/circle colors onto the `Viridis` palette in `ColorPalettes`. Reuses the existing palette data; no new palettes are introduced. |
 | `print` | Forces all opacity properties to `1.0`, line colors to `#000000`, and fill outlines to black for high-contrast print rendering. |
 
-Malformed input or unknown themes return the canonical style unchanged. The
-themed body is logged at `Debug` (event id `6402`).
+An unknown `theme` query value returns `400 Bad Request` listing the supported
+profiles. A malformed *stored* MapLibre document falls back to the canonical
+output without raising an error so the public read endpoint stays available.
+Successful theme applications log at `Debug` (event id `6402`); individual
+malformed color literals encountered during the transform skip in place and
+log at `Debug` (event id `6403`) with the offending property and color value.
 
 ## Cross-protocol consumption
 

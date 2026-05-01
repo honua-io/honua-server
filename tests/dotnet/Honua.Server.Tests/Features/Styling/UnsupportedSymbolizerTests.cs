@@ -89,4 +89,104 @@ public class UnsupportedSymbolizerTests
         Assert.Equal("PICTURE_MARKER_PARTIAL", StyleErrorCodes.PictureMarkerPartial);
         Assert.Equal("RENDERER_PAYLOAD_INCOMPLETE", StyleErrorCodes.RendererPayloadIncomplete);
     }
+
+    [Fact]
+    public void Convert_SimpleRenderer_UnsupportedSymbolType_ReportsSymbolTypeUnsupported()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "simple",
+            "symbol": {
+              "type": "esriTS",
+              "color": [255, 0, 0, 255]
+            }
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        var entry = Assert.Single(result.Unsupported);
+        Assert.Equal(StyleErrorCodes.SymbolTypeUnsupported, entry.Code);
+        Assert.Equal("esriTS", entry.SymbolizerType);
+        Assert.False(string.IsNullOrEmpty(result.MapLibreStyleJson));
+    }
+
+    [Fact]
+    public void Convert_UniqueValueRenderer_NonUniformPictureMarkers_ReportsPictureMarkerPartial()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "category",
+            "uniqueValueInfos": [
+              {
+                "value": "A",
+                "symbol": {
+                  "type": "esriPMS",
+                  "url": "https://example.invalid/icon-a.png",
+                  "imageData": "QQ==",
+                  "contentType": "image/png",
+                  "xoffset": 0,
+                  "yoffset": 0,
+                  "angle": 0
+                }
+              },
+              {
+                "value": "B",
+                "symbol": {
+                  "type": "esriPMS",
+                  "url": "https://example.invalid/icon-b.png",
+                  "imageData": "Qg==",
+                  "contentType": "image/png",
+                  "xoffset": 12,
+                  "yoffset": -4,
+                  "angle": 45
+                }
+              }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        Assert.Contains(result.Unsupported, info => info.Code == StyleErrorCodes.PictureMarkerPartial);
+        Assert.False(string.IsNullOrEmpty(result.MapLibreStyleJson));
+    }
+
+    [Fact]
+    public void Convert_UniqueValueRenderer_UnsupportedNestedSymbolType_ReportsSymbolTypeUnsupported()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "lines", GeometryType.LineString);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "category",
+            "uniqueValueInfos": [
+              {
+                "value": "A",
+                "symbol": {
+                  "type": "esriCustomLine",
+                  "color": [10, 20, 30, 255]
+                }
+              }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        Assert.Contains(result.Unsupported, info =>
+            info.Code == StyleErrorCodes.SymbolTypeUnsupported && info.SymbolizerType == "esriCustomLine");
+    }
 }

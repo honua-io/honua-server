@@ -372,9 +372,32 @@ PUT /api/v1/admin/metadata/layers/{layerId}/style
 Content-Type: application/json
 
 {
-  "mapLibreStyle": { "version": 8, "sources": {}, "layers": [] }
+  "mapLibreStyle": { "version": 8, "sources": {}, "layers": [] },
+  "changedBy": "ops@example.com",
+  "changeSummary": "Initial style for the parcels layer"
 }
 ```
+
+The successful response carries the persisted style plus revision metadata and any symbolizers that the engine could not losslessly translate:
+
+```json
+{
+  "success": true,
+  "data": {
+    "mapLibreStyle": { "version": 8, "sources": {}, "layers": [] },
+    "drawingInfo": null,
+    "styleVersion": 4,
+    "revisedAt": "2026-05-01T17:42:11Z",
+    "revisedBy": "ops@example.com",
+    "changeSummary": "Initial style for the parcels layer",
+    "unsupportedSymbolizers": []
+  }
+}
+```
+
+`changeSummary` is operator-supplied free text capped at 1000 characters; longer values return `400`. `revisedAt` is set to the server's UTC clock on every canonical write. `unsupportedSymbolizers[]` is populated when a `drawingInfo` payload contains renderer or symbol types outside the supported set; each entry has stable `code` (`RENDERER_TYPE_UNSUPPORTED`, `SYMBOL_TYPE_UNSUPPORTED`, `PICTURE_MARKER_PARTIAL`, `RENDERER_PAYLOAD_INCOMPLETE`), `symbolizerType`, and operator `guidance` fields. The request still succeeds and the engine returns a best-effort MapLibre fallback so style intent is never silently dropped.
+
+The public `GET /api/styles/{layerId}.json` endpoint accepts an optional `?theme=default|dark|colorblind-safe|print` query parameter for deterministic theme transforms. The output cache varies by `theme`; the admin update endpoint invalidates every variant on each revision. See [Style Engine: Cross-Protocol Consumption](../gis/style-engine-protocol-consumption.md) for the full contract and how MVT, MapServer, and WMS consume the canonical document.
 
 ### **Metadata and Style Endpoints**
 
@@ -389,10 +412,11 @@ Content-Type: application/json
 | `/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` | GET | Get metadata resource |
 | `/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` | PUT | Update metadata resource |
 | `/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` | DELETE | Delete metadata resource |
-| `/api/v1/admin/metadata/layers/{layerId}/style` | GET | Get layer style payload |
-| `/api/v1/admin/metadata/layers/{layerId}/style` | PUT | Update layer style payload |
+| `/api/v1/admin/metadata/layers/{layerId}/style` | GET | Get layer style payload (MapLibre + cached drawingInfo + revision metadata) |
+| `/api/v1/admin/metadata/layers/{layerId}/style` | PUT | Update layer style payload; accepts optional `changedBy` and `changeSummary` for revision tracking and reports `unsupportedSymbolizers[]` with stable codes |
 | `/api/v1/admin/metadata/layers/{layerId}/style/import-sld` | POST | Convert an SLD/SE 1.0 or 1.1 XML document to MapLibre style JSON and store it (admin only, Community edition; 1 MiB body cap). See [SLD Migration Reference](sld-migration.md). |
 | `/api/v1/admin/metadata/layers/{layerId}/style/export-sld` | GET | Export the stored MapLibre style as an `application/xml` SLD 1.0 document. Diagnostic count surfaces in the `X-Sld-Diagnostic-Count` response header. |
+| `/api/styles/{layerId}.json` | GET | Public MapLibre style fetch with optional `?theme=default\|dark\|colorblind-safe\|print` deterministic transform; output cache varies per theme. |
 
 ### **SDK Compatibility Handshake**
 

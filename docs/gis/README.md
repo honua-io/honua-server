@@ -37,6 +37,10 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 - [WCS 2.0.1](specifications/wcs-2.0.1-coverage.md) — raw raster/coverage export over the shared raster store
 - [OData v4](specifications/odata-v4-coverage.md)
 
+## Styling
+
+- [Style Engine: Cross-Protocol Consumption](style-engine-protocol-consumption.md) — Canonical MapLibre style ingest, theme transforms (`dark`, `colorblind-safe`, `print`), revision metadata, and how stored styles flow into MVT, MapServer, and WMS rendering paths.
+
 ## Compatibility
 
 - [Known Limitations](MVP_COMPATIBILITY_CONTRACT.md) — Current protocol limitations

@@ -79,8 +79,8 @@ internal static class StyleEndpoints
         }
 
         var rawJson = styleElement.Value.GetRawText();
-        var themed = StyleThemeTransformer.ApplyTheme(rawJson, themeProfile);
         var logger = loggerFactory.CreateLogger("Honua.Server.Features.Infrastructure.Styling.StyleEndpoints");
+        var themed = StyleThemeTransformer.ApplyTheme(rawJson, themeProfile, logger, layerId);
         var themeName = themeProfile switch
         {
             ThemeProfile.Dark => "Dark",

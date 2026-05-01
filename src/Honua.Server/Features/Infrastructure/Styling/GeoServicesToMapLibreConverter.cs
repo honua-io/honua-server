@@ -47,11 +47,11 @@ internal static class GeoServicesToMapLibreConverter
         switch (rendererType)
         {
             case "simple":
-                return new StyleConversionResult(ConvertSimpleRenderer(renderer, layer), unsupported);
+                return new StyleConversionResult(ConvertSimpleRenderer(renderer, layer, unsupported), unsupported);
             case "uniqueValue":
-                return new StyleConversionResult(ConvertUniqueValueRenderer(renderer, layer), unsupported);
+                return new StyleConversionResult(ConvertUniqueValueRenderer(renderer, layer, unsupported), unsupported);
             case "classBreaks":
-                return new StyleConversionResult(ConvertClassBreaksRenderer(renderer, layer), unsupported);
+                return new StyleConversionResult(ConvertClassBreaksRenderer(renderer, layer, unsupported), unsupported);
             default:
                 unsupported.Add(new UnsupportedSymbolizerInfo
                 {
@@ -65,12 +65,110 @@ internal static class GeoServicesToMapLibreConverter
         }
     }
 
-    private static string ConvertSimpleRenderer(JsonElement renderer, LayerDefinition layer)
+    private static readonly string[] SupportedPointSymbolTypes = ["esriSMS", "esriPMS"];
+    private static readonly string[] SupportedLineSymbolTypes = ["esriSLS"];
+    private static readonly string[] SupportedFillSymbolTypes = ["esriSFS"];
+
+    /// <summary>
+    /// Inspects <paramref name="symbol"/> for a recognized GeoServices symbol type
+    /// and records a <see cref="StyleErrorCodes.SymbolTypeUnsupported"/> entry on
+    /// <paramref name="unsupported"/> when the type is outside the supported set
+    /// for <paramref name="layer"/>'s geometry.  Conversion still proceeds with a
+    /// best-effort default so callers always receive a renderable MapLibre style.
+    /// </summary>
+    private static void ValidateSymbolType(
+        JsonElement symbol,
+        LayerDefinition layer,
+        List<UnsupportedSymbolizerInfo> unsupported)
+    {
+        if (!TryGetSymbolType(symbol, out var symbolType))
+        {
+            return;
+        }
+
+        var supported = layer.GeometryType switch
+        {
+            GeometryType.Point or GeometryType.MultiPoint => SupportedPointSymbolTypes,
+            GeometryType.LineString or GeometryType.MultiLineString => SupportedLineSymbolTypes,
+            GeometryType.Polygon or GeometryType.MultiPolygon or GeometryType.GeometryCollection => SupportedFillSymbolTypes,
+            _ => null
+        };
+
+        if (supported == null)
+        {
+            return;
+        }
+
+        foreach (var allowed in supported)
+        {
+            if (string.Equals(allowed, symbolType, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        unsupported.Add(new UnsupportedSymbolizerInfo
+        {
+            Code = StyleErrorCodes.SymbolTypeUnsupported,
+            SymbolizerType = symbolType ?? string.Empty,
+            Guidance = $"Symbol type '{symbolType}' is not supported for the layer geometry; default symbology was applied."
+        });
+    }
+
+    /// <summary>
+    /// Records a <see cref="StyleErrorCodes.PictureMarkerPartial"/> entry when the
+    /// supplied picture marker stops carry per-stop offsets or rotation that the
+    /// canonical MapLibre style cannot losslessly express across data-driven stops.
+    /// The image payloads themselves are still preserved in the style metadata.
+    /// </summary>
+    private static void RecordPictureMarkerPartialIfNeeded(
+        IReadOnlyCollection<PictureMarkerPayload> payloads,
+        List<UnsupportedSymbolizerInfo> unsupported)
+    {
+        if (payloads.Count == 0)
+        {
+            return;
+        }
+
+        if (TryGetUniformPictureMarkerLayout(payloads, out _))
+        {
+            return;
+        }
+
+        var hasLayoutHints = false;
+        foreach (var payload in payloads)
+        {
+            if ((payload.XOffset ?? 0d) != 0d || (payload.YOffset ?? 0d) != 0d || (payload.Angle ?? 0d) != 0d)
+            {
+                hasLayoutHints = true;
+                break;
+            }
+        }
+
+        if (!hasLayoutHints)
+        {
+            return;
+        }
+
+        unsupported.Add(new UnsupportedSymbolizerInfo
+        {
+            Code = StyleErrorCodes.PictureMarkerPartial,
+            SymbolizerType = "esriPMS",
+            Guidance = "Picture marker images were preserved in style metadata, but per-stop offsets or rotation could not be projected onto a single icon-offset/icon-rotate layout."
+        });
+    }
+
+    private static string ConvertSimpleRenderer(
+        JsonElement renderer,
+        LayerDefinition layer,
+        List<UnsupportedSymbolizerInfo> unsupported)
     {
         if (!renderer.TryGetProperty("symbol", out var symbol) || symbol.ValueKind != JsonValueKind.Object)
         {
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
+
+        ValidateSymbolType(symbol, layer, unsupported);
 
         var sourceId = StyleDefaults.GetSourceId(layer);
         var layers = new List<Dictionary<string, object?>>();
@@ -103,7 +201,10 @@ internal static class GeoServicesToMapLibreConverter
         return StyleJsonUtilities.Serialize(style);
     }
 
-    private static string ConvertUniqueValueRenderer(JsonElement renderer, LayerDefinition layer)
+    private static string ConvertUniqueValueRenderer(
+        JsonElement renderer,
+        LayerDefinition layer,
+        List<UnsupportedSymbolizerInfo> unsupported)
     {
         var fieldName = TryGetRendererField(renderer, out var field)
             ? field
@@ -120,7 +221,7 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         if (layer.GeometryType is GeometryType.Point or GeometryType.MultiPoint
-            && TryBuildPictureMarkerUniqueValueStyle(layer, fieldName, infos, renderer, out var pictureStyle))
+            && TryBuildPictureMarkerUniqueValueStyle(layer, fieldName, infos, renderer, unsupported, out var pictureStyle))
         {
             return StyleJsonUtilities.Serialize(pictureStyle);
         }
@@ -147,6 +248,8 @@ internal static class GeoServicesToMapLibreConverter
             {
                 continue;
             }
+
+            ValidateSymbolType(symbol, layer, unsupported);
 
             if (!TryGetSymbolColor(symbol, out var color))
             {
@@ -198,7 +301,10 @@ internal static class GeoServicesToMapLibreConverter
         return StyleJsonUtilities.Serialize(style);
     }
 
-    private static string ConvertClassBreaksRenderer(JsonElement renderer, LayerDefinition layer)
+    private static string ConvertClassBreaksRenderer(
+        JsonElement renderer,
+        LayerDefinition layer,
+        List<UnsupportedSymbolizerInfo> unsupported)
     {
         var fieldName = TryGetRendererField(renderer, out var field)
             ? field
@@ -215,7 +321,7 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         if (layer.GeometryType is GeometryType.Point or GeometryType.MultiPoint
-            && TryBuildPictureMarkerClassBreakStyle(layer, fieldName, infos, out var pictureStyle))
+            && TryBuildPictureMarkerClassBreakStyle(layer, fieldName, infos, unsupported, out var pictureStyle))
         {
             return StyleJsonUtilities.Serialize(pictureStyle);
         }
@@ -237,6 +343,8 @@ internal static class GeoServicesToMapLibreConverter
             {
                 continue;
             }
+
+            ValidateSymbolType(symbol, layer, unsupported);
 
             if (!TryGetSymbolColor(symbol, out var color))
             {
@@ -508,6 +616,7 @@ internal static class GeoServicesToMapLibreConverter
         string fieldName,
         JsonElement infos,
         JsonElement renderer,
+        List<UnsupportedSymbolizerInfo> unsupported,
         out Dictionary<string, object?> style)
     {
         style = new Dictionary<string, object?>();
@@ -533,6 +642,8 @@ internal static class GeoServicesToMapLibreConverter
             // Use string conversion to match the to-string coerced input in the match expression.
             stops.Add((ConvertValueTokenAsString(valueElement), payload));
         }
+
+        RecordPictureMarkerPartialIfNeeded(stops.Select(stop => stop.Payload).ToList(), unsupported);
 
         if (stops.Count == 0)
         {
@@ -590,6 +701,7 @@ internal static class GeoServicesToMapLibreConverter
         LayerDefinition layer,
         string fieldName,
         JsonElement infos,
+        List<UnsupportedSymbolizerInfo> unsupported,
         out Dictionary<string, object?> style)
     {
         style = new Dictionary<string, object?>();
@@ -624,6 +736,8 @@ internal static class GeoServicesToMapLibreConverter
         {
             return false;
         }
+
+        RecordPictureMarkerPartialIfNeeded(stops.Select(stop => stop.Payload).ToList(), unsupported);
 
         var images = new List<PictureMarkerImage>();
         var index = 0;

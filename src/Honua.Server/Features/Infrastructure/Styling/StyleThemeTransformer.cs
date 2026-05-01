@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Styling.Domain;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
 
@@ -46,9 +47,15 @@ internal static class StyleThemeTransformer
     /// <summary>
     /// Applies the given theme to a canonical MapLibre style document.  Returns
     /// the input unchanged for <see cref="ThemeProfile.Default"/> or when the
-    /// payload cannot be parsed.
+    /// payload cannot be parsed.  When a logger is supplied, malformed color
+    /// literals encountered during the transform emit event 6403 with the
+    /// originating layer id.
     /// </summary>
-    public static string ApplyTheme(string mapLibreStyleJson, ThemeProfile theme)
+    public static string ApplyTheme(
+        string mapLibreStyleJson,
+        ThemeProfile theme,
+        ILogger? logger = null,
+        int layerId = 0)
     {
         if (theme == ThemeProfile.Default || string.IsNullOrWhiteSpace(mapLibreStyleJson))
         {
@@ -70,13 +77,15 @@ internal static class StyleThemeTransformer
             return mapLibreStyleJson;
         }
 
+        var diagnostics = new ThemeDiagnostics(logger, layerId);
+
         switch (theme)
         {
             case ThemeProfile.Dark:
-                ApplyDarkTheme(layers);
+                ApplyDarkTheme(layers, diagnostics);
                 break;
             case ThemeProfile.ColorblindSafe:
-                ApplyColorblindSafeTheme(layers);
+                ApplyColorblindSafeTheme(layers, diagnostics);
                 break;
             case ThemeProfile.Print:
                 ApplyPrintTheme(layers);
@@ -86,7 +95,7 @@ internal static class StyleThemeTransformer
         return obj.ToJsonString();
     }
 
-    private static void ApplyDarkTheme(JsonArray layers)
+    private static void ApplyDarkTheme(JsonArray layers, ThemeDiagnostics diagnostics)
     {
         foreach (var layer in layers)
         {
@@ -97,7 +106,7 @@ internal static class StyleThemeTransformer
 
             var isBackground = string.Equals(GetString(layerObject["type"]), "background", StringComparison.OrdinalIgnoreCase);
 
-            TransformPaintColors(layerObject, color =>
+            TransformPaintColors(layerObject, diagnostics, color =>
             {
                 var hsl = RgbToHsl(color);
                 var inverted = HslToRgb(hsl with { L = 1d - hsl.L });
@@ -111,7 +120,7 @@ internal static class StyleThemeTransformer
         }
     }
 
-    private static void ApplyColorblindSafeTheme(JsonArray layers)
+    private static void ApplyColorblindSafeTheme(JsonArray layers, ThemeDiagnostics diagnostics)
     {
         var palette = ColorPalettes.Viridis.Colors;
         var maxClasses = 0;
@@ -132,7 +141,7 @@ internal static class StyleThemeTransformer
                 continue;
             }
 
-            TransformPaintColors(layerObject, _ =>
+            TransformPaintColors(layerObject, diagnostics, _ =>
             {
                 var paletteHex = paletteColors[index % paletteColors.Length];
                 index++;
@@ -186,7 +195,10 @@ internal static class StyleThemeTransformer
         }
     }
 
-    private static void TransformPaintColors(JsonObject layerObject, Func<StyleColor, StyleColor> transform)
+    private static void TransformPaintColors(
+        JsonObject layerObject,
+        ThemeDiagnostics diagnostics,
+        Func<StyleColor, StyleColor> transform)
     {
         if (layerObject["paint"] is not JsonObject paint)
         {
@@ -195,7 +207,53 @@ internal static class StyleThemeTransformer
 
         foreach (var property in ColorPaintProperties)
         {
-            if (paint[property] is not JsonValue valueNode)
+            var value = paint[property];
+            if (value is JsonValue valueNode)
+            {
+                if (!valueNode.TryGetValue<string>(out var colorString) || string.IsNullOrWhiteSpace(colorString))
+                {
+                    continue;
+                }
+
+                if (!StyleJsonUtilities.TryParseMapLibreColor(colorString, out var parsed))
+                {
+                    diagnostics.RecordMalformedColor(property, colorString);
+                    continue;
+                }
+
+                var transformed = transform(parsed);
+                paint[property] = ColorToHex(transformed);
+            }
+            else if (value is JsonArray expressionArray)
+            {
+                TransformExpressionColors(expressionArray, property, diagnostics, transform);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Walks a MapLibre expression array (e.g. `["case", ..., ["match", ...], "fallback"]`)
+    /// and rewrites every embedded string color literal through <paramref name="transform"/>.
+    /// Numeric, boolean, and operator string tokens are left untouched: any string that
+    /// fails <see cref="StyleJsonUtilities.TryParseMapLibreColor(string?, out StyleColor)"/>
+    /// is preserved as-is so operator names like <c>match</c> are not corrupted.
+    /// </summary>
+    private static void TransformExpressionColors(
+        JsonArray expression,
+        string property,
+        ThemeDiagnostics diagnostics,
+        Func<StyleColor, StyleColor> transform)
+    {
+        for (var i = 0; i < expression.Count; i++)
+        {
+            var node = expression[i];
+            if (node is JsonArray nested)
+            {
+                TransformExpressionColors(nested, property, diagnostics, transform);
+                continue;
+            }
+
+            if (node is not JsonValue valueNode)
             {
                 continue;
             }
@@ -211,7 +269,25 @@ internal static class StyleThemeTransformer
             }
 
             var transformed = transform(parsed);
-            paint[property] = ColorToHex(transformed);
+            expression[i] = ColorToHex(transformed);
+        }
+    }
+
+    /// <summary>
+    /// Carries the optional logger plus contextual layer id used to emit
+    /// <see cref="LayerStyleLog.ThemeColorParseFailure"/> (event 6403) without
+    /// threading individual ILogger references through every transform helper.
+    /// </summary>
+    private readonly record struct ThemeDiagnostics(ILogger? Logger, int LayerId)
+    {
+        public void RecordMalformedColor(string property, string color)
+        {
+            if (Logger == null)
+            {
+                return;
+            }
+
+            LayerStyleLog.ThemeColorParseFailure(Logger, LayerId, property, color);
         }
     }
 

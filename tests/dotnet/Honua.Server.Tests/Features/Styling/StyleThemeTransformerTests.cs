@@ -137,6 +137,117 @@ public class StyleThemeTransformerTests
         Assert.Equal(json, result);
     }
 
+    [Fact]
+    public void ApplyTheme_DarkProfile_TransformsColorsInsideExpressionArrays()
+    {
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": [
+                "case",
+                ["!=", ["get", "category"], null],
+                ["match", ["to-string", ["get", "category"]], "A", "#cc8844", "B", "#3366aa", "#aabbcc"],
+                "#aabbcc"
+              ]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        Assert.NotEqual(json, result);
+        // Each original literal should have been replaced; the originals must not appear.
+        Assert.DoesNotContain("\"#cc8844\"", result);
+        Assert.DoesNotContain("\"#3366aa\"", result);
+        Assert.DoesNotContain("\"#aabbcc\"", result);
+        // Operator tokens like "case" and "match" must survive untouched.
+        Assert.Contains("\"case\"", result);
+        Assert.Contains("\"match\"", result);
+        Assert.Contains("\"to-string\"", result);
+        Assert.Contains("\"category\"", result);
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_ExpressionArrayTransformIsDeterministic()
+    {
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-circle",
+            "type": "circle",
+            "source": "layer-1",
+            "paint": {
+              "circle-color": ["case", ["!=", ["get", "level"], null], ["step", ["to-number", ["get", "level"]], "#aaaaaa", 5, "#cc4444"], "#aaaaaa"]
+            }
+          }]
+        }
+        """;
+
+        var first = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+        var second = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_MalformedColorEmitsParseFailureLog()
+    {
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {"fill-color": "not-a-color"}
+          }]
+        }
+        """;
+
+        var logger = new RecordingLogger();
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark, logger, layerId: 42);
+
+        Assert.Contains("not-a-color", result);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(6403, entry.EventId);
+        Assert.Contains("fill-color", entry.Message);
+        Assert.Contains("not-a-color", entry.Message);
+    }
+
+    private sealed class RecordingLogger : Microsoft.Extensions.Logging.ILogger
+    {
+        public List<LogEntry> Entries { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add(new LogEntry(eventId.Id, formatter(state, exception)));
+        }
+
+        public sealed record LogEntry(int EventId, string Message);
+    }
+
     private static string BuildPolygonStyleJson(string fillColor) =>
         "{\"version\":8,\"name\":\"test\","
         + "\"sources\":{\"layer-1\":{\"type\":\"vector\"}},"

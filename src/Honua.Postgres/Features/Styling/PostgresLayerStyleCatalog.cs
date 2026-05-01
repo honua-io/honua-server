@@ -69,7 +69,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
             SET maplibre_style = @mapLibreStyle,
                 geoservices_drawing_info = NULL,
                 style_version = COALESCE(style_version, 0) + 1,
-                style_revised_at = NOW() AT TIME ZONE 'UTC',
+                style_revised_at = NOW(),
                 style_revised_by = @revisedBy,
                 style_change_summary = @changeSummary
             WHERE layer_id = @layerId
@@ -109,7 +109,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
             SET maplibre_style = @mapLibreStyle,
                 geoservices_drawing_info = @drawingInfo,
                 style_version = COALESCE(style_version, 0) + 1,
-                style_revised_at = NOW() AT TIME ZONE 'UTC',
+                style_revised_at = NOW(),
                 style_revised_by = @revisedBy,
                 style_change_summary = @changeSummary
             WHERE layer_id = @layerId
