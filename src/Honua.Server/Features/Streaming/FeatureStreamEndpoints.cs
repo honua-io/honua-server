@@ -1119,19 +1119,39 @@ internal static class FeatureStreamEndpoints
                         return;
                     }
 
-                    // Per-(event, subscription) dedup is claimed at send time so
-                    // events that the channel later dropped as pre-drain overflow
-                    // remain replayable. The claim also verifies that the
-                    // subscription's generation has not advanced — if it did
-                    // (unsubscribe or same-id replacement), the queued frame is
-                    // stale and must be dropped without claiming dedup so a
-                    // future replay for the new generation can still deliver the
-                    // event. Whichever path (this writer or the per-subscription
-                    // replay) wins the atomic test-and-set sends the frame; the
-                    // other observes the recorded key and skips.
                     if (!message.IsHeartbeat)
                     {
                         var subscriptionId = message.Envelope.SubscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId;
+
+                        // Default-subscription cursor fence. The writer's replayCursor tracks
+                        // the high-water mark already delivered to the default subscription
+                        // through the initial replay, the convergent handoff loop, the
+                        // onFirstRead store sweep, and the onPoll cross-node poll. Send-time
+                        // dedup (TryClaimSubscriptionDelivery) keeps the replay-to-live handoff
+                        // exactly-once for small replay windows, but the recent-event LRU is
+                        // bounded at RecentEventIdCapacity (128). On a high-volume final sweep
+                        // a queued copy can arrive after its dedup key has been evicted, and
+                        // the writer would re-send it. SSE has the same fence at the SSE drain.
+                        // Non-default subscriptions are protected by their pause/unpause/post-
+                        // unpause-sweep choreography, so broadcast does not queue frames for
+                        // them within their own replay range.
+                        if (replayCursor > 0
+                            && string.Equals(subscriptionId, FeatureStreamSessionManager.DefaultSubscriptionId, StringComparison.Ordinal)
+                            && message.Envelope.Cursor <= replayCursor)
+                        {
+                            continue;
+                        }
+
+                        // Per-(event, subscription) dedup is claimed at send time so
+                        // events that the channel later dropped as pre-drain overflow
+                        // remain replayable. The claim also verifies that the
+                        // subscription's generation has not advanced — if it did
+                        // (unsubscribe or same-id replacement), the queued frame is
+                        // stale and must be dropped without claiming dedup so a
+                        // future replay for the new generation can still deliver the
+                        // event. Whichever path (this writer or the per-subscription
+                        // replay) wins the atomic test-and-set sends the frame; the
+                        // other observes the recorded key and skips.
                         var claim = sessionManager.TryClaimSubscriptionDelivery(
                             session.SessionId,
                             subscriptionId,
@@ -1264,6 +1284,24 @@ internal static class FeatureStreamEndpoints
                 session.WriteLock,
                 "invalid-subscription-id",
                 $"subscriptionId exceeds the {options.MaxSubscriptionIdLength}-character limit.",
+                null,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // The default subscription id is reserved for the server-managed
+        // session-wide subscription that is allocated at session creation and
+        // owns the writer's onPoll/onFirstRead replay cursor. A client subscribe
+        // here would replace it with a new generation, leaving the writer's
+        // pinned default-subscription generation stale and silently dropping
+        // every cross-node poll result.
+        if (string.Equals(subscriptionId, FeatureStreamSessionManager.DefaultSubscriptionId, StringComparison.OrdinalIgnoreCase))
+        {
+            await SendWebSocketErrorAsync(
+                webSocket,
+                session.WriteLock,
+                "invalid-subscription-id",
+                $"subscriptionId '{FeatureStreamSessionManager.DefaultSubscriptionId}' is reserved for server-managed subscriptions.",
                 null,
                 cancellationToken).ConfigureAwait(false);
             return;
@@ -1433,6 +1471,23 @@ internal static class FeatureStreamEndpoints
         }
 
         var subscriptionId = control.SubscriptionId.Trim();
+
+        // Mirror the subscribe-side reservation: clients cannot remove the
+        // server-managed default subscription. Without this guard a removal
+        // would strand the writer's pinned default-subscription generation,
+        // and onPoll cross-node sweeps would silently drop every event.
+        if (string.Equals(subscriptionId, FeatureStreamSessionManager.DefaultSubscriptionId, StringComparison.OrdinalIgnoreCase))
+        {
+            await SendWebSocketErrorAsync(
+                webSocket,
+                session.WriteLock,
+                "invalid-unsubscribe",
+                $"subscriptionId '{FeatureStreamSessionManager.DefaultSubscriptionId}' is reserved and cannot be unsubscribed.",
+                null,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (!sessionManager.TryRemoveSubscription(session.SessionId, subscriptionId))
         {
             await SendWebSocketErrorAsync(webSocket, session.WriteLock, "subscription-not-found", "Subscription was not found.", subscriptionId, cancellationToken).ConfigureAwait(false);

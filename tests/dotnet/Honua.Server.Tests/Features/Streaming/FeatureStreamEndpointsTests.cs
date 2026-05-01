@@ -448,6 +448,206 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
+    // Regression for review finding "Client can replace the reserved default
+    // subscription and break durable polling". The default subscription is
+    // server-managed and the WebSocket writer pins its generation at session
+    // setup; replacing it from the control frame would silently strand every
+    // cross-node poll under the old generation.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_SubscribeWithReservedDefaultId_ReturnsErrorAndStaysOpen()
+    {
+        var wsClient = _fixture.CreateWebSocketClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        using var ws = await wsClient.ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features?clientLabel=reserved-default-sub"),
+            cts.Token);
+
+        _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+        // Exact reserved id is rejected with the canonical invalid-subscription-id code.
+        await SendWebSocketJsonAsync(
+            ws,
+            $$"""{"type":"subscribe","subscriptionId":"{{FeatureStreamSessionManager.DefaultSubscriptionId}}","layerId":0}""",
+            cts.Token);
+        var error = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+        error.GetProperty("type").GetString().Should().Be("error");
+        error.GetProperty("code").GetString().Should().Be("invalid-subscription-id");
+        error.GetProperty("message").GetString().Should().Contain("reserved");
+
+        // Case-insensitive guard: capitalisation variants of the reserved id
+        // would create a sibling that looks reserved; reject them too for clarity.
+        await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"DEFAULT","layerId":0}""", cts.Token);
+        var caseError = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+        caseError.GetProperty("code").GetString().Should().Be("invalid-subscription-id");
+
+        // Connection stays open and a non-reserved id still works.
+        await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"client-sub","layerId":0}""", cts.Token);
+        var subscribed = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+        subscribed.GetProperty("status").GetString().Should().Be("subscribed");
+        subscribed.GetProperty("subscriptionId").GetString().Should().Be("client-sub");
+
+        // The server-managed default subscription must still be alive — its
+        // generation is what onPoll uses, and it must be unchanged across the
+        // rejected control frames.
+        var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
+        await WaitForSessionAsync(sessionManager, "reserved-default-sub", cts.Token);
+        var sessionInfo = sessionManager.GetSessions().Single(s => s.ClientLabel == "reserved-default-sub");
+        sessionManager.GetDefaultSubscriptionGeneration(sessionInfo.SessionId).Should().BeGreaterThan(0);
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+    }
+
+    // Regression companion: unsubscribe of the reserved id must be rejected
+    // with the same invariant. Without this guard the writer's pinned default-
+    // subscription generation would be stranded — every onPoll claim would hit
+    // SubscriptionDeliveryClaim.StaleGeneration and silently drop the event.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_UnsubscribeReservedDefaultId_ReturnsErrorAndPreservesPolling()
+    {
+        var wsClient = _fixture.CreateWebSocketClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        using var ws = await wsClient.ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features?clientLabel=reserved-default-unsub"),
+            cts.Token);
+
+        _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+        await SendWebSocketJsonAsync(
+            ws,
+            $$"""{"type":"unsubscribe","subscriptionId":"{{FeatureStreamSessionManager.DefaultSubscriptionId}}"}""",
+            cts.Token);
+        var error = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+        error.GetProperty("type").GetString().Should().Be("error");
+        error.GetProperty("code").GetString().Should().Be("invalid-unsubscribe");
+        error.GetProperty("message").GetString().Should().Contain("reserved");
+
+        // Default subscription is still present after the rejection.
+        var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
+        await WaitForSessionAsync(sessionManager, "reserved-default-unsub", cts.Token);
+        var sessionInfo = sessionManager.GetSessions().Single(s => s.ClientLabel == "reserved-default-unsub");
+        sessionManager.GetDefaultSubscriptionGeneration(sessionInfo.SessionId).Should().BeGreaterThan(0);
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+    }
+
+    // Regression for review finding "High-volume WebSocket replay handoff can
+    // duplicate the first queued default frame". The WebSocket writer drain
+    // must apply a default-subscription cursor fence the same way SSE does:
+    // queued default-subscription frames whose envelope cursor is at or below
+    // the writer's running replayCursor are duplicates already delivered, and
+    // the recent-event LRU (RecentEventIdCapacity = 128) cannot be relied on
+    // alone to dedupe across large replay windows.
+    //
+    // This test broadcasts a synthetic envelope with a fresh eventId and a
+    // cursor that is provably <= the writer's replayCursor. Without the fence,
+    // dedup alone would let it through (the eventId was never claimed). With
+    // the fence, the writer drops it before the dedup claim.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_DefaultSubscription_DoesNotDuplicateStaleQueuedFrameAfterReplay()
+    {
+        var wsClient = _fixture.CreateWebSocketClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+
+        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
+        var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
+        var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
+
+        // Publish one event so the replay path advances the writer's replayCursor.
+        var serviceId = $"fence-cursor-{Guid.NewGuid():N}";
+        await publisher.PublishAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = serviceId,
+            LayerId = 0,
+            ObjectId = 1,
+            Operation = "insert",
+            Protocol = "rest",
+            RequestId = "req-fence-cursor-replay"
+        });
+
+        var stored = (await eventStore.QueryAsync(null, null, null, 500))
+            .Single(e => e.ServiceId == serviceId);
+
+        using var ws = await wsClient.ConnectAsync(
+            new Uri($"ws://localhost/api/v1/streaming/features?clientLabel=fence-cursor&cursor={stored.Cursor - 1}"),
+            cts.Token);
+
+        // Drain handshake plus the replayed event to confirm replayCursor is past stored.Cursor.
+        var sawReplayedEvent = false;
+        while (!sawReplayedEvent)
+        {
+            cts.Token.ThrowIfCancellationRequested();
+            var frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            if (frame.GetProperty("type").GetString() != "feature-change")
+            {
+                continue;
+            }
+
+            if (frame.TryGetProperty("serviceId", out var svc) && svc.GetString() == serviceId)
+            {
+                sawReplayedEvent = true;
+            }
+        }
+
+        // Locate the session we connected with so we can stage a synthetic broadcast.
+        await WaitForSessionAsync(sessionManager, "fence-cursor", cts.Token);
+        var sessionInfo = sessionManager.GetSessions().Single(s => s.ClientLabel == "fence-cursor");
+        sessionInfo.Transport.Should().Be("WebSocket");
+
+        // Synthetic envelope: cursor 1 (<= replayCursor), unique eventId never
+        // recorded in the per-session dedup LRU. The default subscription has
+        // no filter so the broadcast will queue this frame.
+        var staleEventId = $"fence-stale-{Guid.NewGuid():N}";
+        var staleEnvelope = new FeatureStreamEnvelope
+        {
+            EventId = staleEventId,
+            Cursor = 1,
+            Timestamp = DateTimeOffset.UtcNow,
+            ServiceId = serviceId,
+            LayerId = 0,
+            ObjectId = 9999,
+            Operation = "insert",
+            Protocol = "rest",
+            RequestId = "req-fence-stale"
+        };
+        sessionManager.Broadcast(FeatureStreamMessage.Data(staleEnvelope));
+
+        // The writer must drop the synthetic envelope at the cursor fence —
+        // wait briefly and confirm no feature-change frame for the stale id arrives.
+        var sawStale = false;
+        using var grace = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        grace.CancelAfter(TimeSpan.FromMilliseconds(750));
+        try
+        {
+            while (true)
+            {
+                var frame = await ReceiveWebSocketJsonAsync(ws, grace.Token);
+                if (frame.GetProperty("type").GetString() != "feature-change")
+                {
+                    continue;
+                }
+
+                if (frame.GetProperty("eventId").GetString() == staleEventId)
+                {
+                    sawStale = true;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (grace.Token.IsCancellationRequested)
+        {
+            // Expected — no further frames in the grace window.
+        }
+
+        sawStale.Should().BeFalse(
+            "the default-subscription cursor fence must drop queued frames whose cursor is at or below replayCursor");
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithoutUpgradeOrSseHeader_Returns400()

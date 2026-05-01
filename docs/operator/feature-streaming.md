@@ -17,7 +17,7 @@ When the configured `MaxConcurrentSessions` limit is reached, new connections ar
 
 ## WebSocket Frames
 
-Client control frames are JSON. `subscriptionId` and `cursor` on `subscribe` are optional: the server assigns an opaque id when omitted, and `cursor` triggers per-subscription replay from that point before live delivery begins.
+Client control frames are JSON. `subscriptionId` and `cursor` on `subscribe` are optional: the server assigns an opaque id when omitted, and `cursor` triggers per-subscription replay from that point before live delivery begins. The id `default` is reserved for the server-managed session-wide subscription created from the connection's query parameters; client `subscribe` and `unsubscribe` frames using `default` (case-insensitive) are rejected with `invalid-subscription-id` / `invalid-unsubscribe`.
 
 ```json
 {"type":"subscribe","subscriptionId":"alpha","layerId":0,"bbox":[-158,21,-157,22],"filter":"status = 'active'","datetime":"2026-01-01T00:00:00Z/..","cursor":1234}
@@ -92,6 +92,8 @@ Clients should persist the highest delivered `cursor` per subscription. On recon
 Each connection has a bounded outbound queue. Slow consumers are disconnected after the replay handoff grace window is exhausted. Heartbeat events let clients detect idle-but-healthy connections.
 
 After an `unsubscribe` or a same-id `subscribe` replacement, frames the broadcast had already queued for the prior subscription are fenced at the writer drain (a per-(session) monotonic generation pinned at queue time must still match) and dropped without claiming dedup. The new subscription (or a future `subscribe` with `cursor` for the same id) can therefore replay those events freshly.
+
+The default subscription gets an additional cursor fence on the WebSocket writer drain: queued default-subscription frames whose envelope cursor is at or below the writer's running replay cursor have already been delivered through replay (or the cross-node poll) and are dropped before the dedup claim. This mirrors the SSE drain's cursor guard and keeps high-volume replay handoffs duplicate-free even when the per-session recent-event LRU rolls over. Non-default subscriptions are protected by their pause/unpause/post-unpause-sweep choreography, which prevents broadcast queueing during the subscription's own replay range.
 
 ## Configuration
 
