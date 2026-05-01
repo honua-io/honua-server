@@ -14,6 +14,16 @@ namespace Honua.Postgres.Features.Styling;
 /// </summary>
 internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
 {
+    private const string SelectColumns = """
+        layer_id,
+        maplibre_style,
+        geoservices_drawing_info,
+        style_version,
+        style_revised_at,
+        style_revised_by,
+        style_change_summary
+        """;
+
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string _layersTable;
 
@@ -28,10 +38,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
     public async Task<LayerStyleDefinition?> GetLayerStyleAsync(int layerId, CancellationToken cancellationToken = default)
     {
         string sql = $"""
-            SELECT layer_id,
-                   maplibre_style,
-                   geoservices_drawing_info,
-                   style_version
+            SELECT {SelectColumns}
             FROM {_layersTable}
             WHERE layer_id = @layerId
             """;
@@ -53,18 +60,20 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
     public async Task<LayerStyleDefinition?> SetMapLibreStyleAsync(
         int layerId,
         string mapLibreStyleJson,
+        string? revisedBy = null,
+        string? changeSummary = null,
         CancellationToken cancellationToken = default)
     {
         string sql = $"""
             UPDATE {_layersTable}
             SET maplibre_style = @mapLibreStyle,
                 geoservices_drawing_info = NULL,
-                style_version = COALESCE(style_version, 0) + 1
+                style_version = COALESCE(style_version, 0) + 1,
+                style_revised_at = NOW() AT TIME ZONE 'UTC',
+                style_revised_by = @revisedBy,
+                style_change_summary = @changeSummary
             WHERE layer_id = @layerId
-            RETURNING layer_id,
-                      maplibre_style,
-                      geoservices_drawing_info,
-                      style_version
+            RETURNING {SelectColumns}
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -74,6 +83,8 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         {
             Value = mapLibreStyleJson
         });
+        AddNullableText(command, "@revisedBy", revisedBy);
+        AddNullableText(command, "@changeSummary", changeSummary);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -89,18 +100,20 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         int layerId,
         string mapLibreStyleJson,
         string drawingInfoJson,
+        string? revisedBy = null,
+        string? changeSummary = null,
         CancellationToken cancellationToken = default)
     {
         string sql = $"""
             UPDATE {_layersTable}
             SET maplibre_style = @mapLibreStyle,
                 geoservices_drawing_info = @drawingInfo,
-                style_version = COALESCE(style_version, 0) + 1
+                style_version = COALESCE(style_version, 0) + 1,
+                style_revised_at = NOW() AT TIME ZONE 'UTC',
+                style_revised_by = @revisedBy,
+                style_change_summary = @changeSummary
             WHERE layer_id = @layerId
-            RETURNING layer_id,
-                      maplibre_style,
-                      geoservices_drawing_info,
-                      style_version
+            RETURNING {SelectColumns}
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -114,6 +127,8 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         {
             Value = drawingInfoJson
         });
+        AddNullableText(command, "@revisedBy", revisedBy);
+        AddNullableText(command, "@changeSummary", changeSummary);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -134,10 +149,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
             UPDATE {_layersTable}
             SET geoservices_drawing_info = @drawingInfo
             WHERE layer_id = @layerId
-            RETURNING layer_id,
-                      maplibre_style,
-                      geoservices_drawing_info,
-                      style_version
+            RETURNING {SelectColumns}
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -157,6 +169,15 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         return ReadStyle(reader);
     }
 
+    private static void AddNullableText(NpgsqlCommand command, string name, string? value)
+    {
+        var parameter = new NpgsqlParameter(name, NpgsqlDbType.Text)
+        {
+            Value = string.IsNullOrWhiteSpace(value) ? DBNull.Value : value
+        };
+        _ = command.Parameters.Add(parameter);
+    }
+
     private static LayerStyleDefinition ReadStyle(NpgsqlDataReader reader)
     {
         return new LayerStyleDefinition
@@ -164,7 +185,12 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
             LayerId = reader.GetInt32(0),
             MapLibreStyleJson = reader.IsDBNull(1) ? null : reader.GetString(1),
             DrawingInfoJson = reader.IsDBNull(2) ? null : reader.GetString(2),
-            StyleVersion = reader.IsDBNull(3) ? 0 : reader.GetInt32(3)
+            StyleVersion = reader.IsDBNull(3) ? 0 : reader.GetInt32(3),
+            StyleRevisedAt = reader.IsDBNull(4)
+                ? null
+                : new DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(4), DateTimeKind.Utc)),
+            StyleRevisedBy = reader.IsDBNull(5) ? null : reader.GetString(5),
+            StyleChangeSummary = reader.IsDBNull(6) ? null : reader.GetString(6)
         };
     }
 }

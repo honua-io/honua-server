@@ -352,11 +352,13 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("terrain", "tiles");
             });
 
-            // Layer style caching policy
+            // Layer style caching policy.  Theme variants share the cache tag so
+            // a layer style invalidation flushes both canonical and themed entries.
             options.AddPolicy("LayerStyle", policy =>
             {
                 policy.Expire(ttl.LayerStyle);
                 policy.SetVaryByRouteValue("layerId");
+                policy.SetVaryByQuery("theme");
                 policy.Tag("layer-styles", "metadata");
             });
 

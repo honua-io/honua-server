@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
@@ -13,6 +14,9 @@ namespace Honua.Server.Features.Infrastructure.Styling;
 /// </summary>
 internal sealed class LayerStyleService : ILayerStyleService
 {
+    private static readonly IReadOnlyList<UnsupportedSymbolizerInfo> NoUnsupportedSymbolizers =
+        Array.Empty<UnsupportedSymbolizerInfo>();
+
     private readonly ILayerStyleCatalog _styleCatalog;
     private readonly ILogger<LayerStyleService> _logger;
 
@@ -36,12 +40,15 @@ internal sealed class LayerStyleService : ILayerStyleService
         {
             var defaultStyle = StyleDefaults.BuildDefaultMapLibreStyle(layer);
             mapLibreJson = StyleJsonUtilities.Serialize(defaultStyle);
-            var updated = await _styleCatalog.SetMapLibreStyleAsync(layer.Id, mapLibreJson, cancellationToken)
+            var updated = await _styleCatalog
+                .SetMapLibreStyleAsync(layer.Id, mapLibreJson, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             if (updated == null)
             {
                 return null;
             }
+
+            stored = updated;
         }
 
         var drawingInfoJson = stored.DrawingInfoJson;
@@ -51,9 +58,7 @@ internal sealed class LayerStyleService : ILayerStyleService
             _ = await _styleCatalog.SetDrawingInfoAsync(layer.Id, drawingInfoJson, cancellationToken).ConfigureAwait(false);
         }
 
-        return new LayerStyleSnapshot(
-            StyleJsonUtilities.ParseJsonElement(mapLibreJson),
-            StyleJsonUtilities.ParseJsonElement(drawingInfoJson));
+        return BuildSnapshot(stored, mapLibreJson, drawingInfoJson);
     }
 
     /// <inheritdoc />
@@ -68,6 +73,8 @@ internal sealed class LayerStyleService : ILayerStyleService
         LayerDefinition layer,
         JsonElement? mapLibreStyle,
         JsonElement? drawingInfo,
+        string? revisedBy = null,
+        string? changeSummary = null,
         CancellationToken cancellationToken = default)
     {
         var hasMapLibre = mapLibreStyle.HasValue && mapLibreStyle.Value.ValueKind != JsonValueKind.Null;
@@ -88,7 +95,8 @@ internal sealed class LayerStyleService : ILayerStyleService
                 return new LayerStyleUpdateResult(LayerStyleUpdateStatus.Invalid, null, error);
             }
 
-            var updated = await _styleCatalog.SetMapLibreStyleAsync(layer.Id, normalized, cancellationToken)
+            var updated = await _styleCatalog
+                .SetMapLibreStyleAsync(layer.Id, normalized, revisedBy, changeSummary, cancellationToken)
                 .ConfigureAwait(false);
             if (updated == null)
             {
@@ -99,10 +107,9 @@ internal sealed class LayerStyleService : ILayerStyleService
 
             return new LayerStyleUpdateResult(
                 LayerStyleUpdateStatus.Updated,
-                new LayerStyleSnapshot(
-                    StyleJsonUtilities.ParseJsonElement(normalized),
-                    StyleJsonUtilities.ParseJsonElement(generatedDrawingInfoJson)),
-                null);
+                BuildSnapshot(updated, normalized, generatedDrawingInfoJson),
+                null,
+                NoUnsupportedSymbolizers);
         }
 
         var drawingInfoJson = drawingInfo!.Value.GetRawText();
@@ -111,9 +118,12 @@ internal sealed class LayerStyleService : ILayerStyleService
         {
             LayerStyleLog.UnsupportedRendererType(_logger, rendererType ?? "unknown", layer.Id);
         }
-        var mapLibreJson = GeoServicesToMapLibreConverter.Convert(drawingInfo.Value, layer);
 
-        var saved = await _styleCatalog.SetStyleAsync(layer.Id, mapLibreJson, drawingInfoJson, cancellationToken)
+        var conversion = GeoServicesToMapLibreConverter.Convert(drawingInfo.Value, layer);
+        var mapLibreJson = conversion.MapLibreStyleJson;
+
+        var saved = await _styleCatalog
+            .SetStyleAsync(layer.Id, mapLibreJson, drawingInfoJson, revisedBy, changeSummary, cancellationToken)
             .ConfigureAwait(false);
         if (saved == null)
         {
@@ -122,10 +132,20 @@ internal sealed class LayerStyleService : ILayerStyleService
 
         return new LayerStyleUpdateResult(
             LayerStyleUpdateStatus.Updated,
-            new LayerStyleSnapshot(
-                StyleJsonUtilities.ParseJsonElement(mapLibreJson),
-                StyleJsonUtilities.ParseJsonElement(drawingInfoJson)),
-            null);
+            BuildSnapshot(saved, mapLibreJson, drawingInfoJson),
+            null,
+            conversion.Unsupported);
+    }
+
+    private static LayerStyleSnapshot BuildSnapshot(LayerStyleDefinition stored, string mapLibreJson, string drawingInfoJson)
+    {
+        return new LayerStyleSnapshot(
+            StyleJsonUtilities.ParseJsonElement(mapLibreJson),
+            StyleJsonUtilities.ParseJsonElement(drawingInfoJson),
+            stored.StyleVersion,
+            stored.StyleRevisedAt,
+            stored.StyleRevisedBy,
+            stored.StyleChangeSummary);
     }
 
     private static bool TryGetRendererType(JsonElement drawingInfo, out string? rendererType)

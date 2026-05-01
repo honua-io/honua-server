@@ -84,9 +84,13 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
     public async Task<LayerStyleDefinition?> SetMapLibreStyleAsync(
         int layerId,
         string mapLibreStyleJson,
+        string? revisedBy = null,
+        string? changeSummary = null,
         CancellationToken cancellationToken = default)
     {
-        var updated = await _innerCatalog.SetMapLibreStyleAsync(layerId, mapLibreStyleJson, cancellationToken).ConfigureAwait(false);
+        var updated = await _innerCatalog
+            .SetMapLibreStyleAsync(layerId, mapLibreStyleJson, revisedBy, changeSummary, cancellationToken)
+            .ConfigureAwait(false);
         await RefreshCacheAsync(layerId, updated, cancellationToken).ConfigureAwait(false);
         return updated;
     }
@@ -95,10 +99,12 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
         int layerId,
         string mapLibreStyleJson,
         string drawingInfoJson,
+        string? revisedBy = null,
+        string? changeSummary = null,
         CancellationToken cancellationToken = default)
     {
         var updated = await _innerCatalog
-            .SetStyleAsync(layerId, mapLibreStyleJson, drawingInfoJson, cancellationToken)
+            .SetStyleAsync(layerId, mapLibreStyleJson, drawingInfoJson, revisedBy, changeSummary, cancellationToken)
             .ConfigureAwait(false);
         await RefreshCacheAsync(layerId, updated, cancellationToken).ConfigureAwait(false);
         return updated;

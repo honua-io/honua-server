@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
 
@@ -33,19 +34,29 @@ internal interface ILayerStyleService
     /// <param name="layer">Layer definition.</param>
     /// <param name="mapLibreStyle">MapLibre style payload.</param>
     /// <param name="drawingInfo">GeoServices drawingInfo payload.</param>
+    /// <param name="revisedBy">Optional author or source identifier captured for the new revision.</param>
+    /// <param name="changeSummary">Optional operator-supplied description of the change.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Update result with status and style snapshot.</returns>
     Task<LayerStyleUpdateResult> UpdateStyleAsync(
         LayerDefinition layer,
         JsonElement? mapLibreStyle,
         JsonElement? drawingInfo,
+        string? revisedBy = null,
+        string? changeSummary = null,
         CancellationToken cancellationToken = default);
 }
 
 /// <summary>
 /// Snapshot of stored style payloads.
 /// </summary>
-internal sealed record LayerStyleSnapshot(JsonElement? MapLibreStyle, JsonElement? DrawingInfo);
+internal sealed record LayerStyleSnapshot(
+    JsonElement? MapLibreStyle,
+    JsonElement? DrawingInfo,
+    int StyleVersion = 0,
+    DateTimeOffset? RevisedAt = null,
+    string? RevisedBy = null,
+    string? ChangeSummary = null);
 
 /// <summary>
 /// Status for style updates.
@@ -72,4 +83,5 @@ internal enum LayerStyleUpdateStatus
 internal sealed record LayerStyleUpdateResult(
     LayerStyleUpdateStatus Status,
     LayerStyleSnapshot? Style,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    IReadOnlyList<UnsupportedSymbolizerInfo>? UnsupportedSymbolizers = null);

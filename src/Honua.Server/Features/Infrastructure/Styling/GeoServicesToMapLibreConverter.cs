@@ -4,34 +4,65 @@
 using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
 
 internal static class GeoServicesToMapLibreConverter
 {
-    public static string Convert(JsonElement drawingInfo, LayerDefinition layer)
+    /// <summary>
+    /// Converts a GeoServices drawingInfo payload to canonical MapLibre Style Spec v8 JSON
+    /// and reports any symbolizer inputs that could not be losslessly translated.  When
+    /// inputs are unsupported, callers still receive a best-effort default MapLibre style
+    /// so downstream consumers continue to render.
+    /// </summary>
+    public static StyleConversionResult Convert(JsonElement drawingInfo, LayerDefinition layer)
     {
+        var unsupported = new List<UnsupportedSymbolizerInfo>();
+
         if (layer.GeometryType is GeometryType.None)
         {
-            return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
+            return new StyleConversionResult(
+                StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer)),
+                unsupported);
         }
 
         if (!drawingInfo.TryGetProperty("renderer", out var renderer) || renderer.ValueKind != JsonValueKind.Object)
         {
-            return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
+            unsupported.Add(new UnsupportedSymbolizerInfo
+            {
+                Code = StyleErrorCodes.RendererPayloadIncomplete,
+                SymbolizerType = string.Empty,
+                Guidance = "drawingInfo did not include a 'renderer' object; default style was applied."
+            });
+            return new StyleConversionResult(
+                StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer)),
+                unsupported);
         }
 
         var rendererType = renderer.TryGetProperty("type", out var typeElement)
             ? typeElement.GetString()
             : null;
 
-        return rendererType switch
+        switch (rendererType)
         {
-            "simple" => ConvertSimpleRenderer(renderer, layer),
-            "uniqueValue" => ConvertUniqueValueRenderer(renderer, layer),
-            "classBreaks" => ConvertClassBreaksRenderer(renderer, layer),
-            _ => StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer))
-        };
+            case "simple":
+                return new StyleConversionResult(ConvertSimpleRenderer(renderer, layer), unsupported);
+            case "uniqueValue":
+                return new StyleConversionResult(ConvertUniqueValueRenderer(renderer, layer), unsupported);
+            case "classBreaks":
+                return new StyleConversionResult(ConvertClassBreaksRenderer(renderer, layer), unsupported);
+            default:
+                unsupported.Add(new UnsupportedSymbolizerInfo
+                {
+                    Code = StyleErrorCodes.RendererTypeUnsupported,
+                    SymbolizerType = rendererType ?? string.Empty,
+                    Guidance = "Renderer type is not supported. Use 'simple', 'uniqueValue', or 'classBreaks', or submit a MapLibre style."
+                });
+                return new StyleConversionResult(
+                    StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer)),
+                    unsupported);
+        }
     }
 
     private static string ConvertSimpleRenderer(JsonElement renderer, LayerDefinition layer)
@@ -1018,4 +1049,18 @@ internal static class GeoServicesToMapLibreConverter
             _ => element.ToString() ?? string.Empty
         };
     }
+}
+
+/// <summary>
+/// Result of a GeoServices-to-MapLibre style conversion.  Contains the canonical
+/// MapLibre JSON plus any symbolizers that could not be losslessly translated.
+/// Callers that only need the JSON can rely on the implicit string conversion;
+/// callers that need to surface unsupported-symbolizer reporting access
+/// <see cref="Unsupported"/> directly.
+/// </summary>
+internal sealed record StyleConversionResult(
+    string MapLibreStyleJson,
+    IReadOnlyList<UnsupportedSymbolizerInfo> Unsupported)
+{
+    public static implicit operator string(StyleConversionResult result) => result.MapLibreStyleJson;
 }
