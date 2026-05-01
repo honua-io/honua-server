@@ -134,6 +134,14 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                     .Concat(orderedDependencies.Select(dependency => dependency.Compatibility)),
                 "No GeoServices resources were discovered.");
 
+            if (HasMixedRendererCodes(orderedStyles))
+            {
+                containerAssessment = containerAssessment with
+                {
+                    Code = ImportCompatibilityCodes.ArcGisMixedRenderers
+                };
+            }
+
             var containers = new[]
             {
                 new MigrationInventoryContainer
@@ -751,6 +759,37 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
     private static bool IsSupportedGeometryType(string? geometryType)
         => geometryType is "esriGeometryPoint" or "esriGeometryPolyline" or "esriGeometryPolygon" or "esriGeometryMultipoint";
+
+    private static bool HasMixedRendererCodes(MigrationInventoryStyle[] styles)
+    {
+        if (styles.Length < 2)
+        {
+            return false;
+        }
+
+        string? seen = null;
+        foreach (var style in styles)
+        {
+            var code = style.Compatibility.Code;
+            if (string.IsNullOrEmpty(code))
+            {
+                continue;
+            }
+
+            if (seen == null)
+            {
+                seen = code;
+                continue;
+            }
+
+            if (!string.Equals(seen, code, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static IEnumerable<GeoservicesResourceReference> EnumerateResourceReferences(JsonElement serviceRoot)
     {

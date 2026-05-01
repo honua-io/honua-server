@@ -134,8 +134,9 @@ Each resource records the source schema in a `fields` array:
 }
 ```
 
-- `nullable` is `null` when the source omits the property (older ArcGIS
-  versions).
+- `nullable` is omitted from the artifact when the source does not advertise
+  the property (older ArcGIS versions). Treat absence as "unknown" rather
+  than coercing to `false`.
 - `domainValues` is bounded; coded-value domains exceeding the cap drop
   the values rather than truncating silently and emit a
   `scanCompleteness.warnings[]` entry prefixed with the
@@ -162,7 +163,7 @@ this slice is the constants in
 | `ARCGIS_QUERY_CAPABILITY_MISSING` | incompatible | Layer does not advertise `Query`. | Enable query access or export source data through another path. |
 | `ARCGIS_UNSUPPORTED_GEOMETRY` | incompatible | Geometry type is not supported by the import path. | Normalize or export to a supported vector geometry type. |
 | `ARCGIS_UNSUPPORTED_RENDERER` | incompatible | Renderer cannot be portably translated. | Rebuild an equivalent target style manually. |
-| `ARCGIS_MIXED_RENDERERS` | partial | Service mixes supported and unsupported renderer types across layers. | Address each layer's renderer code independently. |
+| `ARCGIS_MIXED_RENDERERS` | aggregate | Container-level: service has more than one distinct renderer compatibility code across layers. The container `level` reflects the aggregate of per-style levels (`partial` or `incompatible`). | Address each layer's renderer code independently. |
 | `ARCGIS_TOKEN_REQUIRED` | partial | Source returned 401/498/499 — credentials are required. | Provide a token or credentials and rerun the scan. |
 | `ARCGIS_ACCESS_DENIED` | partial | Source returned 403 — supplied identity lacks access. | Confirm the identity has read access and rerun. |
 | `ARCGIS_SERVICE_ERROR` | partial | Source returned a generic non-auth error. | Verify reachability, access, and metadata exposure. |

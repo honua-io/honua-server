@@ -101,6 +101,11 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
         heatmap.Compatibility.Code.Should().Be(ImportCompatibilityCodes.ArcGisUnsupportedRenderer);
 
         artifact.OverallCompatibility.Level.Should().Be("incompatible");
+
+        var serviceContainer = artifact.Containers.Should().ContainSingle().Subject;
+        serviceContainer.Compatibility.Code.Should().Be(
+            ImportCompatibilityCodes.ArcGisMixedRenderers,
+            "service container with multiple distinct renderer codes is the canonical mixed-renderer surface");
     }
 
     [Fact]

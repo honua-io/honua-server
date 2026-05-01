@@ -52,6 +52,7 @@
       "title": "Public Mapping",
       "compatibility": {
         "level": "incompatible",
+        "code": "ARCGIS_MIXED_RENDERERS",
         "reason": "Compatible: 2; partial: 2; incompatible: 1.",
         "warnings": [
           "Renderer references external symbol URLs.",
