@@ -97,6 +97,14 @@ comparing against a hex literal) are therefore preserved verbatim. This keeps
 generated `uniqueValue` and `classBreaks` styles in sync with the chosen theme
 without corrupting input semantics.
 
+The walker also short-circuits on the property/state lookup operators
+`get`, `has`, and `feature-state`: their operands are field-name strings,
+never color outputs, so the entire expression is left untouched. Without
+this guard a valid data-driven binding such as `["get", "red"]` (read the
+`red` feature property) would have its property name rewritten to a themed
+hex literal under `?theme=dark|colorblind-safe` because `red` parses as a
+canonical CSS named color.
+
 Color literals are recognized in any of the forms the admin write-time
 normalizer accepts: hex (`#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`), `rgb(...)`
 and `rgba(...)` in either legacy comma syntax (`rgb(255, 0, 0)`) or CSS

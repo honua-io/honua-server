@@ -485,6 +485,147 @@ public class StyleThemeTransformerTests
     }
 
     [Fact]
+    public void ApplyTheme_DarkProfile_PreservesGetExpressionFieldName()
+    {
+        // Regression: the generic walker used to recurse into every nested
+        // expression array and rewrite any string that parsed as a color.
+        // Because the named-color set includes common words like "red",
+        // "white", and "blue", a valid data-driven binding such as
+        // ["get", "red"] (read the "red" feature property) had its field
+        // name rewritten to a themed hex literal under dark /
+        // colorblind-safe themes, breaking the binding.  The walker now
+        // skips get / has / feature-state operators entirely.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {"fill-color": ["get", "red"]}
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        using var doc = JsonDocument.Parse(result);
+        var fill = FindLayer(doc.RootElement, "fill");
+        var fillColor = fill.GetProperty("paint").GetProperty("fill-color");
+        Assert.Equal(JsonValueKind.Array, fillColor.ValueKind);
+        var operands = fillColor.EnumerateArray().ToArray();
+        Assert.Equal(2, operands.Length);
+        Assert.Equal("get", operands[0].GetString());
+        Assert.Equal("red", operands[1].GetString());
+    }
+
+    [Fact]
+    public void ApplyTheme_ColorblindSafeProfile_PreservesHasExpressionFieldName()
+    {
+        // Regression mirror of the get-field-name guard for the has
+        // operator: ["has", "white"] is a valid feature-property predicate
+        // and "white" must not be rewritten as a themed palette slot.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": [
+                "case",
+                ["has", "white"],
+                "#cc8844",
+                "#aabbcc"
+              ]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.ColorblindSafe);
+
+        // Predicate field name is preserved verbatim.
+        Assert.Contains("\"white\"", result);
+        // Branch outputs are still themed.
+        Assert.DoesNotContain("\"#cc8844\"", result);
+        Assert.DoesNotContain("\"#aabbcc\"", result);
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_PreservesFeatureStateFieldName()
+    {
+        // Regression mirror for feature-state: state property names share
+        // the same skip-the-operands contract as get / has.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {"fill-color": ["feature-state", "blue"]}
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        using var doc = JsonDocument.Parse(result);
+        var fill = FindLayer(doc.RootElement, "fill");
+        var fillColor = fill.GetProperty("paint").GetProperty("fill-color");
+        Assert.Equal(JsonValueKind.Array, fillColor.ValueKind);
+        var operands = fillColor.EnumerateArray().ToArray();
+        Assert.Equal(2, operands.Length);
+        Assert.Equal("feature-state", operands[0].GetString());
+        Assert.Equal("blue", operands[1].GetString());
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_PreservesNestedGetInsideInterpolate()
+    {
+        // Regression: a nested ["get", "red"] inside an interpolate stop-output
+        // position must keep its field name even though the surrounding
+        // interpolate falls through to the generic walker.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                0, ["get", "red"],
+                10, "#aabbcc"
+              ]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        // Field name "red" inside the nested get expression is preserved.
+        Assert.Contains("\"red\"", result);
+        Assert.Contains("\"get\"", result);
+        // The hex literal at the second stop is themed.
+        Assert.DoesNotContain("\"#aabbcc\"", result);
+    }
+
+    [Fact]
     public void ApplyTheme_DarkProfile_TransformsCssNamedColorLiterals()
     {
         // Regression: the normalizer accepts CSS / X11 named color literals

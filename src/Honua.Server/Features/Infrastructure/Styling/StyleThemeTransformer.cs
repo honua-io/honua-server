@@ -262,9 +262,15 @@ internal static class StyleThemeTransformer
     /// operator-aware for <c>match</c>, <c>step</c>, and <c>case</c>: feature
     /// match labels, numeric step stops, and case predicates are skipped so
     /// color-like input values (e.g. a <c>uniqueValue</c> category equal to
-    /// <c>"#ff0000"</c>) are not silently rewritten.  Unknown operators fall
-    /// back to the generic walker so expressions such as <c>interpolate</c> still
-    /// pick up direct color literals.
+    /// <c>"#ff0000"</c>) are not silently rewritten.  Property and state lookup
+    /// operators (<c>get</c>, <c>has</c>, <c>feature-state</c>) carry only
+    /// field-name strings, never color outputs, so the walker skips them
+    /// entirely — without this guard a valid <c>["get", "red"]</c> expression
+    /// would have its <c>"red"</c> property name rewritten as a themed hex
+    /// literal because <c>red</c> parses as a CSS named color.  Unknown
+    /// operators fall back to the generic walker so expressions such as
+    /// <c>interpolate</c> still pick up direct color literals at output
+    /// positions.
     /// </summary>
     private static void TransformExpressionColors(
         JsonArray expression,
@@ -292,6 +298,14 @@ internal static class StyleThemeTransformer
                 return;
             case "case":
                 TransformCaseExpression(expression, property, diagnostics, transform);
+                return;
+            case "get":
+            case "has":
+            case "feature-state":
+                // Operands are property/state names, not color outputs.  Skip
+                // the expression entirely so a stored ["get", "red"] keeps
+                // its data-driven binding instead of being rewritten to a
+                // themed hex literal under dark / colorblind-safe themes.
                 return;
             default:
                 TransformGenericExpression(expression, property, diagnostics, transform);
