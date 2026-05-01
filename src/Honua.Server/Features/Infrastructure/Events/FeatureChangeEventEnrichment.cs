@@ -25,21 +25,26 @@ internal static class FeatureChangeEventEnrichment
     }
 
     /// <summary>
-    /// Extracts all streamable enrichment data from a feature snapshot.
+    /// Extracts all streamable enrichment data from a feature snapshot. The optional
+    /// <paramref name="fallbackSrid"/> is applied when the WKB itself carries no SRID
+    /// metadata (e.g., gRPC ApplyEdits and WFS Transaction publish features whose
+    /// WKB was written by a default <c>WKBWriter</c> with <c>handleSRID:false</c>).
+    /// Without this fallback the geodesy invariant would silently drop the GeoJSON
+    /// even when the layer CRS is known.
     /// </summary>
-    public static FeatureChangeEventEnrichmentResult FromFeatureSnapshot(Feature? feature)
+    public static FeatureChangeEventEnrichmentResult FromFeatureSnapshot(Feature? feature, int? fallbackSrid = null)
     {
         if (feature is null)
         {
             return default;
         }
 
-        var (envelope, geometryJson, geometrySrid) = ExtractGeometry(feature.Value.Geometry);
+        var (envelope, geometryJson, geometrySrid) = ExtractGeometry(feature.Value.Geometry, fallbackSrid);
         var propertiesJson = SerializeAttributes(feature.Value.Attributes);
         return new FeatureChangeEventEnrichmentResult(envelope, propertiesJson, geometryJson, geometrySrid);
     }
 
-    private static (double[]? Envelope, string? GeometryJson, int? Srid) ExtractGeometry(byte[]? wkb)
+    private static (double[]? Envelope, string? GeometryJson, int? Srid) ExtractGeometry(byte[]? wkb, int? fallbackSrid)
     {
         if (wkb is null || wkb.Length == 0)
         {
@@ -56,12 +61,15 @@ internal static class FeatureChangeEventEnrichment
             }
 
             var env = geometry.EnvelopeInternal;
-            var srid = geometry.SRID > 0 ? geometry.SRID : (int?)null;
             // Geodesy invariant: never emit geometry coordinates without CRS metadata.
-            // Clients cannot interpret coordinates without their reference frame, so we
-            // skip the GeoJSON when the WKB carries no SRID. The envelope is retained
-            // for broadcast-time bbox filter evaluation, which compares against the
+            // Prefer the SRID written into the WKB; otherwise fall back to the layer
+            // SRID provided by the caller (gRPC/WFS mutation paths whose default
+            // WKBWriter does not embed SRID). The envelope is retained for
+            // broadcast-time bbox filter evaluation, which compares against the
             // subscription bbox already projected into the layer's storage CRS.
+            var srid = geometry.SRID > 0
+                ? geometry.SRID
+                : fallbackSrid is > 0 ? fallbackSrid : null;
             var geometryJson = srid.HasValue ? new GeoJsonWriter().Write(geometry) : null;
             return ([env.MinX, env.MinY, env.MaxX, env.MaxY], geometryJson, srid);
         }

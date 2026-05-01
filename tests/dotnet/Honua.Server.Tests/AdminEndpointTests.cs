@@ -157,6 +157,35 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Configuration)]
     [Endpoint("GET /api/v1/admin/config")]
+    public async Task GetConfiguration_FeatureStreamingSection_ContainsAllOptionsKnobs()
+    {
+        // Regression: the FeatureStreaming options class exposes safety knobs
+        // (MaxControlFrameBytes, MaxSubscriptionsPerSession, MaxSubscriptionIdLength)
+        // alongside the original interval settings. The admin configuration doc
+        // must enumerate all of them so operators can see the full surface they
+        // can tune.
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/config");
+        var content = await response.Content.ReadAsStringAsync();
+        var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
+            content, ConfigurationJsonContext.Default.ConfigurationDocumentation);
+
+        var streaming = configDoc!.Sections.FirstOrDefault(s => s.Name == "FeatureStreaming");
+        streaming.Should().NotBeNull();
+
+        var propertyPaths = streaming!.Properties.Select(p => p.Path).ToList();
+        propertyPaths.Should().Contain("FeatureStreaming:HeartbeatInterval");
+        propertyPaths.Should().Contain("FeatureStreaming:MaxBufferPerConnection");
+        propertyPaths.Should().Contain("FeatureStreaming:MaxConcurrentSessions");
+        propertyPaths.Should().Contain("FeatureStreaming:ReplayBatchSize");
+        propertyPaths.Should().Contain("FeatureStreaming:CrossNodeSyncInterval");
+        propertyPaths.Should().Contain("FeatureStreaming:MaxControlFrameBytes");
+        propertyPaths.Should().Contain("FeatureStreaming:MaxSubscriptionsPerSession");
+        propertyPaths.Should().Contain("FeatureStreaming:MaxSubscriptionIdLength");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/v1/admin/config")]
     public async Task GetConfiguration_SensitiveValuesMasked()
     {
         // Act

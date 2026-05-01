@@ -296,6 +296,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         await PublishFeatureChangeEventsAsync(
             request.ServiceId ?? "unknown",
             request.LayerId,
+            layer,
             editBatch,
             result,
             context).ConfigureAwait(false);
@@ -306,11 +307,16 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private async Task PublishFeatureChangeEventsAsync(
         string serviceId,
         int layerId,
+        LayerDefinition layer,
         FeatureEditBatch editBatch,
         FeatureEditResult editResult,
         ServerCallContext context)
     {
         var requestId = context.GetHttpContext().TraceIdentifier;
+        // GrpcConversionHelpers builds WKB through a default GeometryFactory that does
+        // not embed SRID metadata. Thread the validated layer SRID through so the
+        // enrichment can still emit geometry/geometryCrs to streaming subscribers.
+        var layerSrid = layer.SpatialReference.ToSrid();
 
         for (var i = 0; i < editResult.CreateResults.Length; i++)
         {
@@ -328,7 +334,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                     mutationFeature: i < editBatch.Creates.Length ? editBatch.Creates[i] : null,
                     serviceId: serviceId,
                     requestId: requestId,
-                    geometryChanged: hasGeometry).ConfigureAwait(false);
+                    geometryChanged: hasGeometry,
+                    layerSrid: layerSrid).ConfigureAwait(false);
             }
         }
 
@@ -348,7 +355,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                     mutationFeature: i < editBatch.Updates.Length ? editBatch.Updates[i] : null,
                     serviceId: serviceId,
                     requestId: requestId,
-                    geometryChanged: hasGeometry).ConfigureAwait(false);
+                    geometryChanged: hasGeometry,
+                    layerSrid: layerSrid).ConfigureAwait(false);
             }
         }
 
@@ -364,7 +372,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                     HonuaTelemetry.Protocols.Grpc,
                     CancellationToken.None,
                     serviceId: serviceId,
-                    requestId: requestId).ConfigureAwait(false);
+                    requestId: requestId,
+                    layerSrid: layerSrid).ConfigureAwait(false);
             }
         }
     }

@@ -55,7 +55,8 @@ internal sealed class FeatureMutationEventService(
         double[]? geometryEnvelope = null,
         string? propertiesJson = null,
         string? geometryJson = null,
-        int? geometrySrid = null)
+        int? geometrySrid = null,
+        int? layerSrid = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
@@ -74,11 +75,21 @@ internal sealed class FeatureMutationEventService(
         if ((geometryEnvelope is null || propertiesJson is null || geometryJson is null || geometrySrid is null) &&
             mutationFeature is not null)
         {
-            var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(mutationFeature);
+            // Pass layerSrid as the enrichment fallback so mutation paths whose default
+            // WKBWriter does not embed SRID (gRPC ApplyEdits, WFS Transaction) still
+            // emit geometry/geometryCrs to streaming subscribers.
+            var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(mutationFeature, layerSrid);
             geometryEnvelope ??= enrichment.GeometryEnvelope;
             propertiesJson ??= enrichment.PropertiesJson;
             geometryJson ??= enrichment.GeometryJson;
             geometrySrid ??= enrichment.GeometrySrid;
+        }
+        else if (geometrySrid is null && layerSrid is > 0)
+        {
+            // Caller pre-supplied geometryJson but no SRID; honor the layer SRID
+            // fallback so the paired-contract guard below does not strip a known
+            // GeoJSON when the originating protocol knows the layer CRS.
+            geometrySrid = layerSrid;
         }
 
         // Geodesy invariant guard: drop the geometry JSON if a caller supplied

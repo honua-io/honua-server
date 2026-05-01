@@ -73,7 +73,7 @@ SSE event names are `status`, `heartbeat`, and `feature-change`. Each `feature-c
 
 `operation` is one of `insert`, `update`, or `delete`. `protocol` identifies the originating mutation surface (`FeatureServer`, `OGC-Features`, `OData`, or `Grpc`); `requestId` echoes the originating request for correlation; `subscriptionId` echoes the subscription that matched. Delete geometry and attributes are emitted only when the mutation source provides a before-image. `changedAttributes` and `geometryChanged` are best-effort delta hints when the source protocol can supply them.
 
-`geometry` and `geometryCrs` ship together as a paired contract: when the originating mutation does not carry an SRID (for example, an upstream WKB written without spatial reference metadata), both fields are omitted rather than emitting coordinates that downstream consumers cannot interpret.
+`geometry` and `geometryCrs` ship together as a paired contract: a known CRS is required to emit either field. The server resolves the CRS in this order: SRID metadata embedded in the mutation's WKB, then the publishing protocol's known layer SRID (gRPC `ApplyEdits` and WFS `Transaction` thread the validated layer CRS through to the streaming envelope so their default WKB writers do not silently strip geometry). If neither source resolves a valid CRS, both fields are omitted rather than emitting coordinates that downstream consumers cannot interpret.
 
 ## Filters
 
