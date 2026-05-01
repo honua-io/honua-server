@@ -139,30 +139,35 @@ internal static class FeatureStreamEndpoints
         var edition = deps.LicenseStatusProvider.GetCurrentStatus().Edition;
         var enabled = edition >= HonuaEdition.Pro;
         var layers = await deps.LayerCatalog.ListLayersAsync(context.RequestAborted).ConfigureAwait(false);
-        var layerCapabilities = layers.Select(layer =>
-        {
-            var canSubscribe = enabled &&
-                AccessPolicyHelpers.RequireLayerAccess(context, layer) is null;
-            var timeInfo = layer.Metadata?.TimeInfo;
-            var temporalFields = timeInfo is null
-                ? null
-                : new[] { timeInfo.StartTimeField, timeInfo.EndTimeField }
-                    .Where(field => !string.IsNullOrWhiteSpace(field))
-                    .Select(field => field!)
-                    .ToArray();
-
-            return new FeatureStreamLayerCapability
+        // Filter to layers the caller can actually read so that anonymous or
+        // unauthorized callers do not learn the names, CRS, or time-aware
+        // status of restricted layers via this discovery endpoint. This
+        // mirrors the access filtering that OGC API Collections applies.
+        var layerCapabilities = layers
+            .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer))
+            .Select(layer =>
             {
-                LayerId = layer.Id,
-                Name = layer.Name,
-                CanSubscribe = canSubscribe,
-                SupportsSpatialFilters = layer.HasGeometry,
-                SupportsTemporalFilters = timeInfo is not null &&
-                    !string.IsNullOrWhiteSpace(timeInfo.StartTimeField),
-                TemporalFields = temporalFields is { Length: > 0 } ? temporalFields : null,
-                Crs = $"EPSG:{layer.SpatialReference.Wkid.ToString(CultureInfo.InvariantCulture)}"
-            };
-        }).ToArray();
+                var timeInfo = layer.Metadata?.TimeInfo;
+                var temporalFields = timeInfo is null
+                    ? null
+                    : new[] { timeInfo.StartTimeField, timeInfo.EndTimeField }
+                        .Where(field => !string.IsNullOrWhiteSpace(field))
+                        .Select(field => field!)
+                        .ToArray();
+
+                return new FeatureStreamLayerCapability
+                {
+                    LayerId = layer.Id,
+                    Name = layer.Name,
+                    CanSubscribe = enabled,
+                    SupportsSpatialFilters = layer.HasGeometry,
+                    SupportsTemporalFilters = timeInfo is not null &&
+                        !string.IsNullOrWhiteSpace(timeInfo.StartTimeField),
+                    TemporalFields = temporalFields is { Length: > 0 } ? temporalFields : null,
+                    Crs = $"EPSG:{layer.SpatialReference.Wkid.ToString(CultureInfo.InvariantCulture)}"
+                };
+            })
+            .ToArray();
 
         var response = new FeatureStreamCapabilitiesResponse
         {
@@ -770,7 +775,8 @@ internal static class FeatureStreamEndpoints
                     session.SessionId,
                     linkedCts.Token,
                     subscriptionFilter,
-                    FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    sessionManager).ConfigureAwait(false);
 
                 // Catch-up: replay events published during the main replay window that
                 // were silently dropped from the bounded channel pre-drain.
@@ -784,7 +790,8 @@ internal static class FeatureStreamEndpoints
                     session.SessionId,
                     linkedCts.Token,
                     subscriptionFilter,
-                    FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    sessionManager).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
             {
@@ -838,7 +845,8 @@ internal static class FeatureStreamEndpoints
                         session.SessionId,
                         linkedCts.Token,
                         subscriptionFilter,
-                        FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                        FeatureStreamSessionManager.DefaultSubscriptionId,
+                        sessionManager).ConfigureAwait(false);
                 } while (replayCursor > previousCursor || session.Reader.TryPeek(out _));
             }
         }
@@ -881,7 +889,8 @@ internal static class FeatureStreamEndpoints
                             session.SessionId,
                             ct,
                             subscriptionFilter,
-                            FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                            FeatureStreamSessionManager.DefaultSubscriptionId,
+                            sessionManager).ConfigureAwait(false);
                         if (cursor > prev)
                         {
                             progress = true;
@@ -904,7 +913,8 @@ internal static class FeatureStreamEndpoints
                     session.SessionId,
                     ct,
                     subscriptionFilter,
-                    FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false)
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    sessionManager).ConfigureAwait(false)
                 : null,
             pollInterval: options.CrossNodeSyncInterval);
 
@@ -1039,12 +1049,13 @@ internal static class FeatureStreamEndpoints
                         return;
                     }
 
-                    // Skip events already delivered during replay to prevent duplicate delivery.
-                    if (!message.IsHeartbeat && replayCursor > 0 && message.Envelope.Cursor <= replayCursor)
-                    {
-                        continue;
-                    }
-
+                    // Per-(event, subscription) dedup is enforced atomically by
+                    // the broadcast and replay paths via TryRememberSubscriptionDelivery,
+                    // so each frame on the channel is the unique winner of its
+                    // (event, subscription) slot. The earlier session-wide cursor
+                    // watermark dedup was incorrect for multi-subscription
+                    // sessions because two subscriptions matching the same event
+                    // share a cursor but are distinct deliveries.
                     var payload = message.IsHeartbeat
                         ? JsonSerializer.SerializeToUtf8Bytes(
                             new FeatureStreamHeartbeat(),
@@ -1054,11 +1065,6 @@ internal static class FeatureStreamEndpoints
                             FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
 
                     await SendWebSocketJsonAsync(webSocket, session.WriteLock, payload, cancellationToken).ConfigureAwait(false);
-
-                    if (!message.IsHeartbeat)
-                    {
-                        replayCursor = message.Envelope.Cursor;
-                    }
                 }
             }
         }

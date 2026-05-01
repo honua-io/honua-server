@@ -459,6 +459,34 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.True(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-201"));
     }
 
+    // Regression for review finding "WebSocket writer drops same-event frames
+    // for additional subscriptions". When two subscriptions on a single
+    // session both match the same event, broadcast must queue both frames so
+    // the WebSocket carries one delivery per subscription — they share a
+    // cursor but are distinct (eventId, subscriptionId) deliveries.
+    [UnitTest]
+    public void Broadcast_WithMultipleMatchingSubscriptions_QueuesOneFramePerSubscription()
+    {
+        using var session = _manager.CreateSession("WebSocket", "multi-match");
+
+        // Both default and subB match (no filter) → broadcast must queue twice.
+        Assert.True(_manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
+
+        var envelope = CreateEnvelope(cursor: 500) with { EventId = "evt-500" };
+        _manager.Broadcast(FeatureStreamMessage.Data(envelope));
+
+        var messages = new List<FeatureStreamMessage>();
+        while (session.Reader.TryRead(out var msg))
+        {
+            messages.Add(msg);
+        }
+
+        Assert.Equal(2, messages.Count);
+        Assert.Contains(messages, m => m.Envelope.SubscriptionId == FeatureStreamSessionManager.DefaultSubscriptionId);
+        Assert.Contains(messages, m => m.Envelope.SubscriptionId == "subB");
+        Assert.All(messages, m => Assert.Equal(500, m.Envelope.Cursor));
+    }
+
     [UnitTest]
     public void Broadcast_WithLayerFilter_OnlyDeliversMatchingEvents()
     {

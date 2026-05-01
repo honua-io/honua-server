@@ -101,6 +101,78 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
+    // Regression for review finding "WebSocket writer drops same-event frames
+    // for additional subscriptions". When two subscriptions on a single
+    // WebSocket both match the same event, both frames must arrive on the
+    // wire — they share a cursor but are distinct (eventId, subscriptionId)
+    // deliveries. The previous session-wide cursor watermark dropped the
+    // second frame.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_TwoSubscriptionsMatchingSameEvent_DeliversBothFrames()
+    {
+        var wsClient = _fixture.CreateWebSocketClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        using var ws = await wsClient.ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features?clientLabel=multi-sub-test"),
+            cts.Token);
+
+        // Drain the connect status frame.
+        _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+        // Subscribe twice to the same layer with two distinct subscription ids.
+        await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"sub-a","layerId":0}""", cts.Token);
+        var subscribedA = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+        subscribedA.GetProperty("status").GetString().Should().Be("subscribed");
+
+        await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"sub-b","layerId":0}""", cts.Token);
+        var subscribedB = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+        subscribedB.GetProperty("status").GetString().Should().Be("subscribed");
+
+        // Publish one event matching both subscriptions.
+        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
+        var serviceId = $"multi-sub-{Guid.NewGuid():N}";
+        await publisher.PublishAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = serviceId,
+            LayerId = 0,
+            ObjectId = 1,
+            Operation = "insert",
+            Protocol = "rest",
+            RequestId = "req-multi-sub"
+        });
+
+        // Expect a feature-change frame per matching subscription on this
+        // session: default (no filter), sub-a, and sub-b. Pre-fix, the writer
+        // task's session-wide cursor watermark dropped the second and third
+        // frames because they shared a cursor with the first.
+        var deliveredSubscriptions = new HashSet<string>(StringComparer.Ordinal);
+        var deliveredEventId = (string?)null;
+        while (!deliveredSubscriptions.Contains("sub-a") || !deliveredSubscriptions.Contains("sub-b"))
+        {
+            cts.Token.ThrowIfCancellationRequested();
+            var frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            if (frame.GetProperty("type").GetString() != "feature-change")
+            {
+                continue;
+            }
+
+            if (frame.GetProperty("serviceId").GetString() != serviceId)
+            {
+                continue;
+            }
+
+            deliveredEventId ??= frame.GetProperty("eventId").GetString();
+            deliveredSubscriptions.Add(frame.GetProperty("subscriptionId").GetString()!);
+        }
+
+        deliveredSubscriptions.Should().Contain("sub-a").And.Contain("sub-b");
+        deliveredEventId.Should().NotBeNull();
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithoutUpgradeOrSseHeader_Returns400()
@@ -498,6 +570,44 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             data.GetProperty("edition").GetString().Should().Be("Community");
             data.GetProperty("transports").GetArrayLength().Should().Be(0);
             data.GetProperty("filterFamilies").GetArrayLength().Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // Regression for review finding "Streaming capabilities expose
+    // inaccessible layer metadata". The discovery endpoint must omit layers
+    // the caller cannot read; otherwise restricted layer names, CRS, or
+    // time-aware status leak through the anonymous-readable capabilities.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features/capabilities")]
+    public async Task Capabilities_OmitsLayersTheCallerCannotAccess()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILayerCatalog>(new MixedAccessStreamLayerCatalog());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            // Even with admin auth (dev bypass), the restricted layer requires
+            // role "restricted-stream-reader" which admin does not hold, so
+            // the capabilities response must filter it out entirely.
+            using var response = await fixture.CreateAdminClient().GetAsync("/api/v1/streaming/features/capabilities");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = doc.RootElement.GetProperty("data");
+            var layers = data.GetProperty("layers").EnumerateArray().ToList();
+
+            layers.Should().HaveCount(1);
+            layers[0].GetProperty("layerId").GetInt32().Should().Be(MixedAccessStreamLayerCatalog.VisibleLayerId);
+            layers[0].GetProperty("name").GetString().Should().Be("Public Stream Layer");
+
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().NotContain("Restricted Stream Layer");
         }
         finally
         {
@@ -1113,6 +1223,87 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             Stream licenseStream,
             CancellationToken cancellationToken = default)
             => Task.FromResult(new LicenseUploadResult(false, "Not supported in tests."));
+    }
+
+    // Mixes one anonymous-readable layer with one role-restricted layer. The
+    // capabilities endpoint must filter the restricted layer out for callers
+    // that lack the role, so its name/CRS/time-aware status is not leaked.
+    private sealed class MixedAccessStreamLayerCatalog : ILayerCatalog
+    {
+        public const int VisibleLayerId = 0;
+        public const int RestrictedLayerId = 7;
+
+        private readonly LayerDefinition _visible;
+        private readonly LayerDefinition _restricted;
+        private readonly ServiceDefinition _service;
+
+        public MixedAccessStreamLayerCatalog()
+        {
+            var spatialReference = SpatialReference.Create(4326);
+            var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
+            var fields = new[]
+            {
+                new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
+                new FieldDefinition("name", FieldType.String, 255, true, null, "Name"),
+                new FieldDefinition("shape", FieldType.Geometry, null, false, null, "Geometry")
+            };
+
+            _visible = new LayerDefinition(
+                Id: VisibleLayerId,
+                Name: "Public Stream Layer",
+                Description: "Anonymous-readable",
+                GeometryType: GeometryType.Point,
+                SpatialReference: spatialReference,
+                Fields: fields,
+                Extent: extent,
+                Metadata: new CatalogMetadata { AccessPolicy = new AccessPolicy { AllowAnonymous = true } });
+
+            _restricted = new LayerDefinition(
+                Id: RestrictedLayerId,
+                Name: "Restricted Stream Layer",
+                Description: "Role-gated; admins are not in this role",
+                GeometryType: GeometryType.Point,
+                SpatialReference: spatialReference,
+                Fields: fields,
+                Extent: extent,
+                Metadata: new CatalogMetadata { AccessPolicy = new AccessPolicy { AllowedRoles = ["restricted-stream-reader"] } });
+
+            _service = new ServiceDefinition(
+                "stream-test",
+                "Streaming capability access test service",
+                [_visible, _restricted],
+                spatialReference,
+                ServiceExtent: extent);
+        }
+
+        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult<LayerDefinition?>(layerId switch
+            {
+                VisibleLayerId => _visible,
+                RestrictedLayerId => _restricted,
+                _ => null
+            });
+
+        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new[] { _visible, _restricted });
+
+        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Equals(serviceName, _service.Name, StringComparison.OrdinalIgnoreCase) ? _service : null);
+
+        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new[] { _service });
+
+        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(layerId == VisibleLayerId || layerId == RestrictedLayerId);
+
+        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Equals(serviceName, _service.Name, StringComparison.OrdinalIgnoreCase));
+
+        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
+            => Task.FromResult<Relationship?>(null);
+
+        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<Relationship>());
     }
 
     private sealed class TimeAwareStreamLayerCatalog : ILayerCatalog
