@@ -98,9 +98,9 @@ public sealed class InMemoryFeatureChangeEventStoreTests
         });
 
         capturedValues.Should().NotBeNull();
-        capturedValues![9].ToString().Should().Be(
+        capturedValues![10].ToString().Should().Be(
             JsonSerializer.Serialize(changedAttributes, FeatureChangeEventsJsonContext.Default.DictionaryStringObject));
-        capturedValues[10].ToString().Should().Be(
+        capturedValues[11].ToString().Should().Be(
             JsonSerializer.Serialize(geometryEnvelope, FeatureChangeEventsJsonContext.Default.DoubleArray));
     }
 }
