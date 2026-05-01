@@ -1183,8 +1183,22 @@
           "Import"
         ],
         "summary": "Scan Migration Source",
-        "description": "Scan a supported GeoServer REST or ArcGIS GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when the scanner produced an artifact but could not complete discovery cleanly. GeoServer uses that failed-artifact path for transport, timeout, auth-related, and other discovery failures; GeoServices also uses it for auth-related and source-reported ArcGIS discovery errors, while transport and timeout failures still surface as 502/504.",
+        "description": "Scan a supported GeoServer REST or ArcGIS GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when the scanner produced an artifact but could not complete discovery cleanly. GeoServer uses that failed-artifact path for transport, timeout, auth-related, and other discovery failures; GeoServices also uses it for auth-related and source-reported ArcGIS discovery errors, while transport and timeout failures still surface as 502/504. Pass the export=json query parameter to receive the artifact as an indented JSON attachment suitable for committing to a migration project repository.",
         "operationId": "scanMigrationSource",
+        "parameters": [
+          {
+            "name": "export",
+            "in": "query",
+            "required": false,
+            "description": "When set to json, returns the artifact as an indented application/json attachment with Content-Disposition: attachment; filename=\"<service-slug>-inventory.json\" and X-Content-Type-Options: nosniff. The slug is derived from the source displayName, sanitized to [A-Za-z0-9_-], collapsed, and capped at 64 characters; credentials supplied in the request body are never echoed into the artifact.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json"
+              ]
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1197,7 +1211,7 @@
         },
         "responses": {
           "200": {
-            "description": "Migration source inventory artifact, including partial or failed completeness states when discovery could not finish cleanly. GeoServer can return a failed artifact for transport, timeout, auth-related, or other discovery failures; GeoServices can return a failed artifact for auth-related and source-reported discovery errors, while transport and timeout failures surface as 502/504.",
+            "description": "Migration source inventory artifact, including partial or failed completeness states when discovery could not finish cleanly. GeoServer can return a failed artifact for transport, timeout, auth-related, or other discovery failures; GeoServices can return a failed artifact for auth-related and source-reported discovery errors, while transport and timeout failures surface as 502/504. With export=json the same artifact is returned as an indented attachment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3449,11 +3463,11 @@
         "properties": {
           "mode": {
             "type": "string",
-            "description": "Observed authentication posture, for example anonymous, basic, auth-required, anonymous-or-auth-required, or unknown. GeoServer scans without a complete username/password pair remain anonymous and add an explanatory note. Successful GeoServices scans are currently anonymous-only; failed artifacts can report auth-required or unknown."
+            "description": "Observed authentication posture, for example anonymous, basic, auth-required, anonymous-or-auth-required, or unknown. GeoServer scans without a complete username/password pair remain anonymous and add an explanatory note. GeoServices scans run anonymously today; successful artifacts therefore report anonymous, and failed artifacts can report auth-required or unknown when discovery is blocked."
           },
           "credentialsSupplied": {
             "type": "boolean",
-            "description": "Whether the scanner had a complete, usable credential set. GeoServer only sets this to true when both username and password were supplied; partial credentials still fall back to anonymous mode and leave this false. Successful GeoServices scans currently remain false."
+            "description": "Whether the scanner had a complete, usable credential set. GeoServer only sets this to true when both username and password were supplied; partial credentials still fall back to anonymous mode and leave this false. GeoServices scans run anonymously today and leave this false."
           },
           "accessConfirmed": {
             "type": "boolean",
@@ -3547,6 +3561,10 @@
               "partial",
               "incompatible"
             ]
+          },
+          "code": {
+            "type": "string",
+            "description": "Optional stable machine-readable compatibility code such as COMPATIBLE, MANUAL_REVIEW, ARCGIS_UNSUPPORTED_RENDERER, or ARCGIS_TOKEN_REQUIRED when the scanner can assign one deterministically. Source-specific codes are namespaced per source kind so downstream automation can branch deterministically. Omitted on aggregate assessments where no single code applies and on source-specific assessments that do not yet define a stable code."
           },
           "reason": {
             "type": "string",
@@ -3659,6 +3677,13 @@
               "$ref": "#/components/schemas/MigrationSpatialReferenceInfo"
             }
           },
+          "fields": {
+            "type": "array",
+            "description": "Field schema entries surfaced for the resource when the source advertises one. Sorted alphabetically by name to keep artifacts diff-stable.",
+            "items": {
+              "$ref": "#/components/schemas/MigrationInventoryField"
+            }
+          },
           "styleIds": {
             "type": "array",
             "description": "Stable IDs linking this resource to entries in styles[].",
@@ -3675,6 +3700,63 @@
           },
           "compatibility": {
             "$ref": "#/components/schemas/MigrationCompatibilityAssessment"
+          }
+        }
+      },
+      "MigrationInventoryField": {
+        "type": "object",
+        "required": [
+          "name",
+          "fieldType"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Source-provided field name."
+          },
+          "alias": {
+            "type": "string",
+            "description": "Source-provided display alias when distinct from the field name."
+          },
+          "fieldType": {
+            "type": "string",
+            "description": "Source-provided field type token (e.g. esriFieldTypeString)."
+          },
+          "nullable": {
+            "type": "boolean",
+            "description": "Whether the field is reported nullable. Omitted when the source does not advertise this property (older ArcGIS versions)."
+          },
+          "domainType": {
+            "type": "string",
+            "description": "Domain category such as codedValue or range when a domain is attached."
+          },
+          "domainName": {
+            "type": "string",
+            "description": "Domain name for the attached domain."
+          },
+          "domainValues": {
+            "type": "array",
+            "description": "Coded values for codedValue domains. Bounded; coded-value domains exceeding the cap surface as the ARCGIS_DOMAIN_TRUNCATED warning rather than silent truncation.",
+            "items": {
+              "$ref": "#/components/schemas/MigrationInventoryCodedValue"
+            }
+          }
+        }
+      },
+      "MigrationInventoryCodedValue": {
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Coded value as advertised by the source."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name for the coded value."
           }
         }
       },

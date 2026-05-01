@@ -204,6 +204,13 @@ public sealed record MigrationCompatibilityAssessment
     public required string Level { get; init; }
 
     /// <summary>
+    /// Stable machine-readable compatibility code such as <c>COMPATIBLE</c> or
+    /// <c>ARCGIS_UNSUPPORTED_RENDERER</c>. Codes are namespaced per source kind so
+    /// downstream automation can branch deterministically.
+    /// </summary>
+    public string? Code { get; init; }
+
+    /// <summary>
     /// Primary explanation for the assigned level.
     /// </summary>
     public required string Reason { get; init; }
@@ -321,6 +328,11 @@ public sealed record MigrationInventoryResource
     public MigrationSpatialReferenceInfo[] SpatialReferences { get; init; } = [];
 
     /// <summary>
+    /// Field metadata for the resource, when the source advertises a schema.
+    /// </summary>
+    public MigrationInventoryField[] Fields { get; init; } = [];
+
+    /// <summary>
     /// Related style or renderer identifiers.
     /// </summary>
     public string[] StyleIds { get; init; } = [];
@@ -334,6 +346,63 @@ public sealed record MigrationInventoryResource
     /// Compatibility assessment for the resource.
     /// </summary>
     public required MigrationCompatibilityAssessment Compatibility { get; init; }
+}
+
+/// <summary>
+/// Field schema entry surfaced for a migration inventory resource.
+/// </summary>
+public sealed record MigrationInventoryField
+{
+    /// <summary>
+    /// Source-provided field name.
+    /// </summary>
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Source-provided display alias when distinct from the field name.
+    /// </summary>
+    public string? Alias { get; init; }
+
+    /// <summary>
+    /// Source-provided field type token (e.g. <c>esriFieldTypeString</c>).
+    /// </summary>
+    public required string FieldType { get; init; }
+
+    /// <summary>
+    /// Whether the field is reported nullable. <c>null</c> when the source omits this property.
+    /// </summary>
+    public bool? Nullable { get; init; }
+
+    /// <summary>
+    /// Domain category such as <c>codedValue</c> or <c>range</c> when a domain is attached.
+    /// </summary>
+    public string? DomainType { get; init; }
+
+    /// <summary>
+    /// Domain name for the attached domain.
+    /// </summary>
+    public string? DomainName { get; init; }
+
+    /// <summary>
+    /// Coded values for <c>codedValue</c> domains. Capped to keep artifacts deterministic.
+    /// </summary>
+    public MigrationInventoryCodedValue[]? DomainValues { get; init; }
+}
+
+/// <summary>
+/// Code/name pair for a coded-value domain entry.
+/// </summary>
+public sealed record MigrationInventoryCodedValue
+{
+    /// <summary>
+    /// Coded value as advertised by the source.
+    /// </summary>
+    public required string Code { get; init; }
+
+    /// <summary>
+    /// Display name for the coded value.
+    /// </summary>
+    public required string Name { get; init; }
 }
 
 /// <summary>

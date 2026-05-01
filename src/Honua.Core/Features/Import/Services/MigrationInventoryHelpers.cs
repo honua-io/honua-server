@@ -32,27 +32,30 @@ internal static partial class MigrationInventoryHelpers
     public static MigrationCompatibilityAssessment Compatible(
         string reason,
         IEnumerable<string>? warnings = null,
-        IEnumerable<string>? manualSteps = null)
-        => CreateAssessment("compatible", reason, warnings, manualSteps);
+        IEnumerable<string>? manualSteps = null,
+        string? code = null)
+        => CreateAssessment("compatible", reason, warnings, manualSteps, code);
 
     public static MigrationCompatibilityAssessment Partial(
         string reason,
         IEnumerable<string>? warnings = null,
-        IEnumerable<string>? manualSteps = null)
-        => CreateAssessment("partial", reason, warnings, manualSteps);
+        IEnumerable<string>? manualSteps = null,
+        string? code = null)
+        => CreateAssessment("partial", reason, warnings, manualSteps, code);
 
     public static MigrationCompatibilityAssessment Incompatible(
         string reason,
         IEnumerable<string>? warnings = null,
-        IEnumerable<string>? manualSteps = null)
-        => CreateAssessment("incompatible", reason, warnings, manualSteps);
+        IEnumerable<string>? manualSteps = null,
+        string? code = null)
+        => CreateAssessment("incompatible", reason, warnings, manualSteps, code);
 
     public static MigrationCompatibilityAssessment Aggregate(IEnumerable<MigrationCompatibilityAssessment> assessments, string emptyReason)
     {
         var materialized = assessments.ToArray();
         if (materialized.Length == 0)
         {
-            return Compatible(emptyReason);
+            return Compatible(emptyReason, code: ImportCompatibilityCodes.Empty);
         }
 
         var level = materialized.Any(a => IsIncompatible(a.Level))
@@ -71,7 +74,8 @@ internal static partial class MigrationInventoryHelpers
             level,
             reason,
             materialized.SelectMany(a => a.Warnings),
-            materialized.SelectMany(a => a.ManualSteps));
+            materialized.SelectMany(a => a.ManualSteps),
+            code: null);
     }
 
     public static MigrationInventorySummary BuildSummary(
@@ -249,10 +253,12 @@ internal static partial class MigrationInventoryHelpers
         string level,
         string reason,
         IEnumerable<string>? warnings,
-        IEnumerable<string>? manualSteps)
+        IEnumerable<string>? manualSteps,
+        string? code)
         => new()
         {
             Level = level,
+            Code = string.IsNullOrWhiteSpace(code) ? null : code,
             Reason = reason,
             Warnings = NormalizeStrings(warnings),
             ManualSteps = NormalizeStrings(manualSteps)

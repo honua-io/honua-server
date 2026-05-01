@@ -1,0 +1,63 @@
+{
+  "serviceUrl": "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+  "responses": {
+    "/arcgis/rest/services/Parcels/FeatureServer?f=json": {
+      "currentVersion": 11.2,
+      "serviceDescription": "Parcel Viewer",
+      "capabilities": "Query",
+      "layers": [
+        { "id": 0, "name": "Parcels" },
+        { "id": 1, "name": "Permits" }
+      ]
+    },
+    "/arcgis/rest/services/Parcels/FeatureServer/0?f=json": {
+      "id": 0,
+      "name": "Parcels",
+      "description": "Parcel polygons",
+      "geometryType": "esriGeometryPolygon",
+      "capabilities": "Query",
+      "spatialReference": { "wkid": 3857 },
+      "drawingInfo": {
+        "renderer": { "type": "simple" }
+      },
+      "fields": [
+        { "name": "OBJECTID", "alias": "OBJECTID", "type": "esriFieldTypeOID" },
+        { "name": "PARCEL_ID", "alias": "Parcel ID", "type": "esriFieldTypeString", "nullable": false },
+        { "name": "ZONING", "alias": "Zoning", "type": "esriFieldTypeString", "nullable": true,
+          "domain": {
+            "type": "codedValue",
+            "name": "ZoningCode",
+            "codedValues": [
+              { "code": "R1", "name": "Residential 1" },
+              { "code": "R2", "name": "Residential 2" },
+              { "code": "C1", "name": "Commercial 1" }
+            ]
+          }
+        },
+        { "name": "AREA_SQM", "type": "esriFieldTypeDouble", "nullable": true }
+      ]
+    },
+    "/arcgis/rest/services/Parcels/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json": {
+      "count": 42
+    },
+    "/arcgis/rest/services/Parcels/FeatureServer/1?f=json": {
+      "id": 1,
+      "name": "Permits",
+      "description": "Permit points",
+      "geometryType": "esriGeometryPoint",
+      "capabilities": "Query",
+      "spatialReference": { "wkid": 3857 },
+      "drawingInfo": {
+        "renderer": { "type": "uniqueValue", "field1": "STATUS" }
+      },
+      "fields": [
+        { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+        { "name": "PERMIT_NO", "type": "esriFieldTypeString", "nullable": false },
+        { "name": "STATUS", "type": "esriFieldTypeString", "nullable": false }
+      ]
+    },
+    "/arcgis/rest/services/Parcels/FeatureServer/1/query?where=1%3D1&returnCountOnly=true&f=json": {
+      "count": 7
+    }
+  }
+}

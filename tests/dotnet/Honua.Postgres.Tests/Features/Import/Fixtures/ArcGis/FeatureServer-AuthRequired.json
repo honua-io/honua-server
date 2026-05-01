@@ -1,0 +1,12 @@
+{
+  "serviceUrl": "https://example.com/arcgis/rest/services/SecureLayer/FeatureServer",
+  "responses": {
+    "/arcgis/rest/services/SecureLayer/FeatureServer?f=json": {
+      "error": {
+        "code": 499,
+        "message": "Token Required",
+        "details": []
+      }
+    }
+  }
+}

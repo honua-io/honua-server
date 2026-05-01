@@ -1,0 +1,52 @@
+{
+  "artifactKind": "honua.migration.source-inventory",
+  "artifactVersion": "1.0",
+  "sourceKind": "arcgis-geoservices-rest",
+  "source": {
+    "displayName": "SecureLayer",
+    "baseUrl": "https://example.com/arcgis/rest/services/SecureLayer/FeatureServer",
+    "product": "ArcGIS GeoServices REST",
+    "serviceType": "FeatureServer"
+  },
+  "authPosture": {
+    "mode": "auth-required",
+    "credentialsSupplied": false,
+    "accessConfirmed": false,
+    "notes": [
+      "Token Required"
+    ]
+  },
+  "scanCompleteness": {
+    "status": "failed",
+    "warnings": [
+      "Token Required"
+    ],
+    "missingArtifacts": [
+      "source-inventory"
+    ]
+  },
+  "summary": {
+    "containerCount": 0,
+    "resourceCount": 0,
+    "styleCount": 0,
+    "externalDependencyCount": 0,
+    "compatibleCount": 0,
+    "partiallyCompatibleCount": 0,
+    "incompatibleCount": 0
+  },
+  "overallCompatibility": {
+    "level": "partial",
+    "code": "ARCGIS_TOKEN_REQUIRED",
+    "reason": "The scan did not complete successfully.",
+    "warnings": [
+      "Token Required"
+    ],
+    "manualSteps": [
+      "Provide a valid ArcGIS token or credentials and rerun the scan."
+    ]
+  },
+  "containers": [],
+  "resources": [],
+  "styles": [],
+  "externalDependencies": []
+}

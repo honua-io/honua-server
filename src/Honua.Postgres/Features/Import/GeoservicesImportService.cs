@@ -74,9 +74,11 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
             if (TryReadArcGisError(serviceDocument.RootElement, out var errorCode, out var errorMessage))
             {
+                var (authMode, code) = ClassifyArcGisError(errorCode);
                 return CreateFailedScanArtifact(
                     normalizedUrl,
-                    IsAuthError(errorCode) ? "auth-required" : "unknown",
+                    authMode,
+                    code,
                     errorMessage,
                     serviceType: ExtractServiceType(normalizedUrl));
             }
@@ -131,6 +133,14 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                     .Concat(orderedStyles.Select(style => style.Compatibility))
                     .Concat(orderedDependencies.Select(dependency => dependency.Compatibility)),
                 "No GeoServices resources were discovered.");
+
+            if (HasMixedRendererCodes(orderedStyles))
+            {
+                containerAssessment = containerAssessment with
+                {
+                    Code = ImportCompatibilityCodes.ArcGisMixedRenderers
+                };
+            }
 
             var containers = new[]
             {
@@ -199,6 +209,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             return CreateFailedScanArtifact(
                 normalizedUrl,
                 "auth-required",
+                ex.StatusCode == HttpStatusCode.Forbidden
+                    ? ImportCompatibilityCodes.ArcGisAccessDenied
+                    : ImportCompatibilityCodes.ArcGisTokenRequired,
                 "The ArcGIS service requires authentication for discovery.",
                 ExtractServiceType(normalizedUrl));
         }
@@ -208,6 +221,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             return CreateFailedScanArtifact(
                 normalizedUrl,
                 "unknown",
+                ImportCompatibilityCodes.ArcGisServiceError,
                 ex.Message,
                 ExtractServiceType(normalizedUrl));
         }
@@ -262,6 +276,16 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
         var spatialReferences = await BuildArcGisSpatialReferencesAsync(resourceDocument.RootElement, cancellationToken).ConfigureAwait(false);
 
+        var fields = ExtractFieldMetadata(
+            resourceDocument.RootElement,
+            out var fieldWarnings);
+
+        Log.InventoryFieldsExtracted(
+            _logger,
+            normalizedUrl,
+            resourceReference.Id,
+            fields.Length);
+
         var style = BuildRendererStyle(
             containerId,
             serviceName,
@@ -289,11 +313,13 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 Compatibility = MigrationInventoryHelpers.Partial(
                     "Attachments require a separate migration path.",
                     ["The source resource advertises attachments."],
-                    ["Plan a separate attachment migration alongside the core data import."])
+                    ["Plan a separate attachment migration alongside the core data import."],
+                    code: ImportCompatibilityCodes.ArcGisAttachments)
             });
         }
 
         var resourceWarnings = new List<string>(rendererWarnings);
+        resourceWarnings.AddRange(fieldWarnings);
         var missingArtifacts = new List<string>();
 
         if (featureCount == null)
@@ -322,6 +348,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             HasAttachments = hasAttachments,
             Capabilities = advertisedCapabilities.OrderBy(static capability => capability, StringComparer.Ordinal).ToArray(),
             SpatialReferences = spatialReferences,
+            Fields = fields,
             StyleIds = style == null ? [] : [style.Id],
             ExternalDependencyIds = dependencies.Select(dependency => dependency.Id)
                 .OrderBy(static value => value, StringComparer.Ordinal)
@@ -414,6 +441,149 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         return GetOptionalIntProperty(countDocument.RootElement, "count");
     }
 
+    private const int CodedValueDomainCap = 100;
+
+    private static MigrationInventoryField[] ExtractFieldMetadata(JsonElement resourceElement, out string[] warnings)
+    {
+        warnings = [];
+
+        if (!resourceElement.TryGetProperty("fields", out var fieldsElement) ||
+            fieldsElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var fields = new List<MigrationInventoryField>();
+        var truncatedDomains = new SortedSet<string>(StringComparer.Ordinal);
+
+        foreach (var fieldElement in fieldsElement.EnumerateArray())
+        {
+            if (fieldElement.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var name = GetOptionalStringProperty(fieldElement, "name");
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var fieldType = GetOptionalStringProperty(fieldElement, "type") ?? "esriFieldTypeUnknown";
+            var alias = GetOptionalStringProperty(fieldElement, "alias");
+            var nullable = GetOptionalBoolProperty(fieldElement, "nullable");
+            var (domainType, domainName, domainValues, domainTruncated) = ExtractDomain(fieldElement);
+
+            if (domainTruncated)
+            {
+                var label = !string.IsNullOrWhiteSpace(domainName)
+                    ? $"'{domainName}' on field '{name}'"
+                    : $"on field '{name}'";
+                _ = truncatedDomains.Add(label);
+            }
+
+            fields.Add(new MigrationInventoryField
+            {
+                Name = name,
+                Alias = string.Equals(alias, name, StringComparison.Ordinal) ? null : alias,
+                FieldType = fieldType,
+                Nullable = nullable,
+                DomainType = domainType,
+                DomainName = domainName,
+                DomainValues = domainValues
+            });
+        }
+
+        if (truncatedDomains.Count > 0)
+        {
+            warnings = truncatedDomains
+                .Select(static label => $"{ImportCompatibilityCodes.ArcGisDomainTruncated}: coded-value domain {label} exceeds the {CodedValueDomainCap}-entry capture cap and was omitted from the artifact.")
+                .ToArray();
+        }
+
+        return fields
+            .OrderBy(static field => field.Name, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static (string? Type, string? Name, MigrationInventoryCodedValue[]? Values, bool Truncated) ExtractDomain(JsonElement fieldElement)
+    {
+        if (!fieldElement.TryGetProperty("domain", out var domainElement) ||
+            domainElement.ValueKind != JsonValueKind.Object)
+        {
+            return (null, null, null, false);
+        }
+
+        var type = GetOptionalStringProperty(domainElement, "type");
+        var name = GetOptionalStringProperty(domainElement, "name");
+
+        if (!string.Equals(type, "codedValue", StringComparison.Ordinal))
+        {
+            return (type, name, null, false);
+        }
+
+        if (!domainElement.TryGetProperty("codedValues", out var codedValuesElement) ||
+            codedValuesElement.ValueKind != JsonValueKind.Array)
+        {
+            return (type, name, [], false);
+        }
+
+        var entries = new List<MigrationInventoryCodedValue>();
+        var truncated = false;
+        foreach (var entry in codedValuesElement.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var codeText = ConvertCodedValueCode(entry);
+            var entryName = GetOptionalStringProperty(entry, "name");
+            if (codeText == null || string.IsNullOrWhiteSpace(entryName))
+            {
+                continue;
+            }
+
+            if (entries.Count >= CodedValueDomainCap)
+            {
+                truncated = true;
+                break;
+            }
+
+            entries.Add(new MigrationInventoryCodedValue
+            {
+                Code = codeText,
+                Name = entryName!
+            });
+        }
+
+        var ordered = entries
+            .OrderBy(static value => value.Code, StringComparer.Ordinal)
+            .ThenBy(static value => value.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        return truncated
+            ? (type, name, null, true)
+            : (type, name, ordered, false);
+    }
+
+    private static string? ConvertCodedValueCode(JsonElement entry)
+    {
+        if (!entry.TryGetProperty("code", out var codeElement))
+        {
+            return null;
+        }
+
+        return codeElement.ValueKind switch
+        {
+            JsonValueKind.String => codeElement.GetString(),
+            JsonValueKind.Number => codeElement.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => null
+        };
+    }
+
     private static MigrationInventoryStyle? BuildRendererStyle(
         string containerId,
         string serviceName,
@@ -463,7 +633,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             Compatibility = MigrationInventoryHelpers.Partial(
                 "External symbol URLs require manual migration review.",
                 ["The renderer references one or more external URLs."],
-                ["Mirror or replace external symbol assets in the target deployment."])
+                ["Mirror or replace external symbol assets in the target deployment."],
+                code: ImportCompatibilityCodes.ArcGisExternalSymbol)
         }).ToArray();
 
         var metadata = new SortedDictionary<string, string>(StringComparer.Ordinal)
@@ -512,13 +683,17 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 return MigrationInventoryHelpers.Partial(
                     $"Renderer type '{rendererType}' can be recreated in Honua with manual follow-up.",
                     warnings,
-                    manualSteps);
+                    manualSteps,
+                    code: hasExternalUrls
+                        ? ImportCompatibilityCodes.ArcGisExternalSymbol
+                        : ImportCompatibilityCodes.ManualReview);
             default:
                 manualSteps.Add("Review the renderer manually and rebuild an equivalent target style.");
                 return MigrationInventoryHelpers.Incompatible(
                     $"Renderer type '{rendererType}' is not currently classified as portable to Honua.",
                     warnings,
-                    manualSteps);
+                    manualSteps,
+                    code: ImportCompatibilityCodes.ArcGisUnsupportedRenderer);
         }
     }
 
@@ -537,7 +712,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             return MigrationInventoryHelpers.Incompatible(
                 "The resource does not advertise query capability.",
                 null,
-                ["Enable query access or export the source data through another path before migration."]);
+                ["Enable query access or export the source data through another path before migration."],
+                code: ImportCompatibilityCodes.ArcGisQueryCapabilityMissing);
         }
 
         if (!resourceKind.Equals("table", StringComparison.OrdinalIgnoreCase) &&
@@ -546,19 +722,23 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             return MigrationInventoryHelpers.Incompatible(
                 $"Geometry type '{geometryType ?? "unknown"}' is not supported by the current import path.",
                 null,
-                ["Normalize or export the resource to a supported vector geometry type before migration."]);
+                ["Normalize or export the resource to a supported vector geometry type before migration."],
+                code: ImportCompatibilityCodes.ArcGisUnsupportedGeometry);
         }
 
+        string? primaryCode = null;
         if (!resourceKind.Equals("table", StringComparison.OrdinalIgnoreCase) && !hasSpatialReference)
         {
             warnings.Add("Spatial reference metadata was unavailable.");
             manualSteps.Add("Confirm CRS, datum, and units before migration.");
+            primaryCode = ImportCompatibilityCodes.ArcGisMissingSpatialRef;
         }
 
         if (hasAttachments == true)
         {
             warnings.Add("Attachments are advertised on this resource.");
             manualSteps.Add("Plan a separate attachment migration.");
+            primaryCode ??= ImportCompatibilityCodes.ArcGisAttachments;
         }
 
         if (warnings.Count == 0)
@@ -566,17 +746,50 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             return MigrationInventoryHelpers.Compatible(
                 resourceKind.Equals("table", StringComparison.OrdinalIgnoreCase)
                     ? "Tabular resource can be queried through the GeoServices API."
-                    : "Vector resource can be queried through the GeoServices API.");
+                    : "Vector resource can be queried through the GeoServices API.",
+                code: ImportCompatibilityCodes.Compatible);
         }
 
         return MigrationInventoryHelpers.Partial(
             "The resource data is queryable, but follow-up migration work is required.",
             warnings,
-            manualSteps);
+            manualSteps,
+            code: primaryCode ?? ImportCompatibilityCodes.ManualReview);
     }
 
     private static bool IsSupportedGeometryType(string? geometryType)
         => geometryType is "esriGeometryPoint" or "esriGeometryPolyline" or "esriGeometryPolygon" or "esriGeometryMultipoint";
+
+    private static bool HasMixedRendererCodes(MigrationInventoryStyle[] styles)
+    {
+        if (styles.Length < 2)
+        {
+            return false;
+        }
+
+        string? seen = null;
+        foreach (var style in styles)
+        {
+            var code = style.Compatibility.Code;
+            if (string.IsNullOrEmpty(code))
+            {
+                continue;
+            }
+
+            if (seen == null)
+            {
+                seen = code;
+                continue;
+            }
+
+            if (!string.Equals(seen, code, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static IEnumerable<GeoservicesResourceReference> EnumerateResourceReferences(JsonElement serviceRoot)
     {
@@ -821,9 +1034,16 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private static MigrationSourceInventoryArtifact CreateFailedScanArtifact(
         string normalizedUrl,
         string authMode,
+        string compatibilityCode,
         string message,
         string serviceType)
     {
+        var manualSteps = compatibilityCode == ImportCompatibilityCodes.ArcGisTokenRequired
+            ? new[] { "Provide a valid ArcGIS token or credentials and rerun the scan." }
+            : compatibilityCode == ImportCompatibilityCodes.ArcGisAccessDenied
+                ? ["Confirm the supplied identity has read access to the service and rerun the scan."]
+                : new[] { "Verify service reachability, access, and metadata exposure before rerunning the scan." };
+
         return new MigrationSourceInventoryArtifact
         {
             SourceKind = "arcgis-geoservices-rest",
@@ -849,13 +1069,23 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             OverallCompatibility = MigrationInventoryHelpers.Partial(
                 "The scan did not complete successfully.",
                 [message],
-                ["Verify service reachability, access, and metadata exposure before rerunning the scan."]),
+                manualSteps,
+                code: compatibilityCode),
             Containers = [],
             Resources = [],
             Styles = [],
             ExternalDependencies = []
         };
     }
+
+    private static (string AuthMode, string CompatibilityCode) ClassifyArcGisError(int? errorCode)
+        => errorCode switch
+        {
+            498 or 499 => ("auth-required", ImportCompatibilityCodes.ArcGisTokenRequired),
+            401 => ("auth-required", ImportCompatibilityCodes.ArcGisTokenRequired),
+            403 => ("auth-required", ImportCompatibilityCodes.ArcGisAccessDenied),
+            _ => ("unknown", ImportCompatibilityCodes.ArcGisServiceError)
+        };
 
     private sealed record GeoservicesResourceReference(int Id, string Name, string Kind);
 
@@ -1719,6 +1949,14 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             string serviceUrl,
             int resourceId,
             Exception exception);
+
+        [LoggerMessage(78218, LogLevel.Debug,
+            "GeoServices inventory captured {FieldCount} fields for {ServiceUrl} resource {ResourceId}")]
+        public static partial void InventoryFieldsExtracted(
+            ILogger logger,
+            string serviceUrl,
+            int resourceId,
+            int fieldCount);
 
         [LoggerMessage(7822, LogLevel.Debug, "Table {TableName} created")]
         public static partial void TableCreated(ILogger logger, string tableName);
