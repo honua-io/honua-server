@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
+using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -136,8 +139,15 @@ internal static class MigrationScannerEndpoints
                     }
             }
 
-            await Results.Json(artifact, ImportJsonContext.Default.MigrationSourceInventoryArtifact)
-                .ExecuteAsync(context).ConfigureAwait(false);
+            if (IsJsonExportRequested(context.Request.Query))
+            {
+                await WriteIndentedJsonAttachmentAsync(context, artifact, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await Results.Json(artifact, ImportJsonContext.Default.MigrationSourceInventoryArtifact)
+                    .ExecuteAsync(context).ConfigureAwait(false);
+            }
         }
         catch (HttpRequestException)
         {
@@ -172,6 +182,111 @@ internal static class MigrationScannerEndpoints
         };
 
         return normalized.Length > 0;
+    }
+
+    private static bool IsJsonExportRequested(IQueryCollection query)
+    {
+        if (!query.TryGetValue("export", out var values))
+        {
+            return false;
+        }
+
+        foreach (var value in values)
+        {
+            if (string.Equals(value, "json", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task WriteIndentedJsonAttachmentAsync(
+        HttpContext context,
+        MigrationSourceInventoryArtifact artifact,
+        CancellationToken cancellationToken)
+    {
+        var fileSlug = SanitizeFilenameSlug(artifact.Source.DisplayName);
+        var filename = $"{fileSlug}-inventory.json";
+
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        context.Response.Headers["Content-Disposition"] =
+            $"attachment; filename=\"{filename}\"";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+
+        var buffer = new ArrayBufferWriter<byte>();
+        await using (var writer = new Utf8JsonWriter(
+            buffer,
+            new JsonWriterOptions { Indented = true }))
+        {
+            JsonSerializer.Serialize(
+                writer,
+                artifact,
+                ImportJsonContext.Default.MigrationSourceInventoryArtifact);
+        }
+
+        await context.Response.Body.WriteAsync(buffer.WrittenMemory, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static string SanitizeFilenameSlug(string? candidate)
+    {
+        const int MaxLength = 64;
+        const string Fallback = "inventory";
+
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return Fallback;
+        }
+
+        var builder = new StringBuilder(candidate.Length);
+        var lastWasSeparator = false;
+
+        foreach (var ch in candidate)
+        {
+            if ((ch >= 'a' && ch <= 'z') ||
+                (ch >= 'A' && ch <= 'Z') ||
+                (ch >= '0' && ch <= '9'))
+            {
+                builder.Append(ch);
+                lastWasSeparator = false;
+            }
+            else if (ch == '-' || ch == '_' || ch == ' ')
+            {
+                if (!lastWasSeparator && builder.Length > 0)
+                {
+                    builder.Append('-');
+                    lastWasSeparator = true;
+                }
+            }
+        }
+
+        if (builder.Length == 0)
+        {
+            return Fallback;
+        }
+
+        while (builder.Length > 0 && builder[^1] == '-')
+        {
+            builder.Length--;
+        }
+
+        if (builder.Length == 0)
+        {
+            return Fallback;
+        }
+
+        if (builder.Length > MaxLength)
+        {
+            builder.Length = MaxLength;
+            while (builder.Length > 0 && builder[^1] == '-')
+            {
+                builder.Length--;
+            }
+        }
+
+        return builder.Length == 0 ? Fallback : builder.ToString();
     }
 }
 

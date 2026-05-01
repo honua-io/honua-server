@@ -1,0 +1,231 @@
+{
+  "artifactKind": "honua.migration.source-inventory",
+  "artifactVersion": "1.0",
+  "sourceKind": "arcgis-geoservices-rest",
+  "source": {
+    "displayName": "Parcel Viewer",
+    "baseUrl": "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+    "product": "ArcGIS GeoServices REST",
+    "version": "11.2",
+    "serviceType": "FeatureServer"
+  },
+  "authPosture": {
+    "mode": "anonymous",
+    "credentialsSupplied": false,
+    "accessConfirmed": true,
+    "notes": []
+  },
+  "scanCompleteness": {
+    "status": "complete",
+    "warnings": [],
+    "missingArtifacts": []
+  },
+  "summary": {
+    "containerCount": 1,
+    "resourceCount": 2,
+    "styleCount": 2,
+    "externalDependencyCount": 0,
+    "compatibleCount": 2,
+    "partiallyCompatibleCount": 3,
+    "incompatibleCount": 0
+  },
+  "overallCompatibility": {
+    "level": "partial",
+    "reason": "Compatible: 2; partial: 3; incompatible: 0.",
+    "warnings": [],
+    "manualSteps": [
+      "Recreate the renderer via the Honua style endpoints after data import."
+    ]
+  },
+  "containers": [
+    {
+      "id": "service:Parcels",
+      "kind": "service",
+      "name": "Parcels",
+      "title": "Parcel Viewer",
+      "compatibility": {
+        "level": "partial",
+        "reason": "Compatible: 2; partial: 2; incompatible: 0.",
+        "warnings": [],
+        "manualSteps": [
+          "Recreate the renderer via the Honua style endpoints after data import."
+        ]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "id": "resource:Parcels:layer:0",
+      "containerId": "service:Parcels",
+      "kind": "layer",
+      "name": "Parcels",
+      "title": "Parcels",
+      "description": "Parcel polygons",
+      "geometryType": "esriGeometryPolygon",
+      "featureCount": 42,
+      "capabilities": [
+        "Query"
+      ],
+      "spatialReferences": [
+        {
+          "role": "resource",
+          "sourceValue": "WKID:3857",
+          "srid": 3857,
+          "crsUri": "http://www.opengis.net/def/crs/EPSG/0/3857",
+          "axisOrder": "east-north",
+          "isGeographic": false
+        }
+      ],
+      "fields": [
+        {
+          "name": "AREA_SQM",
+          "fieldType": "esriFieldTypeDouble",
+          "nullable": true
+        },
+        {
+          "name": "OBJECTID",
+          "fieldType": "esriFieldTypeOID"
+        },
+        {
+          "name": "PARCEL_ID",
+          "alias": "Parcel ID",
+          "fieldType": "esriFieldTypeString",
+          "nullable": false
+        },
+        {
+          "name": "ZONING",
+          "alias": "Zoning",
+          "fieldType": "esriFieldTypeString",
+          "nullable": true,
+          "domainType": "codedValue",
+          "domainName": "ZoningCode",
+          "domainValues": [
+            {
+              "code": "C1",
+              "name": "Commercial 1"
+            },
+            {
+              "code": "R1",
+              "name": "Residential 1"
+            },
+            {
+              "code": "R2",
+              "name": "Residential 2"
+            }
+          ]
+        }
+      ],
+      "styleIds": [
+        "renderer:Parcels:0"
+      ],
+      "externalDependencyIds": [],
+      "compatibility": {
+        "level": "compatible",
+        "code": "COMPATIBLE",
+        "reason": "Vector resource can be queried through the GeoServices API.",
+        "warnings": [],
+        "manualSteps": []
+      }
+    },
+    {
+      "id": "resource:Parcels:layer:1",
+      "containerId": "service:Parcels",
+      "kind": "layer",
+      "name": "Permits",
+      "title": "Permits",
+      "description": "Permit points",
+      "geometryType": "esriGeometryPoint",
+      "featureCount": 7,
+      "capabilities": [
+        "Query"
+      ],
+      "spatialReferences": [
+        {
+          "role": "resource",
+          "sourceValue": "WKID:3857",
+          "srid": 3857,
+          "crsUri": "http://www.opengis.net/def/crs/EPSG/0/3857",
+          "axisOrder": "east-north",
+          "isGeographic": false
+        }
+      ],
+      "fields": [
+        {
+          "name": "OBJECTID",
+          "fieldType": "esriFieldTypeOID"
+        },
+        {
+          "name": "PERMIT_NO",
+          "fieldType": "esriFieldTypeString",
+          "nullable": false
+        },
+        {
+          "name": "STATUS",
+          "fieldType": "esriFieldTypeString",
+          "nullable": false
+        }
+      ],
+      "styleIds": [
+        "renderer:Parcels:1"
+      ],
+      "externalDependencyIds": [],
+      "compatibility": {
+        "level": "compatible",
+        "code": "COMPATIBLE",
+        "reason": "Vector resource can be queried through the GeoServices API.",
+        "warnings": [],
+        "manualSteps": []
+      }
+    }
+  ],
+  "styles": [
+    {
+      "id": "renderer:Parcels:0",
+      "containerId": "service:Parcels",
+      "kind": "renderer",
+      "name": "Parcels",
+      "format": "esri-renderer",
+      "resourceIds": [
+        "resource:Parcels:layer:0"
+      ],
+      "externalDependencyIds": [],
+      "metadata": {
+        "rendererType": "simple"
+      },
+      "compatibility": {
+        "level": "partial",
+        "code": "MANUAL_REVIEW",
+        "reason": "Renderer type \u0027simple\u0027 can be recreated in Honua with manual follow-up.",
+        "warnings": [],
+        "manualSteps": [
+          "Recreate the renderer via the Honua style endpoints after data import."
+        ]
+      }
+    },
+    {
+      "id": "renderer:Parcels:1",
+      "containerId": "service:Parcels",
+      "kind": "renderer",
+      "name": "Permits",
+      "format": "esri-renderer",
+      "resourceIds": [
+        "resource:Parcels:layer:1"
+      ],
+      "externalDependencyIds": [],
+      "metadata": {
+        "field1": "STATUS",
+        "rendererType": "uniqueValue"
+      },
+      "compatibility": {
+        "level": "partial",
+        "code": "MANUAL_REVIEW",
+        "reason": "Renderer type \u0027uniqueValue\u0027 can be recreated in Honua with manual follow-up.",
+        "warnings": [],
+        "manualSteps": [
+          "Recreate the renderer via the Honua style endpoints after data import."
+        ]
+      }
+    }
+  ],
+  "externalDependencies": []
+}

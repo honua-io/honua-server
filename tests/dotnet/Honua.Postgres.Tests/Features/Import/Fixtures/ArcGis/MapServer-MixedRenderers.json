@@ -1,0 +1,62 @@
+{
+  "serviceUrl": "https://example.com/arcgis/rest/services/Public/MapServer",
+  "responses": {
+    "/arcgis/rest/services/Public/MapServer?f=json": {
+      "currentVersion": 11.2,
+      "serviceDescription": "Public Mapping",
+      "capabilities": "Map,Query,Data",
+      "layers": [
+        { "id": 0, "name": "BlockGroups" },
+        { "id": 1, "name": "PopulationDensity" }
+      ]
+    },
+    "/arcgis/rest/services/Public/MapServer/0?f=json": {
+      "id": 0,
+      "name": "BlockGroups",
+      "description": "Census block groups with population density",
+      "geometryType": "esriGeometryPolygon",
+      "capabilities": "Query,Map",
+      "spatialReference": { "wkid": 3857 },
+      "drawingInfo": {
+        "renderer": {
+          "type": "classBreaks",
+          "field": "POP_DENS",
+          "classBreakInfos": [
+            {
+              "symbol": {
+                "type": "esriPMS",
+                "url": "https://cdn.example.com/symbols/blue.png"
+              }
+            }
+          ]
+        }
+      },
+      "fields": [
+        { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+        { "name": "GEOID", "type": "esriFieldTypeString", "nullable": false },
+        { "name": "POP_DENS", "type": "esriFieldTypeDouble", "nullable": true }
+      ]
+    },
+    "/arcgis/rest/services/Public/MapServer/0/query?where=1%3D1&returnCountOnly=true&f=json": {
+      "count": 235
+    },
+    "/arcgis/rest/services/Public/MapServer/1?f=json": {
+      "id": 1,
+      "name": "PopulationDensity",
+      "description": "Population heatmap",
+      "geometryType": "esriGeometryPoint",
+      "capabilities": "Query,Map",
+      "spatialReference": { "wkid": 3857 },
+      "drawingInfo": {
+        "renderer": { "type": "heatmap", "field": "WEIGHT" }
+      },
+      "fields": [
+        { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+        { "name": "WEIGHT", "type": "esriFieldTypeDouble", "nullable": true }
+      ]
+    },
+    "/arcgis/rest/services/Public/MapServer/1/query?where=1%3D1&returnCountOnly=true&f=json": {
+      "count": 1024
+    }
+  }
+}

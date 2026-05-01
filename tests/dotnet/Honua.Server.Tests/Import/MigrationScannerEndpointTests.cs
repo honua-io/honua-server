@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Server.Features.Import;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -137,6 +138,85 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         (await response.Content.ReadAsStringAsync()).Should().Contain("TimeoutSeconds must be greater than 0");
         _geoServerService.ScanRequestCount.Should().Be(0);
         _geoservicesService.ScanRequestCount.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/scan")]
+    public async Task Scan_GeoservicesSourceWithJsonExport_ReturnsIndentedAttachment()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/import/scan?export=json",
+            new
+            {
+                SourceKind = "geoservices",
+                SourceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+                Username = "scanner-user",
+                Password = "scanner-password",
+                TimeoutSeconds = 10
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        response.Content.Headers.ContentDisposition.Should().NotBeNull();
+        response.Content.Headers.ContentDisposition!.DispositionType.Should().Be("attachment");
+        response.Content.Headers.ContentDisposition.FileName?.Trim('"').Should().Be("Parcels-inventory.json");
+
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("  \"artifactKind\":");
+        body.Should().NotContain("scanner-password");
+        body.Should().NotContain("scanner-user");
+    }
+
+    [Theory]
+    [InlineData("Parcel Viewer", "Parcel-Viewer")]
+    [InlineData("Demo / Service ° (alpha)", "Demo-Service-alpha")]
+    [InlineData("   ", "inventory")]
+    [InlineData(null, "inventory")]
+    [InlineData("///", "inventory")]
+    [InlineData("a___---___b", "a-b")]
+    public void SanitizeFilenameSlug_ProducesSafeAsciiOnlyName(string? input, string expected)
+    {
+        MigrationScannerEndpoints.SanitizeFilenameSlug(input).Should().Be(expected);
+    }
+
+    [Fact]
+    public void SanitizeFilenameSlug_LongInput_TrimmedAtBoundary()
+    {
+        var input = new string('a', 100);
+        MigrationScannerEndpoints.SanitizeFilenameSlug(input).Length.Should().BeLessOrEqualTo(64);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/scan")]
+    public async Task Scan_GeoservicesSourceWithJsonExport_ProducesStableInventoryBaseline()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/import/scan?export=json",
+            new
+            {
+                SourceKind = "geoservices",
+                SourceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+                TimeoutSeconds = 10
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var first = await response.Content.ReadAsStringAsync();
+
+        var second = await (await _client.PostAsJsonAsync(
+            "/api/v1/admin/import/scan?export=json",
+            new
+            {
+                SourceKind = "geoservices",
+                SourceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+                TimeoutSeconds = 10
+            })).Content.ReadAsStringAsync();
+
+        first.Should().Be(second, "successive exports of the same artifact must be byte-for-byte identical for downstream review tooling.");
+
+        using var document = JsonDocument.Parse(first);
+        document.RootElement.GetProperty("sourceKind").GetString().Should().Be("arcgis-geoservices-rest");
+        document.RootElement.GetProperty("source").GetProperty("displayName").GetString().Should().Be("Parcels");
     }
 
     private sealed class FakeGeoServerScanService : IGeoServerImportService
