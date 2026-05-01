@@ -21,6 +21,7 @@ COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
+COPY src/Honua.SqlServer/*.csproj src/Honua.SqlServer/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
 COPY src/Honua.Server/*.csproj src/Honua.Server/
 COPY docs/developer/api-specs/admin-api.json docs/developer/api-specs/
