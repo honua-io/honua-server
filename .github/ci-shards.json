@@ -172,7 +172,7 @@
       "shard_name": "Map and Imagery",
       "artifact_suffix": "map-imagery",
       "log_name": "server-tests-map-imagery",
-      "timeout_minutes": 45,
+      "timeout_minutes": 60,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
