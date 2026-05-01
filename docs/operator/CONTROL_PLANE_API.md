@@ -301,7 +301,7 @@ Successful response contract:
 | `styles` | Deterministically ordered GeoServer styles or GeoServices renderers. |
 | `externalDependencies` | Deterministically ordered `datastore`, `coverage-store`, `attachments`, `external-graphic`, or `external-symbol` references with secret-safe addresses for external URLs. |
 
-Compatibility assessments include a stable, machine-readable `code` (for example `COMPATIBLE`, `MANUAL_REVIEW`, `ARCGIS_UNSUPPORTED_RENDERER`, `ARCGIS_TOKEN_REQUIRED`) alongside `level`, `reason`, `warnings`, and `manualSteps`. The full code namespace and remediation table are documented in [ArcGIS Inventory Discovery — Compatibility Codes](arcgis-inventory-discovery.md#compatibility-codes); `code` is omitted for aggregate assessments where no single code applies.
+Compatibility assessments may include a stable, machine-readable `code` (for example `COMPATIBLE`, `MANUAL_REVIEW`, `ARCGIS_UNSUPPORTED_RENDERER`, `ARCGIS_TOKEN_REQUIRED`) alongside `level`, `reason`, `warnings`, and `manualSteps` when the scanner can assign one deterministically. The ArcGIS GeoServices code namespace and remediation table are documented in [ArcGIS Inventory Discovery — Compatibility Codes](arcgis-inventory-discovery.md#compatibility-codes); `code` is omitted for aggregate assessments where no single code applies and for source-specific assessments that do not yet define a stable code.
 
 Artifact item details:
 

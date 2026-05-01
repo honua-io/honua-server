@@ -3564,7 +3564,7 @@
           },
           "code": {
             "type": "string",
-            "description": "Stable machine-readable compatibility code such as COMPATIBLE, MANUAL_REVIEW, ARCGIS_UNSUPPORTED_RENDERER, or ARCGIS_TOKEN_REQUIRED. Codes are namespaced per source kind so downstream automation can branch deterministically. Omitted on aggregate assessments when no single code applies."
+            "description": "Optional stable machine-readable compatibility code such as COMPATIBLE, MANUAL_REVIEW, ARCGIS_UNSUPPORTED_RENDERER, or ARCGIS_TOKEN_REQUIRED when the scanner can assign one deterministically. Source-specific codes are namespaced per source kind so downstream automation can branch deterministically. Omitted on aggregate assessments where no single code applies and on source-specific assessments that do not yet define a stable code."
           },
           "reason": {
             "type": "string",
