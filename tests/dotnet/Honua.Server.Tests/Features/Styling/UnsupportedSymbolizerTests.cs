@@ -278,6 +278,102 @@ public class UnsupportedSymbolizerTests
     }
 
     [Fact]
+    public void Convert_UniqueValueRenderer_MixedPictureAndColorSymbols_ReportsPictureMarkerPartial()
+    {
+        // Regression: a uniqueValue renderer with both esriPMS (image) and
+        // esriSMS (color) stops previously caused TryGetPictureMarkerPayload to
+        // return false on the first non-esriPMS stop.  The dispatcher then fell
+        // through to the generic color path, which considers esriPMS supported
+        // and silently dropped the image metadata.  The fix records
+        // PICTURE_MARKER_PARTIAL when at least one esriPMS payload is present
+        // but cannot be emitted as a clean picture-marker style, so the
+        // no-silent-drop contract holds end-to-end.
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "category",
+            "uniqueValueInfos": [
+              {
+                "value": "A",
+                "symbol": {
+                  "type": "esriPMS",
+                  "url": "https://example.invalid/icon-a.png",
+                  "imageData": "QQ==",
+                  "contentType": "image/png"
+                }
+              },
+              {
+                "value": "B",
+                "symbol": {
+                  "type": "esriSMS",
+                  "style": "esriSMSCircle",
+                  "color": [10, 20, 30, 255]
+                }
+              }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        var entry = Assert.Single(
+            result.Unsupported,
+            info => info.Code == StyleErrorCodes.PictureMarkerPartial);
+        Assert.Equal("esriPMS", entry.SymbolizerType);
+        Assert.Contains("uniqueValue", entry.Guidance, StringComparison.Ordinal);
+        Assert.False(string.IsNullOrEmpty(result.MapLibreStyleJson));
+    }
+
+    [Fact]
+    public void Convert_ClassBreaksRenderer_MixedPictureAndColorSymbols_ReportsPictureMarkerPartial()
+    {
+        // Regression mirror of the uniqueValue mixed-symbol case for
+        // picture-marker classBreaks.
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "classBreaks",
+            "field": "magnitude",
+            "classBreakInfos": [
+              {
+                "classMaxValue": 5,
+                "symbol": {
+                  "type": "esriPMS",
+                  "url": "https://example.invalid/icon-low.png",
+                  "imageData": "QQ==",
+                  "contentType": "image/png"
+                }
+              },
+              {
+                "classMaxValue": 10,
+                "symbol": {
+                  "type": "esriSMS",
+                  "style": "esriSMSCircle",
+                  "color": [200, 30, 30, 255]
+                }
+              }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        var entry = Assert.Single(
+            result.Unsupported,
+            info => info.Code == StyleErrorCodes.PictureMarkerPartial);
+        Assert.Equal("esriPMS", entry.SymbolizerType);
+        Assert.Contains("classBreaks", entry.Guidance, StringComparison.Ordinal);
+        Assert.False(string.IsNullOrEmpty(result.MapLibreStyleJson));
+    }
+
+    [Fact]
     public void Convert_UniqueValueRenderer_UniformStopsAndDefaultSymbol_DoesNotReportPictureMarkerPartial()
     {
         // Sanity counterpart: when stops AND defaultSymbol all share the same

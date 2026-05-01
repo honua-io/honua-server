@@ -63,7 +63,7 @@ releases:
 |------|---------|
 | `RENDERER_TYPE_UNSUPPORTED` | The submitted GeoServices renderer type is outside `simple` / `uniqueValue` / `classBreaks`. |
 | `SYMBOL_TYPE_UNSUPPORTED` | A nested symbol uses a type the converter cannot translate. |
-| `PICTURE_MARKER_PARTIAL` | A picture marker payload was preserved but not all layout hints round-trip across the per-stop set, including any `defaultSymbol` payload — non-uniform `xoffset`/`yoffset`/`angle` between stops or against `defaultSymbol` triggers the code. |
+| `PICTURE_MARKER_PARTIAL` | A picture marker payload was preserved but not all layout hints round-trip across the per-stop set, including any `defaultSymbol` payload — non-uniform `xoffset`/`yoffset`/`angle` between stops or against `defaultSymbol` triggers the code. Also raised when a `uniqueValue` / `classBreaks` renderer mixes `esriPMS` and non-`esriPMS` (e.g. `esriSMS`) stops; the color fallback path renders the layer but cannot preserve the image metadata, so the diagnostic surfaces the dropped images. |
 | `RENDERER_PAYLOAD_INCOMPLETE` | The renderer object was missing required fields and was treated as default. |
 
 ## Theme engine
@@ -78,7 +78,7 @@ with the canonical entry but do not collide.
 | `default` | Returns the canonical style unchanged. |
 | `dark` | Converts each color paint property to HSL and inverts lightness; sets background fills to `#1a1a1a`. Hue and saturation are preserved. |
 | `colorblind-safe` | Remaps the distinct fill/line/circle colors onto the `Viridis` palette in `ColorPalettes`. Identical input RGBA values map to the same palette slot within a single transform, so a `classBreaks` first-class color reused as a case fallback stays visually equal. The input alpha channel is preserved through the swap so semi-transparent fills/lines keep their opacity. Reuses the existing palette data; no new palettes are introduced. |
-| `print` | Forces every present opacity property (scalar or expression) to `1.0`, line colors to `#000000`, and fill outlines to black for high-contrast print rendering. |
+| `print` | Forces every present opacity property (scalar or expression) to `1.0`, every present `line-color` on `line` layers (scalar or expression) to `#000000`, and every `fill-outline-color` on `fill` layers to `#000000` for high-contrast print rendering. |
 
 An unknown `theme` query value returns `400 Bad Request` listing the supported
 profiles. A malformed *stored* MapLibre document falls back to the canonical
@@ -157,8 +157,8 @@ without re-translating it. The revision metadata fields (`styleVersion`,
 | GeoServices renderer | MapLibre output | Notes |
 |----------------------|-----------------|-------|
 | `simple` | `circle` / `line` / `fill` (+ outline) | Picture markers (`esriPMS`) emit a `symbol` layer with metadata for image lookup. |
-| `uniqueValue` | data-driven `match` expression with non-null guard | Defaults route to `defaultSymbol` color or transparent fallback. |
-| `classBreaks` | data-driven `step` expression with numeric guard (`to-number` coercion + `typeof == number` case guard) | Color and picture-marker variants share the same numeric guard. Defaults route to `defaultSymbol` color (color renderer) or `defaultSymbol` image (picture-marker renderer) when present; otherwise fall back to the first class output. |
+| `uniqueValue` | data-driven `match` expression with non-null guard | Color and picture-marker variants share the same non-null guard. Defaults route to `defaultSymbol` color (color renderer) or `defaultSymbol` image (picture-marker renderer) when present; otherwise fall back to a transparent color (color renderer) or the first stop image (picture-marker renderer). The `defaultSymbol` payload is included in the layout uniformity check, so a divergent `xoffset`/`yoffset`/`angle` raises `PICTURE_MARKER_PARTIAL`. A renderer that mixes `esriPMS` with non-`esriPMS` stops cannot emit a clean picture-marker layer; it raises `PICTURE_MARKER_PARTIAL` and falls back to the color path. |
+| `classBreaks` | data-driven `step` expression with numeric guard (`to-number` coercion + `typeof == number` case guard) | Color and picture-marker variants share the same numeric guard. Defaults route to `defaultSymbol` color (color renderer) or `defaultSymbol` image (picture-marker renderer) when present; otherwise fall back to the first class output. The `defaultSymbol` payload is included in the layout uniformity check, so a divergent `xoffset`/`yoffset`/`angle` raises `PICTURE_MARKER_PARTIAL`. A renderer that mixes `esriPMS` with non-`esriPMS` stops cannot emit a clean picture-marker layer; it raises `PICTURE_MARKER_PARTIAL` and falls back to the color path. |
 | Other types (`heatmap`, `dotDensity`, `vectorField`, …) | Default style + `unsupportedSymbolizers[]` | Reported with code `RENDERER_TYPE_UNSUPPORTED`. |
 
 ## Operational notes

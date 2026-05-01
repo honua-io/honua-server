@@ -251,6 +251,48 @@ public class StyleThemeTransformerTests
     }
 
     [Fact]
+    public void ApplyTheme_PrintProfile_ForcesExpressionLineColorToBlack()
+    {
+        // Regression: the normalizer accepts expression-typed line-color, so the
+        // print theme must coerce expression-valued line-color to #000000
+        // alongside scalar line-color values — otherwise a valid line-color
+        // match/step/case expression remains colored under ?theme=print despite
+        // the documented "line colors are black" contract.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [
+            {
+              "id": "layer-1-line",
+              "type": "line",
+              "source": "layer-1",
+              "paint": {
+                "line-color": [
+                  "match",
+                  ["to-string", ["get", "category"]],
+                  "A", "#cc8844",
+                  "B", "#3366aa",
+                  "#aabbcc"
+                ],
+                "line-width": 2
+              }
+            }
+          ]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Print);
+
+        using var doc = JsonDocument.Parse(result);
+        var line = FindLayer(doc.RootElement, "line");
+        var lineColor = line.GetProperty("paint").GetProperty("line-color");
+        Assert.Equal(JsonValueKind.String, lineColor.ValueKind);
+        Assert.Equal("#000000", lineColor.GetString());
+    }
+
+    [Fact]
     public void ApplyTheme_MalformedJson_ReturnsInputUnchanged()
     {
         const string json = "{not-json";

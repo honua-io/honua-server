@@ -650,6 +650,7 @@ internal static class GeoServicesToMapLibreConverter
         style = new Dictionary<string, object?>();
 
         var stops = new List<(object? Value, PictureMarkerPayload Payload)>();
+        var sawColorOnlyStop = false;
         foreach (var info in infos.EnumerateArray())
         {
             if (!info.TryGetProperty("value", out var valueElement))
@@ -662,8 +663,22 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
+            // Skip non-esriPMS stops without aborting so we can detect a mixed
+            // esriPMS / non-esriPMS renderer below.  A non-esriPMS stop on its
+            // own is fine — the color path will handle it — but mixed with an
+            // esriPMS stop it would silently drop the image metadata.
+            if (!TryGetSymbolType(symbol, out var symbolType)
+                || !string.Equals(symbolType, "esriPMS", StringComparison.OrdinalIgnoreCase))
+            {
+                sawColorOnlyStop = true;
+                continue;
+            }
+
             if (!TryGetPictureMarkerPayload(symbol, out var payload))
             {
+                // Malformed esriPMS (missing url AND imageData): keep the
+                // existing "fall through to color path" contract so the layer
+                // still renders something useful.
                 return false;
             }
 
@@ -673,6 +688,21 @@ internal static class GeoServicesToMapLibreConverter
 
         if (stops.Count == 0)
         {
+            return false;
+        }
+
+        if (sawColorOnlyStop)
+        {
+            // At least one esriPMS stop ships image metadata that the color
+            // fallback path cannot preserve.  Record PICTURE_MARKER_PARTIAL so
+            // the no-silent-drop contract holds, then return false to let the
+            // generic color path render a usable layer.
+            unsupported.Add(new UnsupportedSymbolizerInfo
+            {
+                Code = StyleErrorCodes.PictureMarkerPartial,
+                SymbolizerType = "esriPMS",
+                Guidance = "Picture marker images mixed with non-esriPMS symbols in a uniqueValue renderer; image metadata could not be preserved alongside the color fallback. Use a uniform esriPMS renderer to keep image symbology."
+            });
             return false;
         }
 
@@ -757,6 +787,7 @@ internal static class GeoServicesToMapLibreConverter
         style = new Dictionary<string, object?>();
 
         var stops = new List<(double MaxValue, PictureMarkerPayload Payload)>();
+        var sawColorOnlyStop = false;
         foreach (var info in infos.EnumerateArray())
         {
             if (!info.TryGetProperty("classMaxValue", out var maxElement))
@@ -774,8 +805,21 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
+            // Skip non-esriPMS stops without aborting so we can detect a mixed
+            // esriPMS / non-esriPMS renderer below.  Mirrors the uniqueValue
+            // contract so the no-silent-drop guarantee holds for classBreaks.
+            if (!TryGetSymbolType(symbol, out var symbolType)
+                || !string.Equals(symbolType, "esriPMS", StringComparison.OrdinalIgnoreCase))
+            {
+                sawColorOnlyStop = true;
+                continue;
+            }
+
             if (!TryGetPictureMarkerPayload(symbol, out var payload))
             {
+                // Malformed esriPMS (missing url AND imageData): keep the
+                // existing "fall through to color path" contract so the layer
+                // still renders something useful.
                 return false;
             }
 
@@ -784,6 +828,21 @@ internal static class GeoServicesToMapLibreConverter
 
         if (stops.Count == 0)
         {
+            return false;
+        }
+
+        if (sawColorOnlyStop)
+        {
+            // At least one esriPMS stop ships image metadata that the color
+            // fallback path cannot preserve.  Record PICTURE_MARKER_PARTIAL so
+            // the no-silent-drop contract holds, then return false to let the
+            // generic color path render a usable layer.
+            unsupported.Add(new UnsupportedSymbolizerInfo
+            {
+                Code = StyleErrorCodes.PictureMarkerPartial,
+                SymbolizerType = "esriPMS",
+                Guidance = "Picture marker images mixed with non-esriPMS symbols in a classBreaks renderer; image metadata could not be preserved alongside the color fallback. Use a uniform esriPMS renderer to keep image symbology."
+            });
             return false;
         }
 

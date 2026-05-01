@@ -368,24 +368,59 @@ Per-layer mosaic homogeneity is enforced at import: subsequent uploads to a laye
 ## **Layer Style (Minimal Example)**
 
 ```http
-PUT /api/v1/admin/metadata/layers/{layerId}/style
+PUT /api/v1/admin/metadata/layers/42/style
 Content-Type: application/json
 
 {
-  "mapLibreStyle": { "version": 8, "sources": {}, "layers": [] },
+  "mapLibreStyle": {
+    "version": 8,
+    "sources": {},
+    "layers": [
+      {
+        "id": "parcels-fill",
+        "type": "fill",
+        "source": "layer-42",
+        "source-layer": "layer",
+        "paint": {
+          "fill-color": "#2D69A5",
+          "fill-opacity": 0.4,
+          "fill-outline-color": "#1A4775"
+        }
+      }
+    ]
+  },
   "changedBy": "ops@example.com",
   "changeSummary": "Initial style for the parcels layer"
 }
 ```
 
-The successful response carries the persisted style plus revision metadata and any symbolizers that the engine could not losslessly translate:
+The MapLibre payload must be a valid Style Spec v8 document with at least one layer; missing or empty `layers` arrays are rejected with `400`. Any layer that omits `source` defaults to the auto-injected Honua tile source `layer-{layerId}` (source-layer `layer`).
+
+The successful response carries the persisted style plus revision metadata, the GeoServices `drawingInfo` snapshot the server back-generated from the MapLibre input (so MapServer / FeatureServer legend and renderer endpoints stay in sync), and any symbolizers that the engine could not losslessly translate:
 
 ```json
 {
   "success": true,
   "data": {
-    "mapLibreStyle": { "version": 8, "sources": {}, "layers": [] },
-    "drawingInfo": null,
+    "mapLibreStyle": {
+      "version": 8,
+      "sources": { "layer-42": { "type": "vector", "tiles": ["/tiles/42/{z}/{x}/{y}.mvt"], "minzoom": 0, "maxzoom": 22 } },
+      "layers": [
+        {
+          "id": "parcels-fill",
+          "type": "fill",
+          "source": "layer-42",
+          "source-layer": "layer",
+          "paint": { "fill-color": "#2D69A5", "fill-opacity": 0.4, "fill-outline-color": "#1A4775" }
+        }
+      ]
+    },
+    "drawingInfo": {
+      "renderer": {
+        "type": "simple",
+        "symbol": { "type": "esriSFS", "style": "esriSFSSolid", "color": [45, 105, 165, 102], "outline": { "type": "esriSLS", "style": "esriSLSSolid", "color": [26, 71, 117, 255], "width": 1 } }
+      }
+    },
     "styleVersion": 4,
     "revisedAt": "2026-05-01T17:42:11Z",
     "revisedBy": "ops@example.com",

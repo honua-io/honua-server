@@ -196,19 +196,23 @@ internal static class StyleThemeTransformer
                     }
                 }
 
+                // Force every present line-color on line layers to PrintLineColor
+                // regardless of scalar vs expression value: the normalizer accepts
+                // expression-typed line-color, and the print contract is "line
+                // colors are black". An expression-valued line-color would
+                // otherwise survive the transform and stay colored under
+                // ?theme=print.
                 if (string.Equals(layerType, "line", StringComparison.OrdinalIgnoreCase)
-                    && paint["line-color"] is JsonValue)
+                    && paint["line-color"] is not null)
                 {
                     paint["line-color"] = PrintLineColor;
                 }
 
-                if (string.Equals(layerType, "fill", StringComparison.OrdinalIgnoreCase)
-                    && (paint["fill-outline-color"] is null || paint["fill-outline-color"] is not JsonValue))
-                {
-                    paint["fill-outline-color"] = PrintLineColor;
-                }
-                else if (string.Equals(layerType, "fill", StringComparison.OrdinalIgnoreCase)
-                    && paint["fill-outline-color"] is JsonValue)
+                // Fill layers always get a black outline in print so polygon
+                // boundaries are visible against high-contrast print rendering,
+                // regardless of whether the stored value is missing, a scalar,
+                // or an expression.
+                if (string.Equals(layerType, "fill", StringComparison.OrdinalIgnoreCase))
                 {
                     paint["fill-outline-color"] = PrintLineColor;
                 }
