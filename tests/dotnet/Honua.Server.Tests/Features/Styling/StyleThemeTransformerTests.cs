@@ -185,6 +185,46 @@ public class StyleThemeTransformerTests
     }
 
     [Fact]
+    public void ApplyTheme_PrintProfile_ForcesExpressionOpacityToOne()
+    {
+        // Regression: the normalizer accepts opacity expressions, so the print
+        // theme must coerce expression-typed opacity values to the scalar 1.0
+        // alongside scalar opacity values — otherwise a valid style with an
+        // expression-typed fill-opacity remains semi-transparent under print.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [
+            {
+              "id": "layer-1-fill",
+              "type": "fill",
+              "source": "layer-1",
+              "paint": {
+                "fill-color": "#aabbcc",
+                "fill-opacity": [
+                  "case",
+                  ["==", ["get", "highlight"], true],
+                  0.9,
+                  0.3
+                ]
+              }
+            }
+          ]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Print);
+
+        using var doc = JsonDocument.Parse(result);
+        var fill = FindLayer(doc.RootElement, "fill");
+        var fillOpacity = fill.GetProperty("paint").GetProperty("fill-opacity");
+        Assert.Equal(JsonValueKind.Number, fillOpacity.ValueKind);
+        Assert.Equal(1d, fillOpacity.GetDouble(), 5);
+    }
+
+    [Fact]
     public void ApplyTheme_PrintProfile_ForcesLineColorToBlack()
     {
         const string json = """
@@ -400,6 +440,65 @@ public class StyleThemeTransformerTests
         // Outputs and fallback transformed.
         Assert.DoesNotContain("\"#cc8844\"", result);
         Assert.DoesNotContain("\"#aabbcc\"", result);
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_TransformsCssNamedColorLiterals()
+    {
+        // Regression: the normalizer accepts CSS / X11 named color literals
+        // (e.g. "red", "transparent") via MapLibreStyleNormalizer.
+        // TryParseMapLibreColor previously only handled hex and rgb/rgba and
+        // therefore left stored named colors unthemed.  Theme transforms must
+        // resolve the same set the normalizer accepts.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {"fill-color": "red"}
+          }]
+        }
+        """;
+
+        var logger = new RecordingLogger();
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark, logger, layerId: 7);
+
+        using var doc = JsonDocument.Parse(result);
+        var fill = FindLayer(doc.RootElement, "fill");
+        var fillColor = fill.GetProperty("paint").GetProperty("fill-color").GetString();
+        Assert.NotNull(fillColor);
+        Assert.NotEqual("red", fillColor);
+        // Resolves to a hex literal after the dark transform; the parser round-trips.
+        Assert.True(StyleJsonUtilities.TryParseMapLibreColor(fillColor, out _));
+        Assert.Empty(logger.Entries);
+    }
+
+    [Fact]
+    public void ApplyTheme_PrintProfile_TransformsCssNamedLineColor()
+    {
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-line",
+            "type": "line",
+            "source": "layer-1",
+            "paint": {"line-color": "crimson", "line-width": 1}
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Print);
+
+        using var doc = JsonDocument.Parse(result);
+        var line = FindLayer(doc.RootElement, "line");
+        Assert.Equal("#000000", line.GetProperty("paint").GetProperty("line-color").GetString());
     }
 
     [Fact]

@@ -185,7 +185,12 @@ internal static class StyleThemeTransformer
             {
                 foreach (var opacityProperty in OpacityPaintProperties)
                 {
-                    if (paint[opacityProperty] is JsonValue)
+                    // Force every present opacity property to 1.0 regardless of
+                    // whether the stored value is a scalar or an expression: the
+                    // print contract is "fully opaque", and the normalizer accepts
+                    // expression-typed opacity values that would otherwise survive
+                    // unchanged here.
+                    if (paint.ContainsKey(opacityProperty))
                     {
                         paint[opacityProperty] = 1d;
                     }

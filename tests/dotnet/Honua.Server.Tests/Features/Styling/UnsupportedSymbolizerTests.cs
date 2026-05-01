@@ -162,6 +162,166 @@ public class UnsupportedSymbolizerTests
     }
 
     [Fact]
+    public void Convert_UniqueValueRenderer_DivergentDefaultSymbolLayout_ReportsPictureMarkerPartial()
+    {
+        // Regression: stops are uniform (all zero offsets/angle) so the partial
+        // diagnostic on stops alone would miss the layout drop.  The defaultSymbol
+        // carries a divergent xoffset/yoffset/angle and the layout uniformity
+        // check evaluates all images including defaultSymbol, so icon-offset /
+        // icon-rotate would silently fail to be emitted unless the partial check
+        // also sees the defaultSymbol payload.
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "category",
+            "uniqueValueInfos": [
+              {
+                "value": "A",
+                "symbol": {
+                  "type": "esriPMS",
+                  "url": "https://example.invalid/icon-a.png",
+                  "imageData": "QQ==",
+                  "contentType": "image/png",
+                  "xoffset": 0,
+                  "yoffset": 0,
+                  "angle": 0
+                }
+              },
+              {
+                "value": "B",
+                "symbol": {
+                  "type": "esriPMS",
+                  "url": "https://example.invalid/icon-b.png",
+                  "imageData": "Qg==",
+                  "contentType": "image/png",
+                  "xoffset": 0,
+                  "yoffset": 0,
+                  "angle": 0
+                }
+              }
+            ],
+            "defaultSymbol": {
+              "type": "esriPMS",
+              "url": "https://example.invalid/icon-default.png",
+              "imageData": "RA==",
+              "contentType": "image/png",
+              "xoffset": 5,
+              "yoffset": -7,
+              "angle": 30
+            }
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        Assert.Contains(result.Unsupported, info => info.Code == StyleErrorCodes.PictureMarkerPartial);
+    }
+
+    [Fact]
+    public void Convert_ClassBreaksRenderer_DivergentDefaultSymbolLayout_ReportsPictureMarkerPartial()
+    {
+        // Regression mirror of the uniqueValue case for picture-marker classBreaks:
+        // stops are uniform but defaultSymbol carries divergent layout hints.
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "classBreaks",
+            "field": "magnitude",
+            "classBreakInfos": [
+              {
+                "classMaxValue": 5,
+                "symbol": {
+                  "type": "esriPMS",
+                  "url": "https://example.invalid/icon-low.png",
+                  "imageData": "QQ==",
+                  "contentType": "image/png",
+                  "xoffset": 0,
+                  "yoffset": 0,
+                  "angle": 0
+                }
+              },
+              {
+                "classMaxValue": 10,
+                "symbol": {
+                  "type": "esriPMS",
+                  "url": "https://example.invalid/icon-high.png",
+                  "imageData": "Qg==",
+                  "contentType": "image/png",
+                  "xoffset": 0,
+                  "yoffset": 0,
+                  "angle": 0
+                }
+              }
+            ],
+            "defaultSymbol": {
+              "type": "esriPMS",
+              "url": "https://example.invalid/icon-default.png",
+              "imageData": "RA==",
+              "contentType": "image/png",
+              "xoffset": 9,
+              "yoffset": 4,
+              "angle": -15
+            }
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        Assert.Contains(result.Unsupported, info => info.Code == StyleErrorCodes.PictureMarkerPartial);
+    }
+
+    [Fact]
+    public void Convert_UniqueValueRenderer_UniformStopsAndDefaultSymbol_DoesNotReportPictureMarkerPartial()
+    {
+        // Sanity counterpart: when stops AND defaultSymbol all share the same
+        // (zero) layout hints the converter must NOT emit PICTURE_MARKER_PARTIAL.
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "category",
+            "uniqueValueInfos": [
+              {
+                "value": "A",
+                "symbol": {
+                  "type": "esriPMS",
+                  "url": "https://example.invalid/icon-a.png",
+                  "imageData": "QQ==",
+                  "contentType": "image/png",
+                  "xoffset": 0,
+                  "yoffset": 0,
+                  "angle": 0
+                }
+              }
+            ],
+            "defaultSymbol": {
+              "type": "esriPMS",
+              "url": "https://example.invalid/icon-default.png",
+              "imageData": "RA==",
+              "contentType": "image/png",
+              "xoffset": 0,
+              "yoffset": 0,
+              "angle": 0
+            }
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        Assert.DoesNotContain(result.Unsupported, info => info.Code == StyleErrorCodes.PictureMarkerPartial);
+    }
+
+    [Fact]
     public void Convert_UniqueValueRenderer_UnsupportedNestedSymbolType_ReportsSymbolTypeUnsupported()
     {
         var layer = LayerDefinition.CreateBasic(1, "lines", GeometryType.LineString);

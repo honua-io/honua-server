@@ -63,7 +63,7 @@ releases:
 |------|---------|
 | `RENDERER_TYPE_UNSUPPORTED` | The submitted GeoServices renderer type is outside `simple` / `uniqueValue` / `classBreaks`. |
 | `SYMBOL_TYPE_UNSUPPORTED` | A nested symbol uses a type the converter cannot translate. |
-| `PICTURE_MARKER_PARTIAL` | A picture marker payload was preserved but not all layout hints round-trip. |
+| `PICTURE_MARKER_PARTIAL` | A picture marker payload was preserved but not all layout hints round-trip across the per-stop set, including any `defaultSymbol` payload — non-uniform `xoffset`/`yoffset`/`angle` between stops or against `defaultSymbol` triggers the code. |
 | `RENDERER_PAYLOAD_INCOMPLETE` | The renderer object was missing required fields and was treated as default. |
 
 ## Theme engine
@@ -78,7 +78,7 @@ with the canonical entry but do not collide.
 | `default` | Returns the canonical style unchanged. |
 | `dark` | Converts each color paint property to HSL and inverts lightness; sets background fills to `#1a1a1a`. Hue and saturation are preserved. |
 | `colorblind-safe` | Remaps the distinct fill/line/circle colors onto the `Viridis` palette in `ColorPalettes`. Identical input RGBA values map to the same palette slot within a single transform, so a `classBreaks` first-class color reused as a case fallback stays visually equal. The input alpha channel is preserved through the swap so semi-transparent fills/lines keep their opacity. Reuses the existing palette data; no new palettes are introduced. |
-| `print` | Forces all opacity properties to `1.0`, line colors to `#000000`, and fill outlines to black for high-contrast print rendering. |
+| `print` | Forces every present opacity property (scalar or expression) to `1.0`, line colors to `#000000`, and fill outlines to black for high-contrast print rendering. |
 
 An unknown `theme` query value returns `400 Bad Request` listing the supported
 profiles. A malformed *stored* MapLibre document falls back to the canonical
@@ -96,6 +96,12 @@ example a `uniqueValue` category equal to `"#ff0000"`, or a case predicate
 comparing against a hex literal) are therefore preserved verbatim. This keeps
 generated `uniqueValue` and `classBreaks` styles in sync with the chosen theme
 without corrupting input semantics.
+
+Color literals are recognized in any of the forms the admin write-time
+normalizer accepts: hex (`#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`), `rgb(...)`,
+`rgba(...)`, and the canonical CSS / X11 named color set (`red`, `transparent`,
+`steelblue`, …). A stored named color is themed exactly as if it had been
+emitted as the equivalent hex literal.
 
 ## Cross-protocol consumption
 

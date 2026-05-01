@@ -94,7 +94,11 @@ internal static class StyleJsonUtilities
             return TryParseRgbColor(trimmed, out color);
         }
 
-        return false;
+        // Named CSS / X11 colors are accepted by the admin write-time normalizer
+        // (MapLibreStyleNormalizer.IsValidColorLiteral) so the theme transformer
+        // must resolve them too — otherwise a stored "red" would be treated as
+        // malformed and skipped under ?theme=dark|colorblind-safe|print.
+        return CssNamedColors.TryGet(trimmed, out color);
     }
 
     public static double ClampOpacity(double value)

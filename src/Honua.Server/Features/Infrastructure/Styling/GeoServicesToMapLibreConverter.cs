@@ -671,12 +671,35 @@ internal static class GeoServicesToMapLibreConverter
             stops.Add((ConvertValueTokenAsString(valueElement), payload));
         }
 
-        RecordPictureMarkerPartialIfNeeded(stops.Select(stop => stop.Payload).ToList(), unsupported);
-
         if (stops.Count == 0)
         {
             return false;
         }
+
+        // Collect the optional defaultSymbol payload up front so the partial-layout
+        // diagnostic and the layout uniformity check both see the full set of images
+        // that ship in the symbol layer.  A defaultSymbol with a divergent
+        // xoffset/yoffset/angle would otherwise suppress icon-offset/icon-rotate
+        // emission without recording PICTURE_MARKER_PARTIAL.
+        PictureMarkerPayload? defaultPayload = null;
+        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol)
+            && defaultSymbol.ValueKind == JsonValueKind.Object
+            && TryGetPictureMarkerPayload(defaultSymbol, out var defaultParsed))
+        {
+            defaultPayload = defaultParsed;
+        }
+
+        var allPayloads = new List<PictureMarkerPayload>(stops.Count + 1);
+        foreach (var stop in stops)
+        {
+            allPayloads.Add(stop.Payload);
+        }
+        if (defaultPayload is { } defaultPayloadValue)
+        {
+            allPayloads.Add(defaultPayloadValue);
+        }
+
+        RecordPictureMarkerPartialIfNeeded(allPayloads, unsupported);
 
         var images = new List<PictureMarkerImage>();
         var matchExpr = new List<object?> { "match", new object?[] { "to-string", new object?[] { "get", fieldName } } };
@@ -691,12 +714,10 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         var fallbackId = images[0].Id;
-        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol)
-            && defaultSymbol.ValueKind == JsonValueKind.Object
-            && TryGetPictureMarkerPayload(defaultSymbol, out var defaultPayload))
+        if (defaultPayload is { } defaultPayloadForImage)
         {
             fallbackId = BuildPictureMarkerId(layer.Id, index++);
-            images.Add(new PictureMarkerImage(fallbackId, defaultPayload));
+            images.Add(new PictureMarkerImage(fallbackId, defaultPayloadForImage));
         }
 
         matchExpr.Add(fallbackId);
@@ -709,7 +730,7 @@ internal static class GeoServicesToMapLibreConverter
             ["icon-image"] = expression
         };
 
-        if (TryGetUniformPictureMarkerLayout(images.Select(image => image.Payload), out var markerLayout))
+        if (TryGetUniformPictureMarkerLayout(allPayloads, out var markerLayout))
         {
             ApplyPictureMarkerLayout(layout, markerLayout);
         }
@@ -766,7 +787,28 @@ internal static class GeoServicesToMapLibreConverter
             return false;
         }
 
-        RecordPictureMarkerPartialIfNeeded(stops.Select(stop => stop.Payload).ToList(), unsupported);
+        // Collect the optional defaultSymbol payload up front so the partial-layout
+        // diagnostic and the layout uniformity check both see the full set of images
+        // that ship in the symbol layer (mirrors the uniqueValue contract).
+        PictureMarkerPayload? defaultPayload = null;
+        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol)
+            && defaultSymbol.ValueKind == JsonValueKind.Object
+            && TryGetPictureMarkerPayload(defaultSymbol, out var defaultParsed))
+        {
+            defaultPayload = defaultParsed;
+        }
+
+        var allPayloads = new List<PictureMarkerPayload>(stops.Count + 1);
+        foreach (var stop in stops)
+        {
+            allPayloads.Add(stop.Payload);
+        }
+        if (defaultPayload is { } defaultPayloadValue)
+        {
+            allPayloads.Add(defaultPayloadValue);
+        }
+
+        RecordPictureMarkerPartialIfNeeded(allPayloads, unsupported);
 
         var images = new List<PictureMarkerImage>();
         var index = 0;
@@ -789,12 +831,10 @@ internal static class GeoServicesToMapLibreConverter
         // back to the first stop image for backward compatibility with the prior
         // contract.
         var fallbackId = baseId;
-        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol)
-            && defaultSymbol.ValueKind == JsonValueKind.Object
-            && TryGetPictureMarkerPayload(defaultSymbol, out var defaultPayload))
+        if (defaultPayload is { } defaultPayloadForImage)
         {
             fallbackId = BuildPictureMarkerId(layer.Id, index++);
-            images.Add(new PictureMarkerImage(fallbackId, defaultPayload));
+            images.Add(new PictureMarkerImage(fallbackId, defaultPayloadForImage));
         }
 
         // Guard null/missing AND non-castable text using the shared numeric typeof
@@ -808,7 +848,7 @@ internal static class GeoServicesToMapLibreConverter
             ["icon-image"] = expression
         };
 
-        if (TryGetUniformPictureMarkerLayout(images.Select(image => image.Payload), out var markerLayout))
+        if (TryGetUniformPictureMarkerLayout(allPayloads, out var markerLayout))
         {
             ApplyPictureMarkerLayout(layout, markerLayout);
         }
