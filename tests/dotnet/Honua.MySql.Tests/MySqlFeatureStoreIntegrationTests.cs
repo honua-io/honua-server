@@ -196,4 +196,60 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.NotNull(feature);
         Assert.Equal(1, feature!.Value.Id);
     }
+
+    [Fact]
+    public async Task StreamFeaturesAsync_PagesThroughAllRows()
+    {
+        if (_skipped)
+        {
+            return;
+        }
+
+        var seen = new List<long>();
+        await foreach (var feature in _store.StreamFeaturesAsync(LayerId, new FeatureQuery
+        {
+            OrderBy = [new OrderByClause("id", ascending: true)]
+        }))
+        {
+            seen.Add(feature.Id);
+        }
+
+        Assert.Equal(10, seen.Count);
+        Assert.Equal(Enumerable.Range(1, 10).Select(i => (long)i), seen);
+    }
+
+    [Fact]
+    public async Task StreamFeatureBatchesAsync_HonoursBatchSize()
+    {
+        if (_skipped)
+        {
+            return;
+        }
+
+        var batches = new List<IReadOnlyList<Feature>>();
+        await foreach (var batch in _store.StreamFeatureBatchesAsync(
+            LayerId,
+            new FeatureQuery { OrderBy = [new OrderByClause("id", ascending: true)] },
+            batchSize: 3))
+        {
+            batches.Add(batch);
+        }
+
+        Assert.Equal(4, batches.Count); // 3 + 3 + 3 + 1
+        Assert.Equal(3, batches[0].Count);
+        Assert.Single(batches[3]);
+    }
+
+    [Fact]
+    public async Task StreamGmlFeaturesAsync_ThrowsNotSupported()
+    {
+        if (_skipped)
+        {
+            return;
+        }
+
+        Assert.Throws<NotSupportedException>(() =>
+            _store.StreamGmlFeaturesAsync(LayerId, new FeatureQuery()));
+        await Task.CompletedTask;
+    }
 }

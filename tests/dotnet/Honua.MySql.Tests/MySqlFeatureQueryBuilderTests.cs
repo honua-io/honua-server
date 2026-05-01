@@ -214,6 +214,78 @@ public class MySqlFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
+    {
+        // datetime / temporal predicates from OGC API Features, STAC, OData-time arrive
+        // on FeatureQuery.TemporalFilter. The slice does not generate temporal SQL, so
+        // surface NotSupportedException eagerly to avoid silently dropping the filter.
+        var query = new FeatureQuery
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "observed_at",
+                PropertyType = TemporalPropertyType.DateTime,
+                Start = DateTimeOffset.Parse("2024-01-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
+                End = DateTimeOffset.Parse("2024-12-31T23:59:59Z", System.Globalization.CultureInfo.InvariantCulture)
+            }
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(() => _builder.BuildSelectQuery(LayerId, query));
+        Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildCountQuery_TemporalFilter_ThrowsNotSupported()
+    {
+        var query = new FeatureQuery
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "observed_at",
+                PropertyType = TemporalPropertyType.DateTime,
+                Start = DateTimeOffset.Parse("2024-01-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+            }
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(() => _builder.BuildCountQuery(LayerId, query));
+        Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildExtentQuery_TemporalFilter_ThrowsNotSupported()
+    {
+        var query = new FeatureQuery
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "observed_at",
+                PropertyType = TemporalPropertyType.Date,
+                End = DateTimeOffset.Parse("2024-12-31T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+            }
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(() => _builder.BuildExtentQuery(LayerId, query));
+        Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildObjectIdsQuery_TemporalFilter_ThrowsNotSupported()
+    {
+        var query = new FeatureQuery
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "observed_at",
+                PropertyType = TemporalPropertyType.DateTime,
+                Start = DateTimeOffset.Parse("2024-06-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+            }
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(() => _builder.BuildObjectIdsQuery(LayerId, query));
+        Assert.Contains("Temporal filters", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildCountQuery_GeneratesCorrectSql()
     {
         var result = _builder.BuildCountQuery(LayerId, new FeatureQuery());

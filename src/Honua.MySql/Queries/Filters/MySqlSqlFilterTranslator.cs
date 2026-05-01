@@ -184,6 +184,19 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
 
     private string TranslateSpatialDistance(SpatialDistancePredicate spatial, LayerDefinition layer)
     {
+        // ST_Distance_Sphere expects WGS84 point geometries; on polygons or lines it would
+        // silently degrade to centroid math. The MySqlFeatureQueryBuilder distance path
+        // applies the same point-only guard against FeatureQuery.SpatialFilter — the
+        // CQL2 translator must enforce the same contract so OGC API Features / OData
+        // distance predicates against non-point layers fail loudly instead of returning
+        // misleading results.
+        if (layer.GeometryType is not GeometryType.Point and not GeometryType.MultiPoint)
+        {
+            throw new NotSupportedException(
+                $"Distance spatial filters are only supported for point layers in the MySQL/MariaDB provider " +
+                $"(layer geometry is {layer.GeometryType}). ST_Distance_Sphere expects point geometries.");
+        }
+
         var left = TranslateGeometryExpression(spatial.Left, layer);
         var right = TranslateGeometryExpression(spatial.Right, layer);
         var distance = TranslateExpression(spatial.Distance, layer);

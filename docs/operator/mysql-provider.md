@@ -27,9 +27,11 @@ edits, statistics, MVT, and analytics. Use the
 | Aggregate statistics, top features, bins     | **No**    |
 | Native MVT, FlatGeobuf, Geobuf, GML          | **No**    |
 | Streaming GeoJSON                            | **No**    |
+| Streaming Feature/Batches (buffered, paged)  | Yes       |
+| Temporal / `datetime` filters                | **No** (rejected with `NotSupportedException`) |
 | Nearest-neighbor / KNN                       | **No**    |
 | Cross-SRID `ST_Transform` of filter geometry | **No**    |
-| Replicas / change tracking                   | **No**    |
+| Replicas / change tracking                   | **No** (no-op stubs)    |
 
 The capability set is published at
 `Honua.Core.Features.FeatureStore.Domain.FeatureProviderCapabilities.ReadOnlyMySql`.
@@ -223,6 +225,10 @@ Each query opens a `mysql.<operation>` activity span on the
 `ActivityStatusCode.Error` with the underlying exception message and emit a
 structured `MySqlLog.QueryFailed` event (EventId 8902).
 
+The `Honua.MySql.FeatureDataAccess` source is registered with the central
+OpenTelemetry tracer in `Honua.ServiceDefaults`, so spans are exported to the
+configured OTLP endpoint when tracing is enabled.
+
 ## Testing
 
 ### Unit tests
@@ -260,14 +266,25 @@ fixture is added in a follow-on slice.
 
 ## Limitations Summary
 
-- Read-only. No `applyEdits`, no replicas, no change tracking.
+- Read-only. No `applyEdits`, no replicas, no change tracking. The provider
+  registers no-op stubs for `IFeatureWriter`, `IReplicaRepository`, and
+  `IChangeTracker` so DI activation succeeds for protocol handlers that expect
+  them; calls to write-shaped APIs raise `NotSupportedException`.
 - No schema introspection — declare attribute columns in configuration.
 - No native MVT, FlatGeobuf, Geobuf, GML; no streaming GeoJSON.
+- Streaming `Feature` / batch paths are supported as a buffered, paged fallback
+  over the standard select path. Use small batches for large datasets.
 - No statistics, top-features, bins, H3, density, cluster, buffer-aggregate, or
   spatial-join paths.
+- No temporal (`datetime`) filters — OGC API Features `datetime`, STAC
+  temporal search, and OData time-window predicates raise
+  `NotSupportedException`. Apply temporal filtering in the calling layer or
+  use a PostGIS-backed layer.
 - No KNN / nearest-neighbor.
 - No `ST_Transform`; cross-SRID filters fail with a descriptive error.
-- Distance filters require Point/MultiPoint geometry.
+- Distance filters require Point/MultiPoint geometry. The point-only guard is
+  enforced both for `FeatureQuery.SpatialFilter` and for CQL2 distance
+  predicates translated through `MySqlSqlFilterTranslator`.
 - Per-row extent is O(n); cache the result.
 
 ## Cloud-Hosted Deployment Notes

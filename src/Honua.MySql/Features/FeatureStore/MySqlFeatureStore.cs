@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -12,12 +13,17 @@ namespace Honua.MySql.Features.FeatureStore;
 /// MySQL/MariaDB read-only feature store. Provides query, count, and extent paths over
 /// user-managed tables; statistics, edits, MVT, and KNN paths are intentionally
 /// declared unsupported in <see cref="FeatureProviderCapabilities.ReadOnlyMySql"/>.
+/// Streaming methods iterate the underlying data access in pages so DI consumers that
+/// require <see cref="IStreamingFeatureStore"/> can resolve under <c>DataSource:Provider=mysql</c>.
 /// </summary>
 internal sealed class MySqlFeatureStore :
     IFeatureDataProvider,
     IFeatureReader,
-    IPagedFeatureReader
+    IPagedFeatureReader,
+    IStreamingFeatureStore
 {
+    private const int DefaultStreamingPageSize = 1000;
+
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
 
@@ -174,4 +180,87 @@ internal sealed class MySqlFeatureStore :
 
         return PagedQueryResult<Feature>.Create(items, hasMore);
     }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
+        int layerId,
+        FeatureQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var batch in StreamFeatureBatchesAsync(layerId, query, DefaultStreamingPageSize, cancellationToken).ConfigureAwait(false))
+        {
+            foreach (var feature in batch)
+            {
+                yield return feature;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<IReadOnlyList<Feature>> StreamFeatureBatchesAsync(
+        int layerId,
+        FeatureQuery query,
+        int batchSize = 1000,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // The slice has no native cursor/streaming over MySQL connections, so iterate the
+        // existing select path in fixed-size pages. The underlying ORDER BY (if any) is
+        // re-applied per page; callers needing a stable order should request one via
+        // FeatureQuery.OrderBy. Pagination preserves the user-supplied LIMIT/OFFSET when
+        // present rather than overriding it.
+        var effectiveBatchSize = batchSize > 0 ? batchSize : DefaultStreamingPageSize;
+        var requestedLimit = query.Limit;
+        var startOffset = query.Offset ?? 0;
+        var emitted = 0;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var remainingBudget = requestedLimit.HasValue && requestedLimit.Value > 0
+                ? requestedLimit.Value - emitted
+                : (int?)null;
+
+            if (remainingBudget is <= 0)
+            {
+                yield break;
+            }
+
+            var pageSize = remainingBudget.HasValue
+                ? Math.Min(effectiveBatchSize, remainingBudget.Value)
+                : effectiveBatchSize;
+
+            var pageQuery = query with
+            {
+                Limit = pageSize,
+                Offset = startOffset + emitted
+            };
+
+            var selectQuery = _queryBuilder.BuildSelectQuery(layerId, pageQuery);
+            var page = await _dataAccess
+                .ExecuteSelectQueryAsync(selectQuery, pageQuery, layerId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (page.IsDefaultOrEmpty || page.Length == 0)
+            {
+                yield break;
+            }
+
+            yield return page;
+            emitted += page.Length;
+
+            if (page.Length < pageSize)
+            {
+                yield break;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            "Streaming GML features is not supported by the MySQL/MariaDB provider in this slice.");
 }

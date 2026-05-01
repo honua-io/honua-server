@@ -40,7 +40,8 @@ public static partial class Extensions
         HonuaTelemetry.ServiceName,
         "Honua.Server.Export",
         "Honua.Wfs20.Transactions",
-        "Honua.Core.Metadata"
+        "Honua.Core.Metadata",
+        "Honua.MySql.FeatureDataAccess"
     ];
 
     /// <summary>

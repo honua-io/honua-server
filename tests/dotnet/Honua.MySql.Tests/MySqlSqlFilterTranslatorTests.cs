@@ -136,18 +136,100 @@ public class MySqlSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_DWithinDistance_UsesStDistanceSphere()
+    public void Translate_DWithinDistance_OnPointLayer_UsesStDistanceSphere()
     {
+        // ST_Distance_Sphere requires a point layer; the polygon-typed default _layer is
+        // covered by Translate_SpatialDistance_OnNonPointLayer_ThrowsNotSupported.
+        var pointLayer = new LayerDefinition(
+            Id: 2,
+            Name: "stations",
+            Description: null,
+            GeometryType: GeometryType.Point,
+            SpatialReference: SpatialReference.Create(4326),
+            Fields:
+            [
+                new("id", FieldType.BigInteger, Nullable: false),
+                new("geometry", FieldType.Geometry, Nullable: false)
+            ]);
+
         var filter = new SpatialDistancePredicate(
             SpatialOperator.DWithin,
             new PropertyReference("geometry"),
             new GeometryLiteral([0x01], 4326, "POINT"),
             new Literal(100.0, LiteralType.Number));
 
-        var result = _translator.Translate(filter, _layer);
+        var result = _translator.Translate(filter, pointLayer);
 
         Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
         Assert.Contains("<= @p1", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(GeometryType.Polygon)]
+    [InlineData(GeometryType.MultiPolygon)]
+    [InlineData(GeometryType.LineString)]
+    [InlineData(GeometryType.MultiLineString)]
+    public void Translate_SpatialDistance_OnNonPointLayer_ThrowsNotSupported(GeometryType geometryType)
+    {
+        var nonPointLayer = new LayerDefinition(
+            Id: 3,
+            Name: "non_point",
+            Description: null,
+            GeometryType: geometryType,
+            SpatialReference: SpatialReference.Create(4326),
+            Fields:
+            [
+                new("id", FieldType.BigInteger, Nullable: false),
+                new("geometry", FieldType.Geometry, Nullable: false)
+            ]);
+
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geometry"),
+            new GeometryLiteral([0x01], 4326, "POINT"),
+            new Literal(100.0, LiteralType.Number));
+
+        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, nonPointLayer));
+        Assert.Contains("point layers", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Translate_BeyondDistance_OnPolygonLayer_ThrowsNotSupported()
+    {
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.Beyond,
+            new PropertyReference("geometry"),
+            new GeometryLiteral([0x01], 4326, "POINT"),
+            new Literal(50.0, LiteralType.Number));
+
+        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, _layer));
+        Assert.Contains("point layers", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Translate_DWithinDistance_OnMultiPointLayer_UsesStDistanceSphere()
+    {
+        var multiPointLayer = new LayerDefinition(
+            Id: 4,
+            Name: "swarm",
+            Description: null,
+            GeometryType: GeometryType.MultiPoint,
+            SpatialReference: SpatialReference.Create(4326),
+            Fields:
+            [
+                new("id", FieldType.BigInteger, Nullable: false),
+                new("geometry", FieldType.Geometry, Nullable: false)
+            ]);
+
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geometry"),
+            new GeometryLiteral([0x01], 4326, "POINT"),
+            new Literal(100.0, LiteralType.Number));
+
+        var result = _translator.Translate(filter, multiPointLayer);
+
+        Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

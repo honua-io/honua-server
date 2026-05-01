@@ -73,6 +73,18 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<MySqlFeatureStore>();
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<MySqlFeatureStore>());
         services.AddScoped<IFeatureReader>(sp => sp.GetRequiredService<MySqlFeatureStore>());
+        services.AddScoped<IPagedFeatureReader>(sp => sp.GetRequiredService<MySqlFeatureStore>());
+        services.AddScoped<IStreamingFeatureStore>(sp => sp.GetRequiredService<MySqlFeatureStore>());
+
+        // Mirror the DuckDB read-only surface so DI consumers that require these segregated
+        // capabilities (FeatureServer query executor, gRPC service, OGC handlers, WFS, OData)
+        // can activate under DataSource:Provider=mysql. The slice is read/query-only, so the
+        // write-shaped surfaces are no-op or NotSupportedException stubs.
+        services.AddScoped<IFeatureWriter>(_ => new ReadOnlyMySqlFeatureWriter());
+        services.AddScoped<IReplicaRepository>(_ => new ReadOnlyMySqlReplicaRepository());
+        services.AddScoped<IChangeTracker>(_ => new ReadOnlyMySqlChangeTracker());
+        services.AddScoped<ITileProvider>(_ => new ReadOnlyMySqlTileProvider());
+        services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyMySqlGmlFeatureStore());
 
         services.AddScoped<ISqlFilterTranslator>(_ => new MySqlSqlFilterTranslator());
 

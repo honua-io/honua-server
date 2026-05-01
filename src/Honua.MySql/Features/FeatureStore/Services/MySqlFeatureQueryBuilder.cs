@@ -202,5 +202,16 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
                 $"(layer SRID is {mapping.Srid}, requested {query.OutputSrid.Value}). " +
                 $"Pre-project geometries to the layer SRID or use a PostGIS-backed layer.");
         }
+
+        // Temporal filters arrive on FeatureQuery from OGC API Features (datetime),
+        // STAC search, and OData time-window queries. The slice does not translate
+        // them to MySQL SQL — surface NotSupportedException eagerly so callers
+        // cannot silently lose the constraint and return unfiltered rows.
+        if (query.TemporalFilter.HasValue)
+        {
+            throw new NotSupportedException(
+                "Temporal filters are not supported by the MySQL/MariaDB provider in this slice. " +
+                "Apply temporal filtering in the calling layer or use a PostGIS-backed layer.");
+        }
     }
 }
