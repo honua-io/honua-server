@@ -201,6 +201,125 @@ public class StyleThemeTransformerTests
     }
 
     [Fact]
+    public void ApplyTheme_DarkProfile_PreservesColorLikeMatchInputLabels()
+    {
+        // Regression: a uniqueValue category whose feature value is itself a
+        // color-like string (e.g. "#ff0000") must NOT be rewritten by the theme
+        // walker — match input labels are feature values, not output colors.
+        // Only the second element of each pair (the output color) and the
+        // trailing fallback should be transformed.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": [
+                "case",
+                ["!=", ["get", "category"], null],
+                ["match", ["to-string", ["get", "category"]], "#ff0000", "#cc8844", "#00ff00", "#3366aa", "#aabbcc"],
+                "#aabbcc"
+              ]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        // Input labels survive verbatim.
+        Assert.Contains("\"#ff0000\"", result);
+        Assert.Contains("\"#00ff00\"", result);
+
+        // Output arms and fallback are transformed.
+        Assert.DoesNotContain("\"#cc8844\"", result);
+        Assert.DoesNotContain("\"#3366aa\"", result);
+        Assert.DoesNotContain("\"#aabbcc\"", result);
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_PreservesNumericStepStops()
+    {
+        // Regression: numeric stops in `step` are not strings, but if a future
+        // generator ever emits string-typed stops the operator-aware walker
+        // still skips them (only outputs at indices 2, 4, 6, ... are visited).
+        // This style mirrors the structure emitted by the classBreaks converter.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": [
+                "case",
+                ["==", ["typeof", ["get", "magnitude"]], "number"],
+                ["step", ["to-number", ["get", "magnitude"]], "#cc8844", 5, "#3366aa", 10, "#aabbcc"],
+                "#000000"
+              ]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        Assert.DoesNotContain("\"#cc8844\"", result);
+        Assert.DoesNotContain("\"#3366aa\"", result);
+        Assert.DoesNotContain("\"#aabbcc\"", result);
+        // Numeric stops survive (still 5 and 10 in the output).
+        Assert.Contains("5", result);
+        Assert.Contains("10", result);
+        // Operator tokens survive.
+        Assert.Contains("\"step\"", result);
+        Assert.Contains("\"to-number\"", result);
+        Assert.Contains("\"magnitude\"", result);
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_DoesNotRewriteCasePredicateColorLiterals()
+    {
+        // Regression: a case predicate that compares against a color-like
+        // literal must keep the comparison value untouched — predicates are
+        // skipped entirely by the operator-aware walker.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": [
+                "case",
+                ["==", ["get", "color_field"], "#ff0000"],
+                "#cc8844",
+                "#aabbcc"
+              ]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        // Predicate comparison value preserved.
+        Assert.Contains("\"#ff0000\"", result);
+        // Outputs and fallback transformed.
+        Assert.DoesNotContain("\"#cc8844\"", result);
+        Assert.DoesNotContain("\"#aabbcc\"", result);
+    }
+
+    [Fact]
     public void ApplyTheme_DarkProfile_MalformedColorEmitsParseFailureLog()
     {
         const string json = """

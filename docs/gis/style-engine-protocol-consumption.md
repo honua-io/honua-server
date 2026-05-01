@@ -87,6 +87,16 @@ Successful theme applications log at `Debug` (event id `6402`); individual
 malformed color literals encountered during the transform skip in place and
 log at `Debug` (event id `6403`) with the offending property and color value.
 
+Theme transforms walk literal color paint properties and the output positions
+of MapLibre expression arrays (`case`, `match`, `step`, …): each branch output
+and the trailing fallback are rewritten through the transform, while operator
+tokens, the input expression, match input labels, numeric step stops, and case
+predicates are skipped. Feature values that happen to be color-like (for
+example a `uniqueValue` category equal to `"#ff0000"`, or a case predicate
+comparing against a hex literal) are therefore preserved verbatim. This keeps
+generated `uniqueValue` and `classBreaks` styles in sync with the chosen theme
+without corrupting input semantics.
+
 ## Cross-protocol consumption
 
 ### Map Server (GeoServices REST `MapServer` and `FeatureServer`)

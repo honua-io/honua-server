@@ -232,13 +232,175 @@ internal static class StyleThemeTransformer
     }
 
     /// <summary>
-    /// Walks a MapLibre expression array (e.g. `["case", ..., ["match", ...], "fallback"]`)
-    /// and rewrites every embedded string color literal through <paramref name="transform"/>.
-    /// Numeric, boolean, and operator string tokens are left untouched: any string that
-    /// fails <see cref="StyleJsonUtilities.TryParseMapLibreColor(string?, out StyleColor)"/>
-    /// is preserved as-is so operator names like <c>match</c> are not corrupted.
+    /// Walks a MapLibre expression array and rewrites embedded color literals at
+    /// output positions through <paramref name="transform"/>.  The walker is
+    /// operator-aware for <c>match</c>, <c>step</c>, and <c>case</c>: feature
+    /// match labels, numeric step stops, and case predicates are skipped so
+    /// color-like input values (e.g. a <c>uniqueValue</c> category equal to
+    /// <c>"#ff0000"</c>) are not silently rewritten.  Unknown operators fall
+    /// back to the generic walker so expressions such as <c>interpolate</c> still
+    /// pick up direct color literals.
     /// </summary>
     private static void TransformExpressionColors(
+        JsonArray expression,
+        string property,
+        ThemeDiagnostics diagnostics,
+        Func<StyleColor, StyleColor> transform)
+    {
+        if (expression.Count == 0)
+        {
+            return;
+        }
+
+        var op = expression[0] is JsonValue operatorNode
+            && operatorNode.TryGetValue<string>(out var opName)
+            ? opName
+            : null;
+
+        switch (op)
+        {
+            case "match":
+                TransformMatchExpression(expression, property, diagnostics, transform);
+                return;
+            case "step":
+                TransformStepExpression(expression, property, diagnostics, transform);
+                return;
+            case "case":
+                TransformCaseExpression(expression, property, diagnostics, transform);
+                return;
+            default:
+                TransformGenericExpression(expression, property, diagnostics, transform);
+                return;
+        }
+    }
+
+    /// <summary>
+    /// `["match", input, label1, output1, ..., labelN, outputN, fallback?]`.  Skips
+    /// the input expression and every label entirely; transforms each output and
+    /// the trailing fallback.
+    /// </summary>
+    private static void TransformMatchExpression(
+        JsonArray expression,
+        string property,
+        ThemeDiagnostics diagnostics,
+        Func<StyleColor, StyleColor> transform)
+    {
+        if (expression.Count < 4)
+        {
+            return;
+        }
+
+        var remaining = expression.Count - 2;
+        var hasFallback = remaining % 2 == 1;
+        var pairsEnd = hasFallback ? expression.Count - 1 : expression.Count;
+
+        for (var i = 2; i + 1 < pairsEnd; i += 2)
+        {
+            TransformOutputElement(expression, i + 1, property, diagnostics, transform);
+        }
+
+        if (hasFallback)
+        {
+            TransformOutputElement(expression, expression.Count - 1, property, diagnostics, transform);
+        }
+    }
+
+    /// <summary>
+    /// `["step", input, output0, stop1, output1, stop2, output2, ...]`.  Skips
+    /// the input expression and every numeric stop; transforms each output.
+    /// </summary>
+    private static void TransformStepExpression(
+        JsonArray expression,
+        string property,
+        ThemeDiagnostics diagnostics,
+        Func<StyleColor, StyleColor> transform)
+    {
+        if (expression.Count < 3)
+        {
+            return;
+        }
+
+        TransformOutputElement(expression, 2, property, diagnostics, transform);
+
+        for (var i = 4; i < expression.Count; i += 2)
+        {
+            TransformOutputElement(expression, i, property, diagnostics, transform);
+        }
+    }
+
+    /// <summary>
+    /// `["case", cond1, output1, ..., fallback]`.  Skips every predicate entirely
+    /// (predicates may compare against color-like feature values); transforms
+    /// each branch output and the mandatory trailing fallback.
+    /// </summary>
+    private static void TransformCaseExpression(
+        JsonArray expression,
+        string property,
+        ThemeDiagnostics diagnostics,
+        Func<StyleColor, StyleColor> transform)
+    {
+        if (expression.Count < 4)
+        {
+            return;
+        }
+
+        var fallbackIndex = expression.Count - 1;
+
+        for (var i = 1; i + 1 < fallbackIndex; i += 2)
+        {
+            TransformOutputElement(expression, i + 1, property, diagnostics, transform);
+        }
+
+        TransformOutputElement(expression, fallbackIndex, property, diagnostics, transform);
+    }
+
+    /// <summary>
+    /// Recurses into a single expression element treated as a color-bearing
+    /// output: nested arrays are walked operator-aware, scalar string values
+    /// that parse as colors are rewritten in place.
+    /// </summary>
+    private static void TransformOutputElement(
+        JsonArray expression,
+        int index,
+        string property,
+        ThemeDiagnostics diagnostics,
+        Func<StyleColor, StyleColor> transform)
+    {
+        var node = expression[index];
+        if (node is JsonArray nested)
+        {
+            TransformExpressionColors(nested, property, diagnostics, transform);
+            return;
+        }
+
+        if (node is not JsonValue valueNode)
+        {
+            return;
+        }
+
+        if (!valueNode.TryGetValue<string>(out var colorString) || string.IsNullOrWhiteSpace(colorString))
+        {
+            return;
+        }
+
+        if (!StyleJsonUtilities.TryParseMapLibreColor(colorString, out var parsed))
+        {
+            diagnostics.RecordMalformedColor(property, colorString);
+            return;
+        }
+
+        var transformed = transform(parsed);
+        expression[index] = ColorToHex(transformed);
+    }
+
+    /// <summary>
+    /// Generic walker for unknown operators (`interpolate`, `rgb`, `literal`,
+    /// boolean comparators, …): recurses into every nested array and rewrites
+    /// any direct string child that parses as a color.  Operator tokens and
+    /// non-color strings (field names, numeric literals as strings, etc.) are
+    /// left untouched because they fail color parsing.
+    /// </summary>
+    private static void TransformGenericExpression(
         JsonArray expression,
         string property,
         ThemeDiagnostics diagnostics,

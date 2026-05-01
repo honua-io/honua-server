@@ -70,6 +70,27 @@ internal static class GeoServicesToMapLibreConverter
     private static readonly string[] SupportedFillSymbolTypes = ["esriSFS"];
 
     /// <summary>
+    /// Records a <see cref="StyleErrorCodes.RendererPayloadIncomplete"/> entry
+    /// when a supported renderer (<c>simple</c>, <c>uniqueValue</c>, or
+    /// <c>classBreaks</c>) is missing required fields and falls back to the
+    /// default MapLibre style.  Centralized so the four call sites stay in
+    /// sync with the public contract documented in
+    /// <c>docs/gis/style-engine-protocol-consumption.md</c>.
+    /// </summary>
+    private static void RecordPayloadIncomplete(
+        List<UnsupportedSymbolizerInfo> unsupported,
+        string rendererType,
+        string detail)
+    {
+        unsupported.Add(new UnsupportedSymbolizerInfo
+        {
+            Code = StyleErrorCodes.RendererPayloadIncomplete,
+            SymbolizerType = rendererType,
+            Guidance = $"'{rendererType}' renderer payload was incomplete: {detail}. Default style was applied."
+        });
+    }
+
+    /// <summary>
     /// Inspects <paramref name="symbol"/> for a recognized GeoServices symbol type
     /// and records a <see cref="StyleErrorCodes.SymbolTypeUnsupported"/> entry on
     /// <paramref name="unsupported"/> when the type is outside the supported set
@@ -165,6 +186,7 @@ internal static class GeoServicesToMapLibreConverter
     {
         if (!renderer.TryGetProperty("symbol", out var symbol) || symbol.ValueKind != JsonValueKind.Object)
         {
+            RecordPayloadIncomplete(unsupported, "simple", "missing 'symbol' object");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
@@ -212,11 +234,13 @@ internal static class GeoServicesToMapLibreConverter
 
         if (string.IsNullOrWhiteSpace(fieldName))
         {
+            RecordPayloadIncomplete(unsupported, "uniqueValue", "missing 'field1' or 'field' string");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
         if (!renderer.TryGetProperty("uniqueValueInfos", out var infos) || infos.ValueKind != JsonValueKind.Array)
         {
+            RecordPayloadIncomplete(unsupported, "uniqueValue", "missing 'uniqueValueInfos' array");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
@@ -272,6 +296,7 @@ internal static class GeoServicesToMapLibreConverter
 
         if (!anyValues)
         {
+            RecordPayloadIncomplete(unsupported, "uniqueValue", "no parseable 'uniqueValueInfos' entries");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
@@ -312,11 +337,13 @@ internal static class GeoServicesToMapLibreConverter
 
         if (string.IsNullOrWhiteSpace(fieldName))
         {
+            RecordPayloadIncomplete(unsupported, "classBreaks", "missing 'field' string");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
         if (!renderer.TryGetProperty("classBreakInfos", out var infos) || infos.ValueKind != JsonValueKind.Array)
         {
+            RecordPayloadIncomplete(unsupported, "classBreaks", "missing 'classBreakInfos' array");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
@@ -356,6 +383,7 @@ internal static class GeoServicesToMapLibreConverter
 
         if (breaks.Count == 0)
         {
+            RecordPayloadIncomplete(unsupported, "classBreaks", "no parseable 'classBreakInfos' entries");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 

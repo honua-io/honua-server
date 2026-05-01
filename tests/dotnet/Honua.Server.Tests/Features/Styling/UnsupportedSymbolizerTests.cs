@@ -189,4 +189,157 @@ public class UnsupportedSymbolizerTests
         Assert.Contains(result.Unsupported, info =>
             info.Code == StyleErrorCodes.SymbolTypeUnsupported && info.SymbolizerType == "esriCustomLine");
     }
+
+    [Fact]
+    public void Convert_SimpleRenderer_MissingSymbol_ReportsPayloadIncomplete()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "simple"
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        var entry = Assert.Single(result.Unsupported);
+        Assert.Equal(StyleErrorCodes.RendererPayloadIncomplete, entry.Code);
+        Assert.Equal("simple", entry.SymbolizerType);
+        Assert.False(string.IsNullOrEmpty(result.MapLibreStyleJson));
+    }
+
+    [Fact]
+    public void Convert_UniqueValueRenderer_MissingField_ReportsPayloadIncomplete()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "uniqueValueInfos": []
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        var entry = Assert.Single(result.Unsupported);
+        Assert.Equal(StyleErrorCodes.RendererPayloadIncomplete, entry.Code);
+        Assert.Equal("uniqueValue", entry.SymbolizerType);
+    }
+
+    [Fact]
+    public void Convert_UniqueValueRenderer_MissingInfos_ReportsPayloadIncomplete()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "category"
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        var entry = Assert.Single(result.Unsupported);
+        Assert.Equal(StyleErrorCodes.RendererPayloadIncomplete, entry.Code);
+        Assert.Equal("uniqueValue", entry.SymbolizerType);
+    }
+
+    [Fact]
+    public void Convert_UniqueValueRenderer_NoParseableEntries_ReportsPayloadIncomplete()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "category",
+            "uniqueValueInfos": [
+              { "value": "A" }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        var entry = Assert.Single(result.Unsupported);
+        Assert.Equal(StyleErrorCodes.RendererPayloadIncomplete, entry.Code);
+        Assert.Equal("uniqueValue", entry.SymbolizerType);
+    }
+
+    [Fact]
+    public void Convert_ClassBreaksRenderer_MissingField_ReportsPayloadIncomplete()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "classBreaks",
+            "classBreakInfos": []
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        var entry = Assert.Single(result.Unsupported);
+        Assert.Equal(StyleErrorCodes.RendererPayloadIncomplete, entry.Code);
+        Assert.Equal("classBreaks", entry.SymbolizerType);
+    }
+
+    [Fact]
+    public void Convert_ClassBreaksRenderer_MissingInfos_ReportsPayloadIncomplete()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "classBreaks",
+            "field": "magnitude"
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        var entry = Assert.Single(result.Unsupported);
+        Assert.Equal(StyleErrorCodes.RendererPayloadIncomplete, entry.Code);
+        Assert.Equal("classBreaks", entry.SymbolizerType);
+    }
+
+    [Fact]
+    public void Convert_ClassBreaksRenderer_NoParseableEntries_ReportsPayloadIncomplete()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "classBreaks",
+            "field": "magnitude",
+            "classBreakInfos": [
+              { "classMaxValue": "not-a-number" }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var result = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+
+        var entry = Assert.Single(result.Unsupported);
+        Assert.Equal(StyleErrorCodes.RendererPayloadIncomplete, entry.Code);
+        Assert.Equal("classBreaks", entry.SymbolizerType);
+    }
 }
