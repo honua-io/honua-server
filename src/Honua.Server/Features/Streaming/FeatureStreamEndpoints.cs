@@ -1179,7 +1179,8 @@ internal static class FeatureStreamEndpoints
                     session.SessionId,
                     cancellationToken,
                     filter,
-                    subscriptionId).ConfigureAwait(false);
+                    subscriptionId,
+                    deps.SessionManager).ConfigureAwait(false);
             }
 
             await SendWebSocketStatusAsync(
@@ -1197,12 +1198,85 @@ internal static class FeatureStreamEndpoints
         }
         finally
         {
-            // Re-enable broadcast queueing for this subscription. Live events with
-            // cursors > the last replayed cursor flow through the normal channel
-            // path; the writer task's monotonic dedup skips any overlap.
             if (replayCursor.HasValue)
             {
+                // Convergent paused-state replay: events persisted after the last
+                // ReplayToWebSocketAsync batch but before unpause would otherwise
+                // be skipped by Broadcast (paused) and missed entirely. Sweep the
+                // store one more time while still paused to drain that gap. Loop
+                // until the store has no new events past the cursor we already
+                // delivered.
+                if (currentCursor.HasValue && !cancellationToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        long previousCursor;
+                        do
+                        {
+                            previousCursor = currentCursor.Value;
+                            currentCursor = await ReplayToWebSocketAsync(
+                                webSocket,
+                                session.WriteLock,
+                                deps.EventStore,
+                                currentCursor.Value,
+                                deps.Options.Value.ReplayBatchSize,
+                                logger,
+                                session.SessionId,
+                                cancellationToken,
+                                filter,
+                                subscriptionId,
+                                deps.SessionManager).ConfigureAwait(false);
+                        } while (currentCursor.Value > previousCursor);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        // Cancellation during catch-up: exit cleanly and let the
+                        // unpause below run so the session does not stay stuck.
+                    }
+                    catch (WebSocketException)
+                    {
+                        // Client disconnected during catch-up; nothing more to do.
+                    }
+                }
+
+                // Unpause now. Any event broadcast after this moment is queued
+                // via the normal channel path. The atomic per-(event,
+                // subscription) dedup in BroadcastLocally and ReplayToWebSocketAsync
+                // ensures that a final post-unpause sweep below cannot duplicate
+                // events the broadcast already queued.
                 deps.SessionManager.TryUnpauseSubscription(session.SessionId, subscriptionId);
+
+                // Final post-unpause sweep: closes the moment-of-unpause race
+                // where a broadcast fires while paused (skipped) and is then
+                // never re-broadcast. The convergent loop above narrowed the
+                // window to a single instant, but the at-least-once contract
+                // demands we still cover it. Atomic dedup keeps it exactly-once.
+                if (currentCursor.HasValue && !cancellationToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await ReplayToWebSocketAsync(
+                            webSocket,
+                            session.WriteLock,
+                            deps.EventStore,
+                            currentCursor.Value,
+                            deps.Options.Value.ReplayBatchSize,
+                            logger,
+                            session.SessionId,
+                            cancellationToken,
+                            filter,
+                            subscriptionId,
+                            deps.SessionManager).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        // Normal shutdown.
+                    }
+                    catch (WebSocketException)
+                    {
+                        // Client disconnected.
+                    }
+                }
             }
         }
     }
@@ -1865,7 +1939,8 @@ internal static class FeatureStreamEndpoints
         Guid sessionId,
         CancellationToken cancellationToken,
         IStreamSubscriptionFilter? subscriptionFilter = null,
-        string? subscriptionId = null)
+        string? subscriptionId = null,
+        FeatureStreamSessionManager? sessionManager = null)
     {
         var cursor = fromCursor;
         while (!cancellationToken.IsCancellationRequested)
@@ -1886,6 +1961,17 @@ internal static class FeatureStreamEndpoints
                 // Apply subscription filter during replay — advance cursor past filtered events.
                 if (subscriptionFilter is not null
                     && !subscriptionFilter.Matches(envelope, evt.GeometryEnvelope, evt.PropertiesJson))
+                {
+                    continue;
+                }
+
+                // When a session manager is supplied, claim the (event, subscription)
+                // slot atomically so a concurrent broadcast on the same key does not
+                // double-deliver. The unclaimed side queues via the channel; the
+                // claimed side sends directly here.
+                if (sessionManager is not null
+                    && subscriptionId is not null
+                    && !sessionManager.TryRememberSubscriptionDelivery(sessionId, subscriptionId, evt.EventId))
                 {
                     continue;
                 }

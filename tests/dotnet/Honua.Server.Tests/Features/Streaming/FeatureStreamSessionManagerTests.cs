@@ -406,6 +406,59 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Contains(messages, m => m.Envelope.Cursor == 22 && m.Envelope.SubscriptionId == "subB");
     }
 
+    // Regression for review finding "Per-subscription replay can drop events
+    // published before unpause". The replay path claims a (event, subscription)
+    // delivery slot through TryRememberSubscriptionDelivery; once claimed, a
+    // subsequent broadcast for the same event must skip queueing for that
+    // subscription so the client sees the event exactly once. This test runs
+    // the replay-then-broadcast path explicitly.
+    [UnitTest]
+    public void Broadcast_AfterReplayMarkedSubscription_SkipsDuplicateQueueing()
+    {
+        using var session = _manager.CreateSession("WebSocket", "replay-then-broadcast");
+
+        Assert.True(_manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
+
+        // Simulate the per-subscription replay claiming the (event, subB) slot.
+        Assert.True(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-101"));
+
+        // Now broadcast the same event id — broadcast must skip queueing for subB
+        // because replay already claimed delivery; default still receives.
+        var envelope = CreateEnvelope(cursor: 101) with { EventId = "evt-101" };
+        _manager.Broadcast(FeatureStreamMessage.Data(envelope));
+
+        var messages = new List<FeatureStreamMessage>();
+        while (session.Reader.TryRead(out var msg))
+        {
+            messages.Add(msg);
+        }
+
+        // Exactly one message (default), none for subB.
+        Assert.Single(messages);
+        Assert.Equal(FeatureStreamSessionManager.DefaultSubscriptionId, messages[0].Envelope.SubscriptionId);
+    }
+
+    // Regression: broadcast first, then replay's TryRememberSubscriptionDelivery
+    // must observe the claim and skip — i.e., the slot is owned by whichever
+    // path arrives first.
+    [UnitTest]
+    public void TryRememberSubscriptionDelivery_AfterBroadcastClaimedSlot_ReturnsFalse()
+    {
+        using var session = _manager.CreateSession("WebSocket", "broadcast-then-replay");
+
+        Assert.True(_manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
+
+        var envelope = CreateEnvelope(cursor: 200) with { EventId = "evt-200" };
+        _manager.Broadcast(FeatureStreamMessage.Data(envelope));
+
+        // Broadcast claimed (evt-200, subB) when it queued. Replay's later
+        // attempt to claim the same slot must observe that and skip its send.
+        Assert.False(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-200"));
+
+        // First-time delivery of a different (event, subscription) succeeds.
+        Assert.True(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-201"));
+    }
+
     [UnitTest]
     public void Broadcast_WithLayerFilter_OnlyDeliversMatchingEvents()
     {

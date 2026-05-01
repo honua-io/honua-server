@@ -298,8 +298,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
             foreach (var subscriptionId in matchingSubscriptionIds)
             {
+                // Atomic test-and-set so a race with a per-subscription replay
+                // path delivers the event exactly once. Whichever side wins the
+                // TryRememberEvent call sends; the other observes the recorded
+                // key and skips.
                 var eventKey = string.Concat(message.Envelope.EventId, ":", subscriptionId);
-                if (entry.HasSeenEvent(eventKey))
+                if (!entry.TryRememberEvent(eventKey))
                 {
                     continue;
                 }
@@ -311,7 +315,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 if (TryQueueMessage(id, entry, subscriptionMessage))
                 {
                     delivered++;
-                    entry.RememberEvent(eventKey);
                 }
             }
         }
@@ -539,6 +542,23 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     }
 
     /// <summary>
+    /// Atomically records that an event was delivered for a specific subscription
+    /// on a session. Returns true if the caller should send the event, false if it
+    /// was already recorded (caller should skip to avoid duplicate delivery).
+    /// Used by the per-subscription replay path which writes directly to the
+    /// transport, bypassing the channel/broadcast dedup.
+    /// </summary>
+    public bool TryRememberSubscriptionDelivery(Guid sessionId, string subscriptionId, string eventId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return false;
+        }
+
+        return entry.TryRememberEvent(string.Concat(eventId, ":", subscriptionId));
+    }
+
+    /// <summary>
     /// Removes a subscription from an existing WebSocket session.
     /// </summary>
     public bool TryRemoveSubscription(Guid sessionId, string subscriptionId)
@@ -742,21 +762,20 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             return Interlocked.Decrement(ref _drainGraceRemaining) >= 0;
         }
 
-        public bool HasSeenEvent(string eventId)
-        {
-            lock (_recentEventLock)
-            {
-                return _recentEventIdSet.Contains(eventId);
-            }
-        }
-
-        public void RememberEvent(string eventId)
+        /// <summary>
+        /// Atomically records that an event was delivered for this session.
+        /// Returns true if the event is newly recorded (caller should deliver),
+        /// false if it was already recorded (caller should skip to avoid duplicate
+        /// delivery). Used by both the broadcast fan-out and the per-subscription
+        /// replay path to keep the replay-to-live handoff exactly-once.
+        /// </summary>
+        public bool TryRememberEvent(string eventId)
         {
             lock (_recentEventLock)
             {
                 if (!_recentEventIdSet.Add(eventId))
                 {
-                    return;
+                    return false;
                 }
 
                 _recentEventIds.Enqueue(eventId);
@@ -765,6 +784,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 {
                     _recentEventIdSet.Remove(expired);
                 }
+
+                return true;
             }
         }
 
