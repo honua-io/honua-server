@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.SqlServer.Features.FeatureStore.Services;
 
 namespace Honua.SqlServer.Tests;
@@ -85,14 +86,15 @@ public class SqlServerFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelectQuery_PaginationWithoutOrderBy_AppendsStableFallbackOrder()
+    public void BuildSelectQuery_PaginationWithoutOrderBy_FallsBackToPrimaryKeyOrder()
     {
         var mapping = BuildMapping();
         var query = new FeatureQuery { Limit = 25, Offset = 50 };
 
         var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("ORDER BY (SELECT 1)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY [objectid]", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("(SELECT 1)", result.Sql, StringComparison.Ordinal);
         Assert.Contains("OFFSET @p0 ROWS", result.Sql, StringComparison.Ordinal);
         Assert.Contains("FETCH NEXT @p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
         Assert.Equal(50, result.WhereParameters[0]);
@@ -131,6 +133,47 @@ public class SqlServerFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_WherePresentWithSqlFilter_PrefersWhereParser()
+    {
+        // FeatureServer always populates Where alongside the translated SqlFilter; the only
+        // registered ISqlFilterTranslator emits Postgres syntax, so SqlServer must re-parse the
+        // canonical Where text instead of pasting the Postgres-styled fragment into T-SQL.
+        var mapping = BuildMapping();
+        var postgresStyledFragment = new SqlFragment(
+            "(attributes->>'name') = @p0",
+            new object?[] { "Bravo" });
+        var query = new FeatureQuery
+        {
+            Where = "name = 'Alpha'",
+            SqlFilter = postgresStyledFragment
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("[name] = @p0", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("attributes->>'name'", result.Sql, StringComparison.Ordinal);
+        Assert.Single(result.WhereParameters);
+        Assert.Equal("Alpha", result.WhereParameters[0]);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_SqlFilterOnlyWithoutWhere_PassesThroughForDirectCallers()
+    {
+        // Direct programmatic callers may still pass a SqlFragment without Where. We cannot tell
+        // which provider styled it, so behavior matches the pre-fix path: rebind placeholders and
+        // emit the fragment verbatim. FeatureServer cannot reach this branch because it always
+        // sets Where alongside SqlFilter.
+        var mapping = BuildMapping();
+        var fragment = new SqlFragment("[name] = @p0", new object?[] { "Charlie" });
+        var query = new FeatureQuery { SqlFilter = fragment };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("[name] = @p0", result.Sql, StringComparison.Ordinal);
+        Assert.Equal("Charlie", result.WhereParameters[0]);
+    }
+
+    [Fact]
     public void BuildSelectQuery_ObjectIdsFilter_GeneratesInClause()
     {
         var mapping = BuildMapping();
@@ -158,7 +201,7 @@ public class SqlServerFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelectQuery_GeographyEnvelopeIntersects_UsesGeographyStaticConstructor()
+    public void BuildSelectQuery_GeographyEnvelopeIntersects_Throws()
     {
         var mapping = BuildMapping(SqlServerGeometryColumnType.Geography);
         var query = new FeatureQuery
@@ -166,10 +209,26 @@ public class SqlServerFeatureQueryBuilderTests
             SpatialFilter = SpatialFilter.Create([0xFF], SpatialRelationship.EnvelopeIntersects, srid: 4326)
         };
 
+        var ex = Assert.Throws<NotSupportedException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+
+        Assert.Contains("EnvelopeIntersects", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("geography", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_GeographyIntersects_UsesGeographyStaticConstructor()
+    {
+        var mapping = BuildMapping(SqlServerGeometryColumnType.Geography);
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create([0xFF], SpatialRelationship.Intersects, srid: 4326)
+        };
+
         var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
         Assert.Contains("geography::STGeomFromWKB", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("[shape].STEnvelope().STIntersects", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("[shape].STIntersects(geography::STGeomFromWKB(@p0, 4326)) = 1", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -209,13 +268,19 @@ public class SqlServerFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildExtentQuery_GeographyMapping_UsesGeographyEnvelopeAggregate()
+    public void BuildExtentQuery_GeographyMapping_UsesGeographyEnvelopeAggregateAndLatLongProperties()
     {
         var mapping = BuildMapping(SqlServerGeometryColumnType.Geography);
 
         var result = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query: null);
 
         Assert.Contains("geography::EnvelopeAggregate([shape])", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("envelope.STPointN(1).Long AS [min_x]", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("envelope.STPointN(1).Lat AS [min_y]", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("envelope.STPointN(3).Long AS [max_x]", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("envelope.STPointN(3).Lat AS [max_y]", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(".STX", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(".STY", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

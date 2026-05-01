@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security.Domain;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -38,12 +39,13 @@ internal sealed class SqlServerFeatureDataAccess
         SqlServerLayerMapping mapping,
         ParameterizedQuery query,
         IReadOnlyList<string> attributeColumns,
+        DataConnection? dataConnection,
         CancellationToken cancellationToken)
     {
         using var activity = _activitySource.StartActivity("sqlserver.feature.select");
         activity?.SetTag("layer.id", mapping.LayerId);
 
-        await using var connection = await _connectionFactory.OpenAsync(null, cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
         await using var command = CreateCommand(connection, query);
 
         var features = ImmutableArray.CreateBuilder<Feature>();
@@ -74,12 +76,13 @@ internal sealed class SqlServerFeatureDataAccess
     public async Task<long> ExecuteCountAsync(
         SqlServerLayerMapping mapping,
         ParameterizedQuery query,
+        DataConnection? dataConnection,
         CancellationToken cancellationToken)
     {
         using var activity = _activitySource.StartActivity("sqlserver.feature.count");
         activity?.SetTag("layer.id", mapping.LayerId);
 
-        await using var connection = await _connectionFactory.OpenAsync(null, cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
         await using var command = CreateCommand(connection, query);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -94,12 +97,13 @@ internal sealed class SqlServerFeatureDataAccess
     public async Task<FeatureExtent?> ExecuteExtentAsync(
         SqlServerLayerMapping mapping,
         ParameterizedQuery query,
+        DataConnection? dataConnection,
         CancellationToken cancellationToken)
     {
         using var activity = _activitySource.StartActivity("sqlserver.feature.extent");
         activity?.SetTag("layer.id", mapping.LayerId);
 
-        await using var connection = await _connectionFactory.OpenAsync(null, cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
         await using var command = CreateCommand(connection, query);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -123,9 +127,10 @@ internal sealed class SqlServerFeatureDataAccess
 
     public async Task<ImmutableArray<long>> ExecuteObjectIdsAsync(
         ParameterizedQuery query,
+        DataConnection? dataConnection,
         CancellationToken cancellationToken)
     {
-        await using var connection = await _connectionFactory.OpenAsync(null, cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
         await using var command = CreateCommand(connection, query);
 
         var ids = ImmutableArray.CreateBuilder<long>();

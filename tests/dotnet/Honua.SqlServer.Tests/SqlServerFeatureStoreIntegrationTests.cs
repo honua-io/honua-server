@@ -162,6 +162,29 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Equal(1, result.Items[0].Id);
     }
 
+    [SkippableFact]
+    public async Task QueryAsync_LimitMatchingTotalRows_ReportsNoMoreResults()
+    {
+        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
+
+        // Three rows are seeded; a limit equal to the row count must not falsely advertise more.
+        var result = await _store.QueryAsync(LayerId, new FeatureQuery { Limit = 3 });
+
+        Assert.Equal(3, result.Items.Length);
+        Assert.False(result.HasMoreResults);
+    }
+
+    [SkippableFact]
+    public async Task QueryAsync_LimitBelowTotalRows_ReportsMoreResults()
+    {
+        Skip.IfNot(ShouldRun, $"Set {ConnectionEnvVar} to run SQL Server integration tests.");
+
+        var result = await _store.QueryAsync(LayerId, new FeatureQuery { Limit = 2 });
+
+        Assert.Equal(2, result.Items.Length);
+        Assert.True(result.HasMoreResults);
+    }
+
     private static async Task Execute(SqlConnection connection, string sql)
     {
         await using var command = connection.CreateCommand();

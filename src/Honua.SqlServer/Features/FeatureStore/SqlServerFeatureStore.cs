@@ -6,6 +6,8 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Security.Domain;
 using Honua.SqlServer.Features.FeatureStore.Services;
 
 namespace Honua.SqlServer.Features.FeatureStore;
@@ -23,7 +25,7 @@ namespace Honua.SqlServer.Features.FeatureStore;
 /// model resolved from <see cref="ILayerCatalog"/>; the provider does not introduce its own
 /// model types.</para>
 /// </remarks>
-internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureReader
+internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
 {
     private static readonly FeatureProviderCapabilities _capabilities = new()
     {
@@ -44,13 +46,23 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
 
     private readonly SqlServerFeatureDataAccess _dataAccess;
     private readonly ILayerCatalog _layerCatalog;
+    private readonly DataConnection? _boundConnection;
 
     public SqlServerFeatureStore(
         SqlServerFeatureDataAccess dataAccess,
         ILayerCatalog layerCatalog)
+        : this(dataAccess, layerCatalog, boundConnection: null)
+    {
+    }
+
+    private SqlServerFeatureStore(
+        SqlServerFeatureDataAccess dataAccess,
+        ILayerCatalog layerCatalog,
+        DataConnection? boundConnection)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _boundConnection = boundConnection;
     }
 
     /// <inheritdoc />
@@ -66,6 +78,19 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     public IFeatureWriter? Writer => null;
 
     /// <inheritdoc />
+    public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        if (binding.Connection is null)
+        {
+            return this;
+        }
+
+        return new SqlServerFeatureStore(_dataAccess, _layerCatalog, binding.Connection);
+    }
+
+    /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -76,7 +101,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
         };
 
         var sql = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, attributeColumns);
-        var features = await _dataAccess.ExecuteSelectAsync(mapping, sql, attributeColumns, cancellationToken).ConfigureAwait(false);
+        var features = await _dataAccess.ExecuteSelectAsync(mapping, sql, attributeColumns, _boundConnection, cancellationToken).ConfigureAwait(false);
         return features.Length == 0 ? null : features[0];
     }
 
@@ -84,10 +109,24 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, attributeColumns);
-        var features = await _dataAccess.ExecuteSelectAsync(mapping, sql, attributeColumns, cancellationToken).ConfigureAwait(false);
 
-        var hasMore = query.Limit.HasValue && features.Length >= query.Limit.Value;
+        // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
+        // without paying for a separate COUNT query. The probe row is trimmed before returning.
+        var requestedLimit = query.Limit;
+        var probeQuery = requestedLimit.HasValue
+            ? query with { Limit = requestedLimit.Value + 1 }
+            : query;
+
+        var sql = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, probeQuery, attributeColumns);
+        var features = await _dataAccess.ExecuteSelectAsync(mapping, sql, attributeColumns, _boundConnection, cancellationToken).ConfigureAwait(false);
+
+        var hasMore = false;
+        if (requestedLimit.HasValue && features.Length > requestedLimit.Value)
+        {
+            hasMore = true;
+            features = features.RemoveAt(features.Length - 1);
+        }
+
         return QueryResult<Feature>.Create(features.Length, features, hasMore);
     }
 
@@ -104,7 +143,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
-        return await _dataAccess.ExecuteObjectIdsAsync(sql, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ExecuteObjectIdsAsync(sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -112,7 +151,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query);
-        return await _dataAccess.ExecuteCountAsync(mapping, sql, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -120,7 +159,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query);
-        return await _dataAccess.ExecuteExtentAsync(mapping, sql, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -139,8 +178,8 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         var emptyQuery = new FeatureQuery();
-        var countTask = _dataAccess.ExecuteCountAsync(mapping, SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, emptyQuery), cancellationToken);
-        var extentTask = _dataAccess.ExecuteExtentAsync(mapping, SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, emptyQuery), cancellationToken);
+        var countTask = _dataAccess.ExecuteCountAsync(mapping, SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, emptyQuery), _boundConnection, cancellationToken);
+        var extentTask = _dataAccess.ExecuteExtentAsync(mapping, SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, emptyQuery), _boundConnection, cancellationToken);
         await Task.WhenAll(countTask, extentTask).ConfigureAwait(false);
 
         return new EstimateResult

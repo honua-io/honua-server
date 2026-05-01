@@ -120,18 +120,23 @@ through the shared exception pipeline.
 
 ### Spatial Filters
 
-| `SpatialRelationship` | Translation |
-|---|---|
-| `Intersects` | `geom.STIntersects(@filter) = 1` |
-| `EnvelopeIntersects` | `geom.STEnvelope().STIntersects(@filter.STEnvelope()) = 1` |
-| `Within` | `geom.STWithin(@filter) = 1` |
-| `Contains` | `geom.STContains(@filter) = 1` |
-| `Disjoint` | `geom.STDisjoint(@filter) = 1` |
-| `Crosses`, `Touches`, `Overlaps`, `Equals`, `WithinDistance`, `BeyondDistance`, `NearestNeighbor` | Not supported in this slice — request a follow-up if needed. |
+| `SpatialRelationship` | Translation (geometry) | Translation (geography) |
+|---|---|---|
+| `Intersects` | `geom.STIntersects(@filter) = 1` | `geom.STIntersects(@filter) = 1` |
+| `EnvelopeIntersects` | `geom.STEnvelope().STIntersects(@filter.STEnvelope()) = 1` | **Not supported** — `STEnvelope` is geometry-only. Use `Intersects` instead, or convert the layer to `geometry`. |
+| `Within` | `geom.STWithin(@filter) = 1` | `geom.STWithin(@filter) = 1` |
+| `Contains` | `geom.STContains(@filter) = 1` | `geom.STContains(@filter) = 1` |
+| `Disjoint` | `geom.STDisjoint(@filter) = 1` | `geom.STDisjoint(@filter) = 1` |
+| `Crosses`, `Touches`, `Overlaps`, `Equals`, `WithinDistance`, `BeyondDistance`, `NearestNeighbor` | Not supported in this slice — request a follow-up if needed. | _(same)_ |
 
 Filter geometries are parsed with `geometry::STGeomFromWKB(@wkb, @srid)` (or
 `geography::STGeomFromWKB`). When the spatial filter does not specify an SRID, the
 provider falls back to the layer's `StorageSrid` so the comparison is in a single CRS.
+
+`GetExtentAsync` uses `geometry::EnvelopeAggregate` for planar layers and
+`geography::EnvelopeAggregate` for geodetic layers. Corner extraction reads
+`STPointN(n).STX` / `.STY` for `geometry` and `STPointN(n).Long` / `.Lat` for `geography`,
+since SQL Server exposes a different point-coordinate API per spatial type.
 
 ### WHERE Clause
 
@@ -145,6 +150,21 @@ Simple WHERE expressions are parsed and parameterized in-process. Supported toke
 
 Anything outside this grammar is rejected with `ArgumentException`; full-CQL2 / OData /
 ArcGIS expression translation is not part of this slice.
+
+When a request supplies both `Where` and a translated `SqlFilter`, the provider always
+re-parses the canonical `Where` text with its own SQL Server parser and ignores the
+`SqlFilter`. The shared `ISqlFilterTranslator` pipeline currently only registers a
+PostgreSQL translator, so `SqlFilter` fragments cannot be assumed to be valid T-SQL.
+
+### Pagination
+
+Pagination uses `OFFSET … ROWS FETCH NEXT … ROWS ONLY` (T-SQL standard since SQL Server
+2012). When no `OrderBy` is provided, the provider falls back to ordering by the layer's
+configured primary key column so paging is deterministic across requests. To detect
+`HasMoreResults` without a separate `COUNT` round-trip, the provider over-fetches one
+extra row beyond the requested limit, trims it, and reports `HasMoreResults` based on
+whether the probe row arrived. `TotalCount` reflects the size of the returned page only;
+callers that need the absolute total should use `CountAsync`.
 
 ## Observability
 

@@ -46,7 +46,9 @@ public sealed class FeatureProviderQueryRouter
             .ConfigureAwait(false);
 
         EnsureOperationSupported(binding.Provider, operation);
-        return binding.Provider.Reader;
+        return binding.Provider is IBindableFeatureDataProvider bindable
+            ? bindable.CreateReaderForBinding(binding)
+            : binding.Provider.Reader;
     }
 
     private static void EnsureOperationSupported(

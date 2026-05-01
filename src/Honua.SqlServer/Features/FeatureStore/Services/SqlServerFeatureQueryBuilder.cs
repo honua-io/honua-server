@@ -41,7 +41,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
         AppendOrderByClause(sb, query);
-        AppendPagination(sb, query, parameters);
+        AppendPagination(sb, mapping, query, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
@@ -85,14 +85,17 @@ internal static partial class SqlServerFeatureQueryBuilder
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
         AppendOrderByClause(sb, query);
-        AppendPagination(sb, query, parameters);
+        AppendPagination(sb, mapping, query, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
     /// <summary>
-    /// Builds an extent query using <c>geometry::EnvelopeAggregate</c> (SQL Server 2012+).
-    /// Returns NULLs when the layer is empty.
+    /// Builds an extent query using <c>geometry::EnvelopeAggregate</c> or
+    /// <c>geography::EnvelopeAggregate</c> (both SQL Server 2012+). The corner extraction
+    /// uses geometry-typed <c>STX</c>/<c>STY</c> properties for planar layers and
+    /// geography-typed <c>Long</c>/<c>Lat</c> properties for geodetic layers, since SQL Server
+    /// exposes a different point coordinate API per spatial type.
     /// </summary>
     public static ParameterizedQuery BuildExtentQuery(SqlServerLayerMapping mapping, FeatureQuery? query)
     {
@@ -107,12 +110,15 @@ internal static partial class SqlServerFeatureQueryBuilder
         var sb = new StringBuilder();
         var parameters = new List<object>();
         var geometryColumn = mapping.QuotedGeometryColumn!;
+        var isGeography = mapping.GeometryColumnType == SqlServerGeometryColumnType.Geography;
+        var xProperty = isGeography ? "Long" : "STX";
+        var yProperty = isGeography ? "Lat" : "STY";
 
         sb.Append("SELECT ");
-        sb.Append("envelope.STPointN(1).STX AS [min_x], ");
-        sb.Append("envelope.STPointN(1).STY AS [min_y], ");
-        sb.Append("envelope.STPointN(3).STX AS [max_x], ");
-        sb.Append("envelope.STPointN(3).STY AS [max_y] ");
+        sb.Append("envelope.STPointN(1).").Append(xProperty).Append(" AS [min_x], ");
+        sb.Append("envelope.STPointN(1).").Append(yProperty).Append(" AS [min_y], ");
+        sb.Append("envelope.STPointN(3).").Append(xProperty).Append(" AS [max_x], ");
+        sb.Append("envelope.STPointN(3).").Append(yProperty).Append(" AS [max_y] ");
         sb.Append("FROM (SELECT ").Append(mapping.GeometryTypeToken).Append("::EnvelopeAggregate(").Append(geometryColumn).Append(") AS envelope FROM ");
         sb.Append(mapping.QuotedTableReference);
         sb.Append(" WHERE ").Append(geometryColumn).Append(" IS NOT NULL");
@@ -161,21 +167,30 @@ internal static partial class SqlServerFeatureQueryBuilder
 
     private static void AppendWhereClause(StringBuilder sb, FeatureQuery query, List<object> parameters)
     {
+        // Prefer the canonical Where text. SqlFilter on FeatureQuery is produced by the shared
+        // ISqlFilterTranslator pipeline, which only registers a Postgres translator today. Passing
+        // a Postgres-emitted fragment through here would yield invalid T-SQL (JSON path operators,
+        // unquoted identifiers, dollar-sign placeholders), so we re-parse Where using this provider's
+        // own SQL Server-aware parser whenever it is supplied.
+        if (!string.IsNullOrWhiteSpace(query.Where))
+        {
+            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters);
+            sb.Append(" AND (").Append(parameterized).Append(')');
+            return;
+        }
+
         if (query.SqlFilter is { } sqlFilter)
         {
-            // Caller-provided fragments are expected to use @p0, @p1, ... placeholders. Re-bind them
-            // to the next available index range so they line up with the rest of the query parameters.
+            // Direct programmatic callers may construct a SqlFragment without a canonical Where; in
+            // that case we trust the fragment is SQL Server-styled. Caller-provided fragments are
+            // expected to use @p0, @p1, ... placeholders; re-bind them to the next available index
+            // range so they line up with the rest of the query parameters.
             var rebound = RebindNamedParameters(sqlFilter.Sql, parameters.Count);
             sb.Append(" AND (").Append(rebound).Append(')');
             foreach (var param in sqlFilter.Parameters)
             {
                 parameters.Add(param ?? DBNull.Value);
             }
-        }
-        else if (!string.IsNullOrWhiteSpace(query.Where))
-        {
-            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters);
-            sb.Append(" AND (").Append(parameterized).Append(')');
         }
     }
 
@@ -212,6 +227,16 @@ internal static partial class SqlServerFeatureQueryBuilder
 
         var filter = query.SpatialFilter.Value;
         var geomCol = mapping.QuotedGeometryColumn!;
+        var isGeography = mapping.GeometryColumnType == SqlServerGeometryColumnType.Geography;
+
+        // STEnvelope is a geometry-only API; geography has no analogous bounding-box accessor.
+        // Reject EnvelopeIntersects on geography rather than emit SQL that fails at execution.
+        if (isGeography && filter.SpatialRelationship == SpatialRelationship.EnvelopeIntersects)
+        {
+            throw new NotSupportedException(
+                "EnvelopeIntersects is not supported on SQL Server geography columns; STEnvelope is geometry-only. Use Intersects instead.");
+        }
+
         var filterExpr = BuildFilterGeometryExpression(filter, mapping, parameters);
 
         var clause = filter.SpatialRelationship switch
@@ -266,18 +291,19 @@ internal static partial class SqlServerFeatureQueryBuilder
         sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
     }
 
-    private static void AppendPagination(StringBuilder sb, FeatureQuery query, List<object> parameters)
+    private static void AppendPagination(StringBuilder sb, SqlServerLayerMapping mapping, FeatureQuery query, List<object> parameters)
     {
         if (!query.Limit.HasValue && (!query.Offset.HasValue || query.Offset.Value <= 0))
         {
             return;
         }
 
-        // SQL Server requires ORDER BY before OFFSET / FETCH NEXT. When the caller did not
-        // supply one, fall back to a stable identity-based order so paging is deterministic.
+        // SQL Server requires ORDER BY before OFFSET / FETCH NEXT. When the caller did not supply
+        // one, fall back to the primary key so paging is deterministic — ORDER BY (SELECT 1) leaves
+        // row order undefined and can skip or duplicate rows across pages.
         if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
         {
-            sb.Append(" ORDER BY (SELECT 1)");
+            sb.Append(" ORDER BY ").Append(mapping.QuotedPrimaryKeyColumn);
         }
 
         var offset = query.Offset.GetValueOrDefault(0);
