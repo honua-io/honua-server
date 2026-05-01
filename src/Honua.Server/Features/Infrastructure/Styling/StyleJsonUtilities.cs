@@ -89,9 +89,19 @@ internal static class StyleJsonUtilities
             return TryParseHexColor(trimmed, out color);
         }
 
+        // The admin write-time normalizer (MapLibreStyleNormalizer.IsValidColorLiteral)
+        // accepts rgb / rgba / hsl / hsla in both legacy comma-separated and modern
+        // CSS Color Module Level 4 space/slash-separated forms.  Theme transforms
+        // must accept the same set so a stored "hsl(120 100% 50%)" or
+        // "rgb(255 0 0 / 0.5)" is themed instead of being treated as malformed.
         if (trimmed.StartsWith("rgb", StringComparison.OrdinalIgnoreCase))
         {
             return TryParseRgbColor(trimmed, out color);
+        }
+
+        if (trimmed.StartsWith("hsl", StringComparison.OrdinalIgnoreCase))
+        {
+            return TryParseHslColor(trimmed, out color);
         }
 
         // Named CSS / X11 colors are accepted by the admin write-time normalizer
@@ -152,16 +162,12 @@ internal static class StyleJsonUtilities
     {
         color = default;
 
-        var start = text.IndexOf('(');
-        var end = text.IndexOf(')');
-        if (start < 0 || end <= start)
+        if (!TryExtractFunctionArguments(text, out var parts))
         {
             return false;
         }
 
-        var content = text.Substring(start + 1, end - start - 1);
-        var parts = content.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length < 3)
+        if (parts.Length is < 3 or > 4)
         {
             return false;
         }
@@ -174,7 +180,7 @@ internal static class StyleJsonUtilities
         }
 
         var a = (byte)255;
-        if (parts.Length >= 4)
+        if (parts.Length == 4)
         {
             if (!TryParseAlphaChannel(parts[3], out var alpha))
             {
@@ -186,6 +192,231 @@ internal static class StyleJsonUtilities
 
         color = new StyleColor(r, g, b, a);
         return true;
+    }
+
+    private static bool TryParseHslColor(string text, out StyleColor color)
+    {
+        color = default;
+
+        if (!TryExtractFunctionArguments(text, out var parts))
+        {
+            return false;
+        }
+
+        if (parts.Length is < 3 or > 4)
+        {
+            return false;
+        }
+
+        if (!TryParseHueChannel(parts[0], out var hueDegrees)
+            || !TryParsePercentageChannel(parts[1], out var saturation)
+            || !TryParsePercentageChannel(parts[2], out var lightness))
+        {
+            return false;
+        }
+
+        var alpha = (byte)255;
+        if (parts.Length == 4 && !TryParseAlphaChannel(parts[3], out alpha))
+        {
+            return false;
+        }
+
+        var rgb = HslToRgb(new HslColor(NormalizeHueDegrees(hueDegrees), saturation, lightness));
+        color = new StyleColor(rgb.R, rgb.G, rgb.B, alpha);
+        return true;
+    }
+
+    /// <summary>
+    /// Splits a CSS color function body on either commas (legacy syntax) or
+    /// whitespace + an optional `/` alpha separator (CSS Color Module Level 4
+    /// modern syntax).  Mirrors the admin-write normalizer's
+    /// <c>SplitCssFunctionArguments</c> helper so the parser accepts every
+    /// form the normalizer admits.
+    /// </summary>
+    private static bool TryExtractFunctionArguments(string text, out string[] parts)
+    {
+        parts = Array.Empty<string>();
+
+        var start = text.IndexOf('(');
+        var end = text.LastIndexOf(')');
+        if (start < 0 || end <= start)
+        {
+            return false;
+        }
+
+        var body = text.AsSpan(start + 1, end - start - 1).Trim().ToString();
+        if (body.Length == 0)
+        {
+            return false;
+        }
+
+        if (body.Contains(','))
+        {
+            parts = body.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length > 0;
+        }
+
+        // Modern syntax: components separated by whitespace, optional alpha after `/`.
+        var normalized = body.Replace('/', ' ');
+        parts = normalized.Split(' ', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 0;
+    }
+
+    private static bool TryParseHueChannel(string input, out double degrees)
+    {
+        degrees = 0d;
+
+        var trimmed = input.Trim();
+        var unit = "deg";
+        foreach (var candidate in new[] { "deg", "grad", "rad", "turn" })
+        {
+            if (trimmed.EndsWith(candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                unit = candidate;
+                trimmed = trimmed[..^candidate.Length].TrimEnd();
+                break;
+            }
+        }
+
+        if (!double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || double.IsNaN(parsed)
+            || double.IsInfinity(parsed))
+        {
+            return false;
+        }
+
+        degrees = unit switch
+        {
+            "grad" => parsed * 0.9d,
+            "rad" => parsed * (180d / Math.PI),
+            "turn" => parsed * 360d,
+            _ => parsed
+        };
+        return true;
+    }
+
+    private static bool TryParsePercentageChannel(string input, out double fraction)
+    {
+        fraction = 0d;
+
+        var trimmed = input.Trim();
+        if (!trimmed.EndsWith('%'))
+        {
+            return false;
+        }
+
+        if (!double.TryParse(
+                trimmed.AsSpan(0, trimmed.Length - 1),
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var parsed))
+        {
+            return false;
+        }
+
+        fraction = Math.Clamp(parsed / 100d, 0d, 1d);
+        return true;
+    }
+
+    private static double NormalizeHueDegrees(double degrees)
+    {
+        var modulo = degrees % 360d;
+        if (modulo < 0d)
+        {
+            modulo += 360d;
+        }
+        return modulo;
+    }
+
+    internal readonly record struct HslColor(double H, double S, double L);
+
+    internal static StyleColor HslToRgb(HslColor hsl)
+    {
+        if (hsl.S < double.Epsilon)
+        {
+            var grey = (byte)Math.Clamp(Math.Round(hsl.L * 255d, MidpointRounding.AwayFromZero), 0d, 255d);
+            return new StyleColor(grey, grey, grey, 255);
+        }
+
+        var q = hsl.L < 0.5d
+            ? hsl.L * (1d + hsl.S)
+            : hsl.L + hsl.S - (hsl.L * hsl.S);
+        var p = (2d * hsl.L) - q;
+        var hueNormalized = hsl.H / 360d;
+
+        var r = HueToChannel(p, q, hueNormalized + (1d / 3d));
+        var g = HueToChannel(p, q, hueNormalized);
+        var b = HueToChannel(p, q, hueNormalized - (1d / 3d));
+
+        return new StyleColor(
+            (byte)Math.Clamp(Math.Round(r * 255d, MidpointRounding.AwayFromZero), 0d, 255d),
+            (byte)Math.Clamp(Math.Round(g * 255d, MidpointRounding.AwayFromZero), 0d, 255d),
+            (byte)Math.Clamp(Math.Round(b * 255d, MidpointRounding.AwayFromZero), 0d, 255d),
+            255);
+    }
+
+    internal static HslColor RgbToHsl(StyleColor color)
+    {
+        var r = color.R / 255d;
+        var g = color.G / 255d;
+        var b = color.B / 255d;
+
+        var max = Math.Max(r, Math.Max(g, b));
+        var min = Math.Min(r, Math.Min(g, b));
+        var lightness = (max + min) / 2d;
+
+        if (Math.Abs(max - min) < double.Epsilon)
+        {
+            return new HslColor(0d, 0d, lightness);
+        }
+
+        var delta = max - min;
+        var saturation = lightness > 0.5d
+            ? delta / (2d - max - min)
+            : delta / (max + min);
+
+        double hue;
+        if (max == r)
+        {
+            hue = ((g - b) / delta) + (g < b ? 6d : 0d);
+        }
+        else if (max == g)
+        {
+            hue = ((b - r) / delta) + 2d;
+        }
+        else
+        {
+            hue = ((r - g) / delta) + 4d;
+        }
+
+        hue *= 60d;
+        return new HslColor(hue, saturation, lightness);
+    }
+
+    private static double HueToChannel(double p, double q, double t)
+    {
+        if (t < 0d)
+        {
+            t += 1d;
+        }
+        if (t > 1d)
+        {
+            t -= 1d;
+        }
+
+        if (t < 1d / 6d)
+        {
+            return p + ((q - p) * 6d * t);
+        }
+        if (t < 1d / 2d)
+        {
+            return q;
+        }
+        if (t < 2d / 3d)
+        {
+            return p + ((q - p) * ((2d / 3d) - t) * 6d);
+        }
+        return p;
     }
 
     private static bool TryParseColorChannel(string input, out byte value)

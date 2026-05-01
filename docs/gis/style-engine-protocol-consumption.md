@@ -98,10 +98,14 @@ generated `uniqueValue` and `classBreaks` styles in sync with the chosen theme
 without corrupting input semantics.
 
 Color literals are recognized in any of the forms the admin write-time
-normalizer accepts: hex (`#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`), `rgb(...)`,
-`rgba(...)`, and the canonical CSS / X11 named color set (`red`, `transparent`,
-`steelblue`, …). A stored named color is themed exactly as if it had been
-emitted as the equivalent hex literal.
+normalizer accepts: hex (`#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`), `rgb(...)`
+and `rgba(...)` in either legacy comma syntax (`rgb(255, 0, 0)`) or CSS
+Color Module Level 4 modern syntax (`rgb(255 0 0 / 0.5)`), `hsl(...)`
+and `hsla(...)` in either legacy or modern syntax with optional hue
+units (`deg`, `grad`, `rad`, `turn`), and the canonical CSS / X11 named
+color set (`red`, `transparent`, `steelblue`, …). A stored named or
+HSL color is themed exactly as if it had been emitted as the
+equivalent hex literal.
 
 ## Cross-protocol consumption
 
@@ -157,7 +161,7 @@ without re-translating it. The revision metadata fields (`styleVersion`,
 | GeoServices renderer | MapLibre output | Notes |
 |----------------------|-----------------|-------|
 | `simple` | `circle` / `line` / `fill` (+ outline) | Picture markers (`esriPMS`) emit a `symbol` layer with metadata for image lookup. |
-| `uniqueValue` | data-driven `match` expression with non-null guard | Color and picture-marker variants share the same non-null guard. Defaults route to `defaultSymbol` color (color renderer) or `defaultSymbol` image (picture-marker renderer) when present; otherwise fall back to a transparent color (color renderer) or the first stop image (picture-marker renderer). The `defaultSymbol` payload is included in the layout uniformity check, so a divergent `xoffset`/`yoffset`/`angle` raises `PICTURE_MARKER_PARTIAL`. A renderer that mixes `esriPMS` with non-`esriPMS` stops cannot emit a clean picture-marker layer; it raises `PICTURE_MARKER_PARTIAL` and falls back to the color path. |
+| `uniqueValue` | data-driven `match` expression with non-null guard | Color and picture-marker variants share the same non-null guard. Defaults route to `defaultSymbol` color (color renderer) or `defaultSymbol` image (picture-marker renderer) when present; otherwise fall back to the first stop's color (color renderer) or the first stop image (picture-marker renderer). The `defaultSymbol` payload is included in the layout uniformity check, so a divergent `xoffset`/`yoffset`/`angle` raises `PICTURE_MARKER_PARTIAL`. A renderer that mixes `esriPMS` with non-`esriPMS` stops cannot emit a clean picture-marker layer; it raises `PICTURE_MARKER_PARTIAL` and falls back to the color path. |
 | `classBreaks` | data-driven `step` expression with numeric guard (`to-number` coercion + `typeof == number` case guard) | Color and picture-marker variants share the same numeric guard. Defaults route to `defaultSymbol` color (color renderer) or `defaultSymbol` image (picture-marker renderer) when present; otherwise fall back to the first class output. The `defaultSymbol` payload is included in the layout uniformity check, so a divergent `xoffset`/`yoffset`/`angle` raises `PICTURE_MARKER_PARTIAL`. A renderer that mixes `esriPMS` with non-`esriPMS` stops cannot emit a clean picture-marker layer; it raises `PICTURE_MARKER_PARTIAL` and falls back to the color path. |
 | Other types (`heatmap`, `dotDensity`, `vectorField`, …) | Default style + `unsupportedSymbolizers[]` | Reported with code `RENDERER_TYPE_UNSUPPORTED`. |
 
@@ -171,6 +175,8 @@ without re-translating it. The revision metadata fields (`styleVersion`,
   `OutputCacheInvalidationService.InvalidateLayerAsync` to flush the entire
   set on every revision.
 - Telemetry events:
-  - `6400` - unsupported GeoServices renderer type observed.
+  - `6400` - unsupported GeoServices renderer type observed (Warning).
+  - `6401` - optional drawingInfo could not be resolved; metadata was
+    returned without it (Warning).
   - `6402` - theme transform applied (Debug).
   - `6403` - theme transform skipped a malformed color value (Debug).

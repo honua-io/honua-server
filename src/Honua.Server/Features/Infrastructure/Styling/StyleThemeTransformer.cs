@@ -108,8 +108,8 @@ internal static class StyleThemeTransformer
 
             TransformPaintColors(layerObject, diagnostics, color =>
             {
-                var hsl = RgbToHsl(color);
-                var inverted = HslToRgb(hsl with { L = 1d - hsl.L });
+                var hsl = StyleJsonUtilities.RgbToHsl(color);
+                var inverted = StyleJsonUtilities.HslToRgb(hsl with { L = 1d - hsl.L });
                 return new StyleColor(inverted.R, inverted.G, inverted.B, color.A);
             });
 
@@ -497,94 +497,4 @@ internal static class StyleThemeTransformer
         return null;
     }
 
-    private readonly record struct HslColor(double H, double S, double L);
-
-    private static HslColor RgbToHsl(StyleColor color)
-    {
-        var r = color.R / 255d;
-        var g = color.G / 255d;
-        var b = color.B / 255d;
-
-        var max = Math.Max(r, Math.Max(g, b));
-        var min = Math.Min(r, Math.Min(g, b));
-        var lightness = (max + min) / 2d;
-
-        if (Math.Abs(max - min) < double.Epsilon)
-        {
-            return new HslColor(0d, 0d, lightness);
-        }
-
-        var delta = max - min;
-        var saturation = lightness > 0.5d
-            ? delta / (2d - max - min)
-            : delta / (max + min);
-
-        double hue;
-        if (max == r)
-        {
-            hue = ((g - b) / delta) + (g < b ? 6d : 0d);
-        }
-        else if (max == g)
-        {
-            hue = ((b - r) / delta) + 2d;
-        }
-        else
-        {
-            hue = ((r - g) / delta) + 4d;
-        }
-
-        hue *= 60d;
-        return new HslColor(hue, saturation, lightness);
-    }
-
-    private static StyleColor HslToRgb(HslColor hsl)
-    {
-        if (hsl.S < double.Epsilon)
-        {
-            var grey = (byte)Math.Clamp(Math.Round(hsl.L * 255d, MidpointRounding.AwayFromZero), 0d, 255d);
-            return new StyleColor(grey, grey, grey, 255);
-        }
-
-        var q = hsl.L < 0.5d
-            ? hsl.L * (1d + hsl.S)
-            : hsl.L + hsl.S - (hsl.L * hsl.S);
-        var p = (2d * hsl.L) - q;
-        var hueNormalized = hsl.H / 360d;
-
-        var r = HueToChannel(p, q, hueNormalized + (1d / 3d));
-        var g = HueToChannel(p, q, hueNormalized);
-        var b = HueToChannel(p, q, hueNormalized - (1d / 3d));
-
-        return new StyleColor(
-            (byte)Math.Clamp(Math.Round(r * 255d, MidpointRounding.AwayFromZero), 0d, 255d),
-            (byte)Math.Clamp(Math.Round(g * 255d, MidpointRounding.AwayFromZero), 0d, 255d),
-            (byte)Math.Clamp(Math.Round(b * 255d, MidpointRounding.AwayFromZero), 0d, 255d),
-            255);
-    }
-
-    private static double HueToChannel(double p, double q, double t)
-    {
-        if (t < 0d)
-        {
-            t += 1d;
-        }
-        if (t > 1d)
-        {
-            t -= 1d;
-        }
-
-        if (t < 1d / 6d)
-        {
-            return p + ((q - p) * 6d * t);
-        }
-        if (t < 1d / 2d)
-        {
-            return q;
-        }
-        if (t < 2d / 3d)
-        {
-            return p + ((q - p) * ((2d / 3d) - t) * 6d);
-        }
-        return p;
-    }
 }

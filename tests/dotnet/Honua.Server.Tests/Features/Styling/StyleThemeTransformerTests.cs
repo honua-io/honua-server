@@ -543,6 +543,102 @@ public class StyleThemeTransformerTests
         Assert.Equal("#000000", line.GetProperty("paint").GetProperty("line-color").GetString());
     }
 
+    [Theory]
+    [InlineData("hsl(120, 100%, 50%)")]
+    [InlineData("hsl(120 100% 50%)")]
+    [InlineData("hsl(120deg 100% 50%)")]
+    [InlineData("hsla(120, 100%, 50%, 0.5)")]
+    [InlineData("hsl(120 100% 50% / 50%)")]
+    public void TryParseMapLibreColor_HslLiteralForms_ParseToExpectedRgb(string input)
+    {
+        // Regression: the admin write-time normalizer
+        // (MapLibreStyleNormalizer.IsValidColorLiteral) accepts hsl/hsla in
+        // both legacy comma syntax and CSS Color Module Level 4 modern
+        // space-separated syntax with a `/`-separated alpha.
+        // TryParseMapLibreColor previously skipped every hsl/hsla form, so a
+        // stored "hsl(120 100% 50%)" was treated as malformed and emitted
+        // event 6403 under ?theme=dark|colorblind-safe|print instead of
+        // being themed.
+        Assert.True(StyleJsonUtilities.TryParseMapLibreColor(input, out var color));
+        // hsl(120, 100%, 50%) ≡ pure green (#00ff00).
+        Assert.Equal(0, color.R);
+        Assert.Equal(255, color.G);
+        Assert.Equal(0, color.B);
+    }
+
+    [Theory]
+    [InlineData("hsl(0deg 100% 50%)")]
+    [InlineData("hsl(0grad 100% 50%)")]
+    [InlineData("hsl(0rad 100% 50%)")]
+    [InlineData("hsl(0turn 100% 50%)")]
+    [InlineData("hsl(360deg 100% 50%)")]
+    [InlineData("hsl(1turn 100% 50%)")]
+    public void TryParseMapLibreColor_HslHueUnits_NormalizeToZeroDegreesRed(string input)
+    {
+        // 0 in any hue unit = red.  360deg and 1turn wrap around to 0 via
+        // NormalizeHueDegrees.  Verifies grad/rad/turn unit parsing and the
+        // mod-360 wraparound without leaning on irrational unit conversions.
+        Assert.True(StyleJsonUtilities.TryParseMapLibreColor(input, out var color));
+        Assert.Equal(255, color.R);
+        Assert.Equal(0, color.G);
+        Assert.Equal(0, color.B);
+    }
+
+    [Theory]
+    [InlineData("rgb(255 0 0)", 255, 0, 0, 255)]
+    [InlineData("rgb(255 0 0 / 0.5)", 255, 0, 0, 127)]
+    [InlineData("rgb(255 0 0 / 50%)", 255, 0, 0, 127)]
+    [InlineData("rgba(10 20 30 / 1.0)", 10, 20, 30, 255)]
+    public void TryParseMapLibreColor_ModernRgbLiteralForms_AcceptSpaceAndSlashSyntax(
+        string input,
+        int expectedR,
+        int expectedG,
+        int expectedB,
+        int expectedA)
+    {
+        // Regression: the admin normalizer accepts rgb()/rgba() in CSS Color
+        // Module Level 4 modern syntax (space-separated channels, `/` alpha)
+        // via SplitCssFunctionArguments, but TryParseMapLibreColor's old
+        // comma-only split rejected those forms — so a stored
+        // "rgb(255 0 0 / 0.5)" was treated as malformed under ?theme=...
+        Assert.True(StyleJsonUtilities.TryParseMapLibreColor(input, out var color));
+        Assert.Equal((byte)expectedR, color.R);
+        Assert.Equal((byte)expectedG, color.G);
+        Assert.Equal((byte)expectedB, color.B);
+        Assert.Equal((byte)expectedA, color.A);
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_TransformsHslLiteralWithoutLoggingFailure()
+    {
+        // Regression mirror of TransformsCssNamedColorLiterals for hsl():
+        // a stored hsl color must be themed (not skipped) under ?theme=dark.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {"fill-color": "hsl(120 100% 50%)"}
+          }]
+        }
+        """;
+
+        var logger = new RecordingLogger();
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark, logger, layerId: 11);
+
+        using var doc = JsonDocument.Parse(result);
+        var fill = FindLayer(doc.RootElement, "fill");
+        var fillColor = fill.GetProperty("paint").GetProperty("fill-color").GetString();
+        Assert.NotNull(fillColor);
+        Assert.NotEqual("hsl(120 100% 50%)", fillColor);
+        Assert.True(StyleJsonUtilities.TryParseMapLibreColor(fillColor, out _));
+        Assert.Empty(logger.Entries);
+    }
+
     [Fact]
     public void ApplyTheme_DarkProfile_MalformedColorEmitsParseFailureLog()
     {
