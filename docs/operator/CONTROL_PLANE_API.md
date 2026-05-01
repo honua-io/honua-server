@@ -244,6 +244,12 @@ For source-system migration planning, use the unified scan endpoint before start
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/v1/admin/import/scan` | POST | Scan a supported source environment and return a deterministic migration inventory artifact |
+| `/api/v1/admin/import/scan?export=json` | POST | Same scan, returned as an indented JSON attachment for committing to a migration project repository |
+
+The ArcGIS slice of the unified scanner is documented end-to-end in
+[ArcGIS Inventory Discovery](arcgis-inventory-discovery.md), including the
+deterministic compatibility code namespace and the field metadata surfaced
+on each resource.
 
 Request body:
 
@@ -295,12 +301,15 @@ Successful response contract:
 | `styles` | Deterministically ordered GeoServer styles or GeoServices renderers. |
 | `externalDependencies` | Deterministically ordered `datastore`, `coverage-store`, `attachments`, `external-graphic`, or `external-symbol` references with secret-safe addresses for external URLs. |
 
+Compatibility assessments include a stable, machine-readable `code` (for example `COMPATIBLE`, `MANUAL_REVIEW`, `ARCGIS_UNSUPPORTED_RENDERER`, `ARCGIS_TOKEN_REQUIRED`) alongside `level`, `reason`, `warnings`, and `manualSteps`. The full code namespace and remediation table are documented in [ArcGIS Inventory Discovery — Compatibility Codes](arcgis-inventory-discovery.md#compatibility-codes); `code` is omitted for aggregate assessments where no single code applies.
+
 Artifact item details:
 
 | Section | Key fields | Notes |
 |----------|--------|---------|
 | `containers[*]` | `id`, `kind`, `name`, `title`, `description`, `isDefault`, `compatibility` | `id` stays stable across display-title changes. `kind` is typically `workspace` or `service`. |
-| `resources[*]` | `containerId`, `kind`, `geometryType`, `featureCount`, `hasAttachments`, `capabilities`, `spatialReferences`, `styleIds`, `externalDependencyIds`, `compatibility` | `hasAttachments` is omitted when the source does not report attachment state rather than being coerced to `false`. |
+| `resources[*]` | `containerId`, `kind`, `geometryType`, `featureCount`, `hasAttachments`, `capabilities`, `spatialReferences`, `fields`, `styleIds`, `externalDependencyIds`, `compatibility` | `hasAttachments` is omitted when the source does not report attachment state rather than being coerced to `false`. `fields` carries source schema entries for resources that advertise one. |
+| `resources[*].fields[*]` | `name`, `alias`, `fieldType`, `nullable`, `domainType`, `domainName`, `domainValues` | `fieldType` is the source-provided token (e.g. ArcGIS `esriFieldType*`). `nullable` is `null` when the source omits the property. `domainValues` is bounded; coded-value domains exceeding the cap surface as the `ARCGIS_DOMAIN_TRUNCATED` warning rather than silent truncation. |
 | `styles[*]` | `kind`, `format`, `resourceIds`, `externalDependencyIds`, `metadata`, `compatibility` | `kind` is `style` for GeoServer and `renderer` for GeoServices. `metadata` carries deterministic planning details, not raw style documents. |
 | `externalDependencies[*]` | `resourceId`, `kind`, `dependencyType`, `address`, `metadata`, `spatialReferences`, `compatibility` | `resourceId` can point at a layer/table or the owning style/renderer. External addresses are sanitized and secret-like metadata values are redacted. |
 | `spatialReferences[*]` | `role`, `sourceValue`, `srid`, `crsUri`, `datum`, `unit`, `axisOrder`, `isGeographic` | Entries are emitted only when the scanner has meaningful CRS data to report. |
@@ -315,7 +324,8 @@ Behavior notes:
 - Sensitive connection metadata is redacted before serialization. Password-, token-, API-key-, and secret-like values are returned as `[redacted]`.
 - External URL dependencies strip embedded credentials, query strings, and fragments before serialization, and the corresponding dependency IDs use stable hashed fingerprints instead of raw URLs.
 - GeoServer `includeStyleContent=true` deepens classification and dependency discovery only. The artifact still returns metadata, compatibility, and external dependency references rather than raw SLD payloads.
-- GeoServices scans currently classify anonymous discovery only. `username` and `password` are accepted by the request model for contract stability but are not used by the GeoServices scanner. Successful GeoServices artifacts therefore report `authPosture.mode = "anonymous"`, while failed artifacts can report `auth-required` or `unknown`.
+- GeoServices scans run anonymously: `username` and `password` are accepted by the request model for contract stability but are not used by the GeoServices scanner. Successful GeoServices artifacts therefore report `authPosture.mode = "anonymous"`, while failed artifacts can report `auth-required` or `unknown`. The ArcGIS scanner classifies supported, partial, unsupported, and manual-review cases using the codes documented in [ArcGIS Inventory Discovery](arcgis-inventory-discovery.md).
+- The `?export=json` query parameter on the scan endpoint returns the artifact as an indented JSON attachment with `Content-Disposition: attachment; filename="<service-slug>-inventory.json"` and `X-Content-Type-Options: nosniff`. The slug is derived from the source `displayName`, sanitized to alphanumeric, dash, and underscore characters, and capped at 64 characters; credentials supplied in the request body are never echoed into the artifact.
 - GeoServer can emit a synthetic `workspace:global` container when global styles or layer groups are discovered.
 - Stable artifact IDs are keyed from canonical source names rather than display text, so changing a source description does not churn container, resource, style, or dependency identifiers. Arrays and compatibility note collections are normalized for repeatable output so unchanged sources produce materially stable planning artifacts. Nullable scalar properties are omitted when the scanner has no value to emit.
 

@@ -466,9 +466,12 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             var nullable = GetOptionalBoolProperty(fieldElement, "nullable");
             var (domainType, domainName, domainValues, domainTruncated) = ExtractDomain(fieldElement);
 
-            if (domainTruncated && !string.IsNullOrWhiteSpace(domainName))
+            if (domainTruncated)
             {
-                _ = truncatedDomains.Add(domainName);
+                var label = !string.IsNullOrWhiteSpace(domainName)
+                    ? $"'{domainName}' on field '{name}'"
+                    : $"on field '{name}'";
+                _ = truncatedDomains.Add(label);
             }
 
             fields.Add(new MigrationInventoryField
@@ -486,7 +489,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         if (truncatedDomains.Count > 0)
         {
             warnings = truncatedDomains
-                .Select(static name => $"Coded-value domain '{name}' exceeds the {CodedValueDomainCap}-entry capture cap and was omitted from the artifact.")
+                .Select(static label => $"{ImportCompatibilityCodes.ArcGisDomainTruncated}: coded-value domain {label} exceeds the {CodedValueDomainCap}-entry capture cap and was omitted from the artifact.")
                 .ToArray();
         }
 

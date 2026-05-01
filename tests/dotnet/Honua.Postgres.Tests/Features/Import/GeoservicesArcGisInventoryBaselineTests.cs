@@ -124,6 +124,87 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
         artifact.Containers.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task ScanSourceAsync_FeatureServerOverCapDomains_EmitsArcGisDomainTruncatedWarning()
+    {
+        const string serviceUrl = "https://example.com/arcgis/rest/services/Truncation/FeatureServer";
+        var responses = BuildOverCapFixtureResponses();
+        var service = CreateService(new FixtureHttpHandler(responses));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = serviceUrl,
+            TimeoutSeconds = 5
+        });
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        var named = resource.Fields.Single(f => f.Name == "ZONING");
+        named.DomainType.Should().Be("codedValue");
+        named.DomainName.Should().Be("ZoningCode");
+        named.DomainValues.Should().BeNull("over-cap coded-value domains drop the values rather than truncating silently");
+
+        var unnamed = resource.Fields.Single(f => f.Name == "STATUS");
+        unnamed.DomainType.Should().Be("codedValue");
+        unnamed.DomainName.Should().BeNull();
+        unnamed.DomainValues.Should().BeNull();
+
+        var prefix = $"{ImportCompatibilityCodes.ArcGisDomainTruncated}:";
+        artifact.ScanCompleteness.Warnings
+            .Should()
+            .Contain(w => w.StartsWith(prefix, StringComparison.Ordinal) && w.Contains("'ZoningCode'", StringComparison.Ordinal) && w.Contains("'ZONING'", StringComparison.Ordinal),
+                "the named over-cap domain must surface the stable code with field context")
+            .And
+            .Contain(w => w.StartsWith(prefix, StringComparison.Ordinal) && w.Contains("'STATUS'", StringComparison.Ordinal),
+                "the unnamed over-cap domain must surface the stable code with the field-name fallback");
+    }
+
+    private static Dictionary<string, string> BuildOverCapFixtureResponses()
+    {
+        var namedValues = new StringBuilder();
+        var unnamedValues = new StringBuilder();
+        for (var i = 0; i < 105; i++)
+        {
+            if (i > 0)
+            {
+                _ = namedValues.Append(',');
+                _ = unnamedValues.Append(',');
+            }
+
+            _ = namedValues.Append(System.Globalization.CultureInfo.InvariantCulture, $"{{\"code\":\"Z{i:D3}\",\"name\":\"Zone {i:D3}\"}}");
+            _ = unnamedValues.Append(System.Globalization.CultureInfo.InvariantCulture, $"{{\"code\":\"S{i:D3}\",\"name\":\"Status {i:D3}\"}}");
+        }
+
+        var rootJson = "{" +
+            "\"currentVersion\":11.2," +
+            "\"serviceDescription\":\"Truncation Test\"," +
+            "\"capabilities\":\"Query\"," +
+            "\"layers\":[{\"id\":0,\"name\":\"OverCap\"}]" +
+            "}";
+
+        var layerJson = "{" +
+            "\"id\":0,\"name\":\"OverCap\"," +
+            "\"geometryType\":\"esriGeometryPolygon\"," +
+            "\"capabilities\":\"Query\"," +
+            "\"spatialReference\":{\"wkid\":3857}," +
+            "\"drawingInfo\":{\"renderer\":{\"type\":\"simple\"}}," +
+            "\"fields\":[" +
+                "{\"name\":\"OBJECTID\",\"type\":\"esriFieldTypeOID\"}," +
+                "{\"name\":\"ZONING\",\"type\":\"esriFieldTypeString\",\"nullable\":true," +
+                    "\"domain\":{\"type\":\"codedValue\",\"name\":\"ZoningCode\",\"codedValues\":[" + namedValues + "]}}," +
+                "{\"name\":\"STATUS\",\"type\":\"esriFieldTypeString\",\"nullable\":true," +
+                    "\"domain\":{\"type\":\"codedValue\",\"codedValues\":[" + unnamedValues + "]}}" +
+            "]}";
+
+        var countJson = "{\"count\":1}";
+
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["/arcgis/rest/services/Truncation/FeatureServer?f=json"] = rootJson,
+            ["/arcgis/rest/services/Truncation/FeatureServer/0?f=json"] = layerJson,
+            ["/arcgis/rest/services/Truncation/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json"] = countJson
+        };
+    }
+
     private static FixtureScenario LoadFixture(string scenario)
     {
         var fixturePath = Path.Combine(
@@ -171,7 +252,7 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             "1",
             StringComparison.Ordinal);
 
-        if (regenRequested || !File.Exists(sourceBaselinePath))
+        if (regenRequested)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(sourceBaselinePath)!);
             File.WriteAllText(sourceBaselinePath, actualJson);
@@ -179,6 +260,9 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             File.WriteAllText(outputBaselinePath, actualJson);
             return;
         }
+
+        File.Exists(sourceBaselinePath).Should().BeTrue(
+            $"baseline {baselineFile} must exist at {sourceBaselinePath}. Re-run with UPDATE_ARCGIS_INVENTORY_BASELINES=1 to regenerate it and commit the result.");
 
         var expectedJson = File.ReadAllText(sourceBaselinePath);
         actualJson.Should().Be(

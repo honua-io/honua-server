@@ -136,8 +136,12 @@ Each resource records the source schema in a `fields` array:
 
 - `nullable` is `null` when the source omits the property (older ArcGIS
   versions).
-- `domainValues` is bounded; coded-value domains exceeding the cap are
-  reported via a warning rather than truncating silently.
+- `domainValues` is bounded; coded-value domains exceeding the cap drop
+  the values rather than truncating silently and emit a
+  `scanCompleteness.warnings[]` entry prefixed with the
+  `ARCGIS_DOMAIN_TRUNCATED:` stable code so automation can branch on the
+  prefix. The warning carries the domain name when known and falls back to
+  the field name otherwise.
 - Fields are sorted alphabetically by name to keep artifacts diff-stable.
 
 ## Compatibility codes
