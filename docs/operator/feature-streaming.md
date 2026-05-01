@@ -73,6 +73,8 @@ SSE event names are `status`, `heartbeat`, and `feature-change`. Each `feature-c
 
 `operation` is one of `insert`, `update`, or `delete`. `protocol` identifies the originating mutation surface (`FeatureServer`, `OGC-Features`, `OData`, or `Grpc`); `requestId` echoes the originating request for correlation; `subscriptionId` echoes the subscription that matched. Delete geometry and attributes are emitted only when the mutation source provides a before-image. `changedAttributes` and `geometryChanged` are best-effort delta hints when the source protocol can supply them.
 
+`geometry` and `geometryCrs` ship together as a paired contract: when the originating mutation does not carry an SRID (for example, an upstream WKB written without spatial reference metadata), both fields are omitted rather than emitting coordinates that downstream consumers cannot interpret.
+
 ## Filters
 
 - `serviceId`: limits events to a published service. The caller must have read access to every layer in that service. When combined with `layers`/`layerIds`, every requested layer must belong to that service; otherwise the request is rejected with `Layer {id} is not part of service '{name}'.`

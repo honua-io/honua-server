@@ -56,8 +56,13 @@ internal static class FeatureChangeEventEnrichment
             }
 
             var env = geometry.EnvelopeInternal;
-            var geometryJson = new GeoJsonWriter().Write(geometry);
             var srid = geometry.SRID > 0 ? geometry.SRID : (int?)null;
+            // Geodesy invariant: never emit geometry coordinates without CRS metadata.
+            // Clients cannot interpret coordinates without their reference frame, so we
+            // skip the GeoJSON when the WKB carries no SRID. The envelope is retained
+            // for broadcast-time bbox filter evaluation, which compares against the
+            // subscription bbox already projected into the layer's storage CRS.
+            var geometryJson = srid.HasValue ? new GeoJsonWriter().Write(geometry) : null;
             return ([env.MinX, env.MinY, env.MaxX, env.MaxY], geometryJson, srid);
         }
         catch

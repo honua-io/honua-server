@@ -81,6 +81,15 @@ internal sealed class FeatureMutationEventService(
             geometrySrid ??= enrichment.GeometrySrid;
         }
 
+        // Geodesy invariant guard: drop the geometry JSON if a caller supplied
+        // coordinates without an accompanying SRID. Mirrors the enrichment-layer
+        // guard so streaming subscribers and webhook consumers never observe
+        // ambiguous coordinates downstream.
+        if (geometryJson is not null && geometrySrid is null)
+        {
+            geometryJson = null;
+        }
+
         var requestPayload = new FeatureChangeEventRequest
         {
             EventId = Guid.NewGuid().ToString("N"),

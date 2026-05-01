@@ -6,6 +6,8 @@ using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.TestKit.Attributes;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events;
 
@@ -62,5 +64,36 @@ public sealed class FeatureChangeEventEnrichmentTests
         Assert.Equal(JsonValueKind.String, root.GetProperty("windowStart").ValueKind);
         Assert.Equal(JsonValueKind.String, root.GetProperty("duration").ValueKind);
         Assert.Equal(Convert.ToBase64String(payload), root.GetProperty("payload").GetString());
+    }
+
+    [UnitTest]
+    public void FromFeatureSnapshot_WhenWkbHasSrid_EmitsGeometryJsonAndSrid()
+    {
+        var point = new Point(-157.8583, 21.3069) { SRID = 4326 };
+        var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: true).Write(point);
+        var feature = Feature.Create(7, geometry: wkb, attributes: ImmutableDictionary<string, object?>.Empty);
+
+        var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(feature);
+
+        Assert.NotNull(enrichment.GeometryEnvelope);
+        Assert.NotNull(enrichment.GeometryJson);
+        Assert.Equal(4326, enrichment.GeometrySrid);
+    }
+
+    [UnitTest]
+    public void FromFeatureSnapshot_WhenWkbHasNoSrid_OmitsGeometryJsonToPreserveCrsInvariant()
+    {
+        // WKB without SRID metadata (handleSRID: false). Geometry coordinates
+        // alone are ambiguous to clients, so the enrichment must drop the JSON
+        // while keeping the envelope for broadcast-time bbox filter evaluation.
+        var point = new Point(-157.8583, 21.3069);
+        var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false).Write(point);
+        var feature = Feature.Create(8, geometry: wkb, attributes: ImmutableDictionary<string, object?>.Empty);
+
+        var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(feature);
+
+        Assert.NotNull(enrichment.GeometryEnvelope);
+        Assert.Null(enrichment.GeometryJson);
+        Assert.Null(enrichment.GeometrySrid);
     }
 }
