@@ -77,7 +77,7 @@ with the canonical entry but do not collide.
 |-------|----------|
 | `default` | Returns the canonical style unchanged. |
 | `dark` | Converts each color paint property to HSL and inverts lightness; sets background fills to `#1a1a1a`. Hue and saturation are preserved. |
-| `colorblind-safe` | Remaps the distinct fill/line/circle colors onto the `Viridis` palette in `ColorPalettes`. Reuses the existing palette data; no new palettes are introduced. |
+| `colorblind-safe` | Remaps the distinct fill/line/circle colors onto the `Viridis` palette in `ColorPalettes`. Identical input RGBA values map to the same palette slot within a single transform, so a `classBreaks` first-class color reused as a case fallback stays visually equal. The input alpha channel is preserved through the swap so semi-transparent fills/lines keep their opacity. Reuses the existing palette data; no new palettes are introduced. |
 | `print` | Forces all opacity properties to `1.0`, line colors to `#000000`, and fill outlines to black for high-contrast print rendering. |
 
 An unknown `theme` query value returns `400 Bad Request` listing the supported
@@ -152,7 +152,7 @@ without re-translating it. The revision metadata fields (`styleVersion`,
 |----------------------|-----------------|-------|
 | `simple` | `circle` / `line` / `fill` (+ outline) | Picture markers (`esriPMS`) emit a `symbol` layer with metadata for image lookup. |
 | `uniqueValue` | data-driven `match` expression with non-null guard | Defaults route to `defaultSymbol` color or transparent fallback. |
-| `classBreaks` | data-driven `step` expression with numeric guard | Defaults route to `defaultSymbol` color when present. |
+| `classBreaks` | data-driven `step` expression with numeric guard (`to-number` coercion + `typeof == number` case guard) | Color and picture-marker variants share the same numeric guard. Defaults route to `defaultSymbol` color (color renderer) or `defaultSymbol` image (picture-marker renderer) when present; otherwise fall back to the first class output. |
 | Other types (`heatmap`, `dotDensity`, `vectorField`, …) | Default style + `unsupportedSymbolizers[]` | Reported with code `RENDERER_TYPE_UNSUPPORTED`. |
 
 ## Operational notes

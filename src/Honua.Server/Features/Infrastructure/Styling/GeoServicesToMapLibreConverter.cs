@@ -348,7 +348,7 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         if (layer.GeometryType is GeometryType.Point or GeometryType.MultiPoint
-            && TryBuildPictureMarkerClassBreakStyle(layer, fieldName, infos, unsupported, out var pictureStyle))
+            && TryBuildPictureMarkerClassBreakStyle(layer, fieldName, infos, renderer, unsupported, out var pictureStyle))
         {
             return StyleJsonUtilities.Serialize(pictureStyle);
         }
@@ -729,6 +729,7 @@ internal static class GeoServicesToMapLibreConverter
         LayerDefinition layer,
         string fieldName,
         JsonElement infos,
+        JsonElement renderer,
         List<UnsupportedSymbolizerInfo> unsupported,
         out Dictionary<string, object?> style)
     {
@@ -772,14 +773,35 @@ internal static class GeoServicesToMapLibreConverter
         var baseId = BuildPictureMarkerId(layer.Id, index++);
         images.Add(new PictureMarkerImage(baseId, stops[0].Payload));
 
-        var expression = new List<object?> { "step", new object?[] { "get", fieldName }, baseId };
+        // Wrap field access with to-number coercion, matching the color classBreaks
+        // path so picture-marker classBreaks honors the same documented numeric
+        // guard contract.
+        var stepExpr = new List<object?> { "step", new object?[] { "to-number", new object?[] { "get", fieldName } }, baseId };
         for (var i = 1; i < stops.Count; i++)
         {
             var imageId = BuildPictureMarkerId(layer.Id, index++);
             images.Add(new PictureMarkerImage(imageId, stops[i].Payload));
-            expression.Add(stops[i - 1].MaxValue);
-            expression.Add(imageId);
+            stepExpr.Add(stops[i - 1].MaxValue);
+            stepExpr.Add(imageId);
         }
+
+        // Use defaultSymbol image as the case fallback when present; otherwise fall
+        // back to the first stop image for backward compatibility with the prior
+        // contract.
+        var fallbackId = baseId;
+        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol)
+            && defaultSymbol.ValueKind == JsonValueKind.Object
+            && TryGetPictureMarkerPayload(defaultSymbol, out var defaultPayload))
+        {
+            fallbackId = BuildPictureMarkerId(layer.Id, index++);
+            images.Add(new PictureMarkerImage(fallbackId, defaultPayload));
+        }
+
+        // Guard null/missing AND non-castable text using the shared numeric typeof
+        // guard so only native numbers reach the step expression — mirrors the
+        // color classBreaks contract documented in
+        // docs/gis/style-engine-protocol-consumption.md.
+        var expression = new List<object?> { "case", StyleDefaults.BuildNumericFieldGuard(fieldName), stepExpr, fallbackId };
 
         var layout = new Dictionary<string, object?>
         {

@@ -133,7 +133,12 @@ internal static class StyleThemeTransformer
         }
 
         var paletteColors = palette[maxClasses];
-        var index = 0;
+        // Memoize palette assignment by full input RGBA within one ApplyTheme call so
+        // identical input colors map to the same palette slot (e.g. a classBreaks first
+        // class output and its case fallback that share a color stay visually equal),
+        // and so the output preserves the input alpha rather than forcing every paint
+        // property to fully opaque.
+        var assignments = new Dictionary<StyleColor, StyleColor>();
         foreach (var layer in layers)
         {
             if (layer is not JsonObject layerObject)
@@ -141,15 +146,26 @@ internal static class StyleThemeTransformer
                 continue;
             }
 
-            TransformPaintColors(layerObject, diagnostics, _ =>
+            TransformPaintColors(layerObject, diagnostics, color =>
             {
-                var paletteHex = paletteColors[index % paletteColors.Length];
-                index++;
+                if (assignments.TryGetValue(color, out var cached))
+                {
+                    return cached;
+                }
+
+                var paletteHex = paletteColors[assignments.Count % paletteColors.Length];
+                StyleColor resolved;
                 if (StyleJsonUtilities.TryParseMapLibreColor(paletteHex, out var swap))
                 {
-                    return swap;
+                    resolved = new StyleColor(swap.R, swap.G, swap.B, color.A);
                 }
-                return new StyleColor(0, 0, 0, 255);
+                else
+                {
+                    resolved = new StyleColor(0, 0, 0, color.A);
+                }
+
+                assignments[color] = resolved;
+                return resolved;
             });
         }
     }

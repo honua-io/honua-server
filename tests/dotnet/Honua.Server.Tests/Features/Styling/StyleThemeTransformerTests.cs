@@ -76,6 +76,89 @@ public class StyleThemeTransformerTests
     }
 
     [Fact]
+    public void ApplyTheme_ColorblindSafeProfile_PreservesInputAlpha()
+    {
+        // Regression: GeoServices conversion emits rgba(...) strings that can carry
+        // sub-1.0 alpha (default polygon fill is rgba(45,105,165,0.4)).  The palette
+        // swap must preserve the input alpha rather than forcing every paint
+        // property to opaque.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {"fill-color": "rgba(255,0,0,0.4)"}
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.ColorblindSafe);
+
+        using var doc = JsonDocument.Parse(result);
+        var fill = FindLayer(doc.RootElement, "fill");
+        var fillColor = fill.GetProperty("paint").GetProperty("fill-color").GetString();
+        Assert.NotNull(fillColor);
+        Assert.True(StyleJsonUtilities.TryParseMapLibreColor(fillColor, out var transformed));
+        // Input alpha 0.4 → byte 102; preserve within rounding.
+        Assert.InRange((int)transformed.A, 100, 104);
+    }
+
+    [Fact]
+    public void ApplyTheme_ColorblindSafeProfile_MapsIdenticalInputColorsToSamePaletteSlot()
+    {
+        // Regression: the colorblind-safe walker used to advance the palette index
+        // for every visited color, so a classBreaks first-class color and a case
+        // fallback that share an input color got mapped to different palette
+        // slots.  Equal input colors must map to equal output colors within a
+        // single ApplyTheme call.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": [
+                "case",
+                ["==", ["typeof", ["get", "magnitude"]], "number"],
+                ["step", ["to-number", ["get", "magnitude"]], "rgba(204,136,68,0.4)", 5, "rgba(51,102,170,0.4)", 10, "rgba(170,187,204,0.4)"],
+                "rgba(204,136,68,0.4)"
+              ]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.ColorblindSafe);
+
+        // The first step output and the case fallback share rgba(204,136,68,0.4).
+        // After the transform they must remain equal — find them in the output JSON
+        // by parsing the emitted expression and comparing the two corresponding
+        // positions.
+        using var doc = JsonDocument.Parse(result);
+        var fill = FindLayer(doc.RootElement, "fill");
+        var caseExpr = fill.GetProperty("paint").GetProperty("fill-color");
+        Assert.Equal(JsonValueKind.Array, caseExpr.ValueKind);
+
+        // Layout: ["case", predicate, ["step", input, output0, stop, output1, ...], fallback]
+        var stepExpr = caseExpr[2];
+        Assert.Equal(JsonValueKind.Array, stepExpr.ValueKind);
+        var firstStepOutput = stepExpr[2].GetString();
+        var caseFallback = caseExpr[3].GetString();
+
+        Assert.NotNull(firstStepOutput);
+        Assert.NotNull(caseFallback);
+        Assert.Equal(firstStepOutput, caseFallback);
+    }
+
+    [Fact]
     public void ApplyTheme_PrintProfile_ForcesOpacityToOne()
     {
         const string json = """

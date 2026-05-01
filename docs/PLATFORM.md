@@ -114,7 +114,7 @@ REST API and GitOps-ready management:
 - Layer publishing from PostGIS tables
 - Protocol enablement per service
 - Access policies (anonymous, role-based)
-- MapLibre style editing
+- MapLibre style editing with deterministic theme variants (`dark`, `colorblind-safe`, `print`), versioned revision metadata, and stable-code reporting for unsupported GeoServices symbolizers (see [Style Engine: Cross-Protocol Consumption](gis/style-engine-protocol-consumption.md))
 - Metadata manifest export/apply with approval workflows
 
 ### Spec Plan/Apply Engine
