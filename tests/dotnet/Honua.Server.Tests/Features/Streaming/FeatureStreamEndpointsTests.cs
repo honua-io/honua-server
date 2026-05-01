@@ -328,6 +328,126 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
+    // Regression for review finding "Queued WebSocket frames survive subscription
+    // removal or replacement". After unsubscribe, frames that the broadcast had
+    // already queued for that subscription must not reach the wire — the writer
+    // drain rejects them on the per-(event, subscription) generation check before
+    // claiming dedup, so a future subscribe with the same id would also see
+    // those events fresh from a replay (not pre-claimed and silently dropped).
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_QueuedFrames_AfterUnsubscribe_AreNotDelivered()
+    {
+        var wsClient = _fixture.CreateWebSocketClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        using var ws = await wsClient.ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features?clientLabel=stale-after-unsub"),
+            cts.Token);
+
+        // Drain the connect status frame.
+        _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+        await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"sub-fence","layerId":0}""", cts.Token);
+        (await ReceiveWebSocketJsonAsync(ws, cts.Token)).GetProperty("status").GetString().Should().Be("subscribed");
+
+        // Unsubscribe before any matching events fire so the dedup state for
+        // sub-fence is still empty, but the subscription's generation has
+        // already been pinned by the live broadcaster's match snapshot.
+        await SendWebSocketJsonAsync(ws, """{"type":"unsubscribe","subscriptionId":"sub-fence"}""", cts.Token);
+        (await ReceiveWebSocketJsonAsync(ws, cts.Token)).GetProperty("status").GetString().Should().Be("unsubscribed");
+
+        // Publish an event that would have matched sub-fence. Even if the
+        // broadcast had raced ahead and queued a frame for sub-fence (the
+        // unsubscribe and broadcast are not strongly ordered cross-thread),
+        // the writer must drop any queued sub-fence frame as stale-generation.
+        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
+        var serviceId = $"stale-fence-{Guid.NewGuid():N}";
+        await publisher.PublishAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = serviceId,
+            LayerId = 0,
+            ObjectId = 1,
+            Operation = "insert",
+            Protocol = "rest",
+            RequestId = "req-stale-fence"
+        });
+
+        // The default subscription is still active and unfiltered, so the event
+        // is delivered under the default subscriptionId. Receive frames until
+        // we see the default delivery for our serviceId; assert no frame for
+        // the unsubscribed sub-fence ever arrives.
+        var sawDefault = false;
+        var sawSubFence = false;
+        using var observeCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        observeCts.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (!sawDefault)
+            {
+                var frame = await ReceiveWebSocketJsonAsync(ws, observeCts.Token);
+                if (frame.GetProperty("type").GetString() != "feature-change")
+                {
+                    continue;
+                }
+
+                if (frame.TryGetProperty("serviceId", out var svc) && svc.GetString() != serviceId)
+                {
+                    continue;
+                }
+
+                var subId = frame.GetProperty("subscriptionId").GetString();
+                if (subId == "sub-fence")
+                {
+                    sawSubFence = true;
+                }
+                else if (subId == FeatureStreamSessionManager.DefaultSubscriptionId)
+                {
+                    sawDefault = true;
+                }
+            }
+
+            // Give the writer a brief window to drain any stale-generation frame
+            // (it should be dropped before send).
+            using var grace = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            grace.CancelAfter(TimeSpan.FromMilliseconds(500));
+            try
+            {
+                while (true)
+                {
+                    var frame = await ReceiveWebSocketJsonAsync(ws, grace.Token);
+                    if (frame.GetProperty("type").GetString() != "feature-change")
+                    {
+                        continue;
+                    }
+
+                    if (!frame.TryGetProperty("serviceId", out var svc) || svc.GetString() != serviceId)
+                    {
+                        continue;
+                    }
+
+                    if (frame.GetProperty("subscriptionId").GetString() == "sub-fence")
+                    {
+                        sawSubFence = true;
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (grace.Token.IsCancellationRequested)
+            {
+                // Expected — no further frames within the grace window.
+            }
+        }
+        catch (OperationCanceledException) when (observeCts.Token.IsCancellationRequested)
+        {
+            // Expected — let the assertions below report the actual state.
+        }
+
+        sawDefault.Should().BeTrue("the default subscription must still receive the event");
+        sawSubFence.Should().BeFalse("frames queued after unsubscribe must be fenced as stale-generation");
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithoutUpgradeOrSseHeader_Returns400()

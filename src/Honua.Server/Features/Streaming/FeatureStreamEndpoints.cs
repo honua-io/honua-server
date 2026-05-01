@@ -767,6 +767,12 @@ internal static class FeatureStreamEndpoints
         using var sessionLease = session;
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
 
+        // The default subscription is allocated at session creation and is never replaced
+        // (control-frame subscribes always create distinct ids), so its generation is stable
+        // for the life of the session. The replay/handoff/poll callbacks below pin this
+        // generation when claiming send-time deliveries through the session manager.
+        long defaultSubscriptionGeneration = sessionManager.GetDefaultSubscriptionGeneration(session.SessionId);
+
         await SendWebSocketStatusAsync(
             webSocket,
             session.WriteLock,
@@ -818,7 +824,8 @@ internal static class FeatureStreamEndpoints
                     linkedCts.Token,
                     subscriptionFilter,
                     FeatureStreamSessionManager.DefaultSubscriptionId,
-                    sessionManager).ConfigureAwait(false);
+                    sessionManager,
+                    defaultSubscriptionGeneration).ConfigureAwait(false);
 
                 // Catch-up: replay events published during the main replay window that
                 // were silently dropped from the bounded channel pre-drain.
@@ -833,7 +840,8 @@ internal static class FeatureStreamEndpoints
                     linkedCts.Token,
                     subscriptionFilter,
                     FeatureStreamSessionManager.DefaultSubscriptionId,
-                    sessionManager).ConfigureAwait(false);
+                    sessionManager,
+                    defaultSubscriptionGeneration).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
             {
@@ -888,7 +896,8 @@ internal static class FeatureStreamEndpoints
                         linkedCts.Token,
                         subscriptionFilter,
                         FeatureStreamSessionManager.DefaultSubscriptionId,
-                        sessionManager).ConfigureAwait(false);
+                        sessionManager,
+                        defaultSubscriptionGeneration).ConfigureAwait(false);
                 } while (replayCursor > previousCursor || session.Reader.TryPeek(out _));
             }
         }
@@ -907,7 +916,7 @@ internal static class FeatureStreamEndpoints
         // clears grace so subsequent overflows are genuine slow consumers.
         // For fresh live sessions (no cursor), onFirstRead is null and the first
         // message flows straight to normal delivery.
-        var writerTask = WriteWebSocketAsync(webSocket, session, replayCursor, sessionManager, linkedCts.Token,
+        var writerTask = WriteWebSocketAsync(webSocket, session, replayCursor, sessionManager, logger, linkedCts.Token,
             onFirstRead: hasReplay
                 ? async (cursor, ct) =>
                 {
@@ -932,7 +941,8 @@ internal static class FeatureStreamEndpoints
                             ct,
                             subscriptionFilter,
                             FeatureStreamSessionManager.DefaultSubscriptionId,
-                            sessionManager).ConfigureAwait(false);
+                            sessionManager,
+                            defaultSubscriptionGeneration).ConfigureAwait(false);
                         if (cursor > prev)
                         {
                             progress = true;
@@ -956,7 +966,8 @@ internal static class FeatureStreamEndpoints
                     ct,
                     subscriptionFilter,
                     FeatureStreamSessionManager.DefaultSubscriptionId,
-                    sessionManager).ConfigureAwait(false)
+                    sessionManager,
+                    defaultSubscriptionGeneration).ConfigureAwait(false)
                 : null,
             pollInterval: options.CrossNodeSyncInterval);
 
@@ -1044,6 +1055,7 @@ internal static class FeatureStreamEndpoints
         FeatureStreamSession session,
         long replayCursor,
         FeatureStreamSessionManager sessionManager,
+        ILogger logger,
         CancellationToken cancellationToken,
         Func<long, CancellationToken, Task<long>>? onFirstRead = null,
         Func<long, CancellationToken, Task<long>>? onPoll = null,
@@ -1109,16 +1121,36 @@ internal static class FeatureStreamEndpoints
 
                     // Per-(event, subscription) dedup is claimed at send time so
                     // events that the channel later dropped as pre-drain overflow
-                    // remain replayable. Whichever path (this writer or the
-                    // per-subscription replay) wins the atomic test-and-set sends
-                    // the frame; the other observes the recorded key and skips.
-                    if (!message.IsHeartbeat
-                        && !sessionManager.TryRememberSubscriptionDelivery(
-                            session.SessionId,
-                            message.Envelope.SubscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId,
-                            message.Envelope.EventId))
+                    // remain replayable. The claim also verifies that the
+                    // subscription's generation has not advanced — if it did
+                    // (unsubscribe or same-id replacement), the queued frame is
+                    // stale and must be dropped without claiming dedup so a
+                    // future replay for the new generation can still deliver the
+                    // event. Whichever path (this writer or the per-subscription
+                    // replay) wins the atomic test-and-set sends the frame; the
+                    // other observes the recorded key and skips.
+                    if (!message.IsHeartbeat)
                     {
-                        continue;
+                        var subscriptionId = message.Envelope.SubscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId;
+                        var claim = sessionManager.TryClaimSubscriptionDelivery(
+                            session.SessionId,
+                            subscriptionId,
+                            message.SubscriptionGeneration,
+                            message.Envelope.EventId);
+                        if (claim == SubscriptionDeliveryClaim.StaleGeneration)
+                        {
+                            FeatureStreamLog.StaleSubscriptionFrameDropped(
+                                logger,
+                                session.SessionId,
+                                subscriptionId,
+                                message.SubscriptionGeneration);
+                            continue;
+                        }
+
+                        if (claim == SubscriptionDeliveryClaim.AlreadyDelivered)
+                        {
+                            continue;
+                        }
                     }
 
                     var payload = message.IsHeartbeat
@@ -1241,8 +1273,8 @@ internal static class FeatureStreamEndpoints
         // queue events that the per-subscription replay path is about to deliver
         // directly. The unpause after replay restores normal live fan-out.
         var replayCursor = control.Cursor;
-        var addResult = deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: replayCursor.HasValue);
-        switch (addResult)
+        var addOutcome = deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: replayCursor.HasValue);
+        switch (addOutcome.Result)
         {
             case AddSubscriptionResult.Added:
                 break;
@@ -1261,6 +1293,10 @@ internal static class FeatureStreamEndpoints
                 return;
         }
 
+        // Pin the generation we just allocated so replay claims and the writer
+        // drain reject any stale-generation frames if a future control frame
+        // replaces this same id mid-flight.
+        var subscriptionGeneration = addOutcome.Generation;
         FeatureStreamLog.SubscriptionAdded(logger, session.SessionId, subscriptionId, filter?.Summary ?? "all");
         long? currentCursor = null;
         try
@@ -1278,7 +1314,8 @@ internal static class FeatureStreamEndpoints
                     cancellationToken,
                     filter,
                     subscriptionId,
-                    deps.SessionManager).ConfigureAwait(false);
+                    deps.SessionManager,
+                    subscriptionGeneration).ConfigureAwait(false);
             }
 
             await SendWebSocketStatusAsync(
@@ -1323,7 +1360,8 @@ internal static class FeatureStreamEndpoints
                                 cancellationToken,
                                 filter,
                                 subscriptionId,
-                                deps.SessionManager).ConfigureAwait(false);
+                                deps.SessionManager,
+                                subscriptionGeneration).ConfigureAwait(false);
                         } while (currentCursor.Value > previousCursor);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1364,7 +1402,8 @@ internal static class FeatureStreamEndpoints
                             cancellationToken,
                             filter,
                             subscriptionId,
-                            deps.SessionManager).ConfigureAwait(false);
+                            deps.SessionManager,
+                            subscriptionGeneration).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -2069,7 +2108,8 @@ internal static class FeatureStreamEndpoints
         CancellationToken cancellationToken,
         IStreamSubscriptionFilter? subscriptionFilter = null,
         string? subscriptionId = null,
-        FeatureStreamSessionManager? sessionManager = null)
+        FeatureStreamSessionManager? sessionManager = null,
+        long subscriptionGeneration = 0)
     {
         var cursor = fromCursor;
         while (!cancellationToken.IsCancellationRequested)
@@ -2094,15 +2134,29 @@ internal static class FeatureStreamEndpoints
                     continue;
                 }
 
-                // When a session manager is supplied, claim the (event, subscription)
-                // slot atomically so a concurrent broadcast on the same key does not
-                // double-deliver. The unclaimed side queues via the channel; the
-                // claimed side sends directly here.
-                if (sessionManager is not null
-                    && subscriptionId is not null
-                    && !sessionManager.TryRememberSubscriptionDelivery(sessionId, subscriptionId, evt.EventId))
+                // When a session manager and generation are supplied, claim the
+                // (event, subscription) slot atomically. The claim also verifies
+                // the subscription's generation, fencing stale replays after an
+                // unsubscribe/replacement (although the per-connection control
+                // loop is single-threaded, so this matches the writer-side
+                // contract). Whichever send-time path wins the atomic test-and-
+                // set sends the frame; the other observes the recorded key and
+                // skips.
+                if (sessionManager is not null && subscriptionId is not null && subscriptionGeneration > 0)
                 {
-                    continue;
+                    if (sessionManager.TryClaimSubscriptionDelivery(sessionId, subscriptionId, subscriptionGeneration, evt.EventId)
+                        != SubscriptionDeliveryClaim.Claimed)
+                    {
+                        continue;
+                    }
+                }
+                else if (sessionManager is not null && subscriptionId is not null)
+                {
+                    // Generation-less call site (legacy/test); fall back to the dedup-only path.
+                    if (!sessionManager.TryRememberSubscriptionDelivery(sessionId, subscriptionId, evt.EventId))
+                    {
+                        continue;
+                    }
                 }
 
                 var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);

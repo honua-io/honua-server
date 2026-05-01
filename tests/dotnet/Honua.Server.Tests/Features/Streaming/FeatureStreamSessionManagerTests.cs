@@ -361,7 +361,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     {
         using var session = _manager.CreateSession("WebSocket", "paused-subscribe");
 
-        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: true));
+        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: true).Result);
 
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 11)));
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 12)));
@@ -383,7 +383,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     {
         using var session = _manager.CreateSession("WebSocket", "post-unpause");
 
-        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: true));
+        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: true).Result);
 
         // While paused, broadcasts are skipped for subB (only default delivers).
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 21)));
@@ -418,7 +418,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     {
         using var session = _manager.CreateSession("WebSocket", "replay-then-broadcast");
 
-        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
+        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false).Result);
 
         // Simulate the per-subscription replay claiming the (event, subB) slot
         // at send time.
@@ -453,7 +453,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     {
         using var session = _manager.CreateSession("WebSocket", "broadcast-then-replay");
 
-        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
+        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false).Result);
 
         var envelope = CreateEnvelope(cursor: 200) with { EventId = "evt-200" };
         _manager.Broadcast(FeatureStreamMessage.Data(envelope));
@@ -510,7 +510,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         using var session = _manager.CreateSession("WebSocket", "multi-match");
 
         // Both default and subB match (no filter) → broadcast must queue twice.
-        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
+        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false).Result);
 
         var envelope = CreateEnvelope(cursor: 500) with { EventId = "evt-500" };
         _manager.Broadcast(FeatureStreamMessage.Data(envelope));
@@ -712,17 +712,17 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         using var session = manager.CreateSession("WebSocket", "cap-test");
 
         // Default subscription is already present; adding one more reaches cap=2.
-        Assert.Equal(AddSubscriptionResult.Added, manager.TryAddSubscription(session.SessionId, "subA", filter: null));
-        Assert.Equal(AddSubscriptionResult.LimitReached, manager.TryAddSubscription(session.SessionId, "subB", filter: null));
+        Assert.Equal(AddSubscriptionResult.Added, manager.TryAddSubscription(session.SessionId, "subA", filter: null).Result);
+        Assert.Equal(AddSubscriptionResult.LimitReached, manager.TryAddSubscription(session.SessionId, "subB", filter: null).Result);
 
         // Replacing an existing id keeps the count flat.
-        Assert.Equal(AddSubscriptionResult.Added, manager.TryAddSubscription(session.SessionId, "subA", filter: null, paused: true));
+        Assert.Equal(AddSubscriptionResult.Added, manager.TryAddSubscription(session.SessionId, "subA", filter: null, paused: true).Result);
     }
 
     [UnitTest]
     public void TryAddSubscription_UnknownSession_ReturnsSessionGone()
     {
-        Assert.Equal(AddSubscriptionResult.SessionGone, _manager.TryAddSubscription(Guid.NewGuid(), "subA", filter: null));
+        Assert.Equal(AddSubscriptionResult.SessionGone, _manager.TryAddSubscription(Guid.NewGuid(), "subA", filter: null).Result);
     }
 
     [UnitTest]
@@ -937,6 +937,150 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.True(remoteSession.Reader.TryRead(out var secondRemote));
         Assert.Equal(101L, firstRemote.Envelope.Cursor);
         Assert.Equal(102L, secondRemote.Envelope.Cursor);
+    }
+
+    // Regression for review finding "Queued WebSocket frames survive subscription
+    // removal or replacement". Each TryAddSubscription allocates a new generation;
+    // the writer drain rejects queued frames whose generation is no longer current.
+    [UnitTest]
+    public void TryAddSubscription_AllocatesMonotonicGenerationsPerSession()
+    {
+        using var session = _manager.CreateSession("WebSocket", "gen-monotonic");
+
+        var defaultGen = _manager.GetDefaultSubscriptionGeneration(session.SessionId);
+        Assert.True(defaultGen > 0, "Default subscription must have a non-zero generation.");
+
+        var addA = _manager.TryAddSubscription(session.SessionId, "subA", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, addA.Result);
+        Assert.True(addA.Generation > defaultGen);
+
+        var addB = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, addB.Result);
+        Assert.True(addB.Generation > addA.Generation);
+
+        // Replacement of an existing id allocates a fresh generation, so any frame
+        // queued under the old generation is now stale.
+        var replaceA = _manager.TryAddSubscription(session.SessionId, "subA", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, replaceA.Result);
+        Assert.True(replaceA.Generation > addB.Generation);
+    }
+
+    // Regression: queued frames stamped with a subscription's generation are
+    // rejected by the writer-side claim after the subscription is unsubscribed.
+    // Without this fence, the writer would still send the queued frame because
+    // dedup alone cannot distinguish "already delivered" from "subscription gone".
+    [UnitTest]
+    public void TryClaimSubscriptionDelivery_AfterUnsubscribe_RejectsStaleGeneration()
+    {
+        using var session = _manager.CreateSession("WebSocket", "stale-after-unsub");
+
+        var add = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, add.Result);
+
+        // While the subscription is current, the claim succeeds.
+        Assert.Equal(
+            SubscriptionDeliveryClaim.Claimed,
+            _manager.TryClaimSubscriptionDelivery(session.SessionId, "subB", add.Generation, "evt-a"));
+
+        Assert.True(_manager.TryRemoveSubscription(session.SessionId, "subB"));
+
+        // After unsubscribe, the writer's claim for a queued frame stamped with
+        // the old generation is rejected as stale (no dedup claim, no send).
+        Assert.Equal(
+            SubscriptionDeliveryClaim.StaleGeneration,
+            _manager.TryClaimSubscriptionDelivery(session.SessionId, "subB", add.Generation, "evt-b"));
+    }
+
+    // Regression: queued frames stamped with the prior generation are rejected
+    // after a same-id subscribe replaces the filter. Without this fence the writer
+    // would send the gen=N frame under the new gen=N+1 subscription, leaking events
+    // that the new filter would not have matched.
+    [UnitTest]
+    public void TryClaimSubscriptionDelivery_AfterSameIdReplacement_RejectsOldGeneration()
+    {
+        using var session = _manager.CreateSession("WebSocket", "stale-after-replace");
+
+        var first = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, first.Result);
+
+        var second = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, second.Result);
+        Assert.NotEqual(first.Generation, second.Generation);
+
+        // Frame queued under the prior generation must not be delivered.
+        Assert.Equal(
+            SubscriptionDeliveryClaim.StaleGeneration,
+            _manager.TryClaimSubscriptionDelivery(session.SessionId, "subB", first.Generation, "evt-a"));
+
+        // Frame queued under the current generation is still claimable.
+        Assert.Equal(
+            SubscriptionDeliveryClaim.Claimed,
+            _manager.TryClaimSubscriptionDelivery(session.SessionId, "subB", second.Generation, "evt-a"));
+    }
+
+    // Regression: even after unsubscribe, the resubscribe of the same id never
+    // collides with a stale frame because generation is session-monotonic and
+    // never resets. A frame stamped under the long-gone first generation stays
+    // rejected even after the same id is reused multiple times.
+    [UnitTest]
+    public void TryClaimSubscriptionDelivery_UnsubscribeThenResubscribe_NeverCollidesWithOldGeneration()
+    {
+        using var session = _manager.CreateSession("WebSocket", "unsub-resub");
+
+        var first = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, first.Result);
+
+        Assert.True(_manager.TryRemoveSubscription(session.SessionId, "subB"));
+
+        var second = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, second.Result);
+        Assert.True(second.Generation > first.Generation);
+
+        // The original generation cannot collide with the reborn subscription.
+        Assert.Equal(
+            SubscriptionDeliveryClaim.StaleGeneration,
+            _manager.TryClaimSubscriptionDelivery(session.SessionId, "subB", first.Generation, "evt-a"));
+    }
+
+    // Regression: Broadcast must stamp each queued copy with the matching
+    // subscription's generation so the writer drain can fence stale frames.
+    [UnitTest]
+    public void Broadcast_StampsSubscriptionGenerationOnQueuedFrames()
+    {
+        using var session = _manager.CreateSession("WebSocket", "gen-stamp");
+
+        var defaultGen = _manager.GetDefaultSubscriptionGeneration(session.SessionId);
+        var add = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, add.Result);
+
+        var envelope = CreateEnvelope(cursor: 600) with { EventId = "evt-600" };
+        _manager.Broadcast(FeatureStreamMessage.Data(envelope));
+
+        var messages = new List<FeatureStreamMessage>();
+        while (session.Reader.TryRead(out var msg))
+        {
+            messages.Add(msg);
+        }
+
+        Assert.Equal(2, messages.Count);
+        var defaultFrame = Assert.Single(messages, m => m.Envelope.SubscriptionId == FeatureStreamSessionManager.DefaultSubscriptionId);
+        Assert.Equal(defaultGen, defaultFrame.SubscriptionGeneration);
+        var subBFrame = Assert.Single(messages, m => m.Envelope.SubscriptionId == "subB");
+        Assert.Equal(add.Generation, subBFrame.SubscriptionGeneration);
+    }
+
+    // Regression: heartbeats remain stamp-free (and bypass the writer's claim
+    // gate) because they are not subscription-scoped. They must reach every
+    // session regardless of subscription churn.
+    [UnitTest]
+    public void Broadcast_HeartbeatFramesCarryNoSubscriptionGeneration()
+    {
+        using var session = _manager.CreateSession("WebSocket", "heartbeat-gen");
+        _manager.BroadcastHeartbeat();
+
+        Assert.True(session.Reader.TryRead(out var msg));
+        Assert.True(msg.IsHeartbeat);
+        Assert.Equal(0, msg.SubscriptionGeneration);
     }
 
     private static FeatureStreamEnvelope CreateEnvelope(long cursor) => CreateEnvelope(cursor, layerId: 0, serviceId: "test-svc");

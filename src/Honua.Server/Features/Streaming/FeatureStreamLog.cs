@@ -79,4 +79,8 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5018, Level = LogLevel.Information,
         Message = "Feature stream subscription {SubscriptionId} removed from session {SessionId}")]
     public static partial void SubscriptionRemoved(ILogger logger, Guid sessionId, string subscriptionId);
+
+    [LoggerMessage(EventId = 5019, Level = LogLevel.Debug,
+        Message = "Feature stream session {SessionId} dropped a stale-generation frame for subscription {SubscriptionId} (frameGeneration={FrameGeneration})")]
+    public static partial void StaleSubscriptionFrameDropped(ILogger logger, Guid sessionId, string subscriptionId, long frameGeneration);
 }

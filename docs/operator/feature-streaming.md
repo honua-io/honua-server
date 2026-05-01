@@ -17,10 +17,10 @@ When the configured `MaxConcurrentSessions` limit is reached, new connections ar
 
 ## WebSocket Frames
 
-Client control frames are JSON:
+Client control frames are JSON. `subscriptionId` and `cursor` on `subscribe` are optional: the server assigns an opaque id when omitted, and `cursor` triggers per-subscription replay from that point before live delivery begins.
 
 ```json
-{"type":"subscribe","layerId":0,"bbox":[-158,21,-157,22],"filter":"status = 'active'","datetime":"2026-01-01T00:00:00Z/.."}
+{"type":"subscribe","subscriptionId":"alpha","layerId":0,"bbox":[-158,21,-157,22],"filter":"status = 'active'","datetime":"2026-01-01T00:00:00Z/..","cursor":1234}
 {"type":"unsubscribe","subscriptionId":"<id-from-status>"}
 {"type":"ping"}
 ```
@@ -28,7 +28,7 @@ Client control frames are JSON:
 The server sends:
 
 - `status` frames for `connected`, `subscribed`, `unsubscribed`, and ping `ok`.
-- `error` frames for invalid control messages.
+- `error` frames for invalid control messages. Canonical codes include `invalid-json`, `invalid-control`, `unsupported-control`, `invalid-subscription`, `invalid-subscription-id`, `invalid-unsubscribe`, `subscription-limit-reached`, `subscription-not-found`, `session-closed`, and `control-frame-too-large` (the last closes the connection).
 - `heartbeat` frames on the configured heartbeat interval.
 - `feature-change` frames for matching events.
 
@@ -83,13 +83,15 @@ SSE event names are `status`, `heartbeat`, and `feature-change`. Each `feature-c
 
 Polygon intersects (`polygon` / `intersects` query parameters) are explicitly rejected with `polygonIntersects stream filters are not supported by the active feature-change event source.` Unsupported CRS values, non-spatial bbox targets, unknown filter fields, excessive filter depth, functions, and temporal filters on non-time-aware layers all return client-safe `400` errors.
 
-WebSocket `subscribe` control frames accept the same filter shape (`serviceId`, `layerId`/`layers`/`layerIds`, `bbox`, `bboxCrs`, `filter`, `filterLang`, `datetime`) plus an optional `cursor` for per-subscription replay. The same single-layer constraints apply.
+WebSocket `subscribe` control frames accept the same filter shape (`serviceId`, `layerId`/`layers`/`layerIds`, `bbox`, `bboxCrs`, `filter`, `filterLang`, `datetime`) plus an optional client-supplied `subscriptionId` and an optional `cursor` for per-subscription replay. The same single-layer constraints apply. When `cursor` is supplied the server replays missed events from the durable store, then transitions to live delivery; the per-subscription dedup keeps that handoff effectively exactly-once on the WebSocket path.
 
 ## Replay And Backpressure
 
-Clients should persist the highest delivered `cursor` per subscription. On reconnect, pass that cursor to receive events after it. Delivery is at least once, so consumers should de-duplicate by `eventId` and ignore stale cursors already processed.
+Clients should persist the highest delivered `cursor` per subscription. On reconnect, pass that cursor to receive events after it. Delivery is at least once. The same event is delivered once **per matching subscription** on a session, so multi-subscription clients should dedupe by `(subscriptionId, eventId)` (or maintain a per-subscription cursor). Single-subscription consumers and webhooks can safely dedupe by `eventId` alone. Stale cursors already processed should be ignored.
 
 Each connection has a bounded outbound queue. Slow consumers are disconnected after the replay handoff grace window is exhausted. Heartbeat events let clients detect idle-but-healthy connections.
+
+After an `unsubscribe` or a same-id `subscribe` replacement, frames the broadcast had already queued for the prior subscription are fenced at the writer drain (a per-(session) monotonic generation pinned at queue time must still match) and dropped without claiming dedup. The new subscription (or a future `subscribe` with `cursor` for the same id) can therefore replay those events freshly.
 
 ## Configuration
 

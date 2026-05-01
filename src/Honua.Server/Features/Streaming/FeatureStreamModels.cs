@@ -294,6 +294,32 @@ internal enum AddSubscriptionResult
 }
 
 /// <summary>
+/// Outcome of <see cref="FeatureStreamSessionManager.TryAddSubscription"/>: status plus the
+/// generation assigned to the subscription. Generation is monotonically increasing per session
+/// and changes on every add (including same-id replacement), so callers can pin the generation
+/// they observed when issuing replay or send-time delivery claims.
+/// </summary>
+internal readonly record struct AddSubscriptionOutcome(AddSubscriptionResult Result, long Generation);
+
+/// <summary>
+/// Result of <see cref="FeatureStreamSessionManager.TryClaimSubscriptionDelivery"/>. The
+/// writer distinguishes a stale-generation drop (which is observable telemetry — frames are
+/// being orphaned by unsubscribe/replacement) from a benign dedup skip (the per-subscription
+/// replay path already claimed and sent the frame).
+/// </summary>
+internal enum SubscriptionDeliveryClaim
+{
+    /// <summary>Caller owns the slot; send the frame.</summary>
+    Claimed,
+
+    /// <summary>Slot was already claimed by a concurrent send-time path; skip silently.</summary>
+    AlreadyDelivered,
+
+    /// <summary>Subscription was removed or replaced; drop the queued frame and emit telemetry.</summary>
+    StaleGeneration
+}
+
+/// <summary>
 /// Disconnect reason for feature-stream sessions.
 /// </summary>
 internal enum FeatureStreamDisconnectReason
