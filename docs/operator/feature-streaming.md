@@ -97,6 +97,8 @@ After an `unsubscribe` or a same-id `subscribe` replacement, frames the broadcas
 
 The default subscription gets an additional cursor fence on the WebSocket writer drain: queued default-subscription frames whose envelope cursor is at or below the writer's running replay cursor have already been delivered through replay (or the cross-node poll) and are dropped before the dedup claim. This mirrors the SSE drain's cursor guard and keeps high-volume replay handoffs duplicate-free even when the per-session recent-event LRU rolls over. Non-default subscriptions are protected by their pause/unpause/post-unpause-sweep choreography, which prevents broadcast queueing during the subscription's own replay range.
 
+Cross-node recovery (`CrossNodeSyncInterval`) covers all WebSocket subscriptions, not only the session-managed default. Each interval the writer polls the durable store for events past each non-paused subscription's per-subscription poll watermark and re-runs the per-(event, subscription) atomic dedup claim. The watermark is seeded after the subscribe-time replay (or, for no-cursor subscribes, from the store cursor captured before the subscription is added), so the first poll after `subscribed` only surfaces events committed after the subscription was established. This is the recovery path for events that landed in the durable store on another node but were never delivered through the local broadcast / Redis pub/sub fan-out.
+
 ## Configuration
 
 Relevant settings:

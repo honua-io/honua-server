@@ -725,6 +725,82 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Equal(AddSubscriptionResult.SessionGone, _manager.TryAddSubscription(Guid.NewGuid(), "subA", filter: null).Result);
     }
 
+    // Regression for review finding "Control-frame subscriptions are excluded from
+    // durable cross-node polling". The writer's onPoll closure walks this snapshot
+    // each interval; the snapshot must include only non-default, non-paused
+    // subscriptions and must carry the generation captured at snapshot time so
+    // the per-(event, subscription) dedup claim can fence stale frames.
+    [UnitTest]
+    public void GetActivePollableSubscriptions_OnlyIncludesNonDefaultNonPausedSubscriptions()
+    {
+        using var session = _manager.CreateSession("WebSocket", "poll-snapshot");
+
+        // Default is excluded — its replay path uses a separate writer-side cursor
+        // fence and a stable session-pinned generation, not this snapshot.
+        var addA = _manager.TryAddSubscription(session.SessionId, "subA", filter: null, paused: false);
+        var addPaused = _manager.TryAddSubscription(session.SessionId, "subPaused", filter: null, paused: true);
+        Assert.Equal(AddSubscriptionResult.Added, addA.Result);
+        Assert.Equal(AddSubscriptionResult.Added, addPaused.Result);
+
+        var snapshot = _manager.GetActivePollableSubscriptions(session.SessionId);
+
+        Assert.Single(snapshot);
+        Assert.Equal("subA", snapshot[0].SubscriptionId);
+        Assert.Equal(addA.Generation, snapshot[0].Generation);
+        Assert.Equal(0, snapshot[0].LastPolledCursor);
+    }
+
+    // The poll cursor must only advance forward and only when the supplied
+    // generation still owns the subscription. A stale-generation advance from
+    // an unsubscribe-then-resubscribe race must no-op; otherwise the new
+    // subscription would inherit a watermark from the old one and skip events
+    // that should have been replayed under the new generation.
+    [UnitTest]
+    public void TryAdvanceSubscriptionPollCursor_HonoursGenerationAndMonotonicity()
+    {
+        using var session = _manager.CreateSession("WebSocket", "poll-cursor");
+
+        var add = _manager.TryAddSubscription(session.SessionId, "subA", filter: null, paused: false);
+        Assert.Equal(AddSubscriptionResult.Added, add.Result);
+
+        // First advance succeeds.
+        Assert.True(_manager.TryAdvanceSubscriptionPollCursor(session.SessionId, "subA", add.Generation, 50));
+
+        // Backwards advance is rejected (monotonic watermark).
+        Assert.False(_manager.TryAdvanceSubscriptionPollCursor(session.SessionId, "subA", add.Generation, 25));
+
+        // Same value is rejected (must be strictly greater).
+        Assert.False(_manager.TryAdvanceSubscriptionPollCursor(session.SessionId, "subA", add.Generation, 50));
+
+        // Forwards advance succeeds.
+        Assert.True(_manager.TryAdvanceSubscriptionPollCursor(session.SessionId, "subA", add.Generation, 75));
+
+        // Stale generation (a same-id resubscribe replaces the entry) is
+        // rejected so the new generation seeds its own watermark.
+        var replace = _manager.TryAddSubscription(session.SessionId, "subA", filter: null, paused: false);
+        Assert.Equal(AddSubscriptionResult.Added, replace.Result);
+        Assert.NotEqual(add.Generation, replace.Generation);
+        Assert.False(_manager.TryAdvanceSubscriptionPollCursor(session.SessionId, "subA", add.Generation, 200));
+
+        // Snapshot reflects the new generation with a fresh (zero) watermark.
+        var snapshot = _manager.GetActivePollableSubscriptions(session.SessionId);
+        Assert.Single(snapshot);
+        Assert.Equal(replace.Generation, snapshot[0].Generation);
+        Assert.Equal(0, snapshot[0].LastPolledCursor);
+    }
+
+    [UnitTest]
+    public void GetActivePollableSubscriptions_UnknownSession_ReturnsEmpty()
+    {
+        Assert.Empty(_manager.GetActivePollableSubscriptions(Guid.NewGuid()));
+    }
+
+    [UnitTest]
+    public void TryAdvanceSubscriptionPollCursor_UnknownSession_ReturnsFalse()
+    {
+        Assert.False(_manager.TryAdvanceSubscriptionPollCursor(Guid.NewGuid(), "subA", generation: 1, cursor: 10));
+    }
+
     [UnitTest]
     public void Broadcast_HeartbeatBypassesFilter()
     {

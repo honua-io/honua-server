@@ -603,6 +603,31 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     }
 
     /// <summary>
+    /// Snapshots non-default, non-paused subscriptions on the session so the WebSocket writer's
+    /// cross-node poll can replay each one through the per-(event, subscription) dedup claim.
+    /// Returns an empty array when the session is gone or has no eligible subscriptions.
+    /// </summary>
+    public PollableSubscription[] GetActivePollableSubscriptions(Guid sessionId)
+    {
+        return _sessions.TryGetValue(sessionId, out var entry)
+            ? entry.GetActivePollableSubscriptions()
+            : [];
+    }
+
+    /// <summary>
+    /// Advances the per-subscription poll cursor when the supplied generation still owns the
+    /// subscription. Returns false when the session or subscription is gone, the generation
+    /// has been replaced, or the supplied cursor is not strictly greater than the recorded
+    /// value. Used by the WebSocket writer's cross-node poll after each per-subscription
+    /// store sweep so the next interval starts from the watermark just delivered.
+    /// </summary>
+    public bool TryAdvanceSubscriptionPollCursor(Guid sessionId, string subscriptionId, long generation, long cursor)
+    {
+        return _sessions.TryGetValue(sessionId, out var entry)
+            && entry.TryAdvanceSubscriptionPollCursor(subscriptionId, generation, cursor);
+    }
+
+    /// <summary>
     /// Removes a subscription from an existing WebSocket session.
     /// </summary>
     public bool TryRemoveSubscription(Guid sessionId, string subscriptionId)
@@ -725,12 +750,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             {
                 var generation = ++_subscriptionGenerationCounter;
                 _subscriptions[FeatureStreamSessionManager.DefaultSubscriptionId] =
-                    new SubscriptionState(subscriptionFilter, Paused: false, Generation: generation);
+                    new SubscriptionState(subscriptionFilter, Paused: false, Generation: generation, LastPolledCursor: 0);
                 DefaultSubscriptionGeneration = generation;
             }
         }
 
-        private sealed record SubscriptionState(IStreamSubscriptionFilter? Filter, bool Paused, long Generation);
+        private sealed record SubscriptionState(IStreamSubscriptionFilter? Filter, bool Paused, long Generation, long LastPolledCursor);
 
         /// <summary>
         /// Generation assigned to the default subscription at session creation. Stable for the
@@ -873,7 +898,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 }
 
                 generation = ++_subscriptionGenerationCounter;
-                _subscriptions[subscriptionId] = new SubscriptionState(filter, paused, generation);
+                _subscriptions[subscriptionId] = new SubscriptionState(filter, paused, generation, LastPolledCursor: 0);
                 return true;
             }
         }
@@ -926,6 +951,70 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                         ? SubscriptionDeliveryClaim.Claimed
                         : SubscriptionDeliveryClaim.AlreadyDelivered;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Snapshots non-default, non-paused subscriptions on this session for the writer's
+        /// cross-node poll. Each entry carries the generation observed at snapshot time so the
+        /// poll can fence stale frames at send time, plus the per-subscription poll cursor that
+        /// scopes the next durable-store sweep to events past the last delivered cursor.
+        /// </summary>
+        public PollableSubscription[] GetActivePollableSubscriptions()
+        {
+            lock (_subscriptionLock)
+            {
+                if (_subscriptions.Count == 0)
+                {
+                    return [];
+                }
+
+                var snapshot = new List<PollableSubscription>(_subscriptions.Count);
+                foreach (var (subscriptionId, state) in _subscriptions)
+                {
+                    if (state.Paused)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(subscriptionId, FeatureStreamSessionManager.DefaultSubscriptionId, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    snapshot.Add(new PollableSubscription(
+                        subscriptionId,
+                        state.Generation,
+                        state.Filter,
+                        state.LastPolledCursor));
+                }
+
+                return snapshot.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Advances the per-subscription poll cursor when the supplied generation still owns the
+        /// subscription. Returns false when the subscription is gone, the generation has been
+        /// replaced, or the supplied cursor is not strictly greater than the recorded value.
+        /// </summary>
+        public bool TryAdvanceSubscriptionPollCursor(string subscriptionId, long generation, long cursor)
+        {
+            lock (_subscriptionLock)
+            {
+                if (!_subscriptions.TryGetValue(subscriptionId, out var current) ||
+                    current.Generation != generation)
+                {
+                    return false;
+                }
+
+                if (cursor <= current.LastPolledCursor)
+                {
+                    return false;
+                }
+
+                _subscriptions[subscriptionId] = current with { LastPolledCursor = cursor };
+                return true;
             }
         }
 
@@ -990,6 +1079,18 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// removed before sending.
     /// </summary>
     internal readonly record struct SubscriptionMatch(string SubscriptionId, long Generation);
+
+    /// <summary>
+    /// Snapshot of a non-default WebSocket subscription that the writer's cross-node poll
+    /// can replay on the next interval. Carries the generation captured at snapshot time so
+    /// stale-generation frames are fenced at send time, plus the last poll cursor so the
+    /// store sweep starts from the watermark already delivered to this subscription.
+    /// </summary>
+    internal readonly record struct PollableSubscription(
+        string SubscriptionId,
+        long Generation,
+        IStreamSubscriptionFilter? Filter,
+        long LastPolledCursor);
 }
 
 /// <summary>

@@ -648,6 +648,110 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
+    // Regression for review finding "Control-frame subscriptions are excluded
+    // from durable cross-node polling". Sessions opened without query filters
+    // by non-admin clients previously had no onPoll installed at all — control-
+    // frame subscribes added later relied solely on local broadcast / Redis
+    // pub/sub. A cross-node event that landed only in the durable store (not
+    // seen by Broadcast on this node) was lost. After the fix, the writer
+    // always installs onPoll and snapshots active control subscriptions on
+    // each interval, replaying each from its per-subscription poll watermark
+    // through the existing generation/dedup claim path.
+    //
+    // The test runs in dev-bypass mode where every session is admin and so
+    // gets addDefaultSubscription=true — both subscriptions are active, both
+    // have a poll path, and a single store-only event must be delivered to
+    // BOTH the default and the control subscription (one frame per (event,
+    // subscription) tuple). Without the fix, the control subscription would
+    // never see a frame for a store-only cross-node event.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_ControlSubscription_RecoversCrossNodeEventViaDurablePoll()
+    {
+        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    // Tight poll interval so the test does not have to wait the default.
+                    ["FeatureStreaming:CrossNodeSyncInterval"] = "00:00:00.100"
+                });
+            });
+        });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var eventStore = fixture.GetService<IFeatureChangeEventStore>();
+            var wsClient = fixture.CreateWebSocketClient();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+            using var ws = await wsClient.ConnectAsync(
+                new Uri("ws://localhost/api/v1/streaming/features?clientLabel=control-poll-recovery"),
+                cts.Token);
+
+            // Drain the connect status frame.
+            _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+            // Subscribe via control frame to a specific layer with no replay cursor.
+            // The pre-add cursor capture seeds the per-subscription poll watermark
+            // so the next poll surfaces events committed strictly after this point.
+            await SendWebSocketJsonAsync(
+                ws,
+                """{"type":"subscribe","subscriptionId":"control-poll","layerId":0}""",
+                cts.Token);
+            var subscribed = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            subscribed.GetProperty("status").GetString().Should().Be("subscribed");
+            subscribed.GetProperty("subscriptionId").GetString().Should().Be("control-poll");
+
+            // Append directly to the durable store, bypassing FeatureStreamPublisher.
+            // This simulates a peer node persisting an event without this node's
+            // Broadcast / Redis pub/sub fan-out picking it up.
+            var crossNodeServiceId = $"cross-node-{Guid.NewGuid():N}";
+            await eventStore.AppendAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = crossNodeServiceId,
+                LayerId = 0,
+                ObjectId = 4242,
+                Operation = "insert",
+                Protocol = "rest",
+                RequestId = "req-cross-node-poll"
+            }, cts.Token);
+
+            // The fix's invariant: the cross-node store sweep delivers ONE frame
+            // per matching subscription. Wait until the control subscription
+            // receives its frame for this event — without the fix, the writer's
+            // onPoll closure only handled the default subscription and the
+            // control subscription would never see a store-only event.
+            var sawControlSubFrame = false;
+            while (!sawControlSubFrame)
+            {
+                cts.Token.ThrowIfCancellationRequested();
+                var frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+                if (frame.GetProperty("type").GetString() != "feature-change")
+                {
+                    continue;
+                }
+
+                if (frame.TryGetProperty("serviceId", out var svc) && svc.GetString() == crossNodeServiceId
+                    && frame.GetProperty("subscriptionId").GetString() == "control-poll")
+                {
+                    sawControlSubFrame = true;
+                }
+            }
+
+            sawControlSubFrame.Should().BeTrue(
+                "the writer's cross-node poll must replay durable-store events to control-frame subscriptions");
+
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithoutUpgradeOrSseHeader_Returns400()

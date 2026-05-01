@@ -953,22 +953,59 @@ internal static class FeatureStreamEndpoints
                     return cursor;
                 }
         : null,
-            onPoll: addDefaultSubscription
-                ? async (cursor, ct) =>
-                await ReplayToWebSocketAsync(
-                    webSocket,
-                    session.WriteLock,
-                    eventStore,
-                    cursor,
-                    options.ReplayBatchSize,
-                    logger,
-                    session.SessionId,
-                    ct,
-                    subscriptionFilter,
-                    FeatureStreamSessionManager.DefaultSubscriptionId,
-                    sessionManager,
-                    defaultSubscriptionGeneration).ConfigureAwait(false)
-                : null,
+            // The poll closure is always installed so control-frame subscriptions (added
+            // after connect via subscribe frames) are also covered by the durable-store
+            // sweep — without this, a non-admin session opened with no query filters
+            // (addDefaultSubscription:false) would have no recovery path for cross-node
+            // events that the broadcast/Redis pub/sub fan-out missed. The default
+            // subscription path stays gated on addDefaultSubscription so its writer-side
+            // cursor fence remains the single source of truth for that subscription.
+            onPoll: async (cursor, ct) =>
+            {
+                if (addDefaultSubscription)
+                {
+                    cursor = await ReplayToWebSocketAsync(
+                        webSocket,
+                        session.WriteLock,
+                        eventStore,
+                        cursor,
+                        options.ReplayBatchSize,
+                        logger,
+                        session.SessionId,
+                        ct,
+                        subscriptionFilter,
+                        FeatureStreamSessionManager.DefaultSubscriptionId,
+                        sessionManager,
+                        defaultSubscriptionGeneration).ConfigureAwait(false);
+                }
+
+                foreach (var sub in sessionManager.GetActivePollableSubscriptions(session.SessionId))
+                {
+                    var advanced = await ReplayToWebSocketAsync(
+                        webSocket,
+                        session.WriteLock,
+                        eventStore,
+                        sub.LastPolledCursor,
+                        options.ReplayBatchSize,
+                        logger,
+                        session.SessionId,
+                        ct,
+                        sub.Filter,
+                        sub.SubscriptionId,
+                        sessionManager,
+                        sub.Generation).ConfigureAwait(false);
+                    if (advanced > sub.LastPolledCursor)
+                    {
+                        sessionManager.TryAdvanceSubscriptionPollCursor(
+                            session.SessionId,
+                            sub.SubscriptionId,
+                            sub.Generation,
+                            advanced);
+                    }
+                }
+
+                return cursor;
+            },
             pollInterval: options.CrossNodeSyncInterval);
 
         // Receive loop keeps the connection alive and detects client close.
@@ -1307,10 +1344,31 @@ internal static class FeatureStreamEndpoints
             return;
         }
 
+        // For no-cursor subscribes capture the store cursor BEFORE TryAddSubscription so
+        // the per-subscription poll watermark covers any event committed between this
+        // moment and the moment broadcast first sees the new subscription. Without a
+        // pre-add snapshot, an event whose Broadcast iteration races ahead of the Add
+        // would be missed by both the broadcast (sub not in dict yet) and the poll
+        // (watermark already past the event). Dedup at send time handles any overlap
+        // when the broadcast did see the sub. With-cursor subscribes do not need this:
+        // their post-unpause-sweep advances the watermark to the last delivered cursor.
+        var replayCursor = control.Cursor;
+        long preAddCursor = 0;
+        if (!replayCursor.HasValue)
+        {
+            try
+            {
+                preAddCursor = await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+        }
+
         // Pause the subscription before replay so the live channel writer cannot
         // queue events that the per-subscription replay path is about to deliver
         // directly. The unpause after replay restores normal live fan-out.
-        var replayCursor = control.Cursor;
         var addOutcome = deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: replayCursor.HasValue);
         switch (addOutcome.Result)
         {
@@ -1336,6 +1394,18 @@ internal static class FeatureStreamEndpoints
         // replaces this same id mid-flight.
         var subscriptionGeneration = addOutcome.Generation;
         FeatureStreamLog.SubscriptionAdded(logger, session.SessionId, subscriptionId, filter?.Summary ?? "all");
+
+        // Seed the per-subscription poll watermark for the no-cursor path so the
+        // writer's cross-node sweep starts from the pre-add snapshot. The
+        // with-cursor path advances the watermark in the finally block below.
+        if (!replayCursor.HasValue && preAddCursor > 0)
+        {
+            deps.SessionManager.TryAdvanceSubscriptionPollCursor(
+                session.SessionId,
+                subscriptionId,
+                subscriptionGeneration,
+                preAddCursor);
+        }
         long? currentCursor = null;
         try
         {
@@ -1429,7 +1499,7 @@ internal static class FeatureStreamEndpoints
                 {
                     try
                     {
-                        await ReplayToWebSocketAsync(
+                        currentCursor = await ReplayToWebSocketAsync(
                             webSocket,
                             session.WriteLock,
                             deps.EventStore,
@@ -1451,6 +1521,19 @@ internal static class FeatureStreamEndpoints
                     {
                         // Client disconnected.
                     }
+                }
+
+                // Seed the per-subscription poll watermark to the highest cursor
+                // delivered through the per-sub replay path. The writer's cross-node
+                // sweep starts from this watermark on each interval — without it,
+                // the poll would re-scan the entire replay range.
+                if (currentCursor.HasValue && currentCursor.Value > 0)
+                {
+                    deps.SessionManager.TryAdvanceSubscriptionPollCursor(
+                        session.SessionId,
+                        subscriptionId,
+                        subscriptionGeneration,
+                        currentCursor.Value);
                 }
             }
         }
