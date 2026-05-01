@@ -101,6 +101,54 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
+    // Regression for review finding "WebSocket control frames are read with no
+    // size limit". A misbehaving client cannot exhaust server memory by sending
+    // an oversized control frame; the server bounces it with a client-safe
+    // error and closes the connection.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_OversizedControlFrame_ReturnsErrorAndCloses()
+    {
+        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FeatureStreaming:MaxControlFrameBytes"] = "256"
+                });
+            });
+        });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var wsClient = fixture.CreateWebSocketClient();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+            using var ws = await wsClient.ConnectAsync(
+                new Uri("ws://localhost/api/v1/streaming/features?clientLabel=oversize-test"),
+                cts.Token);
+
+            // Drain the connect status frame.
+            _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+            // Build a control frame >256 bytes by padding subscriptionId.
+            var pad = new string('x', 512);
+            var oversized = $$"""{"type":"subscribe","subscriptionId":"{{pad}}","layerId":0}""";
+            await SendWebSocketJsonAsync(ws, oversized, cts.Token);
+
+            // Server must respond with a control-frame-too-large error.
+            var error = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            error.GetProperty("type").GetString().Should().Be("error");
+            error.GetProperty("code").GetString().Should().Be("control-frame-too-large");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // Regression for review finding "WebSocket writer drops same-event frames
     // for additional subscriptions". When two subscriptions on a single
     // WebSocket both match the same event, both frames must arrive on the
@@ -570,6 +618,75 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             data.GetProperty("edition").GetString().Should().Be("Community");
             data.GetProperty("transports").GetArrayLength().Should().Be(0);
             data.GetProperty("filterFamilies").GetArrayLength().Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // Regression for review finding "Streaming access checks bypass
+    // service-level policies". A layer in a service with a role-gated policy
+    // must not appear in capabilities even when the layer itself has no
+    // layer-level policy — the service policy is the only gate. Pre-fix the
+    // capabilities filter only consulted the layer policy.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features/capabilities")]
+    public async Task Capabilities_OmitsLayersWhoseServicePolicyDenies()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILayerCatalog>(new ServiceLevelAccessStreamLayerCatalog());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var response = await fixture.CreateAdminClient().GetAsync("/api/v1/streaming/features/capabilities");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = doc.RootElement.GetProperty("data");
+            var layers = data.GetProperty("layers").EnumerateArray().ToList();
+
+            layers.Should().HaveCount(1);
+            layers[0].GetProperty("layerId").GetInt32().Should().Be(ServiceLevelAccessStreamLayerCatalog.OpenLayerId);
+
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().NotContain("Layer In Restricted Service");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // Regression for the same finding's other half: when a serviceId is
+    // supplied, layer ids must be members of that service. Pre-fix the code
+    // fell back to a global GetLayerAsync, letting callers attach layers
+    // that don't belong to the named service.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithServiceIdAndForeignLayer_ReturnsBadRequest()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILayerCatalog>(new ServiceLevelAccessStreamLayerCatalog());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            // Layer 9 is in restricted-svc; specifying serviceId=open-svc must reject.
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/api/v1/streaming/features?serviceId=open-svc&layers={ServiceLevelAccessStreamLayerCatalog.RestrictedServiceLayerId}");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var response = await fixture.CreateAdminClient().SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            // Apostrophe is escaped as ' in JSON so match the unambiguous prefix.
+            body.Should().Contain($"Layer {ServiceLevelAccessStreamLayerCatalog.RestrictedServiceLayerId} is not part of service");
         }
         finally
         {
@@ -1223,6 +1340,100 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             Stream licenseStream,
             CancellationToken cancellationToken = default)
             => Task.FromResult(new LicenseUploadResult(false, "Not supported in tests."));
+    }
+
+    // Two services where service "restricted-svc" has a role-gated access
+    // policy (admin lacks the role under dev auth) and its layer has no
+    // layer-level policy. Used to verify that streaming surfaces evaluate
+    // service-level policies, not just layer-level ones.
+    private sealed class ServiceLevelAccessStreamLayerCatalog : ILayerCatalog
+    {
+        public const int OpenLayerId = 0;
+        public const int RestrictedServiceLayerId = 9;
+
+        private readonly LayerDefinition _openLayer;
+        private readonly LayerDefinition _restrictedServiceLayer;
+        private readonly ServiceDefinition _openService;
+        private readonly ServiceDefinition _restrictedService;
+
+        public ServiceLevelAccessStreamLayerCatalog()
+        {
+            var spatialReference = SpatialReference.Create(4326);
+            var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
+            var fields = new[]
+            {
+                new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
+                new FieldDefinition("name", FieldType.String, 255, true, null, "Name"),
+                new FieldDefinition("shape", FieldType.Geometry, null, false, null, "Geometry")
+            };
+
+            _openLayer = new LayerDefinition(
+                Id: OpenLayerId,
+                Name: "Public Stream Layer",
+                Description: "Layer in the open service",
+                GeometryType: GeometryType.Point,
+                SpatialReference: spatialReference,
+                Fields: fields,
+                Extent: extent);
+
+            _restrictedServiceLayer = new LayerDefinition(
+                Id: RestrictedServiceLayerId,
+                Name: "Layer In Restricted Service",
+                Description: "Layer has no policy of its own; service policy gates access",
+                GeometryType: GeometryType.Point,
+                SpatialReference: spatialReference,
+                Fields: fields,
+                Extent: extent);
+
+            _openService = new ServiceDefinition(
+                "open-svc",
+                "Open service",
+                [_openLayer],
+                spatialReference,
+                ServiceExtent: extent);
+
+            _restrictedService = new ServiceDefinition(
+                "restricted-svc",
+                "Restricted service",
+                [_restrictedServiceLayer],
+                spatialReference,
+                ServiceExtent: extent,
+                Metadata: new CatalogMetadata { AccessPolicy = new AccessPolicy { AllowedRoles = ["restricted-stream-reader"] } });
+        }
+
+        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult<LayerDefinition?>(layerId switch
+            {
+                OpenLayerId => _openLayer,
+                RestrictedServiceLayerId => _restrictedServiceLayer,
+                _ => null
+            });
+
+        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new[] { _openLayer, _restrictedServiceLayer });
+
+        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Task.FromResult<ServiceDefinition?>(serviceName switch
+            {
+                "open-svc" => _openService,
+                "restricted-svc" => _restrictedService,
+                _ => null
+            });
+
+        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new[] { _openService, _restrictedService });
+
+        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(layerId == OpenLayerId || layerId == RestrictedServiceLayerId);
+
+        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Task.FromResult(serviceName == "open-svc" || serviceName == "restricted-svc");
+
+        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
+            => Task.FromResult<Relationship?>(null);
+
+        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<Relationship>());
     }
 
     // Mixes one anonymous-readable layer with one role-restricted layer. The

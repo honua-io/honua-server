@@ -18,6 +18,7 @@ using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 
@@ -139,12 +140,19 @@ internal static class FeatureStreamEndpoints
         var edition = deps.LicenseStatusProvider.GetCurrentStatus().Edition;
         var enabled = edition >= HonuaEdition.Pro;
         var layers = await deps.LayerCatalog.ListLayersAsync(context.RequestAborted).ConfigureAwait(false);
-        // Filter to layers the caller can actually read so that anonymous or
-        // unauthorized callers do not learn the names, CRS, or time-aware
-        // status of restricted layers via this discovery endpoint. This
-        // mirrors the access filtering that OGC API Collections applies.
+        var services = await deps.LayerCatalog.ListServicesAsync(context.RequestAborted).ConfigureAwait(false);
+        // Resolve the primary service per layer so the access check evaluates
+        // both the layer policy and the service policy (matching the OGC API
+        // Collections pattern). Filtering with the layer policy alone would
+        // expose layers whose service-level policy denies anonymous reads.
+        var layerToService = services.Length > 0
+            ? LayerValidationHelpers.BuildPrimaryServiceMap(services)
+            : (IReadOnlyDictionary<int, ServiceDefinition>)new Dictionary<int, ServiceDefinition>();
         var layerCapabilities = layers
-            .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer))
+            .Where(layer => AccessPolicyHelpers.IsLayerAccessible(
+                context,
+                layer,
+                layerToService.TryGetValue(layer.Id, out var svc) ? svc : null))
             .Select(layer =>
             {
                 var timeInfo = layer.Metadata?.TimeInfo;
@@ -536,18 +544,42 @@ internal static class FeatureStreamEndpoints
             }
         }
 
+        IReadOnlyDictionary<int, ServiceDefinition>? layerToService = null;
         foreach (var id in ids)
         {
-            var layer = ResolveLayer(service, id) ??
-                await deps.LayerCatalog.GetLayerAsync(id, context.RequestAborted).ConfigureAwait(false);
-            if (layer is null)
+            // When a serviceId was provided, restrict layer ids to that service so a
+            // caller cannot piggy-back unrelated layers on an authorized service.
+            // When no serviceId was provided, look up the layer's primary service so
+            // the access policy check evaluates the service-level policy too.
+            LayerDefinition? layer;
+            ServiceDefinition? authService;
+            if (service is not null)
             {
-                var msg = $"Layer {id} not found.";
-                FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
+                layer = ResolveLayer(service, id);
+                if (layer is null)
+                {
+                    var msg = $"Layer {id} is not part of service '{service.Name}'.";
+                    FeatureStreamLog.FilterValidationFailed(logger, msg);
+                    return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
+                }
+
+                authService = service;
+            }
+            else
+            {
+                layer = await deps.LayerCatalog.GetLayerAsync(id, context.RequestAborted).ConfigureAwait(false);
+                if (layer is null)
+                {
+                    var msg = $"Layer {id} not found.";
+                    FeatureStreamLog.FilterValidationFailed(logger, msg);
+                    return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
+                }
+
+                layerToService ??= await BuildLayerToPrimaryServiceMapAsync(deps, context.RequestAborted).ConfigureAwait(false);
+                authService = layerToService.TryGetValue(layer.Id, out var resolved) ? resolved : null;
             }
 
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, authService);
             if (accessError is not null)
             {
                 return (null, accessError);
@@ -555,6 +587,16 @@ internal static class FeatureStreamEndpoints
         }
 
         return (ids.ToArray(), null);
+    }
+
+    private static async Task<IReadOnlyDictionary<int, ServiceDefinition>> BuildLayerToPrimaryServiceMapAsync(
+        FeatureStreamDependencies deps,
+        CancellationToken cancellationToken)
+    {
+        var services = await deps.LayerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
+        return services.Length == 0
+            ? new Dictionary<int, ServiceDefinition>()
+            : LayerValidationHelpers.BuildPrimaryServiceMap(services);
     }
 
     private static IResult? RequireAllLayerAccess(HttpContext context, ServiceDefinition service)
@@ -923,9 +965,24 @@ internal static class FeatureStreamEndpoints
         {
             while (webSocket.State == WebSocketState.Open && !linkedCts.Token.IsCancellationRequested)
             {
-                var receive = await ReceiveWebSocketTextAsync(webSocket, linkedCts.Token).ConfigureAwait(false);
+                var receive = await ReceiveWebSocketTextAsync(
+                    webSocket,
+                    options.MaxControlFrameBytes,
+                    linkedCts.Token).ConfigureAwait(false);
                 if (receive.CloseRequested)
                 {
+                    break;
+                }
+
+                if (receive.SizeExceeded)
+                {
+                    await SendWebSocketErrorAsync(
+                        webSocket,
+                        session.WriteLock,
+                        "control-frame-too-large",
+                        $"WebSocket control frame exceeded the {options.MaxControlFrameBytes}-byte limit.",
+                        null,
+                        linkedCts.Token).ConfigureAwait(false);
                     break;
                 }
 
@@ -1347,16 +1404,38 @@ internal static class FeatureStreamEndpoints
 
         if (layerIds is not null)
         {
+            IReadOnlyDictionary<int, ServiceDefinition>? layerToService = null;
             foreach (var layerId in layerIds)
             {
-                var layer = ResolveLayer(service, layerId) ??
-                    await deps.LayerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-                if (layer is null)
+                // When a serviceId was provided, restrict layer ids to that service so a
+                // caller cannot piggy-back unrelated layers on an authorized service.
+                // When no serviceId was provided, look up the layer's primary service so
+                // the access policy check evaluates the service-level policy too.
+                LayerDefinition? layer;
+                ServiceDefinition? authService;
+                if (service is not null)
                 {
-                    return (null, $"Layer {layerId} not found.");
+                    layer = ResolveLayer(service, layerId);
+                    if (layer is null)
+                    {
+                        return (null, $"Layer {layerId} is not part of service '{service.Name}'.");
+                    }
+
+                    authService = service;
+                }
+                else
+                {
+                    layer = await deps.LayerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+                    if (layer is null)
+                    {
+                        return (null, $"Layer {layerId} not found.");
+                    }
+
+                    layerToService ??= await BuildLayerToPrimaryServiceMapAsync(deps, cancellationToken).ConfigureAwait(false);
+                    authService = layerToService.TryGetValue(layer.Id, out var resolved) ? resolved : null;
                 }
 
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, authService);
                 if (accessError is not null)
                 {
                     return (null, "Access to the requested stream layer is forbidden.");
@@ -1514,8 +1593,9 @@ internal static class FeatureStreamEndpoints
         return null;
     }
 
-    private static async Task<(bool CloseRequested, string? Text)> ReceiveWebSocketTextAsync(
+    private static async Task<(bool CloseRequested, string? Text, bool SizeExceeded)> ReceiveWebSocketTextAsync(
         WebSocket webSocket,
+        int maxBytes,
         CancellationToken cancellationToken)
     {
         var buffer = new byte[4096];
@@ -1526,18 +1606,26 @@ internal static class FeatureStreamEndpoints
             var result = await webSocket.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
             if (result.MessageType == WebSocketMessageType.Close)
             {
-                return (true, null);
+                return (true, null, false);
             }
 
             if (result.MessageType != WebSocketMessageType.Text)
             {
-                return (false, null);
+                return (false, null, false);
+            }
+
+            // Enforce the configured cap before allocating more memory: a
+            // malicious client could otherwise buffer a never-ending fragmented
+            // text frame and exhaust server memory on a streaming connection.
+            if (stream.Length + result.Count > maxBytes)
+            {
+                return (false, null, true);
             }
 
             stream.Write(buffer, 0, result.Count);
             if (result.EndOfMessage)
             {
-                return (false, Encoding.UTF8.GetString(stream.ToArray()));
+                return (false, Encoding.UTF8.GetString(stream.ToArray()), false);
             }
         }
     }

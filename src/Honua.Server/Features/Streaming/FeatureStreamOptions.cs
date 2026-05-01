@@ -39,6 +39,13 @@ public sealed class FeatureStreamOptions
     /// Interval between shared-store sweeps used to pick up events published on other nodes.
     /// </summary>
     public TimeSpan CrossNodeSyncInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Maximum byte size for an inbound WebSocket control frame (subscribe, unsubscribe, ping).
+    /// Frames that exceed this cap are rejected with a client-safe error and the connection
+    /// is closed, preventing a malicious client from buffering an unbounded fragmented message.
+    /// </summary>
+    public int MaxControlFrameBytes { get; set; } = 64 * 1024;
 }
 
 /// <summary>
@@ -75,6 +82,11 @@ internal sealed class FeatureStreamOptionsValidator : IValidateOptions<FeatureSt
         if (options.CrossNodeSyncInterval <= TimeSpan.Zero)
         {
             failures.Add("FeatureStreaming:CrossNodeSyncInterval must be a positive duration.");
+        }
+
+        if (options.MaxControlFrameBytes <= 0)
+        {
+            failures.Add("FeatureStreaming:MaxControlFrameBytes must be a positive integer.");
         }
 
         return failures.Count > 0

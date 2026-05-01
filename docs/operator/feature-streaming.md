@@ -100,6 +100,7 @@ Relevant settings:
 - `FeatureStreaming:MaxConcurrentSessions`
 - `FeatureStreaming:ReplayBatchSize`
 - `FeatureStreaming:CrossNodeSyncInterval`
+- `FeatureStreaming:MaxControlFrameBytes` (default 64 KiB; oversized inbound WebSocket control frames are rejected with a `control-frame-too-large` error and the connection is closed)
 - `FeatureChangeEvents:MaxRetainedEvents`
 
 The capabilities response reports the active edition, minimum required edition, transports, filter families, replay support, cursor retention limit, heartbeat interval, max concurrent sessions, delete before-image availability, and a per-layer summary covering `canSubscribe`, `supportsSpatialFilters`, `supportsTemporalFilters`, layer time fields, and layer CRS. Capability values vary by edition and per-caller layer access.
