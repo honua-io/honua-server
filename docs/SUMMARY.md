@@ -8,6 +8,7 @@
 - [Deployment Scenarios](operator/DEPLOYMENT_SCENARIOS.md)
 - [Database Support Matrix](operator/database-support-matrix.md)
 - [DuckDB Provider](operator/duckdb-provider.md)
+- [SQL Server Provider](operator/sqlserver-provider.md)
 - [TLS Connection Guide](operator/tls-connection-guide.md)
 - [Security](operator/security.md)
 - [HTTP Client Resilience](operator/http-client-resilience.md)

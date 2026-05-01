@@ -193,6 +193,7 @@ src/
   Honua.Core/         Domain models and abstractions
   Honua.Postgres/     PostGIS implementation
   Honua.DuckDB/       DuckDB read-only provider (analytics, GeoParquet, edge)
+  Honua.SqlServer/    SQL Server read-only provider (geometry/geography)
   Honua.Server/       HTTP host (Minimal APIs, vertical slices)
   Honua.AppHost/      .NET Aspire orchestration
   Honua.ServiceDefaults/  Shared service configuration

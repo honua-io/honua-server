@@ -4,9 +4,9 @@ This document describes the current Honua Server architecture and the constraint
 
 ## Goals
 
-- **Provider-backed**: PostgreSQL/PostGIS is the primary read/write provider; DuckDB is an embedded read-only provider for analytics and reference workloads.
+- **Provider-backed**: PostgreSQL/PostGIS is the primary read/write provider; DuckDB is an embedded read-only provider for analytics and reference workloads; SQL Server is an additional read-only provider for enterprise spatial data ([#850](https://github.com/honua-io/honua-server/issues/850)).
 - **Open standards**: serve multiple GIS and data protocols from one dataset.
-- **Clean dependencies**: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` <- `Honua.Server`.
+- **Clean dependencies**: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` / `Honua.SqlServer` <- `Honua.Server`.
 - **Minimal API surface**: endpoints are defined with Minimal APIs, not MVC controllers.
 - **AOT-friendly**: avoid reflection in hot paths and use source-generated JSON/logging.
 
@@ -17,14 +17,16 @@ src/
 ├── Honua.Server/     # ASP.NET Core host + Minimal API endpoints
 ├── Honua.Core/       # Domain models + abstractions
 ├── Honua.Postgres/   # PostgreSQL/PostGIS implementation (read/write)
-└── Honua.DuckDB/     # DuckDB implementation (read-only)
+├── Honua.DuckDB/     # DuckDB implementation (read-only)
+└── Honua.SqlServer/  # SQL Server geometry/geography implementation (read-only)
 ```
 
 Key points:
 - **Honua.Core** defines domain models, protocol DTOs, and abstractions.
 - **Honua.Postgres** implements Core interfaces using raw Npgsql and PostGIS.
 - **Honua.DuckDB** implements Core read interfaces (`IFeatureReader`, `IStreamingFeatureStore`, etc.) for embedded DuckDB databases. Write operations are rejected at startup via capability stripping.
-- **Honua.Server** composes endpoints and handlers, selecting the active provider via `DataSource:Provider` configuration.
+- **Honua.SqlServer** implements `IFeatureReader` against SQL Server `geometry`/`geography` tables. Registered as an additional `IFeatureDataProvider` and selected per-layer when the layer's `DataConnection` resolves to provider `sqlserver`/`mssql`. Edits, native MVT/FlatGeobuf/Geobuf/GML, and statistics aggregates are deliberately disabled in this slice.
+- **Honua.Server** composes endpoints and handlers, selecting the active primary provider via `DataSource:Provider` configuration; additional read-only providers (DuckDB, SQL Server) plug in alongside.
 - The Blazor admin UI lives in the separate `honua-server-admin` repo and talks to this server's Admin API.
 
 ## Feature Slices (Server)
@@ -62,6 +64,15 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 - **Configuration-driven catalog**: layers and services are defined in `appsettings.json`, not in an admin database.
 - See the [DuckDB Provider Guide](../operator/duckdb-provider.md) for operator configuration.
 
+### SQL Server Provider
+
+- **Microsoft.Data.SqlClient**: standard .NET SQL Server driver with built-in pooling.
+- Same **QueryBuilder + DataAccess** split as Postgres/DuckDB, translating to T-SQL with `geometry::*` / `geography::*` spatial functions and `OFFSET`/`FETCH` paging.
+- **Read-only by design**: `IFeatureDataProvider.Writer` is `null`; statistics, top-features, date/value/H3 bins, and temporal extents throw `NotSupportedException`.
+- **Plug-in registration**: `AddSqlServerFeatureProvider` wires the provider as an additional `IFeatureDataProvider` selected per-layer through `FeatureProviderBindingResolver`. The primary backend (Postgres or DuckDB) remains in place.
+- **Identifier safety**: all configured identifiers (table, schema, primary key, geometry column, attribute fields) are validated against `[A-Za-z_][A-Za-z0-9_]*` and bracket-quoted.
+- See the [SQL Server Provider Guide](../operator/sqlserver-provider.md) for operator configuration.
+
 ## Configuration and Limits
 
 - Configuration is environment-variable friendly with source-generated validation.
@@ -90,7 +101,7 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 ## Architectural Constraints (Enforced)
 
 - **No controllers**: Minimal APIs only.
-- **Dependency flow**: Core <- Postgres / DuckDB <- Server.
+- **Dependency flow**: Core <- Postgres / DuckDB / SqlServer <- Server.
 - **Public API docs**: all public types require XML documentation.
 - **AOT compatibility**: reflection avoided in hot paths; source-gen JSON.
 

@@ -1172,6 +1172,14 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
         throw new InvalidOperationException($"Unsupported data source provider '{provider}'.");
     }
 
+    // Register the SQL Server spatial provider as an additional read-only feature backend (#850).
+    // Layers whose connection resolves to provider 'sqlserver'/'mssql' are routed here through the
+    // shared FeatureProviderBindingResolver. Disabled when SqlServer:Enabled is explicitly false.
+    if (configuration.GetValue("SqlServer:Enabled", true))
+    {
+        Honua.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(services, configuration);
+    }
+
     services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
         new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
     services.TryAddScoped(serviceProvider =>
