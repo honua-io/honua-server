@@ -752,6 +752,252 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         }
     }
 
+    // Regression for review finding "WebSocket live sends do not advance
+    // durable-poll watermarks". The writer's per-(event, subscription) dedup
+    // is the bounded RecentEventIdCapacity LRU (128 entries per session). A
+    // non-default subscription that delivers more live frames than the LRU
+    // can hold would, on the next durable-store sweep, see the early frames
+    // re-emitted because their dedup keys were evicted and the per-sub poll
+    // watermark stayed at the pre-add seed. Advancing LastPolledCursor on
+    // each successful live send scopes the next sweep past the live
+    // delivery cursor and preserves the documented at-least-once contract.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_LiveSendsToControlSubscription_AdvanceDurablePollWatermark()
+    {
+        var wsClient = _fixture.CreateWebSocketClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        using var ws = await wsClient.ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features?clientLabel=watermark-advance"),
+            cts.Token);
+
+        _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+        await SendWebSocketJsonAsync(
+            ws,
+            """{"type":"subscribe","subscriptionId":"sub-watermark","layerId":0}""",
+            cts.Token);
+        var subscribed = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+        subscribed.GetProperty("status").GetString().Should().Be("subscribed");
+
+        var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
+        await WaitForSessionAsync(sessionManager, "watermark-advance", cts.Token);
+        var sessionId = sessionManager.GetSessions()
+            .Single(s => s.ClientLabel == "watermark-advance").SessionId;
+
+        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
+        var serviceId = $"watermark-{Guid.NewGuid():N}";
+        const int eventCount = 4;
+        for (var i = 0; i < eventCount; i++)
+        {
+            await publisher.PublishAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = serviceId,
+                LayerId = 0,
+                ObjectId = i,
+                Operation = "insert",
+                Protocol = "rest",
+                RequestId = $"req-watermark-{i}"
+            });
+        }
+
+        // Drain frames until all eventCount events have been delivered to
+        // the control subscription and capture the highest cursor seen.
+        var deliveredCursors = new List<long>();
+        while (deliveredCursors.Count < eventCount)
+        {
+            cts.Token.ThrowIfCancellationRequested();
+            var frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            if (frame.GetProperty("type").GetString() != "feature-change")
+            {
+                continue;
+            }
+
+            if (frame.GetProperty("subscriptionId").GetString() != "sub-watermark"
+                || frame.GetProperty("serviceId").GetString() != serviceId)
+            {
+                continue;
+            }
+
+            deliveredCursors.Add(frame.GetProperty("cursor").GetInt64());
+        }
+
+        var maxDelivered = deliveredCursors.Max();
+
+        // The advance call sits inside the same loop iteration as the send
+        // and runs synchronously after it completes. By the time the test has
+        // received all four frames the writer has executed the corresponding
+        // TryAdvanceSubscriptionPollCursor calls; a small bounded poll
+        // tolerates async scheduling slack.
+        long observedCursor = 0;
+        for (var i = 0; i < 50 && !cts.Token.IsCancellationRequested; i++)
+        {
+            var snapshot = sessionManager.GetActivePollableSubscriptions(sessionId);
+            var sub = snapshot.FirstOrDefault(s => s.SubscriptionId == "sub-watermark");
+            if (sub.SubscriptionId is not null && sub.LastPolledCursor >= maxDelivered)
+            {
+                observedCursor = sub.LastPolledCursor;
+                break;
+            }
+
+            await Task.Delay(20, cts.Token);
+        }
+
+        observedCursor.Should().BeGreaterThanOrEqualTo(
+            maxDelivered,
+            "live sends to a control-frame subscription must advance the per-subscription poll watermark to prevent the next durable sweep from re-emitting events whose dedup keys evicted from the bounded RecentEventIdCapacity LRU");
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+    }
+
+    // Regression for review finding "Durable cross-node polling can starve
+    // under continuous outbound traffic". Pre-fix, each writer iteration
+    // started a fresh full-interval Task.Delay for the poll branch, so a
+    // session whose channel was kept hot would see the read branch always
+    // win the WhenAny race and the durable-store sweep would never fire.
+    // The fix replaces per-iteration delays with an absolute deadline plus
+    // an inline post-drain poll fallback, so the sweep fires on schedule
+    // (plus bounded slack from the ongoing drain) even under continuous
+    // outbound traffic.
+    //
+    // The test uses continuous heartbeat broadcasts to keep the session
+    // channel hot. Heartbeats deliberately bypass the cursor-fence and do
+    // not advance any watermark, so the cross-node event injected directly
+    // into the durable store stays strictly above the writer's per-
+    // subscription poll watermark — i.e., the poll has something to
+    // recover whenever it does fire. A continuous PUBLISHER loop would
+    // have been a more obvious driver but live sends post-fix advance the
+    // per-subscription poll watermark past the cross-node event's cursor,
+    // making the recovery target unreachable through the poll path.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_DurablePoll_FiresUnderContinuousOutboundTraffic()
+    {
+        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    // Tight interval so the test does not pay the default cadence
+                    // and can verify recovery within a bounded budget.
+                    ["FeatureStreaming:CrossNodeSyncInterval"] = "00:00:00.150"
+                });
+            });
+        });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var eventStore = fixture.GetService<IFeatureChangeEventStore>();
+            var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
+            var wsClient = fixture.CreateWebSocketClient();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+            using var ws = await wsClient.ConnectAsync(
+                new Uri("ws://localhost/api/v1/streaming/features?clientLabel=poll-starvation"),
+                cts.Token);
+
+            _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+            await SendWebSocketJsonAsync(
+                ws,
+                """{"type":"subscribe","subscriptionId":"sub-poll-starvation","layerId":0}""",
+                cts.Token);
+            var subscribed = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            subscribed.GetProperty("status").GetString().Should().Be("subscribed");
+
+            // Continuous heartbeat broadcasts keep the session channel hot
+            // without advancing any cursor. Pre-fix, the per-iteration
+            // Task.Delay reset would prevent the poll branch from ever
+            // firing under this load.
+            using var stopHeartbeats = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            var heartbeatTask = Task.Run(async () =>
+            {
+                while (!stopHeartbeats.IsCancellationRequested)
+                {
+                    try
+                    {
+                        sessionManager.BroadcastHeartbeat();
+                        await Task.Delay(20, stopHeartbeats.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        return;
+                    }
+                }
+            });
+
+            // Let the heartbeat loop populate the channel before injecting
+            // the cross-node event so the writer is exercising the
+            // hot-channel WhenAny path when the deadline elapses.
+            await Task.Delay(TimeSpan.FromMilliseconds(200), cts.Token);
+
+            // Inject a store-only event that bypasses Broadcast/Redis pub/sub.
+            // It can only reach the subscription through the cross-node poll
+            // path. Pre-fix, continuous outbound traffic would prevent the
+            // poll from firing and this event would never arrive.
+            var crossNodeServiceId = $"cross-node-{Guid.NewGuid():N}";
+            await eventStore.AppendAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = crossNodeServiceId,
+                LayerId = 0,
+                ObjectId = 0xCAFE,
+                Operation = "insert",
+                Protocol = "rest",
+                RequestId = "req-cross-node-starvation"
+            }, cts.Token);
+
+            var sawCrossNodeFrame = false;
+            using var observeCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            observeCts.CancelAfter(TimeSpan.FromSeconds(10));
+            try
+            {
+                while (!sawCrossNodeFrame)
+                {
+                    var frame = await ReceiveWebSocketJsonAsync(ws, observeCts.Token);
+                    if (frame.GetProperty("type").GetString() != "feature-change")
+                    {
+                        continue;
+                    }
+
+                    if (frame.TryGetProperty("serviceId", out var svc)
+                        && svc.GetString() == crossNodeServiceId
+                        && frame.GetProperty("subscriptionId").GetString() == "sub-poll-starvation")
+                    {
+                        sawCrossNodeFrame = true;
+                    }
+                }
+            }
+            finally
+            {
+                stopHeartbeats.Cancel();
+                try
+                {
+                    await heartbeatTask.ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Heartbeat loop errors during teardown are not relevant.
+                }
+            }
+
+            sawCrossNodeFrame.Should().BeTrue(
+                "the durable-store sweep must fire on schedule even under continuous outbound traffic so cross-node events are not starved by the WhenAny race");
+
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithoutUpgradeOrSseHeader_Returns400()

@@ -1101,13 +1101,31 @@ internal static class FeatureStreamEndpoints
         try
         {
             var effectivePollInterval = pollInterval.GetValueOrDefault(TimeSpan.FromSeconds(1));
+            // Deadline-based poll scheduling: nextPollAt advances by exactly one
+            // interval per fire, regardless of how many channel-traffic loop
+            // iterations elapsed in between. Without an absolute deadline,
+            // continuous local broadcasts win the WhenAny race every iteration
+            // and each round resets the poll delay to a fresh full interval,
+            // starving the durable-store recovery path indefinitely.
+            var nextPollAt = onPoll is null
+                ? DateTimeOffset.MaxValue
+                : DateTimeOffset.UtcNow + effectivePollInterval;
+
             while (!cancellationToken.IsCancellationRequested)
             {
                 using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 var waitToReadTask = session.Reader.WaitToReadAsync(waitCts.Token).AsTask();
-                var waitForPollTask = onPoll == null
-                    ? Task.Delay(Timeout.InfiniteTimeSpan, waitCts.Token)
-                    : Task.Delay(effectivePollInterval, waitCts.Token);
+                TimeSpan remainingDelay;
+                if (onPoll is null)
+                {
+                    remainingDelay = Timeout.InfiniteTimeSpan;
+                }
+                else
+                {
+                    var diff = nextPollAt - DateTimeOffset.UtcNow;
+                    remainingDelay = diff > TimeSpan.Zero ? diff : TimeSpan.Zero;
+                }
+                var waitForPollTask = Task.Delay(remainingDelay, waitCts.Token);
                 var completed = await Task.WhenAny(waitToReadTask, waitForPollTask).ConfigureAwait(false);
 
                 if (completed == waitForPollTask)
@@ -1123,6 +1141,7 @@ internal static class FeatureStreamEndpoints
                     }
 
                     replayCursor = await onPoll!(replayCursor, cancellationToken).ConfigureAwait(false);
+                    nextPollAt = DateTimeOffset.UtcNow + effectivePollInterval;
                     continue;
                 }
 
@@ -1156,69 +1175,112 @@ internal static class FeatureStreamEndpoints
                         return;
                     }
 
-                    if (!message.IsHeartbeat)
+                    if (message.IsHeartbeat)
                     {
-                        var subscriptionId = message.Envelope.SubscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId;
+                        var heartbeatPayload = JsonSerializer.SerializeToUtf8Bytes(
+                            new FeatureStreamHeartbeat(),
+                            FeatureStreamJsonContext.Default.FeatureStreamHeartbeat);
+                        await SendWebSocketJsonAsync(webSocket, session.WriteLock, heartbeatPayload, cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
 
-                        // Default-subscription cursor fence. The writer's replayCursor tracks
-                        // the high-water mark already delivered to the default subscription
-                        // through the initial replay, the convergent handoff loop, the
-                        // onFirstRead store sweep, and the onPoll cross-node poll. Send-time
-                        // dedup (TryClaimSubscriptionDelivery) keeps the replay-to-live handoff
-                        // exactly-once for small replay windows, but the recent-event LRU is
-                        // bounded at RecentEventIdCapacity (128). On a high-volume final sweep
-                        // a queued copy can arrive after its dedup key has been evicted, and
-                        // the writer would re-send it. SSE has the same fence at the SSE drain.
-                        // Non-default subscriptions are protected by their pause/unpause/post-
-                        // unpause-sweep choreography, so broadcast does not queue frames for
-                        // them within their own replay range.
-                        if (replayCursor > 0
-                            && string.Equals(subscriptionId, FeatureStreamSessionManager.DefaultSubscriptionId, StringComparison.Ordinal)
-                            && message.Envelope.Cursor <= replayCursor)
+                    var subscriptionId = message.Envelope.SubscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId;
+                    var isDefaultSubscription = string.Equals(
+                        subscriptionId,
+                        FeatureStreamSessionManager.DefaultSubscriptionId,
+                        StringComparison.Ordinal);
+
+                    // Default-subscription cursor fence. The writer's replayCursor tracks
+                    // the high-water mark already delivered to the default subscription
+                    // through the initial replay, the convergent handoff loop, the
+                    // onFirstRead store sweep, the onPoll cross-node poll, and (post-fix)
+                    // each successful live send. Send-time dedup
+                    // (TryClaimSubscriptionDelivery) keeps the replay-to-live handoff
+                    // exactly-once for small replay windows, but the recent-event LRU is
+                    // bounded at RecentEventIdCapacity (128). On a high-volume final sweep
+                    // a queued copy can arrive after its dedup key has been evicted, and
+                    // the writer would re-send it. SSE has the same fence at the SSE drain.
+                    // Non-default subscriptions are protected by their pause/unpause/post-
+                    // unpause-sweep choreography, so broadcast does not queue frames for
+                    // them within their own replay range.
+                    if (replayCursor > 0
+                        && isDefaultSubscription
+                        && message.Envelope.Cursor <= replayCursor)
+                    {
+                        continue;
+                    }
+
+                    // Per-(event, subscription) dedup is claimed at send time so
+                    // events that the channel later dropped as pre-drain overflow
+                    // remain replayable. The claim also verifies that the
+                    // subscription's generation has not advanced — if it did
+                    // (unsubscribe or same-id replacement), the queued frame is
+                    // stale and must be dropped without claiming dedup so a
+                    // future replay for the new generation can still deliver the
+                    // event. Whichever path (this writer or the per-subscription
+                    // replay) wins the atomic test-and-set sends the frame; the
+                    // other observes the recorded key and skips.
+                    var claim = sessionManager.TryClaimSubscriptionDelivery(
+                        session.SessionId,
+                        subscriptionId,
+                        message.SubscriptionGeneration,
+                        message.Envelope.EventId);
+                    if (claim == SubscriptionDeliveryClaim.StaleGeneration)
+                    {
+                        FeatureStreamLog.StaleSubscriptionFrameDropped(
+                            logger,
+                            session.SessionId,
+                            subscriptionId,
+                            message.SubscriptionGeneration);
+                        continue;
+                    }
+
+                    if (claim == SubscriptionDeliveryClaim.AlreadyDelivered)
+                    {
+                        continue;
+                    }
+
+                    var payload = JsonSerializer.SerializeToUtf8Bytes(
+                        message.Envelope,
+                        FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
+
+                    await SendWebSocketJsonAsync(webSocket, session.WriteLock, payload, cancellationToken).ConfigureAwait(false);
+
+                    // Watermark advance after a successful live send. The bounded
+                    // RecentEventIdCapacity dedup LRU only protects the most recent 128
+                    // entries per session; under high-volume live traffic a delivered
+                    // event id can be evicted before the next durable poll runs, which
+                    // would let the per-subscription store sweep re-emit it. Advancing
+                    // the per-subscription poll watermark here scopes the next durable
+                    // sweep to events strictly past the live-delivered cursor, preserving
+                    // the documented at-least-once contract with the effectively
+                    // exactly-once handoff in the small-window case.
+                    var deliveredCursor = message.Envelope.Cursor;
+                    if (isDefaultSubscription)
+                    {
+                        if (deliveredCursor > replayCursor)
                         {
-                            continue;
+                            replayCursor = deliveredCursor;
                         }
-
-                        // Per-(event, subscription) dedup is claimed at send time so
-                        // events that the channel later dropped as pre-drain overflow
-                        // remain replayable. The claim also verifies that the
-                        // subscription's generation has not advanced — if it did
-                        // (unsubscribe or same-id replacement), the queued frame is
-                        // stale and must be dropped without claiming dedup so a
-                        // future replay for the new generation can still deliver the
-                        // event. Whichever path (this writer or the per-subscription
-                        // replay) wins the atomic test-and-set sends the frame; the
-                        // other observes the recorded key and skips.
-                        var claim = sessionManager.TryClaimSubscriptionDelivery(
+                    }
+                    else
+                    {
+                        sessionManager.TryAdvanceSubscriptionPollCursor(
                             session.SessionId,
                             subscriptionId,
                             message.SubscriptionGeneration,
-                            message.Envelope.EventId);
-                        if (claim == SubscriptionDeliveryClaim.StaleGeneration)
-                        {
-                            FeatureStreamLog.StaleSubscriptionFrameDropped(
-                                logger,
-                                session.SessionId,
-                                subscriptionId,
-                                message.SubscriptionGeneration);
-                            continue;
-                        }
-
-                        if (claim == SubscriptionDeliveryClaim.AlreadyDelivered)
-                        {
-                            continue;
-                        }
+                            deliveredCursor);
                     }
+                }
 
-                    var payload = message.IsHeartbeat
-                        ? JsonSerializer.SerializeToUtf8Bytes(
-                            new FeatureStreamHeartbeat(),
-                            FeatureStreamJsonContext.Default.FeatureStreamHeartbeat)
-                        : JsonSerializer.SerializeToUtf8Bytes(
-                            message.Envelope,
-                            FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
-
-                    await SendWebSocketJsonAsync(webSocket, session.WriteLock, payload, cancellationToken).ConfigureAwait(false);
+                // Drained the burst. If the poll deadline elapsed during the
+                // drain, run the poll inline now — otherwise continuous broadcast
+                // traffic could keep us pinned in the read branch and the
+                // durable-store sweep would never fire.
+                if (onPoll is not null && DateTimeOffset.UtcNow >= nextPollAt)
+                {
+                    replayCursor = await onPoll(replayCursor, cancellationToken).ConfigureAwait(false);
+                    nextPollAt = DateTimeOffset.UtcNow + effectivePollInterval;
                 }
             }
         }
@@ -2110,11 +2172,21 @@ internal static class FeatureStreamEndpoints
             // For fresh sessions, grace was already cleared above.
             bool handoffDone = !hasReplay;
 
+            // Deadline-based poll scheduling: nextPollAt advances by exactly one
+            // interval per fire, regardless of how many channel-traffic loop
+            // iterations elapsed in between. Without an absolute deadline,
+            // continuous local broadcasts win the WhenAny race every iteration
+            // and each round resets the poll delay to a fresh full interval,
+            // starving the durable-store recovery path indefinitely.
+            var nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
+
             while (!linkedCts.Token.IsCancellationRequested)
             {
                 using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token);
                 var waitToReadTask = session.Reader.WaitToReadAsync(waitCts.Token).AsTask();
-                var waitForPollTask = Task.Delay(options.CrossNodeSyncInterval, waitCts.Token);
+                var diff = nextPollAt - DateTimeOffset.UtcNow;
+                var remainingDelay = diff > TimeSpan.Zero ? diff : TimeSpan.Zero;
+                var waitForPollTask = Task.Delay(remainingDelay, waitCts.Token);
                 var completed = await Task.WhenAny(waitToReadTask, waitForPollTask).ConfigureAwait(false);
 
                 if (completed == waitForPollTask)
@@ -2139,6 +2211,7 @@ internal static class FeatureStreamEndpoints
                         linkedCts.Token,
                         subscriptionFilter,
                         FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                    nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
                     continue;
                 }
 
@@ -2218,6 +2291,25 @@ internal static class FeatureStreamEndpoints
                     }
 
                     await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
+                }
+
+                // Drained the burst. If the poll deadline elapsed during the
+                // drain, run the poll inline now — otherwise continuous broadcast
+                // traffic could keep us pinned in the read branch and the
+                // durable-store sweep would never fire.
+                if (DateTimeOffset.UtcNow >= nextPollAt)
+                {
+                    replayCursor = await ReplayToSseAsync(
+                        context.Response,
+                        eventStore,
+                        replayCursor,
+                        options.ReplayBatchSize,
+                        logger,
+                        session.SessionId,
+                        linkedCts.Token,
+                        subscriptionFilter,
+                        FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                    nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
                 }
             }
         }
