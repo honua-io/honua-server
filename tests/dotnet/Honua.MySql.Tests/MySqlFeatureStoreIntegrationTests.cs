@@ -30,7 +30,7 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        if (string.Equals(Environment.GetEnvironmentVariable("HONUA_TEST_MYSQL"), "0", StringComparison.Ordinal))
+        if (!string.Equals(Environment.GetEnvironmentVariable("HONUA_TEST_MYSQL"), "1", StringComparison.Ordinal))
         {
             _skipped = true;
             return;
