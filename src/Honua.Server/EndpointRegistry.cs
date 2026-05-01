@@ -269,6 +269,7 @@ public static class EndpointRegistry
 
         // v1 feature-change streaming endpoints (#501)
         new("GET", "/api/v1/streaming/features"),
+        new("GET", "/api/v1/streaming/features/capabilities"),
         new("GET", "/api/v1/admin/streaming/features/sessions"),
         new("DELETE", "/api/v1/admin/streaming/features/sessions/{sessionId}"),
 

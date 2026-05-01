@@ -57,6 +57,9 @@ public static class FeatureCatalog
 
         /// <summary>Spatial analytics — clustering, joins, density, buffer aggregate.</summary>
         public const string Analytics = "Analytics";
+
+        /// <summary>Real-time feature streaming and subscriptions.</summary>
+        public const string Streaming = "Streaming";
     }
 
     /// <summary>
@@ -123,6 +126,10 @@ public static class FeatureCatalog
         // Import — Pro
         new("import.file", "File Import", Categories.Import,
             HonuaEdition.Pro, "Import geospatial data from file uploads (GeoJSON, Shapefile, GeoPackage)."),
+
+        // Streaming — Pro
+        new("streaming.feature-subscriptions", "Real-Time Feature Streams", Categories.Streaming,
+            HonuaEdition.Pro, "Subscribe to WebSocket and SSE feature-change streams with filters and replay cursors."),
 
         // Import — Enterprise
         new("import.geoservices", "GeoServices Import", Categories.Import,

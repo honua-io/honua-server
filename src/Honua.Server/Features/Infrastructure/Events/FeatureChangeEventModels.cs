@@ -15,6 +15,7 @@ internal sealed record FeatureChangeEvent
     public required string EventId { get; init; }
     public required long Cursor { get; init; }
     public required DateTimeOffset Timestamp { get; init; }
+    public string? SourceId { get; init; }
     public required string ServiceId { get; init; }
     public required int LayerId { get; init; }
     public required long ObjectId { get; init; }
@@ -45,6 +46,17 @@ internal sealed record FeatureChangeEvent
     /// Null for deletes.
     /// </summary>
     public string? PropertiesJson { get; init; }
+
+    /// <summary>
+    /// Pre-serialized GeoJSON geometry captured at mutation time.
+    /// Null for deletes or non-spatial features.
+    /// </summary>
+    public string? GeometryJson { get; init; }
+
+    /// <summary>
+    /// SRID for <see cref="GeometryJson"/> when known.
+    /// </summary>
+    public int? GeometrySrid { get; init; }
 }
 
 /// <summary>
@@ -53,6 +65,7 @@ internal sealed record FeatureChangeEvent
 internal sealed record FeatureChangeEventRequest
 {
     public string? EventId { get; init; }
+    public string? SourceId { get; init; }
     public required string ServiceId { get; init; }
     public required int LayerId { get; init; }
     public required long ObjectId { get; init; }
@@ -84,6 +97,17 @@ internal sealed record FeatureChangeEventRequest
     /// Null for deletes.
     /// </summary>
     public string? PropertiesJson { get; init; }
+
+    /// <summary>
+    /// Pre-serialized GeoJSON geometry captured at mutation time.
+    /// Null for deletes or non-spatial features.
+    /// </summary>
+    public string? GeometryJson { get; init; }
+
+    /// <summary>
+    /// SRID for <see cref="GeometryJson"/> when known.
+    /// </summary>
+    public int? GeometrySrid { get; init; }
 }
 
 /// <summary>

@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Infrastructure.Services;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.Infrastructure.Events;
 
@@ -19,21 +20,30 @@ internal static class FeatureChangeEventEnrichment
     /// </summary>
     public static (double[]? GeometryEnvelope, string? PropertiesJson) FromFeature(Feature? feature)
     {
-        if (feature is null)
-        {
-            return (null, null);
-        }
-
-        var envelope = ExtractEnvelope(feature.Value.Geometry);
-        var propertiesJson = SerializeAttributes(feature.Value.Attributes);
-        return (envelope, propertiesJson);
+        var enrichment = FromFeatureSnapshot(feature);
+        return (enrichment.GeometryEnvelope, enrichment.PropertiesJson);
     }
 
-    private static double[]? ExtractEnvelope(byte[]? wkb)
+    /// <summary>
+    /// Extracts all streamable enrichment data from a feature snapshot.
+    /// </summary>
+    public static FeatureChangeEventEnrichmentResult FromFeatureSnapshot(Feature? feature)
+    {
+        if (feature is null)
+        {
+            return default;
+        }
+
+        var (envelope, geometryJson, geometrySrid) = ExtractGeometry(feature.Value.Geometry);
+        var propertiesJson = SerializeAttributes(feature.Value.Attributes);
+        return new FeatureChangeEventEnrichmentResult(envelope, propertiesJson, geometryJson, geometrySrid);
+    }
+
+    private static (double[]? Envelope, string? GeometryJson, int? Srid) ExtractGeometry(byte[]? wkb)
     {
         if (wkb is null || wkb.Length == 0)
         {
-            return null;
+            return (null, null, null);
         }
 
         try
@@ -42,16 +52,18 @@ internal static class FeatureChangeEventEnrichment
             var geometry = reader.Read(wkb);
             if (geometry is null || geometry.IsEmpty)
             {
-                return null;
+                return (null, null, null);
             }
 
             var env = geometry.EnvelopeInternal;
-            return [env.MinX, env.MinY, env.MaxX, env.MaxY];
+            var geometryJson = new GeoJsonWriter().Write(geometry);
+            var srid = geometry.SRID > 0 ? geometry.SRID : (int?)null;
+            return ([env.MinX, env.MinY, env.MaxX, env.MaxY], geometryJson, srid);
         }
         catch
         {
             // Invalid WKB — skip enrichment rather than failing the write.
-            return null;
+            return (null, null, null);
         }
     }
 
@@ -73,6 +85,12 @@ internal static class FeatureChangeEventEnrichment
         }
     }
 }
+
+internal readonly record struct FeatureChangeEventEnrichmentResult(
+    double[]? GeometryEnvelope,
+    string? PropertiesJson,
+    string? GeometryJson,
+    int? GeometrySrid);
 
 /// <summary>
 /// Source-generated JSON context for attribute snapshot serialization (AOT compatible).

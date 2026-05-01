@@ -4,14 +4,21 @@
 using System.Globalization;
 using System.IO;
 using System.Net.WebSockets;
+using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Streaming;
@@ -28,12 +35,10 @@ internal static class FeatureStreamEndpoints
 
     public static void MapFeatureStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Feature-change events are global and include replay, so only admins can subscribe.
         var streamGroup = endpoints.MapGroup("/api/v{version:apiVersion}/streaming")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
-            .WithTags("Streaming")
-            .RequireAdminAuthorization();
+            .WithTags("Streaming");
 
         streamGroup.MapGet("/features", HandleFeatureStream)
             .WithDisplayName("Stream Feature Changes")
@@ -42,7 +47,16 @@ internal static class FeatureStreamEndpoints
                              "WebSocket: send Upgrade header. SSE: send Accept: text/event-stream. " +
                              "Query params: cursor (resume from cursor), clientLabel, serviceId, " +
                              "layerIds/layers (comma-separated layer filter), bbox (WGS84; requires exactly one layer), filter, filter-lang.")
-            .ProducesProblem(StatusCodes.Status400BadRequest);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .AllowAnonymous();
+
+        streamGroup.MapGet("/features/capabilities", HandleCapabilities)
+            .WithDisplayName("Get Feature Stream Capabilities")
+            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
+            .WithDescription("Returns edition-aware feature-stream transport, filter, replay, and per-layer capability metadata.")
+            .Produces<ApiResponse<FeatureStreamCapabilitiesResponse>>()
+            .AllowAnonymous();
 
         // Admin endpoints for session visibility
         var adminGroup = endpoints.MapGroup("/api/v{version:apiVersion}/admin/streaming/features")
@@ -68,6 +82,23 @@ internal static class FeatureStreamEndpoints
         ILogger<FeatureStreamEndpointsLog> logger,
         HttpContext context)
     {
+        // Determine transport from request headers.
+        var isWebSocket = context.WebSockets.IsWebSocketRequest;
+        var accept = context.Request.Headers.Accept.ToString();
+        var isSse = accept.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase);
+        if (!isWebSocket && !isSse)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "WebSocket upgrade or Accept: text/event-stream header required.");
+        }
+
+        var editionError = RequireProEdition(deps, context, logger);
+        if (editionError is not null)
+        {
+            return editionError;
+        }
+
         // Parse and validate subscription filters before accepting the connection.
         var filterResult = await ParseSubscriptionFilterAsync(deps, logger, context).ConfigureAwait(false);
         if (filterResult.Error is not null)
@@ -75,27 +106,87 @@ internal static class FeatureStreamEndpoints
             return filterResult.Error;
         }
 
-        // Determine transport from request headers.
-        if (context.WebSockets.IsWebSocketRequest)
+        var isAdmin = IsAdmin(context.User);
+        if (!filterResult.HasSubscription && (!isWebSocket || isAdmin))
         {
-            await HandleWebSocketStream(deps.SessionManager, deps.EventStore, deps.Options.Value, logger, context, filterResult.Filter).ConfigureAwait(false);
+            var adminError = RequireAdminForUnfilteredStream(context);
+            if (adminError is not null)
+            {
+                return adminError;
+            }
+        }
+
+        if (isWebSocket)
+        {
+            await HandleWebSocketStream(
+                deps,
+                logger,
+                context,
+                filterResult.Filter,
+                addDefaultSubscription: filterResult.HasSubscription || isAdmin).ConfigureAwait(false);
             return Results.Empty;
         }
 
-        var accept = context.Request.Headers.Accept.ToString();
-        if (accept.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase))
-        {
-            await HandleSseStream(deps.SessionManager, deps.EventStore, deps.Options.Value, logger, context, filterResult.Filter).ConfigureAwait(false);
-            return Results.Empty;
-        }
-
-        return ProblemDetailsHelpers.CreateAdminProblem(
-            context,
-            StatusCodes.Status400BadRequest,
-            "WebSocket upgrade or Accept: text/event-stream header required.");
+        await HandleSseStream(deps.SessionManager, deps.EventStore, deps.Options.Value, logger, context, filterResult.Filter).ConfigureAwait(false);
+        return Results.Empty;
     }
 
-    private static async Task<(IStreamSubscriptionFilter? Filter, IResult? Error)> ParseSubscriptionFilterAsync(
+    private static async Task<IResult> HandleCapabilities(
+        [FromServices] FeatureStreamDependencies deps,
+        HttpContext context)
+    {
+        var options = deps.Options.Value;
+        var edition = deps.LicenseStatusProvider.GetCurrentStatus().Edition;
+        var enabled = edition >= HonuaEdition.Pro;
+        var layers = await deps.LayerCatalog.ListLayersAsync(context.RequestAborted).ConfigureAwait(false);
+        var layerCapabilities = layers.Select(layer =>
+        {
+            var canSubscribe = enabled &&
+                AccessPolicyHelpers.RequireLayerAccess(context, layer) is null;
+            var timeInfo = layer.Metadata?.TimeInfo;
+            var temporalFields = timeInfo is null
+                ? null
+                : new[] { timeInfo.StartTimeField, timeInfo.EndTimeField }
+                    .Where(field => !string.IsNullOrWhiteSpace(field))
+                    .Select(field => field!)
+                    .ToArray();
+
+            return new FeatureStreamLayerCapability
+            {
+                LayerId = layer.Id,
+                Name = layer.Name,
+                CanSubscribe = canSubscribe,
+                SupportsSpatialFilters = layer.HasGeometry,
+                SupportsTemporalFilters = timeInfo is not null &&
+                    !string.IsNullOrWhiteSpace(timeInfo.StartTimeField),
+                TemporalFields = temporalFields is { Length: > 0 } ? temporalFields : null,
+                Crs = $"EPSG:{layer.SpatialReference.Wkid.ToString(CultureInfo.InvariantCulture)}"
+            };
+        }).ToArray();
+
+        var response = new FeatureStreamCapabilitiesResponse
+        {
+            Enabled = enabled,
+            Edition = edition.ToString(),
+            MinimumEdition = HonuaEdition.Pro.ToString(),
+            Transports = enabled ? ["websocket", "sse"] : [],
+            FilterFamilies = enabled
+                ? ["layer", "bbox", "attribute", "temporal"]
+                : [],
+            ReplaySupported = enabled,
+            CursorRetentionLimit = deps.EventOptions.Value.MaxRetainedEvents,
+            HeartbeatIntervalSeconds = options.HeartbeatInterval.TotalSeconds,
+            MaxConcurrentSessions = options.MaxConcurrentSessions,
+            DeleteBeforeImages = enabled,
+            Layers = layerCapabilities
+        };
+
+        return Results.Json(
+            ApiResponse<FeatureStreamCapabilitiesResponse>.CreateSuccess(response),
+            FeatureStreamJsonContext.Default.ApiResponseFeatureStreamCapabilitiesResponse);
+    }
+
+    private static async Task<(IStreamSubscriptionFilter? Filter, bool HasSubscription, IResult? Error)> ParseSubscriptionFilterAsync(
         FeatureStreamDependencies deps,
         ILogger logger,
         HttpContext context)
@@ -105,12 +196,35 @@ internal static class FeatureStreamEndpoints
         var layersParam = NullIfEmpty(query["layers"].ToString());
         var legacyLayerIdsParam = NullIfEmpty(query["layerIds"].ToString());
         var bboxParam = NullIfEmpty(query["bbox"].ToString());
+        var bboxCrsParam = NullIfEmpty(query["bboxCrs"].ToString()) ?? NullIfEmpty(query["bbox-crs"].ToString());
+        var polygonParam = NullIfEmpty(query["polygon"].ToString()) ?? NullIfEmpty(query["intersects"].ToString());
         var filterParam = NullIfEmpty(query["filter"].ToString());
+        var datetimeParam = NullIfEmpty(query["datetime"].ToString()) ?? NullIfEmpty(query["time"].ToString());
 
         int[]? layerIds = null;
         double[]? bbox = null;
         FilterExpression? attributeFilter = null;
+        StreamTemporalFilter? temporalFilter = null;
         bool hasAnyFilter = serviceId is not null;
+        ServiceDefinition? service = null;
+
+        if (serviceId is not null)
+        {
+            service = await deps.LayerCatalog.GetServiceAsync(serviceId, context.RequestAborted).ConfigureAwait(false);
+            if (service is null)
+            {
+                var msg = $"Service '{serviceId}' not found.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(polygonParam))
+        {
+            const string msg = "polygonIntersects stream filters are not supported by the active feature-change event source.";
+            FeatureStreamLog.FilterValidationFailed(logger, msg);
+            return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+        }
 
         // Parse the new strict layer filter first.
         if (!string.IsNullOrWhiteSpace(layersParam))
@@ -123,7 +237,7 @@ internal static class FeatureStreamEndpoints
                 {
                     var msg = $"Invalid layer ID '{part}'. Must be an integer.";
                     FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
                 }
 
                 ids.Add(id);
@@ -132,12 +246,19 @@ internal static class FeatureStreamEndpoints
             // Validate layers exist.
             foreach (var id in ids)
             {
-                var layer = await deps.LayerCatalog.GetLayerAsync(id, context.RequestAborted).ConfigureAwait(false);
+                var layer = ResolveLayer(service, id) ??
+                    await deps.LayerCatalog.GetLayerAsync(id, context.RequestAborted).ConfigureAwait(false);
                 if (layer is null)
                 {
                     var msg = $"Layer {id} not found.";
                     FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                }
+
+                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+                if (accessError is not null)
+                {
+                    return (null, false, accessError);
                 }
             }
 
@@ -153,21 +274,43 @@ internal static class FeatureStreamEndpoints
                 {
                     ids.Add(id);
                 }
+                else
+                {
+                    var msg = $"Invalid layer ID '{part}'. Must be an integer.";
+                    FeatureStreamLog.FilterValidationFailed(logger, msg);
+                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                }
             }
 
             layerIds = ids.ToArray();
             hasAnyFilter = true;
         }
 
+        if (service is not null && layerIds is null)
+        {
+            var accessError = RequireAllLayerAccess(context, service);
+            if (accessError is not null)
+            {
+                return (null, false, accessError);
+            }
+        }
+
         // Parse bbox (minX,minY,maxX,maxY).
         if (!string.IsNullOrWhiteSpace(bboxParam))
         {
+            if (!IsSupportedBboxCrs(bboxCrsParam))
+            {
+                var msg = $"Unsupported bbox CRS '{bboxCrsParam}'. Feature streams currently accept bbox filters in EPSG:4326 only.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+            }
+
             var parts = bboxParam.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (parts.Length != 4)
             {
                 var msg = "Invalid bbox: expected 4 comma-separated values (minX,minY,maxX,maxY).";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             bbox = new double[4];
@@ -177,7 +320,7 @@ internal static class FeatureStreamEndpoints
                 {
                     var msg = $"Invalid bbox value '{parts[i]}' at position {i}. Must be a finite number.";
                     FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
                 }
             }
 
@@ -185,22 +328,30 @@ internal static class FeatureStreamEndpoints
             {
                 var msg = "Invalid bbox: minX must be <= maxX and minY must be <= maxY.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+            }
+
+            if (bbox[0] < -180 || bbox[2] > 180 || bbox[1] < -90 || bbox[3] > 90)
+            {
+                const string msg = "Invalid bbox: EPSG:4326 longitude must be within [-180,180] and latitude within [-90,90].";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             if (layerIds is null || layerIds.Length != 1)
             {
                 const string msg = "bbox filters require exactly one layer specified via the layers or layerIds parameter.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
-            var bboxLayer = await deps.LayerCatalog.GetLayerAsync(layerIds[0], context.RequestAborted).ConfigureAwait(false);
+            var bboxLayer = ResolveLayer(service, layerIds[0]) ??
+                await deps.LayerCatalog.GetLayerAsync(layerIds[0], context.RequestAborted).ConfigureAwait(false);
             if (bboxLayer is null)
             {
                 var msg = $"Layer {layerIds[0]} not found.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             var (projectedBbox, bboxError) = await TryProjectSubscriptionBboxAsync(
@@ -211,7 +362,7 @@ internal static class FeatureStreamEndpoints
             if (bboxError is not null)
             {
                 FeatureStreamLog.FilterValidationFailed(logger, bboxError);
-                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, bboxError));
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, bboxError));
             }
 
             bbox = projectedBbox;
@@ -221,11 +372,18 @@ internal static class FeatureStreamEndpoints
         // Parse attribute filter (CQL2-text).
         if (!string.IsNullOrWhiteSpace(filterParam))
         {
+            if (layerIds is null || layerIds.Length != 1)
+            {
+                const string msg = "attribute filters require exactly one layer for streaming subscriptions.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+            }
+
             var filterLang = query["filter-lang"].ToString();
             if (!TryResolveFilterLanguage(filterLang, out var language, out var filterLangError))
             {
                 FeatureStreamLog.FilterValidationFailed(logger, filterLangError);
-                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, filterLangError));
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, filterLangError));
             }
 
             var parseResult = deps.FilterExpressionService.Parse(language, filterParam);
@@ -233,7 +391,7 @@ internal static class FeatureStreamEndpoints
             {
                 var msg = $"Invalid filter expression: {parseResult.ErrorMessage}";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             if (parseResult.Expression is not null)
@@ -243,14 +401,29 @@ internal static class FeatureStreamEndpoints
                 {
                     var msg = $"Filter expression exceeds maximum depth ({InMemoryFilterEvaluator.MaxStreamingDepth}) for streaming subscriptions.";
                     FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
                 }
 
                 if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(parseResult.Expression, out var validationError))
                 {
                     var msg = validationError ?? "Streaming subscriptions do not support the requested filter expression.";
                     FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                }
+
+                var filterLayer = ResolveLayer(service, layerIds[0]) ??
+                    await deps.LayerCatalog.GetLayerAsync(layerIds[0], context.RequestAborted).ConfigureAwait(false);
+                if (filterLayer is null)
+                {
+                    var msg = $"Layer {layerIds[0]} not found.";
+                    FeatureStreamLog.FilterValidationFailed(logger, msg);
+                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                }
+
+                if (!TryValidateAttributeFilterFields(parseResult.Expression, filterLayer, out var fieldError))
+                {
+                    FeatureStreamLog.FilterValidationFailed(logger, fieldError);
+                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, fieldError));
                 }
 
                 attributeFilter = parseResult.Expression;
@@ -258,17 +431,60 @@ internal static class FeatureStreamEndpoints
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(datetimeParam))
+        {
+            if (layerIds is null || layerIds.Length != 1)
+            {
+                const string msg = "temporal filters require exactly one time-aware layer for streaming subscriptions.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+            }
+
+            var temporalLayer = ResolveLayer(service, layerIds[0]) ??
+                await deps.LayerCatalog.GetLayerAsync(layerIds[0], context.RequestAborted).ConfigureAwait(false);
+            if (temporalLayer is null)
+            {
+                var msg = $"Layer {layerIds[0]} not found.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+            }
+
+            if (temporalLayer.Metadata?.TimeInfo is not { } timeInfo ||
+                string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+            {
+                var msg = $"Layer {layerIds[0]} is not time-aware; temporal stream filters require layer timeInfo.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+            }
+
+            if (!OgcTemporalFilterParser.TryParse(datetimeParam, temporalLayer, out var parsedTemporalFilter, out var temporalError) ||
+                parsedTemporalFilter is null)
+            {
+                var msg = temporalError ?? "Invalid datetime parameter.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+            }
+
+            temporalFilter = new StreamTemporalFilter(
+                parsedTemporalFilter.Value.PropertyName,
+                timeInfo.EndTimeField,
+                parsedTemporalFilter.Value.Start,
+                parsedTemporalFilter.Value.End);
+            hasAnyFilter = true;
+        }
+
         if (!hasAnyFilter)
         {
-            return (null, null);
+            return (null, false, null);
         }
 
         var filter = new StreamSubscriptionFilter(
             serviceId: serviceId,
             layerIds: layerIds,
             bbox: bbox,
-            attributeFilter: attributeFilter);
-        return (filter, null);
+            attributeFilter: attributeFilter,
+            temporalFilter: temporalFilter);
+        return (filter, true, null);
     }
 
     private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)
@@ -290,6 +506,133 @@ internal static class FeatureStreamEndpoints
 
         error = $"Unsupported filter language '{filterLang}'.";
         return false;
+    }
+
+    private static IResult? RequireProEdition(
+        FeatureStreamDependencies deps,
+        HttpContext context,
+        ILogger logger)
+    {
+        var edition = deps.LicenseStatusProvider.GetCurrentStatus().Edition;
+        if (edition >= HonuaEdition.Pro)
+        {
+            return null;
+        }
+
+        FeatureStreamLog.EditionGateBlocked(logger, edition.ToString());
+        return StandardErrorHelpers.CreateForbidden(
+            context,
+            $"Feature streaming requires the Pro edition or higher. Current edition: {edition}.");
+    }
+
+    private static IResult? RequireAdminForUnfilteredStream(HttpContext context)
+    {
+        if (IsAdmin(context.User))
+        {
+            return null;
+        }
+
+        return context.User.Identity?.IsAuthenticated == true
+            ? StandardErrorHelpers.CreateForbidden(
+                context,
+                "Unfiltered all-layer feature streams require admin access. Subscribe to an explicit service/layer scope.")
+            : StandardErrorHelpers.CreateUnauthorized(
+                context,
+                "Authentication is required to open an unfiltered feature stream.");
+    }
+
+    private static bool IsAdmin(ClaimsPrincipal user)
+        => user.Identity?.IsAuthenticated == true && user.IsInRole("admin");
+
+    private static LayerDefinition? ResolveLayer(ServiceDefinition? service, int layerId)
+        => service?.GetLayer(layerId);
+
+    private static IResult? RequireAllLayerAccess(HttpContext context, ServiceDefinition service)
+    {
+        foreach (var layer in service.Layers)
+        {
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+            if (accessError is not null)
+            {
+                return accessError;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsSupportedBboxCrs(string? bboxCrs)
+    {
+        if (string.IsNullOrWhiteSpace(bboxCrs))
+        {
+            return true;
+        }
+
+        return bboxCrs.Equals("EPSG:4326", StringComparison.OrdinalIgnoreCase) ||
+               bboxCrs.Equals("4326", StringComparison.OrdinalIgnoreCase) ||
+               bboxCrs.Equals("http://www.opengis.net/def/crs/EPSG/0/4326", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryValidateAttributeFilterFields(
+        FilterExpression expression,
+        LayerDefinition layer,
+        out string error)
+    {
+        var fields = layer.Fields
+            .Select(field => field.Name)
+            .Append(layer.ObjectIdFieldName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var property in EnumeratePropertyReferences(expression))
+        {
+            if (!fields.Contains(property.PropertyName))
+            {
+                error = $"Unknown field '{property.PropertyName}' in streaming filter for layer {layer.Id}.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    private static IEnumerable<PropertyReference> EnumeratePropertyReferences(FilterExpression expression)
+    {
+        switch (expression)
+        {
+            case PropertyReference property:
+                yield return property;
+                break;
+            case BinaryExpression binary:
+                foreach (var property in EnumeratePropertyReferences(binary.Left))
+                {
+                    yield return property;
+                }
+
+                foreach (var property in EnumeratePropertyReferences(binary.Right))
+                {
+                    yield return property;
+                }
+
+                break;
+            case UnaryExpression unary:
+                foreach (var property in EnumeratePropertyReferences(unary.Operand))
+                {
+                    yield return property;
+                }
+
+                break;
+            case ValueList valueList:
+                foreach (var value in valueList.Values)
+                {
+                    foreach (var property in EnumeratePropertyReferences(value))
+                    {
+                        yield return property;
+                    }
+                }
+
+                break;
+        }
     }
 
     private static async Task<(double[] Bbox, string? Error)> TryProjectSubscriptionBboxAsync(
@@ -346,17 +689,23 @@ internal static class FeatureStreamEndpoints
     }
 
     private static async Task HandleWebSocketStream(
-        FeatureStreamSessionManager sessionManager,
-        IFeatureChangeEventStore eventStore,
-        FeatureStreamOptions options,
+        FeatureStreamDependencies deps,
         ILogger logger,
         HttpContext context,
-        IStreamSubscriptionFilter? subscriptionFilter)
+        IStreamSubscriptionFilter? subscriptionFilter,
+        bool addDefaultSubscription)
     {
+        var sessionManager = deps.SessionManager;
+        var eventStore = deps.EventStore;
+        var options = deps.Options.Value;
         var clientLabel = context.Request.Query["clientLabel"].ToString();
         var cursorParam = context.Request.Query["cursor"].ToString();
         long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
-        var session = sessionManager.TryCreateSession(WebSocketTransport, NullIfEmpty(clientLabel), subscriptionFilter);
+        var session = sessionManager.TryCreateSession(
+            WebSocketTransport,
+            NullIfEmpty(clientLabel),
+            subscriptionFilter,
+            addDefaultSubscription);
         if (session is null)
         {
             await WriteSessionLimitExceededAsync(context, options.MaxConcurrentSessions).ConfigureAwait(false);
@@ -366,9 +715,29 @@ internal static class FeatureStreamEndpoints
         using var sessionLease = session;
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
 
+        await SendWebSocketStatusAsync(
+            webSocket,
+            new FeatureStreamStatusFrame
+            {
+                Status = "connected",
+                Message = "Feature stream connected.",
+                SessionId = session.SessionId
+            },
+            context.RequestAborted).ConfigureAwait(false);
+
         if (subscriptionFilter is not null)
         {
             FeatureStreamLog.SessionCreatedWithFilter(logger, session.SessionId, subscriptionFilter.Summary);
+            await SendWebSocketStatusAsync(
+                webSocket,
+                new FeatureStreamStatusFrame
+                {
+                    Status = "subscribed",
+                    Message = "Initial subscription accepted.",
+                    SessionId = session.SessionId,
+                    SubscriptionId = FeatureStreamSessionManager.DefaultSubscriptionId
+                },
+                context.RequestAborted).ConfigureAwait(false);
         }
 
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -378,17 +747,35 @@ internal static class FeatureStreamEndpoints
         // so that large replay backlogs are not truncated by the buffer limit.
         // Live broadcasts flow into the channel concurrently; the drain deduplicates
         // using the replay cursor so events are delivered exactly once.
-        bool hasReplay = cursor.HasValue;
+        bool hasReplay = addDefaultSubscription && cursor.HasValue;
         long replayCursor = 0;
         if (hasReplay)
         {
             try
             {
-                replayCursor = await ReplayToWebSocketAsync(webSocket, eventStore, cursor!.Value, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
+                replayCursor = await ReplayToWebSocketAsync(
+                    webSocket,
+                    eventStore,
+                    cursor!.Value,
+                    options.ReplayBatchSize,
+                    logger,
+                    session.SessionId,
+                    linkedCts.Token,
+                    subscriptionFilter,
+                    FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
 
                 // Catch-up: replay events published during the main replay window that
                 // were silently dropped from the bounded channel pre-drain.
-                replayCursor = await ReplayToWebSocketAsync(webSocket, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
+                replayCursor = await ReplayToWebSocketAsync(
+                    webSocket,
+                    eventStore,
+                    replayCursor,
+                    options.ReplayBatchSize,
+                    logger,
+                    session.SessionId,
+                    linkedCts.Token,
+                    subscriptionFilter,
+                    FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
             {
@@ -432,7 +819,16 @@ internal static class FeatureStreamEndpoints
                     while (session.Reader.TryRead(out _)) { }
 
                     previousCursor = replayCursor;
-                    replayCursor = await ReplayToWebSocketAsync(webSocket, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
+                    replayCursor = await ReplayToWebSocketAsync(
+                        webSocket,
+                        eventStore,
+                        replayCursor,
+                        options.ReplayBatchSize,
+                        logger,
+                        session.SessionId,
+                        linkedCts.Token,
+                        subscriptionFilter,
+                        FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
                 } while (replayCursor > previousCursor || session.Reader.TryPeek(out _));
             }
         }
@@ -465,7 +861,16 @@ internal static class FeatureStreamEndpoints
                         while (session.Reader.TryRead(out _)) { }
 
                         long prev = cursor;
-                        cursor = await ReplayToWebSocketAsync(webSocket, eventStore, cursor, options.ReplayBatchSize, logger, session.SessionId, ct, subscriptionFilter).ConfigureAwait(false);
+                        cursor = await ReplayToWebSocketAsync(
+                            webSocket,
+                            eventStore,
+                            cursor,
+                            options.ReplayBatchSize,
+                            logger,
+                            session.SessionId,
+                            ct,
+                            subscriptionFilter,
+                            FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
                         if (cursor > prev)
                         {
                             progress = true;
@@ -476,21 +881,45 @@ internal static class FeatureStreamEndpoints
                     return cursor;
                 }
         : null,
-            onPoll: async (cursor, ct) =>
-                await ReplayToWebSocketAsync(webSocket, eventStore, cursor, options.ReplayBatchSize, logger, session.SessionId, ct, subscriptionFilter).ConfigureAwait(false),
+            onPoll: addDefaultSubscription
+                ? async (cursor, ct) =>
+                await ReplayToWebSocketAsync(
+                    webSocket,
+                    eventStore,
+                    cursor,
+                    options.ReplayBatchSize,
+                    logger,
+                    session.SessionId,
+                    ct,
+                    subscriptionFilter,
+                    FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false)
+                : null,
             pollInterval: options.CrossNodeSyncInterval);
 
         // Receive loop keeps the connection alive and detects client close.
-        var buffer = new byte[1];
         try
         {
             while (webSocket.State == WebSocketState.Open && !linkedCts.Token.IsCancellationRequested)
             {
-                var result = await webSocket.ReceiveAsync(buffer, linkedCts.Token).ConfigureAwait(false);
-                if (result.MessageType == WebSocketMessageType.Close)
+                var receive = await ReceiveWebSocketTextAsync(webSocket, linkedCts.Token).ConfigureAwait(false);
+                if (receive.CloseRequested)
                 {
                     break;
                 }
+
+                if (string.IsNullOrWhiteSpace(receive.Text))
+                {
+                    continue;
+                }
+
+                await HandleWebSocketControlAsync(
+                    deps,
+                    logger,
+                    context,
+                    webSocket,
+                    session,
+                    receive.Text,
+                    linkedCts.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
@@ -635,6 +1064,430 @@ internal static class FeatureStreamEndpoints
         }
     }
 
+    private static async Task HandleWebSocketControlAsync(
+        FeatureStreamDependencies deps,
+        ILogger logger,
+        HttpContext context,
+        WebSocket webSocket,
+        FeatureStreamSession session,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        FeatureStreamControlMessage? control;
+        try
+        {
+            control = JsonSerializer.Deserialize(
+                text,
+                FeatureStreamJsonContext.Default.FeatureStreamControlMessage);
+        }
+        catch (JsonException)
+        {
+            await SendWebSocketErrorAsync(webSocket, "invalid-json", "Invalid WebSocket control frame JSON.", null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (control is null || string.IsNullOrWhiteSpace(control.Type))
+        {
+            await SendWebSocketErrorAsync(webSocket, "invalid-control", "WebSocket control frame requires a type.", null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        switch (control.Type.Trim().ToLowerInvariant())
+        {
+            case "ping":
+                await SendWebSocketStatusAsync(
+                    webSocket,
+                    new FeatureStreamStatusFrame
+                    {
+                        Status = "ok",
+                        Message = "Feature stream is connected.",
+                        SessionId = session.SessionId
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                return;
+
+            case "unsubscribe":
+                await HandleWebSocketUnsubscribeAsync(deps.SessionManager, logger, webSocket, session, control, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case "subscribe":
+                await HandleWebSocketSubscribeAsync(deps, logger, context, webSocket, session, control, cancellationToken).ConfigureAwait(false);
+                return;
+
+            default:
+                await SendWebSocketErrorAsync(webSocket, "unsupported-control", $"Unsupported WebSocket control frame type '{control.Type}'.", null, cancellationToken).ConfigureAwait(false);
+                return;
+        }
+    }
+
+    private static async Task HandleWebSocketSubscribeAsync(
+        FeatureStreamDependencies deps,
+        ILogger logger,
+        HttpContext context,
+        WebSocket webSocket,
+        FeatureStreamSession session,
+        FeatureStreamControlMessage control,
+        CancellationToken cancellationToken)
+    {
+        var (filter, error) = await BuildControlSubscriptionFilterAsync(deps, context, control, cancellationToken).ConfigureAwait(false);
+        if (error is not null)
+        {
+            await SendWebSocketErrorAsync(webSocket, "invalid-subscription", error, null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var subscriptionId = string.IsNullOrWhiteSpace(control.SubscriptionId)
+            ? Guid.NewGuid().ToString("N")
+            : control.SubscriptionId.Trim();
+
+        if (!deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter))
+        {
+            await SendWebSocketErrorAsync(webSocket, "session-closed", "Feature stream session is no longer active.", subscriptionId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        FeatureStreamLog.SubscriptionAdded(logger, session.SessionId, subscriptionId, filter?.Summary ?? "all");
+        var replayCursor = control.Cursor;
+        long? currentCursor = null;
+        if (replayCursor.HasValue)
+        {
+            currentCursor = await ReplayToWebSocketAsync(
+                webSocket,
+                deps.EventStore,
+                replayCursor.Value,
+                deps.Options.Value.ReplayBatchSize,
+                logger,
+                session.SessionId,
+                cancellationToken,
+                filter,
+                subscriptionId).ConfigureAwait(false);
+        }
+
+        await SendWebSocketStatusAsync(
+            webSocket,
+            new FeatureStreamStatusFrame
+            {
+                Status = "subscribed",
+                Message = "Subscription accepted.",
+                SessionId = session.SessionId,
+                SubscriptionId = subscriptionId,
+                Cursor = currentCursor
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task HandleWebSocketUnsubscribeAsync(
+        FeatureStreamSessionManager sessionManager,
+        ILogger logger,
+        WebSocket webSocket,
+        FeatureStreamSession session,
+        FeatureStreamControlMessage control,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(control.SubscriptionId))
+        {
+            await SendWebSocketErrorAsync(webSocket, "invalid-unsubscribe", "unsubscribe requires subscriptionId.", null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var subscriptionId = control.SubscriptionId.Trim();
+        if (!sessionManager.TryRemoveSubscription(session.SessionId, subscriptionId))
+        {
+            await SendWebSocketErrorAsync(webSocket, "subscription-not-found", "Subscription was not found.", subscriptionId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        FeatureStreamLog.SubscriptionRemoved(logger, session.SessionId, subscriptionId);
+        await SendWebSocketStatusAsync(
+            webSocket,
+            new FeatureStreamStatusFrame
+            {
+                Status = "unsubscribed",
+                Message = "Subscription removed.",
+                SessionId = session.SessionId,
+                SubscriptionId = subscriptionId
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<(IStreamSubscriptionFilter? Filter, string? Error)> BuildControlSubscriptionFilterAsync(
+        FeatureStreamDependencies deps,
+        HttpContext context,
+        FeatureStreamControlMessage control,
+        CancellationToken cancellationToken)
+    {
+        var serviceId = NullIfEmpty(control.ServiceId);
+        ServiceDefinition? service = null;
+        if (serviceId is not null)
+        {
+            service = await deps.LayerCatalog.GetServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
+            if (service is null)
+            {
+                return (null, $"Service '{serviceId}' not found.");
+            }
+        }
+
+        var layerIds = ResolveControlLayerIds(control);
+        if (serviceId is null && layerIds is null && !IsAdmin(context.User))
+        {
+            return (null, "Unfiltered all-layer feature streams require admin access.");
+        }
+
+        if (layerIds is not null)
+        {
+            foreach (var layerId in layerIds)
+            {
+                var layer = ResolveLayer(service, layerId) ??
+                    await deps.LayerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+                if (layer is null)
+                {
+                    return (null, $"Layer {layerId} not found.");
+                }
+
+                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+                if (accessError is not null)
+                {
+                    return (null, "Access to the requested stream layer is forbidden.");
+                }
+            }
+        }
+        else if (service is not null)
+        {
+            var accessError = RequireAllLayerAccess(context, service);
+            if (accessError is not null)
+            {
+                return (null, "Access to the requested stream service is forbidden.");
+            }
+        }
+
+        double[]? bbox = null;
+        if (control.Bbox is not null)
+        {
+            if (control.Bbox.Length != 4 || control.Bbox.Any(value => !double.IsFinite(value)))
+            {
+                return (null, "bbox requires four finite values.");
+            }
+
+            if (!IsSupportedBboxCrs(control.BboxCrs))
+            {
+                return (null, "Feature streams currently accept bbox filters in EPSG:4326 only.");
+            }
+
+            if (layerIds is null || layerIds.Length != 1)
+            {
+                return (null, "bbox filters require exactly one layer.");
+            }
+
+            if (control.Bbox[0] > control.Bbox[2] || control.Bbox[1] > control.Bbox[3] ||
+                control.Bbox[0] < -180 || control.Bbox[2] > 180 ||
+                control.Bbox[1] < -90 || control.Bbox[3] > 90)
+            {
+                return (null, "Invalid EPSG:4326 bbox.");
+            }
+
+            var layer = ResolveLayer(service, layerIds[0]) ??
+                await deps.LayerCatalog.GetLayerAsync(layerIds[0], cancellationToken).ConfigureAwait(false);
+            if (layer is null)
+            {
+                return (null, $"Layer {layerIds[0]} not found.");
+            }
+
+            var projected = await TryProjectSubscriptionBboxAsync(deps, control.Bbox, layer, cancellationToken).ConfigureAwait(false);
+            if (projected.Error is not null)
+            {
+                return (null, projected.Error);
+            }
+
+            bbox = projected.Bbox;
+        }
+
+        FilterExpression? attributeFilter = null;
+        if (!string.IsNullOrWhiteSpace(control.Filter))
+        {
+            if (layerIds is null || layerIds.Length != 1)
+            {
+                return (null, "attribute filters require exactly one layer.");
+            }
+
+            if (!TryResolveFilterLanguage(control.FilterLang, out var language, out var filterLangError))
+            {
+                return (null, filterLangError);
+            }
+
+            var parseResult = deps.FilterExpressionService.Parse(language, control.Filter);
+            if (!parseResult.IsSuccess || parseResult.Expression is null)
+            {
+                return (null, $"Invalid filter expression: {parseResult.ErrorMessage}");
+            }
+
+            if (InMemoryFilterEvaluator.ExceedsMaxDepth(parseResult.Expression))
+            {
+                return (null, $"Filter expression exceeds maximum depth ({InMemoryFilterEvaluator.MaxStreamingDepth}) for streaming subscriptions.");
+            }
+
+            if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(parseResult.Expression, out var validationError))
+            {
+                return (null, validationError ?? "Streaming subscriptions do not support the requested filter expression.");
+            }
+
+            var layer = ResolveLayer(service, layerIds[0]) ??
+                await deps.LayerCatalog.GetLayerAsync(layerIds[0], cancellationToken).ConfigureAwait(false);
+            if (layer is null)
+            {
+                return (null, $"Layer {layerIds[0]} not found.");
+            }
+
+            if (!TryValidateAttributeFilterFields(parseResult.Expression, layer, out var fieldError))
+            {
+                return (null, fieldError);
+            }
+
+            attributeFilter = parseResult.Expression;
+        }
+
+        StreamTemporalFilter? temporalFilter = null;
+        if (!string.IsNullOrWhiteSpace(control.Datetime))
+        {
+            if (layerIds is null || layerIds.Length != 1)
+            {
+                return (null, "temporal filters require exactly one time-aware layer.");
+            }
+
+            var layer = ResolveLayer(service, layerIds[0]) ??
+                await deps.LayerCatalog.GetLayerAsync(layerIds[0], cancellationToken).ConfigureAwait(false);
+            if (layer is null)
+            {
+                return (null, $"Layer {layerIds[0]} not found.");
+            }
+
+            var timeInfo = layer.Metadata?.TimeInfo;
+            if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+            {
+                return (null, $"Layer {layer.Id} is not time-aware; temporal stream filters require layer timeInfo.");
+            }
+
+            if (!OgcTemporalFilterParser.TryParse(control.Datetime, layer, out var parsedTemporalFilter, out var temporalError) ||
+                parsedTemporalFilter is null)
+            {
+                return (null, temporalError ?? "Invalid datetime parameter.");
+            }
+
+            temporalFilter = new StreamTemporalFilter(
+                parsedTemporalFilter.Value.PropertyName,
+                timeInfo.EndTimeField,
+                parsedTemporalFilter.Value.Start,
+                parsedTemporalFilter.Value.End);
+        }
+
+        return (new StreamSubscriptionFilter(serviceId, layerIds, bbox, attributeFilter, temporalFilter), null);
+    }
+
+    private static int[]? ResolveControlLayerIds(FeatureStreamControlMessage control)
+    {
+        if (control.LayerId.HasValue)
+        {
+            return [control.LayerId.Value];
+        }
+
+        if (control.Layers is { Length: > 0 })
+        {
+            return control.Layers;
+        }
+
+        if (control.LayerIds is { Length: > 0 })
+        {
+            return control.LayerIds;
+        }
+
+        return null;
+    }
+
+    private static async Task<(bool CloseRequested, string? Text)> ReceiveWebSocketTextAsync(
+        WebSocket webSocket,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[4096];
+        using var stream = new MemoryStream();
+
+        while (true)
+        {
+            var result = await webSocket.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                return (true, null);
+            }
+
+            if (result.MessageType != WebSocketMessageType.Text)
+            {
+                return (false, null);
+            }
+
+            stream.Write(buffer, 0, result.Count);
+            if (result.EndOfMessage)
+            {
+                return (false, Encoding.UTF8.GetString(stream.ToArray()));
+            }
+        }
+    }
+
+    private static Task SendWebSocketStatusAsync(
+        WebSocket webSocket,
+        FeatureStreamStatusFrame frame,
+        CancellationToken cancellationToken)
+        => SendWebSocketJsonAsync(
+            webSocket,
+            JsonSerializer.SerializeToUtf8Bytes(frame, FeatureStreamJsonContext.Default.FeatureStreamStatusFrame),
+            cancellationToken);
+
+    private static Task SendWebSocketErrorAsync(
+        WebSocket webSocket,
+        string code,
+        string message,
+        string? subscriptionId,
+        CancellationToken cancellationToken)
+        => SendWebSocketJsonAsync(
+            webSocket,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new FeatureStreamErrorFrame
+                {
+                    Code = code,
+                    Message = message,
+                    SubscriptionId = subscriptionId
+                },
+                FeatureStreamJsonContext.Default.FeatureStreamErrorFrame),
+            cancellationToken);
+
+    private static Task SendWebSocketJsonAsync(
+        WebSocket webSocket,
+        byte[] payload,
+        CancellationToken cancellationToken)
+        => webSocket.State == WebSocketState.Open
+            ? webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken)
+            : Task.CompletedTask;
+
+    private static async Task WriteSseEventAsync<T>(
+        HttpResponse response,
+        string eventName,
+        T payload,
+        JsonTypeInfo<T> jsonTypeInfo,
+        long? id,
+        CancellationToken cancellationToken)
+    {
+        if (id.HasValue)
+        {
+            await response.WriteAsync(
+                string.Concat("id: ", id.Value.ToString(CultureInfo.InvariantCulture), "\n"),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var json = JsonSerializer.Serialize(payload, jsonTypeInfo);
+        await response.WriteAsync(
+            string.Concat(
+                "event: ", eventName, "\n",
+                "data: ", json, "\n\n"),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task HandleSseStream(
         FeatureStreamSessionManager sessionManager,
         IFeatureChangeEventStore eventStore,
@@ -671,6 +1524,36 @@ internal static class FeatureStreamEndpoints
 
         try
         {
+            await WriteSseEventAsync(
+                context.Response,
+                "status",
+                new FeatureStreamStatusFrame
+                {
+                    Status = "connected",
+                    Message = "Feature stream connected.",
+                    SessionId = session.SessionId
+                },
+                FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
+                null,
+                context.RequestAborted).ConfigureAwait(false);
+
+            if (subscriptionFilter is not null)
+            {
+                await WriteSseEventAsync(
+                    context.Response,
+                    "status",
+                    new FeatureStreamStatusFrame
+                    {
+                        Status = "subscribed",
+                        Message = "Initial subscription accepted.",
+                        SessionId = session.SessionId,
+                        SubscriptionId = FeatureStreamSessionManager.DefaultSubscriptionId
+                    },
+                    FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
+                    null,
+                    context.RequestAborted).ConfigureAwait(false);
+            }
+
             await context.Response.Body.FlushAsync(context.RequestAborted).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -704,11 +1587,29 @@ internal static class FeatureStreamEndpoints
         {
             try
             {
-                replayCursor = await ReplayToSseAsync(context.Response, eventStore, cursor!.Value, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
+                replayCursor = await ReplayToSseAsync(
+                    context.Response,
+                    eventStore,
+                    cursor!.Value,
+                    options.ReplayBatchSize,
+                    logger,
+                    session.SessionId,
+                    linkedCts.Token,
+                    subscriptionFilter,
+                    FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
 
                 // Catch-up: replay events published during the main replay window that
                 // were silently dropped from the bounded channel pre-drain.
-                replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
+                replayCursor = await ReplayToSseAsync(
+                    context.Response,
+                    eventStore,
+                    replayCursor,
+                    options.ReplayBatchSize,
+                    logger,
+                    session.SessionId,
+                    linkedCts.Token,
+                    subscriptionFilter,
+                    FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
             {
@@ -755,7 +1656,16 @@ internal static class FeatureStreamEndpoints
                     while (session.Reader.TryRead(out _)) { }
 
                     previousCursor = replayCursor;
-                    replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
+                    replayCursor = await ReplayToSseAsync(
+                        context.Response,
+                        eventStore,
+                        replayCursor,
+                        options.ReplayBatchSize,
+                        logger,
+                        session.SessionId,
+                        linkedCts.Token,
+                        subscriptionFilter,
+                        FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
                 } while (replayCursor > previousCursor || session.Reader.TryPeek(out _));
             }
 
@@ -783,7 +1693,16 @@ internal static class FeatureStreamEndpoints
                         // Ignore expected cancellation for the alternate waiter.
                     }
 
-                    replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
+                    replayCursor = await ReplayToSseAsync(
+                        context.Response,
+                        eventStore,
+                        replayCursor,
+                        options.ReplayBatchSize,
+                        logger,
+                        session.SessionId,
+                        linkedCts.Token,
+                        subscriptionFilter,
+                        FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
                     continue;
                 }
 
@@ -813,7 +1732,16 @@ internal static class FeatureStreamEndpoints
                             while (session.Reader.TryRead(out _)) { }
 
                             long prev = replayCursor;
-                            replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
+                            replayCursor = await ReplayToSseAsync(
+                                context.Response,
+                                eventStore,
+                                replayCursor,
+                                options.ReplayBatchSize,
+                                logger,
+                                session.SessionId,
+                                linkedCts.Token,
+                                subscriptionFilter,
+                                FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
                             if (replayCursor > prev)
                             {
                                 progress = true;
@@ -832,19 +1760,22 @@ internal static class FeatureStreamEndpoints
 
                     if (message.IsHeartbeat)
                     {
-                        await context.Response.WriteAsync(": heartbeat\n\n", linkedCts.Token).ConfigureAwait(false);
+                        await WriteSseEventAsync(
+                            context.Response,
+                            "heartbeat",
+                            new FeatureStreamHeartbeat(),
+                            FeatureStreamJsonContext.Default.FeatureStreamHeartbeat,
+                            null,
+                            linkedCts.Token).ConfigureAwait(false);
                     }
                     else
                     {
-                        var json = JsonSerializer.Serialize(
+                        await WriteSseEventAsync(
+                            context.Response,
+                            "feature-change",
                             message.Envelope,
-                            FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
-
-                        await context.Response.WriteAsync(
-                            string.Concat(
-                                "id: ", message.Envelope.Cursor.ToString(CultureInfo.InvariantCulture), "\n",
-                                "event: feature-change\n",
-                                "data: ", json, "\n\n"),
+                            FeatureStreamJsonContext.Default.FeatureStreamEnvelope,
+                            message.Envelope.Cursor,
                             linkedCts.Token).ConfigureAwait(false);
 
                         replayCursor = message.Envelope.Cursor;
@@ -876,7 +1807,8 @@ internal static class FeatureStreamEndpoints
         ILogger logger,
         Guid sessionId,
         CancellationToken cancellationToken,
-        IStreamSubscriptionFilter? subscriptionFilter = null)
+        IStreamSubscriptionFilter? subscriptionFilter = null,
+        string? subscriptionId = null)
     {
         var cursor = fromCursor;
         while (!cancellationToken.IsCancellationRequested)
@@ -891,7 +1823,7 @@ internal static class FeatureStreamEndpoints
 
             foreach (var evt in events)
             {
-                var envelope = FeatureStreamPublisher.ToEnvelope(evt);
+                var envelope = FeatureStreamPublisher.ToEnvelope(evt) with { SubscriptionId = subscriptionId };
                 cursor = evt.Cursor;
 
                 // Apply subscription filter during replay — advance cursor past filtered events.
@@ -922,7 +1854,8 @@ internal static class FeatureStreamEndpoints
         ILogger logger,
         Guid sessionId,
         CancellationToken cancellationToken,
-        IStreamSubscriptionFilter? subscriptionFilter = null)
+        IStreamSubscriptionFilter? subscriptionFilter = null,
+        string? subscriptionId = null)
     {
         var cursor = fromCursor;
         while (!cancellationToken.IsCancellationRequested)
@@ -937,7 +1870,7 @@ internal static class FeatureStreamEndpoints
 
             foreach (var evt in events)
             {
-                var envelope = FeatureStreamPublisher.ToEnvelope(evt);
+                var envelope = FeatureStreamPublisher.ToEnvelope(evt) with { SubscriptionId = subscriptionId };
                 cursor = evt.Cursor;
 
                 // Apply subscription filter during replay — advance cursor past filtered events.
@@ -947,12 +1880,12 @@ internal static class FeatureStreamEndpoints
                     continue;
                 }
 
-                var json = JsonSerializer.Serialize(envelope, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
-                await response.WriteAsync(
-                    string.Concat(
-                        "id: ", envelope.Cursor.ToString(CultureInfo.InvariantCulture), "\n",
-                        "event: feature-change\n",
-                        "data: ", json, "\n\n"),
+                await WriteSseEventAsync(
+                    response,
+                    "feature-change",
+                    envelope,
+                    FeatureStreamJsonContext.Default.FeatureStreamEnvelope,
+                    envelope.Cursor,
                     cancellationToken).ConfigureAwait(false);
                 await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
             }

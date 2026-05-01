@@ -325,6 +325,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                     "create",
                     HonuaTelemetry.Protocols.Grpc,
                     CancellationToken.None,
+                    mutationFeature: i < editBatch.Creates.Length ? editBatch.Creates[i] : null,
                     serviceId: serviceId,
                     requestId: requestId,
                     geometryChanged: hasGeometry).ConfigureAwait(false);
@@ -344,6 +345,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                     "update",
                     HonuaTelemetry.Protocols.Grpc,
                     CancellationToken.None,
+                    mutationFeature: i < editBatch.Updates.Length ? editBatch.Updates[i] : null,
                     serviceId: serviceId,
                     requestId: requestId,
                     geometryChanged: hasGeometry).ConfigureAwait(false);

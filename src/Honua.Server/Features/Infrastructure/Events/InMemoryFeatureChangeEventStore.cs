@@ -33,27 +33,34 @@ internal sealed class InMemoryFeatureChangeEventStore(
             EventId = ARGV[1],
             Cursor = tonumber(cursor),
             Timestamp = ARGV[2],
-            ServiceId = ARGV[3],
-            LayerId = tonumber(ARGV[4]),
-            ObjectId = tonumber(ARGV[5]),
-            Operation = ARGV[6],
-            Protocol = ARGV[7],
-            RequestId = ARGV[8],
-            GeometryChanged = ARGV[9] == '1'
+            SourceId = ARGV[3],
+            ServiceId = ARGV[4],
+            LayerId = tonumber(ARGV[5]),
+            ObjectId = tonumber(ARGV[6]),
+            Operation = ARGV[7],
+            Protocol = ARGV[8],
+            RequestId = ARGV[9],
+            GeometryChanged = ARGV[10] == '1'
         }
-        if ARGV[10] ~= '' then
-            event.ChangedAttributes = cjson.decode(ARGV[10])
-        end
         if ARGV[11] ~= '' then
-            event.GeometryEnvelope = cjson.decode(ARGV[11])
+            event.ChangedAttributes = cjson.decode(ARGV[11])
         end
         if ARGV[12] ~= '' then
-            event.PropertiesJson = ARGV[12]
+            event.GeometryEnvelope = cjson.decode(ARGV[12])
         end
-        local eventKey = ARGV[13] .. cursor
+        if ARGV[13] ~= '' then
+            event.PropertiesJson = ARGV[13]
+        end
+        if ARGV[14] ~= '' then
+            event.GeometryJson = ARGV[14]
+        end
+        if ARGV[15] ~= '' then
+            event.GeometrySrid = tonumber(ARGV[15])
+        end
+        local eventKey = ARGV[16] .. cursor
         local eventJson = cjson.encode(event)
-        redis.call('SET', eventKey, eventJson, 'EX', tonumber(ARGV[14]))
-        redis.call('SET', KEYS[3], cursor, 'EX', tonumber(ARGV[14]))
+        redis.call('SET', eventKey, eventJson, 'EX', tonumber(ARGV[17]))
+        redis.call('SET', KEYS[3], cursor, 'EX', tonumber(ARGV[17]))
         redis.call('ZADD', KEYS[2], cursor, cursor)
         return { cursor, 1 }
         """;
@@ -93,6 +100,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
         var normalizedServiceId = string.IsNullOrWhiteSpace(request.ServiceId)
             ? "unknown"
             : request.ServiceId.Trim();
+        var normalizedSourceId = string.IsNullOrWhiteSpace(request.SourceId)
+            ? normalizedServiceId
+            : request.SourceId.Trim();
         var normalizedRequestId = string.IsNullOrWhiteSpace(request.RequestId)
             ? "unknown"
             : request.RequestId.Trim();
@@ -103,6 +113,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             {
                 return await AppendWithRedisAsync(
                         normalizedEventId,
+                        normalizedSourceId,
                         normalizedServiceId,
                         request.LayerId,
                         request.ObjectId,
@@ -114,6 +125,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
                         request.GeometryChanged,
                         request.GeometryEnvelope,
                         request.PropertiesJson,
+                        request.GeometryJson,
+                        request.GeometrySrid,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -147,6 +160,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             created = CreateEvent(
                 normalizedEventId,
                 _nextCursor++,
+                normalizedSourceId,
                 normalizedServiceId,
                 request.LayerId,
                 request.ObjectId,
@@ -157,7 +171,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 request.ChangedAttributes,
                 request.GeometryChanged,
                 request.GeometryEnvelope,
-                request.PropertiesJson);
+                request.PropertiesJson,
+                request.GeometryJson,
+                request.GeometrySrid);
 
             _events.Add(created);
             _eventsById[normalizedEventId] = created;
@@ -262,6 +278,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
 
     private async Task<FeatureChangeEvent> AppendWithRedisAsync(
         string eventId,
+        string sourceId,
         string serviceId,
         int layerId,
         long objectId,
@@ -273,6 +290,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
         bool geometryChanged,
         double[]? geometryEnvelope,
         string? propertiesJson,
+        string? geometryJson,
+        int? geometrySrid,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -282,6 +301,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 [
                     eventId,
                     (timestamp ?? DateTimeOffset.UtcNow).ToString("O", CultureInfo.InvariantCulture),
+                    sourceId,
                     serviceId,
                     layerId,
                     objectId,
@@ -292,6 +312,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
                     changedAttributes == null ? string.Empty : JsonSerializer.Serialize(changedAttributes, FeatureChangeEventsJsonContext.Default.DictionaryStringObject),
                     geometryEnvelope == null ? string.Empty : JsonSerializer.Serialize(geometryEnvelope, FeatureChangeEventsJsonContext.Default.DoubleArray),
                     propertiesJson ?? string.Empty,
+                    geometryJson ?? string.Empty,
+                    geometrySrid.HasValue ? geometrySrid.Value.ToString(CultureInfo.InvariantCulture) : string.Empty,
                     EventKeyPrefix,
                     (long)Retention.TotalSeconds
                 ])
@@ -302,6 +324,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             ?? CreateEvent(
                 eventId,
                 cursor,
+                sourceId,
                 serviceId,
                 layerId,
                 objectId,
@@ -312,7 +335,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 changedAttributes,
                 geometryChanged,
                 geometryEnvelope,
-                propertiesJson);
+                propertiesJson,
+                geometryJson,
+                geometrySrid);
         await TrimRedisAsync(cancellationToken).ConfigureAwait(false);
         _redisUnavailable = false;
         return created;
@@ -428,6 +453,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
     private static FeatureChangeEvent CreateEvent(
         string eventId,
         long cursor,
+        string sourceId,
         string serviceId,
         int layerId,
         long objectId,
@@ -438,12 +464,15 @@ internal sealed class InMemoryFeatureChangeEventStore(
         Dictionary<string, object?>? changedAttributes = null,
         bool geometryChanged = false,
         double[]? geometryEnvelope = null,
-        string? propertiesJson = null)
+        string? propertiesJson = null,
+        string? geometryJson = null,
+        int? geometrySrid = null)
         => new()
         {
             EventId = eventId,
             Cursor = cursor,
             Timestamp = timestamp ?? DateTimeOffset.UtcNow,
+            SourceId = sourceId,
             ServiceId = serviceId,
             LayerId = layerId,
             ObjectId = objectId,
@@ -453,7 +482,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
             ChangedAttributes = changedAttributes,
             GeometryChanged = geometryChanged,
             GeometryEnvelope = geometryEnvelope,
-            PropertiesJson = propertiesJson
+            PropertiesJson = propertiesJson,
+            GeometryJson = geometryJson,
+            GeometrySrid = geometrySrid
         };
 
     private void TrimIfNeeded()
@@ -499,7 +530,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
         var normalized = operation.Trim().ToLowerInvariant();
         return normalized switch
         {
-            "create" or "update" or "delete" => normalized,
+            "create" or "insert" => "insert",
+            "update" or "delete" => normalized,
             _ => "update"
         };
     }

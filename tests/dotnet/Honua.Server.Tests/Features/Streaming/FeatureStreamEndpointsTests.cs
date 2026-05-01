@@ -8,6 +8,11 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit;
@@ -53,12 +58,45 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             cts.Token);
 
         ws.State.Should().Be(WebSocketState.Open);
+        var connected = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+        connected.GetProperty("type").GetString().Should().Be("status");
+        connected.GetProperty("status").GetString().Should().Be("connected");
 
         // Allow the handler to register the session after accepting the upgrade.
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
         await WaitForSessionAsync(sessionManager, "ws-test", cts.Token);
 
         sessionManager.GetSessions().Should().Contain(s => s.ClientLabel == "ws-test" && s.Transport == "WebSocket");
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_SubscribeThenUnsubscribe_ReturnsStatusFrames()
+    {
+        var wsClient = _fixture.CreateWebSocketClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        using var ws = await wsClient.ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features?clientLabel=ws-sub-test"),
+            cts.Token);
+
+        // Bare WebSocket clients get a status frame first; explicit subscriptions
+        // are added through control messages.
+        _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+        await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"layer-zero","layerId":0}""", cts.Token);
+        var subscribed = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+        subscribed.GetProperty("type").GetString().Should().Be("status");
+        subscribed.GetProperty("status").GetString().Should().Be("subscribed");
+        subscribed.GetProperty("subscriptionId").GetString().Should().Be("layer-zero");
+
+        await SendWebSocketJsonAsync(ws, """{"type":"unsubscribe","subscriptionId":"layer-zero"}""", cts.Token);
+        var unsubscribed = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+        unsubscribed.GetProperty("type").GetString().Should().Be("status");
+        unsubscribed.GetProperty("status").GetString().Should().Be("unsubscribed");
+        unsubscribed.GetProperty("subscriptionId").GetString().Should().Be("layer-zero");
 
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
@@ -93,6 +131,30 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             using var response = await fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_CommunityEdition_ReturnsForbidden()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseStatusProvider>(new TestLicenseStatusProvider(HonuaEdition.Community));
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features?layers=0");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var response = await fixture.CreateAdminClient().SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         }
         finally
         {
@@ -179,6 +241,78 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithUnsupportedPolygonFilter_ReturnsBadRequest()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/v1/streaming/features?layers=0&intersects=1");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        body.Should().Contain("polygonIntersects");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithTemporalFilterOnNonTimeAwareLayer_ReturnsBadRequest()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILayerCatalog>(new TestLayerCatalog());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                "/api/v1/streaming/features?layers=0&datetime=2023-01-01T00:00:00Z/2023-02-01T00:00:00Z");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var response = await fixture.CreateAdminClient().SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            body.Should().Contain("not time-aware");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithTemporalFilterOnTimeAwareLayer_AllowsSseHandshake()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILayerCatalog>(new TimeAwareStreamLayerCatalog());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                "/api/v1/streaming/features?layers=0&datetime=2023-01-01T00:00:00Z/2023-02-01T00:00:00Z");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var response = await fixture.CreateAdminClient().SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // ─── AC: Client can open an SSE connection ──────────────────────────
 
     [IntegrationTest]
@@ -194,6 +328,141 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_Connect_ReceivesStatusEvent()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features?layers=0");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+
+        var status = await ReadNextSseEventAsync(reader, cts.Token);
+
+        status.EventName.Should().Be("status");
+        status.Data.GetProperty("type").GetString().Should().Be("status");
+        status.Data.GetProperty("status").GetString().Should().Be("connected");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_ReplayEnvelope_IncludesFullSdkContractFields()
+    {
+        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
+        var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
+        var serviceId = $"shape-{Guid.NewGuid():N}";
+
+        await publisher.PublishAsync(new FeatureChangeEventRequest
+        {
+            SourceId = "postgres-cdc",
+            ServiceId = serviceId,
+            LayerId = 0,
+            ObjectId = 4321,
+            Operation = "create",
+            Protocol = "rest",
+            RequestId = "req-shape",
+            GeometryJson = """{"type":"Point","coordinates":[-157.8583,21.3069]}""",
+            GeometrySrid = 4326,
+            GeometryEnvelope = [-157.8583d, 21.3069d, -157.8583d, 21.3069d],
+            PropertiesJson = """{"name":"Honolulu","status":"active"}"""
+        });
+
+        var stored = (await eventStore.QueryAsync(null, null, null, 500))
+            .Single(e => e.ServiceId == serviceId);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/v1/streaming/features?layers=0&cursor={stored.Cursor - 1}");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+
+        JsonElement envelope = default;
+        while (!cts.Token.IsCancellationRequested)
+        {
+            var evt = await ReadNextSseEventAsync(reader, cts.Token);
+            if (evt.EventName != "feature-change" ||
+                evt.Data.GetProperty("serviceId").GetString() != serviceId)
+            {
+                continue;
+            }
+
+            envelope = evt.Data.Clone();
+            break;
+        }
+
+        envelope.ValueKind.Should().Be(JsonValueKind.Object);
+        envelope.GetProperty("type").GetString().Should().Be("feature-change");
+        envelope.GetProperty("sourceId").GetString().Should().Be("postgres-cdc");
+        envelope.GetProperty("serviceId").GetString().Should().Be(serviceId);
+        envelope.GetProperty("layerId").GetInt32().Should().Be(0);
+        envelope.GetProperty("featureId").GetString().Should().Be("4321");
+        envelope.GetProperty("objectId").GetInt64().Should().Be(4321);
+        envelope.GetProperty("operation").GetString().Should().Be("insert");
+        envelope.GetProperty("cursor").GetInt64().Should().Be(stored.Cursor);
+        envelope.GetProperty("timestamp").GetDateTimeOffset().Should().BeCloseTo(stored.Timestamp, TimeSpan.FromSeconds(1));
+        envelope.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
+        envelope.GetProperty("geometryCrs").GetString().Should().Be("EPSG:4326");
+        envelope.GetProperty("attributes").GetProperty("name").GetString().Should().Be("Honolulu");
+        envelope.GetProperty("subscriptionId").GetString().Should().Be("default");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features/capabilities")]
+    public async Task Capabilities_ProEdition_AdvertisesTransportsFiltersAndLayers()
+    {
+        using var response = await _client.GetAsync("/api/v1/streaming/features/capabilities");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = doc.RootElement.GetProperty("data");
+        data.GetProperty("enabled").GetBoolean().Should().BeTrue();
+        data.GetProperty("minimumEdition").GetString().Should().Be("Pro");
+        data.GetProperty("transports").EnumerateArray().Select(item => item.GetString())
+            .Should().Contain(["websocket", "sse"]);
+        data.GetProperty("filterFamilies").EnumerateArray().Select(item => item.GetString())
+            .Should().Contain(["layer", "bbox", "attribute", "temporal"]);
+        data.GetProperty("replaySupported").GetBoolean().Should().BeTrue();
+        data.GetProperty("layers").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features/capabilities")]
+    public async Task Capabilities_CommunityEdition_DisablesStreamingMetadata()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseStatusProvider>(new TestLicenseStatusProvider(HonuaEdition.Community));
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var response = await fixture.CreateAdminClient().GetAsync("/api/v1/streaming/features/capabilities");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = doc.RootElement.GetProperty("data");
+            data.GetProperty("enabled").GetBoolean().Should().BeFalse();
+            data.GetProperty("edition").GetString().Should().Be("Community");
+            data.GetProperty("transports").GetArrayLength().Should().Be(0);
+            data.GetProperty("filterFamilies").GetArrayLength().Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -302,6 +571,11 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 {
                     var json = line["data: ".Length..];
                     using var doc = JsonDocument.Parse(json);
+                    if (!IsFeatureChangeFrame(doc.RootElement))
+                    {
+                        continue;
+                    }
+
                     var sid = doc.RootElement.GetProperty("serviceId").GetString();
                     if (sid == serviceId)
                     {
@@ -424,6 +698,11 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 {
                     var json = line["data: ".Length..];
                     using var doc = JsonDocument.Parse(json);
+                    if (!IsFeatureChangeFrame(doc.RootElement))
+                    {
+                        continue;
+                    }
+
                     var cur = doc.RootElement.GetProperty("cursor").GetInt64();
 
                     // Only count events from this test's service.
@@ -533,6 +812,11 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 {
                     var json = line["data: ".Length..];
                     using var doc = JsonDocument.Parse(json);
+                    if (!IsFeatureChangeFrame(doc.RootElement))
+                    {
+                        continue;
+                    }
+
                     var cur = doc.RootElement.GetProperty("cursor").GetInt64();
                     var sid = doc.RootElement.GetProperty("serviceId").GetString();
                     if (sid == serviceId)
@@ -675,6 +959,85 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         RequestId = "req-1"
     };
 
+    private static bool IsFeatureChangeFrame(JsonElement element)
+        => element.TryGetProperty("type", out var type) &&
+           string.Equals(type.GetString(), "feature-change", StringComparison.Ordinal);
+
+    private static async Task SendWebSocketJsonAsync(
+        WebSocket webSocket,
+        string json,
+        CancellationToken cancellationToken)
+    {
+        var payload = Encoding.UTF8.GetBytes(json);
+        await webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken);
+    }
+
+    private static async Task<JsonElement> ReceiveWebSocketJsonAsync(
+        WebSocket webSocket,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[8192];
+        using var stream = new MemoryStream();
+
+        while (true)
+        {
+            var result = await webSocket.ReceiveAsync(buffer, cancellationToken);
+            result.MessageType.Should().Be(WebSocketMessageType.Text);
+            stream.Write(buffer, 0, result.Count);
+
+            if (!result.EndOfMessage)
+            {
+                continue;
+            }
+
+            using var doc = JsonDocument.Parse(stream.ToArray());
+            return doc.RootElement.Clone();
+        }
+    }
+
+    private static async Task<SseEvent> ReadNextSseEventAsync(
+        StreamReader reader,
+        CancellationToken cancellationToken)
+    {
+        string? eventName = null;
+        string? data = null;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+            {
+                throw new EndOfStreamException("SSE stream ended before an event was received.");
+            }
+
+            if (line.Length == 0)
+            {
+                if (eventName is not null && data is not null)
+                {
+                    using var doc = JsonDocument.Parse(data);
+                    return new SseEvent(eventName, doc.RootElement.Clone());
+                }
+
+                eventName = null;
+                data = null;
+                continue;
+            }
+
+            if (line.StartsWith("event: ", StringComparison.Ordinal))
+            {
+                eventName = line["event: ".Length..];
+            }
+            else if (line.StartsWith("data: ", StringComparison.Ordinal))
+            {
+                data = line["data: ".Length..];
+            }
+        }
+
+        throw new OperationCanceledException(cancellationToken);
+    }
+
+    private sealed record SseEvent(string EventName, JsonElement Data);
+
     private static WebAppFixture CreateLimitedStreamingFixture(int maxConcurrentSessions)
         => new WebAppFixture().ConfigureWebHost(builder =>
         {
@@ -699,5 +1062,80 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 
             await Task.Delay(20, ct);
         }
+    }
+
+    private sealed class TestLicenseStatusProvider(HonuaEdition edition) : ILicenseStatusProvider
+    {
+        public LicenseStatus GetCurrentStatus()
+            => new(edition, IsValid: true, ExpiresAt: null, LicensedTo: null);
+
+        public Task<LicenseUploadResult> UploadLicenseAsync(
+            Stream licenseStream,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new LicenseUploadResult(false, "Not supported in tests."));
+    }
+
+    private sealed class TimeAwareStreamLayerCatalog : ILayerCatalog
+    {
+        private readonly ServiceDefinition _service;
+        private readonly LayerDefinition _layer;
+
+        public TimeAwareStreamLayerCatalog()
+        {
+            var fields = new[]
+            {
+                new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
+                new FieldDefinition("name", FieldType.String, 255, true, null, "Name"),
+                new FieldDefinition("timestamp", FieldType.DateTime, null, true, null, "Timestamp"),
+                new FieldDefinition("shape", FieldType.Geometry, null, false, null, "Geometry")
+            };
+            var spatialReference = SpatialReference.Create(4326);
+            var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
+            _layer = new LayerDefinition(
+                Id: 0,
+                Name: "Time Aware Stream Layer",
+                Description: "Time-aware layer for streaming tests",
+                GeometryType: GeometryType.Point,
+                SpatialReference: spatialReference,
+                Fields: fields,
+                Extent: extent,
+                Metadata: new CatalogMetadata
+                {
+                    TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" }
+                });
+            _service = new ServiceDefinition(
+                "test",
+                "Time-aware streaming service",
+                [_layer],
+                spatialReference,
+                ServiceExtent: extent);
+        }
+
+        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(layerId == _layer.Id ? _layer : null);
+
+        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new[] { _layer });
+
+        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Equals(serviceName, _service.Name, StringComparison.OrdinalIgnoreCase) ? _service : null);
+
+        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new[] { _service });
+
+        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(layerId == _layer.Id);
+
+        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Equals(serviceName, _service.Name, StringComparison.OrdinalIgnoreCase));
+
+        public Task<Relationship?> GetRelationshipAsync(
+            int layerId,
+            int relationshipId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<Relationship?>(null);
+
+        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<Relationship>());
     }
 }

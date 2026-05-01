@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Text.Json;
 using Honua.Server.Features.Infrastructure.Events;
 
 namespace Honua.Server.Features.Streaming;
@@ -61,15 +63,57 @@ internal sealed partial class FeatureStreamPublisher(
         EventId = e.EventId,
         Cursor = e.Cursor,
         Timestamp = e.Timestamp,
+        SourceId = e.SourceId,
         ServiceId = e.ServiceId,
         LayerId = e.LayerId,
+        FeatureId = e.ObjectId.ToString(CultureInfo.InvariantCulture),
         ObjectId = e.ObjectId,
         Operation = e.Operation,
         Protocol = e.Protocol,
         RequestId = e.RequestId,
+        Geometry = ParseJsonElement(e.GeometryJson),
+        GeometryCrs = e.GeometrySrid.HasValue ? $"EPSG:{e.GeometrySrid.Value.ToString(CultureInfo.InvariantCulture)}" : null,
+        Attributes = ParseAttributes(e.PropertiesJson),
         ChangedAttributes = e.ChangedAttributes,
         GeometryChanged = e.GeometryChanged
     };
+
+    private static JsonElement? ParseJsonElement(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static Dictionary<string, JsonElement>? ParseAttributes(string? propertiesJson)
+    {
+        if (string.IsNullOrWhiteSpace(propertiesJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize(
+                propertiesJson,
+                FeatureStreamJsonContext.Default.DictionaryStringJsonElement);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     [LoggerMessage(EventId = 5100, Level = LogLevel.Warning, Message = "Failed to publish feature-change event to store.")]
     private static partial void LogPublishFailed(ILogger logger, Exception exception);

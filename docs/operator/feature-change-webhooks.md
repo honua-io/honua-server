@@ -17,7 +17,7 @@ Each event envelope includes:
 - `serviceId`
 - `layerId`
 - `objectId`
-- `operation` (`create`, `update`, `delete`)
+- `operation` (`insert`, `update`, `delete`)
 - `protocol`
 - `requestId`
 
@@ -70,4 +70,3 @@ Typical recovery loop:
 3. Process each event idempotently keyed by `eventId`.
 4. Persist returned `nextCursor`.
 5. Repeat while `hasMore=true`.
-

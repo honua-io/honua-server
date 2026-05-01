@@ -15,6 +15,7 @@ namespace Honua.Server.Features.Streaming;
 /// </summary>
 internal sealed class FeatureStreamSessionManager : IDisposable
 {
+    internal const string DefaultSubscriptionId = "default";
     private static readonly RedisChannel BroadcastChannel = new("featurechange:stream:broadcast", RedisChannel.PatternMode.Literal);
     private static readonly TimeSpan ClusterBroadcastRecoveryInterval = TimeSpan.FromSeconds(5);
     private const int RecentEventIdCapacity = 128;
@@ -100,7 +101,11 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// Attempts to create a new session. Returns null when the global concurrent-session
     /// cap has been reached.
     /// </summary>
-    public FeatureStreamSession? TryCreateSession(string transport, string? clientLabel, IStreamSubscriptionFilter? filter = null)
+    public FeatureStreamSession? TryCreateSession(
+        string transport,
+        string? clientLabel,
+        IStreamSubscriptionFilter? filter = null,
+        bool addDefaultSubscription = true)
     {
         var opts = _options.Value;
         if (!TryReserveSessionSlot(opts.MaxConcurrentSessions))
@@ -116,7 +121,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             SingleReader = true
         });
         var cts = new CancellationTokenSource();
-        var entry = new SessionEntry(id, channel, cts, DateTimeOffset.UtcNow, clientLabel, transport, filter);
+        var entry = new SessionEntry(id, channel, cts, DateTimeOffset.UtcNow, clientLabel, transport, filter, addDefaultSubscription);
         if (!_sessions.TryAdd(id, entry))
         {
             ReleaseSessionSlot();
@@ -270,61 +275,79 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 continue;
             }
 
-            // Apply subscription filter before queueing. Filtered events never
-            // enter the channel, reducing buffer pressure for selective subscribers.
-            if (entry.SubscriptionFilter is not null
-                && !message.IsHeartbeat
-                && !(entry.SubscriptionFilter is StreamSubscriptionFilter streamFilter
-                    ? streamFilter.Matches(
-                        message.Envelope,
-                        message.GeometryEnvelope,
-                        message.PropertiesJson,
-                        ref parsedProperties,
-                        ref propertiesParsed)
-                    : entry.SubscriptionFilter.Matches(
-                        message.Envelope,
-                        message.GeometryEnvelope,
-                        message.PropertiesJson)))
+            if (message.IsHeartbeat)
             {
-                continue;
-            }
-
-            if (!message.IsHeartbeat && entry.HasSeenEvent(message.Envelope.EventId))
-            {
-                continue;
-            }
-
-            if (!entry.Channel.Writer.TryWrite(message))
-            {
-                if (entry.DrainStarted)
+                if (TryQueueMessage(id, entry, message))
                 {
-                    if (entry.TryConsumeDrainGrace())
-                    {
-                        // Still clearing inherited replay backlog — silently drop.
-                        continue;
-                    }
-
-                    // Grace exhausted — genuine slow consumer.
-                    Interlocked.Increment(ref _slowConsumerDrops);
-                    FeatureStreamLog.SlowConsumerDropped(_logger, id);
-                    RemoveSession(id, FeatureStreamDisconnectReason.SlowConsumer);
+                    delivered++;
                 }
 
-                // Pre-drain (replay window): silently drop to avoid disconnecting
-                // a healthy reconnecting client. The drain dedup will handle overlap.
+                continue;
             }
-            else
+
+            var matchingSubscriptionIds = entry.GetMatchingSubscriptionIds(
+                message.Envelope,
+                message.GeometryEnvelope,
+                message.PropertiesJson,
+                ref parsedProperties,
+                ref propertiesParsed);
+            if (matchingSubscriptionIds.Length == 0)
             {
-                delivered++;
-                entry.UpdateLastQueuedCursor(message.Envelope.Cursor);
-                if (!message.IsHeartbeat)
+                continue;
+            }
+
+            foreach (var subscriptionId in matchingSubscriptionIds)
+            {
+                var eventKey = string.Concat(message.Envelope.EventId, ":", subscriptionId);
+                if (entry.HasSeenEvent(eventKey))
                 {
-                    entry.RememberEvent(message.Envelope.EventId);
+                    continue;
+                }
+
+                var subscriptionMessage = message with
+                {
+                    Envelope = message.Envelope with { SubscriptionId = subscriptionId }
+                };
+                if (TryQueueMessage(id, entry, subscriptionMessage))
+                {
+                    delivered++;
+                    entry.RememberEvent(eventKey);
                 }
             }
         }
 
         return delivered;
+    }
+
+    private bool TryQueueMessage(Guid sessionId, SessionEntry entry, FeatureStreamMessage message)
+    {
+        if (!entry.Channel.Writer.TryWrite(message))
+        {
+            if (entry.DrainStarted)
+            {
+                if (entry.TryConsumeDrainGrace())
+                {
+                    // Still clearing inherited replay backlog — silently drop.
+                    return false;
+                }
+
+                // Grace exhausted — genuine slow consumer.
+                Interlocked.Increment(ref _slowConsumerDrops);
+                FeatureStreamLog.SlowConsumerDropped(_logger, sessionId);
+                RemoveSession(sessionId, FeatureStreamDisconnectReason.SlowConsumer);
+            }
+
+            // Pre-drain (replay window): silently drop to avoid disconnecting
+            // a healthy reconnecting client. The drain dedup will handle overlap.
+            return false;
+        }
+
+        if (!message.IsHeartbeat)
+        {
+            entry.UpdateLastQueuedCursor(message.Envelope.Cursor);
+        }
+
+        return true;
     }
 
     private void HandleClusterBroadcast(RedisChannel channel, RedisValue value)
@@ -485,6 +508,33 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     }
 
     /// <summary>
+    /// Registers a subscription on an existing WebSocket session.
+    /// </summary>
+    public bool TryAddSubscription(Guid sessionId, string subscriptionId, IStreamSubscriptionFilter? filter)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return false;
+        }
+
+        entry.AddSubscription(subscriptionId, filter);
+        return true;
+    }
+
+    /// <summary>
+    /// Removes a subscription from an existing WebSocket session.
+    /// </summary>
+    public bool TryRemoveSubscription(Guid sessionId, string subscriptionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return false;
+        }
+
+        return entry.RemoveSubscription(subscriptionId);
+    }
+
+    /// <summary>
     /// Force-disconnect a session (admin action).
     /// </summary>
     public bool DisconnectSession(Guid sessionId)
@@ -508,15 +558,15 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     {
         return _sessions.Select(kvp =>
         {
-            var streamFilter = kvp.Value.SubscriptionFilter as StreamSubscriptionFilter;
+            var streamFilter = kvp.Value.FirstStreamSubscriptionFilter;
             return new FeatureStreamSessionInfo(
                 kvp.Key,
                 kvp.Value.ConnectedAt,
                 kvp.Value.ClientLabel,
                 kvp.Value.Transport,
                 kvp.Value.LastQueuedCursor,
-                kvp.Value.SubscriptionFilter is not null,
-                kvp.Value.SubscriptionFilter?.Summary,
+                kvp.Value.HasFilter,
+                kvp.Value.FilterSummary,
                 streamFilter?.ServiceId,
                 streamFilter?.LayerIds?.ToArray());
         }).ToArray();
@@ -570,6 +620,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         private readonly Queue<string> _recentEventIds = new();
         private readonly HashSet<string> _recentEventIdSet = new(StringComparer.Ordinal);
         private readonly object _recentEventLock = new();
+        private readonly Dictionary<string, IStreamSubscriptionFilter?> _subscriptions = new(StringComparer.Ordinal);
+        private readonly object _subscriptionLock = new();
 
         public SessionEntry(
             Guid id,
@@ -578,7 +630,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             DateTimeOffset connectedAt,
             string? clientLabel,
             string transport,
-            IStreamSubscriptionFilter? subscriptionFilter = null)
+            IStreamSubscriptionFilter? subscriptionFilter = null,
+            bool addDefaultSubscription = true)
         {
             Id = id;
             Channel = channel;
@@ -586,7 +639,10 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             ConnectedAt = connectedAt;
             ClientLabel = clientLabel;
             Transport = transport;
-            SubscriptionFilter = subscriptionFilter;
+            if (addDefaultSubscription)
+            {
+                _subscriptions[FeatureStreamSessionManager.DefaultSubscriptionId] = subscriptionFilter;
+            }
         }
 
         public Guid Id { get; }
@@ -595,7 +651,50 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         public DateTimeOffset ConnectedAt { get; }
         public string? ClientLabel { get; }
         public string Transport { get; }
-        public IStreamSubscriptionFilter? SubscriptionFilter { get; }
+        public bool HasSubscriptions
+        {
+            get
+            {
+                lock (_subscriptionLock)
+                {
+                    return _subscriptions.Count > 0;
+                }
+            }
+        }
+
+        public bool HasFilter
+        {
+            get
+            {
+                lock (_subscriptionLock)
+                {
+                    return _subscriptions.Values.Any(filter => filter is not null);
+                }
+            }
+        }
+
+        public string? FilterSummary
+        {
+            get
+            {
+                lock (_subscriptionLock)
+                {
+                    return string.Join("; ", _subscriptions.Select(s =>
+                        s.Value is null ? $"{s.Key}: all" : $"{s.Key}: {s.Value.Summary}"));
+                }
+            }
+        }
+
+        public StreamSubscriptionFilter? FirstStreamSubscriptionFilter
+        {
+            get
+            {
+                lock (_subscriptionLock)
+                {
+                    return _subscriptions.Values.OfType<StreamSubscriptionFilter>().FirstOrDefault();
+                }
+            }
+        }
         public volatile bool DrainStarted;
         public long LastQueuedCursor => Interlocked.Read(ref _lastQueuedCursor);
 
@@ -645,6 +744,67 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                     _recentEventIdSet.Remove(expired);
                 }
             }
+        }
+
+        public void AddSubscription(string subscriptionId, IStreamSubscriptionFilter? filter)
+        {
+            lock (_subscriptionLock)
+            {
+                _subscriptions[subscriptionId] = filter;
+            }
+        }
+
+        public bool RemoveSubscription(string subscriptionId)
+        {
+            lock (_subscriptionLock)
+            {
+                return _subscriptions.Remove(subscriptionId);
+            }
+        }
+
+        public string[] GetMatchingSubscriptionIds(
+            FeatureStreamEnvelope envelope,
+            double[]? geometryEnvelope,
+            string? propertiesJson,
+            ref IReadOnlyDictionary<string, JsonElement>? parsedProperties,
+            ref bool propertiesParsed)
+        {
+            KeyValuePair<string, IStreamSubscriptionFilter?>[] subscriptions;
+            lock (_subscriptionLock)
+            {
+                if (_subscriptions.Count == 0)
+                {
+                    return [];
+                }
+
+                subscriptions = _subscriptions.ToArray();
+            }
+
+            var matches = new List<string>(subscriptions.Length);
+            foreach (var (subscriptionId, filter) in subscriptions)
+            {
+                if (filter is null)
+                {
+                    matches.Add(subscriptionId);
+                    continue;
+                }
+
+                var matched = filter is StreamSubscriptionFilter streamFilter
+                    ? streamFilter.Matches(
+                        envelope,
+                        geometryEnvelope,
+                        propertiesJson,
+                        ref parsedProperties,
+                        ref propertiesParsed)
+                    : filter.Matches(envelope, geometryEnvelope, propertiesJson);
+
+                if (matched)
+                {
+                    matches.Add(subscriptionId);
+                }
+            }
+
+            return matches.ToArray();
         }
     }
 }
@@ -698,22 +858,22 @@ internal readonly record struct FeatureStreamMessage
     /// <summary>
     /// True if this is a heartbeat frame rather than a data envelope.
     /// </summary>
-    public bool IsHeartbeat { get; private init; }
+    public bool IsHeartbeat { get; init; }
 
     /// <summary>
     /// The event envelope (only meaningful when <see cref="IsHeartbeat"/> is false).
     /// </summary>
-    public FeatureStreamEnvelope Envelope { get; private init; }
+    public FeatureStreamEnvelope Envelope { get; init; }
 
     /// <summary>
     /// Geometry bounding box from the enriched event (internal only, never serialized to clients).
     /// </summary>
-    public double[]? GeometryEnvelope { get; private init; }
+    public double[]? GeometryEnvelope { get; init; }
 
     /// <summary>
     /// Pre-serialized attribute JSON from the enriched event (internal only, never serialized to clients).
     /// </summary>
-    public string? PropertiesJson { get; private init; }
+    public string? PropertiesJson { get; init; }
 
     /// <summary>
     /// Creates a data message with optional enrichment for subscription filtering.

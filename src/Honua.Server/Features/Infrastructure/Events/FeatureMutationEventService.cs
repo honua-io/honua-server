@@ -53,7 +53,9 @@ internal sealed class FeatureMutationEventService(
         string? requestId = null,
         bool? geometryChanged = null,
         double[]? geometryEnvelope = null,
-        string? propertiesJson = null)
+        string? propertiesJson = null,
+        string? geometryJson = null,
+        int? geometrySrid = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
@@ -69,14 +71,20 @@ internal sealed class FeatureMutationEventService(
             ? requestId
             : context.TraceIdentifier;
 
-        if (geometryEnvelope is null && propertiesJson is null)
+        if ((geometryEnvelope is null || propertiesJson is null || geometryJson is null || geometrySrid is null) &&
+            mutationFeature is not null)
         {
-            (geometryEnvelope, propertiesJson) = FeatureChangeEventEnrichment.FromFeature(mutationFeature);
+            var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(mutationFeature);
+            geometryEnvelope ??= enrichment.GeometryEnvelope;
+            propertiesJson ??= enrichment.PropertiesJson;
+            geometryJson ??= enrichment.GeometryJson;
+            geometrySrid ??= enrichment.GeometrySrid;
         }
 
         var requestPayload = new FeatureChangeEventRequest
         {
             EventId = Guid.NewGuid().ToString("N"),
+            SourceId = protocol,
             ServiceId = resolvedServiceId,
             LayerId = layerId,
             ObjectId = objectId,
@@ -85,7 +93,9 @@ internal sealed class FeatureMutationEventService(
             RequestId = resolvedRequestId,
             GeometryChanged = geometryChanged ?? false,
             GeometryEnvelope = geometryEnvelope,
-            PropertiesJson = propertiesJson
+            PropertiesJson = propertiesJson,
+            GeometryJson = geometryJson,
+            GeometrySrid = geometrySrid
         };
 
         try
