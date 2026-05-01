@@ -75,8 +75,8 @@ SSE event names are `status`, `heartbeat`, and `feature-change`. Each `feature-c
 
 ## Filters
 
-- `serviceId`: limits events to a published service. The caller must have read access to every layer in that service.
-- `layers` (preferred) or `layerIds` (legacy alias): comma-separated layer ids. Each layer is access-checked.
+- `serviceId`: limits events to a published service. The caller must have read access to every layer in that service. When combined with `layers`/`layerIds`, every requested layer must belong to that service; otherwise the request is rejected with `Layer {id} is not part of service '{name}'.`
+- `layers` (preferred) or `layerIds` (legacy alias): comma-separated layer ids. Each layer is access-checked against both its layer policy and (when no `serviceId` is supplied) its primary service policy, matching the OGC API Collections enforcement pattern.
 - `bbox`: `minX,minY,maxX,maxY`. Accepted in EPSG:4326 by default; an explicit CRS via `bboxCrs` (or kebab-case `bbox-crs`) must resolve to EPSG:4326. The server projects the bbox into the layer SRID once at subscription setup. `bbox` requires exactly one layer.
 - `filter`: CQL2 attribute filter selected by `filter-lang` (`cql2-text` default, `cql2-json` alternative). Only the in-memory scalar subset is accepted: scalar comparisons, boolean combinations, null checks, `IN`/`NOT IN`, and simple `LIKE`. Functions, spatial predicates, temporal predicates, and unknown fields are rejected. The expression is depth-limited; over-deep expressions are rejected with the depth in the error body. `filter` requires exactly one layer.
 - `datetime` (alias `time`): OGC datetime instant or interval. Accepted only for layers with `timeInfo`; evaluated against the layer's start/end time fields. `datetime` requires exactly one time-aware layer.
@@ -101,6 +101,8 @@ Relevant settings:
 - `FeatureStreaming:ReplayBatchSize`
 - `FeatureStreaming:CrossNodeSyncInterval`
 - `FeatureStreaming:MaxControlFrameBytes` (default 64 KiB; oversized inbound WebSocket control frames are rejected with a `control-frame-too-large` error and the connection is closed)
+- `FeatureStreaming:MaxSubscriptionsPerSession` (default 64; counts the default subscription. Subscribe control frames over the cap are rejected with a `subscription-limit-reached` error frame; the connection stays open so the client can unsubscribe and try again)
+- `FeatureStreaming:MaxSubscriptionIdLength` (default 128 characters; longer client-supplied `subscriptionId` values are rejected with an `invalid-subscription-id` error frame)
 - `FeatureChangeEvents:MaxRetainedEvents`
 
-The capabilities response reports the active edition, minimum required edition, transports, filter families, replay support, cursor retention limit, heartbeat interval, max concurrent sessions, delete before-image availability, and a per-layer summary covering `canSubscribe`, `supportsSpatialFilters`, `supportsTemporalFilters`, layer time fields, and layer CRS. Capability values vary by edition and per-caller layer access.
+The capabilities response reports the active edition, minimum required edition, transports, filter families, replay support, cursor retention limit, heartbeat interval, max concurrent sessions, delete before-image availability, and a per-layer summary covering `canSubscribe`, `supportsSpatialFilters`, `supportsTemporalFilters`, layer time fields, and layer CRS. The per-layer list is scoped to layers the caller can access; layers denied by their layer policy or primary service policy are omitted entirely (their names, CRS, and time-aware status are not exposed through anonymous discovery). On Community, the response advertises `enabled=false` with no transports or filter families.

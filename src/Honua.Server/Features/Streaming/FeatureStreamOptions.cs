@@ -46,6 +46,20 @@ public sealed class FeatureStreamOptions
     /// is closed, preventing a malicious client from buffering an unbounded fragmented message.
     /// </summary>
     public int MaxControlFrameBytes { get; set; } = 64 * 1024;
+
+    /// <summary>
+    /// Maximum number of concurrent subscriptions a single WebSocket session may hold.
+    /// Subscribe control frames over this cap are rejected with a client-safe error so a
+    /// single connection cannot accumulate unbounded per-session fan-out work.
+    /// </summary>
+    public int MaxSubscriptionsPerSession { get; set; } = 64;
+
+    /// <summary>
+    /// Maximum length of a client-supplied subscription identifier. Subscribe control frames
+    /// with longer ids are rejected; the cap protects the per-session state and downstream
+    /// logging from unbounded string allocations.
+    /// </summary>
+    public int MaxSubscriptionIdLength { get; set; } = 128;
 }
 
 /// <summary>
@@ -87,6 +101,16 @@ internal sealed class FeatureStreamOptionsValidator : IValidateOptions<FeatureSt
         if (options.MaxControlFrameBytes <= 0)
         {
             failures.Add("FeatureStreaming:MaxControlFrameBytes must be a positive integer.");
+        }
+
+        if (options.MaxSubscriptionsPerSession <= 0)
+        {
+            failures.Add("FeatureStreaming:MaxSubscriptionsPerSession must be a positive integer.");
+        }
+
+        if (options.MaxSubscriptionIdLength <= 0)
+        {
+            failures.Add("FeatureStreaming:MaxSubscriptionIdLength must be a positive integer.");
         }
 
         return failures.Count > 0

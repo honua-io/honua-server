@@ -907,7 +907,7 @@ internal static class FeatureStreamEndpoints
         // clears grace so subsequent overflows are genuine slow consumers.
         // For fresh live sessions (no cursor), onFirstRead is null and the first
         // message flows straight to normal delivery.
-        var writerTask = WriteWebSocketAsync(webSocket, session, replayCursor, linkedCts.Token,
+        var writerTask = WriteWebSocketAsync(webSocket, session, replayCursor, sessionManager, linkedCts.Token,
             onFirstRead: hasReplay
                 ? async (cursor, ct) =>
                 {
@@ -1043,6 +1043,7 @@ internal static class FeatureStreamEndpoints
         WebSocket webSocket,
         FeatureStreamSession session,
         long replayCursor,
+        FeatureStreamSessionManager sessionManager,
         CancellationToken cancellationToken,
         Func<long, CancellationToken, Task<long>>? onFirstRead = null,
         Func<long, CancellationToken, Task<long>>? onPoll = null,
@@ -1106,13 +1107,20 @@ internal static class FeatureStreamEndpoints
                         return;
                     }
 
-                    // Per-(event, subscription) dedup is enforced atomically by
-                    // the broadcast and replay paths via TryRememberSubscriptionDelivery,
-                    // so each frame on the channel is the unique winner of its
-                    // (event, subscription) slot. The earlier session-wide cursor
-                    // watermark dedup was incorrect for multi-subscription
-                    // sessions because two subscriptions matching the same event
-                    // share a cursor but are distinct deliveries.
+                    // Per-(event, subscription) dedup is claimed at send time so
+                    // events that the channel later dropped as pre-drain overflow
+                    // remain replayable. Whichever path (this writer or the
+                    // per-subscription replay) wins the atomic test-and-set sends
+                    // the frame; the other observes the recorded key and skips.
+                    if (!message.IsHeartbeat
+                        && !sessionManager.TryRememberSubscriptionDelivery(
+                            session.SessionId,
+                            message.Envelope.SubscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId,
+                            message.Envelope.EventId))
+                    {
+                        continue;
+                    }
+
                     var payload = message.IsHeartbeat
                         ? JsonSerializer.SerializeToUtf8Bytes(
                             new FeatureStreamHeartbeat(),
@@ -1212,18 +1220,45 @@ internal static class FeatureStreamEndpoints
             return;
         }
 
+        var options = deps.Options.Value;
         var subscriptionId = string.IsNullOrWhiteSpace(control.SubscriptionId)
             ? Guid.NewGuid().ToString("N")
             : control.SubscriptionId.Trim();
+
+        if (subscriptionId.Length > options.MaxSubscriptionIdLength)
+        {
+            await SendWebSocketErrorAsync(
+                webSocket,
+                session.WriteLock,
+                "invalid-subscription-id",
+                $"subscriptionId exceeds the {options.MaxSubscriptionIdLength}-character limit.",
+                null,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
 
         // Pause the subscription before replay so the live channel writer cannot
         // queue events that the per-subscription replay path is about to deliver
         // directly. The unpause after replay restores normal live fan-out.
         var replayCursor = control.Cursor;
-        if (!deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: replayCursor.HasValue))
+        var addResult = deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: replayCursor.HasValue);
+        switch (addResult)
         {
-            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "session-closed", "Feature stream session is no longer active.", subscriptionId, cancellationToken).ConfigureAwait(false);
-            return;
+            case AddSubscriptionResult.Added:
+                break;
+            case AddSubscriptionResult.LimitReached:
+                await SendWebSocketErrorAsync(
+                    webSocket,
+                    session.WriteLock,
+                    "subscription-limit-reached",
+                    $"Session already has the maximum of {options.MaxSubscriptionsPerSession} subscriptions; unsubscribe before adding more.",
+                    subscriptionId,
+                    cancellationToken).ConfigureAwait(false);
+                return;
+            case AddSubscriptionResult.SessionGone:
+            default:
+                await SendWebSocketErrorAsync(webSocket, session.WriteLock, "session-closed", "Feature stream session is no longer active.", subscriptionId, cancellationToken).ConfigureAwait(false);
+                return;
         }
 
         FeatureStreamLog.SubscriptionAdded(logger, session.SessionId, subscriptionId, filter?.Summary ?? "all");

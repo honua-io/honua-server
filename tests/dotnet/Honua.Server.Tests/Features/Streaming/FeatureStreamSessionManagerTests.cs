@@ -361,7 +361,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     {
         using var session = _manager.CreateSession("WebSocket", "paused-subscribe");
 
-        Assert.True(_manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: true));
+        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: true));
 
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 11)));
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 12)));
@@ -383,7 +383,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     {
         using var session = _manager.CreateSession("WebSocket", "post-unpause");
 
-        Assert.True(_manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: true));
+        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: true));
 
         // While paused, broadcasts are skipped for subB (only default delivers).
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 21)));
@@ -406,24 +406,26 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Contains(messages, m => m.Envelope.Cursor == 22 && m.Envelope.SubscriptionId == "subB");
     }
 
-    // Regression for review finding "Per-subscription replay can drop events
-    // published before unpause". The replay path claims a (event, subscription)
-    // delivery slot through TryRememberSubscriptionDelivery; once claimed, a
-    // subsequent broadcast for the same event must skip queueing for that
-    // subscription so the client sees the event exactly once. This test runs
-    // the replay-then-broadcast path explicitly.
+    // Regression for review finding "Queued WebSocket events are marked
+    // delivered before they are sent": broadcast must NOT claim the (event,
+    // subscription) delivery slot when it queues. If it did and the bounded
+    // channel later dropped the frame as pre-drain overflow, a subsequent
+    // replay would observe the claim and skip the event entirely. The slot is
+    // claimed at send time by either the writer task or the per-subscription
+    // replay path, whichever arrives first.
     [UnitTest]
-    public void Broadcast_AfterReplayMarkedSubscription_SkipsDuplicateQueueing()
+    public void Broadcast_AfterReplayMarkedSubscription_StillQueuesForWriterToDedupAtSendTime()
     {
         using var session = _manager.CreateSession("WebSocket", "replay-then-broadcast");
 
-        Assert.True(_manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
+        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
 
-        // Simulate the per-subscription replay claiming the (event, subB) slot.
+        // Simulate the per-subscription replay claiming the (event, subB) slot
+        // at send time.
         Assert.True(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-101"));
 
-        // Now broadcast the same event id — broadcast must skip queueing for subB
-        // because replay already claimed delivery; default still receives.
+        // Broadcast still queues the frame for subB (no broadcast-time dedup);
+        // the writer observes the prior claim at send time and skips sending.
         var envelope = CreateEnvelope(cursor: 101) with { EventId = "evt-101" };
         _manager.Broadcast(FeatureStreamMessage.Data(envelope));
 
@@ -433,30 +435,68 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             messages.Add(msg);
         }
 
-        // Exactly one message (default), none for subB.
-        Assert.Single(messages);
-        Assert.Equal(FeatureStreamSessionManager.DefaultSubscriptionId, messages[0].Envelope.SubscriptionId);
+        // Both default and subB queue; the writer's TryRememberSubscriptionDelivery
+        // gate is what suppresses the duplicate subB send on the wire.
+        Assert.Equal(2, messages.Count);
+        Assert.Contains(messages, m => m.Envelope.SubscriptionId == FeatureStreamSessionManager.DefaultSubscriptionId);
+        Assert.Contains(messages, m => m.Envelope.SubscriptionId == "subB");
+
+        // Writer-side dedup: replay claimed first, so the writer's claim fails.
+        Assert.False(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-101"));
     }
 
-    // Regression: broadcast first, then replay's TryRememberSubscriptionDelivery
-    // must observe the claim and skip — i.e., the slot is owned by whichever
-    // path arrives first.
+    // Regression: broadcast does NOT claim the (event, subscription) slot
+    // when it queues. Replay (or the writer) is the first to claim at send
+    // time — whichever path arrives first wins.
     [UnitTest]
-    public void TryRememberSubscriptionDelivery_AfterBroadcastClaimedSlot_ReturnsFalse()
+    public void TryRememberSubscriptionDelivery_FirstCallerAfterBroadcastWinsSlot()
     {
         using var session = _manager.CreateSession("WebSocket", "broadcast-then-replay");
 
-        Assert.True(_manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
+        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
 
         var envelope = CreateEnvelope(cursor: 200) with { EventId = "evt-200" };
         _manager.Broadcast(FeatureStreamMessage.Data(envelope));
 
-        // Broadcast claimed (evt-200, subB) when it queued. Replay's later
-        // attempt to claim the same slot must observe that and skip its send.
+        // Broadcast did not claim the slot. The first send-time caller wins:
+        // replay claims (evt-200, subB) successfully.
+        Assert.True(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-200"));
+
+        // Subsequent claims for the same key (e.g. the writer dequeueing the
+        // broadcast frame) observe the claim and skip.
         Assert.False(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-200"));
 
         // First-time delivery of a different (event, subscription) succeeds.
         Assert.True(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-201"));
+    }
+
+    // Regression for review finding "Queued WebSocket events are marked
+    // delivered before they are sent": when the bounded channel is full
+    // pre-drain and a broadcast frame is silently dropped, the (event,
+    // subscription) slot must remain unclaimed so a subsequent replay can
+    // still deliver the event.
+    [UnitTest]
+    public void Broadcast_PreDrainChannelFull_DoesNotClaimSlot_ReplayCanStillDeliver()
+    {
+        using var session = _manager.CreateSession("WebSocket", null);
+
+        // Fill the bounded channel (MaxBufferPerConnection=4) before drain.
+        for (var i = 0; i < 4; i++)
+        {
+            _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: i, eventId: $"evt-{i}")));
+        }
+
+        // This broadcast frame is dropped pre-drain (channel full). Before the
+        // fix it would also have claimed the slot, making the event un-replayable.
+        const string lostEventId = "evt-lost";
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 99, eventId: lostEventId)));
+
+        // The slot is still unclaimed — replay (or any later send path) can
+        // claim it and deliver the event.
+        Assert.True(_manager.TryRememberSubscriptionDelivery(
+            session.SessionId,
+            FeatureStreamSessionManager.DefaultSubscriptionId,
+            lostEventId));
     }
 
     // Regression for review finding "WebSocket writer drops same-event frames
@@ -470,7 +510,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         using var session = _manager.CreateSession("WebSocket", "multi-match");
 
         // Both default and subB match (no filter) → broadcast must queue twice.
-        Assert.True(_manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
+        Assert.Equal(AddSubscriptionResult.Added, _manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: false));
 
         var envelope = CreateEnvelope(cursor: 500) with { EventId = "evt-500" };
         _manager.Broadcast(FeatureStreamMessage.Data(envelope));
@@ -651,6 +691,40 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.False(filtered.Reader.TryRead(out _));
     }
 
+    // Regression for review finding "WebSocket subscriptions are unbounded
+    // per session": new subscribe frames over the configured cap must be
+    // rejected with a typed result so the connection stays alive but cannot
+    // accumulate unbounded fan-out work. Replacing an existing id keeps the
+    // count flat so a paused-then-resubscribe handshake on the same id still
+    // succeeds when the cap is full.
+    [UnitTest]
+    public void TryAddSubscription_AtCap_RejectsNewIdsButAllowsReplacement()
+    {
+        using var manager = new FeatureStreamSessionManager(
+            Options.Create(new FeatureStreamOptions
+            {
+                HeartbeatInterval = TimeSpan.FromSeconds(30),
+                MaxBufferPerConnection = 4,
+                ReplayBatchSize = 100,
+                MaxSubscriptionsPerSession = 2
+            }),
+            NullLogger<FeatureStreamSessionManager>.Instance);
+        using var session = manager.CreateSession("WebSocket", "cap-test");
+
+        // Default subscription is already present; adding one more reaches cap=2.
+        Assert.Equal(AddSubscriptionResult.Added, manager.TryAddSubscription(session.SessionId, "subA", filter: null));
+        Assert.Equal(AddSubscriptionResult.LimitReached, manager.TryAddSubscription(session.SessionId, "subB", filter: null));
+
+        // Replacing an existing id keeps the count flat.
+        Assert.Equal(AddSubscriptionResult.Added, manager.TryAddSubscription(session.SessionId, "subA", filter: null, paused: true));
+    }
+
+    [UnitTest]
+    public void TryAddSubscription_UnknownSession_ReturnsSessionGone()
+    {
+        Assert.Equal(AddSubscriptionResult.SessionGone, _manager.TryAddSubscription(Guid.NewGuid(), "subA", filter: null));
+    }
+
     [UnitTest]
     public void Broadcast_HeartbeatBypassesFilter()
     {
@@ -709,17 +783,36 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
-    public void Broadcast_DropsDuplicateEventIdForSession()
+    public void Broadcast_DuplicateEventId_QueuesBothFramesAndWriterDedupsAtSendTime()
     {
+        // Broadcast no longer dedups same-eventId duplicates at queue time
+        // because that lost events when the channel later dropped a frame
+        // pre-drain. Both frames now queue; the writer claims the
+        // (eventId, subscription) slot at send time so only the first frame
+        // reaches the wire.
         using var session = _manager.CreateSession("WebSocket", null);
 
         const string eventId = "evt-duplicate";
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 77, eventId: eventId)));
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 12, eventId: eventId)));
 
-        Assert.True(session.Reader.TryRead(out var firstMessage));
-        Assert.False(session.Reader.TryRead(out _));
-        Assert.Equal(77L, firstMessage.Envelope.Cursor);
+        var messages = new List<FeatureStreamMessage>();
+        while (session.Reader.TryRead(out var msg))
+        {
+            messages.Add(msg);
+        }
+
+        Assert.Equal(2, messages.Count);
+
+        // Writer's send-time dedup: first claim wins, second is suppressed.
+        Assert.True(_manager.TryRememberSubscriptionDelivery(
+            session.SessionId,
+            FeatureStreamSessionManager.DefaultSubscriptionId,
+            eventId));
+        Assert.False(_manager.TryRememberSubscriptionDelivery(
+            session.SessionId,
+            FeatureStreamSessionManager.DefaultSubscriptionId,
+            eventId));
     }
 
     [UnitTest]

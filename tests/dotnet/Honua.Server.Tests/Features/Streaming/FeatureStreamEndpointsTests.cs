@@ -149,6 +149,113 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         }
     }
 
+    // Regression for review finding "WebSocket subscriptions are unbounded
+    // per session". A bad client cannot inflate per-session work indefinitely
+    // by piling on unique subscribe ids; the server replies with a typed
+    // error frame and keeps the connection open so the client can recover.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_SubscriptionLimit_RejectsExcessSubscribesWithError()
+    {
+        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    // Default subscription occupies one slot; two more reaches the cap.
+                    ["FeatureStreaming:MaxSubscriptionsPerSession"] = "3"
+                });
+            });
+        });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var wsClient = fixture.CreateWebSocketClient();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+            using var ws = await wsClient.ConnectAsync(
+                new Uri("ws://localhost/api/v1/streaming/features?clientLabel=cap-test"),
+                cts.Token);
+
+            // Drain the connect status frame.
+            _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+            // Two new ids fill the remaining slots.
+            await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"sub-1","layerId":0}""", cts.Token);
+            (await ReceiveWebSocketJsonAsync(ws, cts.Token)).GetProperty("status").GetString().Should().Be("subscribed");
+            await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"sub-2","layerId":0}""", cts.Token);
+            (await ReceiveWebSocketJsonAsync(ws, cts.Token)).GetProperty("status").GetString().Should().Be("subscribed");
+
+            // Third new id is rejected with a typed error.
+            await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"sub-3","layerId":0}""", cts.Token);
+            var error = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            error.GetProperty("type").GetString().Should().Be("error");
+            error.GetProperty("code").GetString().Should().Be("subscription-limit-reached");
+
+            // Connection stays open; replacing an existing id still works.
+            await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"sub-1","layerId":0}""", cts.Token);
+            (await ReceiveWebSocketJsonAsync(ws, cts.Token)).GetProperty("status").GetString().Should().Be("subscribed");
+
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // Regression for review finding "WebSocket subscriptions are unbounded
+    // per session" (subscriptionId length cap): an oversize subscriptionId
+    // is rejected with a client-safe error before it reaches the session
+    // dictionary, where it would otherwise inflate per-message dedup keys
+    // and log lines.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_OversizedSubscriptionId_ReturnsErrorAndStaysOpen()
+    {
+        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FeatureStreaming:MaxSubscriptionIdLength"] = "16"
+                });
+            });
+        });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var wsClient = fixture.CreateWebSocketClient();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+            using var ws = await wsClient.ConnectAsync(
+                new Uri("ws://localhost/api/v1/streaming/features?clientLabel=long-id-test"),
+                cts.Token);
+
+            _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+            var longId = new string('a', 64);
+            await SendWebSocketJsonAsync(ws, $$"""{"type":"subscribe","subscriptionId":"{{longId}}","layerId":0}""", cts.Token);
+            var error = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            error.GetProperty("type").GetString().Should().Be("error");
+            error.GetProperty("code").GetString().Should().Be("invalid-subscription-id");
+
+            // Connection stays open; a sanely-sized id still works.
+            await SendWebSocketJsonAsync(ws, """{"type":"subscribe","subscriptionId":"ok","layerId":0}""", cts.Token);
+            (await ReceiveWebSocketJsonAsync(ws, cts.Token)).GetProperty("status").GetString().Should().Be("subscribed");
+
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // Regression for review finding "WebSocket writer drops same-event frames
     // for additional subscriptions". When two subscriptions on a single
     // WebSocket both match the same event, both frames must arrive on the

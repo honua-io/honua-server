@@ -279,6 +279,21 @@ internal sealed record FeatureStreamSessionInfo(
     int[]? LayerIdFilter = null);
 
 /// <summary>
+/// Result of <see cref="FeatureStreamSessionManager.TryAddSubscription"/>.
+/// </summary>
+internal enum AddSubscriptionResult
+{
+    /// <summary>Subscription was registered on the session.</summary>
+    Added,
+
+    /// <summary>Session no longer exists (e.g., disconnected mid-handshake).</summary>
+    SessionGone,
+
+    /// <summary>The per-session subscription cap is full.</summary>
+    LimitReached
+}
+
+/// <summary>
 /// Disconnect reason for feature-stream sessions.
 /// </summary>
 internal enum FeatureStreamDisconnectReason

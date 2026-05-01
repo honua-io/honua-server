@@ -298,16 +298,13 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
             foreach (var subscriptionId in matchingSubscriptionIds)
             {
-                // Atomic test-and-set so a race with a per-subscription replay
-                // path delivers the event exactly once. Whichever side wins the
-                // TryRememberEvent call sends; the other observes the recorded
-                // key and skips.
-                var eventKey = string.Concat(message.Envelope.EventId, ":", subscriptionId);
-                if (!entry.TryRememberEvent(eventKey))
-                {
-                    continue;
-                }
-
+                // Dedup is claimed at send time (writer task and per-subscription
+                // replay), not here. Claiming the (event, subscription) slot before
+                // queueing would mark events delivered that the bounded channel
+                // later drops as pre-drain overflow — and replay would then skip
+                // them too, losing the event entirely. Queue speculatively; the
+                // writer/replay path with the atomic test-and-set decides who
+                // actually sends.
                 var subscriptionMessage = message with
                 {
                     Envelope = message.Envelope with { SubscriptionId = subscriptionId }
@@ -516,16 +513,20 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// subscription until <see cref="TryUnpauseSubscription"/> is called. This lets
     /// the subscribe handler replay missed events from the durable store without
     /// the live channel writer interleaving frames at the same cursor range.
+    /// Returns <see cref="AddSubscriptionResult.SessionGone"/> if the session is
+    /// closed and <see cref="AddSubscriptionResult.LimitReached"/> if the per-session
+    /// cap is hit; the caller should reject the subscribe frame with a client-safe error.
     /// </summary>
-    public bool TryAddSubscription(Guid sessionId, string subscriptionId, IStreamSubscriptionFilter? filter, bool paused = false)
+    public AddSubscriptionResult TryAddSubscription(Guid sessionId, string subscriptionId, IStreamSubscriptionFilter? filter, bool paused = false)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
         {
-            return false;
+            return AddSubscriptionResult.SessionGone;
         }
 
-        entry.AddSubscription(subscriptionId, filter, paused);
-        return true;
+        return entry.TryAddSubscription(subscriptionId, filter, paused, _options.Value.MaxSubscriptionsPerSession)
+            ? AddSubscriptionResult.Added
+            : AddSubscriptionResult.LimitReached;
     }
 
     /// <summary>
@@ -789,11 +790,20 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        public void AddSubscription(string subscriptionId, IStreamSubscriptionFilter? filter, bool paused = false)
+        public bool TryAddSubscription(string subscriptionId, IStreamSubscriptionFilter? filter, bool paused, int maxSubscriptions)
         {
             lock (_subscriptionLock)
             {
+                // Replacing an existing id keeps the count flat — only count new ids
+                // against the cap so a paused-then-resubscribe handshake on the same
+                // id remains stable.
+                if (!_subscriptions.ContainsKey(subscriptionId) && _subscriptions.Count >= maxSubscriptions)
+                {
+                    return false;
+                }
+
                 _subscriptions[subscriptionId] = new SubscriptionState(filter, paused);
+                return true;
             }
         }
 
