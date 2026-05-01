@@ -162,6 +162,46 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         }
     }
 
+    // Regression for review finding "legacy layerIds stream subscriptions
+    // bypass layer access checks". The legacy `?layerIds=...` alias and the
+    // canonical `?layers=...` parameter must run through the same parser/
+    // authorizer helper, so the same unknown-layer rejection (a side-effect
+    // of the existence check) applies to both. Pre-fix, the legacy branch
+    // skipped existence/access entirely and accepted unknown ids silently.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithLegacyLayerIdsParam_AndUnknownLayer_ReturnsBadRequest()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/v1/streaming/features?layerIds=99999");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        body.Should().Contain("Layer 99999 not found");
+    }
+
+    // Companion check: `?layers=...` must produce the same unknown-layer
+    // outcome as `?layerIds=...`, confirming the unified helper.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithLayersParam_AndUnknownLayer_ReturnsBadRequest()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/v1/streaming/features?layers=99999");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        body.Should().Contain("Layer 99999 not found");
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithUnsupportedFunctionFilter_ReturnsBadRequest()

@@ -226,63 +226,23 @@ internal static class FeatureStreamEndpoints
             return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
         }
 
-        // Parse the new strict layer filter first.
-        if (!string.IsNullOrWhiteSpace(layersParam))
+        // `layers` is the canonical parameter; `layerIds` is a legacy alias. Both
+        // must be parsed, validated, and access-checked through the same helper.
+        var layerSource = !string.IsNullOrWhiteSpace(layersParam) ? layersParam : legacyLayerIdsParam;
+        if (!string.IsNullOrWhiteSpace(layerSource))
         {
-            var parts = layersParam.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var ids = new List<int>(parts.Length);
-            foreach (var part in parts)
+            var (parsedIds, layerError) = await ParseAndAuthorizeLayerIdsAsync(
+                deps,
+                context,
+                logger,
+                service,
+                layerSource).ConfigureAwait(false);
+            if (layerError is not null)
             {
-                if (!int.TryParse(part, CultureInfo.InvariantCulture, out var id))
-                {
-                    var msg = $"Invalid layer ID '{part}'. Must be an integer.";
-                    FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
-                }
-
-                ids.Add(id);
+                return (null, false, layerError);
             }
 
-            // Validate layers exist.
-            foreach (var id in ids)
-            {
-                var layer = ResolveLayer(service, id) ??
-                    await deps.LayerCatalog.GetLayerAsync(id, context.RequestAborted).ConfigureAwait(false);
-                if (layer is null)
-                {
-                    var msg = $"Layer {id} not found.";
-                    FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
-                }
-
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
-                if (accessError is not null)
-                {
-                    return (null, false, accessError);
-                }
-            }
-
-            layerIds = ids.ToArray();
-            hasAnyFilter = true;
-        }
-        else if (!string.IsNullOrWhiteSpace(legacyLayerIdsParam))
-        {
-            var ids = new HashSet<int>();
-            foreach (var part in legacyLayerIdsParam.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                if (int.TryParse(part, CultureInfo.InvariantCulture, out var id))
-                {
-                    ids.Add(id);
-                }
-                else
-                {
-                    var msg = $"Invalid layer ID '{part}'. Must be an integer.";
-                    FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
-                }
-            }
-
-            layerIds = ids.ToArray();
+            layerIds = parsedIds;
             hasAnyFilter = true;
         }
 
@@ -547,6 +507,51 @@ internal static class FeatureStreamEndpoints
     private static LayerDefinition? ResolveLayer(ServiceDefinition? service, int layerId)
         => service?.GetLayer(layerId);
 
+    private static async Task<(int[]? Ids, IResult? Error)> ParseAndAuthorizeLayerIdsAsync(
+        FeatureStreamDependencies deps,
+        HttpContext context,
+        ILogger logger,
+        ServiceDefinition? service,
+        string layersValue)
+    {
+        var ids = new List<int>();
+        var seen = new HashSet<int>();
+        foreach (var part in layersValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!int.TryParse(part, CultureInfo.InvariantCulture, out var id))
+            {
+                var msg = $"Invalid layer ID '{part}'. Must be an integer.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
+            }
+
+            if (seen.Add(id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        foreach (var id in ids)
+        {
+            var layer = ResolveLayer(service, id) ??
+                await deps.LayerCatalog.GetLayerAsync(id, context.RequestAborted).ConfigureAwait(false);
+            if (layer is null)
+            {
+                var msg = $"Layer {id} not found.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
+            }
+
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+            if (accessError is not null)
+            {
+                return (null, accessError);
+            }
+        }
+
+        return (ids.ToArray(), null);
+    }
+
     private static IResult? RequireAllLayerAccess(HttpContext context, ServiceDefinition service)
     {
         foreach (var layer in service.Layers)
@@ -717,6 +722,7 @@ internal static class FeatureStreamEndpoints
 
         await SendWebSocketStatusAsync(
             webSocket,
+            session.WriteLock,
             new FeatureStreamStatusFrame
             {
                 Status = "connected",
@@ -730,6 +736,7 @@ internal static class FeatureStreamEndpoints
             FeatureStreamLog.SessionCreatedWithFilter(logger, session.SessionId, subscriptionFilter.Summary);
             await SendWebSocketStatusAsync(
                 webSocket,
+                session.WriteLock,
                 new FeatureStreamStatusFrame
                 {
                     Status = "subscribed",
@@ -755,6 +762,7 @@ internal static class FeatureStreamEndpoints
             {
                 replayCursor = await ReplayToWebSocketAsync(
                     webSocket,
+                    session.WriteLock,
                     eventStore,
                     cursor!.Value,
                     options.ReplayBatchSize,
@@ -768,6 +776,7 @@ internal static class FeatureStreamEndpoints
                 // were silently dropped from the bounded channel pre-drain.
                 replayCursor = await ReplayToWebSocketAsync(
                     webSocket,
+                    session.WriteLock,
                     eventStore,
                     replayCursor,
                     options.ReplayBatchSize,
@@ -821,6 +830,7 @@ internal static class FeatureStreamEndpoints
                     previousCursor = replayCursor;
                     replayCursor = await ReplayToWebSocketAsync(
                         webSocket,
+                        session.WriteLock,
                         eventStore,
                         replayCursor,
                         options.ReplayBatchSize,
@@ -863,6 +873,7 @@ internal static class FeatureStreamEndpoints
                         long prev = cursor;
                         cursor = await ReplayToWebSocketAsync(
                             webSocket,
+                            session.WriteLock,
                             eventStore,
                             cursor,
                             options.ReplayBatchSize,
@@ -885,6 +896,7 @@ internal static class FeatureStreamEndpoints
                 ? async (cursor, ct) =>
                 await ReplayToWebSocketAsync(
                     webSocket,
+                    session.WriteLock,
                     eventStore,
                     cursor,
                     options.ReplayBatchSize,
@@ -1041,7 +1053,7 @@ internal static class FeatureStreamEndpoints
                             message.Envelope,
                             FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
 
-                    await webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+                    await SendWebSocketJsonAsync(webSocket, session.WriteLock, payload, cancellationToken).ConfigureAwait(false);
 
                     if (!message.IsHeartbeat)
                     {
@@ -1082,13 +1094,13 @@ internal static class FeatureStreamEndpoints
         }
         catch (JsonException)
         {
-            await SendWebSocketErrorAsync(webSocket, "invalid-json", "Invalid WebSocket control frame JSON.", null, cancellationToken).ConfigureAwait(false);
+            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "invalid-json", "Invalid WebSocket control frame JSON.", null, cancellationToken).ConfigureAwait(false);
             return;
         }
 
         if (control is null || string.IsNullOrWhiteSpace(control.Type))
         {
-            await SendWebSocketErrorAsync(webSocket, "invalid-control", "WebSocket control frame requires a type.", null, cancellationToken).ConfigureAwait(false);
+            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "invalid-control", "WebSocket control frame requires a type.", null, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -1097,6 +1109,7 @@ internal static class FeatureStreamEndpoints
             case "ping":
                 await SendWebSocketStatusAsync(
                     webSocket,
+                    session.WriteLock,
                     new FeatureStreamStatusFrame
                     {
                         Status = "ok",
@@ -1115,7 +1128,7 @@ internal static class FeatureStreamEndpoints
                 return;
 
             default:
-                await SendWebSocketErrorAsync(webSocket, "unsupported-control", $"Unsupported WebSocket control frame type '{control.Type}'.", null, cancellationToken).ConfigureAwait(false);
+                await SendWebSocketErrorAsync(webSocket, session.WriteLock, "unsupported-control", $"Unsupported WebSocket control frame type '{control.Type}'.", null, cancellationToken).ConfigureAwait(false);
                 return;
         }
     }
@@ -1132,7 +1145,7 @@ internal static class FeatureStreamEndpoints
         var (filter, error) = await BuildControlSubscriptionFilterAsync(deps, context, control, cancellationToken).ConfigureAwait(false);
         if (error is not null)
         {
-            await SendWebSocketErrorAsync(webSocket, "invalid-subscription", error, null, cancellationToken).ConfigureAwait(false);
+            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "invalid-subscription", error, null, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -1140,40 +1153,58 @@ internal static class FeatureStreamEndpoints
             ? Guid.NewGuid().ToString("N")
             : control.SubscriptionId.Trim();
 
-        if (!deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter))
+        // Pause the subscription before replay so the live channel writer cannot
+        // queue events that the per-subscription replay path is about to deliver
+        // directly. The unpause after replay restores normal live fan-out.
+        var replayCursor = control.Cursor;
+        if (!deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: replayCursor.HasValue))
         {
-            await SendWebSocketErrorAsync(webSocket, "session-closed", "Feature stream session is no longer active.", subscriptionId, cancellationToken).ConfigureAwait(false);
+            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "session-closed", "Feature stream session is no longer active.", subscriptionId, cancellationToken).ConfigureAwait(false);
             return;
         }
 
         FeatureStreamLog.SubscriptionAdded(logger, session.SessionId, subscriptionId, filter?.Summary ?? "all");
-        var replayCursor = control.Cursor;
         long? currentCursor = null;
-        if (replayCursor.HasValue)
+        try
         {
-            currentCursor = await ReplayToWebSocketAsync(
-                webSocket,
-                deps.EventStore,
-                replayCursor.Value,
-                deps.Options.Value.ReplayBatchSize,
-                logger,
-                session.SessionId,
-                cancellationToken,
-                filter,
-                subscriptionId).ConfigureAwait(false);
-        }
-
-        await SendWebSocketStatusAsync(
-            webSocket,
-            new FeatureStreamStatusFrame
+            if (replayCursor.HasValue)
             {
-                Status = "subscribed",
-                Message = "Subscription accepted.",
-                SessionId = session.SessionId,
-                SubscriptionId = subscriptionId,
-                Cursor = currentCursor
-            },
-            cancellationToken).ConfigureAwait(false);
+                currentCursor = await ReplayToWebSocketAsync(
+                    webSocket,
+                    session.WriteLock,
+                    deps.EventStore,
+                    replayCursor.Value,
+                    deps.Options.Value.ReplayBatchSize,
+                    logger,
+                    session.SessionId,
+                    cancellationToken,
+                    filter,
+                    subscriptionId).ConfigureAwait(false);
+            }
+
+            await SendWebSocketStatusAsync(
+                webSocket,
+                session.WriteLock,
+                new FeatureStreamStatusFrame
+                {
+                    Status = "subscribed",
+                    Message = "Subscription accepted.",
+                    SessionId = session.SessionId,
+                    SubscriptionId = subscriptionId,
+                    Cursor = currentCursor
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Re-enable broadcast queueing for this subscription. Live events with
+            // cursors > the last replayed cursor flow through the normal channel
+            // path; the writer task's monotonic dedup skips any overlap.
+            if (replayCursor.HasValue)
+            {
+                deps.SessionManager.TryUnpauseSubscription(session.SessionId, subscriptionId);
+            }
+        }
     }
 
     private static async Task HandleWebSocketUnsubscribeAsync(
@@ -1186,20 +1217,21 @@ internal static class FeatureStreamEndpoints
     {
         if (string.IsNullOrWhiteSpace(control.SubscriptionId))
         {
-            await SendWebSocketErrorAsync(webSocket, "invalid-unsubscribe", "unsubscribe requires subscriptionId.", null, cancellationToken).ConfigureAwait(false);
+            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "invalid-unsubscribe", "unsubscribe requires subscriptionId.", null, cancellationToken).ConfigureAwait(false);
             return;
         }
 
         var subscriptionId = control.SubscriptionId.Trim();
         if (!sessionManager.TryRemoveSubscription(session.SessionId, subscriptionId))
         {
-            await SendWebSocketErrorAsync(webSocket, "subscription-not-found", "Subscription was not found.", subscriptionId, cancellationToken).ConfigureAwait(false);
+            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "subscription-not-found", "Subscription was not found.", subscriptionId, cancellationToken).ConfigureAwait(false);
             return;
         }
 
         FeatureStreamLog.SubscriptionRemoved(logger, session.SessionId, subscriptionId);
         await SendWebSocketStatusAsync(
             webSocket,
+            session.WriteLock,
             new FeatureStreamStatusFrame
             {
                 Status = "unsubscribed",
@@ -1432,21 +1464,25 @@ internal static class FeatureStreamEndpoints
 
     private static Task SendWebSocketStatusAsync(
         WebSocket webSocket,
+        SemaphoreSlim writeLock,
         FeatureStreamStatusFrame frame,
         CancellationToken cancellationToken)
         => SendWebSocketJsonAsync(
             webSocket,
+            writeLock,
             JsonSerializer.SerializeToUtf8Bytes(frame, FeatureStreamJsonContext.Default.FeatureStreamStatusFrame),
             cancellationToken);
 
     private static Task SendWebSocketErrorAsync(
         WebSocket webSocket,
+        SemaphoreSlim writeLock,
         string code,
         string message,
         string? subscriptionId,
         CancellationToken cancellationToken)
         => SendWebSocketJsonAsync(
             webSocket,
+            writeLock,
             JsonSerializer.SerializeToUtf8Bytes(
                 new FeatureStreamErrorFrame
                 {
@@ -1457,13 +1493,33 @@ internal static class FeatureStreamEndpoints
                 FeatureStreamJsonContext.Default.FeatureStreamErrorFrame),
             cancellationToken);
 
-    private static Task SendWebSocketJsonAsync(
+    private static async Task SendWebSocketJsonAsync(
         WebSocket webSocket,
+        SemaphoreSlim writeLock,
         byte[] payload,
         CancellationToken cancellationToken)
-        => webSocket.State == WebSocketState.Open
-            ? webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken)
-            : Task.CompletedTask;
+    {
+        if (webSocket.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        // The writer task drain, per-subscription replay, and control-handler frames
+        // all share one socket. WebSocket.SendAsync is not safe to call concurrently
+        // from multiple producers, so every send acquires the per-session write lock.
+        await writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (webSocket.State == WebSocketState.Open)
+            {
+                await webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            writeLock.Release();
+        }
+    }
 
     private static async Task WriteSseEventAsync<T>(
         HttpResponse response,
@@ -1801,6 +1857,7 @@ internal static class FeatureStreamEndpoints
 
     private static async Task<long> ReplayToWebSocketAsync(
         WebSocket webSocket,
+        SemaphoreSlim writeLock,
         IFeatureChangeEventStore eventStore,
         long fromCursor,
         int batchSize,
@@ -1834,7 +1891,7 @@ internal static class FeatureStreamEndpoints
                 }
 
                 var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
-                await webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+                await SendWebSocketJsonAsync(webSocket, writeLock, payload, cancellationToken).ConfigureAwait(false);
             }
 
             if (events.Count < batchSize)

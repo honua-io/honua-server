@@ -351,6 +351,61 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Equal(11L, delivered[0].Envelope.Cursor);
     }
 
+    // Regression for review finding "WebSocket per-subscription replay races
+    // the live writer". When a subscribe handler is replaying old events
+    // directly to the socket, live broadcasts must not queue events for the
+    // paused subscription — replay covers the cursor range itself, and
+    // queueing would create concurrent SendAsync + duplicate delivery.
+    [UnitTest]
+    public void Broadcast_WithPausedSubscription_SkipsQueueing()
+    {
+        using var session = _manager.CreateSession("WebSocket", "paused-subscribe");
+
+        Assert.True(_manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: true));
+
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 11)));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 12)));
+
+        // Default subscription still receives broadcasts; only the paused one is skipped.
+        // The events appear once each (default), not twice (default + subB).
+        var messages = new List<FeatureStreamMessage>();
+        while (session.Reader.TryRead(out var msg))
+        {
+            messages.Add(msg);
+        }
+
+        Assert.Equal(2, messages.Count);
+        Assert.All(messages, m => Assert.Equal(FeatureStreamSessionManager.DefaultSubscriptionId, m.Envelope.SubscriptionId));
+    }
+
+    [UnitTest]
+    public void Broadcast_AfterUnpauseSubscription_QueuesForBothSubscriptions()
+    {
+        using var session = _manager.CreateSession("WebSocket", "post-unpause");
+
+        Assert.True(_manager.TryAddSubscription(session.SessionId, "subB", filter: null, paused: true));
+
+        // While paused, broadcasts are skipped for subB (only default delivers).
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 21)));
+
+        Assert.True(_manager.TryUnpauseSubscription(session.SessionId, "subB"));
+
+        // After unpause, broadcasts deliver to both default and subB.
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 22)));
+
+        var messages = new List<FeatureStreamMessage>();
+        while (session.Reader.TryRead(out var msg))
+        {
+            messages.Add(msg);
+        }
+
+        // Cursor 21: 1 message (default only). Cursor 22: 2 messages (default + subB).
+        Assert.Equal(3, messages.Count);
+        Assert.Single(messages, m => m.Envelope.Cursor == 21);
+        Assert.Equal(2, messages.Count(m => m.Envelope.Cursor == 22));
+        Assert.Contains(messages, m => m.Envelope.Cursor == 22 && m.Envelope.SubscriptionId == "subB");
+    }
+
     [UnitTest]
     public void Broadcast_WithLayerFilter_OnlyDeliversMatchingEvents()
     {

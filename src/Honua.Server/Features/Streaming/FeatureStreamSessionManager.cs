@@ -509,16 +509,33 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
     /// <summary>
     /// Registers a subscription on an existing WebSocket session.
+    /// When <paramref name="paused"/> is true, the broadcast fan-out skips this
+    /// subscription until <see cref="TryUnpauseSubscription"/> is called. This lets
+    /// the subscribe handler replay missed events from the durable store without
+    /// the live channel writer interleaving frames at the same cursor range.
     /// </summary>
-    public bool TryAddSubscription(Guid sessionId, string subscriptionId, IStreamSubscriptionFilter? filter)
+    public bool TryAddSubscription(Guid sessionId, string subscriptionId, IStreamSubscriptionFilter? filter, bool paused = false)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
         {
             return false;
         }
 
-        entry.AddSubscription(subscriptionId, filter);
+        entry.AddSubscription(subscriptionId, filter, paused);
         return true;
+    }
+
+    /// <summary>
+    /// Clears the broadcast-paused flag on a subscription so live events resume queueing.
+    /// </summary>
+    public bool TryUnpauseSubscription(Guid sessionId, string subscriptionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return false;
+        }
+
+        return entry.SetSubscriptionPaused(subscriptionId, paused: false);
     }
 
     /// <summary>
@@ -620,7 +637,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         private readonly Queue<string> _recentEventIds = new();
         private readonly HashSet<string> _recentEventIdSet = new(StringComparer.Ordinal);
         private readonly object _recentEventLock = new();
-        private readonly Dictionary<string, IStreamSubscriptionFilter?> _subscriptions = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, SubscriptionState> _subscriptions = new(StringComparer.Ordinal);
         private readonly object _subscriptionLock = new();
 
         public SessionEntry(
@@ -641,9 +658,11 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             Transport = transport;
             if (addDefaultSubscription)
             {
-                _subscriptions[FeatureStreamSessionManager.DefaultSubscriptionId] = subscriptionFilter;
+                _subscriptions[FeatureStreamSessionManager.DefaultSubscriptionId] = new SubscriptionState(subscriptionFilter, Paused: false);
             }
         }
+
+        private sealed record SubscriptionState(IStreamSubscriptionFilter? Filter, bool Paused);
 
         public Guid Id { get; }
         public Channel<FeatureStreamMessage> Channel { get; }
@@ -668,7 +687,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             {
                 lock (_subscriptionLock)
                 {
-                    return _subscriptions.Values.Any(filter => filter is not null);
+                    return _subscriptions.Values.Any(state => state.Filter is not null);
                 }
             }
         }
@@ -680,7 +699,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 lock (_subscriptionLock)
                 {
                     return string.Join("; ", _subscriptions.Select(s =>
-                        s.Value is null ? $"{s.Key}: all" : $"{s.Key}: {s.Value.Summary}"));
+                        s.Value.Filter is null ? $"{s.Key}: all" : $"{s.Key}: {s.Value.Filter.Summary}"));
                 }
             }
         }
@@ -691,7 +710,10 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             {
                 lock (_subscriptionLock)
                 {
-                    return _subscriptions.Values.OfType<StreamSubscriptionFilter>().FirstOrDefault();
+                    return _subscriptions.Values
+                        .Select(state => state.Filter)
+                        .OfType<StreamSubscriptionFilter>()
+                        .FirstOrDefault();
                 }
             }
         }
@@ -746,11 +768,25 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        public void AddSubscription(string subscriptionId, IStreamSubscriptionFilter? filter)
+        public void AddSubscription(string subscriptionId, IStreamSubscriptionFilter? filter, bool paused = false)
         {
             lock (_subscriptionLock)
             {
-                _subscriptions[subscriptionId] = filter;
+                _subscriptions[subscriptionId] = new SubscriptionState(filter, paused);
+            }
+        }
+
+        public bool SetSubscriptionPaused(string subscriptionId, bool paused)
+        {
+            lock (_subscriptionLock)
+            {
+                if (!_subscriptions.TryGetValue(subscriptionId, out var current))
+                {
+                    return false;
+                }
+
+                _subscriptions[subscriptionId] = current with { Paused = paused };
+                return true;
             }
         }
 
@@ -769,7 +805,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             ref IReadOnlyDictionary<string, JsonElement>? parsedProperties,
             ref bool propertiesParsed)
         {
-            KeyValuePair<string, IStreamSubscriptionFilter?>[] subscriptions;
+            KeyValuePair<string, SubscriptionState>[] subscriptions;
             lock (_subscriptionLock)
             {
                 if (_subscriptions.Count == 0)
@@ -781,22 +817,30 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
 
             var matches = new List<string>(subscriptions.Length);
-            foreach (var (subscriptionId, filter) in subscriptions)
+            foreach (var (subscriptionId, state) in subscriptions)
             {
-                if (filter is null)
+                // Paused subscriptions still exist (so the writer-task drain knows about them),
+                // but the live broadcaster must not queue events while replay is delivering
+                // the same cursor range directly through the per-subscription replay path.
+                if (state.Paused)
+                {
+                    continue;
+                }
+
+                if (state.Filter is null)
                 {
                     matches.Add(subscriptionId);
                     continue;
                 }
 
-                var matched = filter is StreamSubscriptionFilter streamFilter
+                var matched = state.Filter is StreamSubscriptionFilter streamFilter
                     ? streamFilter.Matches(
                         envelope,
                         geometryEnvelope,
                         propertiesJson,
                         ref parsedProperties,
                         ref propertiesParsed)
-                    : filter.Matches(envelope, geometryEnvelope, propertiesJson);
+                    : state.Filter.Matches(envelope, geometryEnvelope, propertiesJson);
 
                 if (matched)
                 {
@@ -816,6 +860,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 internal sealed class FeatureStreamSession : IDisposable
 {
     private readonly FeatureStreamSessionManager _manager;
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     public FeatureStreamSession(
         Guid sessionId,
@@ -844,9 +889,18 @@ internal sealed class FeatureStreamSession : IDisposable
     /// </summary>
     public CancellationToken DisconnectToken { get; }
 
+    /// <summary>
+    /// Serializes WebSocket transport writes for this session. The transport spec
+    /// requires that only one <c>SendAsync</c> is in flight at a time, and per-subscription
+    /// replay must be atomic against live channel drains; both paths acquire this lock
+    /// before sending so cursors stay ordered and frames never interleave on the wire.
+    /// </summary>
+    public SemaphoreSlim WriteLock => _writeLock;
+
     public void Dispose()
     {
         _manager.RemoveSession(SessionId, FeatureStreamDisconnectReason.ClientClosed);
+        _writeLock.Dispose();
     }
 }
 
