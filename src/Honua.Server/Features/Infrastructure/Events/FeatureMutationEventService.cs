@@ -92,13 +92,16 @@ internal sealed class FeatureMutationEventService(
             geometrySrid = layerSrid;
         }
 
-        // Geodesy invariant guard: drop the geometry JSON if a caller supplied
-        // coordinates without an accompanying SRID. Mirrors the enrichment-layer
-        // guard so streaming subscribers and webhook consumers never observe
-        // ambiguous coordinates downstream.
-        if (geometryJson is not null && geometrySrid is null)
+        // Geodesy invariant guard: emit geometry and geometryCrs as a pair, or
+        // omit both. Mirrors the enrichment-layer guard so streaming subscribers
+        // and webhook consumers never observe ambiguous coordinates (geometry
+        // without CRS) or orphaned CRS metadata (CRS without coordinates — for
+        // example a delete event that supplied layerSrid as a fallback but had
+        // no before-image to enrich into geometryJson).
+        if (geometryJson is null || geometrySrid is null)
         {
             geometryJson = null;
+            geometrySrid = null;
         }
 
         var requestPayload = new FeatureChangeEventRequest

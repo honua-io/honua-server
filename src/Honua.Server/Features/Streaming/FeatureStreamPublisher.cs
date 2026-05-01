@@ -58,25 +58,38 @@ internal sealed partial class FeatureStreamPublisher(
         LogLocalEventBroadcast(_logger, delivered, persisted.Cursor);
     }
 
-    internal static FeatureStreamEnvelope ToEnvelope(FeatureChangeEvent e) => new()
+    internal static FeatureStreamEnvelope ToEnvelope(FeatureChangeEvent e)
     {
-        EventId = e.EventId,
-        Cursor = e.Cursor,
-        Timestamp = e.Timestamp,
-        SourceId = e.SourceId,
-        ServiceId = e.ServiceId,
-        LayerId = e.LayerId,
-        FeatureId = e.ObjectId.ToString(CultureInfo.InvariantCulture),
-        ObjectId = e.ObjectId,
-        Operation = e.Operation,
-        Protocol = e.Protocol,
-        RequestId = e.RequestId,
-        Geometry = ParseJsonElement(e.GeometryJson),
-        GeometryCrs = e.GeometrySrid.HasValue ? $"EPSG:{e.GeometrySrid.Value.ToString(CultureInfo.InvariantCulture)}" : null,
-        Attributes = ParseAttributes(e.PropertiesJson),
-        ChangedAttributes = e.ChangedAttributes,
-        GeometryChanged = e.GeometryChanged
-    };
+        // Defense-in-depth for the geodesy invariant: emit geometry and geometryCrs
+        // only when both resolve. The producing service already enforces the pair,
+        // so this guard catches stored events whose GeometryJson cannot be parsed
+        // (returning null from ParseJsonElement) or any future caller that bypasses
+        // the upstream guard.
+        var geometry = ParseJsonElement(e.GeometryJson);
+        var geometryCrs = (geometry.HasValue && e.GeometrySrid.HasValue)
+            ? $"EPSG:{e.GeometrySrid.Value.ToString(CultureInfo.InvariantCulture)}"
+            : null;
+
+        return new FeatureStreamEnvelope
+        {
+            EventId = e.EventId,
+            Cursor = e.Cursor,
+            Timestamp = e.Timestamp,
+            SourceId = e.SourceId,
+            ServiceId = e.ServiceId,
+            LayerId = e.LayerId,
+            FeatureId = e.ObjectId.ToString(CultureInfo.InvariantCulture),
+            ObjectId = e.ObjectId,
+            Operation = e.Operation,
+            Protocol = e.Protocol,
+            RequestId = e.RequestId,
+            Geometry = geometry,
+            GeometryCrs = geometryCrs,
+            Attributes = ParseAttributes(e.PropertiesJson),
+            ChangedAttributes = e.ChangedAttributes,
+            GeometryChanged = e.GeometryChanged
+        };
+    }
 
     private static JsonElement? ParseJsonElement(string? json)
     {

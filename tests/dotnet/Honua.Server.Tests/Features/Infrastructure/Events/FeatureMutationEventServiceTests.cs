@@ -95,6 +95,41 @@ public sealed class FeatureMutationEventServiceTests
     }
 
     [UnitTest]
+    public async Task PublishAsync_WhenDeleteEventHasLayerSridButNoMutationFeature_OmitsGeometryAndCrsTogether()
+    {
+        // Regression: delete events on the gRPC ApplyEdits path do not pass a
+        // mutationFeature (no before-image) but do pass layerSrid for the
+        // paired-contract fallback. Without a bidirectional guard the else-if
+        // would set geometrySrid from layerSrid while leaving geometryJson
+        // null, publishing geometryCrs without geometry and breaking the
+        // geodesy invariant downstream consumers rely on.
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        FeatureChangeEventRequest? captured = null;
+        publisher
+            .When(p => p.PublishAsync(Arg.Any<FeatureChangeEventRequest>(), Arg.Any<CancellationToken>()))
+            .Do(call => captured = call.Arg<FeatureChangeEventRequest>());
+
+        var service = new FeatureMutationEventService(publisher);
+
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-id" };
+
+        await service.PublishAsync(
+            context,
+            layerId: 0,
+            objectId: 42,
+            operation: "delete",
+            protocol: "Grpc",
+            CancellationToken.None,
+            serviceId: "svc",
+            requestId: "req-3",
+            layerSrid: 4326);
+
+        captured.Should().NotBeNull();
+        captured!.GeometryJson.Should().BeNull();
+        captured.GeometrySrid.Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task PublishAsync_WhenCallerSuppliesGeometryJsonButNoSrid_AppliesLayerSridFallback()
     {
         // When a caller pre-enriches geometryJson but cannot resolve the SRID
