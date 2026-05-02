@@ -179,3 +179,37 @@ External absolute `uri` values inside a hosted `tileset.json` are followed
 directly by the client (and never proxied through Honua), which keeps the
 server out of the path for third-party tile sources referenced by the
 publisher.
+
+## CesiumJS browser smoke
+
+A Playwright smoke spec at
+[`tests/js-browser/cesium/3d-tiles-scene.spec.ts`](../../tests/js-browser/cesium/3d-tiles-scene.spec.ts)
+exercises the public route contract end-to-end against a real CesiumJS build
+in headless Chromium. It is the merge-blocking signal for this surface:
+
+- `cesium-3d-tiles-smoke` job in `ci.yml` runs on every integration-bearing PR.
+- Full nightly Cesium lane (`client-interop-nightly.yml` via
+  `docker/client-compat/cesium/`) reruns the same spec and emits a
+  `js-cesium-3d-tiles.cert.json` envelope.
+
+Asserted contracts: `tileset.json` returns `application/json` with
+`Access-Control-Allow-Origin` echoing an explicitly allowlisted origin (or
+`*`); the first nested tile content URI resolves with the canonical media
+type for its extension and an `Access-Control-Allow-Origin` value matching
+the request origin (or `*`); and `Cesium3DTileset.fromUrl` loads, fetches
+at least one binary tile body (`.b3dm` / `.glb`-shaped URL with 2xx),
+returns no 4xx/5xx for any `/scenes/**` request, surfaces no Playwright
+network failures, and emits no Cesium `tileFailed` events. The 4xx-or-5xx
+gate plus the binary-tile-fetch assertion ensure a missing or broken
+nested-asset route fails the smoke (a previous 2xx-count check could be
+satisfied by `tileset.json` alone). When `CI=true` is set, the spec
+fails-fast on a 404 from `tileset.json` instead of skipping, so missing
+fixture binding or route regressions surface as a hard gate failure;
+local ad-hoc runs without the fixture bound get a helpful skip with a
+configuration hint. Browser-protected scenes (`AccessPolicy` set) are
+recorded as a deferred `CERT-AUTH-01 — DEFERRED to honua-server-849`
+skip until the signed-handoff slice in `honua-server-849` lands.
+
+See [`tests/js-browser/cesium/README.md`](../../tests/js-browser/cesium/README.md)
+for the local command, required `Scenes:Datasets__*` / `Cors:AllowedOrigins`
+configuration, and the smoke vs. full-lane split.

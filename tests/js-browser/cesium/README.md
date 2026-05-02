@@ -52,6 +52,7 @@ npx playwright test --config playwright.config.ts --grep "3D Tiles"
 | `HONUA_BASE_URL` | `http://localhost:5000` | Honua server under test. |
 | `HONUA_SCENE_FIXTURE_ID` | `fixture-tileset` | Scene id matched against `Scenes:Datasets:0:Id`. |
 | `HONUA_CORS_TEST_ORIGIN` | `http://cesium-test.honua.local` | Origin used to probe Honua's CORS configuration. Must appear in `Cors:AllowedOrigins` (production) or `Cors:DevelopmentOrigins` (development). |
+| `CI` | unset (locally) / `true` (in GitHub Actions) | When set, the 3D Tiles spec fails fast on a 404 from `tileset.json` instead of skipping. Local ad-hoc runs without the fixture bound get a helpful skip with a configuration hint; CI must surface a missing route or fixture binding as a hard regression. |
 
 ## CI surfaces
 

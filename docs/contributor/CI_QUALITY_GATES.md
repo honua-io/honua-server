@@ -22,7 +22,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 ## CI Gate (Required Status Check)
 
-The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`pr-readiness`, `changes`, `targeted-shards`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `esri-leaflet-browser-tests`, `maplibre-compat`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`). Configure it as a required status check in branch protection to gate PRs on a single job.
+The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`pr-readiness`, `changes`, `targeted-shards`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `esri-leaflet-browser-tests`, `maplibre-compat`, `cesium-3d-tiles-smoke`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`). Configure it as a required status check in branch protection to gate PRs on a single job.
 
 The `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` to pick the active shards for the diff, then projects the selection into a JSON `matrix_include` array drawn from `.github/ci-shards.json` (the single source of truth for both shard routing and matrix-runtime metadata). The `server-tests` job declares its matrix as `strategy.matrix.include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}`, so **unselected shards never instantiate a runner job** — there is no per-shard checkout, build, or Postgres service container cost for shards a PR did not select. On scheduled full CI and `workflow_dispatch` the descriptor is forced to `run_all: true`, so all eleven entries appear in `matrix_include` and run.
 

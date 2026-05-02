@@ -286,6 +286,8 @@ coverage*/
 # Esri Leaflet browser test artifacts (CI uploads these)
 tests/js-browser/evidence/
 tests/js-browser/test-results/
+# Cesium Playwright runtime/output state — outputDir in cesium/playwright.config.ts
+tests/js-browser/cesium/test-output/
 tests/python/gdal-ogr-results*.json
 tests/python/stac-client-compat-results*.json
 tests/python/stac-client-compat-results*.md
