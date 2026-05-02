@@ -18,7 +18,9 @@ namespace Honua.Server.Tests.Features.Protocols.Scene;
 [Protocol(TestProtocols.Scene)]
 public sealed class SceneAuthorizationTests : IAsyncLifetime
 {
+    private const string AdminPassword = "scene-auth-test-key";
     private readonly WebAppFixture _fixture;
+    private HttpClient _authenticatedClient = null!;
 
     public SceneAuthorizationTests()
     {
@@ -28,6 +30,7 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
                 builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -48,7 +51,11 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
             });
     }
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _authenticatedClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
@@ -88,5 +95,55 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync($"/scenes/{SceneFixturePaths.ProtectedSceneId}/nested/sub-tileset.json");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
+    public async Task GetTileset_ProtectedScene_WithAuth_ReturnsPrivateCacheControlAndVaryAuthorization()
+    {
+        // Shared caches (CDNs, forward proxies) must not store protected scene
+        // payloads keyed only by URL — they would re-serve the body to clients
+        // that did not pass the dataset access policy. The response must
+        // therefore declare `private` cacheability and `Vary: Authorization`.
+        var response = await _authenticatedClient.GetAsync($"/scenes/{SceneFixturePaths.ProtectedSceneId}/tileset.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl?.Private.Should().BeTrue();
+        response.Headers.CacheControl?.Public.Should().BeFalse();
+        response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+        response.Headers.Vary.Should().Contain("Authorization");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
+    public async Task GetSceneAsset_ProtectedScene_NestedAsset_WithAuth_ReturnsPrivateCacheControl()
+    {
+        // Cache-Control discipline must hold for nested assets too — these are
+        // the requests Cesium issues by URL-resolution, so they are the most
+        // likely to traverse intermediary caches.
+        var response = await _authenticatedClient.GetAsync($"/scenes/{SceneFixturePaths.ProtectedSceneId}/tiles/0.b3dm");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl?.Private.Should().BeTrue();
+        response.Headers.CacheControl?.Public.Should().BeFalse();
+        response.Headers.Vary.Should().Contain("Authorization");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
+    public async Task GetTileset_PublicScene_ReturnsPublicCacheControl()
+    {
+        // Public scenes (no access policy) must still emit `Cache-Control: public`
+        // so CDNs and shared caches can store and re-serve the payload —
+        // anonymous-readable data is safe to share.
+        var response = await _fixture.Client.GetAsync($"/scenes/{SceneFixturePaths.FixtureSceneId}/tileset.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl?.Public.Should().BeTrue();
+        response.Headers.CacheControl?.Private.Should().BeFalse();
+        response.Headers.Vary.Should().NotContain("Authorization");
     }
 }

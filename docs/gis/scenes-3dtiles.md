@@ -105,8 +105,17 @@ Honua emits the canonical media types Cesium expects:
 
 ## Caching, ETags, and conditional requests
 
-Both routes set `ETag`, `Last-Modified`, `Accept-Ranges: bytes`, and
-`Cache-Control: public, max-age=...`. The default TTLs are:
+Both routes set `ETag`, `Last-Modified`, and `Accept-Ranges: bytes`. The
+`Cache-Control` value depends on the scene's access policy:
+
+- **Public scenes** (no `AccessPolicy`): `Cache-Control: public, max-age=...`
+  so CDNs and shared proxies can store and re-serve the payload.
+- **Protected scenes** (any `AccessPolicy`): `Cache-Control: private, max-age=...`
+  plus `Vary: Authorization`. Shared caches must not store the body — every
+  request needs to re-run the dataset access policy — but a user agent's
+  private cache may still revalidate within `max-age`.
+
+The default TTLs are:
 
 | Policy | Default | Override |
 | --- | --- | --- |

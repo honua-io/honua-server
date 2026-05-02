@@ -83,6 +83,33 @@ public sealed class SceneAssetResolverTests : IAsyncLifetime, IDisposable
     }
 
     [UnitTest]
+    public void SceneContentTypes_Resolve_AssignsCanonicalMediaTypesForKnownExtensions()
+    {
+        // Locks the documented MIME contract from docs/gis/scenes-3dtiles.md so
+        // changes in the resolver surface here rather than in CesiumJS-side
+        // resource-loader failures. Covers extensions that have no fixture
+        // bytes (glTF/GLB/KTX/Basis/i3dm/pnts/cmpt/bin) since adding real
+        // payloads for every extension is out of scope for this slice.
+        SceneContentTypes.Resolve("model.glb").Should().Be("model/gltf-binary");
+        SceneContentTypes.Resolve("model.gltf").Should().Be("model/gltf+json");
+        SceneContentTypes.Resolve("tile.b3dm").Should().Be("application/octet-stream");
+        SceneContentTypes.Resolve("tile.i3dm").Should().Be("application/octet-stream");
+        SceneContentTypes.Resolve("cloud.pnts").Should().Be("application/octet-stream");
+        SceneContentTypes.Resolve("group.cmpt").Should().Be("application/octet-stream");
+        SceneContentTypes.Resolve("buffer.bin").Should().Be("application/octet-stream");
+        SceneContentTypes.Resolve("tex.png").Should().Be("image/png");
+        SceneContentTypes.Resolve("tex.jpg").Should().Be("image/jpeg");
+        SceneContentTypes.Resolve("tex.jpeg").Should().Be("image/jpeg");
+        SceneContentTypes.Resolve("tex.webp").Should().Be("image/webp");
+        SceneContentTypes.Resolve("tex.ktx").Should().Be("image/ktx");
+        SceneContentTypes.Resolve("tex.ktx2").Should().Be("image/ktx2");
+        SceneContentTypes.Resolve("tex.basis").Should().Be("image/basis");
+        SceneContentTypes.Resolve("MIXED.GLB").Should().Be("model/gltf-binary");
+        SceneContentTypes.Resolve("anything.unknown").Should().Be("application/octet-stream");
+        SceneContentTypes.Resolve("noextension").Should().Be("application/octet-stream");
+    }
+
+    [UnitTest]
     public void TryResolve_DotDotTraversal_RejectsAsInvalidPath()
     {
         var ok = SceneAssetResolver.TryResolve(Dataset(), "../secret.txt", out _, out var error);

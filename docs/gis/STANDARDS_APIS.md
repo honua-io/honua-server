@@ -354,7 +354,8 @@ Terrain v1 expects registered PostGIS rasters with one numeric elevation band, o
 **Contract notes:**
 - Scenes are registered as configuration entries under the `Scenes` section. Each entry declares an `Id`, `AssetRoot` (filesystem prefix that contains `tileset.json`), optional `TilesetFileName`, optional `Description`, and optional `AccessPolicy`.
 - Hosted tilesets are served as-is. Relative `uri` references resolve under `/scenes/{sceneId}/`, and nested `tileset.json` references work without client-side rewriting.
-- All routes emit deterministic ETags (`"<lastWriteUtcTicks-hex>-<lengthBytes-hex>"`), `Last-Modified`, `Accept-Ranges: bytes`, and `Cache-Control: public, max-age=…`. `If-None-Match` returns `304 Not Modified` (strong and weak `W/` variants).
+- All routes emit deterministic ETags (`"<lastWriteUtcTicks-hex>-<lengthBytes-hex>"`), `Last-Modified`, and `Accept-Ranges: bytes`. `If-None-Match` returns `304 Not Modified` (strong and weak `W/` variants).
+- `Cache-Control` is access-policy-aware: public scenes return `public, max-age=…` so CDNs/proxies can share-cache; protected scenes return `private, max-age=…` plus `Vary: Authorization` so shared caches do not bypass the per-request access policy.
 - Default output cache TTLs: `tileset.json` metadata = 10 min (`OutputCache:SceneTilesetMetadata`); tile/binary/texture assets = 1 hour (`OutputCache:SceneTileAsset`).
 - Scenes with no `AccessPolicy` are public. Protected scenes apply the catalog `AccessPolicy` (`AllowAnonymous`, `AllowedRoles`, …) to **every** request — root tileset, nested tilesets, and every binary asset.
 - Path-traversal probes return `400 Bad Request`; missing files return `404 Not Found`. `.`/`..` segments, drive-letter prefixes, UNC paths, embedded backslashes, null bytes, and percent-encoded variants are rejected before any file I/O.

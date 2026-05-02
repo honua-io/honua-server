@@ -125,6 +125,7 @@ internal static partial class SceneEndpoints
         // clients cannot attach credentials to nested asset URLs (#849
         // delivers signed-URL handoff). Skip the auth check when the scene
         // explicitly opted out by leaving its access policy unset.
+        var isProtected = scene.Metadata?.AccessPolicy is not null;
         if (scene.Metadata?.AccessPolicy is { } accessPolicy)
         {
             var deniedResult = AccessPolicyHelpers.RequireAccess(
@@ -154,7 +155,7 @@ internal static partial class SceneEndpoints
         }
 
         var etag = ComputeETag(resolved.File);
-        SetCacheHeaders(context, etag, resolved.File, cacheMaxAge);
+        SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected);
 
         var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
         if (!string.IsNullOrEmpty(ifNoneMatch) && IfNoneMatchMatches(ifNoneMatch, etag))
@@ -205,12 +206,31 @@ internal static partial class SceneEndpoints
     private static string ComputeETag(FileInfo file)
         => $"\"{file.LastWriteTimeUtc.Ticks:X16}-{file.Length:X16}\"";
 
-    private static void SetCacheHeaders(HttpContext context, string etag, FileInfo file, TimeSpan maxAge)
+    private static void SetCacheHeaders(HttpContext context, string etag, FileInfo file, TimeSpan maxAge, bool isProtected)
     {
         var headers = context.Response.Headers;
         headers[HeaderNames.ETag] = etag;
         headers[HeaderNames.LastModified] = file.LastWriteTimeUtc.ToString("R");
-        headers[HeaderNames.CacheControl] = $"public, max-age={(int)Math.Max(0, maxAge.TotalSeconds)}";
+
+        // Protected scenes go through the dataset access policy on every
+        // request. `Cache-Control: public` would let a shared cache (CDN,
+        // forward proxy) store and re-serve the body to other clients without
+        // re-running the policy, so emit `private` plus `Vary: Authorization`
+        // and keep the same max-age semantics. The output cache layer also
+        // disables storage for authenticated requests via
+        // `AnonymousOnlyOutputCachePolicy`, but the response headers must be
+        // correct for downstream caches that Honua does not control.
+        var maxAgeSeconds = (int)Math.Max(0, maxAge.TotalSeconds);
+        if (isProtected)
+        {
+            headers[HeaderNames.CacheControl] = $"private, max-age={maxAgeSeconds}";
+            headers[HeaderNames.Vary] = "Authorization";
+        }
+        else
+        {
+            headers[HeaderNames.CacheControl] = $"public, max-age={maxAgeSeconds}";
+        }
+
         headers[HeaderNames.AcceptRanges] = "bytes";
     }
 

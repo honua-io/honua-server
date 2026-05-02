@@ -1549,7 +1549,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Root tileset.json, nested tileset, b3dm/glTF/texture asset, ETag/If-None-Match, HEAD, traversal/path safety, public vs protected access policy, and CORS exposed-header coverage exercised by endpoint and resolver tests",
+          "proofMechanism": "Root tileset.json, nested tileset, binary b3dm tile, png texture, ETag/If-None-Match, HEAD, Range request -> 206 with Content-Range after a cache-warming full GET, traversal/path safety including symlink-escape rejection, public vs protected access policy with private/Vary cache-control on protected scenes, and CORS exposed-header coverage exercised by endpoint and resolver tests; glTF/GLB asset MIME mapping is unit-tested via SceneContentTypes.Resolve but no glTF/GLB fixture exists yet",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneTilesetEndpointTests.cs",

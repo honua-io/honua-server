@@ -29,16 +29,26 @@ public sealed class SceneTilesetEndpointTests : IAsyncLifetime
         _fixtureRoot = SceneFixturePaths.ResolveFixtureRoot();
 
         _fixture = new WebAppFixture()
-            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configBuilder) =>
+            .ConfigureWebHost(builder =>
             {
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                // Public scene tests exercise anonymous behavior end-to-end:
+                // output cache eligibility, browser/CDN cache headers, and the
+                // Range bypass regression all depend on requests reaching the
+                // server unauthenticated. WebAppFixture defaults to
+                // HONUA_DEV_AUTH=true, which would otherwise short-circuit
+                // AnonymousOnlyOutputCachePolicy and disable cache storage.
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
-                    [$"Scenes:Datasets:0:Id"] = SceneFixturePaths.FixtureSceneId,
-                    [$"Scenes:Datasets:0:Name"] = "Honua Fixture Tileset",
-                    [$"Scenes:Datasets:0:Description"] = "Static 3D Tiles fixture used by tests",
-                    [$"Scenes:Datasets:0:AssetRoot"] = _fixtureRoot
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        [$"Scenes:Datasets:0:Id"] = SceneFixturePaths.FixtureSceneId,
+                        [$"Scenes:Datasets:0:Name"] = "Honua Fixture Tileset",
+                        [$"Scenes:Datasets:0:Description"] = "Static 3D Tiles fixture used by tests",
+                        [$"Scenes:Datasets:0:AssetRoot"] = _fixtureRoot
+                    });
                 });
-            }));
+            });
     }
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
@@ -237,13 +247,19 @@ public sealed class SceneTilesetEndpointTests : IAsyncLifetime
     [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
     public async Task GetSceneAsset_RangeRequestAfterFullGet_Returns206WithContentRange()
     {
-        // Warm the output cache with a full GET, then issue a Range GET. The
-        // cache policy must bypass on Range so the static-file pipeline can
-        // serve 206 Partial Content with a correct Content-Range, instead of
-        // returning the previously cached 200 body.
+        // Warm the output cache with a full anonymous GET (the fixture sets
+        // HONUA_DEV_AUTH=false so AnonymousOnlyOutputCachePolicy lets the body
+        // populate cache). Then issue a Range GET: BypassOutputCacheOnRangeRequestPolicy
+        // must skip cache lookup so the static-file pipeline can return
+        // 206 Partial Content with Content-Range instead of replaying the
+        // previously cached 200 body.
         var assetUrl = $"/scenes/{SceneFixturePaths.FixtureSceneId}/tiles/0.b3dm";
         var fullResponse = await _fixture.Client.GetAsync(assetUrl);
         fullResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        // The warming GET must be cacheable end-to-end: public Cache-Control
+        // is the only configuration under which AnonymousOnlyOutputCachePolicy
+        // and the scene cache policy both allow storage.
+        fullResponse.Headers.CacheControl?.Public.Should().BeTrue();
         fullResponse.Content.Headers.ContentLength.Should().NotBeNull();
         var totalLength = fullResponse.Content.Headers.ContentLength!.Value;
         totalLength.Should().BeGreaterThan(4);
