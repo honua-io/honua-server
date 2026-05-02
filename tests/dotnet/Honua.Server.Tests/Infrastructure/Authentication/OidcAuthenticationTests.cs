@@ -163,6 +163,8 @@ public class OidcAuthenticationTests
             ["Oidc:Generic:Authority"] = TestIssuer,
             ["Oidc:Generic:ClientId"] = TestAudience,
             ["Oidc:ClaimsMapping:RoleClaimType"] = ClaimTypes.Role,
+            ["Oidc:AdminRoles:0"] = "admin",
+            ["Oidc:AdminRoles:1"] = "administrator",
             ["Oidc:TokenValidation:SymmetricSigningKey"] = TestSigningKey,
             ["Oidc:TokenValidation:EnableTokenReplayProtection"] = "false",
             ["HONUA_ADMIN_PASSWORD"] = TestAdminPassword,
@@ -717,7 +719,7 @@ public class OidcAuthenticationTests
         var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
-        var token = GenerateTestJwtToken(roles: ["viewer"]);
+        var token = GenerateTestJwtToken(roles: [$"non-admin-{Guid.NewGuid():N}"]);
 
         // Act
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
