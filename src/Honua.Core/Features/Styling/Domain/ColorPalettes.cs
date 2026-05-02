@@ -4,9 +4,9 @@
 namespace Honua.Core.Features.Styling.Domain;
 
 /// <summary>
-/// Built-in colorblind-safe palettes for style suggestions.
+/// Built-in colorblind-safe palettes for style suggestions and theme transforms.
 /// </summary>
-internal static class ColorPalettes
+public static class ColorPalettes
 {
     /// <summary>
     /// Viridis sequential palette (2-9 classes). Default for numeric/choropleth.

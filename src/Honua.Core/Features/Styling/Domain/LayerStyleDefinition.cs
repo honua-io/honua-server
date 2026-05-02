@@ -27,4 +27,13 @@ public sealed record LayerStyleDefinition
     /// Version counter incremented on canonical style updates.
     /// </summary>
     public int StyleVersion { get; init; }
+
+    /// <summary>UTC timestamp of the last canonical style write; null until the first update.</summary>
+    public DateTimeOffset? StyleRevisedAt { get; init; }
+
+    /// <summary>Caller-supplied identifier for the author or source of the most recent revision.</summary>
+    public string? StyleRevisedBy { get; init; }
+
+    /// <summary>Caller-supplied free-text summary of the most recent revision.</summary>
+    public string? StyleChangeSummary { get; init; }
 }

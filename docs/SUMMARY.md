@@ -33,6 +33,7 @@
 - [Terrain-RGB Tiles](gis/terrain-tiles.md)
 - [Known Limitations](gis/MVP_COMPATIBILITY_CONTRACT.md)
 - [Cross-Server Consume Gap Report](compatibility/cross-server-consume-gap-report.md)
+- [Style Engine: Cross-Protocol Consumption](gis/style-engine-protocol-consumption.md)
 - Tutorials
   - [QGIS Getting Started](gis/tutorials/qgis-getting-started.md)
   - [GeoServer Migration](gis/tutorials/geoserver-migration-guide.md)

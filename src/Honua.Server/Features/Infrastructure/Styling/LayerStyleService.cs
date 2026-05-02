@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
@@ -13,6 +14,9 @@ namespace Honua.Server.Features.Infrastructure.Styling;
 /// </summary>
 internal sealed class LayerStyleService : ILayerStyleService
 {
+    private static readonly IReadOnlyList<UnsupportedSymbolizerInfo> NoUnsupportedSymbolizers =
+        Array.Empty<UnsupportedSymbolizerInfo>();
+
     private readonly ILayerStyleCatalog _styleCatalog;
     private readonly ILogger<LayerStyleService> _logger;
 
@@ -32,28 +36,35 @@ internal sealed class LayerStyleService : ILayerStyleService
         }
 
         var mapLibreJson = stored.MapLibreStyleJson;
-        if (string.IsNullOrWhiteSpace(mapLibreJson))
+        var hasStoredMapLibre = !string.IsNullOrWhiteSpace(mapLibreJson);
+        if (!hasStoredMapLibre)
         {
+            // Lazy default for newly-published layers that have not yet
+            // received a PUT.  Computed in memory only — persisting it would
+            // increment style_version and stamp style_revised_at on a read
+            // path, contradicting the PUT-only revision contract documented
+            // in docs/gis/style-engine-protocol-consumption.md.  The first
+            // PUT lands the genuine revision metadata.
             var defaultStyle = StyleDefaults.BuildDefaultMapLibreStyle(layer);
             mapLibreJson = StyleJsonUtilities.Serialize(defaultStyle);
-            var updated = await _styleCatalog.SetMapLibreStyleAsync(layer.Id, mapLibreJson, cancellationToken)
-                .ConfigureAwait(false);
-            if (updated == null)
-            {
-                return null;
-            }
         }
 
         var drawingInfoJson = stored.DrawingInfoJson;
         if (string.IsNullOrWhiteSpace(drawingInfoJson))
         {
-            drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer);
-            _ = await _styleCatalog.SetDrawingInfoAsync(layer.Id, drawingInfoJson, cancellationToken).ConfigureAwait(false);
+            drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson!, layer);
+            if (hasStoredMapLibre)
+            {
+                // Cache the back-generated drawingInfo only when we have a
+                // canonical MapLibre row to mirror.  SetDrawingInfoAsync does
+                // not touch revision metadata, so this preserves the PUT-only
+                // contract.  For unstyled layers the drawingInfo column stays
+                // NULL until the first PUT lands a canonical row.
+                _ = await _styleCatalog.SetDrawingInfoAsync(layer.Id, drawingInfoJson, cancellationToken).ConfigureAwait(false);
+            }
         }
 
-        return new LayerStyleSnapshot(
-            StyleJsonUtilities.ParseJsonElement(mapLibreJson),
-            StyleJsonUtilities.ParseJsonElement(drawingInfoJson));
+        return BuildSnapshot(stored, mapLibreJson!, drawingInfoJson);
     }
 
     /// <inheritdoc />
@@ -68,6 +79,8 @@ internal sealed class LayerStyleService : ILayerStyleService
         LayerDefinition layer,
         JsonElement? mapLibreStyle,
         JsonElement? drawingInfo,
+        string? revisedBy = null,
+        string? changeSummary = null,
         CancellationToken cancellationToken = default)
     {
         var hasMapLibre = mapLibreStyle.HasValue && mapLibreStyle.Value.ValueKind != JsonValueKind.Null;
@@ -88,7 +101,8 @@ internal sealed class LayerStyleService : ILayerStyleService
                 return new LayerStyleUpdateResult(LayerStyleUpdateStatus.Invalid, null, error);
             }
 
-            var updated = await _styleCatalog.SetMapLibreStyleAsync(layer.Id, normalized, cancellationToken)
+            var updated = await _styleCatalog
+                .SetMapLibreStyleAsync(layer.Id, normalized, revisedBy, changeSummary, cancellationToken)
                 .ConfigureAwait(false);
             if (updated == null)
             {
@@ -99,10 +113,9 @@ internal sealed class LayerStyleService : ILayerStyleService
 
             return new LayerStyleUpdateResult(
                 LayerStyleUpdateStatus.Updated,
-                new LayerStyleSnapshot(
-                    StyleJsonUtilities.ParseJsonElement(normalized),
-                    StyleJsonUtilities.ParseJsonElement(generatedDrawingInfoJson)),
-                null);
+                BuildSnapshot(updated, normalized, generatedDrawingInfoJson),
+                null,
+                NoUnsupportedSymbolizers);
         }
 
         var drawingInfoJson = drawingInfo!.Value.GetRawText();
@@ -111,9 +124,12 @@ internal sealed class LayerStyleService : ILayerStyleService
         {
             LayerStyleLog.UnsupportedRendererType(_logger, rendererType ?? "unknown", layer.Id);
         }
-        var mapLibreJson = GeoServicesToMapLibreConverter.Convert(drawingInfo.Value, layer);
 
-        var saved = await _styleCatalog.SetStyleAsync(layer.Id, mapLibreJson, drawingInfoJson, cancellationToken)
+        var conversion = GeoServicesToMapLibreConverter.Convert(drawingInfo.Value, layer);
+        var mapLibreJson = conversion.MapLibreStyleJson;
+
+        var saved = await _styleCatalog
+            .SetStyleAsync(layer.Id, mapLibreJson, drawingInfoJson, revisedBy, changeSummary, cancellationToken)
             .ConfigureAwait(false);
         if (saved == null)
         {
@@ -122,10 +138,20 @@ internal sealed class LayerStyleService : ILayerStyleService
 
         return new LayerStyleUpdateResult(
             LayerStyleUpdateStatus.Updated,
-            new LayerStyleSnapshot(
-                StyleJsonUtilities.ParseJsonElement(mapLibreJson),
-                StyleJsonUtilities.ParseJsonElement(drawingInfoJson)),
-            null);
+            BuildSnapshot(saved, mapLibreJson, drawingInfoJson),
+            null,
+            conversion.Unsupported);
+    }
+
+    private static LayerStyleSnapshot BuildSnapshot(LayerStyleDefinition stored, string mapLibreJson, string drawingInfoJson)
+    {
+        return new LayerStyleSnapshot(
+            StyleJsonUtilities.ParseJsonElement(mapLibreJson),
+            StyleJsonUtilities.ParseJsonElement(drawingInfoJson),
+            stored.StyleVersion,
+            stored.StyleRevisedAt,
+            stored.StyleRevisedBy,
+            stored.StyleChangeSummary);
     }
 
     private static bool TryGetRendererType(JsonElement drawingInfo, out string? rendererType)

@@ -64,11 +64,7 @@ internal static class AdminLayerStyleEndpoints
                 $"Style for layer {layerId} not found.");
         }
 
-        var response = new LayerStyleResponse
-        {
-            MapLibreStyle = snapshot.MapLibreStyle,
-            DrawingInfo = snapshot.DrawingInfo
-        };
+        var response = BuildResponse(snapshot, unsupportedSymbolizers: null);
 
         var payload = ApiResponse<LayerStyleResponse>.CreateSuccess(response);
         return Results.Json(payload, LayerStyleJsonContext.Default.ApiResponseLayerStyleResponse);
@@ -93,10 +89,20 @@ internal static class AdminLayerStyleEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
         }
 
+        if (!string.IsNullOrEmpty(request.ChangeSummary) && request.ChangeSummary.Length > 1000)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Change summary must be 1000 characters or fewer.");
+        }
+
         var result = await styleService.UpdateStyleAsync(
                 layerResult.Resource,
                 request.MapLibreStyle,
                 request.DrawingInfo,
+                request.ChangedBy,
+                request.ChangeSummary,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -124,13 +130,25 @@ internal static class AdminLayerStyleEndpoints
 
         await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken).ConfigureAwait(false);
 
-        var response = new LayerStyleResponse
-        {
-            MapLibreStyle = result.Style.MapLibreStyle,
-            DrawingInfo = result.Style.DrawingInfo
-        };
+        var response = BuildResponse(result.Style, result.UnsupportedSymbolizers);
 
         var payload = ApiResponse<LayerStyleResponse>.CreateSuccess(response);
         return Results.Json(payload, LayerStyleJsonContext.Default.ApiResponseLayerStyleResponse);
+    }
+
+    private static LayerStyleResponse BuildResponse(
+        LayerStyleSnapshot snapshot,
+        IReadOnlyList<Honua.Core.Features.Styling.Domain.UnsupportedSymbolizerInfo>? unsupportedSymbolizers)
+    {
+        return new LayerStyleResponse
+        {
+            MapLibreStyle = snapshot.MapLibreStyle,
+            DrawingInfo = snapshot.DrawingInfo,
+            StyleVersion = snapshot.StyleVersion,
+            RevisedAt = snapshot.RevisedAt,
+            RevisedBy = snapshot.RevisedBy,
+            ChangeSummary = snapshot.ChangeSummary,
+            UnsupportedSymbolizers = unsupportedSymbolizers
+        };
     }
 }

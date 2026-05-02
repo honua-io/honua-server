@@ -4,42 +4,193 @@
 using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
 
 internal static class GeoServicesToMapLibreConverter
 {
-    public static string Convert(JsonElement drawingInfo, LayerDefinition layer)
+    /// <summary>
+    /// Converts a GeoServices drawingInfo payload to canonical MapLibre Style Spec v8 JSON
+    /// and reports any symbolizer inputs that could not be losslessly translated.  When
+    /// inputs are unsupported, callers still receive a best-effort default MapLibre style
+    /// so downstream consumers continue to render.
+    /// </summary>
+    public static StyleConversionResult Convert(JsonElement drawingInfo, LayerDefinition layer)
     {
+        var unsupported = new List<UnsupportedSymbolizerInfo>();
+
         if (layer.GeometryType is GeometryType.None)
         {
-            return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
+            return new StyleConversionResult(
+                StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer)),
+                unsupported);
         }
 
         if (!drawingInfo.TryGetProperty("renderer", out var renderer) || renderer.ValueKind != JsonValueKind.Object)
         {
-            return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
+            unsupported.Add(new UnsupportedSymbolizerInfo
+            {
+                Code = StyleErrorCodes.RendererPayloadIncomplete,
+                SymbolizerType = string.Empty,
+                Guidance = "drawingInfo did not include a 'renderer' object; default style was applied."
+            });
+            return new StyleConversionResult(
+                StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer)),
+                unsupported);
         }
 
         var rendererType = renderer.TryGetProperty("type", out var typeElement)
             ? typeElement.GetString()
             : null;
 
-        return rendererType switch
+        switch (rendererType)
         {
-            "simple" => ConvertSimpleRenderer(renderer, layer),
-            "uniqueValue" => ConvertUniqueValueRenderer(renderer, layer),
-            "classBreaks" => ConvertClassBreaksRenderer(renderer, layer),
-            _ => StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer))
-        };
+            case "simple":
+                return new StyleConversionResult(ConvertSimpleRenderer(renderer, layer, unsupported), unsupported);
+            case "uniqueValue":
+                return new StyleConversionResult(ConvertUniqueValueRenderer(renderer, layer, unsupported), unsupported);
+            case "classBreaks":
+                return new StyleConversionResult(ConvertClassBreaksRenderer(renderer, layer, unsupported), unsupported);
+            default:
+                unsupported.Add(new UnsupportedSymbolizerInfo
+                {
+                    Code = StyleErrorCodes.RendererTypeUnsupported,
+                    SymbolizerType = rendererType ?? string.Empty,
+                    Guidance = "Renderer type is not supported. Use 'simple', 'uniqueValue', or 'classBreaks', or submit a MapLibre style."
+                });
+                return new StyleConversionResult(
+                    StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer)),
+                    unsupported);
+        }
     }
 
-    private static string ConvertSimpleRenderer(JsonElement renderer, LayerDefinition layer)
+    private static readonly string[] SupportedPointSymbolTypes = ["esriSMS", "esriPMS"];
+    private static readonly string[] SupportedLineSymbolTypes = ["esriSLS"];
+    private static readonly string[] SupportedFillSymbolTypes = ["esriSFS"];
+
+    /// <summary>
+    /// Records a <see cref="StyleErrorCodes.RendererPayloadIncomplete"/> entry
+    /// when a supported renderer (<c>simple</c>, <c>uniqueValue</c>, or
+    /// <c>classBreaks</c>) is missing required fields and falls back to the
+    /// default MapLibre style.  Centralized so the four call sites stay in
+    /// sync with the public contract documented in
+    /// <c>docs/gis/style-engine-protocol-consumption.md</c>.
+    /// </summary>
+    private static void RecordPayloadIncomplete(
+        List<UnsupportedSymbolizerInfo> unsupported,
+        string rendererType,
+        string detail)
+    {
+        unsupported.Add(new UnsupportedSymbolizerInfo
+        {
+            Code = StyleErrorCodes.RendererPayloadIncomplete,
+            SymbolizerType = rendererType,
+            Guidance = $"'{rendererType}' renderer payload was incomplete: {detail}. Default style was applied."
+        });
+    }
+
+    /// <summary>
+    /// Inspects <paramref name="symbol"/> for a recognized GeoServices symbol type
+    /// and records a <see cref="StyleErrorCodes.SymbolTypeUnsupported"/> entry on
+    /// <paramref name="unsupported"/> when the type is outside the supported set
+    /// for <paramref name="layer"/>'s geometry.  Conversion still proceeds with a
+    /// best-effort default so callers always receive a renderable MapLibre style.
+    /// </summary>
+    private static void ValidateSymbolType(
+        JsonElement symbol,
+        LayerDefinition layer,
+        List<UnsupportedSymbolizerInfo> unsupported)
+    {
+        if (!TryGetSymbolType(symbol, out var symbolType))
+        {
+            return;
+        }
+
+        var supported = layer.GeometryType switch
+        {
+            GeometryType.Point or GeometryType.MultiPoint => SupportedPointSymbolTypes,
+            GeometryType.LineString or GeometryType.MultiLineString => SupportedLineSymbolTypes,
+            GeometryType.Polygon or GeometryType.MultiPolygon or GeometryType.GeometryCollection => SupportedFillSymbolTypes,
+            _ => null
+        };
+
+        if (supported == null)
+        {
+            return;
+        }
+
+        foreach (var allowed in supported)
+        {
+            if (string.Equals(allowed, symbolType, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        unsupported.Add(new UnsupportedSymbolizerInfo
+        {
+            Code = StyleErrorCodes.SymbolTypeUnsupported,
+            SymbolizerType = symbolType ?? string.Empty,
+            Guidance = $"Symbol type '{symbolType}' is not supported for the layer geometry; default symbology was applied."
+        });
+    }
+
+    /// <summary>
+    /// Records a <see cref="StyleErrorCodes.PictureMarkerPartial"/> entry when the
+    /// supplied picture marker stops carry per-stop offsets or rotation that the
+    /// canonical MapLibre style cannot losslessly express across data-driven stops.
+    /// The image payloads themselves are still preserved in the style metadata.
+    /// </summary>
+    private static void RecordPictureMarkerPartialIfNeeded(
+        IReadOnlyCollection<PictureMarkerPayload> payloads,
+        List<UnsupportedSymbolizerInfo> unsupported)
+    {
+        if (payloads.Count == 0)
+        {
+            return;
+        }
+
+        if (TryGetUniformPictureMarkerLayout(payloads, out _))
+        {
+            return;
+        }
+
+        var hasLayoutHints = false;
+        foreach (var payload in payloads)
+        {
+            if ((payload.XOffset ?? 0d) != 0d || (payload.YOffset ?? 0d) != 0d || (payload.Angle ?? 0d) != 0d)
+            {
+                hasLayoutHints = true;
+                break;
+            }
+        }
+
+        if (!hasLayoutHints)
+        {
+            return;
+        }
+
+        unsupported.Add(new UnsupportedSymbolizerInfo
+        {
+            Code = StyleErrorCodes.PictureMarkerPartial,
+            SymbolizerType = "esriPMS",
+            Guidance = "Picture marker images were preserved in style metadata, but per-stop offsets or rotation could not be projected onto a single icon-offset/icon-rotate layout."
+        });
+    }
+
+    private static string ConvertSimpleRenderer(
+        JsonElement renderer,
+        LayerDefinition layer,
+        List<UnsupportedSymbolizerInfo> unsupported)
     {
         if (!renderer.TryGetProperty("symbol", out var symbol) || symbol.ValueKind != JsonValueKind.Object)
         {
+            RecordPayloadIncomplete(unsupported, "simple", "missing 'symbol' object");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
+
+        ValidateSymbolType(symbol, layer, unsupported);
 
         var sourceId = StyleDefaults.GetSourceId(layer);
         var layers = new List<Dictionary<string, object?>>();
@@ -72,7 +223,10 @@ internal static class GeoServicesToMapLibreConverter
         return StyleJsonUtilities.Serialize(style);
     }
 
-    private static string ConvertUniqueValueRenderer(JsonElement renderer, LayerDefinition layer)
+    private static string ConvertUniqueValueRenderer(
+        JsonElement renderer,
+        LayerDefinition layer,
+        List<UnsupportedSymbolizerInfo> unsupported)
     {
         var fieldName = TryGetRendererField(renderer, out var field)
             ? field
@@ -80,16 +234,18 @@ internal static class GeoServicesToMapLibreConverter
 
         if (string.IsNullOrWhiteSpace(fieldName))
         {
+            RecordPayloadIncomplete(unsupported, "uniqueValue", "missing 'field1' or 'field' string");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
         if (!renderer.TryGetProperty("uniqueValueInfos", out var infos) || infos.ValueKind != JsonValueKind.Array)
         {
+            RecordPayloadIncomplete(unsupported, "uniqueValue", "missing 'uniqueValueInfos' array");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
         if (layer.GeometryType is GeometryType.Point or GeometryType.MultiPoint
-            && TryBuildPictureMarkerUniqueValueStyle(layer, fieldName, infos, renderer, out var pictureStyle))
+            && TryBuildPictureMarkerUniqueValueStyle(layer, fieldName, infos, renderer, unsupported, out var pictureStyle))
         {
             return StyleJsonUtilities.Serialize(pictureStyle);
         }
@@ -117,6 +273,8 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
+            ValidateSymbolType(symbol, layer, unsupported);
+
             if (!TryGetSymbolColor(symbol, out var color))
             {
                 continue;
@@ -138,6 +296,7 @@ internal static class GeoServicesToMapLibreConverter
 
         if (!anyValues)
         {
+            RecordPayloadIncomplete(unsupported, "uniqueValue", "no parseable 'uniqueValueInfos' entries");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
@@ -167,7 +326,10 @@ internal static class GeoServicesToMapLibreConverter
         return StyleJsonUtilities.Serialize(style);
     }
 
-    private static string ConvertClassBreaksRenderer(JsonElement renderer, LayerDefinition layer)
+    private static string ConvertClassBreaksRenderer(
+        JsonElement renderer,
+        LayerDefinition layer,
+        List<UnsupportedSymbolizerInfo> unsupported)
     {
         var fieldName = TryGetRendererField(renderer, out var field)
             ? field
@@ -175,16 +337,18 @@ internal static class GeoServicesToMapLibreConverter
 
         if (string.IsNullOrWhiteSpace(fieldName))
         {
+            RecordPayloadIncomplete(unsupported, "classBreaks", "missing 'field' string");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
         if (!renderer.TryGetProperty("classBreakInfos", out var infos) || infos.ValueKind != JsonValueKind.Array)
         {
+            RecordPayloadIncomplete(unsupported, "classBreaks", "missing 'classBreakInfos' array");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
         if (layer.GeometryType is GeometryType.Point or GeometryType.MultiPoint
-            && TryBuildPictureMarkerClassBreakStyle(layer, fieldName, infos, out var pictureStyle))
+            && TryBuildPictureMarkerClassBreakStyle(layer, fieldName, infos, renderer, unsupported, out var pictureStyle))
         {
             return StyleJsonUtilities.Serialize(pictureStyle);
         }
@@ -207,6 +371,8 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
+            ValidateSymbolType(symbol, layer, unsupported);
+
             if (!TryGetSymbolColor(symbol, out var color))
             {
                 continue;
@@ -217,6 +383,7 @@ internal static class GeoServicesToMapLibreConverter
 
         if (breaks.Count == 0)
         {
+            RecordPayloadIncomplete(unsupported, "classBreaks", "no parseable 'classBreakInfos' entries");
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
@@ -477,11 +644,13 @@ internal static class GeoServicesToMapLibreConverter
         string fieldName,
         JsonElement infos,
         JsonElement renderer,
+        List<UnsupportedSymbolizerInfo> unsupported,
         out Dictionary<string, object?> style)
     {
         style = new Dictionary<string, object?>();
 
         var stops = new List<(object? Value, PictureMarkerPayload Payload)>();
+        var sawColorOnlyStop = false;
         foreach (var info in infos.EnumerateArray())
         {
             if (!info.TryGetProperty("value", out var valueElement))
@@ -494,8 +663,22 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
+            // Skip non-esriPMS stops without aborting so we can detect a mixed
+            // esriPMS / non-esriPMS renderer below.  A non-esriPMS stop on its
+            // own is fine — the color path will handle it — but mixed with an
+            // esriPMS stop it would silently drop the image metadata.
+            if (!TryGetSymbolType(symbol, out var symbolType)
+                || !string.Equals(symbolType, "esriPMS", StringComparison.OrdinalIgnoreCase))
+            {
+                sawColorOnlyStop = true;
+                continue;
+            }
+
             if (!TryGetPictureMarkerPayload(symbol, out var payload))
             {
+                // Malformed esriPMS (missing url AND imageData): keep the
+                // existing "fall through to color path" contract so the layer
+                // still renders something useful.
                 return false;
             }
 
@@ -507,6 +690,46 @@ internal static class GeoServicesToMapLibreConverter
         {
             return false;
         }
+
+        if (sawColorOnlyStop)
+        {
+            // At least one esriPMS stop ships image metadata that the color
+            // fallback path cannot preserve.  Record PICTURE_MARKER_PARTIAL so
+            // the no-silent-drop contract holds, then return false to let the
+            // generic color path render a usable layer.
+            unsupported.Add(new UnsupportedSymbolizerInfo
+            {
+                Code = StyleErrorCodes.PictureMarkerPartial,
+                SymbolizerType = "esriPMS",
+                Guidance = "Picture marker images mixed with non-esriPMS symbols in a uniqueValue renderer; image metadata could not be preserved alongside the color fallback. Use a uniform esriPMS renderer to keep image symbology."
+            });
+            return false;
+        }
+
+        // Collect the optional defaultSymbol payload up front so the partial-layout
+        // diagnostic and the layout uniformity check both see the full set of images
+        // that ship in the symbol layer.  A defaultSymbol with a divergent
+        // xoffset/yoffset/angle would otherwise suppress icon-offset/icon-rotate
+        // emission without recording PICTURE_MARKER_PARTIAL.
+        PictureMarkerPayload? defaultPayload = null;
+        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol)
+            && defaultSymbol.ValueKind == JsonValueKind.Object
+            && TryGetPictureMarkerPayload(defaultSymbol, out var defaultParsed))
+        {
+            defaultPayload = defaultParsed;
+        }
+
+        var allPayloads = new List<PictureMarkerPayload>(stops.Count + 1);
+        foreach (var stop in stops)
+        {
+            allPayloads.Add(stop.Payload);
+        }
+        if (defaultPayload is { } defaultPayloadValue)
+        {
+            allPayloads.Add(defaultPayloadValue);
+        }
+
+        RecordPictureMarkerPartialIfNeeded(allPayloads, unsupported);
 
         var images = new List<PictureMarkerImage>();
         var matchExpr = new List<object?> { "match", new object?[] { "to-string", new object?[] { "get", fieldName } } };
@@ -521,12 +744,10 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         var fallbackId = images[0].Id;
-        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol)
-            && defaultSymbol.ValueKind == JsonValueKind.Object
-            && TryGetPictureMarkerPayload(defaultSymbol, out var defaultPayload))
+        if (defaultPayload is { } defaultPayloadForImage)
         {
             fallbackId = BuildPictureMarkerId(layer.Id, index++);
-            images.Add(new PictureMarkerImage(fallbackId, defaultPayload));
+            images.Add(new PictureMarkerImage(fallbackId, defaultPayloadForImage));
         }
 
         matchExpr.Add(fallbackId);
@@ -539,7 +760,7 @@ internal static class GeoServicesToMapLibreConverter
             ["icon-image"] = expression
         };
 
-        if (TryGetUniformPictureMarkerLayout(images.Select(image => image.Payload), out var markerLayout))
+        if (TryGetUniformPictureMarkerLayout(allPayloads, out var markerLayout))
         {
             ApplyPictureMarkerLayout(layout, markerLayout);
         }
@@ -559,11 +780,14 @@ internal static class GeoServicesToMapLibreConverter
         LayerDefinition layer,
         string fieldName,
         JsonElement infos,
+        JsonElement renderer,
+        List<UnsupportedSymbolizerInfo> unsupported,
         out Dictionary<string, object?> style)
     {
         style = new Dictionary<string, object?>();
 
         var stops = new List<(double MaxValue, PictureMarkerPayload Payload)>();
+        var sawColorOnlyStop = false;
         foreach (var info in infos.EnumerateArray())
         {
             if (!info.TryGetProperty("classMaxValue", out var maxElement))
@@ -581,8 +805,21 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
+            // Skip non-esriPMS stops without aborting so we can detect a mixed
+            // esriPMS / non-esriPMS renderer below.  Mirrors the uniqueValue
+            // contract so the no-silent-drop guarantee holds for classBreaks.
+            if (!TryGetSymbolType(symbol, out var symbolType)
+                || !string.Equals(symbolType, "esriPMS", StringComparison.OrdinalIgnoreCase))
+            {
+                sawColorOnlyStop = true;
+                continue;
+            }
+
             if (!TryGetPictureMarkerPayload(symbol, out var payload))
             {
+                // Malformed esriPMS (missing url AND imageData): keep the
+                // existing "fall through to color path" contract so the layer
+                // still renders something useful.
                 return false;
             }
 
@@ -594,26 +831,83 @@ internal static class GeoServicesToMapLibreConverter
             return false;
         }
 
+        if (sawColorOnlyStop)
+        {
+            // At least one esriPMS stop ships image metadata that the color
+            // fallback path cannot preserve.  Record PICTURE_MARKER_PARTIAL so
+            // the no-silent-drop contract holds, then return false to let the
+            // generic color path render a usable layer.
+            unsupported.Add(new UnsupportedSymbolizerInfo
+            {
+                Code = StyleErrorCodes.PictureMarkerPartial,
+                SymbolizerType = "esriPMS",
+                Guidance = "Picture marker images mixed with non-esriPMS symbols in a classBreaks renderer; image metadata could not be preserved alongside the color fallback. Use a uniform esriPMS renderer to keep image symbology."
+            });
+            return false;
+        }
+
+        // Collect the optional defaultSymbol payload up front so the partial-layout
+        // diagnostic and the layout uniformity check both see the full set of images
+        // that ship in the symbol layer (mirrors the uniqueValue contract).
+        PictureMarkerPayload? defaultPayload = null;
+        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol)
+            && defaultSymbol.ValueKind == JsonValueKind.Object
+            && TryGetPictureMarkerPayload(defaultSymbol, out var defaultParsed))
+        {
+            defaultPayload = defaultParsed;
+        }
+
+        var allPayloads = new List<PictureMarkerPayload>(stops.Count + 1);
+        foreach (var stop in stops)
+        {
+            allPayloads.Add(stop.Payload);
+        }
+        if (defaultPayload is { } defaultPayloadValue)
+        {
+            allPayloads.Add(defaultPayloadValue);
+        }
+
+        RecordPictureMarkerPartialIfNeeded(allPayloads, unsupported);
+
         var images = new List<PictureMarkerImage>();
         var index = 0;
         var baseId = BuildPictureMarkerId(layer.Id, index++);
         images.Add(new PictureMarkerImage(baseId, stops[0].Payload));
 
-        var expression = new List<object?> { "step", new object?[] { "get", fieldName }, baseId };
+        // Wrap field access with to-number coercion, matching the color classBreaks
+        // path so picture-marker classBreaks honors the same documented numeric
+        // guard contract.
+        var stepExpr = new List<object?> { "step", new object?[] { "to-number", new object?[] { "get", fieldName } }, baseId };
         for (var i = 1; i < stops.Count; i++)
         {
             var imageId = BuildPictureMarkerId(layer.Id, index++);
             images.Add(new PictureMarkerImage(imageId, stops[i].Payload));
-            expression.Add(stops[i - 1].MaxValue);
-            expression.Add(imageId);
+            stepExpr.Add(stops[i - 1].MaxValue);
+            stepExpr.Add(imageId);
         }
+
+        // Use defaultSymbol image as the case fallback when present; otherwise fall
+        // back to the first stop image for backward compatibility with the prior
+        // contract.
+        var fallbackId = baseId;
+        if (defaultPayload is { } defaultPayloadForImage)
+        {
+            fallbackId = BuildPictureMarkerId(layer.Id, index++);
+            images.Add(new PictureMarkerImage(fallbackId, defaultPayloadForImage));
+        }
+
+        // Guard null/missing AND non-castable text using the shared numeric typeof
+        // guard so only native numbers reach the step expression — mirrors the
+        // color classBreaks contract documented in
+        // docs/gis/style-engine-protocol-consumption.md.
+        var expression = new List<object?> { "case", StyleDefaults.BuildNumericFieldGuard(fieldName), stepExpr, fallbackId };
 
         var layout = new Dictionary<string, object?>
         {
             ["icon-image"] = expression
         };
 
-        if (TryGetUniformPictureMarkerLayout(images.Select(image => image.Payload), out var markerLayout))
+        if (TryGetUniformPictureMarkerLayout(allPayloads, out var markerLayout))
         {
             ApplyPictureMarkerLayout(layout, markerLayout);
         }
@@ -1018,4 +1312,18 @@ internal static class GeoServicesToMapLibreConverter
             _ => element.ToString() ?? string.Empty
         };
     }
+}
+
+/// <summary>
+/// Result of a GeoServices-to-MapLibre style conversion.  Contains the canonical
+/// MapLibre JSON plus any symbolizers that could not be losslessly translated.
+/// Callers that only need the JSON can rely on the implicit string conversion;
+/// callers that need to surface unsupported-symbolizer reporting access
+/// <see cref="Unsupported"/> directly.
+/// </summary>
+internal sealed record StyleConversionResult(
+    string MapLibreStyleJson,
+    IReadOnlyList<UnsupportedSymbolizerInfo> Unsupported)
+{
+    public static implicit operator string(StyleConversionResult result) => result.MapLibreStyleJson;
 }

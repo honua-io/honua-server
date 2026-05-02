@@ -72,7 +72,23 @@ ALTER TABLE IF EXISTS honua.layers
     ADD COLUMN IF NOT EXISTS geoservices_drawing_info JSONB;
 
 ALTER TABLE IF EXISTS honua.layers
-    ADD COLUMN IF NOT EXISTS style_version INT DEFAULT 1;
+    ADD COLUMN IF NOT EXISTS style_version INT DEFAULT 0;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS style_revised_at TIMESTAMPTZ;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS style_revised_by TEXT;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS style_change_summary TEXT;
+
+ALTER TABLE IF EXISTS honua.layers
+    DROP CONSTRAINT IF EXISTS layers_style_change_summary_length_check;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD CONSTRAINT layers_style_change_summary_length_check
+        CHECK (style_change_summary IS NULL OR char_length(style_change_summary) <= 1000);
 
 ALTER TABLE IF EXISTS honua.layers
     ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;

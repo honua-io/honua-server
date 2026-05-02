@@ -936,6 +936,124 @@ public class StyleConversionMatrixTests
     }
 
     [Fact]
+    public void GeoServicesToMapLibre_PictureMarkerClassBreaks_AppliesNumericGuardAndToNumberCoercion()
+    {
+        // Regression: picture-marker classBreaks used to emit
+        // ["step", ["get", field], baseId, ...] directly, skipping the numeric
+        // guard and to-number coercion that the color classBreaks path uses.
+        // Now both paths share the same documented contract.
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "classBreaks",
+            "field": "magnitude",
+            "classBreakInfos": [
+              { "classMaxValue": 5,  "symbol": { "type": "esriPMS", "url": "https://example.com/low.png",  "width": 16, "height": 16 } },
+              { "classMaxValue": 10, "symbol": { "type": "esriPMS", "url": "https://example.com/med.png",  "width": 16, "height": 16 } },
+              { "classMaxValue": 20, "symbol": { "type": "esriPMS", "url": "https://example.com/high.png", "width": 16, "height": 16 } }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var mapLibreJson = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+        using var mapLibreDoc = JsonDocument.Parse(mapLibreJson);
+
+        var symbolLayer = FindLayer(mapLibreDoc.RootElement, "symbol");
+        var iconExpr = symbolLayer.GetProperty("layout").GetProperty("icon-image");
+        var caseItems = iconExpr.EnumerateArray().ToArray();
+
+        // Outer expression is case-wrapped with the numeric guard.
+        Assert.Equal("case", caseItems[0].GetString());
+        var guard = caseItems[1].EnumerateArray().ToArray();
+        Assert.Equal("all", guard[0].GetString());
+        // Guard's typeof check rejects strings/null so only native numbers reach the step.
+        var typeofClause = guard[2].EnumerateArray().ToArray();
+        Assert.Equal("==", typeofClause[0].GetString());
+        Assert.Equal("number", typeofClause[2].GetString());
+
+        // Inner step expression coerces input via to-number.
+        var stepItems = caseItems[2].EnumerateArray().ToArray();
+        Assert.Equal("step", stepItems[0].GetString());
+        var stepInput = stepItems[1].EnumerateArray().ToArray();
+        Assert.Equal("to-number", stepInput[0].GetString());
+        var getInput = stepInput[1].EnumerateArray().ToArray();
+        Assert.Equal("get", getInput[0].GetString());
+        Assert.Equal("magnitude", getInput[1].GetString());
+    }
+
+    [Fact]
+    public void GeoServicesToMapLibre_PictureMarkerClassBreaks_HonorsDefaultSymbolAsCaseFallback()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "classBreaks",
+            "field": "magnitude",
+            "classBreakInfos": [
+              { "classMaxValue": 5,  "symbol": { "type": "esriPMS", "url": "https://example.com/low.png",  "width": 16, "height": 16 } },
+              { "classMaxValue": 10, "symbol": { "type": "esriPMS", "url": "https://example.com/med.png",  "width": 16, "height": 16 } }
+            ],
+            "defaultSymbol": { "type": "esriPMS", "url": "https://example.com/default.png", "width": 16, "height": 16 }
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var mapLibreJson = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+        using var mapLibreDoc = JsonDocument.Parse(mapLibreJson);
+
+        var symbolLayer = FindLayer(mapLibreDoc.RootElement, "symbol");
+        var iconExpr = symbolLayer.GetProperty("layout").GetProperty("icon-image");
+        var caseItems = iconExpr.EnumerateArray().ToArray();
+
+        // The case fallback (last position) must be the defaultSymbol image id, not
+        // the first stop's image id.
+        var fallbackId = caseItems[3].GetString();
+        Assert.NotNull(fallbackId);
+        Assert.NotEqual("layer-1-pms-0", fallbackId);
+
+        // The defaultSymbol image must be registered in the metadata images map and
+        // point at the default URL.
+        var images = mapLibreDoc.RootElement.GetProperty("metadata").GetProperty("honua:images");
+        var defaultEntry = images.GetProperty(fallbackId!);
+        Assert.Equal("https://example.com/default.png", defaultEntry.GetProperty("url").GetString());
+    }
+
+    [Fact]
+    public void GeoServicesToMapLibre_PictureMarkerClassBreaks_NoDefaultSymbolFallsBackToFirstStopImage()
+    {
+        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        const string drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "classBreaks",
+            "field": "magnitude",
+            "classBreakInfos": [
+              { "classMaxValue": 5,  "symbol": { "type": "esriPMS", "url": "https://example.com/low.png",  "width": 16, "height": 16 } },
+              { "classMaxValue": 10, "symbol": { "type": "esriPMS", "url": "https://example.com/high.png", "width": 16, "height": 16 } }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var mapLibreJson = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+        using var mapLibreDoc = JsonDocument.Parse(mapLibreJson);
+
+        var symbolLayer = FindLayer(mapLibreDoc.RootElement, "symbol");
+        var iconExpr = symbolLayer.GetProperty("layout").GetProperty("icon-image");
+        var caseItems = iconExpr.EnumerateArray().ToArray();
+
+        // Backward-compat fallback: when no defaultSymbol is supplied the case
+        // fallback must reuse the first stop's image id.
+        Assert.Equal("layer-1-pms-0", caseItems[3].GetString());
+    }
+
+    [Fact]
     public void GenerateDrawingInfo_ClassBreaks_UsesActualDataRangeBounds()
     {
         var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);

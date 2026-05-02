@@ -150,7 +150,7 @@ internal static class AdminSldStyleEndpoints
                 layerResult.Resource,
                 styleElement,
                 drawingInfo: null,
-                cancellationToken)
+                cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (update.Status == LayerStyleUpdateStatus.Invalid)

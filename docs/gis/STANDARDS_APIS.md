@@ -435,16 +435,19 @@ Terrain v1 expects registered PostGIS rasters with one numeric elevation band, o
 
 **Endpoint structure:**
 ```
-/tiles/{layerId}/{z}/{x}/{y}.mvt     (vector tiles)
-/tiles/{layerId}/tile.json            (TileJSON metadata)
-/api/styles/{layerId}.json            (auto-generated MapLibre style)
+/tiles/{layerId}/{z}/{x}/{y}.mvt                     (vector tiles)
+/tiles/{layerId}/tile.json                           (TileJSON metadata)
+/api/styles/{layerId}.json                           (canonical MapLibre style)
+/api/styles/{layerId}.json?theme=dark|colorblind-safe|print  (deterministic theme variant)
 ```
 
 **Typical use cases:**
-- MapLibre GL JS maps with auto-generated styles
+- MapLibre GL JS maps with the canonical or themed style document
 - OpenLayers VectorTile layers
 - Leaflet and Mapbox GL maps
 - Fast vector rendering at multiple zoom levels
+
+The `?theme` query parameter applies a deterministic transform (dark-mode lightness inversion, colorblind-safe palette remap, or solid high-contrast print). The output cache varies per theme; admin style writes invalidate every variant. See [Style Engine: Cross-Protocol Consumption](style-engine-protocol-consumption.md) for the full theme contract and how the same canonical document drives MapServer, WMS, and FeatureServer consumption.
 
 ---
 

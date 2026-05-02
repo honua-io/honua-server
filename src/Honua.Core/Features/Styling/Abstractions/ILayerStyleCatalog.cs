@@ -23,9 +23,16 @@ public interface ILayerStyleCatalog
     /// </summary>
     /// <param name="layerId">Layer identifier.</param>
     /// <param name="mapLibreStyleJson">MapLibre style JSON.</param>
+    /// <param name="revisedBy">Optional author or source identifier captured for the new revision.</param>
+    /// <param name="changeSummary">Optional operator-supplied description of the change.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Updated style, or null when the layer does not exist.</returns>
-    Task<LayerStyleDefinition?> SetMapLibreStyleAsync(int layerId, string mapLibreStyleJson, CancellationToken cancellationToken = default);
+    Task<LayerStyleDefinition?> SetMapLibreStyleAsync(
+        int layerId,
+        string mapLibreStyleJson,
+        string? revisedBy = null,
+        string? changeSummary = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Stores both MapLibre and drawingInfo styles for a layer.
@@ -33,12 +40,16 @@ public interface ILayerStyleCatalog
     /// <param name="layerId">Layer identifier.</param>
     /// <param name="mapLibreStyleJson">MapLibre style JSON.</param>
     /// <param name="drawingInfoJson">GeoServices drawingInfo JSON.</param>
+    /// <param name="revisedBy">Optional author or source identifier captured for the new revision.</param>
+    /// <param name="changeSummary">Optional operator-supplied description of the change.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Updated style, or null when the layer does not exist.</returns>
     Task<LayerStyleDefinition?> SetStyleAsync(
         int layerId,
         string mapLibreStyleJson,
         string drawingInfoJson,
+        string? revisedBy = null,
+        string? changeSummary = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

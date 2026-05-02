@@ -888,7 +888,7 @@
           "Styles"
         ],
         "summary": "Get Layer Style",
-        "description": "Get style payload for a layer",
+        "description": "Get the canonical MapLibre style document for a layer plus revision metadata (styleVersion, revisedAt, revisedBy, changeSummary). The cached drawingInfo conversion is included when available.",
         "operationId": "getAdminLayerStyle",
         "parameters": [
           {
@@ -929,7 +929,7 @@
           "Styles"
         ],
         "summary": "Update Layer Style",
-        "description": "Update layer style payload",
+        "description": "Update the canonical MapLibre style for a layer. Supply mapLibreStyle directly or a GeoServices drawingInfo payload that the engine converts. Optional changedBy and changeSummary populate the layer's revision metadata; changeSummary longer than 1000 characters returns 400. The response includes the persisted style, the incremented styleVersion, the new revisedAt timestamp, and unsupportedSymbolizers[] entries with stable StyleErrorCodes for any symbolizers that could not be losslessly translated. Style intent is never silently dropped: a best-effort MapLibre fallback is still returned alongside the unsupported list.",
         "operationId": "updateAdminLayerStyle",
         "parameters": [
           {
@@ -3077,6 +3077,17 @@
             "type": "object",
             "description": "GeoServices drawingInfo JSON",
             "additionalProperties": true
+          },
+          "changedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional author or source identifier captured for the new revision."
+          },
+          "changeSummary": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 1000,
+            "description": "Optional operator-supplied description of the change. Longer than 1000 characters returns 400."
           }
         }
       },
@@ -4101,6 +4112,58 @@
             "type": "object",
             "description": "GeoServices drawingInfo JSON",
             "additionalProperties": true
+          },
+          "styleVersion": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Monotonic style revision counter incremented on every canonical update."
+          },
+          "revisedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "UTC timestamp of the most recent canonical update; null until the first revision."
+          },
+          "revisedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Author or source identifier captured for the most recent revision."
+          },
+          "changeSummary": {
+            "type": "string",
+            "nullable": true,
+            "description": "Operator-supplied description of the most recent revision."
+          },
+          "unsupportedSymbolizers": {
+            "type": "array",
+            "nullable": true,
+            "description": "Symbolizers from the submitted payload that the engine could not losslessly translate to canonical MapLibre v8. Empty when the entire payload was supported. Returned on PUT responses; null on GET.",
+            "items": {
+              "$ref": "#/components/schemas/UnsupportedSymbolizerInfo"
+            }
+          }
+        }
+      },
+      "UnsupportedSymbolizerInfo": {
+        "type": "object",
+        "description": "Describes a single symbolizer input that the style engine could not translate to the canonical MapLibre Style Spec v8 form.",
+        "required": [
+          "code",
+          "symbolizerType",
+          "guidance"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable code from StyleErrorCodes. Values: RENDERER_TYPE_UNSUPPORTED, SYMBOL_TYPE_UNSUPPORTED, PICTURE_MARKER_PARTIAL, RENDERER_PAYLOAD_INCOMPLETE."
+          },
+          "symbolizerType": {
+            "type": "string",
+            "description": "Renderer or symbol type as supplied by the caller; empty when the type was missing."
+          },
+          "guidance": {
+            "type": "string",
+            "description": "Operator-facing guidance on what to do next."
           }
         }
       },
