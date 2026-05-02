@@ -231,6 +231,18 @@ internal static partial class FeatureServerEndpoints
         {
             FeatureServerLog.LayerMetadataRequested(logger, serviceId, layer.Id);
 
+            if (layer.Metadata?.Extrusion is { } extrusion)
+            {
+                var extrusionErrors = ExtrusionValidator.Validate(extrusion, layer.Fields);
+                if (extrusionErrors.Count > 0)
+                {
+                    return StandardErrorHelpers.CreateUnprocessableEntity(
+                        context,
+                        "Layer extrusion configuration is invalid.",
+                        [.. extrusionErrors]);
+                }
+            }
+
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
             var timeInfo = await BuildTimeInfoAsync(layer, featureReader, cancellationToken).ConfigureAwait(false);
@@ -239,6 +251,7 @@ internal static partial class FeatureServerEndpoints
                 layer,
                 logger,
                 cancellationToken).ConfigureAwait(false);
+            var extrusionInfo = BuildExtrusionInfo(layer);
 
             LayerResponse response = MapLayerToResponse(
                 service,
@@ -246,6 +259,7 @@ internal static partial class FeatureServerEndpoints
                 limits,
                 timeInfo,
                 drawingInfo,
+                extrusionInfo,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads);
 

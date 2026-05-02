@@ -289,6 +289,7 @@ internal static partial class FeatureServerEndpoints
         QueryLimits queryLimits,
         FeatureServerTimeInfo? timeInfo,
         JsonElement? drawingInfo,
+        FeatureServerExtrusionInfo? extrusionInfo,
         bool supportsGeobufOutput,
         bool supportsAttachmentUploads)
     {
@@ -317,6 +318,7 @@ internal static partial class FeatureServerEndpoints
             SpatialReference = layer.SpatialReference.ToSpatialReferenceInfo(),
             Extent = layer.Extent.HasValue ? layer.Extent.Value.ToExtentInfo() : null,
             TimeInfo = timeInfo,
+            ExtrusionInfo = extrusionInfo,
             Fields = [.. layer.Fields.Select(MapFieldInfo)],
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
@@ -365,6 +367,26 @@ internal static partial class FeatureServerEndpoints
             SupportsQueryWithDistance = supportsAdvancedQueries,
             SupportsSqlExpression = supportsAdvancedQueries,
             SupportsBatchEditing = supportsAdvancedQueries
+        };
+    }
+
+    private static FeatureServerExtrusionInfo? BuildExtrusionInfo(LayerDefinition layer)
+    {
+        if (layer.Metadata?.Extrusion is not { } extrusion)
+        {
+            return null;
+        }
+
+        VerticalUnits.TryNormalize(extrusion.Unit, out var unitWire);
+
+        return new FeatureServerExtrusionInfo
+        {
+            Enabled = true,
+            HeightField = extrusion.HeightField,
+            BaseHeightField = extrusion.BaseHeightField,
+            Unit = unitWire,
+            DefaultHeight = extrusion.DefaultHeight,
+            MaterialHint = extrusion.MaterialHint
         };
     }
 

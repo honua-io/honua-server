@@ -276,6 +276,7 @@ All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: appl
 | `editingInfo` | Implemented | Present for editable layers. |
 | `templates` | Implemented | Empty array (no feature templates configured). |
 | `timeInfo` | Implemented | Start/end time fields, time extent, track ID. |
+| `extrusionInfo` | Implemented | Honua extension for v1 extruded 3D feature layers. Present only when the layer has `extrusion` configured in its catalog metadata; omitted entirely for 2D-only layers. Carries `enabled`, `heightField`, `baseHeightField`, `unit` (`meters`/`feet`/`usSurveyFeet`), `defaultHeight`, and `materialHint`. Invalid configuration returns `422 Unprocessable Entity` with stable codes from `ExtrusionErrorCodes`. See [Extruded 3D Feature Layers (v1)](extruded-3d-feature-layers.md). |
 | `maxRecordCount` | Implemented | From query limits. |
 | `supportedQueryFormats` | Implemented | Normalized format list plus runtime-supported binary formats (`PBF`, `FGB`, `PARQUET`, `ARROW`, and conditional `GEOBUF` when the backing store exposes native GeoBuf output). |
 

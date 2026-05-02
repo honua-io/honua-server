@@ -40,6 +40,14 @@ public sealed record CatalogMetadata
     /// Optional raster mosaic defaults for layers backed by multiple rasters.
     /// </summary>
     public RasterMosaicSettings? RasterMosaic { get; init; }
+
+    /// <summary>
+    /// Optional extrusion configuration for 3D feature output.
+    /// Null for 2D-only layers; the GeoServices FeatureServer layer
+    /// response omits the <c>extrusionInfo</c> field entirely when
+    /// this is null.
+    /// </summary>
+    public LayerExtrusionInfo? Extrusion { get; init; }
 }
 
 /// <summary>

@@ -251,6 +251,9 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
         // Build temporal information
         var temporalInfo = BuildLayerTemporalInfo(layer);
 
+        // Build extrusion information for 3D-capable feature layers
+        var extrusionInfo = BuildLayerExtrusionInfo(layer);
+
         // Build style information
         LayerStyleInfo? styleInfo = null;
         if (options.IncludeDrawingInfo)
@@ -275,6 +278,7 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
             Statistics = statistics,
             SpatialInfo = spatialInfo,
             TemporalInfo = temporalInfo,
+            ExtrusionInfo = extrusionInfo,
             StyleInfo = styleInfo,
             Relationships = relationships,
             Capabilities = capabilities,
@@ -503,6 +507,26 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
             EndTimeField = layer.Metadata.TimeInfo.EndTimeField,
             TrackIdField = layer.Metadata.TimeInfo.TrackIdField
         } : null;
+
+    private static LayerExtrusionMetadata? BuildLayerExtrusionInfo(LayerDefinition layer)
+    {
+        if (layer.Metadata?.Extrusion is not { } extrusion)
+        {
+            return null;
+        }
+
+        VerticalUnits.TryNormalize(extrusion.Unit, out var unitWire);
+
+        return new LayerExtrusionMetadata
+        {
+            Enabled = true,
+            HeightField = extrusion.HeightField,
+            BaseHeightField = extrusion.BaseHeightField,
+            Unit = unitWire,
+            DefaultHeight = extrusion.DefaultHeight,
+            MaterialHint = extrusion.MaterialHint
+        };
+    }
 
     private static LayerRelationshipInfo[] BuildLayerRelationships(LayerDefinition layer, ServiceDefinition service, MetadataProviderOptions options) =>
         layer.Relationships?.Select(r => new LayerRelationshipInfo

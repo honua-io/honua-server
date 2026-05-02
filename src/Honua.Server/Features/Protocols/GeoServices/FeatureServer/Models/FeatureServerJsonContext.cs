@@ -21,6 +21,7 @@ namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(LayerRelationshipInfo[]))]
 [JsonSerializable(typeof(LayerInfo))]
 [JsonSerializable(typeof(FeatureServerTimeInfo))]
+[JsonSerializable(typeof(FeatureServerExtrusionInfo))]
 [JsonSerializable(typeof(SpatialReferenceInfo))]
 [JsonSerializable(typeof(GeoServicesSpatialReference))]
 [JsonSerializable(typeof(ExtentInfo))]
