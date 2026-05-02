@@ -134,10 +134,18 @@ All error responses use the shared `application/problem+json` envelope.
 | `sampleCount` above `Limits:Elevation:MaxSampleCount` | `422 Unprocessable Entity` |
 | `interval` outside the configured `Min`/`Max` range | `422 Unprocessable Entity` |
 | Unknown or unsupported CRS via `srid` | `422 Unprocessable Entity` |
+| Coordinates outside WGS 84 lon `[-180, 180]` / lat `[-90, 90]` when `srid` is omitted or `4326` | `422 Unprocessable Entity` |
 | Unknown dataset / layer | `404 Not Found` |
 | Layer access denied | `401 Unauthorized` / `403 Forbidden` |
 | Dataset has no registered rasters | `404 Not Found` |
 | Elevation protocol not enabled for service or layer | `404 Not Found` |
+
+When `srid` is omitted or set to `4326`, the endpoint validates that all
+input coordinates fall inside the WGS 84 lon/lat envelope before any PostGIS
+work — PostGIS `geography` only accepts SRID 4326, so out-of-range lon/lat
+values are rejected at the edge as a stable `422` rather than leaking a
+provider-side geography exception. Inputs in projected SRIDs are validated
+against the spatial reference registry but not against WGS 84 bounds.
 
 ## Limits and configuration
 

@@ -95,6 +95,13 @@ internal static class ElevationEndpoints
                 $"CRS '{srid}' is not supported by the spatial reference registry.");
         }
 
+        if (IsWgs84Default(resolvedSrid) && !IsWithinWgs84Bounds(x.Value, y.Value))
+        {
+            return StandardErrorHelpers.CreateUnprocessableEntity(
+                context,
+                "Coordinates 'x' and 'y' must be within WGS 84 bounds when 'srid' is omitted or 4326: longitude in [-180, 180] and latitude in [-90, 90].");
+        }
+
         var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(layer.Metadata, mosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.value");
@@ -203,6 +210,19 @@ internal static class ElevationEndpoints
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
                 $"CRS '{srid}' is not supported by the spatial reference registry.");
+        }
+
+        if (IsWgs84Default(resolvedSrid))
+        {
+            foreach (var coordinate in lineString.Coordinates)
+            {
+                if (!IsWithinWgs84Bounds(coordinate.X, coordinate.Y))
+                {
+                    return StandardErrorHelpers.CreateUnprocessableEntity(
+                        context,
+                        "LineString coordinates must be within WGS 84 bounds when 'srid' is omitted or 4326: longitude in [-180, 180] and latitude in [-90, 90].");
+                }
+            }
         }
 
         var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(layer.Metadata, mosaicRule);
@@ -460,6 +480,20 @@ internal static class ElevationEndpoints
 
     private static bool IsFiniteCoordinate(double value)
         => !double.IsNaN(value) && !double.IsInfinity(value);
+
+    /// <summary>
+    /// True when the resolved SRID is the WGS 84 default — either an explicit
+    /// <c>4326</c> from the caller or omitted (in which case the endpoint
+    /// treats inputs as lon/lat). PostGIS <c>geography</c> only accepts SRID
+    /// 4326, so out-of-range lon/lat values must be rejected at the edge to
+    /// keep the failure mapped to a stable 422 response rather than leaking
+    /// a provider-side geography exception.
+    /// </summary>
+    private static bool IsWgs84Default(SridResolutionResult resolvedSrid)
+        => !resolvedSrid.Srid.HasValue || resolvedSrid.Srid.Value == DefaultSrid;
+
+    private static bool IsWithinWgs84Bounds(double x, double y)
+        => x >= -180 && x <= 180 && y >= -90 && y <= 90;
 
     private readonly record struct SridResolutionResult(int? Srid, bool IsSupported)
     {

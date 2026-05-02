@@ -159,6 +159,37 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /elevation/{datasetId}/value")]
+    public async Task GetElevationValue_DefaultSridLatitudeOutOfRange_ReturnsUnprocessableEntity()
+    {
+        // Regression: default SRID is 4326. PostGIS geography only accepts SRID
+        // 4326, so latitudes outside [-90, 90] must be rejected at the edge as
+        // a stable 422 rather than leaking a provider-side geography exception.
+        await SeedFullWorldRasterAsync(1);
+
+        var response = await _fixture.Client.GetAsync("/elevation/0/value?x=0&y=100");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("WGS 84");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /elevation/{datasetId}/value")]
+    public async Task GetElevationValue_ExplicitWgs84LongitudeOutOfRange_ReturnsUnprocessableEntity()
+    {
+        await SeedFullWorldRasterAsync(1);
+
+        var response = await _fixture.Client.GetAsync("/elevation/0/value?x=200&y=0&srid=4326");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_UnknownDataset_ReturnsNotFound()
     {
         await SeedFullWorldRasterAsync(1);
@@ -377,6 +408,40 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
             $"/elevation/0/profile?line={Uri.EscapeDataString(line)}&srid=999999");
 
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /elevation/{datasetId}/profile")]
+    public async Task GetElevationProfile_DefaultSridLatitudeOutOfRange_ReturnsUnprocessableEntity()
+    {
+        // Regression: default SRID is 4326. Reject any LineString vertex with
+        // latitude outside [-90, 90] before reaching the PostGIS geography cast.
+        await SeedFullWorldRasterAsync(1);
+
+        var line = "LINESTRING(0 100, 1 100)";
+        var response = await _fixture.Client.GetAsync(
+            $"/elevation/0/profile?line={Uri.EscapeDataString(line)}&sampleCount=5");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("WGS 84");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /elevation/{datasetId}/profile")]
+    public async Task GetElevationProfile_ExplicitWgs84LongitudeOutOfRange_ReturnsUnprocessableEntity()
+    {
+        await SeedFullWorldRasterAsync(1);
+
+        var line = "LINESTRING(-200 0, 0 0)";
+        var response = await _fixture.Client.GetAsync(
+            $"/elevation/0/profile?line={Uri.EscapeDataString(line)}&srid=4326&sampleCount=5");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
     }
 
     [IntegrationTest]
