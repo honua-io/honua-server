@@ -1099,6 +1099,84 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         body.Should().Contain("Layer 99999 not found");
     }
 
+    // Regression for review finding "Reject empty layer filter lists". Inputs
+    // like ?layers=, slipped past Split(',', RemoveEmptyEntries) producing an
+    // empty layer-id array that was treated as a valid filtered subscription
+    // (HasSubscription=true). That bypassed the unfiltered admin gate in
+    // HandleFeatureStream, opening an anonymous no-op SSE session that still
+    // consumed a MaxConcurrentSessions slot. The parser must reject empty
+    // results before the gate runs. Both parameter aliases share the same
+    // helper, so both must reject.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithEmptyLayersParam_ReturnsBadRequest()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/v1/streaming/features?layers=,");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        body.Should().Contain("at least one layer ID");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithEmptyLegacyLayerIdsParam_ReturnsBadRequest()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/v1/streaming/features?layerIds=,%20,");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        body.Should().Contain("at least one layer ID");
+    }
+
+    // Security closure: an anonymous client sending ?layers=, must not open
+    // an SSE session. Pre-fix the empty-filter bug bypassed the unfiltered
+    // admin gate; post-fix the parser-level 400 fires first so the gate
+    // never gets a chance to be skipped.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithoutAuthAndEmptyLayersParam_DoesNotBypassUnfilteredGate()
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-stream-admin-key");
+            });
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                "/api/v1/streaming/features?layers=,");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var response = await fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+            // Either 400 (parser rejection runs first) or 401 (auth gate
+            // runs first). Both are correct; the critical assertion is
+            // that we are NOT 200 with an open SSE stream.
+            response.StatusCode.Should().NotBe(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().NotBe("text/event-stream");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithUnsupportedFunctionFilter_ReturnsBadRequest()

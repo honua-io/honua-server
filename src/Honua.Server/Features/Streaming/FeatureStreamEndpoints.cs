@@ -544,6 +544,20 @@ internal static class FeatureStreamEndpoints
             }
         }
 
+        // Reject layers/layerIds inputs that parsed to zero ids (e.g. "," or
+        // "  ,  "). Without this guard the caller treats the request as a
+        // valid filtered subscription (HasSubscription=true), which skips the
+        // unfiltered admin gate in HandleFeatureStream and the all-layer
+        // service-access check below. The resulting subscription matches no
+        // events but holds an open SSE/WS session and a MaxConcurrentSessions
+        // slot — an anonymous DoS surface.
+        if (ids.Count == 0)
+        {
+            const string msg = "Invalid layer filter: layers/layerIds must specify at least one layer ID.";
+            FeatureStreamLog.FilterValidationFailed(logger, msg);
+            return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
+        }
+
         IReadOnlyDictionary<int, ServiceDefinition>? layerToService = null;
         foreach (var id in ids)
         {
