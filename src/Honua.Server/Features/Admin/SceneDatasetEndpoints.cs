@@ -408,7 +408,12 @@ internal static partial class SceneDatasetEndpoints
             return false;
         }
 
-        var extent = FromDto(request.Extent);
+        if (!TryFromExtentDto(request.Extent, out var extent, out var extentDtoError))
+        {
+            error = extentDtoError;
+            return false;
+        }
+
         if (!SceneDatasetValidator.TryValidateExtent(extent, out var extentError))
         {
             error = extentError;
@@ -514,7 +519,11 @@ internal static partial class SceneDatasetEndpoints
         }
         else if (request.Extent is not null)
         {
-            extent = FromDto(request.Extent);
+            if (!TryFromExtentDto(request.Extent, out extent, out var extentDtoError))
+            {
+                error = extentDtoError;
+                return false;
+            }
         }
         else
         {
@@ -607,8 +616,28 @@ internal static partial class SceneDatasetEndpoints
         }
     }
 
-    private static SceneExtent? FromDto(SceneExtentDto? dto)
-        => dto is null ? null : new SceneExtent(dto.XMin, dto.YMin, dto.XMax, dto.YMax);
+    private static bool TryFromExtentDto(
+        SceneExtentDto? dto,
+        out SceneExtent? extent,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(false)] out string? error)
+    {
+        extent = null;
+        error = null;
+
+        if (dto is null)
+        {
+            return true;
+        }
+
+        if (dto.XMin is null || dto.YMin is null || dto.XMax is null || dto.YMax is null)
+        {
+            error = "Extent requires all four bounds (xMin, yMin, xMax, yMax).";
+            return false;
+        }
+
+        extent = new SceneExtent(dto.XMin.Value, dto.YMin.Value, dto.XMax.Value, dto.YMax.Value);
+        return true;
+    }
 
     private static SceneCachePolicy? FromDto(SceneCachePolicyDto? dto)
         => dto is null ? null : new SceneCachePolicy(dto.MaxAgeSeconds, dto.NoStore);

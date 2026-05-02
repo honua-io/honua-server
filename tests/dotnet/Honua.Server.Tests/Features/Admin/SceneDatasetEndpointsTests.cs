@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -159,6 +160,25 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
         request.RequiresAuth = true;
 
         var response = await _client.PostAsJsonAsync("/api/v1/admin/scenes", request, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes")]
+    public async Task Register_PartialExtent_Returns400Problem()
+    {
+        // Missing xMax and yMax — non-nullable bounds would silently default
+        // to 0 and pass range/order validation, so the endpoint must reject
+        // partial extent payloads instead of silently accepting them.
+        var partialExtent = JsonSerializer.SerializeToNode(new { xMin = -10.0, yMin = -10.0 });
+        var request = BuildValidRequest(NewSceneId("partial-extent"));
+        var requestNode = JsonSerializer.SerializeToNode(request, _jsonOptions)!.AsObject();
+        requestNode["extent"] = partialExtent;
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/scenes",
+            new StringContent(requestNode.ToJsonString(), System.Text.Encoding.UTF8, "application/json"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

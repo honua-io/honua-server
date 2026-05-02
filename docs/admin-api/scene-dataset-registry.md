@@ -67,7 +67,7 @@ enforced by the hosted-serving asset resolver introduced in #837.
 | `crs` | Null or `[A-Z]+:[0-9]+`. |
 | `cachePolicy.maxAgeSeconds` | `0 ≤ value ≤ 86_400`. |
 | `editionGate` | Null or 1–32 chars of `[a-z0-9-]`. |
-| `extent` | Optional; if present, all four bounds must be finite, in WGS-84 ranges, and `min ≤ max`. |
+| `extent` | Optional; when supplied, **all four bounds must be present** (`xMin`, `yMin`, `xMax`, `yMax`) — partial payloads are rejected rather than silently defaulting missing bounds to zero. Each bound must be finite, in WGS-84 ranges, and `min ≤ max`. |
 | `isPublic` + `requiresAuth` | Cannot both be true. |
 
 Failures return `400 Bad Request` shaped as

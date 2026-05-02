@@ -155,16 +155,22 @@ public sealed class SceneDatasetResolveResponse
 /// <summary>
 /// Wire-format DTO for <see cref="Honua.Core.Features.Scene.Domain.SceneExtent"/>.
 /// </summary>
+/// <remarks>
+/// Bounds are nullable on the wire so the admin endpoints can reject partial
+/// payloads (`{ "xMin": -10 }`) instead of silently defaulting the missing
+/// fields to zero. Responses always populate all four bounds when an extent
+/// is present, so the nullable shape is invisible to consumers.
+/// </remarks>
 public sealed class SceneExtentDto
 {
     /// <summary>Minimum longitude.</summary>
-    public double XMin { get; set; }
+    public double? XMin { get; set; }
     /// <summary>Minimum latitude.</summary>
-    public double YMin { get; set; }
+    public double? YMin { get; set; }
     /// <summary>Maximum longitude.</summary>
-    public double XMax { get; set; }
+    public double? XMax { get; set; }
     /// <summary>Maximum latitude.</summary>
-    public double YMax { get; set; }
+    public double? YMax { get; set; }
 }
 
 /// <summary>
