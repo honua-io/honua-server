@@ -410,8 +410,12 @@ internal sealed class PostgresElevationService : IElevationService
     /// SQL fragment that resolves the effective sample count from explicit
     /// <c>@sampleCount</c>, derived <c>@interval</c> against the geodesic line
     /// length, or the configured <c>@defaultSampleCount</c>. Always clamped to
-    /// <c>[2, @maxSampleCount]</c>. Nullable parameters are cast to concrete
-    /// types so PostgreSQL can resolve them when the value is NULL.
+    /// <c>[2, @maxSampleCount]</c>. The derived branch keeps the
+    /// <c>length / interval</c> result in <c>float8</c> and clamps against
+    /// <c>@maxSampleCount</c> before the <c>::int</c> cast so very long lines
+    /// at very small intervals never overflow <c>integer</c>. Nullable
+    /// parameters are cast to concrete types so PostgreSQL can resolve them
+    /// when the value is NULL.
     /// </summary>
     private static string ResolvedSampleCountExpression =>
         """
@@ -419,7 +423,10 @@ internal sealed class PostgresElevationService : IElevationService
             CASE
                 WHEN @sampleCount::int IS NOT NULL THEN @sampleCount::int
                 WHEN @interval::float8 IS NOT NULL AND @interval::float8 > 0
-                    THEN CEIL(ST_Length(geog) / @interval::float8)::int + 1
+                    THEN LEAST(
+                            @maxSampleCount::float8,
+                            CEIL(ST_Length(geog) / @interval::float8) + 1
+                         )::int
                 ELSE @defaultSampleCount
             END))
         """;

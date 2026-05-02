@@ -813,6 +813,7 @@ curl "http://localhost:8080/elevation/0/profile?line=LINESTRING(-122.5%2037.7%2C
     "sourceSrid": 3857,
     "sourceCrs": "EPSG:3857",
     "pixelType": "32BF",
+    "noDataValue": null,
     "verticalUnit": null,
     "verticalDatum": null,
     "verticalUnitAssumption": "Source values are assumed to be meters when no vertical unit is declared.",

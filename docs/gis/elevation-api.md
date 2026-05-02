@@ -166,7 +166,23 @@ fans out via `generate_series`, samples positions with
 `ST_LineInterpolatePoint(geog, frac, true)`, and looks up raster values with
 `ST_Value` against the merged mosaic. Sample bounds protect the database from
 pathological large fan-outs while still allowing dense profiles up to the
-configured maximum.
+configured maximum. The interval branch clamps the derived count against
+`MaxSampleCount` in `float8` space *before* casting to `integer`, so
+pathological combinations of long lines and very small intervals never
+overflow `int4` — the request always returns a bounded sample count instead
+of a 500.
+
+## PostGIS compatibility
+
+The profile SQL relies on the geography overload of
+`ST_LineInterpolatePoint(geography, double, boolean)`, which was introduced in
+PostGIS 3.4. This matches the
+[Database Support Matrix](../operator/database-support-matrix.md) — the
+minimum tested deployment configuration is PostgreSQL 16.x with PostGIS 3.4.
+Older PostGIS releases (≤ 3.3) ship only the geometry overload and will
+return a `function does not exist` error from the elevation profile endpoint;
+the point endpoint is unaffected because it samples a single point with
+`ST_Value` only.
 
 ## Known limitations
 
