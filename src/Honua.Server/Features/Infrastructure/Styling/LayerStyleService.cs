@@ -36,29 +36,35 @@ internal sealed class LayerStyleService : ILayerStyleService
         }
 
         var mapLibreJson = stored.MapLibreStyleJson;
-        if (string.IsNullOrWhiteSpace(mapLibreJson))
+        var hasStoredMapLibre = !string.IsNullOrWhiteSpace(mapLibreJson);
+        if (!hasStoredMapLibre)
         {
+            // Lazy default for newly-published layers that have not yet
+            // received a PUT.  Computed in memory only — persisting it would
+            // increment style_version and stamp style_revised_at on a read
+            // path, contradicting the PUT-only revision contract documented
+            // in docs/gis/style-engine-protocol-consumption.md.  The first
+            // PUT lands the genuine revision metadata.
             var defaultStyle = StyleDefaults.BuildDefaultMapLibreStyle(layer);
             mapLibreJson = StyleJsonUtilities.Serialize(defaultStyle);
-            var updated = await _styleCatalog
-                .SetMapLibreStyleAsync(layer.Id, mapLibreJson, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-            if (updated == null)
-            {
-                return null;
-            }
-
-            stored = updated;
         }
 
         var drawingInfoJson = stored.DrawingInfoJson;
         if (string.IsNullOrWhiteSpace(drawingInfoJson))
         {
-            drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer);
-            _ = await _styleCatalog.SetDrawingInfoAsync(layer.Id, drawingInfoJson, cancellationToken).ConfigureAwait(false);
+            drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson!, layer);
+            if (hasStoredMapLibre)
+            {
+                // Cache the back-generated drawingInfo only when we have a
+                // canonical MapLibre row to mirror.  SetDrawingInfoAsync does
+                // not touch revision metadata, so this preserves the PUT-only
+                // contract.  For unstyled layers the drawingInfo column stays
+                // NULL until the first PUT lands a canonical row.
+                _ = await _styleCatalog.SetDrawingInfoAsync(layer.Id, drawingInfoJson, cancellationToken).ConfigureAwait(false);
+            }
         }
 
-        return BuildSnapshot(stored, mapLibreJson, drawingInfoJson);
+        return BuildSnapshot(stored, mapLibreJson!, drawingInfoJson);
     }
 
     /// <inheritdoc />

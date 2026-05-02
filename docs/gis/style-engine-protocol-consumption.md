@@ -30,7 +30,16 @@ The canonical row is updated only by `PUT /api/v1/admin/metadata/layers/{layerId
 Every successful update increments `style_version`, stamps `style_revised_at`
 to the server's UTC clock, and records the caller-supplied `changedBy` and
 `changeSummary` fields. The cached `geoservices_drawing_info` column is
-regenerated on the next read after a MapLibre-only update.
+regenerated on the next read after a MapLibre-only update; this regeneration
+does not touch revision metadata.
+
+A layer that has never received a PUT has `maplibre_style = NULL` in storage.
+The admin GET and the public read endpoint both serve a deterministic
+in-memory default for such layers (see `StyleDefaults.BuildDefaultMapLibreStyle`)
+with `styleVersion: 0` and null `revisedAt` / `revisedBy` / `changeSummary` —
+no read path persists this default, so repeat reads on an unstyled layer do
+not bump `style_version` or stamp `style_revised_at`. The first PUT lands as
+revision `1` with the caller-supplied metadata.
 
 ## Authoring entry points
 

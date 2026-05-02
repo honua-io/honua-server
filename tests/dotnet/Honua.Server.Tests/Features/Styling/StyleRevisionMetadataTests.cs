@@ -131,6 +131,98 @@ public class StyleRevisionMetadataTests
         Assert.Equal(1, snapshot!.StyleVersion);
     }
 
+    [Fact]
+    public async Task GetStyleAsync_OnUnstyledLayer_DoesNotCreateRevision()
+    {
+        // Regression for the PUT-only revision contract: a public read on a
+        // newly-published layer that has no stored MapLibre must NOT bump
+        // style_version or stamp style_revised_at.  The default style is
+        // computed in memory and returned without persistence so the canonical
+        // row stays at version 0 with null revision metadata until the first
+        // PUT lands.
+        var layer = LayerDefinition.CreateBasic(14, "unstyled", GeometryType.Polygon);
+        var catalog = new InMemoryLayerStyleCatalog(layer.Id);
+        var service = new LayerStyleService(catalog, NullLogger<LayerStyleService>.Instance);
+
+        var snapshot = await service.GetStyleAsync(layer);
+        Assert.NotNull(snapshot);
+        Assert.Equal(0, snapshot!.StyleVersion);
+        Assert.Null(snapshot.RevisedAt);
+        Assert.Null(snapshot.RevisedBy);
+        Assert.Null(snapshot.ChangeSummary);
+        Assert.NotNull(snapshot.MapLibreStyle);
+        Assert.NotNull(snapshot.DrawingInfo);
+
+        var stored = await catalog.GetLayerStyleAsync(layer.Id);
+        Assert.NotNull(stored);
+        Assert.Null(stored!.MapLibreStyleJson);
+        Assert.Null(stored.DrawingInfoJson);
+        Assert.Equal(0, stored.StyleVersion);
+        Assert.Null(stored.StyleRevisedAt);
+        Assert.Null(stored.StyleRevisedBy);
+        Assert.Null(stored.StyleChangeSummary);
+    }
+
+    [Fact]
+    public async Task GetStyleAsync_OnUnstyledLayer_RepeatedReadsStayAtVersionZero()
+    {
+        var layer = LayerDefinition.CreateBasic(15, "unstyled-repeat", GeometryType.LineString);
+        var catalog = new InMemoryLayerStyleCatalog(layer.Id);
+        var service = new LayerStyleService(catalog, NullLogger<LayerStyleService>.Instance);
+
+        var first = await service.GetStyleAsync(layer);
+        var second = await service.GetStyleAsync(layer);
+        var third = await service.GetStyleAsync(layer);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotNull(third);
+        Assert.Equal(0, first!.StyleVersion);
+        Assert.Equal(0, second!.StyleVersion);
+        Assert.Equal(0, third!.StyleVersion);
+        Assert.Null(third.RevisedAt);
+    }
+
+    [Fact]
+    public async Task GetStyleAsync_AfterPutOnPreviouslyUnstyledLayer_StampsFirstRevision()
+    {
+        // The unstyled-read path must not "use up" the first revision: the
+        // first PUT on a previously read-only layer must still land as
+        // version 1 with the operator-supplied revisedBy/changeSummary.
+        var layer = LayerDefinition.CreateBasic(16, "first-put", GeometryType.Polygon);
+        var catalog = new InMemoryLayerStyleCatalog(layer.Id);
+        var service = new LayerStyleService(catalog, NullLogger<LayerStyleService>.Instance);
+
+        var preReadSnapshot = await service.GetStyleAsync(layer);
+        Assert.NotNull(preReadSnapshot);
+        Assert.Equal(0, preReadSnapshot!.StyleVersion);
+
+        var drawingInfoJson = """
+        {
+          "renderer": {
+            "type": "simple",
+            "symbol": {
+              "type": "esriSFS",
+              "color": [10, 20, 30, 200]
+            }
+          }
+        }
+        """;
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var update = await service.UpdateStyleAsync(
+            layer,
+            mapLibreStyle: null,
+            drawingInfo: doc.RootElement,
+            revisedBy: "operator",
+            changeSummary: "First operator-driven revision.");
+
+        Assert.Equal(LayerStyleUpdateStatus.Updated, update.Status);
+        Assert.Equal(1, update.Style!.StyleVersion);
+        Assert.Equal("operator", update.Style!.RevisedBy);
+        Assert.Equal("First operator-driven revision.", update.Style!.ChangeSummary);
+        Assert.NotNull(update.Style!.RevisedAt);
+    }
+
     private sealed class InMemoryLayerStyleCatalog : ILayerStyleCatalog
     {
         private readonly int _expectedLayerId;
