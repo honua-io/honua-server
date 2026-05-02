@@ -781,6 +781,269 @@ public class StyleThemeTransformerTests
     }
 
     [Fact]
+    public void ApplyTheme_DarkProfile_PreservesConcatStringOperands()
+    {
+        // Regression: ["concat", str1, str2, ...] returns a concatenated string.
+        // Operands are string-construction inputs, never color outputs.  A
+        // generic walker that themed any operand parsing as a color would
+        // rewrite "red" inside ["concat", "red", "fish"], producing
+        // ["concat", "<themed-hex>", "fish"] and changing the resulting string
+        // from "redfish" to "<themed-hex>fish".  The walker now skips the
+        // entire concat expression.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {"fill-color": ["concat", "red", "fish"]}
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        using var doc = JsonDocument.Parse(result);
+        var fill = FindLayer(doc.RootElement, "fill");
+        var fillColor = fill.GetProperty("paint").GetProperty("fill-color");
+        Assert.Equal(JsonValueKind.Array, fillColor.ValueKind);
+        var operands = fillColor.EnumerateArray().ToArray();
+        Assert.Equal(3, operands.Length);
+        Assert.Equal("concat", operands[0].GetString());
+        Assert.Equal("red", operands[1].GetString());
+        Assert.Equal("fish", operands[2].GetString());
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_PreservesLiteralValueVerbatim()
+    {
+        // Regression: ["literal", value] produces value as a verbatim literal
+        // and must not be themed.  Without the allow-list, ["literal", "red"]
+        // had its "red" operand rewritten as a themed hex literal, defeating
+        // the user's explicit "treat this as a literal" intent.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {"fill-color": ["literal", "red"]}
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        using var doc = JsonDocument.Parse(result);
+        var fill = FindLayer(doc.RootElement, "fill");
+        var fillColor = fill.GetProperty("paint").GetProperty("fill-color");
+        Assert.Equal(JsonValueKind.Array, fillColor.ValueKind);
+        var operands = fillColor.EnumerateArray().ToArray();
+        Assert.Equal(2, operands.Length);
+        Assert.Equal("literal", operands[0].GetString());
+        Assert.Equal("red", operands[1].GetString());
+    }
+
+    [Fact]
+    public void ApplyTheme_ColorblindSafeProfile_PreservesTopLevelComparatorOperands()
+    {
+        // Regression: ["==", left, right] is a boolean comparator.  Even when
+        // it appears at the top of a color paint property (a malformed but
+        // accepted input shape), its operands are predicate values that must
+        // not be themed — "red" is being compared as a literal feature value,
+        // not used as a color output.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {"fill-color": ["==", ["get", "category"], "red"]}
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.ColorblindSafe);
+
+        using var doc = JsonDocument.Parse(result);
+        var fill = FindLayer(doc.RootElement, "fill");
+        var fillColor = fill.GetProperty("paint").GetProperty("fill-color");
+        Assert.Equal(JsonValueKind.Array, fillColor.ValueKind);
+        var operands = fillColor.EnumerateArray().ToArray();
+        Assert.Equal(3, operands.Length);
+        Assert.Equal("==", operands[0].GetString());
+        Assert.Equal("red", operands[2].GetString());
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_PreservesAllAndAnyOperands()
+    {
+        // Regression: ["all", expr1, expr2, ...] / ["any", expr1, expr2, ...]
+        // are boolean combinators whose operands are predicate expressions.
+        // A color-like string nested inside is a feature value or comparison
+        // target, not a color output.  Skip the whole expression.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": [
+                "all",
+                ["==", ["get", "category"], "red"],
+                ["any", ["==", ["get", "tone"], "blue"], ["==", ["get", "tone"], "green"]]
+              ]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        // Every nested feature-value comparison literal survives verbatim.
+        Assert.Contains("\"red\"", result);
+        Assert.Contains("\"blue\"", result);
+        Assert.Contains("\"green\"", result);
+        Assert.Contains("\"all\"", result);
+        Assert.Contains("\"any\"", result);
+        Assert.Contains("\"category\"", result);
+        Assert.Contains("\"tone\"", result);
+    }
+
+    [Fact]
+    public void ApplyTheme_ColorblindSafeProfile_TransformsCoalesceColorOutputs()
+    {
+        // ["coalesce", value1, ..., valueN] returns the first non-null operand,
+        // so in a color paint context every operand is a possible color
+        // output.  Direct color literals are themed; nested operators dispatch
+        // through the operator-aware walker, so a nested ["get", "color"]
+        // still has its field name preserved.  Uses the ColorblindSafe profile
+        // because its palette swap remaps every input color regardless of
+        // input lightness, unlike Dark's HSL-lightness invert which leaves
+        // pure primaries (lightness 0.5) unchanged.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": ["coalesce", ["get", "color"], "#cc8844", "#aabbcc"]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.ColorblindSafe);
+
+        // Direct color literals are themed.
+        Assert.DoesNotContain("\"#cc8844\"", result);
+        Assert.DoesNotContain("\"#aabbcc\"", result);
+        // Nested get's field name "color" is preserved verbatim.
+        Assert.Contains("\"color\"", result);
+        Assert.Contains("\"get\"", result);
+        Assert.Contains("\"coalesce\"", result);
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_TransformsInterpolateOutputsAndPreservesInputs()
+    {
+        // ["interpolate", interpolation-spec, input, stop, output, ...] —
+        // explicit operator-aware handler themes outputs at indices 4, 6, 8,
+        // ... while leaving the interpolation spec, input expression, and
+        // numeric stops untouched.  Stop colors are intentionally off-pure
+        // (not lightness 0.5) so the dark-theme lightness invert produces
+        // an observably different output.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                0, "#cc8844",
+                10, "#3366aa",
+                20, "#aabbcc"
+              ]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        // Outputs are themed.
+        Assert.DoesNotContain("\"#cc8844\"", result);
+        Assert.DoesNotContain("\"#3366aa\"", result);
+        Assert.DoesNotContain("\"#aabbcc\"", result);
+        // Operator tokens and structural inputs survive.
+        Assert.Contains("\"interpolate\"", result);
+        Assert.Contains("\"linear\"", result);
+        Assert.Contains("\"zoom\"", result);
+    }
+
+    [Fact]
+    public void ApplyTheme_DarkProfile_PreservesNestedConcatInsideCaseOutput()
+    {
+        // Regression: a case output that is itself a non-color-output
+        // expression (e.g. ["concat", "red", "fish"] used as a malformed but
+        // accepted color paint) must not have its operands themed when reached
+        // via TransformOutputElement → TransformExpressionColors.
+        const string json = """
+        {
+          "version": 8,
+          "name": "test",
+          "sources": {"layer-1": {"type": "vector"}},
+          "layers": [{
+            "id": "layer-1-fill",
+            "type": "fill",
+            "source": "layer-1",
+            "paint": {
+              "fill-color": [
+                "case",
+                ["has", "category"],
+                ["concat", "red", "fish"],
+                "#aabbcc"
+              ]
+            }
+          }]
+        }
+        """;
+
+        var result = StyleThemeTransformer.ApplyTheme(json, ThemeProfile.Dark);
+
+        // Concat operands preserved verbatim (the nested expression is skipped
+        // entirely once the case walker dispatches into its operator handler).
+        Assert.Contains("\"red\"", result);
+        Assert.Contains("\"fish\"", result);
+        // Case fallback hex literal is themed.
+        Assert.DoesNotContain("\"#aabbcc\"", result);
+    }
+
+    [Fact]
     public void ApplyTheme_DarkProfile_MalformedColorEmitsParseFailureLog()
     {
         const string json = """

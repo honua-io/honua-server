@@ -258,19 +258,23 @@ internal static class StyleThemeTransformer
 
     /// <summary>
     /// Walks a MapLibre expression array and rewrites embedded color literals at
-    /// output positions through <paramref name="transform"/>.  The walker is
-    /// operator-aware for <c>match</c>, <c>step</c>, and <c>case</c>: feature
-    /// match labels, numeric step stops, and case predicates are skipped so
-    /// color-like input values (e.g. a <c>uniqueValue</c> category equal to
-    /// <c>"#ff0000"</c>) are not silently rewritten.  Property and state lookup
-    /// operators (<c>get</c>, <c>has</c>, <c>feature-state</c>) carry only
-    /// field-name strings, never color outputs, so the walker skips them
-    /// entirely — without this guard a valid <c>["get", "red"]</c> expression
-    /// would have its <c>"red"</c> property name rewritten as a themed hex
-    /// literal because <c>red</c> parses as a CSS named color.  Unknown
-    /// operators fall back to the generic walker so expressions such as
-    /// <c>interpolate</c> still pick up direct color literals at output
-    /// positions.
+    /// output positions through <paramref name="transform"/>.  The walker
+    /// follows an allow-list: only operators whose contract specifies one or
+    /// more color-output positions are visited (<c>match</c>, <c>step</c>,
+    /// <c>case</c>, <c>interpolate</c>, <c>coalesce</c>).  Every other operator
+    /// in the bounded surface that
+    /// <see cref="MapLibreStyleNormalizer"/> accepts (<c>get</c>, <c>has</c>,
+    /// <c>literal</c>, <c>concat</c>, <c>typeof</c>, <c>to-number</c>,
+    /// <c>to-string</c>, comparators, <c>all</c>, <c>any</c>, <c>!</c>,
+    /// arithmetic) plus <c>feature-state</c> and any unknown operator is skipped
+    /// entirely: their operands are field names, predicates, identifiers, or
+    /// string-construction inputs that must not be rewritten as themed hex
+    /// literals just because a feature value or string operand happens to parse
+    /// as a CSS named color.  Without this allow-list, expressions such as
+    /// <c>["concat", "red", "fish"]</c> or <c>["==", ["get", "color"], "red"]</c>
+    /// would have their accepted operands rewritten under
+    /// <c>?theme=dark</c> / <c>?theme=colorblind-safe</c>, corrupting the stored
+    /// style intent.
     /// </summary>
     private static void TransformExpressionColors(
         JsonArray expression,
@@ -299,16 +303,22 @@ internal static class StyleThemeTransformer
             case "case":
                 TransformCaseExpression(expression, property, diagnostics, transform);
                 return;
-            case "get":
-            case "has":
-            case "feature-state":
-                // Operands are property/state names, not color outputs.  Skip
-                // the expression entirely so a stored ["get", "red"] keeps
-                // its data-driven binding instead of being rewritten to a
-                // themed hex literal under dark / colorblind-safe themes.
+            case "interpolate":
+                TransformInterpolateExpression(expression, property, diagnostics, transform);
+                return;
+            case "coalesce":
+                TransformCoalesceExpression(expression, property, diagnostics, transform);
                 return;
             default:
-                TransformGenericExpression(expression, property, diagnostics, transform);
+                // Skip every other operator in the accepted surface.  The full
+                // bounded set the normalizer admits (get / has / literal /
+                // concat / typeof / to-number / to-string / ==,!=,<,<=,>,>= /
+                // ! / all / any / +,-,*,/), plus feature-state, has no color
+                // output positions — operands are property names, predicates,
+                // identifiers, string-construction inputs, or numeric arguments.
+                // Unknown operators are also skipped: we cannot guarantee any
+                // particular position holds a color, so the conservative
+                // default preserves the stored expression verbatim.
                 return;
         }
     }
@@ -433,44 +443,45 @@ internal static class StyleThemeTransformer
     }
 
     /// <summary>
-    /// Generic walker for unknown operators (`interpolate`, `rgb`, `literal`,
-    /// boolean comparators, …): recurses into every nested array and rewrites
-    /// any direct string child that parses as a color.  Operator tokens and
-    /// non-color strings (field names, numeric literals as strings, etc.) are
-    /// left untouched because they fail color parsing.
+    /// `["interpolate", interpolation-spec, input, stop1, output1, stop2, output2, ...]`.
+    /// Skips the interpolation spec and input expression entirely; transforms
+    /// each output at the even indices 4, 6, 8, ….  Numeric stops at odd
+    /// indices ≥ 3 are not strings and would not parse as colors anyway.
     /// </summary>
-    private static void TransformGenericExpression(
+    private static void TransformInterpolateExpression(
         JsonArray expression,
         string property,
         ThemeDiagnostics diagnostics,
         Func<StyleColor, StyleColor> transform)
     {
-        for (var i = 0; i < expression.Count; i++)
+        if (expression.Count < 5)
         {
-            var node = expression[i];
-            if (node is JsonArray nested)
-            {
-                TransformExpressionColors(nested, property, diagnostics, transform);
-                continue;
-            }
+            return;
+        }
 
-            if (node is not JsonValue valueNode)
-            {
-                continue;
-            }
+        for (var i = 4; i < expression.Count; i += 2)
+        {
+            TransformOutputElement(expression, i, property, diagnostics, transform);
+        }
+    }
 
-            if (!valueNode.TryGetValue<string>(out var colorString) || string.IsNullOrWhiteSpace(colorString))
-            {
-                continue;
-            }
-
-            if (!StyleJsonUtilities.TryParseMapLibreColor(colorString, out var parsed))
-            {
-                continue;
-            }
-
-            var transformed = transform(parsed);
-            expression[i] = ColorToHex(transformed);
+    /// <summary>
+    /// `["coalesce", value1, value2, …, valueN]`.  Returns the first non-null
+    /// operand, so in a color paint context every operand is a possible color
+    /// output and is transformed.  Nested expressions go through the
+    /// operator-aware walker via <see cref="TransformOutputElement"/>, so a
+    /// fallback such as <c>["get", "color"]</c> still has its field name
+    /// preserved while a sibling <c>"#ff0000"</c> literal is themed.
+    /// </summary>
+    private static void TransformCoalesceExpression(
+        JsonArray expression,
+        string property,
+        ThemeDiagnostics diagnostics,
+        Func<StyleColor, StyleColor> transform)
+    {
+        for (var i = 1; i < expression.Count; i++)
+        {
+            TransformOutputElement(expression, i, property, diagnostics, transform);
         }
     }
 

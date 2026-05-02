@@ -87,23 +87,47 @@ Successful theme applications log at `Debug` (event id `6402`); individual
 malformed color literals encountered during the transform skip in place and
 log at `Debug` (event id `6403`) with the offending property and color value.
 
-Theme transforms walk literal color paint properties and the output positions
-of MapLibre expression arrays (`case`, `match`, `step`, …): each branch output
-and the trailing fallback are rewritten through the transform, while operator
-tokens, the input expression, match input labels, numeric step stops, and case
-predicates are skipped. Feature values that happen to be color-like (for
-example a `uniqueValue` category equal to `"#ff0000"`, or a case predicate
-comparing against a hex literal) are therefore preserved verbatim. This keeps
-generated `uniqueValue` and `classBreaks` styles in sync with the chosen theme
-without corrupting input semantics.
+Theme transforms walk literal color paint properties and use an explicit
+allow-list of MapLibre expression operators that have color-output positions.
+The allowed operators are `case`, `match`, `step`, `interpolate`, and
+`coalesce`:
 
-The walker also short-circuits on the property/state lookup operators
-`get`, `has`, and `feature-state`: their operands are field-name strings,
-never color outputs, so the entire expression is left untouched. Without
-this guard a valid data-driven binding such as `["get", "red"]` (read the
-`red` feature property) would have its property name rewritten to a themed
-hex literal under `?theme=dark|colorblind-safe` because `red` parses as a
-canonical CSS named color.
+- `case` — each branch output and the mandatory trailing fallback are
+  rewritten; every predicate is skipped entirely.
+- `match` — every output and the trailing fallback are rewritten; the input
+  expression and match input labels are skipped entirely.
+- `step` — the default output and every per-stop output are rewritten;
+  the input expression and numeric stops are skipped entirely.
+- `interpolate` — every output at indices 4, 6, 8, … is rewritten; the
+  interpolation specification, input expression, and numeric stops are
+  skipped entirely.
+- `coalesce` — every operand is a possible color output and is rewritten
+  through the same operator-aware walker, so a fallback such as
+  `["get", "color"]` keeps its field name while a sibling `"#ff0000"`
+  literal is themed.
+
+Every other operator in the bounded surface that the admin write-time
+normalizer accepts (`get`, `has`, `literal`, `concat`, `typeof`, `to-number`,
+`to-string`, comparators (`==`, `!=`, `<`, `<=`, `>`, `>=`), `!`, `all`,
+`any`, and arithmetic `+` / `-` / `*` / `/`) plus the public-read-only
+`feature-state` operator and any unknown operator is skipped entirely: their
+operands are property names, predicates, identifiers, string-construction
+inputs, or numeric arguments that must not be rewritten as themed hex
+literals just because a feature value or string operand happens to parse as
+a CSS named color. Without this allow-list, expressions such as
+`["concat", "red", "fish"]`, `["literal", "red"]`, or
+`["==", ["get", "color"], "red"]` would have their accepted operands
+rewritten under `?theme=dark|colorblind-safe`, corrupting the stored style
+intent. Feature values that happen to be color-like (for example a
+`uniqueValue` category equal to `"#ff0000"` reached via a `match` input
+label, or a case predicate comparing against a hex literal) are therefore
+preserved verbatim.
+
+In particular, a valid data-driven binding such as `["get", "red"]` (read
+the `red` feature property) keeps its property name verbatim because the
+walker does not visit any positions inside `get` / `has` / `feature-state` —
+without the allow-list, `"red"` would have parsed as a CSS named color and
+been rewritten as a themed hex literal.
 
 Color literals are recognized in any of the forms the admin write-time
 normalizer accepts: hex (`#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`), `rgb(...)`
