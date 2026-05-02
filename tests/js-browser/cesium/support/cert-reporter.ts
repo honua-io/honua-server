@@ -78,6 +78,16 @@ const APPLICABLE_PER_PROTOCOL: Record<string, ReadonlySet<string>> = {
     'CERT-DISC-01', 'CERT-DISC-02',
     'CERT-ERRH-01', 'CERT-RNDR-01',
   ]),
+  // 3D Tiles is a tile-tree primitive in Cesium's scene graph, not an
+  // imagery layer. Cesium loads tileset.json over HTTP and resolves nested
+  // tile content URIs from it; query/schema/pagination/geometry-fidelity
+  // categories do not apply because there is no vector-feature semantics
+  // exposed by the harness.
+  '3d-tiles': new Set([
+    'CERT-CONN-01', 'CERT-AUTH-01',
+    'CERT-DISC-01',
+    'CERT-ERRH-01', 'CERT-RNDR-01',
+  ]),
 };
 
 const CERT_ID_REGEX = /\[((?:[A-Z]+-)+\d+)]/g;
@@ -90,6 +100,7 @@ const PROTOCOL_BY_FILE: Record<string, string> = {
   'wmts-imagery.spec.ts': 'wmts',
   'ogc-api-tiles.spec.ts': 'ogc-tiles',
   'ogc-api-maps.spec.ts': 'ogc-maps',
+  '3d-tiles-scene.spec.ts': '3d-tiles',
 };
 
 function deriveProtocol(test: TestCase): string {

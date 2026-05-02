@@ -19,3 +19,16 @@ export const SEED_BBOX_4326 = '-122.44,37.76,-122.40,37.79';
 
 /** Default seeded extent in EPSG:3857 meters. */
 export const SEED_BBOX_3857 = '-13629760,4544000,-13625300,4548200';
+
+// 3D Tiles fixture (committed by #837 under tests/fixtures/scenes/fixture-tileset).
+// Honua serves the tileset at /scenes/{SCENE_ID}/tileset.json when its
+// SceneDataset configuration binds Id=SCENE_ID to the fixture asset root.
+
+/** Public 3D Tiles fixture scene id. */
+export const SCENE_ID = process.env.HONUA_SCENE_FIXTURE_ID ?? 'fixture-tileset';
+
+/** Origin used to validate Honua's CORS configuration. The honua server under
+ *  test must include this value in Cors:AllowedOrigins or the CORS test will
+ *  skip itself. */
+export const CORS_TEST_ORIGIN = process.env.HONUA_CORS_TEST_ORIGIN
+  ?? 'http://cesium-test.honua.local';

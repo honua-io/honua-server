@@ -72,6 +72,18 @@ services:
       ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       Security__ConnectionEncryption__MasterKey: test-master-key-that-is-at-least-32-characters-long-for-security
       Security__ConnectionEncryption__Salt: dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
+      # 3D Tiles fixture used by the cesium 3d-tiles smoke spec. AssetRoot
+      # points inside the read-only fixture mount below so the runtime image
+      # does not need to ship test assets.
+      Scenes__Datasets__0__Id: fixture-tileset
+      Scenes__Datasets__0__Name: Honua Cesium 3D Tiles smoke fixture
+      Scenes__Datasets__0__AssetRoot: /scenes-fixtures/fixture-tileset
+      Scenes__Datasets__0__TilesetFileName: tileset.json
+      # CORS origin pre-allowed for the cesium 3d-tiles smoke CORS assertions.
+      # Cesium browser clients fetch tileset.json cross-origin in production,
+      # so the smoke suite verifies Honua emits Access-Control-Allow-Origin
+      # for an explicitly allowlisted origin.
+      Cors__AllowedOrigins__0: http://cesium-test.honua.local
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,6 +91,8 @@ services:
         condition: service_completed_successfully
     networks:
       - compat
+    volumes:
+      - ../../tests/fixtures/scenes:/scenes-fixtures:ro
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:5000/healthz/ready"]
       interval: 10s

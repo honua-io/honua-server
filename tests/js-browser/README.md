@@ -19,5 +19,5 @@ Layout:
 
 - `esri-leaflet/` contains the Esri Leaflet browser lane and its support files
 - `maplibre/` contains the MapLibre GL JS browser lane and its support files
-- `cesium/` contains the CesiumJS imagery-provider lane (WMS, WMTS, OGC API Tiles, OGC API Maps); run via `docker/client-compat/cesium/` in the nightly real-client interop matrix
+- `cesium/` contains the CesiumJS imagery-provider lane (WMS, WMTS, OGC API Tiles, OGC API Maps) and the 3D Tiles scene smoke; see [`cesium/README.md`](cesium/README.md) for local commands. PR CI runs only the 3D Tiles smoke (`cesium-3d-tiles-smoke`); the full lane runs nightly via `docker/client-compat/cesium/`
 - `fixtures/` contains the static browser page served by the Esri Leaflet lane

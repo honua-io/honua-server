@@ -13,7 +13,7 @@ import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 
 const cesiumDistDir = resolve(import.meta.dirname, '..', 'node_modules', 'cesium', 'Build', 'Cesium');
-const API_PROXY_PREFIXES = ['/api/', '/tiles/', '/ogc/', '/rest/', '/wms', '/wmts', '/wfs'];
+const API_PROXY_PREFIXES = ['/api/', '/tiles/', '/ogc/', '/rest/', '/wms', '/wmts', '/wfs', '/scenes/'];
 const proxyOrigins = new Map<string, Promise<string>>();
 
 /** Options for creating a Cesium viewer. */

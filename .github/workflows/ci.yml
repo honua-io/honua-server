@@ -810,6 +810,105 @@ jobs:
             tests/js-browser/playwright-report/
           retention-days: 14
 
+  cesium-3d-tiles-smoke:
+    name: Cesium 3D Tiles Smoke
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    timeout-minutes: 15
+    # Job-level env propagates to every step including composite actions, so
+    # `dotnet run` inside ./.github/actions/setup-honua-server inherits the
+    # SceneDataset and CORS configuration the smoke spec depends on. The
+    # AssetRoot is repo-relative so the server's content-root resolution
+    # finds the fixture under the workspace.
+    env:
+      Scenes__Datasets__0__Id: fixture-tileset
+      Scenes__Datasets__0__Name: Honua Cesium 3D Tiles smoke fixture
+      # ASP.NET Core content root for `dotnet run --project src/Honua.Server`
+      # is the project directory, so relative AssetRoot resolves against
+      # src/Honua.Server. Use the absolute workspace path to point at the
+      # repo-root fixture.
+      Scenes__Datasets__0__AssetRoot: ${{ github.workspace }}/tests/fixtures/scenes/fixture-tileset
+      Scenes__Datasets__0__TilesetFileName: tileset.json
+      # Honua's CORS policy is environment-scoped: setup-honua-server runs the
+      # process under ASPNETCORE_ENVIRONMENT=Development, which binds against
+      # Cors:DevelopmentOrigins; the production-mode docker-compose lane
+      # consumes Cors:AllowedOrigins. Set both so the smoke spec's CORS
+      # assertion passes regardless of which environment the server runs in.
+      Cors__AllowedOrigins__0: http://cesium-test.honua.local
+      Cors__DevelopmentOrigins__0: http://cesium-test.honua.local
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pyyaml
+        shell: bash
+        run: python -m pip install 'pyyaml>=6,<7'
+
+      - name: Setup Honua Server
+        uses: ./.github/actions/setup-honua-server
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          post-seed-yaml: tests/seed/browser-compat.yaml
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: tests/js-browser/cesium/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: tests/js-browser/cesium
+
+      - name: Install Playwright Chromium
+        run: |
+          # Mirror the maplibre-compat workaround: the Ubuntu 24 runner image
+          # carries Microsoft apt feeds that occasionally 403 during
+          # Playwright's apt dependency install.
+          sudo find /etc/apt/sources.list.d -maxdepth 1 \
+            \( -name 'azure-cli*' -o -name 'microsoft-prod*' \) \
+            -print -delete
+          npx playwright install --with-deps chromium
+        working-directory: tests/js-browser/cesium
+
+      - name: Run Cesium 3D Tiles Smoke
+        run: npx playwright test --config playwright.config.ts --grep "3D Tiles"
+        working-directory: tests/js-browser/cesium
+        env:
+          HONUA_BASE_URL: http://localhost:5000
+          CI: 'true'
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cesium-3d-tiles-smoke-results
+          path: |
+            tests/js-browser/test-results/
+            tests/js-browser/cesium/test-output/
+          retention-days: 14
+
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
@@ -1279,7 +1378,7 @@ jobs:
     # When a newer run supersedes this one via workflow concurrency, avoid
     # publishing a false failing gate from the cancelled run.
     if: ${{ always() && !cancelled() }}
-    needs: [pr-readiness, changes, targeted-shards, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build]
+    needs: [pr-readiness, changes, targeted-shards, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, cesium-3d-tiles-smoke, mcp-certification, core-package-compatibility, postgres-compat, docker-build]
     runs-on: ubuntu-latest
     steps:
       - name: Check required job results
