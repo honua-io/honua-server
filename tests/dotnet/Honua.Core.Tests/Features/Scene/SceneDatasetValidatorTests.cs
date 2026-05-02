@@ -120,6 +120,23 @@ public class SceneDatasetValidatorTests
     }
 
     [UnitTest]
+    public void TryValidateCrs_RejectsTooLongToken()
+    {
+        // The regex on its own accepts any all-digits code, so an overlong
+        // token would still pass shape validation and only fail at INSERT
+        // time against the VARCHAR(32) crs column. The length guard rejects
+        // it up front with an admin problem-details message instead.
+        const string prefix = "EPSG:";
+        var crs = prefix + new string('1', SceneDatasetValidator.MaxCrsLength - prefix.Length + 1);
+
+        var ok = SceneDatasetValidator.TryValidateCrs(crs, out var error);
+
+        Assert.True(crs.Length > SceneDatasetValidator.MaxCrsLength);
+        Assert.False(ok);
+        Assert.Contains("characters or fewer", error, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public void TryValidateCachePolicy_AcceptsBoundary()
     {
         Assert.True(SceneDatasetValidator.TryValidateCachePolicy(new SceneCachePolicy(0, false), out _));

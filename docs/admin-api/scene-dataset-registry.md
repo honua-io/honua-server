@@ -64,7 +64,7 @@ enforced by the hosted-serving asset resolver introduced in #837.
 | `name` | Required, 1–128 chars, globally unique. |
 | `assetRoot` | Non-empty filesystem path; no URI schemes, `..`, `\`, `*`, `?`, `;`, `&`, `|`, `$`, `<`, `>`, `` ` ``, quotes, or null/control bytes. |
 | `tilesetFileName` | Optional. When supplied, ≤ 64 chars with no path separators (`/`, `\`), no `..` traversal segments, and no shell metacharacters. Null/whitespace is accepted and falls back to `tileset.json`. |
-| `crs` | Null or `[A-Z]+:[0-9]+`. |
+| `crs` | Null or `[A-Z]+:[0-9]+`, ≤ 32 characters (matches the underlying `crs VARCHAR(32)` column). |
 | `cachePolicy.maxAgeSeconds` | `0 ≤ value ≤ 86_400`. |
 | `editionGate` | Null or 1–32 chars of `[a-z0-9-]`. |
 | `extent` | Optional; when supplied, **all four bounds must be present** (`xMin`, `yMin`, `xMax`, `yMax`) — partial payloads are rejected rather than silently defaulting missing bounds to zero. Each bound must be finite, in WGS-84 ranges, and `min ≤ max`. |

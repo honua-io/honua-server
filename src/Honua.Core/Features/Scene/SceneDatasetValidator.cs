@@ -36,6 +36,12 @@ public static partial class SceneDatasetValidator
     public const int MaxTilesetFileNameLength = 64;
 
     /// <summary>
+    /// Maximum allowed length for a CRS authority token (matches the Postgres
+    /// <c>crs VARCHAR(32)</c> column).
+    /// </summary>
+    public const int MaxCrsLength = 32;
+
+    /// <summary>
     /// Maximum allowed cache <c>max-age</c>, in seconds (24 hours).
     /// </summary>
     public const int MaxCacheMaxAgeSeconds = 86_400;
@@ -197,6 +203,12 @@ public static partial class SceneDatasetValidator
         if (string.IsNullOrWhiteSpace(crs))
         {
             error = "CRS must be null or a non-empty authority token.";
+            return false;
+        }
+
+        if (crs.Length > MaxCrsLength)
+        {
+            error = $"CRS must be {MaxCrsLength} characters or fewer.";
             return false;
         }
 
