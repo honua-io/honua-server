@@ -117,6 +117,34 @@ interface RecordedResult {
   notes: string;
 }
 
+// Extract notes for a test result. Failed tests carry the error messages so
+// the cert envelope explains why the assertion broke. Skipped tests must
+// carry the skip reason — the evidence contract
+// (docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) requires intentional
+// skips to record their reason in `notes`. Prefer a runtime or static
+// `skip`/`fixme` annotation description (set by `test.skip(condition,
+// description)`), and fall back to the test title (set by the
+// `test.skip(title, body)` declaration form) so a permanently-deferred
+// case like `[CERT-AUTH-01] ... — DEFERRED to honua-server-849` carries
+// its deferral reason into the cert envelope.
+function notesFor(test: TestCase, result: TestResult): string {
+  if (result.status === 'failed') {
+    return result.errors.map((e) => e.message ?? '').join('; ').slice(0, 500);
+  }
+  if (result.status === 'skipped') {
+    const annotations = [
+      ...(result.annotations ?? []),
+      ...test.annotations,
+    ];
+    const description = annotations
+      .filter((a) => a.type === 'skip' || a.type === 'fixme')
+      .map((a) => a.description ?? '')
+      .find((d) => d.length > 0);
+    return (description ?? test.title).slice(0, 500);
+  }
+  return '';
+}
+
 class CertReporter implements Reporter {
   // Per-protocol result map.
   private byProtocol = new Map<string, Map<string, RecordedResult>>();
@@ -134,9 +162,7 @@ class CertReporter implements Reporter {
       : result.status === 'skipped' ? 'skip'
       : 'skip';
 
-    const notes = result.status === 'failed'
-      ? result.errors.map((e) => e.message ?? '').join('; ').slice(0, 500)
-      : '';
+    const notes = notesFor(test, result);
 
     const protocolMap = this.byProtocol.get(protocol) ?? new Map<string, RecordedResult>();
     const protocolExtMap = this.extByProtocol.get(protocol) ?? new Map<string, RecordedResult>();
