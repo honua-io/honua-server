@@ -1,0 +1,43 @@
+{
+  "asset": {
+    "version": "1.1",
+    "tilesetVersion": "honua-fixture-1.0",
+    "generator": "honua-test-fixture"
+  },
+  "geometricError": 100.0,
+  "root": {
+    "boundingVolume": {
+      "region": [
+        -1.3197004795898053,
+        0.6988668696565959,
+        -1.3196595204101946,
+        0.6989078288362069,
+        0.0,
+        20.0
+      ]
+    },
+    "geometricError": 100.0,
+    "refine": "REPLACE",
+    "content": {
+      "uri": "tiles/0.b3dm"
+    },
+    "children": [
+      {
+        "boundingVolume": {
+          "region": [
+            -1.3197004795898053,
+            0.6988668696565959,
+            -1.3196595204101946,
+            0.6989078288362069,
+            0.0,
+            20.0
+          ]
+        },
+        "geometricError": 0.0,
+        "content": {
+          "uri": "nested/sub-tileset.json"
+        }
+      }
+    ]
+  }
+}

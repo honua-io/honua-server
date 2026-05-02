@@ -352,6 +352,28 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("terrain", "tiles");
             });
 
+            // Hosted 3D Tiles tileset.json metadata caching policy.
+            // Range requests bypass output cache so the static-file pipeline
+            // can return 206 Partial Content directly.
+            options.AddPolicy("SceneTilesetMetadata", policy =>
+            {
+                policy.Expire(ttl.SceneTilesetMetadata);
+                policy.SetVaryByRouteValue("sceneId");
+                policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
+                policy.Tag("scene", "metadata");
+            });
+
+            // Hosted 3D Tiles tile/binary/texture asset caching policy.
+            // Range requests bypass output cache so the static-file pipeline
+            // can return 206 Partial Content directly.
+            options.AddPolicy("SceneTileAsset", policy =>
+            {
+                policy.Expire(ttl.SceneTileAsset);
+                policy.SetVaryByRouteValue("sceneId", "assetPath");
+                policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
+                policy.Tag("scene", "tiles");
+            });
+
             // Layer style caching policy.  Theme variants share the cache tag so
             // a layer style invalidation flushes both canonical and themed entries.
             options.AddPolicy("LayerStyle", policy =>

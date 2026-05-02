@@ -14,6 +14,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 | **Power BI/Excel** | OData v4 | `/odata` | BI integration |
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
 | **Web terrain/elevation** | Terrain-RGB | `/terrain/{datasetId}/tile.json` | MapLibre/Mapbox `raster-dem` clients |
+| **CesiumJS / 3D scenes** | Hosted OGC 3D Tiles | `/scenes/{sceneId}/tileset.json` | Serve already-hosted tilesets to Cesium and other 3D Tiles clients |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
 | **Science/elevation coverage workflows** | WCS 2.0.1 | `/rest/services/{id}/ImageServer/WCS` or `/ogc/services/{serviceId}/wcs` | Raw raster/coverage values |
 | **Modern OGC coverage workflows** | OGC API Coverages | `/ogc/coverages` | REST/JSON raster coverage discovery and export |
@@ -335,6 +336,41 @@ Terrain v1 expects registered PostGIS rasters with one numeric elevation band, o
 - MapLibre GL JS `raster-dem` terrain sources
 - Web terrain exaggeration, hillshade, and elevation inspection
 - Lightweight DEM serving without client-side terrain generation
+
+---
+
+## **Hosted OGC 3D Tiles Scenes**
+
+**Best for**: Loading already-hosted 3D Tiles tilesets from CesiumJS and other standards-based 3D Tiles clients without URL rewriting
+
+**Endpoint structure:**
+```
+/scenes/{sceneId}/tileset.json     (GET, HEAD)
+/scenes/{sceneId}/{*assetPath}     (GET, HEAD)
+```
+
+**Output formats:** `application/json` for `tileset.json` and nested tilesets; `application/octet-stream` for `.b3dm`, `.i3dm`, `.pnts`, `.cmpt`, and `.bin`; `model/gltf-binary` for `.glb`; `model/gltf+json` for `.gltf`; canonical `image/*` types for `.png`, `.jpg`/`.jpeg`, `.webp`, `.ktx`, `.ktx2`, and `.basis`.
+
+**Contract notes:**
+- Scenes are registered as configuration entries under the `Scenes` section. Each entry declares an `Id`, `AssetRoot` (filesystem prefix that contains `tileset.json`), optional `TilesetFileName`, optional `Description`, and optional `AccessPolicy`.
+- Hosted tilesets are served as-is. Relative `uri` references resolve under `/scenes/{sceneId}/`, and nested `tileset.json` references work without client-side rewriting.
+- All routes emit deterministic ETags (`"<lastWriteUtcTicks-hex>-<lengthBytes-hex>"`), `Last-Modified`, and `Accept-Ranges: bytes`. `If-None-Match` returns `304 Not Modified` (strong and weak `W/` variants).
+- `Cache-Control` is access-policy-aware: public scenes return `public, max-age=…` so CDNs/proxies can share-cache; protected scenes return `private, max-age=…` plus `Vary: Authorization` so shared caches do not bypass the per-request access policy.
+- Default output cache TTLs: `tileset.json` metadata = 10 min (`OutputCache:SceneTilesetMetadata`); tile/binary/texture assets = 1 hour (`OutputCache:SceneTileAsset`).
+- Scenes with no `AccessPolicy` are public. Protected scenes apply the catalog `AccessPolicy` (`AllowAnonymous`, `AllowedRoles`, …) to **every** request — root tileset, nested tilesets, and every binary asset.
+- Path-traversal probes return `400 Bad Request`; missing files return `404 Not Found`. `.`/`..` segments, drive-letter prefixes, UNC paths, embedded backslashes, null bytes, and percent-encoded variants are rejected before any file I/O.
+- External absolute `uri` values inside a hosted `tileset.json` are followed directly by the client and never proxied through Honua.
+- CORS reuses the shared public policy. `ETag`, `Accept-Ranges`, `Content-Length`, and `Content-Range` are already exposed, which covers Cesium's caching and range-aware streaming requirements.
+- **Browser caveat:** CesiumJS' resource loader cannot attach `Authorization` headers or session cookies to nested asset fetches. For browser-rendered protected scenes, browser-safe signed handoff is delivered separately by [honua-server-849](https://github.com/honua-io/honua-server/issues/849); server-to-server and native clients work end-to-end today.
+
+**Limitations:** This is the foundation slice. Generating 3D Tiles from PostGIS, raster, or model sources (`honua-server-842`), browser-safe protected nested-asset handoff (`honua-server-849`), and a database-backed scene registry are tracked as separate deliverables. I3S/ArcGIS Scene Layer compatibility is on the Enterprise roadmap (`honua-server-843`).
+
+**Typical use cases:**
+- Publishing photogrammetry or BIM-derived 3D Tiles tilesets through Honua to CesiumJS viewers
+- Serving the fixture tileset to the Cesium smoke suite (`honua-server-838`)
+- Operator-controlled hosting of third-party 3D Tiles bundles without client-side URL rewriting
+
+See [Hosted 3D Tiles Scenes](scenes-3dtiles.md) for configuration, the CesiumJS usage example, and the full asset-resolution contract.
 
 ---
 
