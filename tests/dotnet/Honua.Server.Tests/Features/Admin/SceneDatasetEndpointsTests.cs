@@ -309,7 +309,7 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("ISceneDatasetRegistry.FindAsync")]
+    [Endpoint("POST /api/v1/admin/scenes")]
     public async Task FindAsync_ActiveScene_ReturnsServingModel()
     {
         var initial = await CreateAsync(BuildValidRequest(NewSceneId("serve")));
@@ -326,7 +326,8 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("ISceneDatasetRegistry.FindAsync")]
+    [Endpoint("POST /api/v1/admin/scenes")]
+    [Endpoint("DELETE /api/v1/admin/scenes/{id}")]
     public async Task FindAsync_DeactivatedScene_ReturnsNull()
     {
         var initial = await CreateAsync(BuildValidRequest(NewSceneId("hidden")));
@@ -341,7 +342,7 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("ISceneDatasetRegistry.FindAsync")]
+    [Endpoint("POST /api/v1/admin/scenes")]
     public async Task FindAsync_ProtectedScene_PropagatesAccessPolicy()
     {
         var request = BuildValidRequest(NewSceneId("priv"));
