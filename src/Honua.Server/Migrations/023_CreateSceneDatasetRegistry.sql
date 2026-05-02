@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS honua.scene_datasets (
         )
     ),
     CONSTRAINT scene_datasets_cache_max_age_range CHECK (cache_max_age_seconds BETWEEN 0 AND 86400),
-    CONSTRAINT scene_datasets_access_flags_consistent CHECK (NOT (is_public AND requires_auth))
+    CONSTRAINT scene_datasets_access_flags_consistent CHECK (is_public <> requires_auth)
 );
 
 CREATE INDEX IF NOT EXISTS idx_scene_datasets_status     ON honua.scene_datasets(status);
