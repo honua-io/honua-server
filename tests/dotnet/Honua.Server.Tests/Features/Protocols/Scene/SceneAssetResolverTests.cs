@@ -18,6 +18,8 @@ namespace Honua.Server.Tests.Features.Protocols.Scene;
 public sealed class SceneAssetResolverTests : IAsyncLifetime, IDisposable
 {
     private readonly string _root;
+    private readonly string _siblingRoot;
+    private readonly string _siblingSecretPath;
 
     public SceneAssetResolverTests()
     {
@@ -27,10 +29,13 @@ public sealed class SceneAssetResolverTests : IAsyncLifetime, IDisposable
         File.WriteAllText(Path.Combine(_root, "tileset.json"), "{}");
         File.WriteAllBytes(Path.Combine(_root, "tiles", "0.b3dm"), new byte[] { (byte)'b', (byte)'3', (byte)'d', (byte)'m' });
 
-        // A sibling directory the resolver must never reach.
-        var siblingRoot = Path.Combine(Path.GetDirectoryName(_root)!, "honua-scene-resolver-sibling-" + Path.GetRandomFileName());
-        Directory.CreateDirectory(siblingRoot);
-        File.WriteAllText(Path.Combine(siblingRoot, "secret.txt"), "should not be reachable");
+        // A sibling directory the resolver must never reach. Used by the
+        // symlink-escape test to verify that links inside the asset root
+        // cannot redirect file I/O to an outside target.
+        _siblingRoot = Path.Combine(Path.GetDirectoryName(_root)!, "honua-scene-resolver-sibling-" + Path.GetRandomFileName());
+        Directory.CreateDirectory(_siblingRoot);
+        _siblingSecretPath = Path.Combine(_siblingRoot, "secret.txt");
+        File.WriteAllText(_siblingSecretPath, "should not be reachable");
     }
 
     public Task InitializeAsync() => Task.CompletedTask;
@@ -42,6 +47,11 @@ public sealed class SceneAssetResolverTests : IAsyncLifetime, IDisposable
         if (Directory.Exists(_root))
         {
             Directory.Delete(_root, recursive: true);
+        }
+
+        if (Directory.Exists(_siblingRoot))
+        {
+            Directory.Delete(_siblingRoot, recursive: true);
         }
     }
 
@@ -142,5 +152,37 @@ public sealed class SceneAssetResolverTests : IAsyncLifetime, IDisposable
         var ok = SceneAssetResolver.TryResolve(Dataset(), "tiles/missing.b3dm", out _, out var error);
         ok.Should().BeFalse();
         error.Should().Be(SceneAssetResolutionError.NotFound);
+    }
+
+    [UnitTest]
+    public void TryResolve_FileSymlinkEscapingAssetRoot_RejectsAsOutsideRoot()
+    {
+        // Lexical prefix tests already prove `..` and absolute-path inputs are
+        // rejected; this case covers the subtler attack where a symlink under
+        // AssetRoot points to a real file outside of it.
+        var linkPath = Path.Combine(_root, "escape-link");
+
+        try
+        {
+            File.CreateSymbolicLink(linkPath, _siblingSecretPath);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
+        {
+            // The current OS or user cannot create symlinks (e.g., Windows
+            // without Developer Mode). Skip silently — Linux CI still proves
+            // the resolver path.
+            return;
+        }
+
+        try
+        {
+            var ok = SceneAssetResolver.TryResolve(Dataset(), "escape-link", out _, out var error);
+            ok.Should().BeFalse();
+            error.Should().Be(SceneAssetResolutionError.OutsideRoot);
+        }
+        finally
+        {
+            File.Delete(linkPath);
+        }
     }
 }

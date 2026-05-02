@@ -113,10 +113,16 @@ Both routes set `ETag`, `Last-Modified`, `Accept-Ranges: bytes`, and
 | `tileset.json` metadata | 10 minutes | `OutputCache:SceneTilesetMetadata` |
 | Tile / binary / texture asset | 1 hour | `OutputCache:SceneTileAsset` |
 
-ETags are deterministic per file (`"<lastWriteTicks>-<size>"`) so cached
-responses survive process restarts as long as the underlying volume preserves
-file metadata. Clients that send `If-None-Match` will receive `304 Not
-Modified` when the file is unchanged.
+ETags are deterministic per file — formatted as quoted
+`"<lastWriteUtcTicks-hex>-<lengthBytes-hex>"` — so cached responses survive
+process restarts as long as the underlying volume preserves file metadata.
+Clients that send `If-None-Match` (including the `W/` weak prefix) will
+receive `304 Not Modified` when the file is unchanged. `HEAD` is supported
+for cheap freshness probes; range requests are advertised through
+`Accept-Ranges: bytes` and honoured by ASP.NET Core's static-file pipeline.
+Requests that include a `Range` header bypass the output cache so the
+static-file pipeline can return `206 Partial Content` with `Content-Range`
+directly; full GETs still hit the shared cache.
 
 ## Authorization
 
@@ -152,6 +158,10 @@ The asset resolver canonicalizes every request before file I/O and rejects:
 - Any segment equal to `.` or `..`, embedded `\`, or null bytes.
 - Percent-encoded variants of the above (`%2e`, `%2f`, `%5c`).
 - Any canonical path that does not begin with the scene's `AssetRoot`.
+- Files or intermediate directories under `AssetRoot` that are symbolic
+  links / reparse points. The lexical prefix check above is necessary but
+  not sufficient — a link could otherwise redirect file I/O to a target
+  outside the root while the request URL still appears to be under it.
 
 Path-traversal probes return `400 Bad Request` rather than `404` to avoid
 fingerprinting the underlying layout. Missing files return `404 Not Found`.

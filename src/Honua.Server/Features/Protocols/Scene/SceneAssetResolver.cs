@@ -101,8 +101,71 @@ internal static class SceneAssetResolver
             return false;
         }
 
+        // The lexical prefix check above guarantees the resolved string sits
+        // under AssetRoot, but a symbolic link or other reparse-point segment
+        // can still redirect file I/O to a target outside the root. Reject
+        // any link found between the leaf and AssetRoot.
+        if (HasLinkBetweenFileAndRoot(file, dataset.AssetRoot))
+        {
+            error = SceneAssetResolutionError.OutsideRoot;
+            return false;
+        }
+
         resolved = new ResolvedSceneAsset(file, SceneContentTypes.Resolve(canonical));
         return true;
+    }
+
+    private static bool HasLinkBetweenFileAndRoot(FileInfo file, string assetRoot)
+    {
+        FileSystemInfo? current = file;
+        while (current is not null)
+        {
+            // Stop walking once we reach the asset root itself; the operator
+            // owns whether AssetRoot resolves through a link, so we only
+            // police segments strictly under it.
+            if (current is DirectoryInfo dir &&
+                string.Equals(dir.FullName, assetRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (IsReparsePoint(current))
+            {
+                return true;
+            }
+
+            current = current switch
+            {
+                FileInfo f => f.Directory,
+                DirectoryInfo d => d.Parent,
+                _ => null
+            };
+        }
+
+        // Walked past the asset root without ever matching it; treat as
+        // outside-root so the request fails closed.
+        return true;
+    }
+
+    private static bool IsReparsePoint(FileSystemInfo info)
+    {
+        if (info.LinkTarget is not null)
+        {
+            return true;
+        }
+
+        try
+        {
+            return (info.Attributes & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
     }
 
     private static bool IsSafeRelativePath(string assetPath)

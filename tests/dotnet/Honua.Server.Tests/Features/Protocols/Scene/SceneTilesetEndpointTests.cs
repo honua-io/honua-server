@@ -233,6 +233,37 @@ public sealed class SceneTilesetEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
+    public async Task GetSceneAsset_RangeRequestAfterFullGet_Returns206WithContentRange()
+    {
+        // Warm the output cache with a full GET, then issue a Range GET. The
+        // cache policy must bypass on Range so the static-file pipeline can
+        // serve 206 Partial Content with a correct Content-Range, instead of
+        // returning the previously cached 200 body.
+        var assetUrl = $"/scenes/{SceneFixturePaths.FixtureSceneId}/tiles/0.b3dm";
+        var fullResponse = await _fixture.Client.GetAsync(assetUrl);
+        fullResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        fullResponse.Content.Headers.ContentLength.Should().NotBeNull();
+        var totalLength = fullResponse.Content.Headers.ContentLength!.Value;
+        totalLength.Should().BeGreaterThan(4);
+
+        using var rangeRequest = new HttpRequestMessage(HttpMethod.Get, assetUrl);
+        rangeRequest.Headers.Range = new RangeHeaderValue(0, 3);
+        var rangeResponse = await _fixture.Client.SendAsync(rangeRequest);
+
+        rangeResponse.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+        rangeResponse.Content.Headers.ContentRange.Should().NotBeNull();
+        rangeResponse.Content.Headers.ContentRange!.From.Should().Be(0);
+        rangeResponse.Content.Headers.ContentRange.To.Should().Be(3);
+        rangeResponse.Content.Headers.ContentRange.Length.Should().Be(totalLength);
+
+        var rangeBytes = await rangeResponse.Content.ReadAsByteArrayAsync();
+        rangeBytes.Length.Should().Be(4);
+        System.Text.Encoding.ASCII.GetString(rangeBytes).Should().Be("b3dm");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ContentNegotiation)]
     [Endpoint("GET /scenes/{sceneId}/tileset.json")]
     public async Task GetTileset_FromBrowserOrigin_ExposesETagAndAcceptRanges()
