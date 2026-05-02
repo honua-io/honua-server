@@ -364,6 +364,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                path.StartsWith("/stac/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/scenes/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/terrain/", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("/elevation/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/tiles/", StringComparison.OrdinalIgnoreCase);
     }
 

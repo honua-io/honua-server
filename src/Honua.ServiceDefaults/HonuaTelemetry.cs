@@ -252,6 +252,9 @@ public static class HonuaTelemetry
         /// <summary>Terrain-RGB elevation tile surface.</summary>
         public const string Terrain = "Terrain";
 
+        /// <summary>Elevation query and profile surface.</summary>
+        public const string Elevation = "Elevation";
+
         /// <summary>OGC API Maps.</summary>
         public const string OgcMaps = "OGC-Maps";
 

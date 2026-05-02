@@ -388,6 +388,10 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/scenes/{id}"),
         new("DELETE", "/api/v1/admin/scenes/{id}"),
         new("GET", "/api/v1/admin/scenes/{id}/resolve"),
+
+        new("GET", "/elevation/{datasetId}/value"),
+        new("GET", "/elevation/{datasetId}/profile"),
+
         new("GET", "/api/styles/{layerId}.json"),
 
         // Durable PMTiles publish range proxy (#845).

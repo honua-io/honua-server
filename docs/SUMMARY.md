@@ -33,6 +33,7 @@
 - [Raster Overview](gis/raster-overview.md)
 - [Terrain-RGB Tiles](gis/terrain-tiles.md)
 - [Hosted 3D Tiles Scenes](gis/scenes-3dtiles.md)
+- [Elevation Query and Profile API](gis/elevation-api.md)
 - [Known Limitations](gis/MVP_COMPATIBILITY_CONTRACT.md)
 - [Cross-Server Consume Gap Report](compatibility/cross-server-consume-gap-report.md)
 - [Style Engine: Cross-Protocol Consumption](gis/style-engine-protocol-consumption.md)

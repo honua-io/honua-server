@@ -15,6 +15,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
 | **Web terrain/elevation** | Terrain-RGB | `/terrain/{datasetId}/tile.json` | MapLibre/Mapbox `raster-dem` clients |
 | **CesiumJS / 3D scenes** | Hosted OGC 3D Tiles | `/scenes/{sceneId}/tileset.json` | Serve already-hosted tilesets to Cesium and other 3D Tiles clients |
+| **Numeric elevation lookup** | Elevation Query / Profile | `/elevation/{datasetId}/value`, `/elevation/{datasetId}/profile` | Field workflows, route planning, utility inspection |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
 | **Science/elevation coverage workflows** | WCS 2.0.1 | `/rest/services/{id}/ImageServer/WCS` or `/ogc/services/{serviceId}/wcs` | Raw raster/coverage values |
 | **Modern OGC coverage workflows** | OGC API Coverages | `/ogc/coverages` | REST/JSON raster coverage discovery and export |
@@ -371,6 +372,29 @@ Terrain v1 expects registered PostGIS rasters with one numeric elevation band, o
 - Operator-controlled hosting of third-party 3D Tiles bundles without client-side URL rewriting
 
 See [Hosted 3D Tiles Scenes](scenes-3dtiles.md) for configuration, the CesiumJS usage example, and the full asset-resolution contract.
+
+---
+
+## **Elevation Query and Profile API**
+
+**Best for**: Field workflows that need numeric elevation values rather than RGB-encoded tiles — utility inspection, route planning, site review, and inspection apps.
+
+**Endpoint structure:**
+```
+/elevation/{datasetId}/value
+/elevation/{datasetId}/profile
+```
+
+**Output formats:** `application/json` for both endpoints. Errors use the shared `application/problem+json` envelope.
+
+**Contract notes:** `datasetId` accepts a numeric layer id or a layer collection name. The Elevation protocol must be enabled on the service or layer metadata; omitted `EnabledProtocols` means Elevation is enabled by default with the rest of the protocol set.
+
+The `value` endpoint returns the sampled elevation, source dataset id, source raster ids, source metadata (pixel type, no-data value, source SRID), and a `noData`/`outOfBounds` flag when the coordinate falls on a no-data pixel or outside the registered raster extent. The `profile` endpoint returns ordered distance/elevation samples for a WKT LineString plus the same source metadata; sampling is bounded by `Limits:Elevation:DefaultSampleCount`/`MaxSampleCount`/`MinIntervalMeters`/`MaxIntervalMeters`. Profile sampling is implemented as a single PostGIS query (`generate_series` + `ST_LineInterpolatePoint` + `::geography` arc length + `ST_Value`) for one round-trip regardless of `N`. Errors return `400` for malformed coordinates, `422` for invalid WKT/non-LineString geometry, sample-count or interval overflow, and unsupported CRS, and `404` for unknown datasets or layers without a registered raster source. Elevation requests are classified as `elevation.value` and `elevation.profile` operations for telemetry. See [Elevation Query and Profile API](elevation-api.md) for the full request/response contract and known limitations.
+
+**Typical use cases:**
+- Inspection or route-planning tools that need a numeric elevation at a tap point
+- Profile charts for utility lines, fiber routes, trails, or cross-section reviews
+- Server-side elevation lookups for analytics, no-code dashboards, and SDK clients
 
 ---
 

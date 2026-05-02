@@ -22,6 +22,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 - [Terrain-RGB Tiles](terrain-tiles.md) — DEM/raster elevation tiles for MapLibre/Mapbox `raster-dem` clients
 - [Hosted 3D Tiles Scenes](scenes-3dtiles.md) — Already-hosted OGC 3D Tiles tilesets for CesiumJS and other 3D Tiles clients
 - [Extruded 3D Feature Layers (v1)](extruded-3d-feature-layers.md) — Height-driven extrusion metadata on FeatureServer layers (precedes 3D Tiles generation)
+- [Elevation Query and Profile API](elevation-api.md) — Numeric point/line elevation lookup over registered raster datasets
 
 ## Protocol Coverage
 

@@ -1,0 +1,179 @@
+# Elevation Query and Profile API
+
+Honua exposes registered raster/DEM datasets as machine-readable elevation
+endpoints for field workflows that need numeric elevation values, not RGB-encoded
+tiles. The API surfaces a single-point lookup and a line-based profile aligned to
+the same raster catalog and mosaic foundations used by the Terrain-RGB service
+(`#839`) and OGC API Coverages (`#521`).
+
+## Public routes
+
+| Route | Purpose |
+| --- | --- |
+| `GET /elevation/{datasetId}/value` | Sample elevation for a single coordinate against a registered raster dataset. |
+| `GET /elevation/{datasetId}/profile` | Sample elevation along a WKT LineString returning ordered distance/elevation samples. |
+
+`datasetId` accepts a numeric layer id or a layer collection name. The Elevation
+protocol must be enabled on the owning service or layer metadata. When
+`EnabledProtocols` is omitted, Elevation is enabled with the rest of the default
+protocol set.
+
+## Point query — `GET /elevation/{datasetId}/value`
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `x` | yes | X coordinate (longitude when `srid=4326`). Must be a finite numeric value. |
+| `y` | yes | Y coordinate (latitude when `srid=4326`). Must be a finite numeric value. |
+| `srid` | no | EPSG SRID of the supplied coordinate. Defaults to `4326`. Validated through the spatial reference registry. |
+| `mosaicRule` | no | Override layer-default merge strategy: `newest`, `oldest`, `average`, `max`, `min`. |
+
+Successful response (`200 application/json`):
+
+```json
+{
+  "datasetId": "0",
+  "layerId": 0,
+  "elevation": 123.4,
+  "noData": false,
+  "outOfBounds": false,
+  "x": -122.4194,
+  "y": 37.7749,
+  "querySrid": 4326,
+  "mosaicRule": "newest",
+  "source": {
+    "rasterIds": [42],
+    "rasterCount": 1,
+    "sourceSrid": 3857,
+    "sourceCrs": "EPSG:3857",
+    "pixelType": "32BF",
+    "noDataValue": null,
+    "verticalUnit": null,
+    "verticalDatum": null,
+    "verticalUnitAssumption": "Source values are assumed to be meters when no vertical unit is declared.",
+    "band": 1
+  }
+}
+```
+
+When the coordinate falls outside the registered raster extent, the response is
+still `200 OK` with `elevation: null`, `noData: true`, `outOfBounds: true`, and
+`source.rasterCount: 0`. When the coordinate falls inside the extent but on a
+no-data pixel, the response is `200 OK` with `elevation: null`, `noData: true`,
+`outOfBounds: false`, and the selected raster ids preserved for diagnostics.
+
+## Profile query — `GET /elevation/{datasetId}/profile`
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `line` | yes | LineString geometry encoded as WKT, e.g. `LINESTRING(lon1 lat1, lon2 lat2)`. |
+| `sampleCount` | no | Number of samples (including endpoints). Defaults to `Limits:Elevation:DefaultSampleCount` (100). Must be `>=2` and `<= Limits:Elevation:MaxSampleCount` (default 500). |
+| `interval` | no | Maximum sampling interval in meters. When supplied alone, `sampleCount` is set to the configured maximum so spacing never exceeds the requested interval. |
+| `srid` | no | EPSG SRID of the line geometry. Defaults to `4326`. |
+| `mosaicRule` | no | Override layer-default merge strategy: `newest`, `oldest`, `average`, `max`, `min`. |
+
+When both `sampleCount` and `interval` are supplied, `sampleCount` wins and
+`interval` is ignored. Distances are computed along the geodesic arc length of
+the input line (`::geography` projection inside PostGIS), so samples are evenly
+spaced regardless of the source line CRS.
+
+Successful response (`200 application/json`):
+
+```json
+{
+  "datasetId": "0",
+  "layerId": 0,
+  "sampleCount": 5,
+  "lineLengthMeters": 156543.03,
+  "lineSrid": 4326,
+  "mosaicRule": "newest",
+  "isAllNoData": false,
+  "samples": [
+    { "distanceMeters": 0,        "elevation": 12.3,  "noData": false },
+    { "distanceMeters": 39135.76, "elevation": 18.7,  "noData": false },
+    { "distanceMeters": 78271.51, "elevation": null,  "noData": true  },
+    { "distanceMeters": 117407.27,"elevation": 45.0,  "noData": false },
+    { "distanceMeters": 156543.03,"elevation": 52.6,  "noData": false }
+  ],
+  "source": {
+    "rasterIds": [42, 43],
+    "rasterCount": 2,
+    "sourceSrid": 3857,
+    "sourceCrs": "EPSG:3857",
+    "pixelType": "32BF",
+    "noDataValue": null,
+    "verticalUnit": null,
+    "verticalDatum": null,
+    "verticalUnitAssumption": "Source values are assumed to be meters when no vertical unit is declared.",
+    "band": 1
+  }
+}
+```
+
+Samples are ordered from the start of the input line to the end. Each sample
+carries its own `distanceMeters` and `noData` flag so callers can detect coverage
+gaps along the profile without inspecting `isAllNoData`. When the line runs
+entirely outside the registered raster coverage, the response is still `200 OK`
+with `isAllNoData: true` and every sample's `elevation` set to `null`.
+
+## Error responses
+
+All error responses use the shared `application/problem+json` envelope.
+
+| Scenario | HTTP status |
+| --- | --- |
+| Missing `x`/`y` query parameters | `400 Bad Request` |
+| Non-finite coordinate values | `400 Bad Request` |
+| Missing or empty `line` parameter | `400 Bad Request` |
+| Invalid WKT or non-LineString geometry | `422 Unprocessable Entity` |
+| `sampleCount` below 2 | `422 Unprocessable Entity` |
+| `sampleCount` above `Limits:Elevation:MaxSampleCount` | `422 Unprocessable Entity` |
+| `interval` outside the configured `Min`/`Max` range | `422 Unprocessable Entity` |
+| Unknown or unsupported CRS via `srid` | `422 Unprocessable Entity` |
+| Unknown dataset / layer | `404 Not Found` |
+| Layer access denied | `401 Unauthorized` / `403 Forbidden` |
+| Dataset has no registered rasters | `404 Not Found` |
+| Elevation protocol not enabled for service or layer | `404 Not Found` |
+
+## Limits and configuration
+
+```jsonc
+{
+  "Limits": {
+    "Elevation": {
+      "DefaultSampleCount": 100,
+      "MaxSampleCount": 500,
+      "MinIntervalMeters": 1.0,
+      "MaxIntervalMeters": 50000
+    }
+  }
+}
+```
+
+Operators can tighten or relax these limits per environment. Profile sampling is
+implemented as a single PostGIS query that fans out to `N` samples through
+`generate_series` + `ST_LineInterpolatePoint`; sample bounds protect the database
+from pathological large fan-outs while still allowing dense profiles up to the
+configured maximum.
+
+## Known limitations
+
+- **Band 1 only**: The MVP samples band 1 of each raster. Multi-band elevation
+  datasets are out of scope; explicit band selection (`?band=`) is a follow-up.
+- **No vertical datum transformation**: Returned values are dataset native. The
+  response surfaces `verticalUnit` and `verticalDatum` when the catalog declares
+  them and otherwise leaves them `null`. Clients should treat `null` as
+  *meters by assumption* per the explicit assumption note in the response.
+- **GET only**: Profile inputs are encoded as WKT in the URL. Very long lines
+  may approach URL length limits; chunk into multiple shorter queries when
+  necessary. POST body support is deferred follow-up scope.
+- **No exact response caching**: Both endpoints accept ad hoc spatial inputs
+  and skip exact response caching by design (per the cross-cutting caching
+  rule). Layer/raster catalog metadata caching from `ILayerCatalog` still
+  applies for dataset resolution.
+
+## Observability
+
+Elevation requests are classified under the `Elevation` protocol with
+`elevation.value` and `elevation.profile` operations. Spans include the layer
+id, dataset/collection id, selected raster count, and (for profile requests)
+sample count, line length in meters, and an `all-no-data` flag.
