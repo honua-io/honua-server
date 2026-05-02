@@ -135,6 +135,7 @@ All error responses use the shared `application/problem+json` envelope.
 | `interval` outside the configured `Min`/`Max` range | `422 Unprocessable Entity` |
 | Unknown or unsupported CRS via `srid` | `422 Unprocessable Entity` |
 | Coordinates outside WGS 84 lon `[-180, 180]` / lat `[-90, 90]` when `srid` is omitted or `4326` | `422 Unprocessable Entity` |
+| Source rasters missing a CRS (SRID 0/unset), holding multiple distinct SRIDs, or carrying a CRS the spatial reference registry does not recognise | `422 Unprocessable Entity` |
 | Unknown dataset / layer | `404 Not Found` |
 | Layer access denied | `401 Unauthorized` / `403 Forbidden` |
 | Dataset has no registered rasters | `404 Not Found` |
@@ -146,6 +147,14 @@ work — PostGIS `geography` only accepts SRID 4326, so out-of-range lon/lat
 values are rejected at the edge as a stable `422` rather than leaking a
 provider-side geography exception. Inputs in projected SRIDs are validated
 against the spatial reference registry but not against WGS 84 bounds.
+
+The service also validates the source-side CRS before issuing any
+sample-extraction SQL. Each registered raster must declare a positive SRID,
+the dataset must agree on a single source SRID, and that SRID must be
+registered with the spatial reference registry. A dataset with rasters that
+report SRID 0 / unset, mix multiple SRIDs, or carry an SRID the registry
+does not know returns `422` instead of letting the SQL `ST_Transform` to
+the source CRS fail with a provider exception.
 
 ## Limits and configuration
 
@@ -207,6 +216,10 @@ the point endpoint is unaffected because it samples a single point with
   and skip exact response caching by design (per the cross-cutting caching
   rule). Layer/raster catalog metadata caching from `ILayerCatalog` still
   applies for dataset resolution.
+- **Single registered source CRS**: Every raster in the dataset must declare
+  one positive SRID that the spatial reference registry recognises. Datasets
+  with mixed SRIDs or rasters imported with SRID 0 must be re-imported with a
+  valid CRS before they can serve elevation queries.
 
 ## Observability
 

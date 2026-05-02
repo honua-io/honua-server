@@ -214,6 +214,25 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /elevation/{datasetId}/value")]
+    public async Task GetElevationValue_SourceRasterMissingCrs_ReturnsUnprocessableEntity()
+    {
+        // Regression: PostgresElevationService must reject source rasters with
+        // SRID 0/unset before issuing geometry-transform SQL, otherwise the
+        // failure surfaces as a provider-side ST_Transform exception instead
+        // of the documented 422 problem response.
+        await SeedRasterAsync(srid: 0, value: 1);
+
+        var response = await _fixture.Client.GetAsync("/elevation/0/value?x=0&y=0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("coordinate reference system");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_WhenElevationProtocolDisabled_ReturnsNotFound()
@@ -459,6 +478,26 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /elevation/{datasetId}/profile")]
+    public async Task GetElevationProfile_SourceRasterMissingCrs_ReturnsUnprocessableEntity()
+    {
+        // Regression: profile SQL transforms each sample point into the source
+        // raster SRID; a raster registered with SRID 0 must be rejected as a
+        // 422 problem response before any PostGIS transform runs.
+        await SeedRasterAsync(srid: 0, value: 1);
+
+        var line = "LINESTRING(0 0, 1 1)";
+        var response = await _fixture.Client.GetAsync(
+            $"/elevation/0/profile?line={Uri.EscapeDataString(line)}&sampleCount=5");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("coordinate reference system");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_DefaultSampleCount_AppliesConfiguredDefault()
@@ -580,6 +619,23 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
                 AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
                 Srid: 3857));
+
+    private Task SeedRasterAsync(int srid, double value)
+        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+            _fixture,
+            WebAppFixture.TestLayerId,
+            new RasterSeed(
+                Name: $"srid-{srid}-dem",
+                Width: 2,
+                Height: 2,
+                UpperLeftX: -WebMercatorExtent,
+                UpperLeftY: WebMercatorExtent,
+                ScaleX: WebMercatorExtent,
+                ScaleY: -WebMercatorExtent,
+                Value: value,
+                AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
+                CreatedAt: RasterIntegrationTestData.WestAcquisition,
+                Srid: srid));
 
     private async Task ClearLayerRastersAsync()
     {

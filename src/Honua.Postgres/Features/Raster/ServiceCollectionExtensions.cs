@@ -68,6 +68,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IElevationService>(provider =>
             new PostgresElevationService(
                 provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<ICrsRegistry>(),
                 provider.GetRequiredService<IRasterStore>(),
                 provider.GetRequiredService<ILogger<PostgresElevationService>>(),
                 schemaName));

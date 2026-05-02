@@ -15,17 +15,20 @@ internal sealed class PostgresElevationService : IElevationService
     private const int Wgs84Srid = 4326;
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly ICrsRegistry _crsRegistry;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<PostgresElevationService> _logger;
     private readonly string _rasterDataTable;
 
     public PostgresElevationService(
         IDatabaseConnectionProvider connectionProvider,
+        ICrsRegistry crsRegistry,
         IRasterStore rasterStore,
         ILogger<PostgresElevationService> logger,
         string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
@@ -46,6 +49,8 @@ internal sealed class PostgresElevationService : IElevationService
                 ElevationFailureKind.SourceUnavailable,
                 "No raster data is registered for this elevation dataset.");
         }
+
+        await ValidateSourceRastersAsync(rasters, cancellationToken).ConfigureAwait(false);
 
         var sourceMetadata = ResolveSourceMetadata(rasters);
         var resolvedSrid = srid ?? DefaultPointSrid;
@@ -154,6 +159,8 @@ internal sealed class PostgresElevationService : IElevationService
                 ElevationFailureKind.SourceUnavailable,
                 "No raster data is registered for this elevation dataset.");
         }
+
+        await ValidateSourceRastersAsync(rasters, cancellationToken).ConfigureAwait(false);
 
         var sourceMetadata = ResolveSourceMetadata(rasters);
         var matching = await _rasterStore.QueryRastersAsync(
@@ -430,6 +437,50 @@ internal sealed class PostgresElevationService : IElevationService
                 ELSE @defaultSampleCount
             END))
         """;
+
+    /// <summary>
+    /// Validates that every source raster declares one positive SRID that the
+    /// spatial reference registry recognises. The point and profile SQL paths
+    /// transform sample geometries into <c>ST_SRID(raster)</c>, so an
+    /// unregistered or zero source SRID would otherwise surface as a
+    /// provider-side <c>ST_Transform</c> exception instead of the documented
+    /// <c>422 Unprocessable Entity</c> response.
+    /// </summary>
+    private async Task ValidateSourceRastersAsync(
+        RasterInfo[] rasters,
+        CancellationToken cancellationToken)
+    {
+        var distinctSrids = new HashSet<int>();
+        foreach (var raster in rasters)
+        {
+            if (raster.Srid is not > 0)
+            {
+                throw new ElevationQueryException(
+                    ElevationFailureKind.UnsupportedCrs,
+                    "One or more source rasters are missing a coordinate reference system (SRID 0 or unset). Re-import the raster with a valid CRS to enable elevation queries.");
+            }
+
+            distinctSrids.Add(raster.Srid.Value);
+        }
+
+        if (distinctSrids.Count > 1)
+        {
+            throw new ElevationQueryException(
+                ElevationFailureKind.UnsupportedCrs,
+                "Elevation queries require a single source coordinate reference system across all rasters in the dataset.");
+        }
+
+        var sourceSrid = distinctSrids.First();
+        var supported = await _crsRegistry
+            .IsSridSupportedAsync(sourceSrid, cancellationToken)
+            .ConfigureAwait(false);
+        if (!supported)
+        {
+            throw new ElevationQueryException(
+                ElevationFailureKind.UnsupportedCrs,
+                $"Source raster CRS (SRID {sourceSrid}) is not registered or supported by the spatial reference registry.");
+        }
+    }
 
     private static SourceMetadata ResolveSourceMetadata(RasterInfo[] rasters)
     {
