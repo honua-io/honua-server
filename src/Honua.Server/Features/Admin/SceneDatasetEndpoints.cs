@@ -7,9 +7,11 @@ using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
 
@@ -27,9 +29,20 @@ internal static partial class SceneDatasetEndpoints
     /// <summary>
     /// Maps the admin scene dataset endpoints into the request pipeline.
     /// </summary>
+    /// <remarks>
+    /// No-op when <see cref="ISceneRegistrationService"/> is not registered,
+    /// which is the case for non-Postgres data-source profiles (#844). The
+    /// configuration-backed scene serving path remains available; only the
+    /// admin CRUD surface is suppressed.
+    /// </remarks>
     public static IEndpointRouteBuilder MapSceneDatasetEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
+
+        if (endpoints.ServiceProvider.GetService<ISceneRegistrationService>() is null)
+        {
+            return endpoints;
+        }
 
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/scenes")
             .WithApiVersionSet()
@@ -131,6 +144,7 @@ internal static partial class SceneDatasetEndpoints
         try
         {
             var saved = await service.RegisterAsync(record, cancellationToken).ConfigureAwait(false);
+            await InvalidateSceneCacheAsync(context, saved.Id, cancellationToken).ConfigureAwait(false);
             var detail = ToDetail(saved);
 
             SceneDatasetEndpointsLog.SceneRegistered(logger, saved.Id, saved.DatasetId);
@@ -221,6 +235,11 @@ internal static partial class SceneDatasetEndpoints
         try
         {
             var saved = await service.UpdateAsync(updated, cancellationToken).ConfigureAwait(false);
+            await InvalidateSceneCacheAsync(context, saved.Id, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(existing.Id, saved.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                await InvalidateSceneCacheAsync(context, existing.Id, cancellationToken).ConfigureAwait(false);
+            }
             SceneDatasetEndpointsLog.SceneUpdated(logger, saved.Id, saved.DatasetId, saved.Revision);
             return Results.Json(ToDetail(saved), SceneDatasetJsonContext.Default.SceneDatasetDetail);
         }
@@ -253,6 +272,9 @@ internal static partial class SceneDatasetEndpoints
     {
         try
         {
+            // Resolve the slug before deactivation so we can target the
+            // per-scene cache tag; soft-delete returns only a boolean.
+            var existing = await service.GetAsync(id, cancellationToken).ConfigureAwait(false);
             var deactivated = await service.DeactivateAsync(id, cancellationToken).ConfigureAwait(false);
             if (!deactivated)
             {
@@ -260,6 +282,7 @@ internal static partial class SceneDatasetEndpoints
                     "Scene dataset not found.");
             }
 
+            await InvalidateSceneCacheAsync(context, existing?.Id, cancellationToken).ConfigureAwait(false);
             SceneDatasetEndpointsLog.SceneDeactivated(logger, id);
             return Results.NoContent();
         }
@@ -269,6 +292,17 @@ internal static partial class SceneDatasetEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to deactivate scene dataset.");
         }
+    }
+
+    private static async Task InvalidateSceneCacheAsync(HttpContext context, string? sceneId, CancellationToken cancellationToken)
+    {
+        var invalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
+        if (invalidator is null)
+        {
+            return;
+        }
+
+        await invalidator.InvalidateSceneAsync(sceneId, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<IResult> HandleResolveScene(
@@ -343,6 +377,12 @@ internal static partial class SceneDatasetEndpoints
         if (!SceneDatasetValidator.TryValidateAssetRoot(request.AssetRoot, out var assetRootError))
         {
             error = assetRootError;
+            return false;
+        }
+
+        if (!SceneDatasetValidator.TryValidateTilesetFileName(request.TilesetFileName, out var tilesetFileNameError))
+        {
+            error = tilesetFileNameError;
             return false;
         }
 
@@ -432,6 +472,12 @@ internal static partial class SceneDatasetEndpoints
         if (!SceneDatasetValidator.TryValidateAssetRoot(assetRoot, out var assetRootError))
         {
             error = assetRootError;
+            return false;
+        }
+
+        if (!SceneDatasetValidator.TryValidateTilesetFileName(request.TilesetFileName, out var tilesetFileNameError))
+        {
+            error = tilesetFileNameError;
             return false;
         }
 

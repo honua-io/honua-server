@@ -30,6 +30,12 @@ public static partial class SceneDatasetValidator
     public const int MaxSceneNameLength = 128;
 
     /// <summary>
+    /// Maximum allowed length for the tileset filename (matches the Postgres
+    /// <c>tileset_file_name VARCHAR(64)</c> column).
+    /// </summary>
+    public const int MaxTilesetFileNameLength = 64;
+
+    /// <summary>
     /// Maximum allowed cache <c>max-age</c>, in seconds (24 hours).
     /// </summary>
     public const int MaxCacheMaxAgeSeconds = 86_400;
@@ -127,6 +133,49 @@ public static partial class SceneDatasetValidator
         if (ContainsShellMetacharacter(assetRoot))
         {
             error = "Asset root must not contain shell metacharacters.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Validates the tileset filename. Must be a non-empty relative filename
+    /// (no path separators, traversal segments, or shell metacharacters), and
+    /// must fit the underlying database column length. A null or whitespace
+    /// value is accepted and treated as "use the default" by callers.
+    /// </summary>
+    public static bool TryValidateTilesetFileName(string? tilesetFileName, [NotNullWhen(false)] out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(tilesetFileName))
+        {
+            error = null;
+            return true;
+        }
+
+        if (tilesetFileName.Length > MaxTilesetFileNameLength)
+        {
+            error = $"Tileset filename must be {MaxTilesetFileNameLength} characters or fewer.";
+            return false;
+        }
+
+        if (tilesetFileName.Contains('/', StringComparison.Ordinal)
+            || tilesetFileName.Contains('\\', StringComparison.Ordinal))
+        {
+            error = "Tileset filename must not contain path separators.";
+            return false;
+        }
+
+        if (tilesetFileName.Contains("..", StringComparison.Ordinal))
+        {
+            error = "Tileset filename must not contain parent-directory traversal segments.";
+            return false;
+        }
+
+        if (ContainsShellMetacharacter(tilesetFileName))
+        {
+            error = "Tileset filename must not contain shell metacharacters.";
             return false;
         }
 

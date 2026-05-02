@@ -1566,6 +1566,51 @@
       ]
     },
     {
+      "surfaceId": "scene-dataset-registry-admin",
+      "displayName": "Scene dataset registry admin API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/scenes + /api/v1/admin/scenes/{id} + /api/v1/admin/scenes/{id}/resolve",
+      "parentSurfaceId": "scenes-3dtiles",
+      "endpointPrefixes": [
+        "/api/v1/admin/scenes"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry entries plus admin endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/SceneDatasetEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#844",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Register/list/get/update/deactivate/resolve happy paths, validation rejections (asset root, CRS, tileset filename, public+auth conflict), duplicate slug/name conflict, anonymous access denial, and FindAsync projection (active/inactive/protected) exercised by integration tests",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/SceneDatasetEndpointsTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Scene/SceneDatasetValidatorTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Scene/SceneSnippetGeneratorTests.cs",
+            "docs/admin-api/scene-dataset-registry.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#844",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "grpc-feature-service",
       "displayName": "gRPC FeatureService",
       "surfaceKind": "operation-surface",

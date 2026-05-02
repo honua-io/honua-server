@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -21,15 +22,30 @@ internal static class SceneDatasetServiceCollectionExtensions
     /// Postgres.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Order with respect to <c>AddScene(...)</c> is irrelevant. The
     /// configuration-backed registry registered by <c>AddScene</c> is preserved
     /// as <see cref="IConfigurationSceneDatasetRegistry"/> so it can be used as
     /// a fallback for local-dev/test scenarios where datasets are declared via
     /// the <c>Scenes:Datasets</c> configuration section.
+    /// </para>
+    /// <para>
+    /// When the active <c>DataSource:Provider</c> is not Postgres (e.g. DuckDB),
+    /// this method is a no-op: the configuration-backed registry stays the
+    /// authoritative <see cref="ISceneDatasetRegistry"/>, and
+    /// <see cref="ISceneRegistrationService"/> is left unregistered so the
+    /// admin endpoints decline to map themselves.
+    /// </para>
     /// </remarks>
-    public static IServiceCollection AddPostgresSceneRegistry(this IServiceCollection services)
+    public static IServiceCollection AddPostgresSceneRegistry(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        if (!UsesPostgresProvider(configuration))
+        {
+            return services;
+        }
 
         // Promote any prior ISceneDatasetRegistry registration (typically
         // ConfigurationSceneDatasetRegistry from AddScene) to the
@@ -64,6 +80,16 @@ internal static class SceneDatasetServiceCollectionExtensions
         });
 
         return services;
+    }
+
+    private static bool UsesPostgresProvider(IConfiguration configuration)
+    {
+        var provider = configuration.GetValue<string>("DataSource:Provider");
+
+        return string.IsNullOrWhiteSpace(provider)
+            || provider.Equals("postgres", StringComparison.OrdinalIgnoreCase)
+            || provider.Equals("postgresql", StringComparison.OrdinalIgnoreCase)
+            || provider.Equals("postgis", StringComparison.OrdinalIgnoreCase);
     }
 
     private static object CreateInstance(IServiceProvider provider, ServiceDescriptor descriptor)

@@ -140,6 +140,18 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/scenes")]
+    public async Task Register_BadTilesetFileName_Returns400Problem()
+    {
+        var request = BuildValidRequest(NewSceneId("bad-tileset"));
+        request.TilesetFileName = "../escape.json";
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/scenes", request, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes")]
     public async Task Register_ConflictingPublicAndAuthFlags_Returns400Problem()
     {
         var request = BuildValidRequest(NewSceneId("conflict"));

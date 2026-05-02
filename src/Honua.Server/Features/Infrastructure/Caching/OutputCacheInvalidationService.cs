@@ -120,6 +120,23 @@ internal sealed partial class OutputCacheInvalidationService
         return EvictTagsAsync(["ogc-metadata", "ogc-tiles", "ogc-maps"], cancellationToken);
     }
 
+    /// <summary>
+    /// Evicts hosted scene serving entries from the output cache after a
+    /// scene-registry mutation (register/update/deactivate). Removes the
+    /// per-scene tag plus the broader <c>scene</c> tag so anonymous cached
+    /// tilesets and assets cannot survive an access-flag or deactivation
+    /// change.
+    /// </summary>
+    public Task InvalidateSceneAsync(string? sceneId, CancellationToken cancellationToken)
+    {
+        var tags = new List<string> { "scene" };
+        if (!string.IsNullOrWhiteSpace(sceneId))
+        {
+            tags.Add($"scene:{sceneId.Trim().ToLowerInvariant()}");
+        }
+        return EvictTagsAsync(tags, cancellationToken);
+    }
+
     public async Task InvalidateServiceCatalogAsync(
         string? serviceId,
         IEnumerable<int>? layerIds,

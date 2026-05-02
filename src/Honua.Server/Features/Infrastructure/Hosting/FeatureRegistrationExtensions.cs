@@ -76,7 +76,7 @@ internal static class FeatureRegistrationExtensions
         services.AddStaticMap();
         services.AddTerrain();
         services.AddScene(configuration);
-        services.AddPostgresSceneRegistry();
+        services.AddPostgresSceneRegistry(configuration);
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
         services.AddAnalysisReporting(configuration);

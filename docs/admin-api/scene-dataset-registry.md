@@ -109,9 +109,28 @@ lean `SceneDataset` it serves:
   are accepted.
 - Protected records (`isPublic = false`) map to `SceneDataset { Metadata.AccessPolicy = { AllowAnonymous = false, AllowedRoles = … } }`,
   matching the existing scene access-policy contract.
+- The persisted `cachePolicy` is forwarded onto the serving model. The hosted
+  routes use `cachePolicy.maxAgeSeconds` to pin the response `Cache-Control`
+  header, and emit `Cache-Control: no-store` (plus `Vary: Authorization` on
+  protected scenes) when `noStore = true`.
+- `assetRoot` is canonicalized against the server content root before
+  projection, so relative asset roots stored at registration survive the
+  hosted asset resolver's path-containment check.
 
 Inactive records are filtered out of `FindAsync` so deactivation immediately
-hides a dataset from the public surface.
+hides a dataset from the public surface. Successful register / update /
+deactivate calls evict the shared `scene` and per-scene `scene:{id}` output
+cache tags so cached anonymous responses cannot outlive an access-flag or
+deactivation change.
+
+## Provider gating
+
+The Postgres-backed registry only registers when `DataSource:Provider` is
+unset or set to `postgres`/`postgresql`/`postgis`. Under non-Postgres
+profiles (e.g. DuckDB) the configuration-driven `Scenes:Datasets` registry
+remains the active `ISceneDatasetRegistry`, and the admin endpoints
+documented above are not mapped — the hosted serving path keeps working but
+the admin CRUD surface is intentionally absent.
 
 ## Example: register and resolve
 

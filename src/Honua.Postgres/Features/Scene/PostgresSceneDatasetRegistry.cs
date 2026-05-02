@@ -7,6 +7,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Postgres.Features.Infrastructure;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
@@ -82,13 +83,16 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         """;
 
     private readonly IPrimaryDatabaseConnectionProvider _connectionProvider;
+    private readonly IHostEnvironment _environment;
     private readonly ILogger<PostgresSceneDatasetRegistry> _logger;
 
     public PostgresSceneDatasetRegistry(
         IPrimaryDatabaseConnectionProvider connectionProvider,
+        IHostEnvironment environment,
         ILogger<PostgresSceneDatasetRegistry> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _environment = environment ?? throw new ArgumentNullException(nameof(environment));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -364,7 +368,7 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         }
     }
 
-    private static SceneDataset ProjectToServing(SceneDatasetRecord record)
+    private SceneDataset ProjectToServing(SceneDatasetRecord record)
     {
         var metadata = record.IsPublic
             ? null
@@ -382,10 +386,26 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
             Id = record.Id,
             Name = record.Name,
             Description = record.Description,
-            AssetRoot = record.AssetRoot,
+            AssetRoot = CanonicalizeAssetRoot(record.AssetRoot),
             TilesetFileName = record.TilesetFileName,
-            Metadata = metadata
+            Metadata = metadata,
+            CachePolicy = record.CachePolicy
         };
+    }
+
+    /// <summary>
+    /// Resolves a stored asset root to the absolute, separator-trimmed form
+    /// expected by <c>SceneAssetResolver</c>. Mirrors the canonicalization
+    /// applied by <c>ConfigurationSceneDatasetRegistry</c> at startup so
+    /// relative roots (e.g. dev fixture paths) survive projection.
+    /// </summary>
+    private string CanonicalizeAssetRoot(string assetRoot)
+    {
+        var rooted = Path.IsPathRooted(assetRoot)
+            ? assetRoot
+            : Path.Combine(_environment.ContentRootPath, assetRoot);
+
+        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(rooted));
     }
 
     private static SceneDatasetRecord MapRow(DbDataReader reader)

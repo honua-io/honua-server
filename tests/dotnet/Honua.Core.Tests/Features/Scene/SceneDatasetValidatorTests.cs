@@ -206,4 +206,43 @@ public class SceneDatasetValidatorTests
     {
         Assert.True(SceneDatasetValidator.TryValidateAccessFlags(isPublic, requiresAuth, out _));
     }
+
+    [Theory]
+    [InlineData("tileset.json")]
+    [InlineData("scene.json")]
+    [InlineData("root-tileset.json")]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryValidateTilesetFileName_AcceptsSafeRelativeNames(string? tilesetFileName)
+    {
+        Assert.True(SceneDatasetValidator.TryValidateTilesetFileName(tilesetFileName, out _));
+    }
+
+    [Theory]
+    [InlineData("nested/tileset.json")]
+    [InlineData("nested\\tileset.json")]
+    [InlineData("../tileset.json")]
+    [InlineData("..tileset.json")]
+    [InlineData("tileset|.json")]
+    [InlineData("tileset.json;rm")]
+    [InlineData("tileset$x.json")]
+    public void TryValidateTilesetFileName_RejectsUnsafeNames(string tilesetFileName)
+    {
+        var ok = SceneDatasetValidator.TryValidateTilesetFileName(tilesetFileName, out var error);
+
+        Assert.False(ok);
+        Assert.False(string.IsNullOrEmpty(error));
+    }
+
+    [UnitTest]
+    public void TryValidateTilesetFileName_RejectsTooLong()
+    {
+        var tilesetFileName = new string('a', SceneDatasetValidator.MaxTilesetFileNameLength + 1);
+
+        var ok = SceneDatasetValidator.TryValidateTilesetFileName(tilesetFileName, out var error);
+
+        Assert.False(ok);
+        Assert.False(string.IsNullOrEmpty(error));
+    }
 }
