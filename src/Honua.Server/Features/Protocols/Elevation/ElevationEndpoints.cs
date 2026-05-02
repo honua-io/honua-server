@@ -217,21 +217,27 @@ internal static class ElevationEndpoints
         {
             var lineSrid = resolvedSrid.Srid ?? DefaultSrid;
             var lineWkb = WriteLineWkb(lineString);
-            var resolvedSampleCount = ResolveSampleCount(
-                sampleCount,
-                interval,
-                elevationLimits);
+            var capturedSampleCount = sampleCount.HasValue
+                ? Math.Min(sampleCount.Value, elevationLimits.MaxSampleCount)
+                : (int?)null;
 
-            activity?.SetTag("honua.elevation.sample_count", resolvedSampleCount);
+            var samplingOptions = new ProfileSamplingOptions
+            {
+                SampleCount = capturedSampleCount,
+                IntervalMeters = interval,
+                DefaultSampleCount = elevationLimits.DefaultSampleCount,
+                MaxSampleCount = elevationLimits.MaxSampleCount
+            };
 
             var result = await elevationService.QueryProfileAsync(
                 layer.Id,
                 lineWkb,
                 lineSrid,
-                new ProfileSamplingOptions { SampleCount = resolvedSampleCount },
+                samplingOptions,
                 mergeStrategy,
                 cancellationToken);
 
+            activity?.SetTag("honua.elevation.sample_count", result.SampleCount);
             activity?.SetTag("honua.elevation.raster_count", result.RasterIds.Length);
             activity?.SetTag("honua.elevation.line_length_m", result.LineLengthMeters);
             activity?.SetTag("honua.elevation.no_data", result.IsAllNoData);
@@ -244,25 +250,6 @@ internal static class ElevationEndpoints
             HonuaTelemetry.RecordException(activity, ex);
             return MapElevationException(context, ex);
         }
-    }
-
-    private static int ResolveSampleCount(
-        int? requestedSampleCount,
-        double? requestedInterval,
-        ElevationLimits limits)
-    {
-        if (requestedSampleCount.HasValue)
-        {
-            return Math.Min(requestedSampleCount.Value, limits.MaxSampleCount);
-        }
-
-        if (requestedInterval.HasValue)
-        {
-            // Geodesic line length is unknown without an extra round-trip; cap at MaxSampleCount.
-            return Math.Clamp(limits.MaxSampleCount, 2, limits.MaxSampleCount);
-        }
-
-        return Math.Clamp(limits.DefaultSampleCount, 2, limits.MaxSampleCount);
     }
 
     private static byte[] WriteLineWkb(LineString lineString)

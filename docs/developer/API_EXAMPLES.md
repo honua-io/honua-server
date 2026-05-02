@@ -18,6 +18,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 | **OData v4** | Business intelligence | `/odata` | Excel, Power BI |
 | **Vector Tiles** | High-performance maps | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, Leaflet |
 | **Terrain-RGB Tiles** | Web terrain/elevation | `/terrain/{datasetId}/tile.json` | MapLibre/Mapbox `raster-dem` clients |
+| **Elevation Query / Profile** | Numeric elevation lookup | `/elevation/{datasetId}/value`, `/elevation/{datasetId}/profile` | Field workflows, route planning, utility inspection |
 
 ## Table of Contents
 
@@ -31,6 +32,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 - [OData v4](#odata-v4-api)
 - [Vector Tiles (MVT)](#vector-tiles-mvt)
 - [Terrain-RGB Elevation Tiles](#terrain-rgb-elevation-tiles)
+- [Elevation Query and Profile API](#elevation-query-and-profile-api)
 - [Error Handling](#error-handling)
 - [Related Documentation](#related-documentation)
 
@@ -742,6 +744,86 @@ Tiles are 256x256 `image/png` responses in WebMercator XYZ coordinates. They use
 ```
 
 `datasetId` can be a numeric layer id or a layer collection name. TileJSON metadata can return `200 OK` with `supported: false` and `unsupportedReasons` for unsupported sources. PNG tile requests return `400` for zoom or tile-matrix validation failures, `404` for missing datasets or layers without raster sources, and `422` for unsupported DEM sources such as missing CRS or multi-band rasters.
+
+---
+
+## **Elevation Query and Profile API**
+
+### **Point elevation**
+
+```bash
+curl "http://localhost:8080/elevation/0/value?x=-122.4194&y=37.7749"
+```
+
+**Example JSON response (trimmed):**
+```json
+{
+  "datasetId": "0",
+  "layerId": 0,
+  "elevation": 123.4,
+  "noData": false,
+  "outOfBounds": false,
+  "x": -122.4194,
+  "y": 37.7749,
+  "querySrid": 4326,
+  "mosaicRule": "newest",
+  "source": {
+    "rasterIds": [42],
+    "rasterCount": 1,
+    "sourceSrid": 3857,
+    "sourceCrs": "EPSG:3857",
+    "pixelType": "32BF",
+    "noDataValue": null,
+    "verticalUnit": null,
+    "verticalDatum": null,
+    "verticalUnitAssumption": "Source values are assumed to be meters when no vertical unit is declared.",
+    "band": 1
+  }
+}
+```
+
+When the coordinate is outside the registered raster extent the response is still `200 OK` with `elevation: null`, `noData: true`, `outOfBounds: true`, and an empty `source.rasterIds` list.
+
+### **Line elevation profile**
+
+```bash
+curl "http://localhost:8080/elevation/0/profile?line=LINESTRING(-122.5%2037.7%2C-122.3%2037.8)&sampleCount=5"
+```
+
+**Example JSON response (trimmed):**
+```json
+{
+  "datasetId": "0",
+  "layerId": 0,
+  "sampleCount": 5,
+  "lineLengthMeters": 24158.42,
+  "lineSrid": 4326,
+  "mosaicRule": "newest",
+  "isAllNoData": false,
+  "samples": [
+    { "distanceMeters": 0,        "elevation": 12.3,  "noData": false },
+    { "distanceMeters": 6039.61,  "elevation": 18.7,  "noData": false },
+    { "distanceMeters": 12079.21, "elevation": null,  "noData": true  },
+    { "distanceMeters": 18118.82, "elevation": 45.0,  "noData": false },
+    { "distanceMeters": 24158.42, "elevation": 52.6,  "noData": false }
+  ],
+  "source": {
+    "rasterIds": [42, 43],
+    "rasterCount": 2,
+    "sourceSrid": 3857,
+    "sourceCrs": "EPSG:3857",
+    "pixelType": "32BF",
+    "verticalUnit": null,
+    "verticalDatum": null,
+    "verticalUnitAssumption": "Source values are assumed to be meters when no vertical unit is declared.",
+    "band": 1
+  }
+}
+```
+
+`sampleCount` defaults to `Limits:Elevation:DefaultSampleCount` (100) and is capped at `Limits:Elevation:MaxSampleCount` (default 500). When only `interval` is supplied, the SQL derives the effective sample count as `ceil(geodesicLengthMeters / interval) + 1`, clamped to `[2, MaxSampleCount]`; the response `sampleCount` reflects what was actually returned. The input line is transformed to WGS 84 before any geographic length or interpolation work (PostGIS `geography` only accepts SRID 4326), and `ST_LineInterpolatePoint(geog, frac, true)` is used so each sample's reported `distanceMeters` matches its true geodesic position along the line. Profile sampling executes as a single PostGIS query for one round-trip regardless of `N`. When `sampleCount` and `interval` are both supplied, `sampleCount` wins and `interval` is ignored.
+
+`datasetId` accepts a numeric layer id or a layer collection name. The Elevation protocol must be enabled on the service or layer metadata; omitted `EnabledProtocols` includes Elevation by default. Errors return `400` for malformed coordinates, `422` for invalid WKT/non-LineString geometry, sample-count or interval overflow, and unsupported CRS, and `404` for unknown datasets or layers without a registered raster source. See [Elevation Query and Profile API](../gis/elevation-api.md) for the full request/response contract and known limitations.
 
 ---
 

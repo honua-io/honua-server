@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -13,6 +12,7 @@ namespace Honua.Postgres.Features.Raster;
 internal sealed class PostgresElevationService : IElevationService
 {
     private const int DefaultPointSrid = 4326;
+    private const int Wgs84Srid = 4326;
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly IRasterStore _rasterStore;
@@ -137,9 +137,14 @@ internal sealed class PostgresElevationService : IElevationService
     {
         ArgumentNullException.ThrowIfNull(lineWkb);
 
-        if (options.SampleCount < 2)
+        if (options.MaxSampleCount < 2)
         {
-            throw new ArgumentException("Sample count must be at least 2.", nameof(options));
+            throw new ArgumentException("MaxSampleCount must be at least 2.", nameof(options));
+        }
+
+        if (options.SampleCount.HasValue && options.SampleCount.Value < 2)
+        {
+            throw new ArgumentException("SampleCount must be at least 2 when supplied.", nameof(options));
         }
 
         var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -166,65 +171,89 @@ internal sealed class PostgresElevationService : IElevationService
             rasterIds[i] = matching[i].Id;
         }
 
-        var samples = new ElevationSample[options.SampleCount];
+        var samples = new List<ElevationSample>(Math.Min(options.MaxSampleCount, options.SampleCount ?? options.DefaultSampleCount));
         var allNoData = true;
+        var lineLength = 0d;
 
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
 
         if (rasterIds.Length == 0)
         {
-            command.CommandText = """
-                WITH line AS (
-                    SELECT ST_GeomFromWKB(@lineWkb, @lineSrid) AS geom
+            command.CommandText = $"""
+                WITH line_in AS (
+                    SELECT ST_GeomFromWKB(@lineWkb, @lineSrid) AS geom_in
+                ),
+                line_4326 AS (
+                    SELECT CASE
+                               WHEN @lineSrid = {Wgs84Srid} THEN geom_in
+                               ELSE ST_Transform(geom_in, {Wgs84Srid})
+                           END AS geom
+                    FROM line_in
                 ),
                 line_g AS (
-                    SELECT geom, geom::geography AS geog FROM line
+                    SELECT geom, geom::geography AS geog FROM line_4326
                 ),
                 params AS (
-                    SELECT ST_Length(geog) AS len_m FROM line_g
+                    SELECT geog,
+                           ST_Length(geog) AS len_m,
+                           {ResolvedSampleCountExpression} AS n_samples
+                    FROM line_g
                 ),
                 fracs AS (
-                    SELECT n, n / (@sampleCount - 1)::float AS frac
-                    FROM generate_series(0, @sampleCount - 1) AS gs(n)
+                    SELECT n,
+                           CASE WHEN params.n_samples > 1
+                                THEN n / (params.n_samples - 1)::float
+                                ELSE 0
+                           END AS frac
+                    FROM params CROSS JOIN generate_series(0, params.n_samples - 1) AS gs(n)
                 )
                 SELECT fracs.n,
-                       fracs.frac * params.len_m AS dist_m
+                       fracs.frac * params.len_m AS dist_m,
+                       params.len_m
                 FROM fracs CROSS JOIN params
                 ORDER BY fracs.n
                 """;
-            command.AddParameter("@lineWkb", lineWkb);
-            command.AddParameter("@lineSrid", lineSrid);
-            command.AddParameter("@sampleCount", options.SampleCount);
+            AddProfileSqlParameters(command, lineWkb, lineSrid, options);
 
-            double lineLength = 0;
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
             {
-                var n = reader.GetInt32(0);
-                var dist = reader.IsDBNull(1) ? 0.0 : reader.GetDouble(1);
-                lineLength = Math.Max(lineLength, dist);
-                samples[n] = new ElevationSample
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    DistanceMeters = dist,
-                    Elevation = null,
-                    NoData = true
-                };
+                    var dist = reader.IsDBNull(1) ? 0.0 : reader.GetDouble(1);
+                    if (!reader.IsDBNull(2))
+                    {
+                        lineLength = Math.Max(lineLength, reader.GetDouble(2));
+                    }
+
+                    samples.Add(new ElevationSample
+                    {
+                        DistanceMeters = dist,
+                        Elevation = null,
+                        NoData = true
+                    });
+                }
+            }
+
+            if (samples.Count == 0)
+            {
+                samples.Add(new ElevationSample { DistanceMeters = 0, Elevation = null, NoData = true });
+                samples.Add(new ElevationSample { DistanceMeters = lineLength, Elevation = null, NoData = true });
             }
 
             PostgresElevationLog.ElevationProfileQueried(
                 _logger,
                 layerId,
-                options.SampleCount,
+                samples.Count,
                 lineLength,
                 rasterCount: 0,
                 allNoData: true);
 
             return new ElevationProfileResult
             {
-                Samples = samples,
+                Samples = samples.ToArray(),
                 LineLengthMeters = lineLength,
-                SampleCount = options.SampleCount,
+                SampleCount = samples.Count,
                 LayerId = layerId,
                 RasterIds = rasterIds,
                 SourceSrid = sourceMetadata.SourceSrid,
@@ -236,26 +265,42 @@ internal sealed class PostgresElevationService : IElevationService
             };
         }
 
-        var aggregateExpression = CreateMosaicAggregateExpression(mergeStrategy);
+        var aggregateExpression = RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy);
         command.CommandText = $"""
-            WITH line AS (
-                SELECT ST_GeomFromWKB(@lineWkb, @lineSrid) AS geom
+            WITH line_in AS (
+                SELECT ST_GeomFromWKB(@lineWkb, @lineSrid) AS geom_in
+            ),
+            line_4326 AS (
+                SELECT CASE
+                           WHEN @lineSrid = {Wgs84Srid} THEN geom_in
+                           ELSE ST_Transform(geom_in, {Wgs84Srid})
+                       END AS geom
+                FROM line_in
             ),
             line_g AS (
-                SELECT geom, geom::geography AS geog FROM line
+                SELECT geom, geom::geography AS geog FROM line_4326
             ),
             params AS (
-                SELECT ST_Length(geog) AS len_m FROM line_g
+                SELECT geom,
+                       geog,
+                       ST_Length(geog) AS len_m,
+                       {ResolvedSampleCountExpression} AS n_samples
+                FROM line_g
             ),
             fracs AS (
-                SELECT n, n / (@sampleCount - 1)::float AS frac
-                FROM generate_series(0, @sampleCount - 1) AS gs(n)
+                SELECT n,
+                       CASE WHEN params.n_samples > 1
+                            THEN n / (params.n_samples - 1)::float
+                            ELSE 0
+                       END AS frac
+                FROM params CROSS JOIN generate_series(0, params.n_samples - 1) AS gs(n)
             ),
             pts AS (
                 SELECT fracs.n AS idx,
                        fracs.frac * params.len_m AS dist_m,
-                       ST_LineInterpolatePoint(line_g.geom, fracs.frac) AS geom
-                FROM fracs CROSS JOIN line_g CROSS JOIN params
+                       params.len_m AS line_length_m,
+                       ST_LineInterpolatePoint(params.geog, fracs.frac, true)::geometry AS geom_4326
+                FROM fracs CROSS JOIN params
             ),
             requested AS (
                 SELECT unnest(@rasterIds) AS raster_id
@@ -276,56 +321,66 @@ internal sealed class PostgresElevationService : IElevationService
             )
             SELECT pts.idx,
                    pts.dist_m,
+                   pts.line_length_m,
                    ST_Value(
                        merged.rast,
                        1,
-                       ST_Transform(ST_SetSRID(pts.geom, @lineSrid), ST_SRID(merged.rast))
+                       ST_Transform(ST_SetSRID(pts.geom_4326, {Wgs84Srid}), ST_SRID(merged.rast))
                    ) AS elev
             FROM pts CROSS JOIN merged
             ORDER BY pts.idx
             """;
-        command.AddParameter("@lineWkb", lineWkb);
-        command.AddParameter("@lineSrid", lineSrid);
-        command.AddParameter("@sampleCount", options.SampleCount);
+        AddProfileSqlParameters(command, lineWkb, lineSrid, options);
         command.AddParameter("@layerId", layerId);
         command.AddParameter("@rasterIds", rasterIds);
 
-        double maxDistance = 0;
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var idx = reader.GetInt32(0);
                 var dist = reader.IsDBNull(1) ? 0.0 : reader.GetDouble(1);
-                maxDistance = Math.Max(maxDistance, dist);
-                double? elev = reader.IsDBNull(2) ? null : reader.GetDouble(2);
+                if (!reader.IsDBNull(2))
+                {
+                    lineLength = Math.Max(lineLength, reader.GetDouble(2));
+                }
+
+                double? elev = reader.IsDBNull(3) ? null : reader.GetDouble(3);
                 if (elev.HasValue)
                 {
                     allNoData = false;
                 }
 
-                samples[idx] = new ElevationSample
+                samples.Add(new ElevationSample
                 {
                     DistanceMeters = dist,
                     Elevation = elev,
                     NoData = !elev.HasValue
-                };
+                });
             }
+        }
+
+        if (samples.Count == 0)
+        {
+            // Defensive: profile with mosaic merge produced no rows. Return a
+            // deterministic 2-sample no-data response rather than an empty list.
+            samples.Add(new ElevationSample { DistanceMeters = 0, Elevation = null, NoData = true });
+            samples.Add(new ElevationSample { DistanceMeters = lineLength, Elevation = null, NoData = true });
+            allNoData = true;
         }
 
         PostgresElevationLog.ElevationProfileQueried(
             _logger,
             layerId,
-            options.SampleCount,
-            maxDistance,
+            samples.Count,
+            lineLength,
             rasterIds.Length,
             allNoData);
 
         return new ElevationProfileResult
         {
-            Samples = samples,
-            LineLengthMeters = maxDistance,
-            SampleCount = options.SampleCount,
+            Samples = samples.ToArray(),
+            LineLengthMeters = lineLength,
+            SampleCount = samples.Count,
             LayerId = layerId,
             RasterIds = rasterIds,
             SourceSrid = sourceMetadata.SourceSrid,
@@ -336,6 +391,38 @@ internal sealed class PostgresElevationService : IElevationService
             IsAllNoData = allNoData
         };
     }
+
+    private static void AddProfileSqlParameters(
+        System.Data.Common.DbCommand command,
+        byte[] lineWkb,
+        int lineSrid,
+        ProfileSamplingOptions options)
+    {
+        command.AddParameter("@lineWkb", lineWkb);
+        command.AddParameter("@lineSrid", lineSrid);
+        command.AddParameter("@sampleCount", (object?)options.SampleCount ?? DBNull.Value);
+        command.AddParameter("@interval", (object?)options.IntervalMeters ?? DBNull.Value);
+        command.AddParameter("@defaultSampleCount", options.DefaultSampleCount);
+        command.AddParameter("@maxSampleCount", options.MaxSampleCount);
+    }
+
+    /// <summary>
+    /// SQL fragment that resolves the effective sample count from explicit
+    /// <c>@sampleCount</c>, derived <c>@interval</c> against the geodesic line
+    /// length, or the configured <c>@defaultSampleCount</c>. Always clamped to
+    /// <c>[2, @maxSampleCount]</c>. Nullable parameters are cast to concrete
+    /// types so PostgreSQL can resolve them when the value is NULL.
+    /// </summary>
+    private static string ResolvedSampleCountExpression =>
+        """
+        GREATEST(2, LEAST(@maxSampleCount,
+            CASE
+                WHEN @sampleCount::int IS NOT NULL THEN @sampleCount::int
+                WHEN @interval::float8 IS NOT NULL AND @interval::float8 > 0
+                    THEN CEIL(ST_Length(geog) / @interval::float8)::int + 1
+                ELSE @defaultSampleCount
+            END))
+        """;
 
     private static SourceMetadata ResolveSourceMetadata(RasterInfo[] rasters)
     {
@@ -368,16 +455,6 @@ internal sealed class PostgresElevationService : IElevationService
             .ToArray();
         return distinct.Length == 1 ? distinct[0] : null;
     }
-
-    private static string CreateMosaicAggregateExpression(RasterMergeStrategy mergeStrategy) => mergeStrategy switch
-    {
-        RasterMergeStrategy.Newest => "ST_Union(rast, 'LAST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC)",
-        RasterMergeStrategy.Oldest => "ST_Union(rast, 'FIRST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC)",
-        RasterMergeStrategy.Average => "ST_Union(rast, 'MEAN')",
-        RasterMergeStrategy.Max => "ST_Union(rast, 'MAX')",
-        RasterMergeStrategy.Min => "ST_Union(rast, 'MIN')",
-        _ => "ST_Union(rast, 'LAST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC)"
-    };
 
     private static byte[] BuildPointWkb(double x, double y)
     {

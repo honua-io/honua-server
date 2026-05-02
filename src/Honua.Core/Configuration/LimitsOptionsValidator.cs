@@ -16,12 +16,31 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
         ValidateDataAnnotations(options.Connections, failures, "Connections");
         ValidateDataAnnotations(options.Imports, failures, "Imports");
         ValidateDataAnnotations(options.Analytics, failures, "Analytics");
+        ValidateDataAnnotations(options.Elevation, failures, "Elevation");
 
         ValidateQueryLimits(options.Query, failures);
         ValidateTileLimits(options.Tiles, failures);
         ValidateEditLimits(options.Edits, failures);
         ValidateAttachmentLimits(options.Attachments, failures);
         ValidateConnectionLimits(options.Connections, failures);
+        ValidateElevationLimits(options.Elevation, failures);
+    }
+
+    internal static void ValidateElevationLimits(ElevationLimits limits, List<string> failures)
+    {
+        ValidateLogicalOrder(
+            limits.DefaultSampleCount,
+            limits.MaxSampleCount,
+            "Elevation.DefaultSampleCount",
+            "Elevation.MaxSampleCount",
+            failures);
+
+        ValidateLogicalOrder(
+            limits.MinIntervalMeters,
+            limits.MaxIntervalMeters,
+            "Elevation.MinIntervalMeters",
+            "Elevation.MaxIntervalMeters",
+            failures);
     }
 
     internal static void ValidateQueryLimits(QueryLimits limits, List<string> failures)

@@ -25,6 +25,7 @@ Historical planning, audit, and design artifacts live under [docs/archive/](arch
 | See API examples | [API Examples](developer/API_EXAMPLES.md) |
 | Check protocol support | [Protocols Overview](gis/STANDARDS_APIS.md) |
 | Serve terrain/elevation tiles | [Terrain-RGB Tiles](gis/terrain-tiles.md) |
+| Look up numeric elevation values | [Elevation Query and Profile API](gis/elevation-api.md) |
 | Integrate AI agents | [MCP Server](developer/MCP_SERVER.md) |
 | Troubleshoot issues | [Troubleshooting](operator/troubleshooting.md) |
 | Review OpenAPI specs | [API Specs](developer/api-specs/) |

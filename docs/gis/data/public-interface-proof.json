@@ -1611,6 +1611,49 @@
       ]
     },
     {
+      "surfaceId": "elevation-query-profile",
+      "displayName": "Elevation Query and Profile API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Elevation",
+      "canonicalIdentifier": "/elevation/{datasetId}/value + /elevation/{datasetId}/profile",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/elevation/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus elevation endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Elevation/ElevationEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#840",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Point lookup, profile sampling, no-data, out-of-bounds, sample/interval limit enforcement, unsupported CRS, and protocol-not-enabled flows are covered by integration tests against a seeded raster",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Elevation/ElevationEndpointTests.cs",
+            "docs/gis/elevation-api.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#840",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "grpc-feature-service",
       "displayName": "gRPC FeatureService",
       "surfaceKind": "operation-surface",

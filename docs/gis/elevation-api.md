@@ -67,14 +67,19 @@ no-data pixel, the response is `200 OK` with `elevation: null`, `noData: true`,
 | --- | --- | --- |
 | `line` | yes | LineString geometry encoded as WKT, e.g. `LINESTRING(lon1 lat1, lon2 lat2)`. |
 | `sampleCount` | no | Number of samples (including endpoints). Defaults to `Limits:Elevation:DefaultSampleCount` (100). Must be `>=2` and `<= Limits:Elevation:MaxSampleCount` (default 500). |
-| `interval` | no | Maximum sampling interval in meters. When supplied alone, `sampleCount` is set to the configured maximum so spacing never exceeds the requested interval. |
-| `srid` | no | EPSG SRID of the line geometry. Defaults to `4326`. |
+| `interval` | no | Target sampling interval in meters. Validated against `Limits:Elevation:MinIntervalMeters` and `Limits:Elevation:MaxIntervalMeters`. When supplied without `sampleCount`, the effective sample count is derived inline by the profile SQL as `ceil(geodesicLengthMeters / interval) + 1`, clamped to `[2, Limits:Elevation:MaxSampleCount]`. |
+| `srid` | no | EPSG SRID of the line geometry. Defaults to `4326`. Lines in projected SRIDs are transformed to WGS 84 (`EPSG:4326`) before any geographic length or interpolation is performed (PostGIS `geography` only accepts SRID 4326). |
 | `mosaicRule` | no | Override layer-default merge strategy: `newest`, `oldest`, `average`, `max`, `min`. |
 
 When both `sampleCount` and `interval` are supplied, `sampleCount` wins and
-`interval` is ignored. Distances are computed along the geodesic arc length of
-the input line (`::geography` projection inside PostGIS), so samples are evenly
-spaced regardless of the source line CRS.
+`interval` is ignored. Sample positions and reported distances are computed in
+the same metric space — the input line is transformed to WGS 84 and cast to
+PostGIS `geography`, then sampled with `ST_LineInterpolatePoint(geog, frac, true)`
+on the WGS 84 spheroid. Reported `distanceMeters` are the cumulative geodesic
+arc length of the input line, so the position of each sample matches the
+distance reported for it. The `sampleCount` field on the response always
+reflects the effective number of samples returned, including the value derived
+from `interval`.
 
 Successful response (`200 application/json`):
 
@@ -149,10 +154,18 @@ All error responses use the shared `application/problem+json` envelope.
 }
 ```
 
-Operators can tighten or relax these limits per environment. Profile sampling is
-implemented as a single PostGIS query that fans out to `N` samples through
-`generate_series` + `ST_LineInterpolatePoint`; sample bounds protect the database
-from pathological large fan-outs while still allowing dense profiles up to the
+Operators can tighten or relax these limits per environment. The
+`LimitsOptionsValidator` rejects misconfigurations at startup — the server
+fails fast when `Elevation.DefaultSampleCount` exceeds `MaxSampleCount`, when
+`Elevation.MinIntervalMeters` exceeds `MaxIntervalMeters`, or when any
+`ElevationLimits` field falls outside the declared `[Range]`. Profile sampling
+is implemented as a single PostGIS query that transforms the input line to
+WGS 84, computes the geodesic length in `geography`, derives the effective
+sample count (from `sampleCount`, `interval`/length, or `DefaultSampleCount`),
+fans out via `generate_series`, samples positions with
+`ST_LineInterpolatePoint(geog, frac, true)`, and looks up raster values with
+`ST_Value` against the merged mosaic. Sample bounds protect the database from
+pathological large fan-outs while still allowing dense profiles up to the
 configured maximum.
 
 ## Known limitations

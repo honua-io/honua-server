@@ -410,6 +410,95 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         json.RootElement.GetProperty("sampleCount").GetInt32().Should().Be(100);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /elevation/{datasetId}/profile")]
+    public async Task GetElevationProfile_WithProjectedSrid_ReturnsValidGeodesicLength()
+    {
+        // Regression: profile lines in projected CRSs (e.g. EPSG:3857) must be
+        // transformed to WGS84 before any geography cast — PostGIS geography
+        // only accepts SRID 4326 input.
+        await SeedFullWorldRasterAsync(42);
+
+        // Web Mercator coordinates roughly equivalent to (0,0) → (1,1) in 4326.
+        // 1° lon at the equator ≈ 111 195 m → ~157 km diagonal.
+        var line = "LINESTRING(0 0, 111319.49 111325.14)";
+        var response = await _fixture.Client.GetAsync(
+            $"/elevation/0/profile?line={Uri.EscapeDataString(line)}&srid=3857&sampleCount=5");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+
+        root.GetProperty("lineSrid").GetInt32().Should().Be(3857);
+        root.GetProperty("sampleCount").GetInt32().Should().Be(5);
+        root.GetProperty("lineLengthMeters").GetDouble().Should().BeApproximately(157_249, 5_000);
+        root.GetProperty("isAllNoData").GetBoolean().Should().BeFalse();
+
+        var samples = root.GetProperty("samples");
+        samples.GetArrayLength().Should().Be(5);
+        foreach (var sample in samples.EnumerateArray())
+        {
+            sample.GetProperty("noData").GetBoolean().Should().BeFalse();
+            sample.GetProperty("elevation").GetDouble().Should().BeApproximately(42, 0.0001);
+        }
+
+        // Distances must be non-decreasing and end at the geodesic length.
+        var first = samples[0].GetProperty("distanceMeters").GetDouble();
+        var last = samples[samples.GetArrayLength() - 1].GetProperty("distanceMeters").GetDouble();
+        first.Should().Be(0);
+        last.Should().BeApproximately(root.GetProperty("lineLengthMeters").GetDouble(), 0.0001);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /elevation/{datasetId}/profile")]
+    public async Task GetElevationProfile_WithIntervalOnly_DerivesSampleCountFromLineLength()
+    {
+        // Regression: ?interval was previously ignored (always set to MaxSampleCount).
+        // Now the SQL derives effective_count = ceil(length / interval) + 1, capped.
+        await SeedFullWorldRasterAsync(7);
+
+        // ~157 km geodesic line. With interval=50 km we expect ceil(157/50)+1 = 5 samples.
+        var line = "LINESTRING(0 0, 1 1)";
+        var response = await _fixture.Client.GetAsync(
+            $"/elevation/0/profile?line={Uri.EscapeDataString(line)}&interval=50000");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+
+        // Roughly 4-6 samples for a ~157 km line at 50 km interval.
+        var sampleCount = root.GetProperty("sampleCount").GetInt32();
+        sampleCount.Should().BeInRange(4, 6);
+        root.GetProperty("samples").GetArrayLength().Should().Be(sampleCount);
+
+        // Smaller intervals should produce more samples than the default of 100
+        // would give for this short line.
+        var denserResponse = await _fixture.Client.GetAsync(
+            $"/elevation/0/profile?line={Uri.EscapeDataString(line)}&interval=1000");
+        denserResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var denser = JsonDocument.Parse(await denserResponse.Content.ReadAsStringAsync());
+        denser.RootElement.GetProperty("sampleCount").GetInt32().Should().BeGreaterThan(sampleCount);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /elevation/{datasetId}/profile")]
+    public async Task GetElevationProfile_WithIntervalAndSampleCount_PrefersExplicitSampleCount()
+    {
+        await SeedFullWorldRasterAsync(7);
+
+        var line = "LINESTRING(0 0, 1 1)";
+        var response = await _fixture.Client.GetAsync(
+            $"/elevation/0/profile?line={Uri.EscapeDataString(line)}&sampleCount=12&interval=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        // Explicit sampleCount wins; interval is ignored when both are supplied.
+        json.RootElement.GetProperty("sampleCount").GetInt32().Should().Be(12);
+    }
+
     private Task SeedFullWorldRasterAsync(double elevationMeters)
         => RasterIntegrationTestData.ReplaceLayerRastersAsync(
             _fixture,

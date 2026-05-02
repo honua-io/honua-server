@@ -84,6 +84,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | Vector Tiles (MVT) | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, OpenLayers, Leaflet, Mapbox GL |
 | TileJSON | `/tiles/{layerId}/tile.json` | MapLibre |
 | Terrain-RGB Elevation Tiles | `/terrain/{datasetId}/tile.json`, `/terrain/{datasetId}/{z}/{x}/{y}.png` | MapLibre/Mapbox `raster-dem` clients |
+| Elevation Query / Profile API | `/elevation/{datasetId}/value`, `/elevation/{datasetId}/profile` | Field workflows, route planning, utility inspection, no-code dashboards |
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
 | Admin API | `/api/v1/admin` | Standalone Admin UI, automation scripts |
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
@@ -103,6 +104,8 @@ Please use these forms instead of blank issues so reports include enough detail 
 **Raster and coverage access** — ImageServer export/identify/tile/catalog/statistics/legend routes, WCS 2.0.1 `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`, plus OGC API Coverages discovery/schema/coverage retrieval over enabled raster layers.
 
 **Terrain elevation tiles** — server-generated Terrain-RGB metadata and 256x256 WebMercator XYZ PNG tiles from registered single-band DEM/raster sources. TileJSON is available at `/terrain/{datasetId}/tile.json`; no-data and uncovered pixels encode as `[0,0,0]` (`-10000m`).
+
+**Numeric elevation lookup** — point and line-profile elevation API over the same registered raster/DEM sources. `GET /elevation/{datasetId}/value` returns the sampled elevation, source raster ids, source SRID, pixel type, and a `noData`/`outOfBounds` flag. `GET /elevation/{datasetId}/profile` returns ordered distance/elevation samples for a WKT LineString in a single PostGIS round-trip — the line is transformed to WGS 84, sampled with `ST_LineInterpolatePoint(geog, frac, true)` on the spheroid, and looked up through `ST_Value` on the merged mosaic. Sample count is bounded by `Limits:Elevation` and may be derived from `interval`/length when `sampleCount` is omitted.
 
 **Geometry operations** — GeoServices Geometry Service endpoints for buffer, simplify, project, intersect, union, clip, difference, area, and length.
 

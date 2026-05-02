@@ -169,13 +169,40 @@ public sealed record ElevationProfileResult
 /// <summary>
 /// Sampling options for an elevation profile query.
 /// </summary>
+/// <remarks>
+/// When <see cref="SampleCount"/> is supplied it is used directly, capped at
+/// <see cref="MaxSampleCount"/>. When only <see cref="IntervalMeters"/> is
+/// supplied, the effective sample count is derived from the line's geodesic
+/// length so neighbouring samples are spaced at most
+/// <see cref="IntervalMeters"/> apart, clamped to
+/// <c>[2, MaxSampleCount]</c>. When neither is supplied,
+/// <see cref="DefaultSampleCount"/> is used.
+/// </remarks>
 public readonly record struct ProfileSamplingOptions
 {
     /// <summary>
-    /// Number of samples (including both endpoints) to compute along the
-    /// profile line. Must be at least 2.
+    /// Explicit sample count requested by the caller, if any. Must be at
+    /// least 2 when supplied.
     /// </summary>
-    public required int SampleCount { get; init; }
+    public int? SampleCount { get; init; }
+
+    /// <summary>
+    /// Sampling interval in meters supplied by the caller, if any. Used to
+    /// derive the effective sample count from the line's geodesic length when
+    /// <see cref="SampleCount"/> is not supplied.
+    /// </summary>
+    public double? IntervalMeters { get; init; }
+
+    /// <summary>
+    /// Default sample count applied when neither <see cref="SampleCount"/>
+    /// nor <see cref="IntervalMeters"/> is supplied.
+    /// </summary>
+    public required int DefaultSampleCount { get; init; }
+
+    /// <summary>
+    /// Maximum sample count permitted in a single profile request.
+    /// </summary>
+    public required int MaxSampleCount { get; init; }
 }
 
 /// <summary>
