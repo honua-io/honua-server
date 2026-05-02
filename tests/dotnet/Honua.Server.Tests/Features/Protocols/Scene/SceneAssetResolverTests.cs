@@ -182,6 +182,28 @@ public sealed class SceneAssetResolverTests : IAsyncLifetime, IDisposable
     }
 
     [UnitTest]
+    public void TryResolve_AssetRootWithTrailingSeparator_ResolvesValidAsset()
+    {
+        // Regression: HasLinkBetweenFileAndRoot used a string-equality stop
+        // condition that never matched when AssetRoot retained a trailing
+        // directory separator (which Path.GetFullPath preserves), causing the
+        // walk to overshoot the root and reject every valid file as
+        // OutsideRoot.
+        var datasetWithTrailingSeparator = new SceneDataset
+        {
+            Id = "trailing",
+            Name = "trailing",
+            AssetRoot = Path.GetFullPath(_root) + Path.DirectorySeparatorChar,
+            TilesetFileName = "tileset.json"
+        };
+
+        var ok = SceneAssetResolver.TryResolve(datasetWithTrailingSeparator, "tiles/0.b3dm", out var resolved, out var error);
+        ok.Should().BeTrue();
+        error.Should().Be(SceneAssetResolutionError.None);
+        resolved.File.FullName.Should().StartWith(Path.GetFullPath(_root));
+    }
+
+    [UnitTest]
     public void TryResolve_FileSymlinkEscapingAssetRoot_RejectsAsOutsideRoot()
     {
         // Lexical prefix tests already prove `..` and absolute-path inputs are

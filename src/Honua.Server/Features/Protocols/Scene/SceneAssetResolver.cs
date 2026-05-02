@@ -117,6 +117,13 @@ internal static class SceneAssetResolver
 
     private static bool HasLinkBetweenFileAndRoot(FileInfo file, string assetRoot)
     {
+        // DirectoryInfo.FullName never reports a trailing separator for
+        // non-root directories, so trim AssetRoot to match. Callers
+        // (ConfigurationSceneDatasetRegistry) already canonicalize, but
+        // trimming here keeps the resolver correct for any other source
+        // and makes the comparison robust under all input shapes.
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(assetRoot);
+
         FileSystemInfo? current = file;
         while (current is not null)
         {
@@ -124,7 +131,7 @@ internal static class SceneAssetResolver
             // owns whether AssetRoot resolves through a link, so we only
             // police segments strictly under it.
             if (current is DirectoryInfo dir &&
-                string.Equals(dir.FullName, assetRoot, StringComparison.OrdinalIgnoreCase))
+                string.Equals(dir.FullName, normalizedRoot, StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }

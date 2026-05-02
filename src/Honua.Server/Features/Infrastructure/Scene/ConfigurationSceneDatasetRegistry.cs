@@ -71,7 +71,12 @@ internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
             ? entry.AssetRoot
             : Path.Combine(contentRoot, entry.AssetRoot);
 
-        var canonical = Path.GetFullPath(assetRoot);
+        // Path.GetFullPath preserves a trailing directory separator, but
+        // DirectoryInfo.FullName never reports one for non-root directories.
+        // Strip the trailing separator here so downstream string equality
+        // checks (notably SceneAssetResolver.HasLinkBetweenFileAndRoot)
+        // can match parent walks against this canonical form.
+        var canonical = Path.TrimEndingDirectorySeparator(Path.GetFullPath(assetRoot));
 
         var metadata = entry.AccessPolicy is null
             ? null
