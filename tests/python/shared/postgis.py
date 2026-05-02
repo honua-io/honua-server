@@ -353,7 +353,7 @@ class PostGISFixture:
                         metadata JSONB,
                         maplibre_style JSONB,
                         geoservices_drawing_info JSONB,
-                        style_version INT DEFAULT 1,
+                        style_version INT DEFAULT 0,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """

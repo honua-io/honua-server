@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS honua.layers (
     metadata JSONB,
     maplibre_style JSONB,
     geoservices_drawing_info JSONB,
-    style_version INT DEFAULT 1,
+    style_version INT DEFAULT 0,
     enabled BOOLEAN NOT NULL DEFAULT TRUE
 );
 

@@ -36,7 +36,7 @@ sql:
           metadata JSONB,
           maplibre_style JSONB,
           geoservices_drawing_info JSONB,
-          style_version INT DEFAULT 1,
+          style_version INT DEFAULT 0,
           style_revised_at TIMESTAMPTZ,
           style_revised_by TEXT,
           style_change_summary TEXT,

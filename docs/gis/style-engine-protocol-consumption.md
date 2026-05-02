@@ -41,6 +41,14 @@ no read path persists this default, so repeat reads on an unstyled layer do
 not bump `style_version` or stamp `style_revised_at`. The first PUT lands as
 revision `1` with the caller-supplied metadata.
 
+The schema enforces this contract at the storage layer: migration
+`022_AddStyleRevisionMetadata.sql` sets `style_version DEFAULT 0` and
+backfills any row where `maplibre_style IS NULL AND style_revised_at IS NULL`
+to `style_version = 0` so the original `DEFAULT 1` from migration `009`
+cannot make an unstyled row read as revision `1`. Updates use
+`style_version = COALESCE(style_version, 0) + 1`, so the first PUT on a
+newly-published row increments `0 -> 1` deterministically.
+
 ## Authoring entry points
 
 | Operation | Endpoint | Notes |

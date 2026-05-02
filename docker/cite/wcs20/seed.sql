@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS honua.layers (
     metadata JSONB,
     maplibre_style JSONB,
     geoservices_drawing_info JSONB,
-    style_version INT DEFAULT 1,
+    style_version INT DEFAULT 0,
     enabled BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -71,7 +71,7 @@ ALTER TABLE IF EXISTS honua.layers
 ALTER TABLE IF EXISTS honua.layers
     ADD COLUMN IF NOT EXISTS geoservices_drawing_info JSONB;
 ALTER TABLE IF EXISTS honua.layers
-    ADD COLUMN IF NOT EXISTS style_version INT DEFAULT 1;
+    ADD COLUMN IF NOT EXISTS style_version INT DEFAULT 0;
 ALTER TABLE IF EXISTS honua.layers
     ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;
 

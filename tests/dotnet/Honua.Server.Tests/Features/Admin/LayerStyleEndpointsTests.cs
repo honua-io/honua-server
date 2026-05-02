@@ -56,6 +56,60 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    public async Task UnstyledLayer_ReadsAtVersionZero_AndFirstPutLandsAsRevisionOne()
+    {
+        // Regression for the schema-level styleVersion contract: an unstyled
+        // Postgres-backed layer (seed inserts the row without maplibre_style)
+        // must read at styleVersion 0 with null revision metadata, so the
+        // first operator PUT lands as revision 1, not 2.  Migration 022
+        // sets DEFAULT 0 and backfills any rows still at the old DEFAULT 1
+        // value; the integration-test seed schemas use DEFAULT 0 directly.
+        var client = _fixture.CreateAdminClient();
+
+        var unstyledResponse = await client.GetAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style");
+        unstyledResponse.Be200Ok();
+        var unstyledPayload = await unstyledResponse.Content.ReadAsStringAsync();
+        var unstyled = JsonSerializer.Deserialize(
+            unstyledPayload,
+            LayerStyleJsonContext.Default.ApiResponseLayerStyleResponse);
+
+        unstyled!.Data!.StyleVersion.Should().Be(0);
+        unstyled.Data!.RevisedAt.Should().BeNull();
+        unstyled.Data!.RevisedBy.Should().BeNull();
+        unstyled.Data!.ChangeSummary.Should().BeNull();
+
+        var layer = LayerDefinition.CreateBasic(
+            WebAppFixture.TestLayerId,
+            "Test Layer",
+            GeometryType.Point);
+        var firstStyle = StyleDefaults.BuildDefaultMapLibreStyle(layer);
+        var firstRequest = new LayerStyleUpdateRequest
+        {
+            MapLibreStyle = JsonSerializer.SerializeToElement(firstStyle),
+            ChangedBy = "first-revision-operator",
+            ChangeSummary = "Initial revision."
+        };
+
+        var firstPutResponse = await client.PutAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
+            JsonContent.Create(firstRequest, LayerStyleJsonContext.Default.LayerStyleUpdateRequest));
+        firstPutResponse.Be200Ok();
+        var firstPutPayload = await firstPutResponse.Content.ReadAsStringAsync();
+        var firstPut = JsonSerializer.Deserialize(
+            firstPutPayload,
+            LayerStyleJsonContext.Default.ApiResponseLayerStyleResponse);
+
+        firstPut!.Data!.StyleVersion.Should().Be(1);
+        firstPut.Data!.RevisedAt.Should().NotBeNull();
+        firstPut.Data!.RevisedBy.Should().Be("first-revision-operator");
+        firstPut.Data!.ChangeSummary.Should().Be("Initial revision.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
     [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task UpdateLayerStyle_WithMapLibreStyle_UpdatesAndReturnsStyle()
