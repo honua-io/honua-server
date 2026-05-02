@@ -354,23 +354,30 @@ internal static class ObservabilityServiceCollectionExtensions
 
             // Hosted 3D Tiles tileset.json metadata caching policy.
             // Range requests bypass output cache so the static-file pipeline
-            // can return 206 Partial Content directly.
+            // can return 206 Partial Content directly. Responses marked
+            // Cache-Control: no-store (per-scene cachePolicy.noStore) are
+            // suppressed at storage time so the cache cannot outlive the
+            // dataset's no-store directive.
             options.AddPolicy("SceneTilesetMetadata", policy =>
             {
                 policy.Expire(ttl.SceneTilesetMetadata);
                 policy.SetVaryByRouteValue("sceneId");
                 policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
+                policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
                 policy.Tag("scene", "metadata");
             });
 
             // Hosted 3D Tiles tile/binary/texture asset caching policy.
             // Range requests bypass output cache so the static-file pipeline
-            // can return 206 Partial Content directly.
+            // can return 206 Partial Content directly. Per-scene no-store
+            // responses are suppressed at storage time, mirroring the
+            // metadata policy.
             options.AddPolicy("SceneTileAsset", policy =>
             {
                 policy.Expire(ttl.SceneTileAsset);
                 policy.SetVaryByRouteValue("sceneId", "assetPath");
                 policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
+                policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
                 policy.Tag("scene", "tiles");
             });
 

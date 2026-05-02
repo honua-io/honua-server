@@ -33,13 +33,16 @@ internal static partial class SceneDatasetEndpoints
     /// No-op when <see cref="ISceneRegistrationService"/> is not registered,
     /// which is the case for non-Postgres data-source profiles (#844). The
     /// configuration-backed scene serving path remains available; only the
-    /// admin CRUD surface is suppressed.
+    /// admin CRUD surface is suppressed. Registration is checked through
+    /// <see cref="IServiceProviderIsService"/> so that the scoped registration
+    /// service is not constructed from the root provider during mapping.
     /// </remarks>
     public static IEndpointRouteBuilder MapSceneDatasetEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        if (endpoints.ServiceProvider.GetService<ISceneRegistrationService>() is null)
+        var serviceInspector = endpoints.ServiceProvider.GetService<IServiceProviderIsService>();
+        if (serviceInspector is not null && !serviceInspector.IsService(typeof(ISceneRegistrationService)))
         {
             return endpoints;
         }

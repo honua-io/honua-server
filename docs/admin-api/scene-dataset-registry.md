@@ -38,7 +38,7 @@ satisfy unique constraints on `id` and `name`.
 | `name` | string | Display name; up to 128 characters; must be globally unique. |
 | `description` | string? | Optional human-readable description. |
 | `assetRoot` | string | Server-side filesystem directory containing the root tileset document. URI schemes, `..`, backslashes, and shell metacharacters are rejected. |
-| `tilesetFileName` | string | Defaults to `tileset.json`. |
+| `tilesetFileName` | string | Defaults to `tileset.json`. Up to 64 characters; relative filename only (no path separators, traversal segments, or shell metacharacters). |
 | `datasetType` | string | `hosted_tiles` (default) or `terrain`. |
 | `extent` | object? | WGS-84 axis-aligned bounding box `{ xMin, yMin, xMax, yMax }`. Required-paired or omitted entirely. |
 | `crs` | string? | Authority token (`EPSG:4979`, `OGC:1`). Geodesy interpretation is the caller's responsibility. |
@@ -63,6 +63,7 @@ enforced by the hosted-serving asset resolver introduced in #837.
 | `id` | Must be 1–64 chars of `[a-z0-9-]`, not starting or ending with a hyphen. |
 | `name` | Required, 1–128 chars, globally unique. |
 | `assetRoot` | Non-empty filesystem path; no URI schemes, `..`, `\`, `*`, `?`, `;`, `&`, `|`, `$`, `<`, `>`, `` ` ``, quotes, or null/control bytes. |
+| `tilesetFileName` | Optional. When supplied, ≤ 64 chars with no path separators (`/`, `\`), no `..` traversal segments, and no shell metacharacters. Null/whitespace is accepted and falls back to `tileset.json`. |
 | `crs` | Null or `[A-Z]+:[0-9]+`. |
 | `cachePolicy.maxAgeSeconds` | `0 ≤ value ≤ 86_400`. |
 | `editionGate` | Null or 1–32 chars of `[a-z0-9-]`. |
@@ -112,7 +113,9 @@ lean `SceneDataset` it serves:
 - The persisted `cachePolicy` is forwarded onto the serving model. The hosted
   routes use `cachePolicy.maxAgeSeconds` to pin the response `Cache-Control`
   header, and emit `Cache-Control: no-store` (plus `Vary: Authorization` on
-  protected scenes) when `noStore = true`.
+  protected scenes) when `noStore = true`. A no-store response also disables
+  server-side output-cache storage on the matching scene route so a
+  previously cached body cannot outlive the dataset's no-store directive.
 - `assetRoot` is canonicalized against the server content root before
   projection, so relative asset roots stored at registration survive the
   hosted asset resolver's path-containment check.

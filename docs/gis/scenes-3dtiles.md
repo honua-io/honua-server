@@ -128,6 +128,19 @@ The default TTLs are:
 | `tileset.json` metadata | 10 minutes | `OutputCache:SceneTilesetMetadata` |
 | Tile / binary / texture asset | 1 hour | `OutputCache:SceneTileAsset` |
 
+Datasets registered through the [scene dataset registry](../admin-api/scene-dataset-registry.md)
+can override these defaults per-scene via `cachePolicy`. `maxAgeSeconds`
+replaces the configured default for the matching response, and
+`noStore = true` emits `Cache-Control: no-store` (plus `Vary: Authorization`
+on protected scenes) regardless of the global TTL — useful for rotated
+debug datasets or short-lived previews. When the response carries
+`Cache-Control: no-store` the scene output-cache policies also suppress
+server-side cache storage so a no-store body cannot be replayed on
+subsequent requests until the configured TTL expires. The
+configuration-driven `Scenes` fallback does not carry a per-dataset cache
+policy, so those datasets always serve at the configured `OutputCache`
+defaults.
+
 ETags are deterministic per file — formatted as quoted
 `"<lastWriteUtcTicks-hex>-<lengthBytes-hex>"` — so cached responses survive
 process restarts as long as the underlying volume preserves file metadata.
