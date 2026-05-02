@@ -44,8 +44,8 @@ satisfy unique constraints on `id` and `name`.
 | `crs` | string? | Authority token (`EPSG:4979`, `OGC:1`). Geodesy interpretation is the caller's responsibility. |
 | `cachePolicy` | object | `{ maxAgeSeconds, noStore }`. `maxAgeSeconds` is bounded to `[0, 86400]`. |
 | `editionGate` | string? | Lower-kebab slug consumed by the licensing layer. |
-| `requiresAuth` | bool | When true, the hosted serving path refuses anonymous access. |
-| `isPublic` | bool | When true, the dataset is publicly readable. Cannot be true together with `requiresAuth`. |
+| `requiresAuth` | bool | When true, the hosted serving path refuses anonymous access. Mutually exclusive with `isPublic`. |
+| `isPublic` | bool | When true, the dataset is publicly readable. Mutually exclusive with `requiresAuth`. |
 | `allowedRoles` | string[]? | Roles allowed to read a protected dataset. Forwarded to `CatalogMetadata.AccessPolicy.AllowedRoles`. Ignored for public datasets. |
 | `status` | string | `active`, `inactive`, or `validation_failed`. |
 | `validationMessage` | string? | Optional non-fatal validation message. |
@@ -68,7 +68,7 @@ enforced by the hosted-serving asset resolver introduced in #837.
 | `cachePolicy.maxAgeSeconds` | `0 ≤ value ≤ 86_400`. |
 | `editionGate` | Null or 1–32 chars of `[a-z0-9-]`. |
 | `extent` | Optional; when supplied, **all four bounds must be present** (`xMin`, `yMin`, `xMax`, `yMax`) — partial payloads are rejected rather than silently defaulting missing bounds to zero. Each bound must be finite, in WGS-84 ranges, and `min ≤ max`. |
-| `isPublic` + `requiresAuth` | Cannot both be true. |
+| `isPublic` + `requiresAuth` | Exactly one must be `true`. Both-true is a contradiction; both-false would let the admin record claim no auth while the serving projection still treats any non-public record as protected. |
 
 Failures return `400 Bad Request` shaped as
 `application/problem+json` (admin problem type).

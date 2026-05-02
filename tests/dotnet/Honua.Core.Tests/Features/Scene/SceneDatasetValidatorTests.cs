@@ -215,10 +215,21 @@ public class SceneDatasetValidatorTests
         Assert.Contains("public", error, StringComparison.Ordinal);
     }
 
+    [UnitTest]
+    public void TryValidateAccessFlags_RejectsBothFalse()
+    {
+        // Both-false is a contradiction: the registry projects any non-public
+        // record to a protected access policy, so the admin-visible
+        // requiresAuth=false would lie about how the scene actually serves.
+        var ok = SceneDatasetValidator.TryValidateAccessFlags(isPublic: false, requiresAuth: false, out var error);
+
+        Assert.False(ok);
+        Assert.Contains("exactly one", error, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]
-    [InlineData(false, false)]
     public void TryValidateAccessFlags_AcceptsConsistentCombinations(bool isPublic, bool requiresAuth)
     {
         Assert.True(SceneDatasetValidator.TryValidateAccessFlags(isPublic, requiresAuth, out _));

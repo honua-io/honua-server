@@ -166,6 +166,22 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/scenes")]
+    public async Task Register_NeitherPublicNorAuth_Returns400Problem()
+    {
+        // Both flags false would let the admin record claim no auth while the
+        // serving projection treats any non-public record as protected. The
+        // validator rejects this contradiction up front.
+        var request = BuildValidRequest(NewSceneId("ambig"));
+        request.IsPublic = false;
+        request.RequiresAuth = false;
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/scenes", request, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes")]
     public async Task Register_PartialExtent_Returns400Problem()
     {
         // Missing xMax and yMax — non-nullable bounds would silently default

@@ -294,14 +294,24 @@ public static partial class SceneDatasetValidator
     }
 
     /// <summary>
-    /// Cross-field check: a record cannot simultaneously declare itself public
-    /// and require authentication.
+    /// Cross-field check: a record must declare its access posture
+    /// unambiguously. Exactly one of <paramref name="isPublic"/> /
+    /// <paramref name="requiresAuth"/> must be <c>true</c>; both-true is a
+    /// direct contradiction, and both-false would leave the record's
+    /// admin-visible auth flag inconsistent with serving (the registry
+    /// projects any non-public record to a protected access policy).
     /// </summary>
     public static bool TryValidateAccessFlags(bool isPublic, bool requiresAuth, [NotNullWhen(false)] out string? error)
     {
         if (isPublic && requiresAuth)
         {
             error = "A scene cannot be both public and require authentication.";
+            return false;
+        }
+
+        if (!isPublic && !requiresAuth)
+        {
+            error = "A scene must declare exactly one of isPublic=true or requiresAuth=true.";
             return false;
         }
 

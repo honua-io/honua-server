@@ -238,6 +238,38 @@ public sealed class OutputCacheInvalidationServiceTests
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:beta:*", Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateSceneAsync_WithSceneId_EvictsBroadAndPerSceneTags()
+    {
+        var outputCacheStore = Substitute.For<IOutputCacheStore>();
+        var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var logger = NullLogger<OutputCacheInvalidationService>.Instance;
+        var sut = new OutputCacheInvalidationService(outputCacheStore, null, null, scopeFactory, null, logger);
+
+        await sut.InvalidateSceneAsync("Downtown", CancellationToken.None);
+
+        await outputCacheStore.Received().EvictByTagAsync("scene", Arg.Any<CancellationToken>());
+        await outputCacheStore.Received().EvictByTagAsync("scene:downtown", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateSceneAsync_WithoutSceneId_OnlyEvictsBroadTag()
+    {
+        var outputCacheStore = Substitute.For<IOutputCacheStore>();
+        var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var logger = NullLogger<OutputCacheInvalidationService>.Instance;
+        var sut = new OutputCacheInvalidationService(outputCacheStore, null, null, scopeFactory, null, logger);
+
+        await sut.InvalidateSceneAsync(null, CancellationToken.None);
+
+        await outputCacheStore.Received().EvictByTagAsync("scene", Arg.Any<CancellationToken>());
+        await outputCacheStore.DidNotReceive().EvictByTagAsync(
+            Arg.Is<string>(t => t.StartsWith("scene:", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
     private static ServiceDefinition CreateService(string name, params int[] layerIds)
     {
         var layers = layerIds
