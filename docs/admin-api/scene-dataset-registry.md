@@ -73,6 +73,32 @@ enforced by the hosted-serving asset resolver introduced in #837.
 Failures return `400 Bad Request` shaped as
 `application/problem+json` (admin problem type).
 
+## Update semantics
+
+`PUT /api/v1/admin/scenes/{id}` accepts a partial update payload: every field
+is optional, and any field that is omitted (or sent as `null`) is treated as
+"keep the current value". Updates always succeed against the current revision —
+the response carries the new `revision` value so optimistic clients can detect
+out-of-band edits.
+
+For nullable fields where omission cannot mean "clear", the contract uses an
+explicit boolean sentinel that wins over the value field when set to `true`:
+
+| Field | Clear sentinel | Effect when sentinel is `true` |
+| --- | --- | --- |
+| `extent` | `clearExtent` | Removes the stored bounding box. |
+| `crs` | `clearCrs` | Removes the stored CRS authority token. |
+| `editionGate` | `clearEditionGate` | Removes the licensing gate slug. |
+| `allowedRoles` | `clearAllowedRoles` | Removes the role allow-list (the dataset becomes role-unrestricted; combine with `requiresAuth = true` to keep it protected). |
+
+Sending the value field together with its `clear*` sentinel is allowed — the
+sentinel wins. `tilesetFileName`, `description`, `name`, `assetRoot`,
+`datasetType`, `cachePolicy`, `requiresAuth`, and `isPublic` have no clear
+sentinel because each carries a non-nullable default; passing the field
+overwrites it, omitting it keeps the previous value. Whitespace-only values
+for `tilesetFileName` are treated as "no change" rather than "reset to
+default" so the column never ends up empty after an update.
+
 ## Resolve output
 
 `GET /api/v1/admin/scenes/{id}/resolve` returns the active record together with
@@ -125,6 +151,15 @@ hides a dataset from the public surface. Successful register / update /
 deactivate calls evict the shared `scene` and per-scene `scene:{id}` output
 cache tags so cached anonymous responses cannot outlive an access-flag or
 deactivation change.
+
+When the configuration-backed `Scenes:Datasets` block is also present (the
+local-dev fallback path described under [Provider gating](#provider-gating)),
+the composite registry checks Postgres first and only delegates to the
+configuration entry when the slug is **not owned by Postgres at all** — a
+slug that exists in Postgres but is inactive returns `null` from the
+composite, never the configuration entry. Deactivation therefore stays
+authoritative even when an operator left a same-named entry in
+`Scenes:Datasets`.
 
 ## Provider gating
 

@@ -76,7 +76,7 @@ internal static class SceneDatasetServiceCollectionExtensions
             var fallback = sp.GetService<IConfigurationSceneDatasetRegistry>();
             return fallback is null
                 ? primary
-                : new CompositeSceneDatasetRegistry(primary, fallback);
+                : new CompositeSceneDatasetRegistry(primary, primary, fallback);
         });
 
         return services;
@@ -138,17 +138,36 @@ internal sealed class ConfigurationSceneDatasetRegistryAdapter : IConfigurationS
 internal sealed class CompositeSceneDatasetRegistry : ISceneDatasetRegistry
 {
     private readonly ISceneDatasetRegistry _primary;
+    private readonly ISceneRegistrationService _primaryOwnership;
     private readonly ISceneDatasetRegistry _fallback;
 
-    public CompositeSceneDatasetRegistry(ISceneDatasetRegistry primary, ISceneDatasetRegistry fallback)
+    public CompositeSceneDatasetRegistry(
+        ISceneDatasetRegistry primary,
+        ISceneRegistrationService primaryOwnership,
+        ISceneDatasetRegistry fallback)
     {
         _primary = primary;
+        _primaryOwnership = primaryOwnership;
         _fallback = fallback;
     }
 
     public async ValueTask<SceneDataset?> FindAsync(string id, CancellationToken cancellationToken = default)
     {
         var hit = await _primary.FindAsync(id, cancellationToken).ConfigureAwait(false);
-        return hit ?? await _fallback.FindAsync(id, cancellationToken).ConfigureAwait(false);
+        if (hit is not null)
+        {
+            return hit;
+        }
+
+        // Don't let the configuration-backed fallback resurrect a slug that
+        // is owned by the primary store but inactive — deactivation must
+        // remain authoritative regardless of any matching configuration entry.
+        var owned = await _primaryOwnership.GetBySceneIdAsync(id, cancellationToken).ConfigureAwait(false);
+        if (owned is not null)
+        {
+            return null;
+        }
+
+        return await _fallback.FindAsync(id, cancellationToken).ConfigureAwait(false);
     }
 }
