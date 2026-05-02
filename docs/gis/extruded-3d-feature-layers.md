@@ -47,7 +47,7 @@ deserialization is AOT-safe in published builds.
 | --- | --- | --- |
 | `heightField` | yes | Numeric layer field that drives extrusion height. Must reference an `Integer`, `BigInteger`, `Double`, or `Float` field. |
 | `baseHeightField` | no | Optional numeric field for base elevation. Same type rules as `heightField`. |
-| `unit` | no | Vertical unit. One of `meters` (default), `feet`, `usSurveyFeet`. |
+| `unit` | no | Vertical unit. One of `meters` (default), `feet`, `usSurveyFeet`. Recognition is case-insensitive on input (e.g. `METERS` or `Feet`) and the wire form is always emitted in canonical lowercase/camelCase. Any other token (for example `yards`) is rejected with `EXTRUSION_UNIT_UNRECOGNIZED` at the layer metadata endpoint rather than at catalog deserialization, so a misconfigured row never breaks catalog reads. |
 | `defaultHeight` | no | Fallback height when `heightField` is null. Must be `>= 0`. |
 | `materialHint` | no | Free-form hint passed through to downstream 3D generation; not interpreted by this server. |
 

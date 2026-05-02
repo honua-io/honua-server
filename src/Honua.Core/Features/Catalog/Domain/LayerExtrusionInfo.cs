@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json.Serialization;
-
 namespace Honua.Core.Features.Catalog.Domain;
 
 /// <summary>
@@ -26,9 +24,15 @@ public sealed record LayerExtrusionInfo
     public string? BaseHeightField { get; init; }
 
     /// <summary>
-    /// Vertical unit for height and base values.
+    /// Vertical unit for height and base values. Stored as the raw token
+    /// from catalog metadata so unknown values flow through to
+    /// <see cref="ExtrusionValidator"/> and surface as
+    /// <see cref="ExtrusionErrorCodes.UnitUnrecognized"/> rather than
+    /// throwing during catalog deserialization. Recognized values
+    /// (<see cref="VerticalUnits"/>) are matched case-insensitively;
+    /// null or whitespace defaults to meters.
     /// </summary>
-    public VerticalUnit Unit { get; init; } = VerticalUnit.Meters;
+    public string? Unit { get; init; }
 
     /// <summary>
     /// Fallback height when the height field value is null. Must be &gt;= 0.
@@ -45,24 +49,55 @@ public sealed record LayerExtrusionInfo
 }
 
 /// <summary>
-/// Recognized vertical units for extrusion metadata.
-/// Serialized as lowercase strings on the wire ("meters", "feet",
-/// "usSurveyFeet"). Per-member <see cref="JsonStringEnumMemberNameAttribute"/>
-/// pins the wire form so it stays stable regardless of enum identifier
-/// changes.
+/// Canonical wire tokens for vertical units recognized by the v1
+/// extrusion contract. The tokens are stable across releases and are
+/// emitted lowercase/camelCase regardless of the input casing.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<VerticalUnit>))]
-public enum VerticalUnit
+public static class VerticalUnits
 {
     /// <summary>Metres (default).</summary>
-    [JsonStringEnumMemberName("meters")]
-    Meters,
+    public const string Meters = "meters";
 
     /// <summary>International feet (0.3048 m).</summary>
-    [JsonStringEnumMemberName("feet")]
-    Feet,
+    public const string Feet = "feet";
 
     /// <summary>US Survey feet (1200/3937 m).</summary>
-    [JsonStringEnumMemberName("usSurveyFeet")]
-    UsSurveyFeet
+    public const string UsSurveyFeet = "usSurveyFeet";
+
+    /// <summary>
+    /// Attempts to normalize a raw unit token to the canonical wire form.
+    /// Returns true and the canonical token for recognized values
+    /// (case-insensitive); returns true with <see cref="Meters"/> when the
+    /// input is null or whitespace; returns false for any other token.
+    /// </summary>
+    public static bool TryNormalize(string? rawUnit, out string normalized)
+    {
+        if (string.IsNullOrWhiteSpace(rawUnit))
+        {
+            normalized = Meters;
+            return true;
+        }
+
+        var trimmed = rawUnit.Trim();
+        if (string.Equals(trimmed, Meters, StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = Meters;
+            return true;
+        }
+
+        if (string.Equals(trimmed, Feet, StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = Feet;
+            return true;
+        }
+
+        if (string.Equals(trimmed, UsSurveyFeet, StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = UsSurveyFeet;
+            return true;
+        }
+
+        normalized = string.Empty;
+        return false;
+    }
 }

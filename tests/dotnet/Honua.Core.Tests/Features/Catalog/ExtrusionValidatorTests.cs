@@ -36,7 +36,7 @@ public sealed class ExtrusionValidatorTests
         {
             HeightField = "height_m",
             BaseHeightField = "base_m",
-            Unit = VerticalUnit.Meters,
+            Unit = VerticalUnits.Meters,
             DefaultHeight = 3.0
         };
 
@@ -52,7 +52,7 @@ public sealed class ExtrusionValidatorTests
         var extrusion = new LayerExtrusionInfo
         {
             HeightField = "levels",
-            Unit = VerticalUnit.Meters
+            Unit = VerticalUnits.Meters
         };
 
         var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
@@ -218,12 +218,12 @@ public sealed class ExtrusionValidatorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public void Validate_UnitOutOfRange_ReportsUnitUnrecognized()
+    public void Validate_UnknownUnit_ReportsUnitUnrecognized()
     {
         var extrusion = new LayerExtrusionInfo
         {
             HeightField = "height_m",
-            Unit = (VerticalUnit)int.MaxValue
+            Unit = "yards"
         };
 
         var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
@@ -235,7 +235,7 @@ public sealed class ExtrusionValidatorTests
     [Operation(Operations.Metadata)]
     public void Validate_AllRecognizedUnits_AreAccepted()
     {
-        foreach (var unit in Enum.GetValues<VerticalUnit>())
+        foreach (var unit in new[] { VerticalUnits.Meters, VerticalUnits.Feet, VerticalUnits.UsSurveyFeet })
         {
             var extrusion = new LayerExtrusionInfo
             {
@@ -251,6 +251,39 @@ public sealed class ExtrusionValidatorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void Validate_RecognizedUnit_IsCaseInsensitive()
+    {
+        foreach (var unit in new[] { "METERS", "Feet", "USSURVEYFEET" })
+        {
+            var extrusion = new LayerExtrusionInfo
+            {
+                HeightField = "height_m",
+                Unit = unit
+            };
+
+            var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+            errors.Should().NotContain(ExtrusionErrorCodes.UnitUnrecognized,
+                $"unit '{unit}' should be recognized case-insensitively");
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Validate_NullUnit_DefaultsToMetersWithNoError()
+    {
+        var extrusion = new LayerExtrusionInfo
+        {
+            HeightField = "height_m",
+            Unit = null
+        };
+
+        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+
+        errors.Should().NotContain(ExtrusionErrorCodes.UnitUnrecognized);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void Validate_MultipleViolations_ReportsAllErrors()
     {
         var extrusion = new LayerExtrusionInfo
@@ -258,7 +291,7 @@ public sealed class ExtrusionValidatorTests
             HeightField = "name",
             BaseHeightField = "active",
             DefaultHeight = -2.0,
-            Unit = (VerticalUnit)999
+            Unit = "yards"
         };
 
         var errors = ExtrusionValidator.Validate(extrusion, _layerFields);

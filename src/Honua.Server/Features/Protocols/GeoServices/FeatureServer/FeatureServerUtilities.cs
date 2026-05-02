@@ -377,24 +377,18 @@ internal static partial class FeatureServerEndpoints
             return null;
         }
 
+        VerticalUnits.TryNormalize(extrusion.Unit, out var unitWire);
+
         return new FeatureServerExtrusionInfo
         {
             Enabled = true,
             HeightField = extrusion.HeightField,
             BaseHeightField = extrusion.BaseHeightField,
-            Unit = MapVerticalUnitWire(extrusion.Unit),
+            Unit = unitWire,
             DefaultHeight = extrusion.DefaultHeight,
             MaterialHint = extrusion.MaterialHint
         };
     }
-
-    private static string MapVerticalUnitWire(VerticalUnit unit) => unit switch
-    {
-        VerticalUnit.Meters => "meters",
-        VerticalUnit.Feet => "feet",
-        VerticalUnit.UsSurveyFeet => "usSurveyFeet",
-        _ => "meters"
-    };
 
     private static async Task<FeatureServerTimeInfo?> BuildTimeInfoAsync(
         LayerDefinition layer,

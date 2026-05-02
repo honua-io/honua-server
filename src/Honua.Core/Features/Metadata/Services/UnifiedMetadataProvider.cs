@@ -508,24 +508,25 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
             TrackIdField = layer.Metadata.TimeInfo.TrackIdField
         } : null;
 
-    private static LayerExtrusionMetadata? BuildLayerExtrusionInfo(LayerDefinition layer) =>
-        layer.Metadata?.Extrusion is { } extrusion ? new LayerExtrusionMetadata
+    private static LayerExtrusionMetadata? BuildLayerExtrusionInfo(LayerDefinition layer)
+    {
+        if (layer.Metadata?.Extrusion is not { } extrusion)
+        {
+            return null;
+        }
+
+        VerticalUnits.TryNormalize(extrusion.Unit, out var unitWire);
+
+        return new LayerExtrusionMetadata
         {
             Enabled = true,
             HeightField = extrusion.HeightField,
             BaseHeightField = extrusion.BaseHeightField,
-            Unit = MapVerticalUnit(extrusion.Unit),
+            Unit = unitWire,
             DefaultHeight = extrusion.DefaultHeight,
             MaterialHint = extrusion.MaterialHint
-        } : null;
-
-    private static string MapVerticalUnit(VerticalUnit unit) => unit switch
-    {
-        VerticalUnit.Meters => "meters",
-        VerticalUnit.Feet => "feet",
-        VerticalUnit.UsSurveyFeet => "usSurveyFeet",
-        _ => "meters"
-    };
+        };
+    }
 
     private static LayerRelationshipInfo[] BuildLayerRelationships(LayerDefinition layer, ServiceDefinition service, MetadataProviderOptions options) =>
         layer.Relationships?.Select(r => new LayerRelationshipInfo

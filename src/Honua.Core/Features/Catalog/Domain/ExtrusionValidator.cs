@@ -66,7 +66,8 @@ public static class ExtrusionValidator
             }
         }
 
-        if (!Enum.IsDefined(extrusion.Unit))
+        if (!string.IsNullOrWhiteSpace(extrusion.Unit) &&
+            !VerticalUnits.TryNormalize(extrusion.Unit, out _))
         {
             errors.Add(ExtrusionErrorCodes.UnitUnrecognized);
         }

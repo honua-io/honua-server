@@ -37,7 +37,8 @@ internal static partial class FeatureServerEndpoints
             .CacheOutput("LayerMetadata")
             .WithETag()
             .Produces<LayerResponse>(200, "application/json")
-            .Produces(404);
+            .Produces(404)
+            .Produces(StatusCodes.Status422UnprocessableEntity);
 
         var queryGet = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesGet)
             .WithDisplayName("Query FeatureServer Features (GET)")

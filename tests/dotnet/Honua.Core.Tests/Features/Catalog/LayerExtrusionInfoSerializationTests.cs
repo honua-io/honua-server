@@ -27,7 +27,7 @@ public sealed class LayerExtrusionInfoSerializationTests
         {
             HeightField = "height_m",
             BaseHeightField = "base_m",
-            Unit = VerticalUnit.UsSurveyFeet,
+            Unit = VerticalUnits.UsSurveyFeet,
             DefaultHeight = 4.5,
             MaterialHint = "concrete"
         };
@@ -41,11 +41,11 @@ public sealed class LayerExtrusionInfoSerializationTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public void Serialize_VerticalUnit_UsesCamelCaseStrings()
+    public void Serialize_VerticalUnit_PreservesCanonicalTokens()
     {
-        var meters = new LayerExtrusionInfo { HeightField = "h", Unit = VerticalUnit.Meters };
-        var feet = new LayerExtrusionInfo { HeightField = "h", Unit = VerticalUnit.Feet };
-        var usSurveyFeet = new LayerExtrusionInfo { HeightField = "h", Unit = VerticalUnit.UsSurveyFeet };
+        var meters = new LayerExtrusionInfo { HeightField = "h", Unit = VerticalUnits.Meters };
+        var feet = new LayerExtrusionInfo { HeightField = "h", Unit = VerticalUnits.Feet };
+        var usSurveyFeet = new LayerExtrusionInfo { HeightField = "h", Unit = VerticalUnits.UsSurveyFeet };
 
         var metersJson = JsonSerializer.Serialize(meters, CatalogJsonContext.Default.LayerExtrusionInfo);
         var feetJson = JsonSerializer.Serialize(feet, CatalogJsonContext.Default.LayerExtrusionInfo);
@@ -58,6 +58,21 @@ public sealed class LayerExtrusionInfoSerializationTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void Deserialize_UnknownUnit_DoesNotThrow()
+    {
+        // Unknown unit tokens must round-trip into the catalog model so
+        // ExtrusionValidator can surface them as EXTRUSION_UNIT_UNRECOGNIZED
+        // rather than failing during catalog deserialization.
+        const string payload = """{"heightField":"h","unit":"yards"}""";
+
+        var deserialized = JsonSerializer.Deserialize(payload, CatalogJsonContext.Default.LayerExtrusionInfo);
+
+        deserialized.Should().NotBeNull();
+        deserialized!.Unit.Should().Be("yards");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void CatalogMetadata_RoundTrip_PreservesExtrusion()
     {
         var original = new CatalogMetadata
@@ -65,7 +80,7 @@ public sealed class LayerExtrusionInfoSerializationTests
             Extrusion = new LayerExtrusionInfo
             {
                 HeightField = "h",
-                Unit = VerticalUnit.Feet,
+                Unit = VerticalUnits.Feet,
                 DefaultHeight = 0.0,
                 MaterialHint = "glass"
             }

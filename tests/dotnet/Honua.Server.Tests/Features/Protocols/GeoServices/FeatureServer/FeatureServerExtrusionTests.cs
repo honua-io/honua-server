@@ -51,7 +51,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         await SetLayerExtrusionMetadataAsync(new LayerExtrusionInfo
         {
             HeightField = "objectid",
-            Unit = VerticalUnit.Meters,
+            Unit = VerticalUnits.Meters,
             DefaultHeight = 3.0,
             MaterialHint = "concrete"
         });
@@ -83,7 +83,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         {
             HeightField = "objectid",
             BaseHeightField = "objectid",
-            Unit = VerticalUnit.Feet
+            Unit = VerticalUnits.Feet
         });
 
         var client = _fixture.CreateClient();
@@ -161,6 +161,26 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task LayerMetadata_UnknownUnit_Returns422WithErrorCode()
+    {
+        // Unknown unit tokens in raw catalog metadata must surface through
+        // the validator as EXTRUSION_UNIT_UNRECOGNIZED rather than throw
+        // during catalog deserialization.
+        await SetRawMetadataJsonAsync("""{"extrusion":{"heightField":"objectid","unit":"yards"}}""");
+
+        var client = _fixture.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain(ExtrusionErrorCodes.UnitUnrecognized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task LayerMetadata_NegativeDefaultHeight_Returns422WithErrorCode()
     {
         await SetLayerExtrusionMetadataAsync(new LayerExtrusionInfo
@@ -187,7 +207,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         await SetLayerExtrusionMetadataAsync(new LayerExtrusionInfo
         {
             HeightField = "objectid",
-            Unit = VerticalUnit.Meters
+            Unit = VerticalUnits.Meters
         });
 
         var client = _fixture.CreateClient();
