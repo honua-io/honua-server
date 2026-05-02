@@ -5,10 +5,9 @@
 //                  content-type and matching CORS allow-origin.
 //   CERT-RNDR-01 — Cesium3DTileset.fromUrl loads, fetches at least one binary
 //                  tile body, no Honua 4xx/5xx, no Cesium tileFailed events.
-//                  (Pixel-count signal omitted: the committed fixture is a
-//                  minimal b3dm with no glTF body, so visible pixels are not
-//                  a reliable signal — tile-fetch + tileFailed cover the
-//                  "scene rendered without errors" intent of the AC.)
+//                  (Pixel-count signal omitted: tile-fetch + tileFailed give
+//                  the deterministic browser-render signal this PR needs
+//                  without making PR CI depend on GPU pixel thresholds.)
 //   CERT-AUTH-01 — protected scene browser handoff deferred to honua-server-849.
 //
 // The harness routes /scenes/* through the same-origin Node proxy that already
@@ -243,13 +242,20 @@ test.describe('Cesium 3D Tiles scene', () => {
       // alone is not enough evidence that the nested-asset route works. The
       // committed fixture references tiles/0.b3dm at the root, so at least one
       // .b3dm/.glb-shaped request must reach the proxy with 2xx.
-      const tilePayloadRequests = observer.requests.filter(
-        (r) => TILE_PAYLOAD_REGEX.test(r.url) && r.status >= 200 && r.status < 300,
-      );
-      expect(
-        tilePayloadRequests.length,
-        'Cesium3DTileset did not fetch any nested binary tile payload — only tileset.json was loaded.',
+      await expect.poll(
+        () => observer.requests.filter(
+          (r) => TILE_PAYLOAD_REGEX.test(r.url) && r.status >= 200 && r.status < 300,
+        ).length,
+        {
+          message: 'Cesium3DTileset did not fetch any nested binary tile payload — only tileset.json was loaded.',
+          timeout: 30_000,
+        },
       ).toBeGreaterThanOrEqual(1);
+
+      // Give the tileFailed event bridge a short turn after the binary body
+      // reaches the browser. Cesium may surface parse/load failures just after
+      // the route observer records the response.
+      await page.waitForTimeout(250);
 
       // Cesium-side failures (parse errors, runtime tile-load issues) caught
       // by the tileFailed event registered above.

@@ -68,7 +68,12 @@ export async function observeImageryRequests(
       await route.fulfill({ response });
     } catch (error) {
       failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
-      await route.abort();
+      try {
+        await route.abort();
+      } catch {
+        // Playwright can report route.fetch()/fulfill() failures after the
+        // route is already handled. The original failure is preserved above.
+      }
     }
   };
 
