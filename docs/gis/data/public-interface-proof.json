@@ -1519,6 +1519,53 @@
       ]
     },
     {
+      "surfaceId": "scenes-3dtiles",
+      "displayName": "Hosted OGC 3D Tiles scenes",
+      "surfaceKind": "http-route-family",
+      "protocol": "3D-Tiles",
+      "canonicalIdentifier": "/scenes/{sceneId}/tileset.json + /scenes/{sceneId}/{*assetPath}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/scenes/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus scene endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneTilesetEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAuthorizationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#837",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Root tileset.json, nested tileset, b3dm/glTF/texture asset, ETag/If-None-Match, HEAD, traversal/path safety, public vs protected access policy, and CORS exposed-header coverage exercised by endpoint and resolver tests",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneTilesetEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAuthorizationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAssetResolverTests.cs",
+            "tests/fixtures/scenes/fixture-tileset/tileset.json",
+            "docs/gis/scenes-3dtiles.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#837",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "grpc-feature-service",
       "displayName": "gRPC FeatureService",
       "surfaceKind": "operation-surface",

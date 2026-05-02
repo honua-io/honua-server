@@ -170,6 +170,19 @@ public sealed class OutputCacheTtlOptions
     public TimeSpan TerrainTile { get; set; } = TimeSpan.FromHours(1);
 
     /// <summary>
+    /// Scene <c>tileset.json</c> metadata cache duration. Default: 10 minutes
+    /// — short enough to pick up tileset republishes within an operator's
+    /// expectations.
+    /// </summary>
+    public TimeSpan SceneTilesetMetadata { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Scene tile/binary asset cache duration. Default: 1 hour — binary tile
+    /// payloads are immutable once written.
+    /// </summary>
+    public TimeSpan SceneTileAsset { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
     /// Layer style cache duration. Default: 10 minutes.
     /// </summary>
     public TimeSpan LayerStyle { get; set; } = TimeSpan.FromMinutes(10);

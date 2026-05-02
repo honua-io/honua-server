@@ -65,6 +65,11 @@ public static class Protocols
     public const string Terrain = "Terrain";
 
     /// <summary>
+    /// Hosted OGC 3D Tiles scene serving (Cesium-compatible).
+    /// </summary>
+    public const string Scene = "Scene-3DTiles";
+
+    /// <summary>
     /// Health and monitoring endpoints.
     /// </summary>
     public const string Health = "Health";

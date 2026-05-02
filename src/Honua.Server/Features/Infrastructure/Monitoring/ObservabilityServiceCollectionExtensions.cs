@@ -352,6 +352,22 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("terrain", "tiles");
             });
 
+            // Hosted 3D Tiles tileset.json metadata caching policy
+            options.AddPolicy("SceneTilesetMetadata", policy =>
+            {
+                policy.Expire(ttl.SceneTilesetMetadata);
+                policy.SetVaryByRouteValue("sceneId");
+                policy.Tag("scene", "metadata");
+            });
+
+            // Hosted 3D Tiles tile/binary/texture asset caching policy
+            options.AddPolicy("SceneTileAsset", policy =>
+            {
+                policy.Expire(ttl.SceneTileAsset);
+                policy.SetVaryByRouteValue("sceneId", "assetPath");
+                policy.Tag("scene", "tiles");
+            });
+
             // Layer style caching policy.  Theme variants share the cache tag so
             // a layer style invalidation flushes both canonical and themed entries.
             options.AddPolicy("LayerStyle", policy =>

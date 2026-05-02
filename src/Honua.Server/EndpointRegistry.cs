@@ -373,6 +373,12 @@ public static class EndpointRegistry
         new("GET", "/tiles/{layerId}/tile.json"),
         new("GET", "/terrain/{datasetId}/tile.json"),
         new("GET", "/terrain/{datasetId}/{z}/{x}/{y}.png"),
+
+        // Hosted 3D Tiles scene serving (#837).
+        new("GET", "/scenes/{sceneId}/tileset.json"),
+        new("HEAD", "/scenes/{sceneId}/tileset.json"),
+        new("GET", "/scenes/{sceneId}/{*assetPath}"),
+        new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
         new("GET", "/api/styles/{layerId}.json"),
 
         // Durable PMTiles publish range proxy (#845).
