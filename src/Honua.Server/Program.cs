@@ -767,6 +767,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
         Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
+        Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
         Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,

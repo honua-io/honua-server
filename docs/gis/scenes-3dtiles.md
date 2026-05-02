@@ -23,11 +23,17 @@ they do for layer ids on other Honua endpoints. CesiumJS resolves nested
 `./tiles/0/0/0.b3dm` inside the document maps directly to
 `/scenes/{sceneId}/tiles/0/0/0.b3dm`.
 
-## Configuration
+## Registration
 
-Scenes are registered in the `Scenes` configuration section. The initial
-implementation is configuration-driven; a database-backed registry will replace
-this surface in a follow-up issue without changing the URL contract.
+Scenes are registered through the [scene dataset registry admin API](../admin-api/scene-dataset-registry.md)
+introduced in #844. The hosted serving routes resolve a dataset by its
+URL slug via `ISceneDatasetRegistry.FindAsync`; the Postgres-backed
+implementation behind that interface projects each record to the lean
+`SceneDataset` shape served below.
+
+The original `Scenes` configuration section remains in the codebase for
+local-dev/test scenarios where Postgres is not available. In production it
+is replaced at runtime by the registry; mixing both should be avoided.
 
 ```json
 {
