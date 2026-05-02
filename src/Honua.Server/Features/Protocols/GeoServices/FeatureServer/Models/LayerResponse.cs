@@ -59,6 +59,13 @@ public sealed class LayerResponse
     public FeatureServerTimeInfo? TimeInfo { get; init; }
 
     /// <summary>
+    /// Extrusion metadata for 3D-capable layers. Absent from the response
+    /// when no extrusion is configured to preserve byte-for-byte
+    /// compatibility with 2D clients.
+    /// </summary>
+    public FeatureServerExtrusionInfo? ExtrusionInfo { get; init; }
+
+    /// <summary>
     /// Minimum scale for layer visibility
     /// </summary>
     public double? MinScale { get; init; }

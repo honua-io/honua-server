@@ -45,6 +45,12 @@ public sealed record LayerMetadata
     public LayerTemporalInfo? TemporalInfo { get; init; }
 
     /// <summary>
+    /// Extrusion metadata for 3D-capable feature layers.
+    /// Null when no extrusion is configured (the layer is 2D-only).
+    /// </summary>
+    public LayerExtrusionMetadata? ExtrusionInfo { get; init; }
+
+    /// <summary>
     /// Styling and rendering information.
     /// </summary>
     public LayerStyleInfo? StyleInfo { get; init; }

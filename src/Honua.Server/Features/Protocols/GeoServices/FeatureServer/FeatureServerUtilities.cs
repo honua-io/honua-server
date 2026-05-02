@@ -289,6 +289,7 @@ internal static partial class FeatureServerEndpoints
         QueryLimits queryLimits,
         FeatureServerTimeInfo? timeInfo,
         JsonElement? drawingInfo,
+        FeatureServerExtrusionInfo? extrusionInfo,
         bool supportsGeobufOutput,
         bool supportsAttachmentUploads)
     {
@@ -317,6 +318,7 @@ internal static partial class FeatureServerEndpoints
             SpatialReference = layer.SpatialReference.ToSpatialReferenceInfo(),
             Extent = layer.Extent.HasValue ? layer.Extent.Value.ToExtentInfo() : null,
             TimeInfo = timeInfo,
+            ExtrusionInfo = extrusionInfo,
             Fields = [.. layer.Fields.Select(MapFieldInfo)],
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
@@ -367,6 +369,32 @@ internal static partial class FeatureServerEndpoints
             SupportsBatchEditing = supportsAdvancedQueries
         };
     }
+
+    private static FeatureServerExtrusionInfo? BuildExtrusionInfo(LayerDefinition layer)
+    {
+        if (layer.Metadata?.Extrusion is not { } extrusion)
+        {
+            return null;
+        }
+
+        return new FeatureServerExtrusionInfo
+        {
+            Enabled = true,
+            HeightField = extrusion.HeightField,
+            BaseHeightField = extrusion.BaseHeightField,
+            Unit = MapVerticalUnitWire(extrusion.Unit),
+            DefaultHeight = extrusion.DefaultHeight,
+            MaterialHint = extrusion.MaterialHint
+        };
+    }
+
+    private static string MapVerticalUnitWire(VerticalUnit unit) => unit switch
+    {
+        VerticalUnit.Meters => "meters",
+        VerticalUnit.Feet => "feet",
+        VerticalUnit.UsSurveyFeet => "usSurveyFeet",
+        _ => "meters"
+    };
 
     private static async Task<FeatureServerTimeInfo?> BuildTimeInfoAsync(
         LayerDefinition layer,
