@@ -138,10 +138,11 @@ lean `SceneDataset` it serves:
   matching the existing scene access-policy contract.
 - The persisted `cachePolicy` is forwarded onto the serving model. The hosted
   routes use `cachePolicy.maxAgeSeconds` to pin the response `Cache-Control`
-  header, and emit `Cache-Control: no-store` (plus `Vary: Authorization` on
-  protected scenes) when `noStore = true`. A no-store response also disables
-  server-side output-cache storage on the matching scene route so a
-  previously cached body cannot outlive the dataset's no-store directive.
+  header, and emit `Cache-Control: no-store` when `noStore = true`. Protected
+  no-store responses still vary by the credential request header that
+  authorized the body (`Authorization` or `X-Honua-Token`). A no-store response
+  also disables server-side output-cache storage on the matching scene route so
+  a previously cached body cannot outlive the dataset's no-store directive.
 - `assetRoot` is canonicalized against the server content root before
   projection, so relative asset roots stored at registration survive the
   hosted asset resolver's path-containment check.

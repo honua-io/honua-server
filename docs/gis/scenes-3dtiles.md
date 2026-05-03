@@ -116,10 +116,12 @@ Both routes set `ETag`, `Last-Modified`, and `Accept-Ranges: bytes`. The
 
 - **Public scenes** (no `AccessPolicy`): `Cache-Control: public, max-age=...`
   so CDNs and shared proxies can store and re-serve the payload.
-- **Protected scenes** (any `AccessPolicy`): `Cache-Control: private, max-age=...`
-  plus `Vary: Authorization`. Shared caches must not store the body — every
-  request needs to re-run the dataset access policy — but a user agent's
-  private cache may still revalidate within `max-age`.
+- **Protected scenes** (any `AccessPolicy`): `Cache-Control: private, max-age=...`.
+  Bearer/API-key responses include `Vary: Authorization`; `?token=` responses
+  vary by tokenized URL; `X-Honua-Token` responses include
+  `Vary: X-Honua-Token`. Shared caches must not store the body — every request
+  needs to re-run the dataset access policy — but a user agent's private cache
+  may still revalidate within `max-age`.
 
 The default TTLs are:
 
@@ -131,9 +133,10 @@ The default TTLs are:
 Datasets registered through the [scene dataset registry](../admin-api/scene-dataset-registry.md)
 can override these defaults per-scene via `cachePolicy`. `maxAgeSeconds`
 replaces the configured default for the matching response, and
-`noStore = true` emits `Cache-Control: no-store` (plus `Vary: Authorization`
-on protected scenes) regardless of the global TTL — useful for rotated
-debug datasets or short-lived previews. When the response carries
+`noStore = true` emits `Cache-Control: no-store` regardless of the global TTL —
+useful for rotated debug datasets or short-lived previews. Protected no-store
+responses still vary by the credential transport when a request header
+authorized the body (`Authorization` or `X-Honua-Token`). When the response carries
 `Cache-Control: no-store` the scene output-cache policies also suppress
 server-side cache storage so a no-store body cannot be replayed on
 subsequent requests until the configured TTL expires. The
@@ -243,8 +246,9 @@ Token-authorized asset responses use `Cache-Control: private, max-age=...`
 so user-agent caches may revalidate within `max-age` but shared caches must
 not store the body. Output caching is disabled at the server when a token
 is present so cached anonymous bodies cannot be replayed across distinct
-tokens. `Vary: Authorization` is **not** emitted for token-authorized
-responses (no `Authorization` header is present).
+tokens. `?token=` responses vary by tokenized URL, while `X-Honua-Token`
+responses include `Vary: X-Honua-Token`. `Vary: Authorization` is **not**
+emitted for token-authorized responses (no `Authorization` header is present).
 
 ### Configuration and operational limits
 

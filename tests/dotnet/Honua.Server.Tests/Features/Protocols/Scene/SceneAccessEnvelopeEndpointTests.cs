@@ -245,6 +245,9 @@ public sealed class SceneAccessEnvelopeEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl?.Private.Should().BeTrue();
+        response.Headers.Vary.Should().Contain("X-Honua-Token");
+        response.Headers.Vary.Should().NotContain("Authorization");
     }
 
     [IntegrationTest]
@@ -342,11 +345,10 @@ public sealed class SceneAccessEnvelopeEndpointTests : IAsyncLifetime
     [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
     public async Task GetSceneAsset_TokenAuthorized_DoesNotEmitVaryAuthorization()
     {
-        // Token-authorized requests carry no Authorization header. Emitting
+        // Query-token requests already vary by URL. Emitting
         // Vary: Authorization on these responses would be misleading because
-        // the response actually varies by ?token= / X-Honua-Token. The cache
-        // bypass policy already disables output caching for token requests,
-        // so the response need not advertise Vary at all.
+        // no Authorization header is present, and Vary: X-Honua-Token is only
+        // needed for the native header transport.
         var token = await IssueTokenAsync(SceneFixturePaths.ProtectedSceneId);
 
         var response = await _fixture.Client.GetAsync(
@@ -354,6 +356,7 @@ public sealed class SceneAccessEnvelopeEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.Vary.Should().NotContain("Authorization");
+        response.Headers.Vary.Should().NotContain("X-Honua-Token");
     }
 
     private async Task<string> IssueTokenAsync(string sceneId)

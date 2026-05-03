@@ -228,7 +228,7 @@ internal static partial class SceneEndpoints
         // delivers signed-URL handoff). Skip the auth check when the scene
         // explicitly opted out by leaving its access policy unset.
         var isProtected = scene.Metadata?.AccessPolicy is not null;
-        var authorizedByToken = false;
+        var tokenTransport = SceneAccessTokenTransport.None;
         if (scene.Metadata?.AccessPolicy is { } accessPolicy)
         {
             var policyDecision = AccessPolicyHelpers.EvaluateAccess(
@@ -243,7 +243,9 @@ internal static partial class SceneEndpoints
                 // signed-envelope path before failing — Cesium browser
                 // clients cannot attach Authorization headers to nested
                 // asset fetches and rely entirely on the envelope token.
-                var rawToken = BypassOutputCacheOnSceneAccessTokenPolicy.TryExtractToken(context);
+                var rawToken = BypassOutputCacheOnSceneAccessTokenPolicy.TryExtractToken(
+                    context,
+                    out var extractedTokenTransport);
                 if (!string.IsNullOrEmpty(rawToken))
                 {
                     EnvelopeValidationResult validation;
@@ -270,7 +272,7 @@ internal static partial class SceneEndpoints
                     switch (validation)
                     {
                         case EnvelopeValidationResult.Allowed:
-                            authorizedByToken = true;
+                            tokenTransport = extractedTokenTransport;
                             break;
                         case EnvelopeValidationResult.Expired:
                             SceneAccessLog.TokenExpired(logger, scene.Id);
@@ -290,7 +292,7 @@ internal static partial class SceneEndpoints
                     }
                 }
 
-                if (!authorizedByToken)
+                if (tokenTransport is SceneAccessTokenTransport.None)
                 {
                     SceneAccessLog.TokenMissing(logger, scene.Id);
                     return AccessPolicyHelpers.CreateAccessDeniedResult(context, policyDecision)
@@ -315,7 +317,7 @@ internal static partial class SceneEndpoints
         }
 
         var etag = ComputeETag(resolved.File);
-        SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected, scene.CachePolicy, authorizedByToken);
+        SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected, scene.CachePolicy, tokenTransport);
 
         var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
         if (!string.IsNullOrEmpty(ifNoneMatch) && IfNoneMatchMatches(ifNoneMatch, etag))
@@ -373,7 +375,7 @@ internal static partial class SceneEndpoints
         TimeSpan maxAge,
         bool isProtected,
         SceneCachePolicy? scenePolicy,
-        bool authorizedByToken)
+        SceneAccessTokenTransport tokenTransport)
     {
         var headers = context.Response.Headers;
         headers[HeaderNames.ETag] = etag;
@@ -391,30 +393,33 @@ internal static partial class SceneEndpoints
         // Protected scenes go through the dataset access policy on every
         // request. `Cache-Control: public` would let a shared cache (CDN,
         // forward proxy) store and re-serve the body to other clients without
-        // re-running the policy, so emit `private` plus `Vary: Authorization`
-        // and keep the same max-age semantics. The output cache layer also
-        // disables storage for authenticated requests via
-        // `AnonymousOnlyOutputCachePolicy`, but the response headers must be
-        // correct for downstream caches that Honua does not control. When
-        // the principal is authorized only via a signed envelope token (no
-        // Authorization header present), `Vary: Authorization` would let a
-        // shared cache reuse the response across distinct token values —
-        // skip that header on token-only access since the cache key shape
-        // already differs by URL+token.
+        // re-running the policy, so emit `private` and vary by the credential
+        // transport that authorized the response. Query-token responses vary
+        // by URL already; header-token responses need `Vary: X-Honua-Token`
+        // so browser/private caches do not reuse a tokenized response for a
+        // later request with a different or missing header.
         if (noStore)
         {
             headers[HeaderNames.CacheControl] = "no-store";
-            if (isProtected && !authorizedByToken)
+            if (isProtected && tokenTransport is SceneAccessTokenTransport.None)
             {
                 headers[HeaderNames.Vary] = "Authorization";
+            }
+            else if (isProtected && tokenTransport is SceneAccessTokenTransport.Header)
+            {
+                headers[HeaderNames.Vary] = BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader;
             }
         }
         else if (isProtected)
         {
             headers[HeaderNames.CacheControl] = $"private, max-age={maxAgeSeconds}";
-            if (!authorizedByToken)
+            if (tokenTransport is SceneAccessTokenTransport.None)
             {
                 headers[HeaderNames.Vary] = "Authorization";
+            }
+            else if (tokenTransport is SceneAccessTokenTransport.Header)
+            {
+                headers[HeaderNames.Vary] = BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader;
             }
         }
         else
