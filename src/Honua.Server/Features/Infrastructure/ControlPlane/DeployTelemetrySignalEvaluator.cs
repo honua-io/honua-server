@@ -316,9 +316,12 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
             }
 
             var preset = ResolvePreset(spec);
-            var errorRateQuery = Get(parameters, "telemetry.error_rate.query") ?? preset?.ErrorRateQuery;
-            var latencyQuery = Get(parameters, "telemetry.latency_p95.query") ?? preset?.LatencyP95Query;
-            var sampleQuery = Get(parameters, "telemetry.sample_count.query") ?? preset?.MinimumSampleQuery;
+            var explicitErrorQuery = Get(parameters, "telemetry.error_rate.query");
+            var explicitLatencyQuery = Get(parameters, "telemetry.latency_p95.query");
+            var explicitSampleQuery = Get(parameters, "telemetry.sample_count.query");
+            var errorRateQuery = explicitErrorQuery ?? preset?.ErrorRateQuery;
+            var latencyQuery = explicitLatencyQuery ?? preset?.LatencyP95Query;
+            var sampleQuery = explicitSampleQuery ?? preset?.MinimumSampleQuery;
 
             if (string.IsNullOrWhiteSpace(errorRateQuery) &&
                 string.IsNullOrWhiteSpace(latencyQuery) &&
@@ -332,7 +335,14 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
             var sampleMinimum = ParseOptionalDouble(parameters, "telemetry.sample_count.minimum") ?? preset?.MinimumSampleCount;
             var warmupSeconds = ParseOptionalDouble(parameters, "telemetry.warmup_seconds");
 
-            var validationError = preset?.ValidationError;
+            // When the operator supplied explicit query overrides, the preset's input
+            // requirement (e.g. canary selector / job) no longer applies — the per-query
+            // threshold checks below validate the override-only policy.
+            var hasExplicitQueryOverride =
+                !string.IsNullOrWhiteSpace(explicitErrorQuery) ||
+                !string.IsNullOrWhiteSpace(explicitLatencyQuery) ||
+                !string.IsNullOrWhiteSpace(explicitSampleQuery);
+            var validationError = hasExplicitQueryOverride ? null : preset?.ValidationError;
             if (!string.IsNullOrWhiteSpace(errorRateQuery) && !errorThreshold.HasValue)
             {
                 validationError = "Deploy telemetry policy is invalid because telemetry.error_rate.threshold is missing.";

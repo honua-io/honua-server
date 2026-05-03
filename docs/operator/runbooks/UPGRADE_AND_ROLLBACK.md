@@ -318,8 +318,8 @@ The `WorkflowOperationRecord.CurrentPhase` field reports the canary weight as a 
 
 | Parameter | Required? | Purpose |
 |---|---|---|
-| `target.resource_id` | One of the function-name keys is required | Lambda function ARN. Used to derive both function name and region. Aliases: `lambda.function_arn`, `lambda.alias_arn`. |
-| `aws.lambda.function_name` / `lambda.function_name` | Required if `target.resource_id` does not encode the function name | Explicit function name. Falls back to `TargetName` when omitted. |
+| `target.resource_id` | Optional | Lambda function ARN. Used to derive the AWS region only; the function name is **not** parsed from this ARN. Aliases: `lambda.function_arn`, `lambda.alias_arn`. |
+| `aws.lambda.function_name` / `lambda.function_name` / `lambda.alias_function_name` | Optional | Explicit Lambda function name. Falls back to `TargetName` when omitted, so an ARN-only configuration must set `TargetName` to the function name. |
 | `aws.lambda.alias_name` / `lambda.alias_name` / `lambda.alias` | Optional (default `live`) | Lambda alias managed by the rollout. |
 | `aws.region` / `lambda.region` | Optional | Explicit AWS region. Derived from the resource ARN when omitted. |
 | `aws.lambda.canary_weight_percentage` / `lambda.canary_weight_percentage` / `deployment.canary_weight_percentage` | Optional (1-99) | Enables weighted canary rollout. When set, `telemetry.connection` is required. |
