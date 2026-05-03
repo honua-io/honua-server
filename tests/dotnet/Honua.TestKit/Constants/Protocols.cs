@@ -70,6 +70,11 @@ public static class Protocols
     public const string Scene = "Scene-3DTiles";
 
     /// <summary>
+    /// Elevation query and profile API.
+    /// </summary>
+    public const string Elevation = "Elevation";
+
+    /// <summary>
     /// Health and monitoring endpoints.
     /// </summary>
     public const string Health = "Health";

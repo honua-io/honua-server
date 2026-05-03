@@ -1840,17 +1840,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     private static string CreateMosaicAggregateExpression(RasterMergeStrategy mergeStrategy)
-    {
-        return mergeStrategy switch
-        {
-            RasterMergeStrategy.Newest => "ST_Union(rast, 'LAST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC)",
-            RasterMergeStrategy.Oldest => "ST_Union(rast, 'FIRST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC)",
-            RasterMergeStrategy.Average => "ST_Union(rast, 'MEAN')",
-            RasterMergeStrategy.Max => "ST_Union(rast, 'MAX')",
-            RasterMergeStrategy.Min => "ST_Union(rast, 'MIN')",
-            _ => "ST_Union(rast, 'LAST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC)"
-        };
-    }
+        => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy);
 
     // GDAL driver availability is static for the PostGIS process lifetime.
     // Cache per driver name to avoid querying ST_GDALDrivers() on every export.

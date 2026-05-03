@@ -89,6 +89,45 @@ public class LimitsOptions
     /// Spatial analytics limits.
     /// </summary>
     public AnalyticsLimits Analytics { get; set; } = new();
+
+    /// <summary>
+    /// Elevation query and profile API limits.
+    /// </summary>
+    public ElevationLimits Elevation { get; set; } = new();
+}
+
+/// <summary>
+/// Limits specific to elevation query and profile operations.
+/// </summary>
+public class ElevationLimits
+{
+    /// <summary>
+    /// Default profile sample count when neither <c>sampleCount</c> nor
+    /// <c>interval</c> is supplied.
+    /// </summary>
+    [Range(2, 2000)]
+    public int DefaultSampleCount { get; set; } = 100;
+
+    /// <summary>
+    /// Maximum profile sample count permitted in a single request.
+    /// </summary>
+    [Range(2, 2000)]
+    public int MaxSampleCount { get; set; } = 500;
+
+    /// <summary>
+    /// Maximum sampling interval, in meters, used to derive sample count from
+    /// the profile line length. Lower bound prevents pathological per-pixel
+    /// sampling on long lines.
+    /// </summary>
+    [Range(1, 500000)]
+    public double MaxIntervalMeters { get; set; } = 50000;
+
+    /// <summary>
+    /// Minimum sampling interval, in meters, accepted when <c>interval</c> is
+    /// supplied directly.
+    /// </summary>
+    [Range(0.01, 1000000)]
+    public double MinIntervalMeters { get; set; } = 1.0;
 }
 
 /// <summary>

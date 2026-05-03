@@ -56,6 +56,9 @@ public static class ServiceProtocols
     /// <summary>Terrain-RGB elevation tile protocol.</summary>
     public const string Terrain = "Terrain";
 
+    /// <summary>Elevation query and profile protocol.</summary>
+    public const string Elevation = "Elevation";
+
     /// <summary>
     /// All supported protocol identifiers.
     /// </summary>
@@ -76,7 +79,8 @@ public static class ServiceProtocols
         OData,
         Grpc,
         Stac,
-        Terrain
+        Terrain,
+        Elevation
     ];
 
     /// <summary>

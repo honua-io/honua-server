@@ -330,4 +330,67 @@ public class LimitsOptionsValidatorTests
         Assert.False(result.Succeeded);
         Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("RequestTimeout") && f.Contains("between 10 seconds and 10 minutes"));
     }
+
+    [UnitTest]
+    public void Validate_ElevationDefaultSampleCountExceedsMax_ReturnsFail()
+    {
+        var options = new LimitsOptions
+        {
+            Elevation = new ElevationLimits
+            {
+                DefaultSampleCount = 600,
+                MaxSampleCount = 500
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("Elevation.DefaultSampleCount", StringComparison.Ordinal)
+                 && f.Contains("Elevation.MaxSampleCount", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void Validate_ElevationMinIntervalExceedsMaxInterval_ReturnsFail()
+    {
+        var options = new LimitsOptions
+        {
+            Elevation = new ElevationLimits
+            {
+                MinIntervalMeters = 5000,
+                MaxIntervalMeters = 1000
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("Elevation.MinIntervalMeters", StringComparison.Ordinal)
+                 && f.Contains("Elevation.MaxIntervalMeters", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void Validate_ElevationDefaultSampleCountBelowRange_ReturnsFail()
+    {
+        // DefaultSampleCount must be >= 2 per Range attribute on ElevationLimits.
+        var options = new LimitsOptions
+        {
+            Elevation = new ElevationLimits
+            {
+                DefaultSampleCount = 1
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("Elevation", StringComparison.Ordinal)
+                 && f.Contains("DefaultSampleCount", StringComparison.Ordinal));
+    }
 }
