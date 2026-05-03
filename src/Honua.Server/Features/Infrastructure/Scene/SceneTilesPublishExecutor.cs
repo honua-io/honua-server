@@ -8,6 +8,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
+using Honua.Core.Features.Scene;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Scene.Generation;
@@ -132,6 +133,12 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 generationOptions.MaxFeatureCount,
                 serverOptions.MaxFeatureCount);
 
+            // Validate registry-bound option fields before doing any I/O. The
+            // manual scene-dataset endpoint runs the same validators; mirroring
+            // them here ensures a generation request fails fast with a 400 and
+            // never writes a partial directory when limits are exceeded.
+            ValidateRegistryBoundOptions(intent, generationOptions);
+
             if (!int.TryParse(intent.SourceId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             {
                 throw new ValidationException(
@@ -194,8 +201,16 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
             var sceneId = ResolveSceneId(intent, layer);
             var displayName = ResolveDisplayName(intent, layer);
+            ValidateDisplayName(displayName);
             var description = TryGetTargetConfig(intent, TargetConfigDescription);
             var editionGate = TryGetTargetConfig(intent, TargetConfigEditionGate);
+
+            // Preflight registry lookup so a duplicate sceneId returns 409 BEFORE
+            // we create the output directory or overwrite any existing files. The
+            // registry INSERT below still races and remains the canonical
+            // collision authority, but the preflight closes the practical
+            // overwrite window for sequential publishes against the same id.
+            await PreflightSceneIdConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
 
             var outputDirectory = ResolveOutputDirectory(serverOptions, sceneId);
             Directory.CreateDirectory(outputDirectory);
@@ -337,6 +352,48 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
 
         return collected;
+    }
+
+    private static void ValidateRegistryBoundOptions(
+        PublishIntent intent,
+        SceneGenerationOptions options)
+    {
+        var cachePolicy = new SceneCachePolicy(options.CacheMaxAgeSeconds, NoStore: false);
+        if (!SceneDatasetValidator.TryValidateCachePolicy(cachePolicy, out var cacheError))
+        {
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: cacheMaxAgeSeconds is invalid: {cacheError}");
+        }
+
+        var editionGate = TryGetTargetConfig(intent, TargetConfigEditionGate);
+        if (!SceneDatasetValidator.TryValidateEditionGate(editionGate, out var editionError))
+        {
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: editionGate is invalid: {editionError}");
+        }
+    }
+
+    private static void ValidateDisplayName(string displayName)
+    {
+        if (!SceneDatasetValidator.TryValidateName(displayName, out var error))
+        {
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: displayName is invalid: {error}");
+        }
+    }
+
+    private async Task PreflightSceneIdConflictAsync(string sceneId, CancellationToken cancellationToken)
+    {
+        if (_registration is null)
+        {
+            return;
+        }
+        var existing = await _registration.GetBySceneIdAsync(sceneId, cancellationToken).ConfigureAwait(false);
+        if (existing is not null)
+        {
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.SceneIdConflict}: A scene dataset with id '{sceneId}' already exists.");
+        }
     }
 
     private static SceneGenerationOptions ParseGenerationOptions(
@@ -500,41 +557,28 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         if (!string.IsNullOrEmpty(explicitId))
         {
             var normalized = explicitId.ToLowerInvariant();
-            if (!IsSafeSceneId(normalized))
+            if (!SceneDatasetValidator.TryValidateSceneId(normalized, out var error))
             {
                 throw new ValidationException(
-                    $"{SceneGenerationErrorCodes.OptionsInvalid}: sceneId must match [a-z0-9][a-z0-9-]* and contain no path separators.");
+                    $"{SceneGenerationErrorCodes.OptionsInvalid}: sceneId is invalid: {error}");
             }
             return normalized;
         }
 
-        var slug = SlugifyName(layer.Name);
         var suffix = intent.IntentId.Length >= 8
             ? intent.IntentId[..8]
             : intent.IntentId;
-        return $"{slug}-{suffix}".ToLowerInvariant();
-    }
-
-    private static bool IsSafeSceneId(string sceneId)
-    {
-        if (string.IsNullOrEmpty(sceneId))
+        // Reserve room for the "-{suffix}" tail so the auto-generated id
+        // satisfies the registry's MaxSceneIdLength budget.
+        var slugBudget = SceneDatasetValidator.MaxSceneIdLength - 1 - suffix.Length;
+        var slug = SlugifyName(layer.Name, Math.Max(1, slugBudget));
+        var candidate = $"{slug}-{suffix}".ToLowerInvariant();
+        if (!SceneDatasetValidator.TryValidateSceneId(candidate, out var autoError))
         {
-            return false;
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: derived sceneId '{candidate}' is invalid: {autoError}. Supply an explicit sceneId.");
         }
-        var first = sceneId[0];
-        if (!(char.IsAsciiLetterLower(first) || char.IsAsciiDigit(first)))
-        {
-            return false;
-        }
-        for (var i = 1; i < sceneId.Length; i++)
-        {
-            var c = sceneId[i];
-            if (!(char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-'))
-            {
-                return false;
-            }
-        }
-        return true;
+        return candidate;
     }
 
     private static string ResolveDisplayName(PublishIntent intent, LayerDefinition layer)
@@ -620,20 +664,24 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         return Math.Round(diagonal, 6, MidpointRounding.AwayFromZero);
     }
 
-    private static string SlugifyName(string name)
+    private static string SlugifyName(string name, int maxLength)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        if (string.IsNullOrWhiteSpace(name) || maxLength <= 0)
         {
             return "scene";
         }
         var span = name.AsSpan();
-        var buffer = new char[span.Length];
+        var capacity = Math.Min(span.Length, maxLength);
+        var buffer = new char[capacity];
         var written = 0;
         var lastDash = false;
-        for (var i = 0; i < span.Length; i++)
+        for (var i = 0; i < span.Length && written < capacity; i++)
         {
             var c = span[i];
-            if (char.IsLetterOrDigit(c))
+            // Restrict to ASCII alphanumerics so the resulting slug always
+            // satisfies SceneDatasetValidator's pattern. Non-ASCII letters are
+            // mapped to the dash separator.
+            if (char.IsAsciiLetterOrDigit(c))
             {
                 buffer[written++] = char.ToLowerInvariant(c);
                 lastDash = false;

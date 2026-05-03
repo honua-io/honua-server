@@ -261,6 +261,159 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_DuplicateSceneIdPreservesExistingFiles()
+    {
+        // Pre-populate the registry with an existing record so the preflight
+        // detects the conflict before any filesystem writes happen.
+        _registration.Records.Add(new SceneDatasetRecord
+        {
+            DatasetId = Guid.NewGuid(),
+            Id = "existing-scene",
+            Name = "Existing scene",
+            AssetRoot = "/tmp/existing",
+            TilesetFileName = "tileset.json",
+            DatasetType = SceneDatasetType.HostedTiles,
+            CachePolicy = SceneCachePolicy.Default,
+            IsPublic = true,
+            Status = SceneDatasetStatus.Active,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = "test"
+        });
+
+        // Pre-create the on-disk artifacts to verify the executor does not
+        // overwrite them when the sceneId already exists in the registry.
+        var existingDir = Path.Combine(_outputRoot, "existing-scene");
+        Directory.CreateDirectory(existingDir);
+        var existingTileBytes = new byte[] { 0x01, 0x02, 0x03 };
+        var existingTilesetBytes = Encoding.UTF8.GetBytes("{\"asset\":{\"version\":\"1.1\"}}");
+        await File.WriteAllBytesAsync(Path.Combine(existingDir, "tile_0000.glb"), existingTileBytes);
+        await File.WriteAllBytesAsync(Path.Combine(existingDir, "tileset.json"), existingTilesetBytes);
+
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: "existing-scene"), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.SceneIdConflict);
+
+        // Files must remain byte-identical — preflight catches the duplicate
+        // before Directory.CreateDirectory or File.WriteAllBytesAsync runs.
+        (await File.ReadAllBytesAsync(Path.Combine(existingDir, "tile_0000.glb")))
+            .Should().Equal(existingTileBytes);
+        (await File.ReadAllBytesAsync(Path.Combine(existingDir, "tileset.json")))
+            .Should().Equal(existingTilesetBytes);
+    }
+
+    [UnitTest]
+    public async Task Execute_RejectsExplicitSceneIdLongerThanLimit()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var tooLong = new string('a', 65);
+        var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: tooLong), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+        Directory.Exists(Path.Combine(_outputRoot, tooLong)).Should().BeFalse(
+            "validation must reject before any directory is created.");
+    }
+
+    [UnitTest]
+    public async Task Execute_RejectsExplicitSceneIdWithTrailingHyphen()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: "scene-"), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+    }
+
+    [UnitTest]
+    public async Task Execute_RejectsCacheMaxAgeAboveLimit()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var act = () => _executor.RunDirectAsync(
+            BuildIntent(sceneId: "cache-too-long", cacheMaxAgeSeconds: 86_401),
+            CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+        Directory.Exists(Path.Combine(_outputRoot, "cache-too-long")).Should().BeFalse(
+            "validation must reject before any directory is created.");
+    }
+
+    [UnitTest]
+    public async Task Execute_RejectsInvalidEditionGate()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var act = () => _executor.RunDirectAsync(
+            BuildIntent(sceneId: "bad-gate", editionGate: "Pro Edition!"),
+            CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+    }
+
+    [UnitTest]
+    public async Task Execute_RejectsDisplayNameLongerThanLimit()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var longName = new string('a', 129);
+        var act = () => _executor.RunDirectAsync(
+            BuildIntent(sceneId: "long-name", displayName: longName),
+            CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+    }
+
+    [UnitTest]
+    public async Task Execute_AutoGeneratedSceneIdHandlesNonAsciiLayerName()
+    {
+        var fields = new[]
+        {
+            new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
+            new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
+            new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
+            new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true)
+        };
+        _catalog.Layer = new LayerDefinition(
+            LayerId, "Bâtiments-2026", null, GeometryType.Polygon,
+            SpatialReference.Create(4326, 4326), fields);
+        _featureSource.Features = SamplePolygons();
+
+        var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+
+        // The auto-generated id must satisfy the canonical SceneDatasetValidator
+        // pattern even when the source layer name carries non-ASCII characters.
+        outcome.Result.SceneId.Should().MatchRegex("^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$");
+        outcome.Result.SceneId.Should().NotContainAny("â", "Â", "â");
+    }
+
+    [UnitTest]
+    public async Task Execute_AcceptsCacheMaxAgeAtBoundary()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var outcome = await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "cache-boundary", cacheMaxAgeSeconds: 86_400),
+            CancellationToken.None);
+
+        outcome.Result.SceneId.Should().Be("cache-boundary");
+    }
+
+    [UnitTest]
     public async Task Execute_BigIntegerValues_PreservedWithoutClamping()
     {
         var fields = new[]
@@ -367,12 +520,29 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         };
     }
 
-    private static PublishIntent BuildIntent(string? sceneId = null)
+    private static PublishIntent BuildIntent(
+        string? sceneId = null,
+        string? displayName = null,
+        string? editionGate = null,
+        int? cacheMaxAgeSeconds = null)
     {
         var config = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!string.IsNullOrEmpty(sceneId))
         {
             config[SceneTilesPublishExecutor.TargetConfigSceneId] = sceneId;
+        }
+        if (!string.IsNullOrEmpty(displayName))
+        {
+            config[SceneTilesPublishExecutor.TargetConfigDisplayName] = displayName;
+        }
+        if (!string.IsNullOrEmpty(editionGate))
+        {
+            config[SceneTilesPublishExecutor.TargetConfigEditionGate] = editionGate;
+        }
+        if (cacheMaxAgeSeconds is { } cache)
+        {
+            config[SceneTilesPublishExecutor.TargetConfigCacheMaxAge] =
+                cache.ToString(CultureInfo.InvariantCulture);
         }
         return PublishIntent.CreateDraft(
             intentId: Guid.NewGuid().ToString("N"),

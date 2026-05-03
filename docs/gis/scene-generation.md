@@ -38,13 +38,13 @@ an admin-request timeout. Asynchronous job tracking through a durable
 | Field | Required | Notes |
 | --- | --- | --- |
 | `layerId` | yes | Catalog id of a feature layer with a polygon, point, or linestring geometry column. |
-| `sceneId` | no | Stable URL slug. Must match `[a-z0-9][a-z0-9-]*` (lowercased server-side). When omitted, the server derives one from the layer name + intent id. |
-| `displayName` | no | Human-readable name; defaults to the layer name. |
+| `sceneId` | no | Stable URL slug, validated by the canonical `SceneDatasetValidator`: 1–64 chars, must match `[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?` (lowercased server-side, no trailing hyphen). When omitted, the server derives an ASCII slug from the layer name plus an 8-char intent suffix and rejects derivations that fail the same pattern. |
+| `displayName` | no | Human-readable name (≤ 128 characters); defaults to the layer name. |
 | `description` | no | Optional description text. |
 | `includeAttributes` | no | Allowlist of attribute fields to project into the tileset's metadata schema. Empty means all numeric/string attributes. |
 | `maxFeatureCount` | no | Per-job override of the v1 50 000-feature cap; the smaller of the two values wins. |
-| `cacheMaxAgeSeconds` | no | Cache directive applied to the registered scene dataset. |
-| `editionGate` | no | Optional licensing gate forwarded to the scene record. |
+| `cacheMaxAgeSeconds` | no | Cache directive applied to the registered scene dataset. Bounded to `[0, 86400]` (24 hours); values above the ceiling are rejected with `SCENE_OPTIONS_INVALID`. |
+| `editionGate` | no | Optional licensing gate forwarded to the scene record. Must be a lowercase slug (letters, digits, hyphens). |
 
 ### Successful response (`201 Created`)
 
@@ -167,8 +167,8 @@ problem-detail helpers:
 | `SCENE_FEATURE_LIMIT_EXCEEDED` | 400 | The layer exceeds the configured maximum feature count. |
 | `SCENE_ATTRIBUTE_TYPE_UNSUPPORTED` | 400 | Reserved for future attribute-type validation surfaces. |
 | `SCENE_MODEL_ASSET_INVALID` | 400 | Reserved for the future glTF/GLB model-asset path. |
-| `SCENE_REGISTRATION_CONFLICT` | 409 | The requested scene id or display name collides with an existing dataset. |
-| `SCENE_OPTIONS_INVALID` | 400 | Generation options failed validation. |
+| `SCENE_REGISTRATION_CONFLICT` | 409 | The requested scene id or display name collides with an existing dataset. The executor preflights this against the registry before any filesystem writes, so a duplicate request leaves any pre-existing scene assets unchanged. |
+| `SCENE_OPTIONS_INVALID` | 400 | Generation options failed validation. The executor runs the canonical `SceneDatasetValidator` checks (`sceneId`, `displayName`, `cacheMaxAgeSeconds`, `editionGate`) before doing any I/O so invalid input never produces a partial output directory. |
 
 ## Limits and known v1 limitations
 
