@@ -38,7 +38,51 @@ internal sealed record AwsAlbListenerRuleState
 }
 
 /// <summary>
+/// Aggregated view of the listener-rule weights the deploy controller actually
+/// owns. The deploy controller writes pairs that always sum to 100 with no
+/// stray target groups; <see cref="MatchesExpectedShare"/> validates an
+/// observation against that contract before treating it as a stable rollout
+/// endpoint.
+/// </summary>
+internal sealed record AwsAlbWeightSummary
+{
+    public int CanaryShare { get; init; }
+
+    public int StableShare { get; init; }
+
+    public int Sum { get; init; }
+
+    public bool HasUnexpectedTargets { get; init; }
+
+    public bool IsNormalized => Sum == 100 && !HasUnexpectedTargets;
+
+    public bool MatchesExpectedShare(int expectedCanaryShare)
+        => IsNormalized
+            && CanaryShare == expectedCanaryShare
+            && StableShare == 100 - expectedCanaryShare;
+}
+
+/// <summary>
+/// Outcome of an ECS deployment-level convergence check. The reason field is
+/// surfaced into the operator-facing observation message so an operation that
+/// is not yet ready can be inspected without parsing structured logs.
+/// </summary>
+internal sealed record AwsEcsDeploymentConvergence
+{
+    public bool IsConverged { get; init; }
+
+    public string Reason { get; init; } = string.Empty;
+
+    public string? PrimaryTaskDefinitionArn { get; init; }
+}
+
+/// <summary>
 /// Read-only snapshot of an ECS service used to confirm canary convergence.
+/// Top-level counts are aggregates across all deployments; the
+/// <see cref="Deployments"/> collection carries per-deployment status so the
+/// reconciler can require the PRIMARY deployment for the requested task
+/// definition to be at steady state with no ACTIVE old deployments still
+/// serving tasks.
 /// </summary>
 internal sealed record AwsEcsServiceState
 {
@@ -53,6 +97,41 @@ internal sealed record AwsEcsServiceState
     public int PendingCount { get; init; }
 
     public string? Status { get; init; }
+
+    public IReadOnlyList<AwsEcsDeploymentState> Deployments { get; init; } =
+        Array.Empty<AwsEcsDeploymentState>();
+}
+
+/// <summary>
+/// Per-deployment ECS state. ECS exposes one PRIMARY deployment plus zero or
+/// more ACTIVE deployments that still hold running tasks while a rollout is
+/// settling. The reconciler needs that visibility because aggregate service
+/// counts can satisfy <c>RunningCount &gt;= DesiredCount</c> while an old
+/// ACTIVE deployment is still serving traffic on the previous task definition.
+/// </summary>
+internal sealed record AwsEcsDeploymentState
+{
+    public string? DeploymentId { get; init; }
+
+    /// <summary>PRIMARY, ACTIVE, or INACTIVE.</summary>
+    public string? Status { get; init; }
+
+    public string? TaskDefinitionArn { get; init; }
+
+    /// <summary>
+    /// IN_PROGRESS, COMPLETED, FAILED, or null when ECS does not return a
+    /// deployment-level rollout state (services not using the rolling-update
+    /// deployment type or services behind a Classic Load Balancer).
+    /// </summary>
+    public string? RolloutState { get; init; }
+
+    public string? RolloutStateReason { get; init; }
+
+    public int RunningCount { get; init; }
+
+    public int DesiredCount { get; init; }
+
+    public int PendingCount { get; init; }
 }
 
 /// <summary>
@@ -271,6 +350,25 @@ internal sealed class AwsSdkEcsClient : IAwsEcsClient
         var service = response.Services?.FirstOrDefault()
             ?? throw new AmazonECSException($"ECS service '{serviceName}' was not found in cluster '{cluster}'.");
 
+        var deployments = new List<AwsEcsDeploymentState>();
+        if (service.Deployments != null)
+        {
+            foreach (var deployment in service.Deployments)
+            {
+                deployments.Add(new AwsEcsDeploymentState
+                {
+                    DeploymentId = deployment.Id,
+                    Status = deployment.Status,
+                    TaskDefinitionArn = deployment.TaskDefinition,
+                    RolloutState = deployment.RolloutState?.Value,
+                    RolloutStateReason = deployment.RolloutStateReason,
+                    RunningCount = deployment.RunningCount ?? 0,
+                    DesiredCount = deployment.DesiredCount ?? 0,
+                    PendingCount = deployment.PendingCount ?? 0
+                });
+            }
+        }
+
         return new AwsEcsServiceState
         {
             ServiceName = service.ServiceName ?? serviceName,
@@ -278,7 +376,8 @@ internal sealed class AwsSdkEcsClient : IAwsEcsClient
             RunningCount = service.RunningCount ?? 0,
             DesiredCount = service.DesiredCount ?? 0,
             PendingCount = service.PendingCount ?? 0,
-            Status = service.Status
+            Status = service.Status,
+            Deployments = deployments
         };
     }
 
@@ -458,19 +557,15 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     : $"ECS canary service '{target.CanaryService}' is moving 100% of traffic to task definition '{spec.DesiredRevision}'."
             };
         }
-        catch (AmazonElasticLoadBalancingV2Exception ex)
+        catch (Exception ex) when (IsAwsRuntimeException(ex))
         {
-            // The AWS SDK error text can carry ARNs, request IDs, account hints, or
-            // other internals that should not surface to the operator-facing
-            // ErrorMessage that DeployWorkflowService persists. Mirror the
-            // ObserveAsync sanitization path: log structured detail, return a
-            // sanitized Failed submission so the durable record stays clean.
-            Log.SubmissionFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
-            activity?.SetStatus(ActivityStatusCode.Error);
-            return SanitizedSubmissionFailure(ex);
-        }
-        catch (AmazonECSException ex)
-        {
+            // AWS SDK v4 flattens the exception hierarchy: AmazonServiceException
+            // (the base for service-specific exceptions like AmazonECSException
+            // and AmazonElasticLoadBalancingV2Exception) and AmazonClientException
+            // (credential/profile/identity resolution and other SDK-side failures
+            // that never reach AWS) both inherit from Exception directly. Catch
+            // both so the durable ErrorMessage that DeployWorkflowService persists
+            // never carries raw provider detail.
             Log.SubmissionFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
             activity?.SetStatus(ActivityStatusCode.Error);
             return SanitizedSubmissionFailure(ex);
@@ -506,9 +601,8 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            var canaryShare = ResolveWeight(ruleState, target.CanaryTargetGroupArn!);
-            var stableShare = ResolveWeight(ruleState, target.StableTargetGroupArn!);
-            Log.StateObserved(logger, target.CanaryService!, serviceState.RunningCount, serviceState.DesiredCount, canaryShare);
+            var albWeights = SummarizeAlbWeights(ruleState, target);
+            Log.StateObserved(logger, target.CanaryService!, serviceState.RunningCount, serviceState.DesiredCount, albWeights.CanaryShare);
 
             if (operation.Status == WorkflowOperationStatus.RollbackRequested)
             {
@@ -518,7 +612,10 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 // scaled out for the next rollout — no traffic flows there. Waiting for
                 // RunningCount to reach zero would leave the operation pinned in
                 // RollbackRequested forever for the common warm-canary topology.
-                if (stableShare == 100 && canaryShare == 0 && IsCanaryDeploymentSettled(serviceState))
+                // The weight check uses MatchesExpectedShare(0) so an unnormalized rule
+                // (e.g. canary=0/stable=50 with a stray third target group) doesn't
+                // satisfy rollback even though the canary slot reads zero.
+                if (albWeights.MatchesExpectedShare(0) && IsCanaryDeploymentSettled(serviceState))
                 {
                     return new DeployObservation
                     {
@@ -534,54 +631,58 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     Status = WorkflowOperationStatus.RollbackRequested,
                     ProviderOperationId = operation.ProviderOperationId,
                     ObservedRevision = serviceState.TaskDefinitionArn,
-                    Message = $"ECS/ALB rollout rollback is still settling canary service '{target.CanaryService}' (pending={serviceState.PendingCount}, canaryWeight={canaryShare})."
+                    Message = $"ECS/ALB rollout rollback is still settling canary service '{target.CanaryService}' (pending={serviceState.PendingCount}, canaryWeight={albWeights.CanaryShare}, stableWeight={albWeights.StableShare})."
                 };
             }
 
-            var canaryConverged = serviceState.RunningCount >= serviceState.DesiredCount && serviceState.PendingCount == 0;
-            // Promotion or success requires the ECS service to actually be running the
-            // requested task definition. Otherwise an external rollback or a stale
-            // service definition could satisfy ALB weights and rolling counts while
-            // the workload is still on the previous revision.
-            var taskDefinitionMatches = string.Equals(
-                serviceState.TaskDefinitionArn,
-                spec.DesiredRevision,
-                StringComparison.Ordinal);
+            // Promotion or success requires the ECS PRIMARY deployment to actually be
+            // running the requested task definition with no old ACTIVE deployment
+            // still serving traffic. Aggregate service counts can satisfy
+            // RunningCount >= DesiredCount while ECS is still draining a previous
+            // deployment, so deployment-level state is the source of truth here.
+            var convergence = EvaluateDeploymentConvergence(serviceState, spec.DesiredRevision);
+            var primaryRevision = convergence.PrimaryTaskDefinitionArn ?? serviceState.TaskDefinitionArn;
 
-            if (canaryShare == 100 && canaryConverged && taskDefinitionMatches)
+            // ALB target-group weights are relative; the deploy controller writes
+            // pairs that always sum to 100 with no other target groups. A rule that
+            // does not normalize to that contract (e.g. canary=100/stable=100, a
+            // third target group with non-zero weight, or partial weight drift)
+            // cannot be treated as a stable rollout endpoint regardless of the
+            // canary share, so PromotionRecommended and Succeeded both require
+            // MatchesExpectedShare on the configured share.
+            if (albWeights.MatchesExpectedShare(100) && convergence.IsConverged)
             {
                 return new DeployObservation
                 {
                     Status = WorkflowOperationStatus.Succeeded,
                     ProviderOperationId = operation.ProviderOperationId,
-                    ObservedRevision = serviceState.TaskDefinitionArn,
+                    ObservedRevision = primaryRevision,
                     Message = $"ECS canary service '{target.CanaryService}' is serving 100% of traffic on task definition '{spec.DesiredRevision}'."
                 };
             }
 
             if (desiredCanaryWeight.HasValue &&
-                canaryShare == desiredCanaryWeight.Value &&
-                canaryConverged &&
-                taskDefinitionMatches)
+                albWeights.MatchesExpectedShare(desiredCanaryWeight.Value) &&
+                convergence.IsConverged)
             {
                 return new DeployObservation
                 {
                     Status = WorkflowOperationStatus.Reconciling,
                     ProviderOperationId = operation.ProviderOperationId,
-                    ObservedRevision = serviceState.TaskDefinitionArn,
+                    ObservedRevision = primaryRevision,
                     PromotionRecommended = true,
-                    Message = $"ECS canary service '{target.CanaryService}' is holding {canaryShare}% of traffic on task definition '{spec.DesiredRevision}' and is ready for promotion."
+                    Message = $"ECS canary service '{target.CanaryService}' is holding {albWeights.CanaryShare}% of traffic on task definition '{spec.DesiredRevision}' and is ready for promotion."
                 };
             }
 
-            if (!taskDefinitionMatches)
+            if (!convergence.IsConverged)
             {
                 return new DeployObservation
                 {
                     Status = WorkflowOperationStatus.Reconciling,
                     ProviderOperationId = operation.ProviderOperationId,
-                    ObservedRevision = serviceState.TaskDefinitionArn,
-                    Message = $"ECS canary service '{target.CanaryService}' is reporting task definition '{serviceState.TaskDefinitionArn ?? "<unknown>"}' instead of the desired '{spec.DesiredRevision}'; waiting for ECS to adopt the requested revision."
+                    ObservedRevision = primaryRevision,
+                    Message = $"ECS canary service '{target.CanaryService}' is reconciling: {convergence.Reason} (canaryWeight={albWeights.CanaryShare}, stableWeight={albWeights.StableShare})."
                 };
             }
 
@@ -589,17 +690,11 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             {
                 Status = WorkflowOperationStatus.Reconciling,
                 ProviderOperationId = operation.ProviderOperationId,
-                ObservedRevision = serviceState.TaskDefinitionArn,
-                Message = $"ECS canary service '{target.CanaryService}' is converging to task definition '{spec.DesiredRevision}' (running={serviceState.RunningCount}, desired={serviceState.DesiredCount}, canaryWeight={canaryShare})."
+                ObservedRevision = primaryRevision,
+                Message = $"ECS canary service '{target.CanaryService}' is converging on ALB weights (canaryWeight={albWeights.CanaryShare}, stableWeight={albWeights.StableShare}, sum={albWeights.Sum}{(albWeights.HasUnexpectedTargets ? ", unexpected target groups" : string.Empty)})."
             };
         }
-        catch (AmazonElasticLoadBalancingV2Exception ex)
-        {
-            Log.StateLookupFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
-            activity?.SetStatus(ActivityStatusCode.Error);
-            return SanitizedFailure(operation, ex);
-        }
-        catch (AmazonECSException ex)
+        catch (Exception ex) when (IsAwsRuntimeException(ex))
         {
             Log.StateLookupFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
             activity?.SetStatus(ActivityStatusCode.Error);
@@ -638,7 +733,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 Message = $"ECS/ALB rollout promoted: canary target group is now serving 100% of traffic on task definition '{spec.DesiredRevision}'."
             };
         }
-        catch (AmazonElasticLoadBalancingV2Exception ex)
+        catch (Exception ex) when (IsAwsRuntimeException(ex))
         {
             Log.StateLookupFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
             activity?.SetStatus(ActivityStatusCode.Error);
@@ -677,7 +772,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 Message = $"ECS/ALB rollout rollback requested: stable target group is being shifted to 100% of traffic. Canary service '{target.CanaryService}' will settle on subsequent reconciliations."
             };
         }
-        catch (AmazonElasticLoadBalancingV2Exception ex)
+        catch (Exception ex) when (IsAwsRuntimeException(ex))
         {
             Log.StateLookupFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
             activity?.SetStatus(ActivityStatusCode.Error);
@@ -685,7 +780,10 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         }
     }
 
-    private static DeployObservation SanitizedFailure(WorkflowOperationRecord operation, AmazonServiceException ex)
+    private static bool IsAwsRuntimeException(Exception ex)
+        => ex is AmazonServiceException or AmazonClientException;
+
+    private static DeployObservation SanitizedFailure(WorkflowOperationRecord operation, Exception ex)
         => new()
         {
             Status = WorkflowOperationStatus.Failed,
@@ -694,12 +792,10 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             // Provider error text can contain ARNs, request IDs, account hints, or other
             // internals. The raw error already went to the structured log; the operator
             // surface gets a stable, generic message that points at the log for diagnosis.
-            Message = ex is AmazonECSException
-                ? "ECS state lookup failed for this rollout. Check the deploy controller logs for the underlying AWS error."
-                : "ALB state lookup failed for this rollout. Check the deploy controller logs for the underlying AWS error."
+            Message = ResolveAwsFailureMessage(ex)
         };
 
-    private static DeploySubmissionResult SanitizedSubmissionFailure(AmazonServiceException ex)
+    private static DeploySubmissionResult SanitizedSubmissionFailure(Exception ex)
         => new()
         {
             Status = WorkflowOperationStatus.Failed,
@@ -707,9 +803,19 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             // The raw AWS error is already in the structured log; the durable operation
             // record gets a stable, generic message and operators consult logs for the
             // underlying provider detail.
-            Message = ex is AmazonECSException
-                ? "ECS state lookup failed for this rollout. Check the deploy controller logs for the underlying AWS error."
-                : "ALB state lookup failed for this rollout. Check the deploy controller logs for the underlying AWS error."
+            Message = ResolveAwsFailureMessage(ex)
+        };
+
+    private static string ResolveAwsFailureMessage(Exception ex)
+        => ex switch
+        {
+            AmazonECSException => "ECS state lookup failed for this rollout. Check the deploy controller logs for the underlying AWS error.",
+            AmazonElasticLoadBalancingV2Exception => "ALB state lookup failed for this rollout. Check the deploy controller logs for the underlying AWS error.",
+            // AmazonClientException covers SDK-side failures that never reach AWS:
+            // credential resolution, profile lookup, instance metadata errors,
+            // network failures before request submission. AmazonServiceException
+            // without an ECS/ALB subtype falls through to the same generic message.
+            _ => "AWS state lookup failed for this rollout. Check the deploy controller logs for the underlying AWS error."
         };
 
     private static AwsAlbTargetGroupWeight[] BuildWeights(
@@ -723,17 +829,160 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             new AwsAlbTargetGroupWeight { TargetGroupArn = stableTargetGroupArn, Weight = stableWeight }
         ];
 
-    private static int ResolveWeight(AwsAlbListenerRuleState state, string targetGroupArn)
+    private static AwsAlbWeightSummary SummarizeAlbWeights(
+        AwsAlbListenerRuleState state,
+        AwsEcsAlbDeployTarget target)
     {
+        var canaryShare = 0;
+        var stableShare = 0;
+        var hasUnexpectedTargets = false;
         foreach (var entry in state.TargetGroupWeights)
         {
-            if (string.Equals(entry.TargetGroupArn, targetGroupArn, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(entry.TargetGroupArn, target.CanaryTargetGroupArn, StringComparison.OrdinalIgnoreCase))
             {
-                return entry.Weight;
+                canaryShare = entry.Weight;
+            }
+            else if (string.Equals(entry.TargetGroupArn, target.StableTargetGroupArn, StringComparison.OrdinalIgnoreCase))
+            {
+                stableShare = entry.Weight;
+            }
+            else if (entry.Weight != 0)
+            {
+                // A third target group with non-zero weight breaks the canary/stable
+                // contract because traffic could leak to a target the controller does
+                // not own. Zero-weighted strays are tolerated; they receive nothing.
+                hasUnexpectedTargets = true;
             }
         }
 
-        return 0;
+        return new AwsAlbWeightSummary
+        {
+            CanaryShare = canaryShare,
+            StableShare = stableShare,
+            Sum = canaryShare + stableShare,
+            HasUnexpectedTargets = hasUnexpectedTargets
+        };
+    }
+
+    private static AwsEcsDeploymentConvergence EvaluateDeploymentConvergence(
+        AwsEcsServiceState state,
+        string desiredTaskDefinitionArn)
+    {
+        // Some service shapes (CODE_DEPLOY, services without rolling-update history)
+        // return no per-deployment entries. Fall back to the aggregate counts the
+        // service exposes; the runbook documents this as best-effort because ECS is
+        // not advertising deployment-level signal.
+        if (state.Deployments.Count == 0)
+        {
+            var taskDefMatches = string.Equals(state.TaskDefinitionArn, desiredTaskDefinitionArn, StringComparison.Ordinal);
+            if (!taskDefMatches)
+            {
+                return new AwsEcsDeploymentConvergence
+                {
+                    IsConverged = false,
+                    Reason = $"service is reporting task definition '{state.TaskDefinitionArn ?? "<unknown>"}' instead of the desired '{desiredTaskDefinitionArn}'",
+                    PrimaryTaskDefinitionArn = state.TaskDefinitionArn
+                };
+            }
+
+            var aggregateConverged = state.RunningCount >= state.DesiredCount && state.PendingCount == 0;
+            return new AwsEcsDeploymentConvergence
+            {
+                IsConverged = aggregateConverged,
+                Reason = aggregateConverged
+                    ? "service is at steady state on the desired task definition"
+                    : $"service is still rolling (running={state.RunningCount}, desired={state.DesiredCount}, pending={state.PendingCount})",
+                PrimaryTaskDefinitionArn = state.TaskDefinitionArn
+            };
+        }
+
+        AwsEcsDeploymentState? primary = null;
+        foreach (var deployment in state.Deployments)
+        {
+            if (string.Equals(deployment.Status, "PRIMARY", StringComparison.OrdinalIgnoreCase))
+            {
+                primary = deployment;
+                break;
+            }
+        }
+
+        if (primary == null)
+        {
+            return new AwsEcsDeploymentConvergence
+            {
+                IsConverged = false,
+                Reason = "ECS did not return a PRIMARY deployment for this service",
+                PrimaryTaskDefinitionArn = state.TaskDefinitionArn
+            };
+        }
+
+        if (!string.Equals(primary.TaskDefinitionArn, desiredTaskDefinitionArn, StringComparison.Ordinal))
+        {
+            return new AwsEcsDeploymentConvergence
+            {
+                IsConverged = false,
+                Reason = $"PRIMARY deployment is on task definition '{primary.TaskDefinitionArn ?? "<unknown>"}' instead of the desired '{desiredTaskDefinitionArn}'",
+                PrimaryTaskDefinitionArn = primary.TaskDefinitionArn
+            };
+        }
+
+        // RolloutState is null for non-rolling-update deployment types and for
+        // services behind a Classic Load Balancer; treat null as no signal and
+        // rely on counts. IN_PROGRESS / FAILED are explicit reasons to keep
+        // the operation in Reconciling.
+        if (!string.IsNullOrEmpty(primary.RolloutState) &&
+            !string.Equals(primary.RolloutState, "COMPLETED", StringComparison.OrdinalIgnoreCase))
+        {
+            var reasonSuffix = string.IsNullOrEmpty(primary.RolloutStateReason)
+                ? string.Empty
+                : $" ({primary.RolloutStateReason})";
+            return new AwsEcsDeploymentConvergence
+            {
+                IsConverged = false,
+                Reason = $"PRIMARY deployment rollout state is '{primary.RolloutState}'{reasonSuffix}",
+                PrimaryTaskDefinitionArn = primary.TaskDefinitionArn
+            };
+        }
+
+        if (primary.RunningCount < primary.DesiredCount || primary.PendingCount > 0)
+        {
+            return new AwsEcsDeploymentConvergence
+            {
+                IsConverged = false,
+                Reason = $"PRIMARY deployment is still rolling (running={primary.RunningCount}, desired={primary.DesiredCount}, pending={primary.PendingCount})",
+                PrimaryTaskDefinitionArn = primary.TaskDefinitionArn
+            };
+        }
+
+        // Old ACTIVE deployments still serving tasks mean traffic could land on a
+        // previous task definition. The PRIMARY may be at steady state but the
+        // rollout is not yet complete until those drain.
+        var lingeringActive = 0;
+        foreach (var deployment in state.Deployments)
+        {
+            if (string.Equals(deployment.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase) &&
+                deployment.RunningCount > 0)
+            {
+                lingeringActive++;
+            }
+        }
+
+        if (lingeringActive > 0)
+        {
+            return new AwsEcsDeploymentConvergence
+            {
+                IsConverged = false,
+                Reason = $"{lingeringActive} ACTIVE deployment{(lingeringActive == 1 ? string.Empty : "s")} still serving tasks on a previous task definition",
+                PrimaryTaskDefinitionArn = primary.TaskDefinitionArn
+            };
+        }
+
+        return new AwsEcsDeploymentConvergence
+        {
+            IsConverged = true,
+            Reason = "PRIMARY deployment is at steady state",
+            PrimaryTaskDefinitionArn = primary.TaskDefinitionArn
+        };
     }
 
     private static bool IsCanaryDeploymentSettled(AwsEcsServiceState state)

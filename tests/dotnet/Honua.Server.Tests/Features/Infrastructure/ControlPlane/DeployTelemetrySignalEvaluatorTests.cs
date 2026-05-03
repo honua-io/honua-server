@@ -99,6 +99,67 @@ public sealed class DeployTelemetrySignalEvaluatorTests
     }
 
     [Fact]
+    public async Task EvaluateAsync_AwsEcsCanaryWeight_DefaultsToAwsAlbCanaryPreset()
+    {
+        // Without telemetry.policy or canary_selector/canary_job, the runbook
+        // says the aws-alb-canary preset is selected for ECS canary deploys.
+        // Verify by inspecting the resulting Prometheus queries — the preset
+        // builds a canary-scoped selector around the default canary job rather
+        // than the aggregate honua-http selector.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: CreateSuccessfulResponses("12", "0.01", "120"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsEcs,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["aws.ecs.canary_weight_percentage"] = "10"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeFalse();
+
+        var queries = capturedQueries.ToArray();
+        // The aws-alb-canary preset uses DefaultCanaryPrometheusJob = "honua-canary"
+        // when no explicit canary selector or job is configured. The honua-http
+        // preset would have used "honua".
+        queries.Should().NotBeEmpty();
+        queries[0].Should().Contain("job=\"honua-canary\"");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_GenericDeploymentCanaryWeight_DefaultsToAwsAlbCanaryPresetForAwsEcs()
+    {
+        // Operators can set the generic deployment.canary_weight_percentage
+        // key instead of the ECS-specific alias; the same preset selection
+        // applies.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: CreateSuccessfulResponses("12", "0.01", "120"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsEcs,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["deployment.canary_weight_percentage"] = "20",
+                ["telemetry.prometheus.canary_job"] = "honua-ecs-canary"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeFalse();
+
+        var queries = capturedQueries.ToArray();
+        queries[0].Should().Contain("job=\"honua-ecs-canary\"");
+    }
+
+    [Fact]
     public async Task EvaluateAsync_UsesDefaultHonuaHttpPreset_ForAzureContainerAppsTargets()
     {
         var capturedQueries = new ConcurrentQueue<string>();

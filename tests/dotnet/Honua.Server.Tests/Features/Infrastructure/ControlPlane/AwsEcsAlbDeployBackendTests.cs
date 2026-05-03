@@ -3,6 +3,7 @@
 
 using Amazon.ECS;
 using Amazon.ElasticLoadBalancingV2;
+using Amazon.Runtime;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
@@ -513,6 +514,346 @@ public sealed class AwsEcsAlbDeployBackendTests
     }
 
     [Fact]
+    public async Task ObserveAsync_FullCanaryWeight_StableAlsoFullWeight_DoesNotSucceed()
+    {
+        // ALB target-group weights are relative; if both target groups carry
+        // weight=100 traffic still splits 50/50. The deploy controller writes
+        // pairs that sum to 100, so an observation that does not normalize
+        // cannot be treated as a stable rollout endpoint.
+        var albClient = new StubAwsAlbClient
+        {
+            RuleState = new AwsAlbListenerRuleState
+            {
+                ListenerRuleArn = ListenerRuleArn,
+                TargetGroupWeights =
+                [
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 100 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 100 }
+                ]
+            }
+        };
+        var ecsClient = new StubAwsEcsClient
+        {
+            ServiceState = ConvergedServiceState(TaskDefArn)
+        };
+        var backend = CreateBackend(albClient, ecsClient);
+
+        var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.Reconciling));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+    }
+
+    [Fact]
+    public async Task ObserveAsync_CanaryWeightWithUnexpectedTargetGroup_DoesNotRecommendPromotion()
+    {
+        // A third target group with non-zero weight breaks the canary/stable
+        // contract because traffic could leak to a target the controller does
+        // not own.
+        var albClient = new StubAwsAlbClient
+        {
+            RuleState = new AwsAlbListenerRuleState
+            {
+                ListenerRuleArn = ListenerRuleArn,
+                TargetGroupWeights =
+                [
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 10 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 90 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/honua-rogue/aaa", Weight = 5 }
+                ]
+            }
+        };
+        var ecsClient = new StubAwsEcsClient
+        {
+            ServiceState = ConvergedServiceState(TaskDefArn)
+        };
+        var backend = CreateBackend(albClient, ecsClient);
+
+        var observation = await backend.ObserveAsync(CreateOperation(
+            parameters: CanaryParameters(),
+            status: WorkflowOperationStatus.Reconciling));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        observation.PromotionRecommended.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ObserveAsync_PrimaryDeploymentRolloutInProgress_DoesNotSucceed()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            RuleState = new AwsAlbListenerRuleState
+            {
+                ListenerRuleArn = ListenerRuleArn,
+                TargetGroupWeights =
+                [
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 100 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 0 }
+                ]
+            }
+        };
+        var ecsClient = new StubAwsEcsClient
+        {
+            ServiceState = new AwsEcsServiceState
+            {
+                ServiceName = CanaryService,
+                TaskDefinitionArn = TaskDefArn,
+                RunningCount = 2,
+                DesiredCount = 2,
+                PendingCount = 0,
+                Status = "ACTIVE",
+                Deployments =
+                [
+                    new AwsEcsDeploymentState
+                    {
+                        DeploymentId = "primary",
+                        Status = "PRIMARY",
+                        TaskDefinitionArn = TaskDefArn,
+                        RolloutState = "IN_PROGRESS",
+                        RunningCount = 2,
+                        DesiredCount = 2,
+                        PendingCount = 0
+                    }
+                ]
+            }
+        };
+        var backend = CreateBackend(albClient, ecsClient);
+
+        var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.Reconciling));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        observation.Message.Should().Contain("IN_PROGRESS");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_OldActiveDeploymentStillRunning_DoesNotSucceed()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            RuleState = new AwsAlbListenerRuleState
+            {
+                ListenerRuleArn = ListenerRuleArn,
+                TargetGroupWeights =
+                [
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 100 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 0 }
+                ]
+            }
+        };
+        var ecsClient = new StubAwsEcsClient
+        {
+            ServiceState = new AwsEcsServiceState
+            {
+                ServiceName = CanaryService,
+                TaskDefinitionArn = TaskDefArn,
+                RunningCount = 4,
+                DesiredCount = 2,
+                PendingCount = 0,
+                Status = "ACTIVE",
+                Deployments =
+                [
+                    new AwsEcsDeploymentState
+                    {
+                        DeploymentId = "primary",
+                        Status = "PRIMARY",
+                        TaskDefinitionArn = TaskDefArn,
+                        RolloutState = "COMPLETED",
+                        RunningCount = 2,
+                        DesiredCount = 2,
+                        PendingCount = 0
+                    },
+                    new AwsEcsDeploymentState
+                    {
+                        DeploymentId = "previous",
+                        Status = "ACTIVE",
+                        TaskDefinitionArn = PreviousTaskDefArn,
+                        RolloutState = "COMPLETED",
+                        RunningCount = 2,
+                        DesiredCount = 0,
+                        PendingCount = 0
+                    }
+                ]
+            }
+        };
+        var backend = CreateBackend(albClient, ecsClient);
+
+        var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.Reconciling));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        observation.Message.Should().Contain("ACTIVE deployment");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_PrimaryConvergedNoLingeringActive_ReturnsSucceeded()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            RuleState = new AwsAlbListenerRuleState
+            {
+                ListenerRuleArn = ListenerRuleArn,
+                TargetGroupWeights =
+                [
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 100 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 0 }
+                ]
+            }
+        };
+        var ecsClient = new StubAwsEcsClient
+        {
+            ServiceState = new AwsEcsServiceState
+            {
+                ServiceName = CanaryService,
+                TaskDefinitionArn = TaskDefArn,
+                RunningCount = 2,
+                DesiredCount = 2,
+                PendingCount = 0,
+                Status = "ACTIVE",
+                Deployments =
+                [
+                    new AwsEcsDeploymentState
+                    {
+                        DeploymentId = "primary",
+                        Status = "PRIMARY",
+                        TaskDefinitionArn = TaskDefArn,
+                        RolloutState = "COMPLETED",
+                        RunningCount = 2,
+                        DesiredCount = 2,
+                        PendingCount = 0
+                    },
+                    new AwsEcsDeploymentState
+                    {
+                        DeploymentId = "drained",
+                        Status = "ACTIVE",
+                        TaskDefinitionArn = PreviousTaskDefArn,
+                        RolloutState = "COMPLETED",
+                        RunningCount = 0,
+                        DesiredCount = 0,
+                        PendingCount = 0
+                    }
+                ]
+            }
+        };
+        var backend = CreateBackend(albClient, ecsClient);
+
+        var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.Reconciling));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+    }
+
+    [Fact]
+    public async Task ObserveAsync_NoPrimaryDeploymentReturned_DoesNotSucceed()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            RuleState = new AwsAlbListenerRuleState
+            {
+                ListenerRuleArn = ListenerRuleArn,
+                TargetGroupWeights =
+                [
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 100 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 0 }
+                ]
+            }
+        };
+        var ecsClient = new StubAwsEcsClient
+        {
+            ServiceState = new AwsEcsServiceState
+            {
+                ServiceName = CanaryService,
+                TaskDefinitionArn = TaskDefArn,
+                RunningCount = 2,
+                DesiredCount = 2,
+                PendingCount = 0,
+                Status = "ACTIVE",
+                Deployments =
+                [
+                    new AwsEcsDeploymentState
+                    {
+                        DeploymentId = "active-only",
+                        Status = "ACTIVE",
+                        TaskDefinitionArn = PreviousTaskDefArn,
+                        RolloutState = "COMPLETED",
+                        RunningCount = 2,
+                        DesiredCount = 2,
+                        PendingCount = 0
+                    }
+                ]
+            }
+        };
+        var backend = CreateBackend(albClient, ecsClient);
+
+        var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.Reconciling));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        observation.Message.Should().Contain("PRIMARY");
+    }
+
+    [Fact]
+    public async Task StartAsync_AmazonClientException_ReturnsFailedWithoutLeakingProviderDetail()
+    {
+        // Credential resolution / profile lookup failures surface as
+        // AmazonClientException, which in AWS SDK v4 is a sibling of
+        // AmazonServiceException rather than a base. The unified catch must
+        // sanitise both branches before DeployWorkflowService persists them.
+        var ecsClient = new StubAwsEcsClient
+        {
+            DescribeException = new AmazonClientException("Unable to load credentials from profile [secret-profile-token=xyz]")
+        };
+        var backend = CreateBackend(ecsClient: ecsClient);
+
+        var submission = await backend.StartAsync(CreateOperation(parameters: CanaryParameters()));
+
+        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
+        submission.Message.Should().NotContain("secret-profile-token");
+        submission.Message.Should().NotContain("xyz");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_AmazonClientException_ReturnsFailedWithoutLeakingProviderDetail()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            DescribeException = new AmazonClientException("InstanceMetadataServiceUnavailable: secret-imds-host=169.254.169.254/zzz")
+        };
+        var backend = CreateBackend(albClient);
+
+        var observation = await backend.ObserveAsync(CreateOperation());
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Failed);
+        observation.Message.Should().NotContain("secret-imds-host");
+        observation.Message.Should().NotContain("169.254");
+    }
+
+    [Fact]
+    public async Task PromoteAsync_AmazonClientException_ReturnsFailedWithoutLeakingProviderDetail()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            UpdateException = new AmazonClientException("STS AssumeRole failed: secret-role-arn")
+        };
+        var backend = CreateBackend(albClient);
+
+        var observation = await backend.PromoteAsync(CreateOperation(parameters: CanaryParameters()));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Failed);
+        observation.Message.Should().NotContain("secret-role-arn");
+    }
+
+    [Fact]
+    public async Task RollbackAsync_AmazonClientException_ReturnsFailedWithoutLeakingProviderDetail()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            UpdateException = new AmazonClientException("Endpoint resolution failed: secret-endpoint-arn")
+        };
+        var backend = CreateBackend(albClient);
+
+        var observation = await backend.RollbackAsync(CreateOperation(parameters: CanaryParameters()));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Failed);
+        observation.Message.Should().NotContain("secret-endpoint-arn");
+    }
+
+    [Fact]
     public async Task ObserveAsync_EcsException_ReturnsFailed()
     {
         var ecsClient = new StubAwsEcsClient
@@ -631,6 +972,30 @@ public sealed class AwsEcsAlbDeployBackendTests
         parameters["telemetry.connection"] = "prod-prom";
         return parameters;
     }
+
+    private static AwsEcsServiceState ConvergedServiceState(string taskDefinitionArn)
+        => new()
+        {
+            ServiceName = CanaryService,
+            TaskDefinitionArn = taskDefinitionArn,
+            RunningCount = 2,
+            DesiredCount = 2,
+            PendingCount = 0,
+            Status = "ACTIVE",
+            Deployments =
+            [
+                new AwsEcsDeploymentState
+                {
+                    DeploymentId = "primary",
+                    Status = "PRIMARY",
+                    TaskDefinitionArn = taskDefinitionArn,
+                    RolloutState = "COMPLETED",
+                    RunningCount = 2,
+                    DesiredCount = 2,
+                    PendingCount = 0
+                }
+            ]
+        };
 
     private sealed class StubAwsAlbClient : IAwsAlbClient
     {
