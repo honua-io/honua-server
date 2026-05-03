@@ -246,7 +246,7 @@ public sealed class AwsEcsAlbDeployBackendTests
     }
 
     [Fact]
-    public async Task ObserveAsync_RollbackRequested_CanaryStillRunning_RemainsRollbackRequested()
+    public async Task ObserveAsync_RollbackRequested_WarmCanaryAtSteadyState_ReturnsRolledBack()
     {
         var albClient = new StubAwsAlbClient
         {
@@ -276,7 +276,117 @@ public sealed class AwsEcsAlbDeployBackendTests
 
         var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.RollbackRequested));
 
+        observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        observation.Message.Should().Contain("no pending deployment");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_RollbackRequested_CanaryStillRolling_RemainsRollbackRequested()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            RuleState = new AwsAlbListenerRuleState
+            {
+                ListenerRuleArn = ListenerRuleArn,
+                TargetGroupWeights =
+                [
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 0 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 100 }
+                ]
+            }
+        };
+        var ecsClient = new StubAwsEcsClient
+        {
+            ServiceState = new AwsEcsServiceState
+            {
+                ServiceName = CanaryService,
+                TaskDefinitionArn = TaskDefArn,
+                RunningCount = 1,
+                DesiredCount = 2,
+                PendingCount = 1,
+                Status = "ACTIVE"
+            }
+        };
+        var backend = CreateBackend(albClient, ecsClient);
+
+        var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.RollbackRequested));
+
         observation.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+    }
+
+    [Fact]
+    public async Task ObserveAsync_FullCanaryWeight_TaskDefinitionMismatch_DoesNotSucceed()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            RuleState = new AwsAlbListenerRuleState
+            {
+                ListenerRuleArn = ListenerRuleArn,
+                TargetGroupWeights =
+                [
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 100 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 0 }
+                ]
+            }
+        };
+        var ecsClient = new StubAwsEcsClient
+        {
+            ServiceState = new AwsEcsServiceState
+            {
+                ServiceName = CanaryService,
+                TaskDefinitionArn = PreviousTaskDefArn,
+                RunningCount = 2,
+                DesiredCount = 2,
+                PendingCount = 0,
+                Status = "ACTIVE"
+            }
+        };
+        var backend = CreateBackend(albClient, ecsClient);
+
+        var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.Reconciling));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        observation.PromotionRecommended.Should().BeFalse();
+        observation.Message.Should().Contain("task definition");
+        observation.ObservedRevision.Should().Be(PreviousTaskDefArn);
+    }
+
+    [Fact]
+    public async Task ObserveAsync_CanaryWeightMatch_TaskDefinitionMismatch_DoesNotRecommendPromotion()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            RuleState = new AwsAlbListenerRuleState
+            {
+                ListenerRuleArn = ListenerRuleArn,
+                TargetGroupWeights =
+                [
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 10 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 90 }
+                ]
+            }
+        };
+        var ecsClient = new StubAwsEcsClient
+        {
+            ServiceState = new AwsEcsServiceState
+            {
+                ServiceName = CanaryService,
+                TaskDefinitionArn = PreviousTaskDefArn,
+                RunningCount = 2,
+                DesiredCount = 2,
+                PendingCount = 0,
+                Status = "ACTIVE"
+            }
+        };
+        var backend = CreateBackend(albClient, ecsClient);
+
+        var observation = await backend.ObserveAsync(CreateOperation(
+            parameters: CanaryParameters(),
+            status: WorkflowOperationStatus.Reconciling));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        observation.PromotionRecommended.Should().BeFalse();
+        observation.Message.Should().Contain("task definition");
     }
 
     [Fact]
@@ -307,6 +417,72 @@ public sealed class AwsEcsAlbDeployBackendTests
         albClient.LastWeights.Should().NotBeNull();
         albClient.LastWeights!.Single(w => w.TargetGroupArn == CanaryTargetGroupArn).Weight.Should().Be(0);
         albClient.LastWeights.Single(w => w.TargetGroupArn == StableTargetGroupArn).Weight.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task StartAsync_EcsException_ReturnsFailedWithoutLeakingProviderDetail()
+    {
+        var ecsClient = new StubAwsEcsClient
+        {
+            DescribeException = new AmazonECSException("ServiceNotFoundException: secret-cluster-token=abcdef")
+        };
+        var backend = CreateBackend(ecsClient: ecsClient);
+
+        var submission = await backend.StartAsync(CreateOperation(parameters: CanaryParameters()));
+
+        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
+        submission.Message.Should().NotBeNullOrEmpty();
+        submission.Message.Should().NotContain("secret-cluster-token");
+        submission.Message.Should().NotContain("abcdef");
+    }
+
+    [Fact]
+    public async Task StartAsync_AlbUpdateException_ReturnsFailedWithoutLeakingProviderDetail()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            UpdateException = new AmazonElasticLoadBalancingV2Exception("AccessDenied: arn=arn:aws:elasticloadbalancing:us-east-1:secret-account:rule/abc")
+        };
+        var backend = CreateBackend(albClient);
+
+        var submission = await backend.StartAsync(CreateOperation(parameters: CanaryParameters()));
+
+        submission.Status.Should().Be(WorkflowOperationStatus.Failed);
+        submission.Message.Should().NotBeNullOrEmpty();
+        submission.Message.Should().NotContain("secret-account");
+        submission.Message.Should().NotContain("AccessDenied");
+    }
+
+    [Fact]
+    public async Task PromoteAsync_AlbException_ReturnsFailedWithoutLeakingProviderDetail()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            UpdateException = new AmazonElasticLoadBalancingV2Exception("ValidationError: secret-rule-token=zzz")
+        };
+        var backend = CreateBackend(albClient);
+
+        var observation = await backend.PromoteAsync(CreateOperation(parameters: CanaryParameters()));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Failed);
+        observation.Message.Should().NotBeNullOrEmpty();
+        observation.Message.Should().NotContain("secret-rule-token");
+    }
+
+    [Fact]
+    public async Task RollbackAsync_AlbException_ReturnsFailedWithoutLeakingProviderDetail()
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            UpdateException = new AmazonElasticLoadBalancingV2Exception("ThrottlingException: secret-rule-token=zzz")
+        };
+        var backend = CreateBackend(albClient);
+
+        var observation = await backend.RollbackAsync(CreateOperation(parameters: CanaryParameters()));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Failed);
+        observation.Message.Should().NotBeNullOrEmpty();
+        observation.Message.Should().NotContain("secret-rule-token");
     }
 
     [Fact]

@@ -283,6 +283,7 @@ Useful target parameters:
 - `telemetry.prometheus.extra_selector`: additional label matchers appended to the generated selector
 - `lambda.canary_weight_percentage`: optional AWS Lambda alias canary percentage for deploy targets; requires `telemetry.connection` because Honua only promotes or rolls back the alias after telemetry settles
 - `containerapp.canary_weight_percentage`: optional Azure Container Apps canary traffic percentage (1–99) for the `honua-azure-container-apps-revision` backend; requires `telemetry.connection`
+- `aws.ecs.canary_weight_percentage`: optional AWS ECS canary traffic percentage (1–99) for the `honua-aws-ecs-alb` backend; requires `telemetry.connection`. Equivalent to the generic `deployment.canary_weight_percentage` key
 
 Explicit query overrides still win:
 
