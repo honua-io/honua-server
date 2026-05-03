@@ -30,11 +30,16 @@ internal static class SceneServiceCollectionExtensions
         // intentionally NOT called: deployments that serve only public
         // scenes (no AccessPolicy on any registered scene) must be able
         // to start without a SigningKey configured. ValidateDataAnnotations
-        // enforces [Required] / [Range] lazily on the first IOptions
-        // resolve, and the SceneAccessEnvelopeService constructor is the
+        // enforces [Range] on the TTL/refresh fields lazily on the first
+        // IOptions resolve. The SigningKey presence check is intentionally
+        // NOT a [Required] data annotation — that would surface as
+        // OptionsValidationException from IOptions.Value, which the endpoint
+        // handlers' catch (InvalidOperationException) blocks would not
+        // catch, silencing the structured SigningMisconfigured (8415) log.
+        // Instead the SceneAccessEnvelopeService constructor is the
         // runtime fail-closed guard — it throws InvalidOperationException
-        // if SigningKey is unset. The scene endpoints catch that at the
-        // resolve site and surface a structured 500 + log entry so a
+        // if SigningKey is unset, and the scene endpoints catch that at
+        // the resolve site and surface a structured 500 + log entry so a
         // misconfigured protected-scene deployment is operationally
         // visible without taking the rest of the server down.
         services.AddOptions<SceneAccessSigningOptions>()

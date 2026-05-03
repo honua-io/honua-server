@@ -44,7 +44,8 @@ internal static partial class SceneEndpoints
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
 
         endpoints.MapMethods(
                 "/scenes/{sceneId}/tileset.json",
@@ -62,7 +63,8 @@ internal static partial class SceneEndpoints
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
 
         endpoints.MapMethods(
                 "/scenes/{sceneId}/{*assetPath}",
@@ -89,7 +91,8 @@ internal static partial class SceneEndpoints
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
 
         return endpoints;
     }
@@ -447,13 +450,15 @@ internal static partial class SceneEndpoints
         return false;
     }
 
+    // EventIds 8404 / 8405 reserved here. 8401-8403 are owned by
+    // Honua.Core's MonitoredCacheLog; 8410-8415 are owned by SceneAccessLog.
     private static partial class Log
     {
-        [LoggerMessage(EventId = 8401, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = 8404, Level = LogLevel.Warning,
             Message = "Rejected scene asset request for scene {SceneId}: {Reason} (path: {AssetPath})")]
         public static partial void RejectedAssetPath(ILogger logger, string sceneId, string reason, string assetPath);
 
-        [LoggerMessage(EventId = 8402, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = 8405, Level = LogLevel.Debug,
             Message = "Serving scene asset {SceneId}/{AssetPath} as {ContentType} ({Bytes} bytes)")]
         public static partial void ServingAsset(ILogger logger, string sceneId, string assetPath, string contentType, long bytes);
     }

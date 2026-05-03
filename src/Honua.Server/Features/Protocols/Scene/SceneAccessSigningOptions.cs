@@ -38,7 +38,16 @@ internal sealed class SceneAccessSigningOptions
     /// protected scenes; the issuer/verifier fail closed when this is
     /// unset. Never logged or returned to clients.
     /// </summary>
-    [Required(AllowEmptyStrings = false)]
+    /// <remarks>
+    /// The presence check is enforced by the
+    /// <see cref="SceneAccessEnvelopeService"/> constructor (throws
+    /// <see cref="InvalidOperationException"/>) rather than a
+    /// <c>[Required]</c> data annotation. <c>[Required]</c> would surface
+    /// as <see cref="Microsoft.Extensions.Options.OptionsValidationException"/>
+    /// from <c>IOptions&lt;T&gt;.Value</c>, which the endpoint handlers do
+    /// not catch — bypassing the structured <c>SigningMisconfigured</c> log
+    /// event.
+    /// </remarks>
     public string SigningKey { get; set; } = string.Empty;
 
     /// <summary>
