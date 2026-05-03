@@ -161,14 +161,133 @@ Each request runs through the existing dataset access policy:
   `AllowedRoles`) on **every** request — root tileset, nested tilesets, and
   every binary asset.
 
-> **Browser caveat.** CesiumJS' internal resource loader cannot attach
-> custom `Authorization` headers or session cookies to nested tile fetches.
-> For *non-browser* clients (server-to-server, mobile/native) the existing
-> token/session auth works end-to-end. Browser-safe protected rendering —
-> signed-URL or proxy handoff — is delivered separately by
-> [honua-server-849](https://github.com/honua-io/honua-server/issues/849).
-> Until then, do not rely on the auth check alone to gate sensitive scenes
-> rendered in browsers.
+### Browser-safe access via signed envelope
+
+Protected scenes accept a short-lived **scene access envelope** in addition
+to bearer/API-key headers. CesiumJS' resource loader cannot attach custom
+`Authorization` headers or session cookies to nested tile fetches; the
+envelope provides a render-safe alternative without weakening server-side
+authorization.
+
+#### Issue endpoint
+
+```
+POST /scenes/{sceneId}/access-envelope
+Authorization: Bearer {credential}    # any standard Honua auth
+```
+
+Returns:
+
+```json
+{
+  "sceneId": "downtown-protected",
+  "token": "eyJzIjoiZG93bnRvd24tcHJvdGVjdGVkIiwiZSI6MTcxNDc1ODQwMH0.7c4f...",
+  "expiresAt": "2026-05-03T14:00:00Z",
+  "refreshAfter": "2026-05-03T13:37:30Z",
+  "allowedMethods": ["GET", "HEAD"]
+}
+```
+
+Issuance is itself gated by the dataset access policy: the caller must
+already be authorized for the scene before a token is minted. Public scenes
+return `400 Bad Request` from this endpoint (envelopes are unnecessary).
+Issuance responses always carry `Cache-Control: no-store` — the token is a
+short-lived credential and must not be persisted.
+
+| Field | Description |
+| --- | --- |
+| `sceneId` | Echoes the requested scene id; the token is bound to this id and rejected on any other scene. |
+| `token` | Opaque HMAC-signed wire string. Treat as a credential. |
+| `expiresAt` | Absolute expiry (RFC 3339 / ISO 8601 UTC). After this instant the token is rejected with `401`. |
+| `refreshAfter` | Recommended refresh instant, halfway through the TTL by default. Re-call the issue endpoint when reached so the active session never relies on a near-expiry token. |
+| `allowedMethods` | HTTP methods the envelope is valid for. The current implementation issues `GET` and `HEAD`. |
+
+#### Token transport on nested asset requests
+
+Two transports are supported on protected scene asset endpoints:
+
+- **`?token=` query parameter** — primary, browser-safe transport. CesiumJS
+  propagates the parameter from the root `Cesium.Resource` to every nested
+  tile/glTF/texture URL automatically.
+- **`X-Honua-Token` header** — native-client transport for callers that
+  prefer to keep tokens out of URLs and can attach headers to nested asset
+  fetches.
+
+CesiumJS integration:
+
+```js
+const tilesetResource = new Cesium.Resource({
+  url: "https://honua.example.com/scenes/downtown-protected/tileset.json",
+  queryParameters: { token: envelope.token }
+});
+const tileset = await Cesium.Cesium3DTileset.fromUrl(tilesetResource);
+viewer.scene.primitives.add(tileset);
+```
+
+#### Validation outcomes
+
+| Failure | HTTP status | Cause |
+| --- | --- | --- |
+| Missing token (no bearer) | `401` | Protected scene with no `Authorization` header and no token |
+| Tampered or undecodable | `401` | Signature mismatch, bad encoding, or malformed payload |
+| Expired | `401` | Token past `expiresAt` |
+| Wrong scene | `403` | Token bound to a different scene id |
+| Path traversal under valid token | `400` | Asset path resolver rejects the request before file I/O |
+
+All failures return a shared problem-details body and never leak the token,
+HMAC value, signing key, storage credentials, or absolute filesystem paths.
+
+#### Response cache headers
+
+Token-authorized asset responses use `Cache-Control: private, max-age=...`
+so user-agent caches may revalidate within `max-age` but shared caches must
+not store the body. Output caching is disabled at the server when a token
+is present so cached anonymous bodies cannot be replayed across distinct
+tokens. `Vary: Authorization` is **not** emitted for token-authorized
+responses (no `Authorization` header is present).
+
+### Configuration and operational limits
+
+```json
+{
+  "Honua": {
+    "SceneAccessSigning": {
+      "SigningKey": "set-from-secret-store-or-env",
+      "TokenTtlMinutes": 15,
+      "RefreshAfterFractionOfTtl": 0.5
+    }
+  }
+}
+```
+
+| Property | Default | Description |
+| --- | --- | --- |
+| `SigningKey` | — (required for protected scenes) | HMAC-SHA256 secret. Resolve from environment variables or a secret store; never check the value into source. |
+| `TokenTtlMinutes` | `15` | Envelope lifetime in minutes (1–1440). Shorter TTLs reduce credential exposure but force more refreshes. |
+| `RefreshAfterFractionOfTtl` | `0.5` | Fraction of the TTL after which clients should refresh. |
+
+Operational limits and security caveats:
+
+- **Granularity.** Tokens bind to `(sceneId, expiresAt)`; one token grants
+  access to all assets under the scene's prefix for the TTL window. This
+  matches how Cesium loads thousands of nested assets per session and
+  avoids per-tile signing round-trips.
+- **No per-token revocation within TTL.** Within the TTL window a token
+  cannot be individually revoked. Use a short TTL to bound the exposure
+  window. Rotating `SigningKey` invalidates **all** outstanding tokens
+  immediately on the next request.
+- **Query-parameter logging.** Tokens transported via `?token=` may appear
+  in server access logs; deployments that route through proxies that log
+  full URLs should prefer the `X-Honua-Token` header on native clients and
+  keep the TTL short.
+- **No subject binding.** The current envelope does not embed the issuing
+  user's identity. Per-user revocation is not in scope; rely on TTL and
+  signing-key rotation.
+- **No cross-scene reuse.** A token issued for scene `A` is rejected with
+  `403` when used on scene `B`.
+
+> Browser smoke coverage for end-to-end Cesium rendering of protected
+> scenes lives in [honua-server-838](https://github.com/honua-io/honua-server/issues/838).
 
 ## CORS
 

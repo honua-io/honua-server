@@ -357,13 +357,19 @@ internal static class ObservabilityServiceCollectionExtensions
             // can return 206 Partial Content directly. Responses marked
             // Cache-Control: no-store (per-scene cachePolicy.noStore) are
             // suppressed at storage time so the cache cannot outlive the
-            // dataset's no-store directive.
+            // dataset's no-store directive. Requests carrying a scene
+            // access envelope token (?token= or X-Honua-Token) also bypass
+            // the cache: the token authorizes a specific principal for a
+            // short window, and caching by URL alone would either store
+            // unique entries per token or replay an authorized payload to
+            // a later anonymous client.
             options.AddPolicy("SceneTilesetMetadata", policy =>
             {
                 policy.Expire(ttl.SceneTilesetMetadata);
                 policy.SetVaryByRouteValue("sceneId");
                 policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
                 policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
+                policy.AddPolicy<BypassOutputCacheOnSceneAccessTokenPolicy>();
                 policy.Tag("scene", "metadata");
             });
 
@@ -371,13 +377,15 @@ internal static class ObservabilityServiceCollectionExtensions
             // Range requests bypass output cache so the static-file pipeline
             // can return 206 Partial Content directly. Per-scene no-store
             // responses are suppressed at storage time, mirroring the
-            // metadata policy.
+            // metadata policy. Requests carrying a scene access envelope
+            // token (?token= or X-Honua-Token) also bypass the cache.
             options.AddPolicy("SceneTileAsset", policy =>
             {
                 policy.Expire(ttl.SceneTileAsset);
                 policy.SetVaryByRouteValue("sceneId", "assetPath");
                 policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
                 policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
+                policy.AddPolicy<BypassOutputCacheOnSceneAccessTokenPolicy>();
                 policy.Tag("scene", "tiles");
             });
 
