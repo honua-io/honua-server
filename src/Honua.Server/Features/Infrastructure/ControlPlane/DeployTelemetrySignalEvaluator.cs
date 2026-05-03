@@ -375,6 +375,7 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
             {
                 "honua-http" or "kubernetes-honua-http" => CreateHonuaHttpPreset(parameters),
                 "aws-alb-canary" => CreateAwsAlbCanaryPreset(parameters),
+                "aws-lambda-canary" => CreateAwsLambdaCanaryPreset(parameters),
                 "azure-aca-canary" => CreateAzureAcaCanaryPreset(parameters),
                 _ => new DeployTelemetryPolicy
                 {
@@ -389,6 +390,7 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
             {
                 DeployTargetKind.Kubernetes => "kubernetes-honua-http",
                 DeployTargetKind.AwsEcs => HasCanarySignalConfiguration(spec.Parameters) ? "aws-alb-canary" : "honua-http",
+                DeployTargetKind.AwsLambda => HasCanarySignalConfiguration(spec.Parameters) ? "aws-lambda-canary" : "honua-http",
                 DeployTargetKind.AzureContainerApps => HasCanarySignalConfiguration(spec.Parameters) ? "azure-aca-canary" : "honua-http",
                 DeployTargetKind.AzureFunctions => "honua-http",
                 _ => null
@@ -413,6 +415,9 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
 
         private static DeployTelemetryPolicy CreateAwsAlbCanaryPreset(IReadOnlyDictionary<string, string> parameters)
             => CreateCanaryPreset(parameters, "aws-alb-canary");
+
+        private static DeployTelemetryPolicy CreateAwsLambdaCanaryPreset(IReadOnlyDictionary<string, string> parameters)
+            => CreateCanaryPreset(parameters, "aws-lambda-canary");
 
         private static DeployTelemetryPolicy CreateAzureAcaCanaryPreset(IReadOnlyDictionary<string, string> parameters)
             => CreateCanaryPreset(parameters, "azure-aca-canary");

@@ -250,6 +250,113 @@ Operators who manage ACA through an external GitOps controller (Flux/ArgoCD) can
 
 ---
 
+## AWS Lambda Alias and Version Rollout
+
+AWS Lambda deploys use alias-based weighted traffic shifting between published numeric function versions, managed through the deploy controller backend `honua-gitops-aws-lambda`. The backend supports both immediate cutover (alias re-pointing) and canary traffic shifting via `RoutingConfig.AdditionalVersionWeights`.
+
+### Lifecycle
+
+1. **Preflight**: CI/CD pipeline publishes a new Lambda function version (e.g. `42`). The deploy controller validates that `desiredRevision` is a positive numeric version (not `$LATEST`), the alias name resolves, and the function name resolves. When `lambda.canary_weight_percentage` is set, `telemetry.connection` is also required.
+2. **Start (immediate cutover)**: Without canary configuration, the controller calls `UpdateAlias` with the desired version and no additional weights, moving 100% of traffic to the desired version.
+3. **Start (canary)**: With `lambda.canary_weight_percentage` set, the controller holds the alias on the current stable version and routes the configured percentage of traffic to the desired version through `AdditionalVersionWeights`. The previous version is captured at submit time so rollback can target it.
+4. **Observe**: The reconciler polls alias state. While the alias points at the stable version with the desired canary weight, observation reports `Reconciling` with `PromotionRecommended=true`. Once the alias points to the desired version with no weighted traffic, observation reports `Succeeded`.
+5. **Promote**: After the telemetry gate passes, the controller calls `UpdateAlias` again with the desired version and clears the additional weights, completing the rollout.
+6. **Rollback**: The controller re-points the alias to the previously captured `CurrentRevision` and clears any additional weights. If `CurrentRevision` was not captured, rollback returns `ManualInterventionRequired`.
+
+### Weighted traffic state in the operation record
+
+The `WorkflowOperationRecord.CurrentPhase` field reports the canary weight as a human-readable phrase, e.g. `Lambda alias 'live' is holding stable version '41' while routing 10% of traffic to canary version '42'.` Promotion, rollback, and failure phases all flow through the same field so operators see the full rollout history without consulting Lambda directly. The terminal `Succeeded` or `RolledBack` status, the `ObservedState` (alias's current version), and `ErrorMessage` (rollback or failure reason) round out the operation state model.
+
+### Configuration (immediate cutover)
+
+```json
+{
+  "ControlPlane": {
+    "DeployTargets": [
+      {
+        "TargetId": "prod-lambda",
+        "TargetKind": "AwsLambda",
+        "Backend": "honua-gitops-aws-lambda",
+        "Environment": "production",
+        "TargetName": "honua-prod-lambda",
+        "Parameters": {
+          "target.resource_id": "arn:aws:lambda:us-east-1:123456789012:function:honua-prod-lambda",
+          "lambda.alias_name": "live"
+        }
+      }
+    ]
+  }
+}
+```
+
+### Configuration (canary traffic shifting with health gate)
+
+```json
+{
+  "ControlPlane": {
+    "DeployTargets": [
+      {
+        "TargetId": "prod-lambda",
+        "TargetKind": "AwsLambda",
+        "Backend": "honua-gitops-aws-lambda",
+        "Environment": "production",
+        "TargetName": "honua-prod-lambda",
+        "Parameters": {
+          "target.resource_id": "arn:aws:lambda:us-east-1:123456789012:function:honua-prod-lambda",
+          "lambda.alias_name": "live",
+          "lambda.canary_weight_percentage": "10",
+          "telemetry.connection": "prod-prom",
+          "telemetry.prometheus.canary_selector": "service=\"honua-prod-lambda\",version=\"canary\""
+        }
+      }
+    ]
+  }
+}
+```
+
+### Parameter reference
+
+| Parameter | Required? | Purpose |
+|---|---|---|
+| `target.resource_id` | One of the function-name keys is required | Lambda function ARN. Used to derive both function name and region. Aliases: `lambda.function_arn`, `lambda.alias_arn`. |
+| `aws.lambda.function_name` / `lambda.function_name` | Required if `target.resource_id` does not encode the function name | Explicit function name. Falls back to `TargetName` when omitted. |
+| `aws.lambda.alias_name` / `lambda.alias_name` / `lambda.alias` | Optional (default `live`) | Lambda alias managed by the rollout. |
+| `aws.region` / `lambda.region` | Optional | Explicit AWS region. Derived from the resource ARN when omitted. |
+| `aws.lambda.canary_weight_percentage` / `lambda.canary_weight_percentage` / `deployment.canary_weight_percentage` | Optional (1-99) | Enables weighted canary rollout. When set, `telemetry.connection` is required. |
+| `telemetry.connection` | Required for canary rollouts | Reference to a `ControlPlane.TelemetryConnections` entry. |
+| `telemetry.policy` | Optional | Override the default preset (e.g. force `aws-lambda-canary`). |
+| `telemetry.prometheus.canary_selector` / `telemetry.prometheus.canary_job` | Optional | Selector or job label for the canary metric stream. Presence triggers the `aws-lambda-canary` preset by default. |
+| `telemetry.error_rate.query` / `telemetry.latency_p95.query` / `telemetry.sample_count.query` | Optional | Override individual preset queries. Required when running event-driven Lambdas without HTTP metrics. |
+
+### Health-gate behavior
+
+**Default (`honua-http` preset)**: Used when no canary selector or canary job is configured. Same thresholds as Azure Functions (5% error rate, 2000ms p95 latency, 2-minute warmup, 20 minimum samples).
+
+**Canary (`aws-lambda-canary` preset)**: Selected automatically when `telemetry.prometheus.canary_selector` or `telemetry.prometheus.canary_job` is set, or explicitly via `telemetry.policy: "aws-lambda-canary"`. Reuses the canary preset shape from `aws-alb-canary` and `azure-aca-canary`:
+- **Error rate threshold**: 5% (5xx / total over 5-minute window)
+- **P95 latency threshold**: 2000ms
+- **Warmup duration**: 3 minutes (longer to allow the canary version to warm up after cold start)
+- **Minimum sample count**: 10 requests (lower due to reduced canary traffic volume)
+
+Telemetry breach drives the reconciler to call `RollbackAsync` on the Lambda backend, which re-points the alias to `CurrentRevision` and clears `AdditionalVersionWeights`. Telemetry warmup keeps the operation `Reconciling` without rolling back so the canary has time to accumulate samples.
+
+### Canary rollout walkthrough
+
+1. Submit a deploy operation with `desiredRevision="42"`, the previous live version observable as `CurrentRevision="41"`, and `lambda.canary_weight_percentage="10"`. The operation moves to `Submitted`.
+2. The backend's `StartAsync` calls `UpdateAlias` with `FunctionVersion=41` and `AdditionalVersionWeights={"42":0.10}`. The operation phase reads "Lambda alias 'live' is routing 10% of traffic to published version '42'."
+3. The reconciler polls `ObserveAsync`. While the alias still routes 10% to version 42, the observation returns `Reconciling` with `PromotionRecommended=true` so the controller can run the telemetry gate.
+4. Telemetry warmup elapses. The evaluator returns no breach, no waiting. The reconciler calls `PromoteAsync`, which clears the weights and pins the alias to version 42. The operation transitions to `Succeeded`.
+5. If telemetry detects degradation at any point, the reconciler calls `RollbackAsync` instead. The alias re-points to version 41 with no weights, and the operation transitions to `RollbackRequested` then `RolledBack` once the next `ObserveAsync` confirms the alias state.
+
+### Manual intervention scenarios
+
+- **Missing previous revision**: If the controller did not capture `CurrentRevision` when the canary started, `RollbackAsync` returns `ManualInterventionRequired`. Operator must manually re-point the alias through the AWS console or `aws lambda update-alias`.
+- **Function version not published**: `desiredRevision` must be a positive numeric version published via `PublishVersion`. `$LATEST` and non-numeric values are rejected by `PlanAsync`.
+- **Event-driven Lambdas**: The `aws-lambda-canary` preset queries Honua HTTP metrics. Lambdas that do not emit `honua_http_request_total` and `honua_http_request_duration_ms_bucket` should either omit the canary selector (skipping the preset and falling back to operator-supplied queries) or set explicit `telemetry.error_rate.query` / `telemetry.latency_p95.query` overrides.
+- **Backend unavailable**: When `GetAlias` raises `ResourceNotFoundException`, the operation transitions to `Failed` with the SDK message preserved in `CurrentPhase` and `ErrorMessage`.
+
+---
+
 ## Rollback Procedure
 
 ### Application Rollback First

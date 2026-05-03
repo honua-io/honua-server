@@ -187,6 +187,54 @@ public sealed class AwsLambdaGitOpsDeployBackendTests
         aliasClient.LastUpdatedVersion.Should().Be("41");
     }
 
+    [Fact]
+    public async Task ObserveAsync_WhenAliasStillPointsToDesiredDuringRollback_StaysRollbackRequested()
+    {
+        var aliasClient = new StubAwsLambdaAliasClient
+        {
+            CurrentState = new AwsLambdaAliasState
+            {
+                AliasName = "live",
+                AliasArn = "arn:aws:lambda:us-east-1:123456789012:function:honua:live",
+                FunctionVersion = "42"
+            }
+        };
+        var backend = new AwsLambdaGitOpsDeployBackend(aliasClient, NullLogger<AwsLambdaGitOpsDeployBackend>.Instance);
+
+        var observation = await backend.ObserveAsync(CreateOperation(
+            desiredRevision: "42",
+            currentRevision: "41",
+            status: WorkflowOperationStatus.RollbackRequested));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        observation.ObservedRevision.Should().Be("42");
+        observation.Message.Should().Contain("still converging on rollback version '41'");
+    }
+
+    [Fact]
+    public async Task RollbackAsync_WhenCurrentRevisionIsNull_ReturnsManualInterventionRequired()
+    {
+        var aliasClient = new StubAwsLambdaAliasClient
+        {
+            CurrentState = new AwsLambdaAliasState
+            {
+                AliasName = "live",
+                AliasArn = "arn:aws:lambda:us-east-1:123456789012:function:honua:live",
+                FunctionVersion = "42"
+            }
+        };
+        var backend = new AwsLambdaGitOpsDeployBackend(aliasClient, NullLogger<AwsLambdaGitOpsDeployBackend>.Instance);
+
+        var observation = await backend.RollbackAsync(CreateOperation(
+            desiredRevision: "42",
+            currentRevision: null,
+            status: WorkflowOperationStatus.Reconciling));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        observation.Message.Should().Contain("previously observed Lambda version");
+        aliasClient.LastUpdatedVersion.Should().BeNull();
+    }
+
     private static DeployOperationSpec CreateSpec(
         string desiredRevision,
         IReadOnlyDictionary<string, string>? parameters = null)
