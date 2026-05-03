@@ -17,6 +17,7 @@
 - [Control Plane API](operator/CONTROL_PLANE_API.md)
 - [ArcGIS Inventory Discovery](operator/arcgis-inventory-discovery.md)
 - [Webhooks](operator/feature-change-webhooks.md)
+- [Feature Streaming](operator/feature-streaming.md)
 - [Tile Operations](operator/tile-operations-runbook.md)
 - [SLD Migration Reference](operator/sld-migration.md)
 - [PMTiles Publishing](operator/pmtiles-publishing.md)

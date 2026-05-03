@@ -53,7 +53,7 @@ public sealed class FeatureStreamPublisherTests : IDisposable
         // Verify event was persisted.
         var stored = await _store.QueryAsync(null, null, null, 10);
         Assert.Single(stored);
-        Assert.Equal("create", stored[0].Operation);
+        Assert.Equal("insert", stored[0].Operation);
 
         // Verify event was broadcast to the session.
         Assert.True(session.Reader.TryRead(out var msg));
@@ -139,12 +139,16 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             EventId = "evt-1",
             Cursor = 99,
             Timestamp = DateTimeOffset.UtcNow,
+            SourceId = "source-1",
             ServiceId = "svc",
             LayerId = 3,
             ObjectId = 7,
             Operation = "delete",
             Protocol = "ogc",
             RequestId = "req-1",
+            PropertiesJson = """{"name":"Test Park","area":42.5}""",
+            GeometryJson = """{"type":"Point","coordinates":[-157.8,21.3]}""",
+            GeometrySrid = 4326,
             ChangedAttributes = changedAttrs,
             GeometryChanged = true
         };
@@ -152,15 +156,78 @@ public sealed class FeatureStreamPublisherTests : IDisposable
         var envelope = FeatureStreamPublisher.ToEnvelope(evt);
 
         Assert.Equal(evt.EventId, envelope.EventId);
+        Assert.Equal("feature-change", envelope.Type);
         Assert.Equal(evt.Cursor, envelope.Cursor);
+        Assert.Equal(evt.SourceId, envelope.SourceId);
         Assert.Equal(evt.ServiceId, envelope.ServiceId);
         Assert.Equal(evt.LayerId, envelope.LayerId);
+        Assert.Equal("7", envelope.FeatureId);
         Assert.Equal(evt.ObjectId, envelope.ObjectId);
         Assert.Equal(evt.Operation, envelope.Operation);
         Assert.Equal(evt.Protocol, envelope.Protocol);
         Assert.Equal(evt.RequestId, envelope.RequestId);
+        Assert.Equal("Point", envelope.Geometry!.Value.GetProperty("type").GetString());
+        Assert.Equal("EPSG:4326", envelope.GeometryCrs);
+        Assert.Equal("Test Park", envelope.Attributes!["name"].GetString());
+        Assert.Equal(42.5, envelope.Attributes!["area"].GetDouble());
         Assert.Same(changedAttrs, envelope.ChangedAttributes);
         Assert.True(envelope.GeometryChanged);
+    }
+
+    [UnitTest]
+    public void ToEnvelope_WhenGeometryJsonMissing_OmitsGeometryCrsToPreservePairedContract()
+    {
+        // Defense-in-depth for the geodesy invariant: even if a stored event
+        // were to carry a SRID without an accompanying GeometryJson (e.g., a
+        // legacy event from before the upstream guard was bidirectional), the
+        // envelope must not surface geometryCrs without geometry.
+        var evt = new FeatureChangeEvent
+        {
+            EventId = "evt-paired",
+            Cursor = 1,
+            Timestamp = DateTimeOffset.UtcNow,
+            SourceId = "source-1",
+            ServiceId = "svc",
+            LayerId = 0,
+            ObjectId = 7,
+            Operation = "delete",
+            Protocol = "Grpc",
+            RequestId = "req-paired",
+            GeometryJson = null,
+            GeometrySrid = 4326
+        };
+
+        var envelope = FeatureStreamPublisher.ToEnvelope(evt);
+
+        Assert.Null(envelope.Geometry);
+        Assert.Null(envelope.GeometryCrs);
+    }
+
+    [UnitTest]
+    public void ToEnvelope_WhenGeometryJsonUnparseable_OmitsGeometryCrsToPreservePairedContract()
+    {
+        // ParseJsonElement returns null on JsonException; the envelope must not
+        // expose geometryCrs when the geometry itself failed to parse.
+        var evt = new FeatureChangeEvent
+        {
+            EventId = "evt-bad-geom",
+            Cursor = 2,
+            Timestamp = DateTimeOffset.UtcNow,
+            SourceId = "source-1",
+            ServiceId = "svc",
+            LayerId = 0,
+            ObjectId = 8,
+            Operation = "update",
+            Protocol = "rest",
+            RequestId = "req-bad-geom",
+            GeometryJson = "{not valid json",
+            GeometrySrid = 4326
+        };
+
+        var envelope = FeatureStreamPublisher.ToEnvelope(evt);
+
+        Assert.Null(envelope.Geometry);
+        Assert.Null(envelope.GeometryCrs);
     }
 
     [UnitTest]

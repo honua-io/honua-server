@@ -190,7 +190,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         continue;
                     }
 
-                    var (geometryEnvelope, propertiesJson) = GetBatchEventEnrichment(preparedOperation);
                     await _mutationEventService.PublishAsync(
                         context,
                         layerId,
@@ -200,10 +199,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         CancellationToken.None,
                         serviceProtocol: ServiceProtocols.OgcFeatures,
                         requestId: $"{context.TraceIdentifier}:{operation.Id ?? "batch"}",
-                        mutationFeature: null,
-                        geometryChanged: false,
-                        geometryEnvelope: geometryEnvelope,
-                        propertiesJson: propertiesJson).ConfigureAwait(false);
+                        mutationFeature: preparedOperation?.OperationKind == BatchOperationKind.Delete
+                            ? null
+                            : preparedOperation?.Feature,
+                        geometryChanged: preparedOperation?.Feature?.Geometry is { Length: > 0 }).ConfigureAwait(false);
                 }
             }
 
@@ -1305,16 +1304,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         {
             state.DeletedObjectIds.Add(operation.ObjectId.Value);
         }
-    }
-
-    private static (double[]? GeometryEnvelope, string? PropertiesJson) GetBatchEventEnrichment(PreparedBatchOperation? operation)
-    {
-        if (operation is null || operation.OperationKind == BatchOperationKind.Delete)
-        {
-            return (null, null);
-        }
-
-        return FeatureChangeEventEnrichment.FromFeature(operation.Feature);
     }
 
     private static async Task<(BatchRequest? Request, string? Error)> ReadBatchRequestAsync(

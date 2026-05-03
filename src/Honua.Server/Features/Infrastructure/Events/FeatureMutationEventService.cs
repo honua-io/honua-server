@@ -53,7 +53,10 @@ internal sealed class FeatureMutationEventService(
         string? requestId = null,
         bool? geometryChanged = null,
         double[]? geometryEnvelope = null,
-        string? propertiesJson = null)
+        string? propertiesJson = null,
+        string? geometryJson = null,
+        int? geometrySrid = null,
+        int? layerSrid = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
@@ -69,14 +72,42 @@ internal sealed class FeatureMutationEventService(
             ? requestId
             : context.TraceIdentifier;
 
-        if (geometryEnvelope is null && propertiesJson is null)
+        if ((geometryEnvelope is null || propertiesJson is null || geometryJson is null || geometrySrid is null) &&
+            mutationFeature is not null)
         {
-            (geometryEnvelope, propertiesJson) = FeatureChangeEventEnrichment.FromFeature(mutationFeature);
+            // Pass layerSrid as the enrichment fallback so mutation paths whose default
+            // WKBWriter does not embed SRID (gRPC ApplyEdits, WFS Transaction) still
+            // emit geometry/geometryCrs to streaming subscribers.
+            var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(mutationFeature, layerSrid);
+            geometryEnvelope ??= enrichment.GeometryEnvelope;
+            propertiesJson ??= enrichment.PropertiesJson;
+            geometryJson ??= enrichment.GeometryJson;
+            geometrySrid ??= enrichment.GeometrySrid;
+        }
+        else if (geometrySrid is null && layerSrid is > 0)
+        {
+            // Caller pre-supplied geometryJson but no SRID; honor the layer SRID
+            // fallback so the paired-contract guard below does not strip a known
+            // GeoJSON when the originating protocol knows the layer CRS.
+            geometrySrid = layerSrid;
+        }
+
+        // Geodesy invariant guard: emit geometry and geometryCrs as a pair, or
+        // omit both. Mirrors the enrichment-layer guard so streaming subscribers
+        // and webhook consumers never observe ambiguous coordinates (geometry
+        // without CRS) or orphaned CRS metadata (CRS without coordinates — for
+        // example a delete event that supplied layerSrid as a fallback but had
+        // no before-image to enrich into geometryJson).
+        if (geometryJson is null || geometrySrid is null)
+        {
+            geometryJson = null;
+            geometrySrid = null;
         }
 
         var requestPayload = new FeatureChangeEventRequest
         {
             EventId = Guid.NewGuid().ToString("N"),
+            SourceId = protocol,
             ServiceId = resolvedServiceId,
             LayerId = layerId,
             ObjectId = objectId,
@@ -85,7 +116,9 @@ internal sealed class FeatureMutationEventService(
             RequestId = resolvedRequestId,
             GeometryChanged = geometryChanged ?? false,
             GeometryEnvelope = geometryEnvelope,
-            PropertiesJson = propertiesJson
+            PropertiesJson = propertiesJson,
+            GeometryJson = geometryJson,
+            GeometrySrid = geometrySrid
         };
 
         try

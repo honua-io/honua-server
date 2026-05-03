@@ -1703,6 +1703,9 @@ internal sealed partial class Wfs20Handler
 
                         var layerId = operation.Descriptor.Layer.Id;
                         var createdFeature = operation.MutationFeature.Value with { Id = result.ObjectId.Value };
+                        // WFS GeometryWkbWriter does not embed SRID, so thread the layer
+                        // SRID through as the enrichment fallback.
+                        var layerSrid = operation.Descriptor.Layer.SpatialReference.ToSrid();
                         await _mutationEventService.PublishAsync(
                             context,
                             layerId,
@@ -1712,7 +1715,8 @@ internal sealed partial class Wfs20Handler
                             cancellationToken,
                             mutationFeature: createdFeature,
                             serviceId: serviceIdsByLayer[layerId],
-                            serviceProtocol: ServiceProtocols.Wfs20).ConfigureAwait(false);
+                            serviceProtocol: ServiceProtocols.Wfs20,
+                            layerSrid: layerSrid).ConfigureAwait(false);
                         break;
                     }
 
@@ -1729,6 +1733,7 @@ internal sealed partial class Wfs20Handler
                         }
 
                         var layerId = operation.Descriptor.Layer.Id;
+                        var layerSrid = operation.Descriptor.Layer.SpatialReference.ToSrid();
                         await _mutationEventService.PublishAsync(
                             context,
                             layerId,
@@ -1738,7 +1743,8 @@ internal sealed partial class Wfs20Handler
                             cancellationToken,
                             mutationFeature: operation.MutationFeature.Value,
                             serviceId: serviceIdsByLayer[layerId],
-                            serviceProtocol: ServiceProtocols.Wfs20).ConfigureAwait(false);
+                            serviceProtocol: ServiceProtocols.Wfs20,
+                            layerSrid: layerSrid).ConfigureAwait(false);
                         break;
                     }
 
@@ -1755,6 +1761,7 @@ internal sealed partial class Wfs20Handler
                         }
 
                         var layerId = operation.Descriptor.Layer.Id;
+                        var layerSrid = operation.Descriptor.Layer.SpatialReference.ToSrid();
                         await _mutationEventService.PublishAsync(
                             context,
                             layerId,
@@ -1764,7 +1771,8 @@ internal sealed partial class Wfs20Handler
                             cancellationToken,
                             mutationFeature: operation.DeleteSnapshot,
                             serviceId: serviceIdsByLayer[layerId],
-                            serviceProtocol: ServiceProtocols.Wfs20).ConfigureAwait(false);
+                            serviceProtocol: ServiceProtocols.Wfs20,
+                            layerSrid: layerSrid).ConfigureAwait(false);
                         break;
                     }
             }

@@ -21,6 +21,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     private readonly int[]? _layerIds;
     private readonly double[]? _bbox;
     private readonly FilterExpression? _attributeFilter;
+    private readonly StreamTemporalFilter? _temporalFilter;
 
     /// <summary>
     /// Creates a composite subscription filter.
@@ -29,16 +30,19 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     /// <param name="layerIds">Allowed layer IDs (null = all layers).</param>
     /// <param name="bbox">Bounding box [MinX, MinY, MaxX, MaxY] (null = no spatial filter).</param>
     /// <param name="attributeFilter">Parsed filter expression (null = no attribute filter).</param>
+    /// <param name="temporalFilter">Parsed temporal interval filter (null = no temporal filter).</param>
     public StreamSubscriptionFilter(
         string? serviceId = null,
         int[]? layerIds = null,
         double[]? bbox = null,
-        FilterExpression? attributeFilter = null)
+        FilterExpression? attributeFilter = null,
+        StreamTemporalFilter? temporalFilter = null)
     {
         _serviceId = serviceId;
         _layerIds = layerIds;
         _bbox = bbox;
         _attributeFilter = attributeFilter;
+        _temporalFilter = temporalFilter;
     }
 
     /// <summary>
@@ -75,6 +79,11 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
             if (_attributeFilter is not null)
             {
                 parts.Add("where=<expression>");
+            }
+
+            if (_temporalFilter is not null)
+            {
+                parts.Add("datetime=<interval>");
             }
 
             return string.Join("; ", parts);
@@ -144,8 +153,8 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
             }
         }
 
-        // 4. Attribute filter — parse propertiesJson and evaluate AST.
-        if (_attributeFilter is not null)
+        // 4. Attribute/temporal filters — parse propertiesJson once and evaluate AST/window.
+        if (_attributeFilter is not null || _temporalFilter is not null)
         {
             if (!propertiesParsed)
             {
@@ -169,11 +178,90 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
                 }
             }
 
-            return parsedProperties is not null &&
-                   InMemoryFilterEvaluator.Evaluate(_attributeFilter, parsedProperties);
+            if (parsedProperties is null)
+            {
+                return false;
+            }
+
+            if (_attributeFilter is not null &&
+                !InMemoryFilterEvaluator.Evaluate(_attributeFilter, parsedProperties))
+            {
+                return false;
+            }
+
+            if (_temporalFilter is not null &&
+                !MatchesTemporal(parsedProperties, _temporalFilter))
+            {
+                return false;
+            }
         }
 
         return true;
+    }
+
+    private static bool MatchesTemporal(
+        IReadOnlyDictionary<string, JsonElement> properties,
+        StreamTemporalFilter filter)
+    {
+        if (!TryGetTemporalValue(properties, filter.StartField, out var eventStart))
+        {
+            return false;
+        }
+
+        var eventEnd = eventStart;
+        if (!string.IsNullOrWhiteSpace(filter.EndField) &&
+            TryGetTemporalValue(properties, filter.EndField, out var parsedEnd))
+        {
+            eventEnd = parsedEnd;
+        }
+
+        if (filter.Start.HasValue && eventEnd < filter.Start.Value)
+        {
+            return false;
+        }
+
+        if (filter.End.HasValue && eventStart > filter.End.Value)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryGetTemporalValue(
+        IReadOnlyDictionary<string, JsonElement> properties,
+        string fieldName,
+        out DateTimeOffset value)
+    {
+        foreach (var (key, element) in properties)
+        {
+            if (!string.Equals(key, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (element.ValueKind == JsonValueKind.String &&
+                DateTimeOffset.TryParse(
+                    element.GetString(),
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                    out value))
+            {
+                return true;
+            }
+
+            if (element.ValueKind == JsonValueKind.Number &&
+                element.TryGetInt64(out var epochMilliseconds))
+            {
+                value = DateTimeOffset.FromUnixTimeMilliseconds(epochMilliseconds);
+                return true;
+            }
+
+            break;
+        }
+
+        value = default;
+        return false;
     }
 
     /// <summary>

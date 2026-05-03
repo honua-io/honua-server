@@ -6,6 +6,8 @@ using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.TestKit.Attributes;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events;
 
@@ -62,5 +64,88 @@ public sealed class FeatureChangeEventEnrichmentTests
         Assert.Equal(JsonValueKind.String, root.GetProperty("windowStart").ValueKind);
         Assert.Equal(JsonValueKind.String, root.GetProperty("duration").ValueKind);
         Assert.Equal(Convert.ToBase64String(payload), root.GetProperty("payload").GetString());
+    }
+
+    [UnitTest]
+    public void FromFeatureSnapshot_WhenWkbHasSrid_EmitsGeometryJsonAndSrid()
+    {
+        var point = new Point(-157.8583, 21.3069) { SRID = 4326 };
+        var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: true).Write(point);
+        var feature = Feature.Create(7, geometry: wkb, attributes: ImmutableDictionary<string, object?>.Empty);
+
+        var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(feature);
+
+        Assert.NotNull(enrichment.GeometryEnvelope);
+        Assert.NotNull(enrichment.GeometryJson);
+        Assert.Equal(4326, enrichment.GeometrySrid);
+    }
+
+    [UnitTest]
+    public void FromFeatureSnapshot_WhenWkbHasNoSrid_OmitsGeometryJsonToPreserveCrsInvariant()
+    {
+        // WKB without SRID metadata (handleSRID: false). Geometry coordinates
+        // alone are ambiguous to clients, so the enrichment must drop the JSON
+        // while keeping the envelope for broadcast-time bbox filter evaluation.
+        var point = new Point(-157.8583, 21.3069);
+        var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false).Write(point);
+        var feature = Feature.Create(8, geometry: wkb, attributes: ImmutableDictionary<string, object?>.Empty);
+
+        var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(feature);
+
+        Assert.NotNull(enrichment.GeometryEnvelope);
+        Assert.Null(enrichment.GeometryJson);
+        Assert.Null(enrichment.GeometrySrid);
+    }
+
+    [UnitTest]
+    public void FromFeatureSnapshot_WhenWkbHasNoSridButFallbackProvided_UsesFallbackForGeometryAndCrs()
+    {
+        // Regression for review finding "Layer-SRID mutation paths drop stream
+        // geometry": gRPC ApplyEdits and WFS Transaction publish features whose
+        // WKB was written by a default WKBWriter (handleSRID:false) even though
+        // the layer CRS is known. The enrichment must accept a fallback SRID so
+        // those streams still emit geometry/geometryCrs to subscribers.
+        var point = new Point(-157.8583, 21.3069);
+        var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false).Write(point);
+        var feature = Feature.Create(9, geometry: wkb, attributes: ImmutableDictionary<string, object?>.Empty);
+
+        var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(feature, fallbackSrid: 4326);
+
+        Assert.NotNull(enrichment.GeometryEnvelope);
+        Assert.NotNull(enrichment.GeometryJson);
+        Assert.Equal(4326, enrichment.GeometrySrid);
+    }
+
+    [UnitTest]
+    public void FromFeatureSnapshot_WhenWkbHasSridAndFallbackProvided_PrefersWkbSrid()
+    {
+        // The fallback must not override an SRID that the WKB itself carries —
+        // the per-feature CRS is authoritative when present.
+        var point = new Point(-157.8583, 21.3069) { SRID = 3857 };
+        var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: true).Write(point);
+        var feature = Feature.Create(10, geometry: wkb, attributes: ImmutableDictionary<string, object?>.Empty);
+
+        var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(feature, fallbackSrid: 4326);
+
+        Assert.NotNull(enrichment.GeometryJson);
+        Assert.Equal(3857, enrichment.GeometrySrid);
+    }
+
+    [UnitTest]
+    public void FromFeatureSnapshot_WhenFallbackIsZeroOrNegative_TreatsAsAbsent()
+    {
+        // 0 and negative SRIDs are not valid CRS identifiers, so the fallback
+        // must be ignored to preserve the geodesy invariant.
+        var point = new Point(-157.8583, 21.3069);
+        var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false).Write(point);
+        var feature = Feature.Create(11, geometry: wkb, attributes: ImmutableDictionary<string, object?>.Empty);
+
+        var enrichmentZero = FeatureChangeEventEnrichment.FromFeatureSnapshot(feature, fallbackSrid: 0);
+        var enrichmentNegative = FeatureChangeEventEnrichment.FromFeatureSnapshot(feature, fallbackSrid: -1);
+
+        Assert.Null(enrichmentZero.GeometryJson);
+        Assert.Null(enrichmentZero.GeometrySrid);
+        Assert.Null(enrichmentNegative.GeometryJson);
+        Assert.Null(enrichmentNegative.GeometrySrid);
     }
 }

@@ -39,6 +39,27 @@ public sealed class FeatureStreamOptions
     /// Interval between shared-store sweeps used to pick up events published on other nodes.
     /// </summary>
     public TimeSpan CrossNodeSyncInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Maximum byte size for an inbound WebSocket control frame (subscribe, unsubscribe, ping).
+    /// Frames that exceed this cap are rejected with a client-safe error and the connection
+    /// is closed, preventing a malicious client from buffering an unbounded fragmented message.
+    /// </summary>
+    public int MaxControlFrameBytes { get; set; } = 64 * 1024;
+
+    /// <summary>
+    /// Maximum number of concurrent subscriptions a single WebSocket session may hold.
+    /// Subscribe control frames over this cap are rejected with a client-safe error so a
+    /// single connection cannot accumulate unbounded per-session fan-out work.
+    /// </summary>
+    public int MaxSubscriptionsPerSession { get; set; } = 64;
+
+    /// <summary>
+    /// Maximum length of a client-supplied subscription identifier. Subscribe control frames
+    /// with longer ids are rejected; the cap protects the per-session state and downstream
+    /// logging from unbounded string allocations.
+    /// </summary>
+    public int MaxSubscriptionIdLength { get; set; } = 128;
 }
 
 /// <summary>
@@ -75,6 +96,21 @@ internal sealed class FeatureStreamOptionsValidator : IValidateOptions<FeatureSt
         if (options.CrossNodeSyncInterval <= TimeSpan.Zero)
         {
             failures.Add("FeatureStreaming:CrossNodeSyncInterval must be a positive duration.");
+        }
+
+        if (options.MaxControlFrameBytes <= 0)
+        {
+            failures.Add("FeatureStreaming:MaxControlFrameBytes must be a positive integer.");
+        }
+
+        if (options.MaxSubscriptionsPerSession <= 0)
+        {
+            failures.Add("FeatureStreaming:MaxSubscriptionsPerSession must be a positive integer.");
+        }
+
+        if (options.MaxSubscriptionIdLength <= 0)
+        {
+            failures.Add("FeatureStreaming:MaxSubscriptionIdLength must be a positive integer.");
         }
 
         return failures.Count > 0

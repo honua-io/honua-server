@@ -15,6 +15,7 @@ namespace Honua.Server.Features.Streaming;
 /// </summary>
 internal sealed class FeatureStreamSessionManager : IDisposable
 {
+    internal const string DefaultSubscriptionId = "default";
     private static readonly RedisChannel BroadcastChannel = new("featurechange:stream:broadcast", RedisChannel.PatternMode.Literal);
     private static readonly TimeSpan ClusterBroadcastRecoveryInterval = TimeSpan.FromSeconds(5);
     private const int RecentEventIdCapacity = 128;
@@ -100,7 +101,11 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// Attempts to create a new session. Returns null when the global concurrent-session
     /// cap has been reached.
     /// </summary>
-    public FeatureStreamSession? TryCreateSession(string transport, string? clientLabel, IStreamSubscriptionFilter? filter = null)
+    public FeatureStreamSession? TryCreateSession(
+        string transport,
+        string? clientLabel,
+        IStreamSubscriptionFilter? filter = null,
+        bool addDefaultSubscription = true)
     {
         var opts = _options.Value;
         if (!TryReserveSessionSlot(opts.MaxConcurrentSessions))
@@ -116,7 +121,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             SingleReader = true
         });
         var cts = new CancellationTokenSource();
-        var entry = new SessionEntry(id, channel, cts, DateTimeOffset.UtcNow, clientLabel, transport, filter);
+        var entry = new SessionEntry(id, channel, cts, DateTimeOffset.UtcNow, clientLabel, transport, filter, addDefaultSubscription);
         if (!_sessions.TryAdd(id, entry))
         {
             ReleaseSessionSlot();
@@ -270,61 +275,82 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 continue;
             }
 
-            // Apply subscription filter before queueing. Filtered events never
-            // enter the channel, reducing buffer pressure for selective subscribers.
-            if (entry.SubscriptionFilter is not null
-                && !message.IsHeartbeat
-                && !(entry.SubscriptionFilter is StreamSubscriptionFilter streamFilter
-                    ? streamFilter.Matches(
-                        message.Envelope,
-                        message.GeometryEnvelope,
-                        message.PropertiesJson,
-                        ref parsedProperties,
-                        ref propertiesParsed)
-                    : entry.SubscriptionFilter.Matches(
-                        message.Envelope,
-                        message.GeometryEnvelope,
-                        message.PropertiesJson)))
+            if (message.IsHeartbeat)
             {
-                continue;
-            }
-
-            if (!message.IsHeartbeat && entry.HasSeenEvent(message.Envelope.EventId))
-            {
-                continue;
-            }
-
-            if (!entry.Channel.Writer.TryWrite(message))
-            {
-                if (entry.DrainStarted)
+                if (TryQueueMessage(id, entry, message))
                 {
-                    if (entry.TryConsumeDrainGrace())
-                    {
-                        // Still clearing inherited replay backlog — silently drop.
-                        continue;
-                    }
-
-                    // Grace exhausted — genuine slow consumer.
-                    Interlocked.Increment(ref _slowConsumerDrops);
-                    FeatureStreamLog.SlowConsumerDropped(_logger, id);
-                    RemoveSession(id, FeatureStreamDisconnectReason.SlowConsumer);
+                    delivered++;
                 }
 
-                // Pre-drain (replay window): silently drop to avoid disconnecting
-                // a healthy reconnecting client. The drain dedup will handle overlap.
+                continue;
             }
-            else
+
+            var matches = entry.GetMatchingSubscriptions(
+                message.Envelope,
+                message.GeometryEnvelope,
+                message.PropertiesJson,
+                ref parsedProperties,
+                ref propertiesParsed);
+            if (matches.Length == 0)
             {
-                delivered++;
-                entry.UpdateLastQueuedCursor(message.Envelope.Cursor);
-                if (!message.IsHeartbeat)
+                continue;
+            }
+
+            foreach (var match in matches)
+            {
+                // Dedup is claimed at send time (writer task and per-subscription
+                // replay), not here. Claiming the (event, subscription) slot before
+                // queueing would mark events delivered that the bounded channel
+                // later drops as pre-drain overflow — and replay would then skip
+                // them too, losing the event entirely. Queue speculatively; the
+                // writer/replay path with the atomic test-and-set decides who
+                // actually sends. The generation observed at match time travels
+                // with the frame so the writer can reject queued frames whose
+                // subscription was unsubscribed or replaced before drain.
+                var subscriptionMessage = message with
                 {
-                    entry.RememberEvent(message.Envelope.EventId);
+                    Envelope = message.Envelope with { SubscriptionId = match.SubscriptionId },
+                    SubscriptionGeneration = match.Generation
+                };
+                if (TryQueueMessage(id, entry, subscriptionMessage))
+                {
+                    delivered++;
                 }
             }
         }
 
         return delivered;
+    }
+
+    private bool TryQueueMessage(Guid sessionId, SessionEntry entry, FeatureStreamMessage message)
+    {
+        if (!entry.Channel.Writer.TryWrite(message))
+        {
+            if (entry.DrainStarted)
+            {
+                if (entry.TryConsumeDrainGrace())
+                {
+                    // Still clearing inherited replay backlog — silently drop.
+                    return false;
+                }
+
+                // Grace exhausted — genuine slow consumer.
+                Interlocked.Increment(ref _slowConsumerDrops);
+                FeatureStreamLog.SlowConsumerDropped(_logger, sessionId);
+                RemoveSession(sessionId, FeatureStreamDisconnectReason.SlowConsumer);
+            }
+
+            // Pre-drain (replay window): silently drop to avoid disconnecting
+            // a healthy reconnecting client. The drain dedup will handle overlap.
+            return false;
+        }
+
+        if (!message.IsHeartbeat)
+        {
+            entry.UpdateLastQueuedCursor(message.Envelope.Cursor);
+        }
+
+        return true;
     }
 
     private void HandleClusterBroadcast(RedisChannel channel, RedisValue value)
@@ -485,6 +511,136 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     }
 
     /// <summary>
+    /// Registers a subscription on an existing WebSocket session and returns the generation
+    /// assigned to it. The generation is monotonic per session and changes on every add
+    /// (including same-id replacement), so the caller must pin the returned generation when
+    /// issuing replay or send-time delivery claims for this subscription. Frames stamped with
+    /// an older generation are rejected at send time, fencing stale queued frames after
+    /// unsubscribe or replacement.
+    ///
+    /// When <paramref name="paused"/> is true, the broadcast fan-out skips this subscription
+    /// until <see cref="TryUnpauseSubscription"/> is called. This lets the subscribe handler
+    /// replay missed events from the durable store without the live channel writer
+    /// interleaving frames at the same cursor range.
+    ///
+    /// Returns <see cref="AddSubscriptionResult.SessionGone"/> when the session is closed
+    /// and <see cref="AddSubscriptionResult.LimitReached"/> when the per-session cap is hit;
+    /// the caller should reject the subscribe frame with a client-safe error.
+    /// </summary>
+    public AddSubscriptionOutcome TryAddSubscription(Guid sessionId, string subscriptionId, IStreamSubscriptionFilter? filter, bool paused = false)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return new AddSubscriptionOutcome(AddSubscriptionResult.SessionGone, 0);
+        }
+
+        return entry.TryAddSubscription(subscriptionId, filter, paused, _options.Value.MaxSubscriptionsPerSession, out var generation)
+            ? new AddSubscriptionOutcome(AddSubscriptionResult.Added, generation)
+            : new AddSubscriptionOutcome(AddSubscriptionResult.LimitReached, 0);
+    }
+
+    /// <summary>
+    /// Returns the generation assigned to the default subscription on the named session, or
+    /// 0 if the session does not exist or has no default subscription. Used by the WebSocket
+    /// writer's replay callbacks for the default subscription (which is never replaced and so
+    /// has a stable generation for the life of the session).
+    /// </summary>
+    public long GetDefaultSubscriptionGeneration(Guid sessionId)
+        => _sessions.TryGetValue(sessionId, out var entry) ? entry.DefaultSubscriptionGeneration : 0;
+
+    /// <summary>
+    /// Clears the broadcast-paused flag on a subscription so live events resume queueing.
+    /// </summary>
+    public bool TryUnpauseSubscription(Guid sessionId, string subscriptionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return false;
+        }
+
+        return entry.SetSubscriptionPaused(subscriptionId, paused: false);
+    }
+
+    /// <summary>
+    /// Atomically records that an event was delivered for a specific subscription
+    /// on a session. Returns true if the caller should send the event, false if it
+    /// was already recorded (caller should skip to avoid duplicate delivery).
+    /// Used by the per-subscription replay path which writes directly to the
+    /// transport, bypassing the channel/broadcast dedup. Does not check generation —
+    /// callers that own the subscription's current generation should prefer
+    /// <see cref="TryClaimSubscriptionDelivery"/>, which atomically rejects stale-
+    /// generation frames before claiming dedup.
+    /// </summary>
+    public bool TryRememberSubscriptionDelivery(Guid sessionId, string subscriptionId, string eventId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return false;
+        }
+
+        return entry.TryRememberEvent(string.Concat(eventId, ":", subscriptionId));
+    }
+
+    /// <summary>
+    /// Atomically verifies the subscription still exists with the supplied generation and,
+    /// if so, claims the (event, subscription) delivery slot. Returns
+    /// <see cref="SubscriptionDeliveryClaim.StaleGeneration"/> when the session is gone or
+    /// the subscription was removed or replaced (so callers must drop the queued frame
+    /// without claiming dedup), and <see cref="SubscriptionDeliveryClaim.AlreadyDelivered"/>
+    /// when a concurrent send-time path already claimed the slot. Used by the WebSocket writer
+    /// and per-subscription replay so stale frames queued before an unsubscribe or same-id
+    /// resubscribe are dropped without claiming dedup, leaving future replay free to deliver
+    /// the event under the new generation.
+    /// </summary>
+    public SubscriptionDeliveryClaim TryClaimSubscriptionDelivery(Guid sessionId, string subscriptionId, long generation, string eventId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return SubscriptionDeliveryClaim.StaleGeneration;
+        }
+
+        return entry.TryClaimSubscriptionDelivery(subscriptionId, generation, eventId);
+    }
+
+    /// <summary>
+    /// Snapshots non-default, non-paused subscriptions on the session so the WebSocket writer's
+    /// cross-node poll can replay each one through the per-(event, subscription) dedup claim.
+    /// Returns an empty array when the session is gone or has no eligible subscriptions.
+    /// </summary>
+    public PollableSubscription[] GetActivePollableSubscriptions(Guid sessionId)
+    {
+        return _sessions.TryGetValue(sessionId, out var entry)
+            ? entry.GetActivePollableSubscriptions()
+            : [];
+    }
+
+    /// <summary>
+    /// Advances the per-subscription poll cursor when the supplied generation still owns the
+    /// subscription. Returns false when the session or subscription is gone, the generation
+    /// has been replaced, or the supplied cursor is not strictly greater than the recorded
+    /// value. Used by the WebSocket writer's cross-node poll after each per-subscription
+    /// store sweep so the next interval starts from the watermark just delivered.
+    /// </summary>
+    public bool TryAdvanceSubscriptionPollCursor(Guid sessionId, string subscriptionId, long generation, long cursor)
+    {
+        return _sessions.TryGetValue(sessionId, out var entry)
+            && entry.TryAdvanceSubscriptionPollCursor(subscriptionId, generation, cursor);
+    }
+
+    /// <summary>
+    /// Removes a subscription from an existing WebSocket session.
+    /// </summary>
+    public bool TryRemoveSubscription(Guid sessionId, string subscriptionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return false;
+        }
+
+        return entry.RemoveSubscription(subscriptionId);
+    }
+
+    /// <summary>
     /// Force-disconnect a session (admin action).
     /// </summary>
     public bool DisconnectSession(Guid sessionId)
@@ -508,15 +664,15 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     {
         return _sessions.Select(kvp =>
         {
-            var streamFilter = kvp.Value.SubscriptionFilter as StreamSubscriptionFilter;
+            var streamFilter = kvp.Value.FirstStreamSubscriptionFilter;
             return new FeatureStreamSessionInfo(
                 kvp.Key,
                 kvp.Value.ConnectedAt,
                 kvp.Value.ClientLabel,
                 kvp.Value.Transport,
                 kvp.Value.LastQueuedCursor,
-                kvp.Value.SubscriptionFilter is not null,
-                kvp.Value.SubscriptionFilter?.Summary,
+                kvp.Value.HasFilter,
+                kvp.Value.FilterSummary,
                 streamFilter?.ServiceId,
                 streamFilter?.LayerIds?.ToArray());
         }).ToArray();
@@ -567,9 +723,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     {
         private long _lastQueuedCursor;
         private long _drainGraceRemaining;
+        private long _subscriptionGenerationCounter;
         private readonly Queue<string> _recentEventIds = new();
         private readonly HashSet<string> _recentEventIdSet = new(StringComparer.Ordinal);
         private readonly object _recentEventLock = new();
+        private readonly Dictionary<string, SubscriptionState> _subscriptions = new(StringComparer.Ordinal);
+        private readonly object _subscriptionLock = new();
 
         public SessionEntry(
             Guid id,
@@ -578,7 +737,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             DateTimeOffset connectedAt,
             string? clientLabel,
             string transport,
-            IStreamSubscriptionFilter? subscriptionFilter = null)
+            IStreamSubscriptionFilter? subscriptionFilter = null,
+            bool addDefaultSubscription = true)
         {
             Id = id;
             Channel = channel;
@@ -586,8 +746,23 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             ConnectedAt = connectedAt;
             ClientLabel = clientLabel;
             Transport = transport;
-            SubscriptionFilter = subscriptionFilter;
+            if (addDefaultSubscription)
+            {
+                var generation = ++_subscriptionGenerationCounter;
+                _subscriptions[FeatureStreamSessionManager.DefaultSubscriptionId] =
+                    new SubscriptionState(subscriptionFilter, Paused: false, Generation: generation, LastPolledCursor: 0);
+                DefaultSubscriptionGeneration = generation;
+            }
         }
+
+        private sealed record SubscriptionState(IStreamSubscriptionFilter? Filter, bool Paused, long Generation, long LastPolledCursor);
+
+        /// <summary>
+        /// Generation assigned to the default subscription at session creation. Stable for the
+        /// life of the session because the default subscription is never replaced (control-frame
+        /// subscribes always create distinct ids).
+        /// </summary>
+        public long DefaultSubscriptionGeneration { get; }
 
         public Guid Id { get; }
         public Channel<FeatureStreamMessage> Channel { get; }
@@ -595,7 +770,53 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         public DateTimeOffset ConnectedAt { get; }
         public string? ClientLabel { get; }
         public string Transport { get; }
-        public IStreamSubscriptionFilter? SubscriptionFilter { get; }
+        public bool HasSubscriptions
+        {
+            get
+            {
+                lock (_subscriptionLock)
+                {
+                    return _subscriptions.Count > 0;
+                }
+            }
+        }
+
+        public bool HasFilter
+        {
+            get
+            {
+                lock (_subscriptionLock)
+                {
+                    return _subscriptions.Values.Any(state => state.Filter is not null);
+                }
+            }
+        }
+
+        public string? FilterSummary
+        {
+            get
+            {
+                lock (_subscriptionLock)
+                {
+                    return string.Join("; ", _subscriptions.Select(s =>
+                        s.Value.Filter is null ? $"{s.Key}: all" : $"{s.Key}: {s.Value.Filter.Summary}"));
+                }
+            }
+        }
+
+        public StreamSubscriptionFilter? FirstStreamSubscriptionFilter
+        {
+            get
+            {
+                lock (_subscriptionLock)
+                {
+                    return _subscriptions.Values
+                        .Select(state => state.Filter)
+                        .OfType<StreamSubscriptionFilter>()
+                        .FirstOrDefault();
+                }
+            }
+        }
         public volatile bool DrainStarted;
         public long LastQueuedCursor => Interlocked.Read(ref _lastQueuedCursor);
 
@@ -621,32 +842,255 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             return Interlocked.Decrement(ref _drainGraceRemaining) >= 0;
         }
 
-        public bool HasSeenEvent(string eventId)
+        /// <summary>
+        /// Atomically records that an event was delivered for this session.
+        /// Returns true if the event is newly recorded (caller should deliver),
+        /// false if it was already recorded (caller should skip to avoid duplicate
+        /// delivery). Used by both the broadcast fan-out and the per-subscription
+        /// replay path to keep the replay-to-live handoff exactly-once.
+        /// </summary>
+        public bool TryRememberEvent(string eventId)
         {
             lock (_recentEventLock)
             {
-                return _recentEventIdSet.Contains(eventId);
+                return TryRememberEventLocked(eventId);
             }
         }
 
-        public void RememberEvent(string eventId)
+        private bool TryRememberEventLocked(string eventId)
         {
-            lock (_recentEventLock)
+            if (!_recentEventIdSet.Add(eventId))
             {
-                if (!_recentEventIdSet.Add(eventId))
+                return false;
+            }
+
+            _recentEventIds.Enqueue(eventId);
+            while (_recentEventIds.Count > RecentEventIdCapacity &&
+                   _recentEventIds.TryDequeue(out var expired))
+            {
+                _recentEventIdSet.Remove(expired);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Adds or replaces a subscription, allocating a new generation each call. Callers must
+        /// pin the returned generation when issuing later replay or send-time delivery claims so
+        /// stale frames queued before a replacement or unsubscribe are rejected at send time.
+        /// </summary>
+        public bool TryAddSubscription(
+            string subscriptionId,
+            IStreamSubscriptionFilter? filter,
+            bool paused,
+            int maxSubscriptions,
+            out long generation)
+        {
+            lock (_subscriptionLock)
+            {
+                // Replacing an existing id keeps the count flat — only count new ids
+                // against the cap so a paused-then-resubscribe handshake on the same
+                // id remains stable.
+                if (!_subscriptions.ContainsKey(subscriptionId) && _subscriptions.Count >= maxSubscriptions)
                 {
-                    return;
+                    generation = 0;
+                    return false;
                 }
 
-                _recentEventIds.Enqueue(eventId);
-                while (_recentEventIds.Count > RecentEventIdCapacity &&
-                       _recentEventIds.TryDequeue(out var expired))
+                generation = ++_subscriptionGenerationCounter;
+                _subscriptions[subscriptionId] = new SubscriptionState(filter, paused, generation, LastPolledCursor: 0);
+                return true;
+            }
+        }
+
+        public bool SetSubscriptionPaused(string subscriptionId, bool paused)
+        {
+            lock (_subscriptionLock)
+            {
+                if (!_subscriptions.TryGetValue(subscriptionId, out var current))
                 {
-                    _recentEventIdSet.Remove(expired);
+                    return false;
+                }
+
+                _subscriptions[subscriptionId] = current with { Paused = paused };
+                return true;
+            }
+        }
+
+        public bool RemoveSubscription(string subscriptionId)
+        {
+            lock (_subscriptionLock)
+            {
+                return _subscriptions.Remove(subscriptionId);
+            }
+        }
+
+        /// <summary>
+        /// Atomically verifies the subscription still exists with the supplied generation and,
+        /// if so, claims the (event, subscription) delivery slot. Returns
+        /// <see cref="SubscriptionDeliveryClaim.StaleGeneration"/> when the generation no
+        /// longer matches (subscription removed or replaced) — the caller must drop the queued
+        /// frame without sending and without claiming dedup, so a future replay for the same
+        /// id can still deliver the event under a new generation. Returns
+        /// <see cref="SubscriptionDeliveryClaim.AlreadyDelivered"/> when a concurrent send-time
+        /// path already claimed the slot (benign — the other path is sending the frame).
+        /// </summary>
+        public SubscriptionDeliveryClaim TryClaimSubscriptionDelivery(string subscriptionId, long generation, string eventId)
+        {
+            lock (_subscriptionLock)
+            {
+                if (!_subscriptions.TryGetValue(subscriptionId, out var state) ||
+                    state.Generation != generation)
+                {
+                    return SubscriptionDeliveryClaim.StaleGeneration;
+                }
+
+                lock (_recentEventLock)
+                {
+                    return TryRememberEventLocked(string.Concat(eventId, ":", subscriptionId))
+                        ? SubscriptionDeliveryClaim.Claimed
+                        : SubscriptionDeliveryClaim.AlreadyDelivered;
                 }
             }
+        }
+
+        /// <summary>
+        /// Snapshots non-default, non-paused subscriptions on this session for the writer's
+        /// cross-node poll. Each entry carries the generation observed at snapshot time so the
+        /// poll can fence stale frames at send time, plus the per-subscription poll cursor that
+        /// scopes the next durable-store sweep to events past the last delivered cursor.
+        /// </summary>
+        public PollableSubscription[] GetActivePollableSubscriptions()
+        {
+            lock (_subscriptionLock)
+            {
+                if (_subscriptions.Count == 0)
+                {
+                    return [];
+                }
+
+                var snapshot = new List<PollableSubscription>(_subscriptions.Count);
+                foreach (var (subscriptionId, state) in _subscriptions)
+                {
+                    if (state.Paused)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(subscriptionId, FeatureStreamSessionManager.DefaultSubscriptionId, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    snapshot.Add(new PollableSubscription(
+                        subscriptionId,
+                        state.Generation,
+                        state.Filter,
+                        state.LastPolledCursor));
+                }
+
+                return snapshot.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Advances the per-subscription poll cursor when the supplied generation still owns the
+        /// subscription. Returns false when the subscription is gone, the generation has been
+        /// replaced, or the supplied cursor is not strictly greater than the recorded value.
+        /// </summary>
+        public bool TryAdvanceSubscriptionPollCursor(string subscriptionId, long generation, long cursor)
+        {
+            lock (_subscriptionLock)
+            {
+                if (!_subscriptions.TryGetValue(subscriptionId, out var current) ||
+                    current.Generation != generation)
+                {
+                    return false;
+                }
+
+                if (cursor <= current.LastPolledCursor)
+                {
+                    return false;
+                }
+
+                _subscriptions[subscriptionId] = current with { LastPolledCursor = cursor };
+                return true;
+            }
+        }
+
+        public SubscriptionMatch[] GetMatchingSubscriptions(
+            FeatureStreamEnvelope envelope,
+            double[]? geometryEnvelope,
+            string? propertiesJson,
+            ref IReadOnlyDictionary<string, JsonElement>? parsedProperties,
+            ref bool propertiesParsed)
+        {
+            KeyValuePair<string, SubscriptionState>[] subscriptions;
+            lock (_subscriptionLock)
+            {
+                if (_subscriptions.Count == 0)
+                {
+                    return [];
+                }
+
+                subscriptions = _subscriptions.ToArray();
+            }
+
+            var matches = new List<SubscriptionMatch>(subscriptions.Length);
+            foreach (var (subscriptionId, state) in subscriptions)
+            {
+                // Paused subscriptions still exist (so the writer-task drain knows about them),
+                // but the live broadcaster must not queue events while replay is delivering
+                // the same cursor range directly through the per-subscription replay path.
+                if (state.Paused)
+                {
+                    continue;
+                }
+
+                if (state.Filter is null)
+                {
+                    matches.Add(new SubscriptionMatch(subscriptionId, state.Generation));
+                    continue;
+                }
+
+                var matched = state.Filter is StreamSubscriptionFilter streamFilter
+                    ? streamFilter.Matches(
+                        envelope,
+                        geometryEnvelope,
+                        propertiesJson,
+                        ref parsedProperties,
+                        ref propertiesParsed)
+                    : state.Filter.Matches(envelope, geometryEnvelope, propertiesJson);
+
+                if (matched)
+                {
+                    matches.Add(new SubscriptionMatch(subscriptionId, state.Generation));
+                }
+            }
+
+            return matches.ToArray();
         }
     }
+
+    /// <summary>
+    /// Subscription match returned by <see cref="SessionEntry.GetMatchingSubscriptions"/>:
+    /// id plus the generation observed at match time. The generation travels with the
+    /// queued frame so the writer can verify the subscription has not been replaced or
+    /// removed before sending.
+    /// </summary>
+    internal readonly record struct SubscriptionMatch(string SubscriptionId, long Generation);
+
+    /// <summary>
+    /// Snapshot of a non-default WebSocket subscription that the writer's cross-node poll
+    /// can replay on the next interval. Carries the generation captured at snapshot time so
+    /// stale-generation frames are fenced at send time, plus the last poll cursor so the
+    /// store sweep starts from the watermark already delivered to this subscription.
+    /// </summary>
+    internal readonly record struct PollableSubscription(
+        string SubscriptionId,
+        long Generation,
+        IStreamSubscriptionFilter? Filter,
+        long LastPolledCursor);
 }
 
 /// <summary>
@@ -656,6 +1100,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 internal sealed class FeatureStreamSession : IDisposable
 {
     private readonly FeatureStreamSessionManager _manager;
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     public FeatureStreamSession(
         Guid sessionId,
@@ -684,9 +1129,18 @@ internal sealed class FeatureStreamSession : IDisposable
     /// </summary>
     public CancellationToken DisconnectToken { get; }
 
+    /// <summary>
+    /// Serializes WebSocket transport writes for this session. The transport spec
+    /// requires that only one <c>SendAsync</c> is in flight at a time, and per-subscription
+    /// replay must be atomic against live channel drains; both paths acquire this lock
+    /// before sending so cursors stay ordered and frames never interleave on the wire.
+    /// </summary>
+    public SemaphoreSlim WriteLock => _writeLock;
+
     public void Dispose()
     {
         _manager.RemoveSession(SessionId, FeatureStreamDisconnectReason.ClientClosed);
+        _writeLock.Dispose();
     }
 }
 
@@ -698,22 +1152,31 @@ internal readonly record struct FeatureStreamMessage
     /// <summary>
     /// True if this is a heartbeat frame rather than a data envelope.
     /// </summary>
-    public bool IsHeartbeat { get; private init; }
+    public bool IsHeartbeat { get; init; }
 
     /// <summary>
     /// The event envelope (only meaningful when <see cref="IsHeartbeat"/> is false).
     /// </summary>
-    public FeatureStreamEnvelope Envelope { get; private init; }
+    public FeatureStreamEnvelope Envelope { get; init; }
 
     /// <summary>
     /// Geometry bounding box from the enriched event (internal only, never serialized to clients).
     /// </summary>
-    public double[]? GeometryEnvelope { get; private init; }
+    public double[]? GeometryEnvelope { get; init; }
 
     /// <summary>
     /// Pre-serialized attribute JSON from the enriched event (internal only, never serialized to clients).
     /// </summary>
-    public string? PropertiesJson { get; private init; }
+    public string? PropertiesJson { get; init; }
+
+    /// <summary>
+    /// Generation of the subscription this frame was queued for. The writer drain rejects
+    /// frames whose generation no longer matches the subscription's current generation,
+    /// fencing stale frames after unsubscribe or same-id replacement. Zero on heartbeats and
+    /// on legacy paths that do not pin a generation (the SSE single-default-subscription
+    /// drain falls back to the session-wide watermark).
+    /// </summary>
+    public long SubscriptionGeneration { get; init; }
 
     /// <summary>
     /// Creates a data message with optional enrichment for subscription filtering.

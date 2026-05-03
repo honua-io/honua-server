@@ -58,12 +58,18 @@ COPY . .
 # word-split into separate `-p:` arguments. Quoting collapses them into a single (invalid) argument.
 ARG CONFIGURATION=Release
 # hadolint ignore=SC2086
-RUN case "${TARGETARCH:-amd64}" in \
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
+    --mount=type=secret,id=github_token \
+    case "${TARGETARCH:-amd64}" in \
         amd64) RUNTIME_ID="linux-musl-x64" ;; \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false" && \
+    sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+      --runtime "$RUNTIME_ID" \
+      $EXTRA_MSBUILD_ARGS && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \

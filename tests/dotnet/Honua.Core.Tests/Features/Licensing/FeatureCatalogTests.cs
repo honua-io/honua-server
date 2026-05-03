@@ -51,6 +51,7 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.Styling);
         categories.Should().Contain(FeatureCatalog.Categories.Raster);
         categories.Should().Contain(FeatureCatalog.Categories.Analytics);
+        categories.Should().Contain(FeatureCatalog.Categories.Streaming);
     }
 
     [Theory]
@@ -68,6 +69,16 @@ public sealed class FeatureCatalogTests
 
         feature.Should().NotBeNull($"feature catalog must define '{key}' for ticket #342");
         feature!.Category.Should().Be(FeatureCatalog.Categories.Analytics);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+    }
+
+    [Fact]
+    public void All_FeatureStreamingIsProTier()
+    {
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == "streaming.feature-subscriptions");
+
+        feature.Should().NotBeNull("feature catalog must define real-time streaming for ticket #339");
+        feature!.Category.Should().Be(FeatureCatalog.Categories.Streaming);
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 

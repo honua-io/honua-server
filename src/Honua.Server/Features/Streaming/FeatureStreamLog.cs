@@ -67,4 +67,20 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5015, Level = LogLevel.Debug,
         Message = "Feature stream WebSocket receive loop ended for session {SessionId}")]
     public static partial void WebSocketReceiveEnded(ILogger logger, Exception exception, Guid sessionId);
+
+    [LoggerMessage(EventId = 5016, Level = LogLevel.Warning,
+        Message = "Feature streaming blocked by edition gate: currentEdition={Edition}")]
+    public static partial void EditionGateBlocked(ILogger logger, string edition);
+
+    [LoggerMessage(EventId = 5017, Level = LogLevel.Information,
+        Message = "Feature stream subscription {SubscriptionId} added to session {SessionId}: {FilterSummary}")]
+    public static partial void SubscriptionAdded(ILogger logger, Guid sessionId, string subscriptionId, string filterSummary);
+
+    [LoggerMessage(EventId = 5018, Level = LogLevel.Information,
+        Message = "Feature stream subscription {SubscriptionId} removed from session {SessionId}")]
+    public static partial void SubscriptionRemoved(ILogger logger, Guid sessionId, string subscriptionId);
+
+    [LoggerMessage(EventId = 5019, Level = LogLevel.Debug,
+        Message = "Feature stream session {SessionId} dropped a stale-generation frame for subscription {SubscriptionId} (frameGeneration={FrameGeneration})")]
+    public static partial void StaleSubscriptionFrameDropped(ILogger logger, Guid sessionId, string subscriptionId, long frameGeneration);
 }

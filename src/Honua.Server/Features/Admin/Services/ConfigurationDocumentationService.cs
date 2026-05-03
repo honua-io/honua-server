@@ -540,7 +540,13 @@ public sealed class ConfigurationDocumentationService
                 BuildProperty("FeatureStreaming:ReplayBatchSize", "FeatureStreaming__ReplayBatchSize", "integer",
                     "Number of events fetched per batch during cursor replay", 200),
                 BuildProperty("FeatureStreaming:CrossNodeSyncInterval", "FeatureStreaming__CrossNodeSyncInterval", "timespan",
-                    "Interval between shared-store sweeps for cross-node event pickup", TimeSpan.FromSeconds(1))
+                    "Interval between shared-store sweeps for cross-node event pickup", TimeSpan.FromSeconds(1)),
+                BuildProperty("FeatureStreaming:MaxControlFrameBytes", "FeatureStreaming__MaxControlFrameBytes", "integer",
+                    "Maximum byte size for an inbound WebSocket control frame; oversized frames close the connection", 64 * 1024),
+                BuildProperty("FeatureStreaming:MaxSubscriptionsPerSession", "FeatureStreaming__MaxSubscriptionsPerSession", "integer",
+                    "Maximum number of concurrent subscriptions a single WebSocket session may hold", 64),
+                BuildProperty("FeatureStreaming:MaxSubscriptionIdLength", "FeatureStreaming__MaxSubscriptionIdLength", "integer",
+                    "Maximum length of a client-supplied subscription identifier", 128)
             ]
         };
     }

@@ -15,6 +15,7 @@ Deploy, configure, monitor, and manage Honua Server.
 - [Security](security.md) — Authentication, authorization, CORS, CSP
 - [HTTP Client Resilience](http-client-resilience.md) — Retry, circuit breaker, and timeout tuning for external services
 - [Feature Change Webhooks](feature-change-webhooks.md) — Event notification setup
+- [Feature Streaming](feature-streaming.md) — WebSocket/SSE feature-change subscriptions
 
 ## Database
 
