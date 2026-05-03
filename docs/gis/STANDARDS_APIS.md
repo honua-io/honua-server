@@ -365,7 +365,7 @@ Terrain v1 expects registered PostGIS rasters with one numeric elevation band, o
 - CORS reuses the shared public policy. `ETag`, `Accept-Ranges`, `Content-Length`, and `Content-Range` are already exposed, which covers Cesium's caching and range-aware streaming requirements.
 - **Browser-safe protected access:** CesiumJS' resource loader cannot attach `Authorization` headers or session cookies to nested asset fetches. Authorized callers can `POST /scenes/{sceneId}/access-envelope` to mint a short-lived HMAC-signed token (default TTL 15 minutes), then present it on nested requests via the `?token=` query parameter (CesiumJS automatically propagates query parameters from the root `Cesium.Resource` to all derived URLs) or, for native clients, the `X-Honua-Token` header. Token-authorized asset responses are `Cache-Control: private, max-age=…`; query-token responses vary by URL, header-token responses emit `Vary: X-Honua-Token`, and the server-side output cache is bypassed when any token is present so cached anonymous bodies cannot be replayed across distinct tokens. Server-to-server and native bearer/API-key clients continue to work unchanged.
 
-**Limitations:** This is the foundation slice. Generating 3D Tiles from PostGIS, raster, or model sources (`honua-server-842`) is tracked as a separate deliverable. The visual admin UI on top of the registry API is a `honua-server-admin` ticket. I3S/ArcGIS Scene Layer compatibility is on the Enterprise roadmap (`honua-server-843`). Access envelope tokens are scoped at scene granularity (one token grants access to all assets under the scene's prefix until expiry), there is no per-token revocation inside the TTL window — rotate `Honua:SceneAccessSigning:SigningKey` to invalidate all outstanding tokens immediately — and the envelope does not embed the issuing user's identity.
+**Limitations:** This is the foundation slice for hosted serving. The visual admin UI on top of the registry API is a `honua-server-admin` ticket. I3S/ArcGIS Scene Layer compatibility is on the Enterprise roadmap (`honua-server-843`). Access envelope tokens are scoped at scene granularity (one token grants access to all assets under the scene's prefix until expiry), there is no per-token revocation inside the TTL window — rotate `Honua:SceneAccessSigning:SigningKey` to invalidate all outstanding tokens immediately — and the envelope does not embed the issuing user's identity. For producing tilesets from Honua data, see the **3D Tiles Generation Pipeline** below.
 
 **Typical use cases:**
 - Publishing photogrammetry or BIM-derived 3D Tiles tilesets through Honua to CesiumJS viewers
@@ -373,6 +373,51 @@ Terrain v1 expects registered PostGIS rasters with one numeric elevation band, o
 - Operator-controlled hosting of third-party 3D Tiles bundles without client-side URL rewriting
 
 See [Hosted 3D Tiles Scenes](scenes-3dtiles.md) for configuration, the CesiumJS usage example, and the full asset-resolution contract.
+
+---
+
+## **3D Tiles Generation Pipeline**
+
+**Best for**: Producing a deterministic OGC 3D Tiles 1.1 tileset from a registered PostGIS feature layer through the admin publishing path.
+
+**Endpoint structure:**
+```
+/api/v1/admin/scenes/generate                      (POST, admin)
+```
+
+The generated tileset is served back through the hosted scene endpoints:
+
+```
+/scenes/{sceneId}/tileset.json                     (GET, HEAD)
+/scenes/{sceneId}/tile_0000.glb                    (GET, HEAD)
+```
+
+**Output formats:** `tileset.json` is OGC 3D Tiles 1.1 (`asset.version = "1.1"`). The single tile content is glTF 2.0 binary (`model/gltf-binary`) with one mesh primitive. Vertex positions are encoded in ECEF meters (EPSG:4978); per-vertex `_FEATURE_ID_0` and an `EXT_structural_metadata` property table preserve selected feature attributes for identify/query workflows.
+
+**Contract notes:**
+- Admin authorization is required. The endpoint runs synchronously: small/medium datasets fit inside an admin-request timeout, and a durable `IPublishIntentStore`-backed async lifecycle is intentionally deferred.
+- Supported geometry kinds: `Polygon`, `MultiPolygon`, `Point`, `MultiPoint`, `LineString`, `MultiLineString`. Multi-geometries are normalized to the first part for a single deterministic representation per feature.
+- Source CRS resolution uses `ST_Transform(geom, 4326)` before ECEF projection; any PostGIS-supported CRS works. Z values are preserved when present; 2D layers may opt into vertical extrusion via the catalog `extrusionInfo` block (`honua-server-841`). Layers without Z and without extrusion configured produce a flat-at-Z=0 output with a logged warning.
+- Attribute fields surfaced via `EXT_structural_metadata` are limited to `Integer`, `BigInteger`, `Double`, `Float`, and `String`. Other field types are omitted from the metadata table.
+- Outputs are written under `{SceneGeneration:OutputRoot}/{sceneId}/` (default `scenes-generated/`, relative to the application content root). Each generation job creates one `tileset.json` and one `tile_0000.glb`, then automatically registers the result with the scene dataset registry (no separate `POST /api/v1/admin/scenes` call is required).
+- Determinism is guaranteed by primary-key feature ordering, fan triangulation rooted at the first ring vertex, fixed buffer layout (positions, feature ids, then property columns in declaration order), and source-generated JSON serialization with no dictionary keys. Two runs against an identical fixture produce byte-identical outputs.
+- `geometricError` on the root tile is the WGS-84 bounding-box diagonal in meters, rounded to 6 decimals. The root bounding volume is a `region` (radians) with `[west, south, east, north, minHeight, maxHeight]`.
+- Generation failures surface stable problem-detail codes: `SCENE_LAYER_NOT_FOUND` (404), `SCENE_LAYER_CRS_UNKNOWN` (400), `SCENE_UNSUPPORTED_GEOMETRY_TYPE` (400), `SCENE_FEATURE_LIMIT_EXCEEDED` (400), `SCENE_ATTRIBUTE_TYPE_UNSUPPORTED` (400, reserved), `SCENE_MODEL_ASSET_INVALID` (400, reserved), `SCENE_ID_CONFLICT` (409), `SCENE_OPTIONS_INVALID` (400). `503` is returned for transient executor-side failures.
+
+**Limitations:**
+- Single-tile output per generation job; no LOD generation or spatial partitioning. Quadtree/oct-tree tiling, mesh decimation, streaming, and distributed pipelines are deferred enterprise-scale work.
+- Hard 50 000-feature cap (configurable via `SceneGeneration:MaxFeatureCount`). Per-job overrides cannot exceed the configured ceiling.
+- Polygon inner rings are dropped; only the outer ring is triangulated. Convex polygons render correctly; non-convex rings still parse but may render imperfectly.
+- Client-supplied glTF/GLB model-asset substitution is not implemented in v1 (the `SCENE_MODEL_ASSET_INVALID` code is reserved for that path).
+- CityGML/IFC ingestion is a documented future path; native I3S output is informed by `honua-server-843`.
+- Concurrent regeneration of the same layer is unsupported; the most recent registration wins on collision unless the operator supplies an explicit `sceneId`.
+
+**Typical use cases:**
+- Materializing a building-footprint layer (with optional extruded height) into a CesiumJS-loadable tileset
+- Producing fixture tilesets for the Cesium smoke suite (`honua-server-838`)
+- Smart-city, infrastructure, and AEC workflows that need Honua-produced 3D Tiles output rather than externally pre-built bundles
+
+See [3D Tiles Generation Pipeline](scene-generation.md) for the full request/response contract, configuration keys, and deferred enterprise-scale work list.
 
 ---
 

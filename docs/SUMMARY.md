@@ -34,6 +34,7 @@
 - [Terrain-RGB Tiles](gis/terrain-tiles.md)
 - [Hosted 3D Tiles Scenes](gis/scenes-3dtiles.md)
 - [OpenUSD and Omniverse Export Path](gis/openusd-omniverse-export-path.md)
+- [3D Tiles Generation Pipeline](gis/scene-generation.md)
 - [Elevation Query and Profile API](gis/elevation-api.md)
 - [Known Limitations](gis/MVP_COMPATIBILITY_CONTRACT.md)
 - [Cross-Server Consume Gap Report](compatibility/cross-server-consume-gap-report.md)

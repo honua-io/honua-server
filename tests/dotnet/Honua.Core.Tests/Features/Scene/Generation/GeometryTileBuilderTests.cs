@@ -105,7 +105,7 @@ public sealed class GeometryTileBuilderTests
         // Sanity: extruded prism should produce more vertices than a flat
         // polygon (top fan + bottom fan + 6 verts per wall).
         var glbFlat = GeometryTileBuilder.BuildGlb(
-            [feature with { Attributes = new Dictionary<string, object?>(StringComparer.Ordinal) } ],
+            [feature with { Attributes = new Dictionary<string, object?>(StringComparer.Ordinal) }],
             schemas,
             extrusion: null);
         glb.Length.Should().BeGreaterThan(glbFlat.Length);

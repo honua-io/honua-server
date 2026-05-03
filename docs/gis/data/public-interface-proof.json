@@ -1627,6 +1627,52 @@
       ]
     },
     {
+      "surfaceId": "scene-generation-admin",
+      "displayName": "3D Tiles generation admin API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/scenes/generate",
+      "parentSurfaceId": "scenes-3dtiles",
+      "endpointPrefixes": [
+        "/api/v1/admin/scenes/generate"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "Admin endpoint mapping in SceneGenerationEndpoints (only registered when SceneTilesPublishExecutor is resolvable, i.e. the Postgres-backed scene profile) plus the publish-executor wiring under FeatureRegistrationExtensions; EndpointRegistry alignment for scenes/generate is tracked as deferred docs/registry follow-on",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Admin/SceneGenerationEndpoints.cs",
+            "src/Honua.Server/Features/Infrastructure/Scene/SceneTilesPublishExecutor.cs",
+            "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#842",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Deterministic tileset.json/GLB byte-equality across runs, ECEF projection of WGS-84 vertices, EXT_structural_metadata attribute round-trip, fan triangulation of polygon outer rings, layer-not-found / unsupported-geometry / feature-cap / scene-id-conflict / options-invalid problem-detail mapping, and scene-registry registration after a successful generation are exercised by core and server tests",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/EcefCoordinateTransformTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/GeometryTileBuilderTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/TilesetDocumentWriterTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Scene/SceneTilesPublishExecutorTests.cs",
+            "docs/gis/scene-generation.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#842",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "elevation-query-profile",
       "displayName": "Elevation Query and Profile API",
       "surfaceKind": "http-route-family",

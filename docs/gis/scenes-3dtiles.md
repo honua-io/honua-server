@@ -36,6 +36,11 @@ URL slug via `ISceneDatasetRegistry.FindAsync`; the Postgres-backed
 implementation behind that interface projects each record to the lean
 `SceneDataset` shape served below.
 
+The [3D Tiles generation pipeline](scene-generation.md) (#842) auto-registers
+its outputs through the same registry, so producer-side workflows never need
+a separate `POST /api/v1/admin/scenes` step. The configuration block below
+remains for already-hosted (externally produced) bundles.
+
 The original `Scenes` configuration section remains in the codebase for
 local-dev/test scenarios where Postgres is not available. In production it
 is replaced at runtime by the registry; mixing both should be avoided. The

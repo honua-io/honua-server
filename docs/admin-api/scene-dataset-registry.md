@@ -5,6 +5,11 @@ The scene dataset registry is the server-side admin API for registering hosted
 (#849), and snippet/embed consumers (#838, #532) all work against a single,
 durable contract.
 
+The [3D Tiles generation pipeline](../gis/scene-generation.md) (#842) writes
+through this registry directly: a successful `POST /api/v1/admin/scenes/generate`
+auto-registers the produced tileset, so manual `POST /api/v1/admin/scenes`
+calls are only needed for already-hosted (externally produced) scenes.
+
 This document covers the **server/API slice only**. Visual admin UI work is a
 separate `honua-server-admin` ticket and is intentionally out of scope here.
 
