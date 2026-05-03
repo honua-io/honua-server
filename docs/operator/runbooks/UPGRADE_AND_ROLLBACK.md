@@ -357,6 +357,134 @@ Telemetry breach drives the reconciler to call `RollbackAsync` on the Lambda bac
 
 ---
 
+## AWS ECS + ALB Canary Rollout
+
+AWS ECS deploys behind an Application Load Balancer use ALB listener-rule weights to shift traffic between a stable and a canary ECS service, managed through the deploy controller backend `honua-aws-ecs-alb`. The backend manages two-target-group canary traffic shifting end-to-end without requiring an external GitOps agent. It coexists with the GitOps passthrough backend `honua-gitops-aws-ecs`; targets pick by `Backend` name.
+
+### Resource pre-conditions
+
+The operator (typically Terraform) must provision **before** submitting any deploy operation:
+
+- **Stable ECS service** registered to a stable ALB target group.
+- **Canary ECS service** registered to a canary ALB target group. The two services share the same load balancer.
+- **ALB listener rule** whose first action is `Type=forward` with both target groups attached as `TargetGroupTuple` entries with integer weights. The backend mutates the weights of this existing rule; it does not create or delete rules.
+- **IAM credentials** that grant the server `ecs:DescribeServices`, `ecs:UpdateService`, `elasticloadbalancing:DescribeRules`, and `elasticloadbalancing:ModifyRule` against the listed ARNs.
+
+The backend reads and writes only the listener rule and the canary ECS service; the stable ECS service is read-only from its perspective. Rotate the stable service through your CI/CD pipeline once a promotion is confirmed.
+
+### Lifecycle
+
+1. **Preflight**: `PlanAsync` validates that the cluster, canary service, listener rule ARN, both target group ARNs, and a non-empty `desiredRevision` (canary task definition ARN) are present. When `deployment.canary_weight_percentage` is set, it requires `telemetry.connection` so the rollout can be promoted or rolled back automatically.
+2. **Start (immediate cutover)**: Without canary configuration, the controller calls `UpdateService` on the canary ECS service to register the new task definition, then sets the listener rule to `canary=100, stable=0`. Operators typically retire the stable service post-promotion.
+3. **Start (canary)**: With `deployment.canary_weight_percentage` set, the controller registers the new task definition on the canary service and sets the listener rule to `canary=N, stable=100-N` where N is the configured percentage.
+4. **Observe**: Each reconciliation reads the listener-rule weights (`DescribeRules`) and the canary ECS service state (`DescribeServices`). When the canary weight equals the configured target percentage and `RunningCount >= DesiredCount` with `PendingCount == 0`, the observation reports `PromotionRecommended=true` so the telemetry gate can clear it.
+5. **Promote**: After the telemetry gate passes, the controller sets the listener rule to `canary=100, stable=0`. Returns `Succeeded` with the desired task definition arn.
+6. **Rollback**: The controller sets the listener rule to `canary=0, stable=100` and reports `RollbackRequested`. Subsequent observations return `RolledBack` once the canary service has drained (running tasks reach zero or the canary service is `INACTIVE`).
+
+### Configuration (immediate cutover)
+
+```json
+{
+  "ControlPlane": {
+    "DeployTargets": [
+      {
+        "TargetId": "prod-ecs",
+        "TargetKind": "AwsEcs",
+        "Backend": "honua-aws-ecs-alb",
+        "Environment": "production",
+        "TargetName": "honua-prod-canary",
+        "Parameters": {
+          "aws.region": "us-east-1",
+          "aws.ecs.cluster": "honua-prod-ecs",
+          "aws.ecs.canary_service": "honua-prod-canary",
+          "aws.alb.listener_rule_arn": "arn:aws:elasticloadbalancing:us-east-1:<acct>:listener-rule/app/honua-prod/<lb-id>/<listener-id>/<rule-id>",
+          "aws.alb.canary_target_group_arn": "arn:aws:elasticloadbalancing:us-east-1:<acct>:targetgroup/honua-canary/<id>",
+          "aws.alb.stable_target_group_arn": "arn:aws:elasticloadbalancing:us-east-1:<acct>:targetgroup/honua-stable/<id>"
+        }
+      }
+    ]
+  }
+}
+```
+
+### Configuration (canary traffic shifting)
+
+```json
+{
+  "ControlPlane": {
+    "DeployTargets": [
+      {
+        "TargetId": "prod-ecs",
+        "TargetKind": "AwsEcs",
+        "Backend": "honua-aws-ecs-alb",
+        "Environment": "production",
+        "TargetName": "honua-prod-canary",
+        "Parameters": {
+          "aws.region": "us-east-1",
+          "aws.ecs.cluster": "honua-prod-ecs",
+          "aws.ecs.canary_service": "honua-prod-canary",
+          "aws.alb.listener_rule_arn": "arn:aws:elasticloadbalancing:us-east-1:<acct>:listener-rule/app/honua-prod/<lb-id>/<listener-id>/<rule-id>",
+          "aws.alb.canary_target_group_arn": "arn:aws:elasticloadbalancing:us-east-1:<acct>:targetgroup/honua-canary/<id>",
+          "aws.alb.stable_target_group_arn": "arn:aws:elasticloadbalancing:us-east-1:<acct>:targetgroup/honua-stable/<id>",
+          "deployment.canary_weight_percentage": "10",
+          "telemetry.connection": "prod-prom",
+          "telemetry.policy": "aws-alb-canary"
+        }
+      }
+    ]
+  }
+}
+```
+
+`desiredRevision` on each deploy operation must be the ARN of the published task definition revision (e.g. `arn:aws:ecs:us-east-1:<acct>:task-definition/honua-app:42`). The CI/CD pipeline is responsible for registering the task definition before submitting the operation.
+
+### Health-gate behavior
+
+The deploy controller's telemetry evaluator selects the `aws-alb-canary` Prometheus preset when `telemetry.policy` is omitted and `deployment.canary_weight_percentage` is set, or when `telemetry.policy` is explicitly set to `aws-alb-canary`. The preset evaluates the canary's HTTP traffic against:
+
+- **Error rate threshold**: 5%
+- **P95 latency threshold**: 2000ms
+- **Warmup duration**: 3 minutes (canary service rolling-update settling time)
+- **Minimum sample count**: 10 requests (lower volume canary)
+
+Configure the canary's Prometheus selector through `telemetry.prometheus.canary_selector` or `telemetry.prometheus.canary_job` so the gate scopes to canary-only traffic.
+
+### Limitations
+
+- The backend mutates listener-rule weights in place. It assumes the rule already exists with a weighted `forward` action and both target groups attached. A rule with the wrong action type returns a sanitised state-lookup error.
+- The canary ECS service must be pre-existing and pre-attached to the canary target group; the backend does not create services or target groups.
+- The stable ECS service task definition is not changed by this backend. Operators promote the stable service through their normal CI/CD path after a `Succeeded` observation.
+- `SupportsCancellation` is `false`; in-flight deploys are settled by promotion or rollback, not cancellation.
+
+### Manual intervention scenarios
+
+- **Listener rule has no forward action**: The runtime returns a sanitised `Failed` observation; the structured log carries the underlying AWS error. Inspect the rule with `aws elbv2 describe-rules --rule-arns <arn>` and reattach a forward action with both target groups before retrying.
+- **Canary task definition fails to roll**: ECS rolling update keeps `PendingCount > 0` or `RunningCount < DesiredCount`. The reconciler keeps the operation in `Reconciling` until the service converges; investigate ECS service events with `aws ecs describe-services --cluster <cluster> --services <service>`.
+- **Rollback never drains**: The canary service is still scaled out. Either lower its desired count manually (`aws ecs update-service --desired-count 0 ...`) or wait for the next reconciliation cycle once the listener rule weights are at `canary=0`.
+
+### GitOps passthrough alternative
+
+Operators who manage ECS through an external GitOps controller can use the `honua-gitops-aws-ecs` backend instead. That backend delegates state observation to the external controller and returns `ManualInterventionRequired` for observation.
+
+### Live validation after Terraform apply
+
+The repository ships gated live-validation tests in `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/AwsEcsAlbDeployBackendLiveTests.cs`. They exercise the real `AwsSdkAlbClient` and `AwsSdkEcsClient` against an environment provisioned by Terraform. Set the following environment variables before running `dotnet test --filter FullyQualifiedName~AwsEcsAlbDeployBackendLiveTests`:
+
+| Variable | Required | Notes |
+|---|---|---|
+| `HONUA_LIVE_ECS_ALB_CLUSTER` | yes | ECS cluster name or ARN |
+| `HONUA_LIVE_ECS_ALB_CANARY_SERVICE` | yes | Canary ECS service name |
+| `HONUA_LIVE_ECS_ALB_LISTENER_RULE_ARN` | yes | ALB listener rule with weighted forward action |
+| `HONUA_LIVE_ECS_ALB_CANARY_TARGET_GROUP_ARN` | yes | Target group attached to the canary service |
+| `HONUA_LIVE_ECS_ALB_STABLE_TARGET_GROUP_ARN` | yes | Target group attached to the stable service |
+| `HONUA_LIVE_ECS_ALB_TASK_DEFINITION_ARN` | yes | Published task definition ARN to roll out |
+| `HONUA_LIVE_ECS_ALB_REGION` | no | AWS region; SDK credential-chain default used otherwise |
+| `HONUA_LIVE_ECS_ALB_TELEMETRY_CONNECTION` | no | Prometheus connection id (enables the canary plan test) |
+
+Tests skip automatically when any required variable is missing. AWS credentials are resolved through the standard AWS SDK credential chain.
+
+---
+
 ## Rollback Procedure
 
 ### Application Rollback First
