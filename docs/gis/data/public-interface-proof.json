@@ -1642,12 +1642,13 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "Admin endpoint mapping in SceneGenerationEndpoints (only registered when SceneTilesPublishExecutor is resolvable, i.e. the Postgres-backed scene profile) plus the publish-executor wiring under FeatureRegistrationExtensions; EndpointRegistry alignment for scenes/generate is tracked as deferred docs/registry follow-on",
+          "proofMechanism": "Admin endpoint mapping in SceneGenerationEndpoints (only registered when SceneTilesPublishExecutor is resolvable, i.e. the Postgres-backed scene profile), publish-executor wiring under FeatureRegistrationExtensions, and the canonical POST /api/v1/admin/scenes/generate entry in EndpointRegistry",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/Features/Admin/SceneGenerationEndpoints.cs",
             "src/Honua.Server/Features/Infrastructure/Scene/SceneTilesPublishExecutor.cs",
-            "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs"
+            "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs",
+            "src/Honua.Server/EndpointRegistry.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
