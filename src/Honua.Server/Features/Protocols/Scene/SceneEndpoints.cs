@@ -25,20 +25,6 @@ internal static partial class SceneEndpoints
 {
     private const string ScenesTag = "Scenes";
 
-    /// <summary>
-    /// Query parameter the asset endpoints accept for browser-safe access
-    /// envelope tokens. Mirrors
-    /// <see cref="BypassOutputCacheOnSceneAccessTokenPolicy.TokenQueryParameter"/>
-    /// — keep in lockstep so cache bypass and verification agree.
-    /// </summary>
-    private const string TokenQueryParameter = BypassOutputCacheOnSceneAccessTokenPolicy.TokenQueryParameter;
-
-    /// <summary>
-    /// Header the asset endpoints accept for native-client access envelope
-    /// tokens.
-    /// </summary>
-    private const string TokenHeader = BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader;
-
     public static IEndpointRouteBuilder MapSceneEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -112,10 +98,11 @@ internal static partial class SceneEndpoints
         string sceneId,
         HttpContext context,
         [FromServices] ISceneDatasetRegistry registry,
-        [FromServices] ISceneAccessEnvelopeService envelopeService,
         [FromServices] ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
+        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Scene.SceneEndpoints");
+
         if (string.IsNullOrWhiteSpace(sceneId))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Scene identifier is required.");
@@ -150,20 +137,26 @@ internal static partial class SceneEndpoints
         SceneAccessEnvelope envelope;
         try
         {
+            // Resolve the envelope service lazily inside the try block.
+            // SceneAccessEnvelopeService throws InvalidOperationException
+            // from its constructor when SigningKey is unset; routing the
+            // resolve through [FromServices] would surface that exception
+            // during parameter binding before the catch could intercept it.
+            var envelopeService = context.RequestServices
+                .GetRequiredService<ISceneAccessEnvelopeService>();
             envelope = envelopeService.Issue(scene.Id);
         }
         catch (InvalidOperationException)
         {
-            // Signing key not configured; fail closed and surface a generic
-            // problem to the client. The InvalidOperationException details
-            // would leak that signing is misconfigured — already logged via
-            // standard ASP.NET error pipeline.
+            // Signing key not configured (or hash unexpectedly failed).
+            // Log the misconfiguration so the operator can see it; return
+            // a structured 500 rather than leaking the internal message.
+            SceneAccessLog.SigningMisconfigured(logger, scene.Id);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Scene access envelope issuance is not configured.");
         }
 
-        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Scene.SceneEndpoints");
         SceneAccessLog.EnvelopeIssued(logger, scene.Id, envelope.ExpiresAt);
 
         // Tokens are short-lived credentials; never store, never share.
@@ -247,12 +240,30 @@ internal static partial class SceneEndpoints
                 // signed-envelope path before failing — Cesium browser
                 // clients cannot attach Authorization headers to nested
                 // asset fetches and rely entirely on the envelope token.
-                var rawToken = ExtractAccessToken(context);
+                var rawToken = BypassOutputCacheOnSceneAccessTokenPolicy.TryExtractToken(context);
                 if (!string.IsNullOrEmpty(rawToken))
                 {
-                    var envelopeService = context.RequestServices
-                        .GetRequiredService<ISceneAccessEnvelopeService>();
-                    var validation = envelopeService.Validate(rawToken, scene.Id);
+                    EnvelopeValidationResult validation;
+                    try
+                    {
+                        // SceneAccessEnvelopeService throws
+                        // InvalidOperationException from its constructor
+                        // when SigningKey is unset. Resolving inside this
+                        // try block keeps the misconfiguration response
+                        // structured (matches the issue endpoint) rather
+                        // than surfacing as an unhandled 500.
+                        var envelopeService = context.RequestServices
+                            .GetRequiredService<ISceneAccessEnvelopeService>();
+                        validation = envelopeService.Validate(rawToken, scene.Id);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        SceneAccessLog.SigningMisconfigured(logger, scene.Id);
+                        return StandardErrorHelpers.CreateInternalServerError(
+                            context,
+                            "Scene access envelope verification is not configured.");
+                    }
+
                     switch (validation)
                     {
                         case EnvelopeValidationResult.Allowed:
@@ -324,36 +335,6 @@ internal static partial class SceneEndpoints
             lastModified: resolved.File.LastWriteTimeUtc,
             entityTag: null,
             enableRangeProcessing: true);
-    }
-
-    private static string? ExtractAccessToken(HttpContext context)
-    {
-        // Query parameter first — primary, browser-safe transport.
-        if (context.Request.Query.TryGetValue(TokenQueryParameter, out var queryValues))
-        {
-            foreach (var value in queryValues)
-            {
-                if (!string.IsNullOrEmpty(value))
-                {
-                    return value;
-                }
-            }
-        }
-
-        // Header transport for native clients that can attach headers to
-        // nested asset fetches and prefer to keep tokens out of URLs.
-        if (context.Request.Headers.TryGetValue(TokenHeader, out var headerValues))
-        {
-            foreach (var value in headerValues)
-            {
-                if (!string.IsNullOrEmpty(value))
-                {
-                    return value;
-                }
-            }
-        }
-
-        return null;
     }
 
     private static IResult MapResolutionError(

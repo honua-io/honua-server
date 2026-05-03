@@ -10,7 +10,7 @@ namespace Honua.Server.Features.Protocols.Scene;
 /// </summary>
 internal static partial class SceneAccessLog
 {
-    [LoggerMessage(EventId = 8410, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 8410, Level = LogLevel.Information,
         Message = "Issued scene access envelope for scene {SceneId}; expires at {ExpiresAtUtc:O}")]
     public static partial void EnvelopeIssued(ILogger logger, string sceneId, DateTimeOffset expiresAtUtc);
 
@@ -29,4 +29,8 @@ internal static partial class SceneAccessLog
     [LoggerMessage(EventId = 8414, Level = LogLevel.Warning,
         Message = "Rejected scene access for scene {SceneId}: protected scene requires bearer auth or access envelope token")]
     public static partial void TokenMissing(ILogger logger, string sceneId);
+
+    [LoggerMessage(EventId = 8415, Level = LogLevel.Error,
+        Message = "Scene access envelope service is misconfigured for scene {SceneId}: signing key is unset; deployment must set Honua:SceneAccessSigning:SigningKey to use protected scenes")]
+    public static partial void SigningMisconfigured(ILogger logger, string sceneId);
 }

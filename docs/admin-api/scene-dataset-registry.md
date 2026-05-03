@@ -145,6 +145,13 @@ lean `SceneDataset` it serves:
 - `assetRoot` is canonicalized against the server content root before
   projection, so relative asset roots stored at registration survive the
   hosted asset resolver's path-containment check.
+- For protected records, browser clients (CesiumJS / WebView) authenticate
+  nested asset cascades by minting a short-lived signed access envelope at
+  `POST /scenes/{id}/access-envelope` (server slug, not `datasetId`) and
+  presenting the token via `?token=` or `X-Honua-Token`. The envelope reuses
+  the same access policy this registry projects onto `SceneDataset`, so role
+  changes here continue to gate envelope issuance. See
+  [Hosted 3D Tiles Scenes — Browser-safe access via signed envelope](../gis/scenes-3dtiles.md#browser-safe-access-via-signed-envelope).
 
 Inactive records are filtered out of `FindAsync` so deactivation immediately
 hides a dataset from the public surface. Successful register / update /

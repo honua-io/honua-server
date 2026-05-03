@@ -26,14 +26,17 @@ internal static class SceneServiceCollectionExtensions
         services.Configure<SceneDatasetOptions>(configuration.GetSection(SceneDatasetOptions.SectionName));
         services.TryAddSingleton<ISceneDatasetRegistry, ConfigurationSceneDatasetRegistry>();
 
-        // Bind scene access signing options. ValidateOnStart fails fast if
-        // the deployment ships protected scenes without a SigningKey set, so
-        // we never silently fall through to an insecure issuance mode.
-        // ValidateDataAnnotations enforces [Required] / [Range] declared on
-        // the options type. The actual signing service still throws at
-        // construction if SigningKey is empty, which is what allows the
-        // scene feature to remain functional for deployments that only
-        // serve public scenes (signing services are resolved lazily).
+        // Bind scene access signing options. ValidateOnStart() is
+        // intentionally NOT called: deployments that serve only public
+        // scenes (no AccessPolicy on any registered scene) must be able
+        // to start without a SigningKey configured. ValidateDataAnnotations
+        // enforces [Required] / [Range] lazily on the first IOptions
+        // resolve, and the SceneAccessEnvelopeService constructor is the
+        // runtime fail-closed guard — it throws InvalidOperationException
+        // if SigningKey is unset. The scene endpoints catch that at the
+        // resolve site and surface a structured 500 + log entry so a
+        // misconfigured protected-scene deployment is operationally
+        // visible without taking the rest of the server down.
         services.AddOptions<SceneAccessSigningOptions>()
             .Bind(configuration.GetSection(SceneAccessSigningOptions.SectionName))
             .ValidateDataAnnotations();

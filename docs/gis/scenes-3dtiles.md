@@ -183,7 +183,7 @@ Returns:
   "sceneId": "downtown-protected",
   "token": "eyJzIjoiZG93bnRvd24tcHJvdGVjdGVkIiwiZSI6MTcxNDc1ODQwMH0.7c4f...",
   "expiresAt": "2026-05-03T14:00:00Z",
-  "refreshAfter": "2026-05-03T13:37:30Z",
+  "refreshAfter": "2026-05-03T13:52:30Z",
   "allowedMethods": ["GET", "HEAD"]
 }
 ```

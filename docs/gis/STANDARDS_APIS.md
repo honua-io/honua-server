@@ -346,8 +346,9 @@ Terrain v1 expects registered PostGIS rasters with one numeric elevation band, o
 
 **Endpoint structure:**
 ```
-/scenes/{sceneId}/tileset.json     (GET, HEAD)
-/scenes/{sceneId}/{*assetPath}     (GET, HEAD)
+/scenes/{sceneId}/tileset.json             (GET, HEAD)
+/scenes/{sceneId}/{*assetPath}             (GET, HEAD)
+/scenes/{sceneId}/access-envelope          (POST — protected scenes only)
 ```
 
 **Output formats:** `application/json` for `tileset.json` and nested tilesets; `application/octet-stream` for `.b3dm`, `.i3dm`, `.pnts`, `.cmpt`, and `.bin`; `model/gltf-binary` for `.glb`; `model/gltf+json` for `.gltf`; canonical `image/*` types for `.png`, `.jpg`/`.jpeg`, `.webp`, `.ktx`, `.ktx2`, and `.basis`.
@@ -362,9 +363,9 @@ Terrain v1 expects registered PostGIS rasters with one numeric elevation band, o
 - Path-traversal probes return `400 Bad Request`; missing files return `404 Not Found`. `.`/`..` segments, drive-letter prefixes, UNC paths, embedded backslashes, null bytes, and percent-encoded variants are rejected before any file I/O.
 - External absolute `uri` values inside a hosted `tileset.json` are followed directly by the client and never proxied through Honua.
 - CORS reuses the shared public policy. `ETag`, `Accept-Ranges`, `Content-Length`, and `Content-Range` are already exposed, which covers Cesium's caching and range-aware streaming requirements.
-- **Browser caveat:** CesiumJS' resource loader cannot attach `Authorization` headers or session cookies to nested asset fetches. For browser-rendered protected scenes, browser-safe signed handoff is delivered separately by [honua-server-849](https://github.com/honua-io/honua-server/issues/849); server-to-server and native clients work end-to-end today.
+- **Browser-safe protected access:** CesiumJS' resource loader cannot attach `Authorization` headers or session cookies to nested asset fetches. Authorized callers can `POST /scenes/{sceneId}/access-envelope` to mint a short-lived HMAC-signed token (default TTL 15 minutes), then present it on nested requests via the `?token=` query parameter (CesiumJS automatically propagates query parameters from the root `Cesium.Resource` to all derived URLs) or, for native clients, the `X-Honua-Token` header. Token-authorized asset responses are `Cache-Control: private, max-age=…` and the server-side output cache is bypassed when `?token=` is present so cached anonymous bodies cannot be replayed across distinct tokens. Server-to-server and native bearer/API-key clients continue to work unchanged.
 
-**Limitations:** This is the foundation slice. Generating 3D Tiles from PostGIS, raster, or model sources (`honua-server-842`) and browser-safe protected nested-asset handoff (`honua-server-849`) are tracked as separate deliverables. The visual admin UI on top of the registry API is a `honua-server-admin` ticket. I3S/ArcGIS Scene Layer compatibility is on the Enterprise roadmap (`honua-server-843`).
+**Limitations:** This is the foundation slice. Generating 3D Tiles from PostGIS, raster, or model sources (`honua-server-842`) is tracked as a separate deliverable. The visual admin UI on top of the registry API is a `honua-server-admin` ticket. I3S/ArcGIS Scene Layer compatibility is on the Enterprise roadmap (`honua-server-843`). Access envelope tokens are scoped at scene granularity (one token grants access to all assets under the scene's prefix until expiry), there is no per-token revocation inside the TTL window — rotate `Honua:SceneAccessSigning:SigningKey` to invalidate all outstanding tokens immediately — and the envelope does not embed the issuing user's identity.
 
 **Typical use cases:**
 - Publishing photogrammetry or BIM-derived 3D Tiles tilesets through Honua to CesiumJS viewers
