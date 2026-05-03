@@ -38,7 +38,7 @@ an admin-request timeout. Asynchronous job tracking through a durable
 | Field | Required | Notes |
 | --- | --- | --- |
 | `layerId` | yes | Catalog id of a feature layer with a polygon, point, or linestring geometry column. |
-| `sceneId` | no | Stable URL slug. When omitted, the server derives one from the layer name + intent id. |
+| `sceneId` | no | Stable URL slug. Must match `[a-z0-9][a-z0-9-]*` (lowercased server-side). When omitted, the server derives one from the layer name + intent id. |
 | `displayName` | no | Human-readable name; defaults to the layer name. |
 | `description` | no | Optional description text. |
 | `includeAttributes` | no | Allowlist of attribute fields to project into the tileset's metadata schema. Empty means all numeric/string attributes. |
@@ -92,7 +92,9 @@ viewer.scene.primitives.add(tileset);
   flat at Z=0 with a logged warning.
 - **Attribute types**: `Integer`, `BigInteger`, `Double`, `Float`, and
   `String` are surfaced through the GLB's `EXT_structural_metadata` schema.
-  Other types are omitted from the metadata table.
+  Other types are omitted from the metadata table. `BigInteger` values
+  outside the INT32 range are clamped and a warning is added to the
+  response `warnings` array.
 
 ## Output layout
 

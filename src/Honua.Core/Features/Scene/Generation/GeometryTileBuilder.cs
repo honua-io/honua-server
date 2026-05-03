@@ -48,12 +48,14 @@ public static class GeometryTileBuilder
     /// <param name="metadataAttributes">Ordered list of attribute schema definitions to emit.</param>
     /// <param name="extrusion">Optional extrusion that converts polygons into vertical prisms.</param>
     /// <param name="generatorTag">Optional generator label (omitted when null/empty).</param>
+    /// <param name="warnings">Optional sink for non-fatal coercion warnings (e.g., int64 → int32 clamping).</param>
     /// <returns>A deterministic GLB byte sequence.</returns>
     public static byte[] BuildGlb(
         IReadOnlyList<SceneFeature> features,
         IReadOnlyList<SceneAttributeSchema> metadataAttributes,
         LayerExtrusionInfo? extrusion,
-        string? generatorTag = null)
+        string? generatorTag = null,
+        IList<string>? warnings = null)
     {
         ArgumentNullException.ThrowIfNull(features);
         ArgumentNullException.ThrowIfNull(metadataAttributes);
@@ -98,7 +100,7 @@ public static class GeometryTileBuilder
         }
 
         // 2. Build the per-feature property table buffers.
-        var propertyTable = SceneMetadataTable.Build(features, metadataAttributes);
+        var propertyTable = SceneMetadataTable.Build(features, metadataAttributes, warnings);
 
         // 3. Lay out the binary buffer: positions, feature ids, then each property column.
         var positionBytes = AsByteSpan(positions);
@@ -653,12 +655,13 @@ internal sealed class SceneMetadataTable
 
     internal static SceneMetadataTable Build(
         IReadOnlyList<SceneFeature> features,
-        IReadOnlyList<SceneAttributeSchema> attributes)
+        IReadOnlyList<SceneAttributeSchema> attributes,
+        IList<string>? warnings = null)
     {
         var columns = new List<SceneMetadataColumn>(attributes.Count);
         foreach (var attribute in attributes)
         {
-            columns.Add(SceneMetadataColumn.Build(attribute, features));
+            columns.Add(SceneMetadataColumn.Build(attribute, features, warnings));
         }
         return new SceneMetadataTable(columns);
     }
@@ -673,12 +676,15 @@ internal sealed class SceneMetadataColumn
     public byte[]? StringOffsetBytes { get; init; }
     public int? StringOffsetBufferView { get; set; }
 
-    public static SceneMetadataColumn Build(SceneAttributeSchema schema, IReadOnlyList<SceneFeature> features)
+    public static SceneMetadataColumn Build(
+        SceneAttributeSchema schema,
+        IReadOnlyList<SceneFeature> features,
+        IList<string>? warnings = null)
     {
         return schema.SchemaType switch
         {
             "SCALAR" when schema.SchemaComponentType == "FLOAT32" => BuildScalarFloat(schema, features),
-            "SCALAR" when schema.SchemaComponentType == "INT32" => BuildScalarInt32(schema, features),
+            "SCALAR" when schema.SchemaComponentType == "INT32" => BuildScalarInt32(schema, features, warnings),
             "STRING" => BuildString(schema, features),
             _ => throw new InvalidOperationException(
                 $"Unsupported attribute schema {schema.SchemaType}/{schema.SchemaComponentType}")
@@ -703,14 +709,26 @@ internal sealed class SceneMetadataColumn
         };
     }
 
-    private static SceneMetadataColumn BuildScalarInt32(SceneAttributeSchema schema, IReadOnlyList<SceneFeature> features)
+    private static SceneMetadataColumn BuildScalarInt32(
+        SceneAttributeSchema schema,
+        IReadOnlyList<SceneFeature> features,
+        IList<string>? warnings)
     {
         var bytes = new byte[features.Count * 4];
+        var clamped = 0;
         for (var i = 0; i < features.Count; i++)
         {
             features[i].Attributes.TryGetValue(schema.FieldName, out var value);
-            var v = ToInt32(value);
+            var v = ToInt32(value, ref clamped);
             BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(i * 4, 4), v);
+        }
+        if (clamped > 0 && warnings is not null)
+        {
+            warnings.Add(string.Format(
+                CultureInfo.InvariantCulture,
+                "Attribute '{0}' clamped {1} value(s) to INT32 range; widen the schema mapping if exact values are required.",
+                schema.FieldName,
+                clamped));
         }
         return new SceneMetadataColumn
         {
@@ -763,16 +781,32 @@ internal sealed class SceneMetadataColumn
         _ => 0f
     };
 
-    private static int ToInt32(object? value) => value switch
+    private static int ToInt32(object? value, ref int clampedCount)
     {
-        null => 0,
-        int i => i,
-        long l => (int)Math.Clamp(l, int.MinValue, int.MaxValue),
-        short s => s,
-        float f => (int)f,
-        double d => (int)d,
-        decimal m => (int)m,
-        string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) => v,
-        _ => 0
-    };
+        switch (value)
+        {
+            case null: return 0;
+            case int i: return i;
+            case long l:
+                if (l < int.MinValue || l > int.MaxValue)
+                {
+                    clampedCount++;
+                    return (int)Math.Clamp(l, int.MinValue, int.MaxValue);
+                }
+                return (int)l;
+            case short s: return s;
+            case float f:
+                if (f < int.MinValue || f > int.MaxValue) clampedCount++;
+                return (int)f;
+            case double d:
+                if (d < int.MinValue || d > int.MaxValue) clampedCount++;
+                return (int)d;
+            case decimal m:
+                if (m < int.MinValue || m > int.MaxValue) clampedCount++;
+                return (int)m;
+            case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v):
+                return v;
+            default: return 0;
+        }
+    }
 }

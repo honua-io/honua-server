@@ -158,23 +158,35 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             var minHeight = collected.MinHeight;
             var maxHeight = collected.MaxHeight;
 
-            if (!collected.SawAnyHeight && extrusion is null)
+            // Extrusion only affects polygon GLB output; for points and
+            // linestrings the writer keeps the source vertex Z untouched.
+            var firstKind = collected.Features[0].Geometry.Kind;
+            var extrusionAffectsGlb = extrusion is not null && firstKind == SceneGeometryKind.Polygon;
+
+            if (extrusionAffectsGlb)
+            {
+                // The GLB writer overrides vertex Z with baseHeight on the
+                // bottom face and baseHeight + extrusionHeight on the top
+                // face, so the bounding region must reflect that prism range
+                // — not the source vertex Z range — or CesiumJS may cull the
+                // tile prematurely when BaseHeightField is non-zero.
+                var extrusionMaxTop = double.NegativeInfinity;
+                var extrusionMinBase = double.PositiveInfinity;
+                foreach (var feature in collected.Features)
+                {
+                    var baseHeight = ResolveExtrusionBase(feature, extrusion!);
+                    var topZ = baseHeight + ResolveExtrusionMax(feature, extrusion!);
+                    if (topZ > extrusionMaxTop) extrusionMaxTop = topZ;
+                    if (baseHeight < extrusionMinBase) extrusionMinBase = baseHeight;
+                }
+                minHeight = extrusionMinBase;
+                maxHeight = extrusionMaxTop;
+            }
+            else if (!collected.SawAnyHeight)
             {
                 collected.Warnings.Add("Layer has no Z values and no extrusion configured; output is flat at Z=0.");
                 minHeight = 0.0;
                 maxHeight = 0.0;
-            }
-            else if (extrusion is not null)
-            {
-                var extrusionMax = collected.Features.Max(f => ResolveExtrusionMax(f, extrusion));
-                if (extrusionMax > maxHeight)
-                {
-                    maxHeight = extrusionMax;
-                }
-                if (!collected.SawAnyHeight)
-                {
-                    minHeight = 0.0;
-                }
             }
 
             if (double.IsPositiveInfinity(minHeight)) minHeight = 0.0;
@@ -192,7 +204,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 collected.Features,
                 attributeSchemas,
                 extrusion,
-                serverOptions.GeneratorTag);
+                serverOptions.GeneratorTag,
+                collected.Warnings);
 
             var tileFileName = "tile_0000.glb";
             await File.WriteAllBytesAsync(
@@ -443,8 +456,37 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             _ => extrusion.DefaultHeight ?? 0.0
         };
 
-        VerticalUnits.TryNormalize(extrusion.Unit, out var unit);
-        return unit switch
+        return ConvertVerticalToMeters(value, extrusion.Unit);
+    }
+
+    private static double ResolveExtrusionBase(SceneFeature feature, LayerExtrusionInfo extrusion)
+    {
+        if (string.IsNullOrEmpty(extrusion.BaseHeightField))
+        {
+            return 0.0;
+        }
+        if (!feature.Attributes.TryGetValue(extrusion.BaseHeightField, out var raw) || raw is null)
+        {
+            return 0.0;
+        }
+        var value = raw switch
+        {
+            double d => d,
+            float f => f,
+            int i => i,
+            long l => l,
+            short s => s,
+            decimal m => (double)m,
+            string s when double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) => v,
+            _ => 0.0
+        };
+        return ConvertVerticalToMeters(value, extrusion.Unit);
+    }
+
+    private static double ConvertVerticalToMeters(double value, string? unit)
+    {
+        VerticalUnits.TryNormalize(unit, out var normalized);
+        return normalized switch
         {
             VerticalUnits.Feet => value * 0.3048,
             VerticalUnits.UsSurveyFeet => value * (1200.0 / 3937.0),
@@ -457,7 +499,13 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         var explicitId = TryGetTargetConfig(intent, TargetConfigSceneId);
         if (!string.IsNullOrEmpty(explicitId))
         {
-            return explicitId.ToLowerInvariant();
+            var normalized = explicitId.ToLowerInvariant();
+            if (!IsSafeSceneId(normalized))
+            {
+                throw new ValidationException(
+                    $"{SceneGenerationErrorCodes.OptionsInvalid}: sceneId must match [a-z0-9][a-z0-9-]* and contain no path separators.");
+            }
+            return normalized;
         }
 
         var slug = SlugifyName(layer.Name);
@@ -465,6 +513,28 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             ? intent.IntentId[..8]
             : intent.IntentId;
         return $"{slug}-{suffix}".ToLowerInvariant();
+    }
+
+    private static bool IsSafeSceneId(string sceneId)
+    {
+        if (string.IsNullOrEmpty(sceneId))
+        {
+            return false;
+        }
+        var first = sceneId[0];
+        if (!(char.IsAsciiLetterLower(first) || char.IsAsciiDigit(first)))
+        {
+            return false;
+        }
+        for (var i = 1; i < sceneId.Length; i++)
+        {
+            var c = sceneId[i];
+            if (!(char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-'))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static string ResolveDisplayName(PublishIntent intent, LayerDefinition layer)

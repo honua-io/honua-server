@@ -88,7 +88,7 @@ internal static partial class SceneGenerationEndpoints
         try
         {
             var outcome = await executor.RunDirectAsync(intent, cancellationToken).ConfigureAwait(false);
-            await InvalidateSceneCacheAsync(context, outcome.Result.SceneId, cancellationToken).ConfigureAwait(false);
+            await InvalidateSceneCacheAsync(context, outcome.Result.SceneId, logger, cancellationToken).ConfigureAwait(false);
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var tilesetUrl = string.Concat(
@@ -204,7 +204,11 @@ internal static partial class SceneGenerationEndpoints
         return (StatusCodes.Status400BadRequest, message);
     }
 
-    private static async Task InvalidateSceneCacheAsync(HttpContext context, string sceneId, CancellationToken cancellationToken)
+    private static async Task InvalidateSceneCacheAsync(
+        HttpContext context,
+        string sceneId,
+        ILogger logger,
+        CancellationToken cancellationToken)
     {
         var invalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
         if (invalidator is null)
@@ -215,11 +219,13 @@ internal static partial class SceneGenerationEndpoints
         {
             await invalidator.InvalidateSceneAsync(sceneId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Cache invalidation failures must not surface to the caller — the
             // generated scene is still valid, the next request will simply
-            // serve from disk via the registry lookup.
+            // serve from disk via the registry lookup. We log so that systematic
+            // failures are visible rather than silently producing stale reads.
+            SceneGenerationEndpointsLog.CacheInvalidationFailed(logger, sceneId, ex);
         }
     }
 
@@ -245,5 +251,9 @@ internal static partial class SceneGenerationEndpoints
         [LoggerMessage(EventId = 8423, Level = LogLevel.Error,
             Message = "Scene generation request failed: intent {IntentId}")]
         public static partial void OperationFailed(ILogger logger, string intentId, Exception exception);
+
+        [LoggerMessage(EventId = 8424, Level = LogLevel.Warning,
+            Message = "Scene cache invalidation failed for scene {SceneId}; subsequent reads may serve stale content until cache expires.")]
+        public static partial void CacheInvalidationFailed(ILogger logger, string sceneId, Exception exception);
     }
 }

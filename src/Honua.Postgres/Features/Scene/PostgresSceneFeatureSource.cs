@@ -70,19 +70,19 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
                 .Append(QuoteIdentifier($"a_{field.Name}"));
         }
 
+        var sql = $"""
+            SELECT {selectColumns}
+            FROM {qualifiedTable}
+            WHERE {quotedKey} > @last_key
+            ORDER BY {quotedKey} ASC
+            LIMIT {PageSize}
+            """;
+
         var lastKey = long.MinValue;
         var hasMore = true;
 
         while (hasMore && !cancellationToken.IsCancellationRequested)
         {
-            var sql = $"""
-                SELECT {selectColumns}
-                FROM {qualifiedTable}
-                WHERE {quotedKey} > @last_key
-                ORDER BY {quotedKey} ASC
-                LIMIT {PageSize}
-                """;
-
             var batch = await ReadBatchAsync(sql, lastKey, attributeFields, cancellationToken).ConfigureAwait(false);
             if (batch.Count == 0)
             {

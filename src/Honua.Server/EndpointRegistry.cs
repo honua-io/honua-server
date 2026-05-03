@@ -390,6 +390,9 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/scenes/{id}"),
         new("GET", "/api/v1/admin/scenes/{id}/resolve"),
 
+        // 3D Tiles generation admin endpoint (#842).
+        new("POST", "/api/v1/admin/scenes/generate"),
+
         new("GET", "/elevation/{datasetId}/value"),
         new("GET", "/elevation/{datasetId}/profile"),
 

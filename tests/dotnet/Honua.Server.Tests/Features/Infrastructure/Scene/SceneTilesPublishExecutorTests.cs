@@ -211,6 +211,90 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         ex.And.Message.Should().Contain("id 'duplicate-scene' or name");
     }
 
+    [UnitTest]
+    public async Task Execute_RejectsSceneIdWithPathTraversal()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: "../etc/escape"), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+        Directory.Exists(_outputRoot).Should().BeFalse(
+            "validation must reject before any directory is created.");
+    }
+
+    [UnitTest]
+    public async Task Execute_BoundingRegionMaxHeight_AccountsForBaseHeightField()
+    {
+        _catalog.Layer = BuildLayer(extrusion: new LayerExtrusionInfo
+        {
+            HeightField = "height",
+            BaseHeightField = "base",
+            Unit = VerticalUnits.Meters
+        });
+        _featureSource.Features = SamplePolygons(baseHeight: 100.0);
+
+        var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+
+        var tile = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tile_0000.glb"));
+        var json = ExtractJsonChunk(tile);
+        using var doc = JsonDocument.Parse(json);
+        // GLB Z bounds reflect baseHeight + extrusionHeight in ECEF space.
+        var positionAccessor = doc.RootElement.GetProperty("accessors")[0];
+        var maxZ = positionAccessor.GetProperty("max")[2].GetDouble();
+        var minZ = positionAccessor.GetProperty("min")[2].GetDouble();
+        (maxZ - minZ).Should().BeGreaterThan(50.0,
+            "the prism spans baseHeight=100 to baseHeight+max(height)=150");
+
+        // Tileset.json bounding region heights are read from disk and must
+        // include the 100m base offset; without the fix the max height would
+        // be just the extrusion height (max ~50m) and ignore the 100m base.
+        var tilesetJson = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tileset.json"));
+        using var tilesetDoc = JsonDocument.Parse(tilesetJson);
+        var region = tilesetDoc.RootElement.GetProperty("root").GetProperty("boundingVolume").GetProperty("region");
+        var minHeightMeters = region[4].GetDouble();
+        var maxHeightMeters = region[5].GetDouble();
+        minHeightMeters.Should().BeApproximately(100.0, 0.001);
+        maxHeightMeters.Should().BeApproximately(150.0, 0.001);
+    }
+
+    [UnitTest]
+    public async Task Execute_BigIntegerClampedValues_EmitWarning()
+    {
+        var fields = new[]
+        {
+            new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
+            new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
+            new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
+            new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true),
+            new FieldDefinition("big_id", FieldType.BigInteger, Length: null, Nullable: true)
+        };
+        _catalog.Layer = new LayerDefinition(
+            LayerId, "Buildings", null, GeometryType.Polygon,
+            SpatialReference.Create(4326, 4326), fields);
+
+        var basePolygons = SamplePolygons();
+        var bigValues = new long[] { (long)int.MaxValue + 100L, (long)int.MinValue - 100L };
+        var withBigId = new List<SceneFeature>(basePolygons.Count);
+        for (var i = 0; i < basePolygons.Count; i++)
+        {
+            var attrs = new Dictionary<string, object?>(basePolygons[i].Attributes, StringComparer.Ordinal)
+            {
+                ["big_id"] = bigValues[i]
+            };
+            withBigId.Add(basePolygons[i] with { Attributes = attrs });
+        }
+        _featureSource.Features = withBigId;
+
+        var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+
+        outcome.Result.Warnings.Should().Contain(w =>
+            w.Contains("big_id", StringComparison.Ordinal)
+            && w.Contains("clamped", StringComparison.Ordinal));
+    }
+
     private LayerDefinition BuildLayer(
         SpatialReference? spatialReference = null,
         LayerExtrusionInfo? extrusion = null)
@@ -233,7 +317,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             Metadata: extrusion is null ? null : new CatalogMetadata { Extrusion = extrusion });
     }
 
-    private static List<SceneFeature> SamplePolygons()
+    private static List<SceneFeature> SamplePolygons(double? baseHeight = null)
     {
         var ringA = new[]
         {
@@ -251,27 +335,34 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             new SceneVertex(-122.49, 37.79, 0),
             new SceneVertex(-122.49, 37.71, 0)
         };
+        var attrsA = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["name"] = "alpha",
+            ["height"] = 25
+        };
+        var attrsB = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["name"] = "beta",
+            ["height"] = 50
+        };
+        if (baseHeight is { } b)
+        {
+            attrsA["base"] = b;
+            attrsB["base"] = b;
+        }
         return new List<SceneFeature>
         {
             new()
             {
                 Id = 1,
                 Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = ringA },
-                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["name"] = "alpha",
-                    ["height"] = 25
-                }
+                Attributes = attrsA
             },
             new()
             {
                 Id = 2,
                 Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = ringB },
-                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["name"] = "beta",
-                    ["height"] = 50
-                }
+                Attributes = attrsB
             }
         };
     }
