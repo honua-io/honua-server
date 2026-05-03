@@ -166,7 +166,7 @@ internal static partial class SceneEndpoints
         }
 
         var etag = ComputeETag(resolved.File);
-        SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected);
+        SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected, scene.CachePolicy);
 
         var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
         if (!string.IsNullOrEmpty(ifNoneMatch) && IfNoneMatchMatches(ifNoneMatch, etag))
@@ -217,11 +217,20 @@ internal static partial class SceneEndpoints
     private static string ComputeETag(FileInfo file)
         => $"\"{file.LastWriteTimeUtc.Ticks:X16}-{file.Length:X16}\"";
 
-    private static void SetCacheHeaders(HttpContext context, string etag, FileInfo file, TimeSpan maxAge, bool isProtected)
+    private static void SetCacheHeaders(HttpContext context, string etag, FileInfo file, TimeSpan maxAge, bool isProtected, SceneCachePolicy? scenePolicy)
     {
         var headers = context.Response.Headers;
         headers[HeaderNames.ETag] = etag;
         headers[HeaderNames.LastModified] = file.LastWriteTimeUtc.ToString("R");
+
+        // A registered scene may pin its own cache policy (e.g. shorter
+        // max-age for previews, no-store for rotated debug datasets); honor
+        // that over the global default. Otherwise fall back to the configured
+        // OutputCacheTtlOptions value.
+        var maxAgeSeconds = scenePolicy is { } policy
+            ? Math.Clamp(policy.MaxAgeSeconds, 0, int.MaxValue)
+            : (int)Math.Max(0, maxAge.TotalSeconds);
+        var noStore = scenePolicy?.NoStore == true;
 
         // Protected scenes go through the dataset access policy on every
         // request. `Cache-Control: public` would let a shared cache (CDN,
@@ -231,8 +240,15 @@ internal static partial class SceneEndpoints
         // disables storage for authenticated requests via
         // `AnonymousOnlyOutputCachePolicy`, but the response headers must be
         // correct for downstream caches that Honua does not control.
-        var maxAgeSeconds = (int)Math.Max(0, maxAge.TotalSeconds);
-        if (isProtected)
+        if (noStore)
+        {
+            headers[HeaderNames.CacheControl] = "no-store";
+            if (isProtected)
+            {
+                headers[HeaderNames.Vary] = "Authorization";
+            }
+        }
+        else if (isProtected)
         {
             headers[HeaderNames.CacheControl] = $"private, max-age={maxAgeSeconds}";
             headers[HeaderNames.Vary] = "Authorization";

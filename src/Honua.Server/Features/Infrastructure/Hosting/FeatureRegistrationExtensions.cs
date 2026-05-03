@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Postgres.Features.Scene;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Alerts;
 using Honua.Server.Features.Protocols.Cog;
@@ -75,6 +76,7 @@ internal static class FeatureRegistrationExtensions
         services.AddStaticMap();
         services.AddTerrain();
         services.AddScene(configuration);
+        services.AddPostgresSceneRegistry(configuration);
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
         services.AddAnalysisReporting(configuration);
@@ -113,6 +115,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapTileJsonEndpoints();
         endpoints.MapTerrainEndpoints();
         endpoints.MapSceneEndpoints();
+        endpoints.MapSceneDatasetEndpoints();
         endpoints.MapPMTilesProxyEndpoints();
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcCoveragesEndpoints();

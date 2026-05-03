@@ -379,6 +379,14 @@ public static class EndpointRegistry
         new("HEAD", "/scenes/{sceneId}/tileset.json"),
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
+
+        // Scene dataset registry admin endpoints (#844).
+        new("GET", "/api/v1/admin/scenes"),
+        new("POST", "/api/v1/admin/scenes"),
+        new("GET", "/api/v1/admin/scenes/{id}"),
+        new("PUT", "/api/v1/admin/scenes/{id}"),
+        new("DELETE", "/api/v1/admin/scenes/{id}"),
+        new("GET", "/api/v1/admin/scenes/{id}/resolve"),
         new("GET", "/api/styles/{layerId}.json"),
 
         // Durable PMTiles publish range proxy (#845).

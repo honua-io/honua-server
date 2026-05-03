@@ -35,8 +35,7 @@ ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
 # SC2086 suppression rationale: EXTRA_MSBUILD_ARGS holds multiple MSBuild flags that must
 # word-split into separate `-p:` arguments. Quoting collapses them into a single (invalid) argument.
 # hadolint ignore=SC2086
-RUN --mount=type=cache,target=/root/.nuget/packages \
-    --mount=type=secret,id=github_actor \
+RUN --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
         amd64) RUNTIME_ID="linux-musl-x64" ;; \
@@ -59,8 +58,7 @@ COPY . .
 # word-split into separate `-p:` arguments. Quoting collapses them into a single (invalid) argument.
 ARG CONFIGURATION=Release
 # hadolint ignore=SC2086
-RUN --mount=type=cache,target=/root/.nuget/packages \
-    case "${TARGETARCH:-amd64}" in \
+RUN case "${TARGETARCH:-amd64}" in \
         amd64) RUNTIME_ID="linux-musl-x64" ;; \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \

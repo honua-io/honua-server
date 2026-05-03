@@ -53,4 +53,10 @@ public sealed record SceneDataset
     /// and asset requests. Public scenes leave this null.
     /// </summary>
     public CatalogMetadata? Metadata { get; init; }
+
+    /// <summary>
+    /// Per-dataset cache directives surfaced to clients and shared caches.
+    /// Null when the registry leaves serving caching to the global default.
+    /// </summary>
+    public SceneCachePolicy? CachePolicy { get; init; }
 }

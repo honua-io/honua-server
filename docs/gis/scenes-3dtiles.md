@@ -23,11 +23,17 @@ they do for layer ids on other Honua endpoints. CesiumJS resolves nested
 `./tiles/0/0/0.b3dm` inside the document maps directly to
 `/scenes/{sceneId}/tiles/0/0/0.b3dm`.
 
-## Configuration
+## Registration
 
-Scenes are registered in the `Scenes` configuration section. The initial
-implementation is configuration-driven; a database-backed registry will replace
-this surface in a follow-up issue without changing the URL contract.
+Scenes are registered through the [scene dataset registry admin API](../admin-api/scene-dataset-registry.md)
+introduced in #844. The hosted serving routes resolve a dataset by its
+URL slug via `ISceneDatasetRegistry.FindAsync`; the Postgres-backed
+implementation behind that interface projects each record to the lean
+`SceneDataset` shape served below.
+
+The original `Scenes` configuration section remains in the codebase for
+local-dev/test scenarios where Postgres is not available. In production it
+is replaced at runtime by the registry; mixing both should be avoided.
 
 ```json
 {
@@ -121,6 +127,19 @@ The default TTLs are:
 | --- | --- | --- |
 | `tileset.json` metadata | 10 minutes | `OutputCache:SceneTilesetMetadata` |
 | Tile / binary / texture asset | 1 hour | `OutputCache:SceneTileAsset` |
+
+Datasets registered through the [scene dataset registry](../admin-api/scene-dataset-registry.md)
+can override these defaults per-scene via `cachePolicy`. `maxAgeSeconds`
+replaces the configured default for the matching response, and
+`noStore = true` emits `Cache-Control: no-store` (plus `Vary: Authorization`
+on protected scenes) regardless of the global TTL — useful for rotated
+debug datasets or short-lived previews. When the response carries
+`Cache-Control: no-store` the scene output-cache policies also suppress
+server-side cache storage so a no-store body cannot be replayed on
+subsequent requests until the configured TTL expires. The
+configuration-driven `Scenes` fallback does not carry a per-dataset cache
+policy, so those datasets always serve at the configured `OutputCache`
+defaults.
 
 ETags are deterministic per file — formatted as quoted
 `"<lastWriteUtcTicks-hex>-<lengthBytes-hex>"` — so cached responses survive

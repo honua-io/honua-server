@@ -35,6 +35,7 @@ internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
         AddTag(context, routeValues, "serviceId", "service");
         AddTag(context, routeValues, "layerId", "layer");
         AddTag(context, routeValues, "collectionId", "collection");
+        AddTag(context, routeValues, "sceneId", "scene");
     }
 
     private static void AddTag(OutputCacheContext context, RouteValueDictionary routeValues, string routeKey, string tagPrefix)
