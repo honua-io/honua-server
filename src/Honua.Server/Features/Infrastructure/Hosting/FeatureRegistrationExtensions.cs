@@ -3,6 +3,7 @@
 
 using Honua.Postgres.Features.Scene;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Infrastructure.Scene;
 using Honua.Server.Features.Alerts;
 using Honua.Server.Features.Protocols.Cog;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
@@ -79,6 +80,7 @@ internal static class FeatureRegistrationExtensions
         services.AddScene(configuration);
         services.AddPostgresSceneRegistry(configuration);
         services.AddElevation();
+        services.AddSceneGeneration(configuration);
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
         services.AddAnalysisReporting(configuration);
@@ -119,6 +121,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapSceneEndpoints();
         endpoints.MapSceneDatasetEndpoints();
         endpoints.MapElevationEndpoints();
+        endpoints.MapSceneGenerationEndpoints();
         endpoints.MapPMTilesProxyEndpoints();
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcCoveragesEndpoints();

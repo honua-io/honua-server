@@ -1,0 +1,778 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Buffers.Binary;
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Scene.Domain;
+
+namespace Honua.Core.Features.Scene.Generation;
+
+/// <summary>
+/// Produces a deterministic GLB (binary glTF 2.0) blob containing the
+/// projected geometry and per-feature attribute metadata for one tile of
+/// the v1 3D Tiles generation pipeline.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The writer materializes a single mesh primitive whose mode is dictated by
+/// the homogeneous geometry kind of the input features (POINTS for points,
+/// LINES for line strings, TRIANGLES for polygons / extruded prisms). Vertex
+/// positions are encoded in ECEF meters (EPSG:4978) so CesiumJS can place the
+/// geometry on the ellipsoid without further client-side transforms.
+/// </para>
+/// <para>
+/// Per-vertex feature ids and the per-feature attribute table are emitted
+/// through the <c>EXT_mesh_features</c> and <c>EXT_structural_metadata</c>
+/// glTF extensions so identify flows can attribute hits back to the source
+/// feature row. The metadata table is serialized in a stable column order
+/// (input order), which combined with deterministic vertex traversal gives
+/// byte-identical output across runs against the same source data.
+/// </para>
+/// </remarks>
+public static class GeometryTileBuilder
+{
+    private const int GlbHeaderLength = 12;
+    private const int ChunkHeaderLength = 8;
+    private const uint GlbMagic = 0x46546C67; // "glTF"
+    private const uint GlbVersion = 2;
+    private const uint JsonChunkType = 0x4E4F534A; // "JSON"
+    private const uint BinChunkType = 0x004E4942; // "BIN\0"
+
+    /// <summary>
+    /// Builds a single-primitive GLB tile from the supplied features.
+    /// </summary>
+    /// <param name="features">Ordered, homogeneous-geometry features. Must be non-empty.</param>
+    /// <param name="metadataAttributes">Ordered list of attribute schema definitions to emit.</param>
+    /// <param name="extrusion">Optional extrusion that converts polygons into vertical prisms.</param>
+    /// <param name="generatorTag">Optional generator label (omitted when null/empty).</param>
+    /// <returns>A deterministic GLB byte sequence.</returns>
+    public static byte[] BuildGlb(
+        IReadOnlyList<SceneFeature> features,
+        IReadOnlyList<SceneAttributeSchema> metadataAttributes,
+        LayerExtrusionInfo? extrusion,
+        string? generatorTag = null)
+    {
+        ArgumentNullException.ThrowIfNull(features);
+        ArgumentNullException.ThrowIfNull(metadataAttributes);
+
+        if (features.Count == 0)
+        {
+            throw new ArgumentException("At least one feature is required to build a tile.", nameof(features));
+        }
+
+        var kind = features[0].Geometry.Kind;
+        for (var i = 1; i < features.Count; i++)
+        {
+            if (features[i].Geometry.Kind != kind)
+            {
+                throw new ArgumentException(
+                    "All features in a tile must share the same geometry kind.",
+                    nameof(features));
+            }
+        }
+
+        // 1. Build geometry buffers (positions + per-vertex feature ids).
+        var positions = new List<float>(features.Count * 8);
+        var featureIds = new List<float>(features.Count * 8);
+        var primitiveMode = kind switch
+        {
+            SceneGeometryKind.Point => 0, // POINTS
+            SceneGeometryKind.LineString => 1, // LINES
+            SceneGeometryKind.Polygon => 4, // TRIANGLES
+            _ => throw new InvalidOperationException(
+                $"Unsupported scene geometry kind '{kind}'.")
+        };
+
+        for (var i = 0; i < features.Count; i++)
+        {
+            AppendFeature(features[i], (float)i, kind, extrusion, positions, featureIds);
+        }
+
+        var vertexCount = positions.Count / 3;
+        if (vertexCount == 0)
+        {
+            throw new InvalidOperationException("No vertices produced for tile.");
+        }
+
+        // 2. Build the per-feature property table buffers.
+        var propertyTable = SceneMetadataTable.Build(features, metadataAttributes);
+
+        // 3. Lay out the binary buffer: positions, feature ids, then each property column.
+        var positionBytes = AsByteSpan(positions);
+        var featureIdBytes = AsByteSpan(featureIds);
+
+        var bufferViews = new List<BufferViewDescriptor>(2 + propertyTable.Columns.Count);
+        var binaryWriter = new BinaryBufferBuilder();
+
+        var positionView = binaryWriter.Append(positionBytes);
+        bufferViews.Add(new BufferViewDescriptor(positionView, BufferViewTarget.ArrayBuffer));
+
+        var featureIdView = binaryWriter.Append(featureIdBytes);
+        bufferViews.Add(new BufferViewDescriptor(featureIdView, BufferViewTarget.ArrayBuffer));
+
+        var propertyViewIndices = new int[propertyTable.Columns.Count];
+        for (var i = 0; i < propertyTable.Columns.Count; i++)
+        {
+            var view = binaryWriter.Append(propertyTable.Columns[i].Bytes);
+            propertyViewIndices[i] = bufferViews.Count;
+            bufferViews.Add(new BufferViewDescriptor(view, BufferViewTarget.None));
+
+            if (propertyTable.Columns[i].StringOffsetBytes is { } offsetBytes)
+            {
+                var offsetView = binaryWriter.Append(offsetBytes);
+                propertyTable.Columns[i].StringOffsetBufferView = bufferViews.Count;
+                bufferViews.Add(new BufferViewDescriptor(offsetView, BufferViewTarget.None));
+            }
+        }
+
+        var binaryPayload = binaryWriter.GetPayloadWithPadding();
+
+        // 4. Compose JSON document.
+        var jsonBytes = BuildJsonChunk(
+            primitiveMode,
+            vertexCount,
+            positions,
+            bufferViews,
+            positionViewIndex: 0,
+            featureIdViewIndex: 1,
+            featureCount: features.Count,
+            propertyTable,
+            propertyViewIndices,
+            binaryPayload.Length,
+            generatorTag);
+
+        var paddedJson = PadJsonToFourBytes(jsonBytes);
+
+        // 5. Assemble GLB.
+        var totalLength = GlbHeaderLength
+            + ChunkHeaderLength + paddedJson.Length
+            + ChunkHeaderLength + binaryPayload.Length;
+
+        var glb = new byte[totalLength];
+        BinaryPrimitives.WriteUInt32LittleEndian(glb.AsSpan(0, 4), GlbMagic);
+        BinaryPrimitives.WriteUInt32LittleEndian(glb.AsSpan(4, 4), GlbVersion);
+        BinaryPrimitives.WriteUInt32LittleEndian(glb.AsSpan(8, 4), (uint)totalLength);
+
+        var offset = GlbHeaderLength;
+        BinaryPrimitives.WriteUInt32LittleEndian(glb.AsSpan(offset, 4), (uint)paddedJson.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(glb.AsSpan(offset + 4, 4), JsonChunkType);
+        offset += ChunkHeaderLength;
+        paddedJson.CopyTo(glb.AsSpan(offset, paddedJson.Length));
+        offset += paddedJson.Length;
+
+        BinaryPrimitives.WriteUInt32LittleEndian(glb.AsSpan(offset, 4), (uint)binaryPayload.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(glb.AsSpan(offset + 4, 4), BinChunkType);
+        offset += ChunkHeaderLength;
+        binaryPayload.CopyTo(glb.AsSpan(offset, binaryPayload.Length));
+
+        return glb;
+    }
+
+    private static void AppendFeature(
+        SceneFeature feature,
+        float featureIndex,
+        SceneGeometryKind kind,
+        LayerExtrusionInfo? extrusion,
+        List<float> positions,
+        List<float> featureIds)
+    {
+        var vertices = feature.Geometry.Vertices;
+        switch (kind)
+        {
+            case SceneGeometryKind.Point:
+                if (vertices.Count == 0)
+                {
+                    return;
+                }
+
+                AppendVertex(vertices[0], heightOverride: null, positions, featureIds, featureIndex);
+                break;
+
+            case SceneGeometryKind.LineString:
+                for (var i = 0; i < vertices.Count - 1; i++)
+                {
+                    AppendVertex(vertices[i], heightOverride: null, positions, featureIds, featureIndex);
+                    AppendVertex(vertices[i + 1], heightOverride: null, positions, featureIds, featureIndex);
+                }
+                break;
+
+            case SceneGeometryKind.Polygon:
+                AppendPolygonTriangles(feature, featureIndex, extrusion, positions, featureIds);
+                break;
+        }
+    }
+
+    private static void AppendVertex(
+        SceneVertex vertex,
+        double? heightOverride,
+        List<float> positions,
+        List<float> featureIds,
+        float featureIndex)
+    {
+        var height = heightOverride ?? vertex.Height ?? 0.0;
+        var (x, y, z) = EcefCoordinateTransform.ToEcef(vertex.Longitude, vertex.Latitude, height);
+        positions.Add((float)x);
+        positions.Add((float)y);
+        positions.Add((float)z);
+        featureIds.Add(featureIndex);
+    }
+
+    private static void AppendPolygonTriangles(
+        SceneFeature feature,
+        float featureIndex,
+        LayerExtrusionInfo? extrusion,
+        List<float> positions,
+        List<float> featureIds)
+    {
+        var ring = feature.Geometry.Vertices;
+        if (ring.Count < 3)
+        {
+            return;
+        }
+
+        // v1 uses a fan triangulation rooted at the first vertex; correct for
+        // convex rings and deterministic for non-convex inputs (rendering may
+        // be visually imperfect — documented limitation).
+        var ringCount = ring.Count;
+        // If the ring is closed (first == last), drop the duplicate.
+        if (ring[0].Longitude == ring[ringCount - 1].Longitude
+            && ring[0].Latitude == ring[ringCount - 1].Latitude
+            && (ring[0].Height ?? 0.0) == (ring[ringCount - 1].Height ?? 0.0))
+        {
+            ringCount--;
+        }
+        if (ringCount < 3)
+        {
+            return;
+        }
+
+        var hasExtrusion = extrusion is not null;
+        var topHeight = hasExtrusion
+            ? ResolveExtrusionHeight(feature, extrusion!)
+            : 0.0;
+
+        if (!hasExtrusion)
+        {
+            // Flat polygon: triangulate top face only with feature vertices' Z.
+            for (var i = 1; i < ringCount - 1; i++)
+            {
+                AppendVertex(ring[0], heightOverride: null, positions, featureIds, featureIndex);
+                AppendVertex(ring[i], heightOverride: null, positions, featureIds, featureIndex);
+                AppendVertex(ring[i + 1], heightOverride: null, positions, featureIds, featureIndex);
+            }
+            return;
+        }
+
+        // Extruded prism: top face, bottom face (reversed winding), and walls.
+        var baseHeight = ResolveBaseHeight(feature, extrusion!);
+        var topZ = baseHeight + topHeight;
+
+        for (var i = 1; i < ringCount - 1; i++)
+        {
+            AppendVertex(ring[0], topZ, positions, featureIds, featureIndex);
+            AppendVertex(ring[i], topZ, positions, featureIds, featureIndex);
+            AppendVertex(ring[i + 1], topZ, positions, featureIds, featureIndex);
+        }
+        for (var i = 1; i < ringCount - 1; i++)
+        {
+            AppendVertex(ring[0], baseHeight, positions, featureIds, featureIndex);
+            AppendVertex(ring[i + 1], baseHeight, positions, featureIds, featureIndex);
+            AppendVertex(ring[i], baseHeight, positions, featureIds, featureIndex);
+        }
+        for (var i = 0; i < ringCount; i++)
+        {
+            var current = ring[i];
+            var next = ring[(i + 1) % ringCount];
+            AppendVertex(current, baseHeight, positions, featureIds, featureIndex);
+            AppendVertex(next, baseHeight, positions, featureIds, featureIndex);
+            AppendVertex(next, topZ, positions, featureIds, featureIndex);
+
+            AppendVertex(current, baseHeight, positions, featureIds, featureIndex);
+            AppendVertex(next, topZ, positions, featureIds, featureIndex);
+            AppendVertex(current, topZ, positions, featureIds, featureIndex);
+        }
+    }
+
+    private static double ResolveExtrusionHeight(SceneFeature feature, LayerExtrusionInfo extrusion)
+    {
+        var raw = LookupNumericAttribute(feature, extrusion.HeightField) ?? extrusion.DefaultHeight ?? 0.0;
+        return ConvertVerticalToMeters(raw, extrusion.Unit);
+    }
+
+    private static double ResolveBaseHeight(SceneFeature feature, LayerExtrusionInfo extrusion)
+    {
+        if (string.IsNullOrEmpty(extrusion.BaseHeightField))
+        {
+            return 0.0;
+        }
+
+        var raw = LookupNumericAttribute(feature, extrusion.BaseHeightField) ?? 0.0;
+        return ConvertVerticalToMeters(raw, extrusion.Unit);
+    }
+
+    private static double? LookupNumericAttribute(SceneFeature feature, string fieldName)
+    {
+        if (!feature.Attributes.TryGetValue(fieldName, out var raw) || raw is null)
+        {
+            return null;
+        }
+
+        return raw switch
+        {
+            double d => d,
+            float f => f,
+            int i => i,
+            long l => l,
+            short s => s,
+            decimal m => (double)m,
+            string s when double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) => v,
+            _ => null
+        };
+    }
+
+    private static double ConvertVerticalToMeters(double value, string? unit)
+    {
+        VerticalUnits.TryNormalize(unit, out var normalized);
+        return normalized switch
+        {
+            VerticalUnits.Feet => value * 0.3048,
+            VerticalUnits.UsSurveyFeet => value * (1200.0 / 3937.0),
+            _ => value
+        };
+    }
+
+    private static byte[] AsByteSpan(List<float> values)
+    {
+        var bytes = new byte[values.Count * 4];
+        for (var i = 0; i < values.Count; i++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(i * 4, 4), values[i]);
+        }
+        return bytes;
+    }
+
+    private static byte[] PadJsonToFourBytes(byte[] json)
+    {
+        var padding = (4 - (json.Length & 3)) & 3;
+        if (padding == 0)
+        {
+            return json;
+        }
+        var padded = new byte[json.Length + padding];
+        json.CopyTo(padded, 0);
+        for (var i = 0; i < padding; i++)
+        {
+            padded[json.Length + i] = 0x20;
+        }
+        return padded;
+    }
+
+    private static byte[] BuildJsonChunk(
+        int primitiveMode,
+        int vertexCount,
+        List<float> positions,
+        List<BufferViewDescriptor> bufferViews,
+        int positionViewIndex,
+        int featureIdViewIndex,
+        int featureCount,
+        SceneMetadataTable propertyTable,
+        int[] propertyViewIndices,
+        int totalBinaryLength,
+        string? generatorTag)
+    {
+        var (minX, minY, minZ, maxX, maxY, maxZ) = ComputePositionBounds(positions);
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false, SkipValidation = true }))
+        {
+            writer.WriteStartObject();
+
+            writer.WritePropertyName("asset");
+            writer.WriteStartObject();
+            writer.WriteString("version", "2.0");
+            if (!string.IsNullOrEmpty(generatorTag))
+            {
+                writer.WriteString("generator", generatorTag);
+            }
+            writer.WriteEndObject();
+
+            writer.WriteStartArray("extensionsUsed");
+            writer.WriteStringValue("EXT_mesh_features");
+            writer.WriteStringValue("EXT_structural_metadata");
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("scenes");
+            writer.WriteStartObject();
+            writer.WriteStartArray("nodes");
+            writer.WriteNumberValue(0);
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+
+            writer.WriteNumber("scene", 0);
+
+            writer.WriteStartArray("nodes");
+            writer.WriteStartObject();
+            writer.WriteNumber("mesh", 0);
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("meshes");
+            writer.WriteStartObject();
+            writer.WriteStartArray("primitives");
+            writer.WriteStartObject();
+
+            writer.WriteStartObject("attributes");
+            writer.WriteNumber("POSITION", 0);
+            writer.WriteNumber("_FEATURE_ID_0", 1);
+            writer.WriteEndObject();
+
+            writer.WriteNumber("mode", primitiveMode);
+
+            writer.WriteStartObject("extensions");
+            writer.WriteStartObject("EXT_mesh_features");
+            writer.WriteStartArray("featureIds");
+            writer.WriteStartObject();
+            writer.WriteNumber("featureCount", featureCount);
+            writer.WriteNumber("attribute", 0);
+            writer.WriteNumber("propertyTable", 0);
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("accessors");
+            writer.WriteStartObject();
+            writer.WriteNumber("bufferView", positionViewIndex);
+            writer.WriteNumber("componentType", 5126);
+            writer.WriteNumber("count", vertexCount);
+            writer.WriteString("type", "VEC3");
+            writer.WriteStartArray("min");
+            writer.WriteNumberValue(minX);
+            writer.WriteNumberValue(minY);
+            writer.WriteNumberValue(minZ);
+            writer.WriteEndArray();
+            writer.WriteStartArray("max");
+            writer.WriteNumberValue(maxX);
+            writer.WriteNumberValue(maxY);
+            writer.WriteNumberValue(maxZ);
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+
+            writer.WriteStartObject();
+            writer.WriteNumber("bufferView", featureIdViewIndex);
+            writer.WriteNumber("componentType", 5126);
+            writer.WriteNumber("count", vertexCount);
+            writer.WriteString("type", "SCALAR");
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("bufferViews");
+            foreach (var view in bufferViews)
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("buffer", 0);
+                writer.WriteNumber("byteOffset", view.ByteOffset);
+                writer.WriteNumber("byteLength", view.ByteLength);
+                if (view.Target != BufferViewTarget.None)
+                {
+                    writer.WriteNumber("target", (int)view.Target);
+                }
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("buffers");
+            writer.WriteStartObject();
+            writer.WriteNumber("byteLength", totalBinaryLength);
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+
+            writer.WriteStartObject("extensions");
+            writer.WriteStartObject("EXT_structural_metadata");
+            WriteSchema(writer, propertyTable);
+
+            writer.WriteStartArray("propertyTables");
+            writer.WriteStartObject();
+            writer.WriteString("class", SceneMetadataTable.SchemaClassName);
+            writer.WriteNumber("count", featureCount);
+            writer.WriteStartObject("properties");
+            for (var i = 0; i < propertyTable.Columns.Count; i++)
+            {
+                var column = propertyTable.Columns[i];
+                writer.WriteStartObject(column.PropertyId);
+                writer.WriteNumber("values", propertyViewIndices[i]);
+                if (column.StringOffsetBufferView is { } offsetView)
+                {
+                    writer.WriteNumber("stringOffsets", offsetView);
+                    writer.WriteString("stringOffsetType", "UINT32");
+                }
+                writer.WriteEndObject();
+            }
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+
+            writer.WriteEndObject();
+        }
+
+        return stream.ToArray();
+    }
+
+    private static (double, double, double, double, double, double) ComputePositionBounds(List<float> positions)
+    {
+        var minX = double.PositiveInfinity;
+        var minY = double.PositiveInfinity;
+        var minZ = double.PositiveInfinity;
+        var maxX = double.NegativeInfinity;
+        var maxY = double.NegativeInfinity;
+        var maxZ = double.NegativeInfinity;
+
+        for (var i = 0; i < positions.Count; i += 3)
+        {
+            var x = positions[i];
+            var y = positions[i + 1];
+            var z = positions[i + 2];
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (z < minZ) minZ = z;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+            if (z > maxZ) maxZ = z;
+        }
+        return (minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    private static void WriteSchema(Utf8JsonWriter writer, SceneMetadataTable table)
+    {
+        writer.WriteStartObject("schema");
+        writer.WriteString("id", "honua_scene_schema");
+        writer.WriteStartObject("classes");
+        writer.WriteStartObject(SceneMetadataTable.SchemaClassName);
+        writer.WriteString("name", SceneMetadataTable.SchemaClassName);
+        writer.WriteStartObject("properties");
+        foreach (var column in table.Columns)
+        {
+            writer.WriteStartObject(column.PropertyId);
+            writer.WriteString("type", column.SchemaType);
+            if (!string.IsNullOrEmpty(column.SchemaComponentType))
+            {
+                writer.WriteString("componentType", column.SchemaComponentType);
+            }
+            writer.WriteEndObject();
+        }
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+    }
+
+    private enum BufferViewTarget
+    {
+        None = 0,
+        ArrayBuffer = 34962
+    }
+
+    private readonly record struct BufferViewDescriptor(BufferRange Range, BufferViewTarget Target)
+    {
+        public int ByteOffset => Range.ByteOffset;
+        public int ByteLength => Range.ByteLength;
+    }
+
+    private readonly record struct BufferRange(int ByteOffset, int ByteLength);
+
+    private sealed class BinaryBufferBuilder
+    {
+        private readonly List<byte> _buffer = new();
+
+        public BufferRange Append(byte[] payload)
+        {
+            // glTF 2.0 requires bufferView byteOffset to be aligned to the
+            // accessor's component size (4 bytes for FLOAT/UINT32). Pad with
+            // zeros to keep alignment deterministic.
+            var pad = (4 - (_buffer.Count & 3)) & 3;
+            for (var i = 0; i < pad; i++)
+            {
+                _buffer.Add(0);
+            }
+            var offset = _buffer.Count;
+            _buffer.AddRange(payload);
+            return new BufferRange(offset, payload.Length);
+        }
+
+        public byte[] GetPayloadWithPadding()
+        {
+            var pad = (4 - (_buffer.Count & 3)) & 3;
+            for (var i = 0; i < pad; i++)
+            {
+                _buffer.Add(0);
+            }
+            return _buffer.ToArray();
+        }
+    }
+}
+
+/// <summary>
+/// Schema entry for one attribute column emitted into the GLB metadata table.
+/// </summary>
+public sealed record SceneAttributeSchema
+{
+    /// <summary>Property id surfaced in EXT_structural_metadata (sanitized field name).</summary>
+    public required string PropertyId { get; init; }
+
+    /// <summary>Field name as it appears on the source feature.</summary>
+    public required string FieldName { get; init; }
+
+    /// <summary>Schema-level type (e.g. SCALAR, STRING).</summary>
+    public required string SchemaType { get; init; }
+
+    /// <summary>Schema component type (e.g. FLOAT32, INT32). Empty for STRING.</summary>
+    public string SchemaComponentType { get; init; } = string.Empty;
+}
+
+internal sealed class SceneMetadataTable
+{
+    internal const string SchemaClassName = "honua_feature_class";
+
+    internal IReadOnlyList<SceneMetadataColumn> Columns { get; }
+
+    private SceneMetadataTable(IReadOnlyList<SceneMetadataColumn> columns)
+    {
+        Columns = columns;
+    }
+
+    internal static SceneMetadataTable Build(
+        IReadOnlyList<SceneFeature> features,
+        IReadOnlyList<SceneAttributeSchema> attributes)
+    {
+        var columns = new List<SceneMetadataColumn>(attributes.Count);
+        foreach (var attribute in attributes)
+        {
+            columns.Add(SceneMetadataColumn.Build(attribute, features));
+        }
+        return new SceneMetadataTable(columns);
+    }
+}
+
+internal sealed class SceneMetadataColumn
+{
+    public required string PropertyId { get; init; }
+    public required string SchemaType { get; init; }
+    public required string SchemaComponentType { get; init; }
+    public required byte[] Bytes { get; init; }
+    public byte[]? StringOffsetBytes { get; init; }
+    public int? StringOffsetBufferView { get; set; }
+
+    public static SceneMetadataColumn Build(SceneAttributeSchema schema, IReadOnlyList<SceneFeature> features)
+    {
+        return schema.SchemaType switch
+        {
+            "SCALAR" when schema.SchemaComponentType == "FLOAT32" => BuildScalarFloat(schema, features),
+            "SCALAR" when schema.SchemaComponentType == "INT32" => BuildScalarInt32(schema, features),
+            "STRING" => BuildString(schema, features),
+            _ => throw new InvalidOperationException(
+                $"Unsupported attribute schema {schema.SchemaType}/{schema.SchemaComponentType}")
+        };
+    }
+
+    private static SceneMetadataColumn BuildScalarFloat(SceneAttributeSchema schema, IReadOnlyList<SceneFeature> features)
+    {
+        var bytes = new byte[features.Count * 4];
+        for (var i = 0; i < features.Count; i++)
+        {
+            features[i].Attributes.TryGetValue(schema.FieldName, out var value);
+            var f = ToFloat(value);
+            BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(i * 4, 4), f);
+        }
+        return new SceneMetadataColumn
+        {
+            PropertyId = schema.PropertyId,
+            SchemaType = "SCALAR",
+            SchemaComponentType = "FLOAT32",
+            Bytes = bytes
+        };
+    }
+
+    private static SceneMetadataColumn BuildScalarInt32(SceneAttributeSchema schema, IReadOnlyList<SceneFeature> features)
+    {
+        var bytes = new byte[features.Count * 4];
+        for (var i = 0; i < features.Count; i++)
+        {
+            features[i].Attributes.TryGetValue(schema.FieldName, out var value);
+            var v = ToInt32(value);
+            BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(i * 4, 4), v);
+        }
+        return new SceneMetadataColumn
+        {
+            PropertyId = schema.PropertyId,
+            SchemaType = "SCALAR",
+            SchemaComponentType = "INT32",
+            Bytes = bytes
+        };
+    }
+
+    private static SceneMetadataColumn BuildString(SceneAttributeSchema schema, IReadOnlyList<SceneFeature> features)
+    {
+        var stringBytes = new List<byte>(features.Count * 16);
+        var offsets = new uint[features.Count + 1];
+        offsets[0] = 0;
+        for (var i = 0; i < features.Count; i++)
+        {
+            features[i].Attributes.TryGetValue(schema.FieldName, out var raw);
+            var encoded = Encoding.UTF8.GetBytes(raw?.ToString() ?? string.Empty);
+            stringBytes.AddRange(encoded);
+            offsets[i + 1] = (uint)stringBytes.Count;
+        }
+
+        var offsetBytes = new byte[offsets.Length * 4];
+        for (var i = 0; i < offsets.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(offsetBytes.AsSpan(i * 4, 4), offsets[i]);
+        }
+
+        return new SceneMetadataColumn
+        {
+            PropertyId = schema.PropertyId,
+            SchemaType = "STRING",
+            SchemaComponentType = string.Empty,
+            Bytes = stringBytes.ToArray(),
+            StringOffsetBytes = offsetBytes
+        };
+    }
+
+    private static float ToFloat(object? value) => value switch
+    {
+        null => 0f,
+        float f => f,
+        double d => (float)d,
+        int i => i,
+        long l => l,
+        short s => s,
+        decimal m => (float)m,
+        string s when float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) => v,
+        _ => 0f
+    };
+
+    private static int ToInt32(object? value) => value switch
+    {
+        null => 0,
+        int i => i,
+        long l => (int)Math.Clamp(l, int.MinValue, int.MaxValue),
+        short s => s,
+        float f => (int)f,
+        double d => (int)d,
+        decimal m => (int)m,
+        string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) => v,
+        _ => 0
+    };
+}
