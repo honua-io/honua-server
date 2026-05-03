@@ -92,9 +92,10 @@ viewer.scene.primitives.add(tileset);
   flat at Z=0 with a logged warning.
 - **Attribute types**: `Integer`, `BigInteger`, `Double`, `Float`, and
   `String` are surfaced through the GLB's `EXT_structural_metadata` schema.
-  Other types are omitted from the metadata table. `BigInteger` values
-  outside the INT32 range are clamped and a warning is added to the
-  response `warnings` array.
+  `Integer` is encoded as `SCALAR/INT32`; `BigInteger` is encoded as
+  `SCALAR/INT64` and the corresponding bufferView is 8-byte aligned per the
+  EXT_structural_metadata specification. `Double` and `Float` are encoded as
+  `SCALAR/FLOAT32`. Other types are omitted from the metadata table.
 
 ## Output layout
 

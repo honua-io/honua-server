@@ -118,14 +118,15 @@ public static class GeometryTileBuilder
         var propertyViewIndices = new int[propertyTable.Columns.Count];
         for (var i = 0; i < propertyTable.Columns.Count; i++)
         {
-            var view = binaryWriter.Append(propertyTable.Columns[i].Bytes);
+            var column = propertyTable.Columns[i];
+            var view = binaryWriter.Append(column.Bytes, column.ByteAlignment);
             propertyViewIndices[i] = bufferViews.Count;
             bufferViews.Add(new BufferViewDescriptor(view, BufferViewTarget.None));
 
-            if (propertyTable.Columns[i].StringOffsetBytes is { } offsetBytes)
+            if (column.StringOffsetBytes is { } offsetBytes)
             {
                 var offsetView = binaryWriter.Append(offsetBytes);
-                propertyTable.Columns[i].StringOffsetBufferView = bufferViews.Count;
+                column.StringOffsetBufferView = bufferViews.Count;
                 bufferViews.Add(new BufferViewDescriptor(offsetView, BufferViewTarget.None));
             }
         }
@@ -597,12 +598,15 @@ public static class GeometryTileBuilder
     {
         private readonly List<byte> _buffer = new();
 
-        public BufferRange Append(byte[] payload)
+        public BufferRange Append(byte[] payload, int alignment = 4)
         {
             // glTF 2.0 requires bufferView byteOffset to be aligned to the
-            // accessor's component size (4 bytes for FLOAT/UINT32). Pad with
-            // zeros to keep alignment deterministic.
-            var pad = (4 - (_buffer.Count & 3)) & 3;
+            // accessor's component size (4 bytes for FLOAT/UINT32).
+            // EXT_structural_metadata extends this for property-table values,
+            // requiring alignment equal to the component byte length (8 for
+            // INT64/UINT64). Pad with zeros to keep alignment deterministic.
+            var mask = alignment - 1;
+            var pad = (alignment - (_buffer.Count & mask)) & mask;
             for (var i = 0; i < pad; i++)
             {
                 _buffer.Add(0);
@@ -676,6 +680,13 @@ internal sealed class SceneMetadataColumn
     public byte[]? StringOffsetBytes { get; init; }
     public int? StringOffsetBufferView { get; set; }
 
+    /// <summary>
+    /// Required bufferView byteOffset alignment for the values bytes.
+    /// EXT_structural_metadata mandates alignment equal to the component
+    /// byte length (8 for INT64/UINT64, 4 for INT32/FLOAT32, 1 for STRING).
+    /// </summary>
+    public int ByteAlignment { get; init; } = 4;
+
     public static SceneMetadataColumn Build(
         SceneAttributeSchema schema,
         IReadOnlyList<SceneFeature> features,
@@ -685,6 +696,7 @@ internal sealed class SceneMetadataColumn
         {
             "SCALAR" when schema.SchemaComponentType == "FLOAT32" => BuildScalarFloat(schema, features),
             "SCALAR" when schema.SchemaComponentType == "INT32" => BuildScalarInt32(schema, features, warnings),
+            "SCALAR" when schema.SchemaComponentType == "INT64" => BuildScalarInt64(schema, features, warnings),
             "STRING" => BuildString(schema, features),
             _ => throw new InvalidOperationException(
                 $"Unsupported attribute schema {schema.SchemaType}/{schema.SchemaComponentType}")
@@ -736,6 +748,37 @@ internal sealed class SceneMetadataColumn
             SchemaType = "SCALAR",
             SchemaComponentType = "INT32",
             Bytes = bytes
+        };
+    }
+
+    private static SceneMetadataColumn BuildScalarInt64(
+        SceneAttributeSchema schema,
+        IReadOnlyList<SceneFeature> features,
+        IList<string>? warnings)
+    {
+        var bytes = new byte[features.Count * 8];
+        var coerced = 0;
+        for (var i = 0; i < features.Count; i++)
+        {
+            features[i].Attributes.TryGetValue(schema.FieldName, out var value);
+            var v = ToInt64(value, ref coerced);
+            BinaryPrimitives.WriteInt64LittleEndian(bytes.AsSpan(i * 8, 8), v);
+        }
+        if (coerced > 0 && warnings is not null)
+        {
+            warnings.Add(string.Format(
+                CultureInfo.InvariantCulture,
+                "Attribute '{0}' coerced {1} non-integral value(s) to INT64; check the source layer for unexpected types.",
+                schema.FieldName,
+                coerced));
+        }
+        return new SceneMetadataColumn
+        {
+            PropertyId = schema.PropertyId,
+            SchemaType = "SCALAR",
+            SchemaComponentType = "INT64",
+            Bytes = bytes,
+            ByteAlignment = 8
         };
     }
 
@@ -807,6 +850,42 @@ internal sealed class SceneMetadataColumn
             case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v):
                 return v;
             default: return 0;
+        }
+    }
+
+    private static long ToInt64(object? value, ref int coercedCount)
+    {
+        switch (value)
+        {
+            case null: return 0L;
+            case long l: return l;
+            case int i: return i;
+            case short s: return s;
+            case byte b: return b;
+            case sbyte sb: return sb;
+            case ushort us: return us;
+            case uint ui: return ui;
+            case ulong ul:
+                if (ul > long.MaxValue)
+                {
+                    coercedCount++;
+                    return long.MaxValue;
+                }
+                return (long)ul;
+            case float f:
+                if (f < long.MinValue || f > long.MaxValue) coercedCount++;
+                return (long)f;
+            case double d:
+                if (d < long.MinValue || d > long.MaxValue) coercedCount++;
+                return (long)d;
+            case decimal m:
+                if (m < long.MinValue || m > long.MaxValue) coercedCount++;
+                return (long)m;
+            case string s when long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v):
+                return v;
+            default:
+                coercedCount++;
+                return 0L;
         }
     }
 }

@@ -261,7 +261,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
-    public async Task Execute_BigIntegerClampedValues_EmitWarning()
+    public async Task Execute_BigIntegerValues_PreservedWithoutClamping()
     {
         var fields = new[]
         {
@@ -290,7 +290,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
 
-        outcome.Result.Warnings.Should().Contain(w =>
+        outcome.Result.Warnings.Should().NotContain(w =>
             w.Contains("big_id", StringComparison.Ordinal)
             && w.Contains("clamped", StringComparison.Ordinal));
     }

@@ -410,7 +410,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     private static (string? Schema, string Component) MapFieldType(FieldType fieldType) => fieldType switch
     {
         FieldType.Integer => ("SCALAR", "INT32"),
-        FieldType.BigInteger => ("SCALAR", "INT32"),
+        FieldType.BigInteger => ("SCALAR", "INT64"),
         FieldType.Double => ("SCALAR", "FLOAT32"),
         FieldType.Float => ("SCALAR", "FLOAT32"),
         FieldType.String => ("STRING", string.Empty),

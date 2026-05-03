@@ -141,6 +141,72 @@ public sealed class GeometryTileBuilderTests
         act.Should().Throw<ArgumentException>().WithMessage("*share the same geometry kind*");
     }
 
+    [UnitTest]
+    public void BuildGlb_PreservesInt64AttributesBeyondInt32Range()
+    {
+        var beyondMax = (long)int.MaxValue + 100L;
+        var beyondMin = (long)int.MinValue - 100L;
+
+        var features = new[]
+        {
+            new SceneFeature
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry
+                {
+                    Kind = SceneGeometryKind.Polygon,
+                    Vertices = SquareRing()
+                },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["big_id"] = beyondMax
+                }
+            },
+            new SceneFeature
+            {
+                Id = 2,
+                Geometry = new SceneFeatureGeometry
+                {
+                    Kind = SceneGeometryKind.Polygon,
+                    Vertices = SquareRing(offsetLon: 0.001)
+                },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["big_id"] = beyondMin
+                }
+            }
+        };
+
+        var schemas = new[]
+        {
+            new SceneAttributeSchema { PropertyId = "big_id", FieldName = "big_id", SchemaType = "SCALAR", SchemaComponentType = "INT64" }
+        };
+
+        var glb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null);
+        var json = ExtractJsonChunk(glb);
+
+        using var doc = JsonDocument.Parse(json);
+        var classProps = doc.RootElement.GetProperty("extensions").GetProperty("EXT_structural_metadata")
+            .GetProperty("schema").GetProperty("classes")
+            .GetProperty("honua_feature_class").GetProperty("properties");
+        classProps.GetProperty("big_id").GetProperty("componentType").GetString().Should().Be("INT64");
+
+        var bigIdView = doc.RootElement.GetProperty("extensions").GetProperty("EXT_structural_metadata")
+            .GetProperty("propertyTables")[0]
+            .GetProperty("properties").GetProperty("big_id")
+            .GetProperty("values").GetInt32();
+
+        var bufferView = doc.RootElement.GetProperty("bufferViews")[bigIdView];
+        var byteOffset = bufferView.GetProperty("byteOffset").GetInt32();
+        var byteLength = bufferView.GetProperty("byteLength").GetInt32();
+        (byteOffset % 8).Should().Be(0, "INT64 buffer views must be 8-byte aligned per EXT_structural_metadata");
+        byteLength.Should().Be(features.Length * 8);
+
+        var binPayload = ExtractBinChunk(glb);
+        BinaryPrimitives.ReadInt64LittleEndian(binPayload.AsSpan(byteOffset, 8)).Should().Be(beyondMax);
+        BinaryPrimitives.ReadInt64LittleEndian(binPayload.AsSpan(byteOffset + 8, 8)).Should().Be(beyondMin);
+    }
+
     private static byte[] BuildSimpleSquare()
     {
         var features = new[]
@@ -202,5 +268,13 @@ public sealed class GeometryTileBuilderTests
         var jsonLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(glb.AsSpan(12, 4));
         var jsonBytes = glb.AsSpan(20, jsonLength);
         return Encoding.UTF8.GetString(jsonBytes).TrimEnd('\0', ' ');
+    }
+
+    private static byte[] ExtractBinChunk(byte[] glb)
+    {
+        var jsonLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(glb.AsSpan(12, 4));
+        var binChunkOffset = 20 + jsonLength;
+        var binLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(glb.AsSpan(binChunkOffset, 4));
+        return glb.AsSpan(binChunkOffset + 8, binLength).ToArray();
     }
 }
