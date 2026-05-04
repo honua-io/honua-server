@@ -194,20 +194,28 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             {
                 // The GLB writer overrides vertex Z with baseHeight on the
                 // bottom face and baseHeight + extrusionHeight on the top
-                // face, so the bounding region must reflect that prism range
-                // — not the source vertex Z range — or CesiumJS may cull the
-                // tile prematurely when BaseHeightField is non-zero.
-                var extrusionMaxTop = double.NegativeInfinity;
-                var extrusionMinBase = double.PositiveInfinity;
+                // face. The bounding region must enclose both faces. The
+                // extrusion height value is signed: AEC and infrastructure
+                // workflows use negative values for downward extrusions
+                // (basements, underground utilities), so the prism's "top"
+                // face can be below its "base". Take min/max over BOTH
+                // baseHeight and topZ per feature; using topZ alone for max
+                // and baseHeight alone for min would underestimate the
+                // region for downward extrusions and let CesiumJS cull the
+                // tile prematurely.
+                var extrusionMaxZ = double.NegativeInfinity;
+                var extrusionMinZ = double.PositiveInfinity;
                 foreach (var feature in collected.Features)
                 {
                     var baseHeight = ResolveExtrusionBase(feature, extrusion!);
                     var topZ = baseHeight + ResolveExtrusionMax(feature, extrusion!);
-                    if (topZ > extrusionMaxTop) extrusionMaxTop = topZ;
-                    if (baseHeight < extrusionMinBase) extrusionMinBase = baseHeight;
+                    var featureMin = Math.Min(baseHeight, topZ);
+                    var featureMax = Math.Max(baseHeight, topZ);
+                    if (featureMax > extrusionMaxZ) extrusionMaxZ = featureMax;
+                    if (featureMin < extrusionMinZ) extrusionMinZ = featureMin;
                 }
-                minHeight = extrusionMinBase;
-                maxHeight = extrusionMaxTop;
+                minHeight = extrusionMinZ;
+                maxHeight = extrusionMaxZ;
             }
             else if (!collected.SawAnyHeight)
             {

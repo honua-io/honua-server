@@ -316,6 +316,39 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_BoundingRegion_HandlesDownwardExtrusion()
+    {
+        // AEC and infrastructure workflows extrude downward (basements,
+        // underground utilities) by passing a negative height value. The
+        // GLB writer puts the "top" face below the "base" in that case;
+        // the bounding region must still enclose the prism. Without the
+        // signed-min/max fix, region.maxHeight would be capped at the
+        // negative topZ (~-25m) instead of the actual surface baseHeight (0m),
+        // causing CesiumJS to cull the tile prematurely above ground level.
+        _catalog.Layer = BuildLayer(extrusion: new LayerExtrusionInfo
+        {
+            HeightField = "height",
+            Unit = VerticalUnits.Meters
+        });
+        _featureSource.Features = DownwardExtrusionPolygons();
+
+        var outcome = await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "downward-extrusion"), CancellationToken.None);
+
+        var tilesetJson = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tileset.json"));
+        using var tilesetDoc = JsonDocument.Parse(tilesetJson);
+        var region = tilesetDoc.RootElement.GetProperty("root").GetProperty("boundingVolume").GetProperty("region");
+        var minHeightMeters = region[4].GetDouble();
+        var maxHeightMeters = region[5].GetDouble();
+        // Downward-extruded prism with baseHeight=0 and heights {-25, -50}
+        // spans Z ∈ [-50, 0]. The bounding region must enclose both faces.
+        minHeightMeters.Should().BeApproximately(-50.0, 0.001,
+            "downward-extruded prism reaches baseHeight + min(negativeHeight) = -50m.");
+        maxHeightMeters.Should().BeApproximately(0.0, 0.001,
+            "the surface (baseHeight=0) is the prism's upper bound for downward extrusion.");
+    }
+
+    [UnitTest]
     public async Task Execute_DuplicateSceneIdPreservesExistingFiles()
     {
         // Pre-populate the registry with an existing record so the preflight
@@ -1004,6 +1037,51 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
                 Id = 2,
                 Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = ringB },
                 Attributes = attrsB
+            }
+        };
+    }
+
+    private static List<SceneFeature> DownwardExtrusionPolygons()
+    {
+        // baseHeight defaults to 0 (no BaseHeightField set on the layer);
+        // negative height values produce a prism that descends below ground.
+        var ringA = new[]
+        {
+            new SceneVertex(-122.5, 37.7, 0),
+            new SceneVertex(-122.4, 37.7, 0),
+            new SceneVertex(-122.4, 37.8, 0),
+            new SceneVertex(-122.5, 37.8, 0),
+            new SceneVertex(-122.5, 37.7, 0)
+        };
+        var ringB = new[]
+        {
+            new SceneVertex(-122.49, 37.71, 0),
+            new SceneVertex(-122.41, 37.71, 0),
+            new SceneVertex(-122.41, 37.79, 0),
+            new SceneVertex(-122.49, 37.79, 0),
+            new SceneVertex(-122.49, 37.71, 0)
+        };
+        return new List<SceneFeature>
+        {
+            new()
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = ringA },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = "basement-a",
+                    ["height"] = -25
+                }
+            },
+            new()
+            {
+                Id = 2,
+                Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = ringB },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = "basement-b",
+                    ["height"] = -50
+                }
             }
         };
     }
