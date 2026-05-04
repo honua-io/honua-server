@@ -8,7 +8,11 @@ rewriting.
 
 This is the foundation slice of Honua's 3D support. It covers serving;
 generating 3D Tiles from PostGIS, raster, or model sources is a separate
-deliverable.
+deliverable, and exporting hosted scenes to OpenUSD/Omniverse is documented
+in the roadmap spike at
+[OpenUSD and Omniverse Export Path](openusd-omniverse-export-path.md)
+(`honua-server-901`; first-artifact implementation tracked in
+`honua-server-904`).
 
 ## Public routes
 

@@ -19,7 +19,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 ## 3D and Scene Status
 
 - Implemented: scene dataset registry and resolution APIs, scene protocol endpoints, Terrain-RGB metadata/tiles, elevation APIs, vector tile/MapLibre style support, and scene metadata consumed by SDKs/mobile.
-- Not yet complete: demo-grade 3D Tiles generation, point-cloud/reality-capture ingest, OpenUSD/Omniverse export, and a unified construction world-model fixture remain backlog work.
+- Not yet complete: demo-grade 3D Tiles generation, point-cloud/reality-capture ingest, OpenUSD/Omniverse export (spike recommends a USDA stage-manifest first artifact), and a unified construction world-model fixture remain backlog work.
 
 ## Source Evidence
 

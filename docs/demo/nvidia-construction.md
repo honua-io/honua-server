@@ -201,6 +201,17 @@ No terrain tileset is committed. The demo client should use Cesium's
 `EllipsoidTerrainProvider`; real terrain serving is tracked in
 `honua-server-839`.
 
+## OpenUSD / Omniverse handoff
+
+This fixture is served as hosted OGC 3D Tiles to CesiumJS. An OpenUSD or
+Omniverse export is **not** part of the demo. The conservative export-path
+recommendation — a USDA text-format stage manifest that preserves scene
+metadata and source references for inspection in NVIDIA tooling — is
+documented in
+[OpenUSD and Omniverse Export Path](../gis/openusd-omniverse-export-path.md)
+(`honua-server-901`); the bounded first-artifact implementation is tracked in
+`honua-server-904`.
+
 ## Testing
 
 Tests are split so the on-disk fixture invariants run on the fast tier
