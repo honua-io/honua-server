@@ -77,6 +77,58 @@ public class MySqlFeatureStoreTests
         Assert.True(dataAccess.SelectCallCount >= 1);
     }
 
+    [Fact]
+    public async Task StreamFeatureBatchesAsync_WithoutOrderBy_AddsPrimaryKeyOrdering()
+    {
+        // Paged streaming uses repeated LIMIT/OFFSET queries; without a deterministic ORDER BY,
+        // MySQL/MariaDB result order between pages is unspecified, so the slice injects an
+        // ascending primary-key sort when the caller hasn't supplied one. This guarantees a
+        // stable page sequence for canonical IStreamingFeatureStore consumers (export, OData,
+        // gRPC, GeoServices) that don't know to request a MySQL-specific order.
+        var dataAccess = new RecordingFeatureDataAccess(
+            pages: [ImmutableArray.Create(Feature.Create(1, null))]);
+        var store = CreateStore(dataAccess);
+
+        await foreach (var _ in store.StreamFeatureBatchesAsync(LayerId, new FeatureQuery(), batchSize: 1))
+        {
+        }
+
+        Assert.NotNull(dataAccess.LastFeatureQuery);
+        Assert.NotNull(dataAccess.LastFeatureQuery!.Value.OrderBy);
+        var orderBy = dataAccess.LastFeatureQuery.Value.OrderBy!.Value;
+        Assert.Single(orderBy);
+        Assert.Equal("id", orderBy[0].Field);
+        Assert.True(orderBy[0].Ascending);
+
+        // The emitted SQL also reflects the injected ORDER BY clause.
+        Assert.NotNull(dataAccess.LastSql);
+        Assert.Contains("ORDER BY `id` ASC", dataAccess.LastSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StreamFeatureBatchesAsync_WithCallerOrderBy_PreservesCallerSort()
+    {
+        // Caller-supplied OrderBy is honored as-is — the caller already accepts responsibility
+        // for stable ordering across pages, and overriding it would change query semantics.
+        var dataAccess = new RecordingFeatureDataAccess(
+            pages: [ImmutableArray.Create(Feature.Create(1, null))]);
+        var store = CreateStore(dataAccess);
+
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc("name"))
+        };
+
+        await foreach (var _ in store.StreamFeatureBatchesAsync(LayerId, query, batchSize: 1))
+        {
+        }
+
+        Assert.NotNull(dataAccess.LastFeatureQuery);
+        var orderBy = dataAccess.LastFeatureQuery!.Value.OrderBy!.Value;
+        Assert.Single(orderBy);
+        Assert.Equal("name", orderBy[0].Field);
+    }
+
     private static MySqlFeatureStore CreateStore(IFeatureDataAccess dataAccess)
     {
         var mapping = new MySqlLayerMapping
@@ -91,7 +143,7 @@ public class MySqlFeatureStoreTests
         };
         var registry = new MySqlLayerMappingRegistry([mapping]);
         var queryBuilder = new MySqlFeatureQueryBuilder(registry);
-        return new MySqlFeatureStore(queryBuilder, dataAccess);
+        return new MySqlFeatureStore(queryBuilder, dataAccess, registry);
     }
 
     private sealed class RecordingFeatureDataAccess : IFeatureDataAccess
@@ -105,10 +157,16 @@ public class MySqlFeatureStoreTests
 
         public int SelectCallCount { get; private set; }
 
+        public FeatureQuery? LastFeatureQuery { get; private set; }
+
+        public string? LastSql { get; private set; }
+
         public Task<ImmutableArray<Feature>> ExecuteSelectQueryAsync(
             ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
         {
             SelectCallCount++;
+            LastFeatureQuery = featureQuery;
+            LastSql = query.Sql;
             var page = _pages.Count > 0 ? _pages.Dequeue() : ImmutableArray<Feature>.Empty;
             return Task.FromResult(page);
         }

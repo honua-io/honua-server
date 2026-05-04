@@ -162,7 +162,7 @@ See the [SQL Server Provider Guide](docs/operator/sqlserver-provider.md) for sup
 DataSource__Provider=mysql            # or mariadb (alias)
 MySql__ConnectionString="Server=mysql;Database=honua;User=honua_ro;Password=${MYSQL_PASSWORD};SslMode=Required"
 ```
-Requires MySQL 8.0.11+ or MariaDB 10.6+. No edits, native MVT, FlatGeobuf, Geobuf, GML, statistics, or KNN. See the [MySQL/MariaDB Provider Guide](docs/operator/mysql-provider.md) for layer mapping, supported operations, and limitations.
+Requires MySQL 8.0.11+ or MariaDB 10.6+. No edits, native MVT, FlatGeobuf, Geobuf, GML, streaming GeoJSON, statistics, KNN, temporal `datetime` filters, or cross-SRID `ST_Transform`. Extent is supported for Point and Polygon/MultiPolygon layers only. See the [MySQL/MariaDB Provider Guide](docs/operator/mysql-provider.md) for layer mapping, supported operations, and limitations.
 
 **Common options:**
 ```bash

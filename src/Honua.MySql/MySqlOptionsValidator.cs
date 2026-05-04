@@ -22,6 +22,17 @@ internal static class MySqlOptionsValidator
             errors.Add("MySql:ConnectionString is required.");
         }
 
+        // Engine flavor is read once at startup and threaded into the SQL builders so
+        // axis-order-aware WKB I/O matches the active engine. Reject unknown values rather
+        // than silently defaulting to Mysql, which would emit a 3-arg ST_GeomFromWKB on
+        // MariaDB and fail at the first spatial query.
+        if (!Enum.TryParse<MySqlEngineFlavor>(options.EngineFlavor, ignoreCase: true, out _))
+        {
+            errors.Add(
+                $"MySql:EngineFlavor '{options.EngineFlavor}' is invalid. " +
+                "Expected one of: Mysql, MariaDb.");
+        }
+
         if (options.Layers.Length == 0)
         {
             errors.Add("MySql:Layers must contain at least one layer mapping.");

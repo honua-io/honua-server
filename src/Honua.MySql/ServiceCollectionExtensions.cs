@@ -37,6 +37,9 @@ internal static class ServiceCollectionExtensions
 
         MySqlOptionsValidator.ThrowIfInvalid(options);
 
+        // Engine flavor is validated above; parse once so SQL builders can pre-bind it.
+        var engineFlavor = Enum.Parse<MySqlEngineFlavor>(options.EngineFlavor, ignoreCase: true);
+
         // Strip unsupported capability tokens at startup so the catalog cannot advertise them.
         foreach (var svc in options.Services)
         {
@@ -53,19 +56,26 @@ internal static class ServiceCollectionExtensions
         // Pooled MySqlDataSource — singleton — provides connection pooling.
         services.AddSingleton(_ => new MySqlDataSourceBuilder(options.ConnectionString).Build());
         services.AddSingleton(_ => new MySqlLayerMappingRegistry(mappings));
+        // Register the engine flavor enum boxed inside an immutable holder; AddSingleton<T>(T)
+        // requires a reference type, and a tiny holder is cheaper than reading IOptions<MySqlOptions>
+        // on every scoped activation.
+        services.AddSingleton(new MySqlEngineFlavorHolder(engineFlavor));
 
         services.AddScoped<IDatabaseConnectionProvider>(sp =>
             new MySqlConnectionProvider(sp.GetRequiredService<MySqlDataSource>()));
 
         services.AddScoped<IFeatureQueryBuilder>(sp =>
-            new MySqlFeatureQueryBuilder(sp.GetRequiredService<MySqlLayerMappingRegistry>()));
+            new MySqlFeatureQueryBuilder(
+                sp.GetRequiredService<MySqlLayerMappingRegistry>(),
+                sp.GetRequiredService<MySqlEngineFlavorHolder>().Flavor));
 
         services.AddScoped<IFeatureDataAccess>(sp =>
             new MySqlFeatureDataAccess(
                 sp.GetRequiredService<IDatabaseConnectionProvider>(),
                 sp.GetRequiredService<MySqlLayerMappingRegistry>(),
                 sp.GetService<Core.Features.Infrastructure.Monitoring.IPerformanceMonitor>(),
-                sp.GetRequiredService<ILogger<MySqlFeatureDataAccess>>()));
+                sp.GetRequiredService<ILogger<MySqlFeatureDataAccess>>(),
+                sp.GetRequiredService<MySqlEngineFlavorHolder>().Flavor));
 
         services.AddScoped<IFeatureCacheManager>(sp =>
             new MySqlFeatureCacheManager(sp.GetRequiredService<MySqlLayerMappingRegistry>()));
@@ -86,7 +96,8 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ITileProvider>(_ => new ReadOnlyMySqlTileProvider());
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyMySqlGmlFeatureStore());
 
-        services.AddScoped<ISqlFilterTranslator>(_ => new MySqlSqlFilterTranslator());
+        services.AddScoped<ISqlFilterTranslator>(sp =>
+            new MySqlSqlFilterTranslator(sp.GetRequiredService<MySqlEngineFlavorHolder>().Flavor));
 
         services.AddScoped<ILayerCatalog>(sp =>
         {

@@ -32,6 +32,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly MySqlLayerMappingRegistry _layerRegistry;
+    private readonly MySqlEngineFlavor _engineFlavor;
     private readonly IPerformanceMonitor? _performanceMonitor;
     private readonly ILogger<MySqlFeatureDataAccess> _logger;
 
@@ -39,10 +40,12 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
         IDatabaseConnectionProvider connectionProvider,
         MySqlLayerMappingRegistry layerRegistry,
         IPerformanceMonitor? performanceMonitor,
-        ILogger<MySqlFeatureDataAccess> logger)
+        ILogger<MySqlFeatureDataAccess> logger,
+        MySqlEngineFlavor engineFlavor = MySqlEngineFlavor.Mysql)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _layerRegistry = layerRegistry ?? throw new ArgumentNullException(nameof(layerRegistry));
+        _engineFlavor = engineFlavor;
         _performanceMonitor = performanceMonitor;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -151,7 +154,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
             : ", " + string.Join(", ", mapping.AttributeColumns.Select(MySqlIdentifier.Quote));
 
         var sql =
-            $"SELECT {mapping.QuotedPrimaryKeyColumn}, ST_AsWKB({mapping.QuotedGeometryColumn}) AS geometry{attributesSql} " +
+            $"SELECT {mapping.QuotedPrimaryKeyColumn}, {MySqlSpatialSql.AsWkb(mapping.QuotedGeometryColumn, _engineFlavor)} AS geometry{attributesSql} " +
             $"FROM {mapping.QualifiedTableSql} WHERE {mapping.QuotedPrimaryKeyColumn} = @p0";
         var pq = new ParameterizedQuery(sql, [featureId]);
 

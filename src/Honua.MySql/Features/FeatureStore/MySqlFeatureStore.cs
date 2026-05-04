@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.MySql.Features.Infrastructure;
 
 namespace Honua.MySql.Features.FeatureStore;
 
@@ -26,13 +27,16 @@ internal sealed class MySqlFeatureStore :
 
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
+    private readonly MySqlLayerMappingRegistry _layerRegistry;
 
     public MySqlFeatureStore(
         IFeatureQueryBuilder queryBuilder,
-        IFeatureDataAccess dataAccess)
+        IFeatureDataAccess dataAccess,
+        MySqlLayerMappingRegistry layerRegistry)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
+        _layerRegistry = layerRegistry ?? throw new ArgumentNullException(nameof(layerRegistry));
     }
 
     /// <inheritdoc />
@@ -204,14 +208,20 @@ internal sealed class MySqlFeatureStore :
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         // The slice has no native cursor/streaming over MySQL connections, so iterate the
-        // existing select path in fixed-size pages. The underlying ORDER BY (if any) is
-        // re-applied per page; callers needing a stable order should request one via
-        // FeatureQuery.OrderBy. Pagination preserves the user-supplied LIMIT/OFFSET when
-        // present rather than overriding it.
+        // existing select path in fixed-size pages. Pagination preserves the user-supplied
+        // LIMIT/OFFSET when present rather than overriding it.
         var effectiveBatchSize = batchSize > 0 ? batchSize : DefaultStreamingPageSize;
         var requestedLimit = query.Limit;
         var startOffset = query.Offset ?? 0;
         var emitted = 0;
+
+        // LIMIT/OFFSET pagination is only well-defined under a deterministic ORDER BY.
+        // Shared consumers (export, OData, gRPC, GeoServices) call IStreamingFeatureStore
+        // as a canonical surface and don't know to request a MySQL-specific order, so the
+        // provider injects an ascending primary-key sort when the caller hasn't supplied
+        // one. Caller-supplied OrderBy is honored as-is — the caller already accepts
+        // responsibility for stable ordering across pages.
+        var orderedQuery = EnsureDeterministicOrder(query, layerId);
 
         while (true)
         {
@@ -234,7 +244,7 @@ internal sealed class MySqlFeatureStore :
                 ? Math.Min(effectiveBatchSize, remainingBudget.Value)
                 : effectiveBatchSize;
 
-            var pageQuery = query with
+            var pageQuery = orderedQuery with
             {
                 Limit = pageSize,
                 Offset = startOffset + emitted
@@ -258,6 +268,20 @@ internal sealed class MySqlFeatureStore :
                 yield break;
             }
         }
+    }
+
+    private FeatureQuery EnsureDeterministicOrder(FeatureQuery query, int layerId)
+    {
+        if (query.OrderBy is { IsDefaultOrEmpty: false })
+        {
+            return query;
+        }
+
+        var mapping = _layerRegistry.GetRequiredMapping(layerId);
+        return query with
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc(mapping.PrimaryKeyColumn))
+        };
     }
 
     /// <inheritdoc />

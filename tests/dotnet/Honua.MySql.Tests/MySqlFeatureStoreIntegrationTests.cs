@@ -108,7 +108,7 @@ public class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         var dataAccess = new MySqlFeatureDataAccess(
             connectionProvider, _registry, performanceMonitor: null,
             NullLogger<MySqlFeatureDataAccess>.Instance);
-        _store = new MySqlFeatureStore(queryBuilder, dataAccess);
+        _store = new MySqlFeatureStore(queryBuilder, dataAccess, _registry);
     }
 
     public async Task DisposeAsync()

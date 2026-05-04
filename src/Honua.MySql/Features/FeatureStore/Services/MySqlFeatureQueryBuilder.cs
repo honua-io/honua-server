@@ -19,10 +19,14 @@ namespace Honua.MySql.Features.FeatureStore.Services;
 internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
 {
     private readonly MySqlLayerMappingRegistry _layerRegistry;
+    private readonly MySqlEngineFlavor _engineFlavor;
 
-    public MySqlFeatureQueryBuilder(MySqlLayerMappingRegistry layerRegistry)
+    public MySqlFeatureQueryBuilder(
+        MySqlLayerMappingRegistry layerRegistry,
+        MySqlEngineFlavor engineFlavor = MySqlEngineFlavor.Mysql)
     {
         _layerRegistry = layerRegistry ?? throw new ArgumentNullException(nameof(layerRegistry));
+        _engineFlavor = engineFlavor;
     }
 
     /// <inheritdoc />
@@ -41,7 +45,7 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         var columnsExpr = BuildAttributeColumnsExpression(mapping, query);
 
         sb.Append(CultureInfo.InvariantCulture,
-            $"SELECT {mapping.QuotedPrimaryKeyColumn}, ST_AsWKB({mapping.QuotedGeometryColumn}) AS geometry");
+            $"SELECT {mapping.QuotedPrimaryKeyColumn}, {MySqlSpatialSql.AsWkb(mapping.QuotedGeometryColumn, _engineFlavor)} AS geometry");
 
         if (!string.IsNullOrEmpty(columnsExpr))
         {

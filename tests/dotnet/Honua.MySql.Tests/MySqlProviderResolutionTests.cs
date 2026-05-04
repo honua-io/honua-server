@@ -168,7 +168,7 @@ public class MySqlProviderResolutionTests
             registry,
             performanceMonitor: null,
             NullLogger<MySqlFeatureDataAccess>.Instance);
-        return new MySqlFeatureStore(queryBuilder, dataAccess);
+        return new MySqlFeatureStore(queryBuilder, dataAccess, registry);
     }
 
     private sealed class ThrowingConnectionProvider : Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider

@@ -61,6 +61,7 @@ section to `appsettings.json`:
   },
   "MySql": {
     "ConnectionString": "Server=localhost;Database=honua;User=honua_ro;Password=${MYSQL_PASSWORD};SslMode=Required",
+    "EngineFlavor": "Mysql",
     "Layers": [
       {
         "Id": 1,
@@ -95,10 +96,11 @@ section to `appsettings.json`:
 
 ### Configuration Reference
 
-| Setting              | Required | Default | Description |
-|----------------------|----------|---------|-------------|
-| `ConnectionString`   | Yes      | —       | MySqlConnector connection string. Prefer secret-backed configuration in production. |
-| `Layers`             | Yes      | —       | At least one layer mapping. |
+| Setting              | Required | Default  | Description |
+|----------------------|----------|----------|-------------|
+| `ConnectionString`   | Yes      | —        | MySqlConnector connection string. Prefer secret-backed configuration in production. |
+| `EngineFlavor`       | No       | `Mysql`  | `Mysql` or `MariaDb` (case-insensitive). Controls per-engine WKB axis-order handling — see [Engine Flavor and Axis Order](#engine-flavor-and-axis-order) below. |
+| `Layers`             | Yes      | —        | At least one layer mapping. |
 
 #### Layer settings
 
@@ -176,6 +178,28 @@ and to filter expressions translated through `MySqlSqlFilterTranslator`.
 **approximation**; the resulting distance differs from a true geodesic
 calculation. For accurate geodesic distance use a PostGIS-backed layer.
 Distance filters on non-`Point` layers raise `NotSupportedException`.
+
+## Engine Flavor and Axis Order
+
+MySQL 8 and MariaDB 10.6 differ in how they encode WKB for geographic SRSes. The
+provider exposes an `EngineFlavor` setting so the right WKB I/O option is picked
+at startup:
+
+| `EngineFlavor` | Apply when                  | WKB I/O behaviour                                                                                                              |
+|----------------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| `Mysql`        | Oracle MySQL 8.0.11+        | The provider emits `'axis-order=long-lat'` on `ST_AsWKB` and `ST_GeomFromWKB` so geographic SRSes (e.g. EPSG:4326) produce and consume canonical X/Y WKB regardless of the SRS-defined axis order. The option is permitted-but-ignored on projected SRSes (e.g. EPSG:3857). |
+| `MariaDb`      | MariaDB 10.6+               | The provider uses the 2-argument `ST_GeomFromWKB(wkb, srid)` form. MariaDB does not support the third axis-order argument and does not enforce SRS-based axis order, so WKB-natural X/Y already matches the canonical Honua contract. |
+
+**Symptom of a wrong flavor.** With `EngineFlavor=MariaDb` against MySQL 8 (or
+the inverse), filter geometries and returned feature geometries are interpreted
+in the wrong axis order. On EPSG:4326 this manifests as features near
+"Antarctica" returning when the caller asked for North America (the bounding
+box is interpreted as `(lat, lon)` instead of `(lon, lat)`), or as a hard
+runtime error if the engine rejects the unsupported argument count.
+
+**Connecting through PlanetScale or another MySQL-compatible proxy** typically
+warrants `Mysql`. Confirm by running `SELECT VERSION()`; values containing
+"MariaDB" indicate the MariaDB flavor.
 
 ## SRID Handling
 
@@ -300,7 +324,11 @@ fixture is added in a follow-on slice.
 - No schema introspection — declare attribute columns in configuration.
 - No native MVT, FlatGeobuf, Geobuf, GML; no streaming GeoJSON.
 - Streaming `Feature` / batch paths are supported as a buffered, paged fallback
-  over the standard select path. Use small batches for large datasets.
+  over the standard select path (no native MySQL cursor). Use small batches for
+  large datasets. When the caller does not supply a `FeatureQuery.OrderBy`, the
+  provider injects an ascending sort on the layer's primary key column to
+  guarantee a stable page sequence; without that default, repeated
+  `LIMIT`/`OFFSET` reads can repeat or skip rows.
 - No statistics, top-features, bins, H3, density, cluster, buffer-aggregate, or
   spatial-join paths.
 - No temporal (`datetime`) filters — OGC API Features `datetime`, STAC
@@ -318,6 +346,10 @@ fixture is added in a follow-on slice.
 - Per-row extent is O(n); cache the result.
 - Invalid `GeometryType` configuration values are rejected at startup (no
   silent fallback to `Point`).
+- WKB axis order is engine-specific. `EngineFlavor=Mysql` adds the
+  `'axis-order=long-lat'` option to `ST_AsWKB` and `ST_GeomFromWKB`;
+  `EngineFlavor=MariaDb` uses the 2-argument forms. Misconfiguration produces
+  swapped lon/lat at runtime. Default is `Mysql`.
 
 ## Cloud-Hosted Deployment Notes
 

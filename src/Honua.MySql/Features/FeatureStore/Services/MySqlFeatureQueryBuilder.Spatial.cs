@@ -12,7 +12,7 @@ namespace Honua.MySql.Features.FeatureStore.Services;
 
 internal sealed partial class MySqlFeatureQueryBuilder
 {
-    private static void AppendSpatialFilter(
+    private void AppendSpatialFilter(
         StringBuilder sb,
         MySqlLayerMapping mapping,
         FeatureQuery query,
@@ -40,7 +40,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         }
 
         var geomCol = mapping.QuotedGeometryColumn;
-        var filterGeom = AppendFilterGeometryParam(filter, mapping, ref paramIndex, parameters);
+        var filterGeom = AppendFilterGeometryParam(filter, mapping, _engineFlavor, ref paramIndex, parameters);
 
         var clause = filter.SpatialRelationship switch
         {
@@ -78,15 +78,19 @@ internal sealed partial class MySqlFeatureQueryBuilder
     private static string AppendFilterGeometryParam(
         SpatialFilter filter,
         MySqlLayerMapping mapping,
+        MySqlEngineFlavor engineFlavor,
         ref int paramIndex,
         List<object> parameters)
     {
         var wkbParam = $"@p{paramIndex++}";
         parameters.Add(filter.Geometry);
 
-        // ST_GeomFromWKB(wkb, srid) parses WKB and tags the result with the layer SRID so
-        // MySQL's spatial functions reject mismatched references at evaluation time.
-        return $"ST_GeomFromWKB({wkbParam}, {mapping.Srid.ToString(CultureInfo.InvariantCulture)})";
+        // ST_GeomFromWKB parses canonical X/Y WKB and tags the result with the layer SRID so
+        // MySQL's spatial functions reject mismatched references at evaluation time. On MySQL
+        // the 'axis-order=long-lat' option keeps geographic SRSes (e.g. EPSG:4326) lon-lat
+        // even though the SRS metadata declares latitude-first; MariaDB ignores SRS axis
+        // order and is always WKB-natural.
+        return MySqlSpatialSql.GeomFromWkb(wkbParam, mapping.Srid, engineFlavor);
     }
 
     private static string BuildDistanceClause(

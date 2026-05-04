@@ -43,7 +43,9 @@ public class MySqlFeatureQueryBuilderTests
     {
         var result = _builder.BuildSelectQuery(LayerId, new FeatureQuery());
 
-        Assert.Contains("SELECT `id`, ST_AsWKB(`geom`)", result.Sql, StringComparison.Ordinal);
+        // Default flavor is Mysql, so the axis-order=long-lat option is emitted on ST_AsWKB to
+        // force canonical X/Y WKB on geographic SRSes regardless of the SRS-defined axis order.
+        Assert.Contains("SELECT `id`, ST_AsWKB(`geom`, 'axis-order=long-lat')", result.Sql, StringComparison.Ordinal);
         Assert.Contains("`name`, `area`, `type`", result.Sql, StringComparison.Ordinal);
         Assert.Contains("FROM `honua`.`parcels`", result.Sql, StringComparison.Ordinal);
         Assert.Contains("WHERE 1=1", result.Sql, StringComparison.Ordinal);
@@ -142,8 +144,8 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = _builder.BuildSelectQuery(LayerId, query);
 
-        Assert.Contains("MBRIntersects(`geom`, ST_GeomFromWKB(@p0, 4326))", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("ST_Intersects(`geom`, ST_GeomFromWKB(@p0, 4326))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MBRIntersects(`geom`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat'))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_Intersects(`geom`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat'))", result.Sql, StringComparison.Ordinal);
         Assert.Single(result.WhereParameters);
     }
 
@@ -160,7 +162,7 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = _builder.BuildSelectQuery(LayerId, query);
 
-        Assert.Contains("MBRIntersects(`geom`, ST_GeomFromWKB(@p0, 4326))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MBRIntersects(`geom`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat'))", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_Intersects", result.Sql, StringComparison.Ordinal);
     }
 
@@ -396,7 +398,7 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = _builder.BuildExtentQuery(LayerId, query);
 
-        Assert.Contains("MBRIntersects(`geom`, ST_GeomFromWKB(@p0, 4326))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MBRIntersects(`geom`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat'))", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -457,5 +459,63 @@ public class MySqlFeatureQueryBuilderTests
     public void BuildSelectQuery_UnregisteredLayer_Throws()
     {
         Assert.Throws<KeyNotFoundException>(() => _builder.BuildSelectQuery(999, new FeatureQuery()));
+    }
+
+    [Fact]
+    public void BuildSelectQuery_MariaDbFlavor_OmitsAxisOrderOptionOnAsWkb()
+    {
+        // MariaDB does not support the third axis-order argument on ST_AsWKB / ST_GeomFromWKB.
+        // It also does not enforce SRS-based axis order, so WKB-natural X/Y matches the
+        // canonical Honua contract without the option. Emitting the 3-arg form on MariaDB
+        // would fail at runtime, so the slice gates the option behind the engine flavor.
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 11,
+            TableName = "parcels",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.Polygon
+        };
+        var builder = new MySqlFeatureQueryBuilder(
+            new MySqlLayerMappingRegistry([mapping]),
+            MySqlEngineFlavor.MariaDb);
+
+        var result = builder.BuildSelectQuery(11, new FeatureQuery());
+
+        Assert.Contains("ST_AsWKB(`geom`)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("axis-order", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_MariaDbFlavor_OmitsAxisOrderOptionOnSpatialFilter()
+    {
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 12,
+            TableName = "parcels",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.Polygon
+        };
+        var builder = new MySqlFeatureQueryBuilder(
+            new MySqlLayerMappingRegistry([mapping]),
+            MySqlEngineFlavor.MariaDb);
+
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(
+                geometry: [0x01],
+                spatialRelationship: SpatialRelationship.Intersects,
+                srid: 4326)
+        };
+
+        var result = builder.BuildSelectQuery(12, query);
+
+        Assert.Contains("ST_GeomFromWKB(@p0, 4326)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("axis-order", result.Sql, StringComparison.Ordinal);
     }
 }

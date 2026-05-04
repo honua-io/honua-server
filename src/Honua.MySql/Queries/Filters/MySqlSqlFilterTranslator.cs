@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -19,9 +18,16 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
 {
     private const int MaxExpressionDepth = FilterExpressionNormalizer.MaxExpressionDepth;
 
+    private readonly MySqlEngineFlavor _engineFlavor;
+
     private int _paramIndex;
     private int _depth;
     private readonly List<object?> _parameters = [];
+
+    public MySqlSqlFilterTranslator(MySqlEngineFlavor engineFlavor = MySqlEngineFlavor.Mysql)
+    {
+        _engineFlavor = engineFlavor;
+    }
 
     /// <inheritdoc />
     public SqlFragment Translate(FilterExpression filter, LayerDefinition layer)
@@ -228,8 +234,7 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
 
                     var wkbParam = $"@p{_paramIndex++}";
                     _parameters.Add(geometry.Wkb);
-                    var sridLiteral = layer.SpatialReference.Wkid.ToString(CultureInfo.InvariantCulture);
-                    return $"ST_GeomFromWKB({wkbParam}, {sridLiteral})";
+                    return MySqlSpatialSql.GeomFromWkb(wkbParam, layer.SpatialReference.Wkid, _engineFlavor);
                 }
             case PropertyReference property:
                 {

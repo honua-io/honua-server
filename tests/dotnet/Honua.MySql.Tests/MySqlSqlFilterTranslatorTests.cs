@@ -109,8 +109,10 @@ public class MySqlSqlFilterTranslatorTests
 
         var result = _translator.Translate(filter, _layer);
 
+        // Default flavor is Mysql, so the axis-order=long-lat option is emitted on
+        // ST_GeomFromWKB to interpret canonical X/Y WKB on geographic SRSes.
         Assert.Equal(
-            "MBRIntersects(`geometry`, ST_GeomFromWKB(@p0, 4326)) AND ST_Intersects(`geometry`, ST_GeomFromWKB(@p0, 4326))",
+            "MBRIntersects(`geometry`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat')) AND ST_Intersects(`geometry`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat'))",
             result.Sql);
         Assert.Single(result.Parameters);
     }
@@ -291,5 +293,24 @@ public class MySqlSqlFilterTranslatorTests
         var result = _translator.Translate(filter, _layer);
 
         Assert.Equal("TRUE", result.Sql);
+    }
+
+    [Fact]
+    public void Translate_MariaDbFlavor_OmitsAxisOrderOption()
+    {
+        // CQL2 / OGC translator emits ST_GeomFromWKB for geometry literals; on MariaDB the
+        // 3-arg axis-order form is unsupported and would error at evaluation time. The
+        // flavor parameter must be honored so MariaDB users can run filters that include
+        // geometry literals (STAC bbox, OGC API Features bbox, etc.).
+        var translator = new MySqlSqlFilterTranslator(MySqlEngineFlavor.MariaDb);
+        var filter = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geometry"),
+            new GeometryLiteral([0x01, 0x02], 4326, "POINT"));
+
+        var result = translator.Translate(filter, _layer);
+
+        Assert.Contains("ST_GeomFromWKB(@p0, 4326)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("axis-order", result.Sql, StringComparison.Ordinal);
     }
 }

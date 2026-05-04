@@ -13,6 +13,14 @@ public sealed class MySqlOptions
     /// <summary>MySQL/MariaDB connection string. Prefer environment- or secret-backed configuration.</summary>
     public string ConnectionString { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Engine flavor. Controls WKB axis-order handling — MySQL uses the
+    /// <c>'axis-order=long-lat'</c> option, MariaDB does not support it and relies on
+    /// WKB-natural order. Accepted values: <c>Mysql</c> (default) and <c>MariaDb</c>
+    /// (case-insensitive).
+    /// </summary>
+    public string EngineFlavor { get; set; } = nameof(Honua.MySql.MySqlEngineFlavor.Mysql);
+
     /// <summary>Configured layer definitions.</summary>
     public MySqlLayerOptions[] Layers { get; set; } = [];
 

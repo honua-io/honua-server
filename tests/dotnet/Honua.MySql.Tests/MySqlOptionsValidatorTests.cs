@@ -111,6 +111,45 @@ public class MySqlOptionsValidatorTests
         Assert.Null(ex);
     }
 
+    [Theory]
+    [InlineData("postgres")]    // wrong engine entirely
+    [InlineData("mssql")]
+    [InlineData("xyz")]
+    public void ThrowIfInvalid_InvalidEngineFlavor_Throws(string flavor)
+    {
+        // EngineFlavor controls per-engine WKB axis-order handling. An unknown value would
+        // cause the parser fallback to silently pick Mysql and emit a 3-arg ST_GeomFromWKB
+        // on MariaDB, which fails at the first spatial query. Reject it up front.
+        var options = new MySqlOptions
+        {
+            ConnectionString = "Server=localhost;",
+            EngineFlavor = flavor,
+            Layers = [BuildLayer()]
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => MySqlOptionsValidator.ThrowIfInvalid(options));
+        Assert.Contains("EngineFlavor", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(flavor, ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Mysql")]
+    [InlineData("mysql")]
+    [InlineData("MariaDb")]
+    [InlineData("mariadb")]
+    public void ThrowIfInvalid_ValidEngineFlavor_DoesNotThrow(string flavor)
+    {
+        var options = new MySqlOptions
+        {
+            ConnectionString = "Server=localhost;",
+            EngineFlavor = flavor,
+            Layers = [BuildLayer()]
+        };
+
+        var ex = Record.Exception(() => MySqlOptionsValidator.ThrowIfInvalid(options));
+        Assert.Null(ex);
+    }
+
     private static MySqlLayerOptions BuildLayer(
         int id = 1, string name = "Parcels", string table = "parcels", string[]? attributes = null,
         string geometryType = "Polygon")
