@@ -205,6 +205,37 @@ public sealed class NvidiaConstructionFixtureTests : IAsyncLifetime
     }
 
     [UnitTest]
+    public void ObservationsSidecar_CoordinatesAreContainedByPublishedBounds()
+    {
+        // Clients use extras.bounds (and the OGC region) to frame and cull the
+        // observation layer. Sidecar coordinates outside those bounds would be
+        // dropped from the camera framing or culled from the scene entirely.
+        // Asserting on both tilesets keeps main and obs bounds in sync.
+        using var sidecar = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(_fixtureRoot, NvidiaConstructionFixturePaths.ObservationsSidecarFileName)));
+        var observations = sidecar.RootElement.GetProperty("observations");
+
+        foreach (var tilesetName in BothTilesetFiles)
+        {
+            using var tileset = LoadTileset(tilesetName);
+            var bounds = tileset.RootElement.GetProperty("extras").GetProperty("bounds");
+            var west = bounds.GetProperty("west").GetDouble();
+            var east = bounds.GetProperty("east").GetDouble();
+            var south = bounds.GetProperty("south").GetDouble();
+            var north = bounds.GetProperty("north").GetDouble();
+
+            foreach (var entry in observations.EnumerateArray())
+            {
+                var id = entry.GetProperty("id").GetString();
+                var lon = entry.GetProperty("longitude").GetDouble();
+                var lat = entry.GetProperty("latitude").GetDouble();
+                lon.Should().BeInRange(west, east, $"{id} longitude must lie within {tilesetName} bounds");
+                lat.Should().BeInRange(south, north, $"{id} latitude must lie within {tilesetName} bounds");
+            }
+        }
+    }
+
+    [UnitTest]
     public void TileBinaries_ArePresentAndStartWithB3dmMagic()
     {
         foreach (var relative in BothTileBinaries)

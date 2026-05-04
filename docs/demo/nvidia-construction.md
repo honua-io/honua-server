@@ -33,20 +33,39 @@ tests/fixtures/scenes/nvidia-construction/
 
 ## Running locally
 
+`appsettings.Development.json` registers both scenes via
+`Scenes:Datasets`. The `ConfigurationSceneDatasetRegistry` resolves the
+relative `AssetRoot` (`../../tests/fixtures/scenes/nvidia-construction`)
+against `IHostEnvironment.ContentRootPath` (`src/Honua.Server/`), so the
+fixture is portable across `dotnet run` from the repo root or the project
+directory.
+
+The Development profile leaves `DataSource:Provider` unset, which means the
+Postgres-backed scene registry (#844) is composed in front of the
+configuration registry as `CompositeSceneDatasetRegistry`. The composite
+queries Postgres first and falls through to the configuration entries when
+the slug is not owned by Postgres — so the demo scene IDs are served via the
+fallback path. Postgres must therefore be reachable at
+`ConnectionStrings:DefaultConnection` for `dotnet run` to serve the demo;
+without it, the composite raises HTTP 500 on the first Postgres query before
+the fallback runs.
+
 ```bash
+# Bring up the local Postgres that ships with the repo (uses port 5432;
+# the Development profile expects 5433 — adjust POSTGRES_PORT or
+# ConnectionStrings:DefaultConnection to match).
+docker compose up -d postgres
+
 dotnet run --project src/Honua.Server
 ```
 
-`appsettings.Development.json` registers both scenes. The
-`ConfigurationSceneDatasetRegistry` resolves the relative `AssetRoot`
-(`../../tests/fixtures/scenes/nvidia-construction`) against
-`IHostEnvironment.ContentRootPath` (`src/Honua.Server/`), so the fixture works
-out of the box for `dotnet run` from the repo root or from the project
-directory.
+The hermetic configuration-only path (no Postgres) is exercised by
+`NvidiaConstructionFixtureTests`, which registers the same fixture via
+in-memory configuration through `WebAppFixture`.
 
 | URL | What it returns |
 |---|---|
-| `http://localhost:5000/scenes/nvidia-construction/tileset.json` | Main tileset with `extras.cameraHint`, `extras.bounds`, `extras.projectMeta`, `extras.workPackages`, `extras.parcels`, `extras.stakeholders` |
+| `http://localhost:5000/scenes/nvidia-construction/tileset.json` | Main tileset with `extras.cameraHint`, `extras.bounds`, and `extras.projectMeta` (project metadata; nests `workPackages`, `parcels`, and `stakeholders`) |
 | `http://localhost:5000/scenes/nvidia-construction/tiles/structure.b3dm` | Placeholder structure tile |
 | `http://localhost:5000/scenes/nvidia-construction-obs/tileset.json` | Observations layer tileset (shares fixture root, different `TilesetFileName`) |
 | `http://localhost:5000/scenes/nvidia-construction-obs/tiles/obs-pin.b3dm` | Placeholder observation pin tile |
@@ -187,6 +206,9 @@ covers:
   bounding regions in WGS-84 radians;
 - required `extras` fields are present (camera hint, bounds, project meta,
   layer kind, layer id);
+- every observation in `observations.json` falls within the `extras.bounds`
+  declared on both tilesets, so the published extent stays consistent with
+  the sidecar coordinates clients render;
 - `observations.json` has 5 unique stable IDs and required per-entry fields;
 - both b3dm placeholders start with the `b3dm` magic header;
 - content URIs are safe relative paths (no traversal, no remote URLs);

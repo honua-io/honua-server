@@ -178,7 +178,11 @@ unset or set to `postgres`/`postgresql`/`postgis`. Under non-Postgres
 profiles (e.g. DuckDB) the configuration-driven `Scenes:Datasets` registry
 remains the active `ISceneDatasetRegistry`, and the admin endpoints
 documented above are not mapped — the hosted serving path keeps working but
-the admin CRUD surface is intentionally absent.
+the admin CRUD surface is intentionally absent. See the
+[NVIDIA construction demo fixture](../demo/nvidia-construction.md) for an
+end-to-end example of the configuration-only path: two scene ids sharing
+one committed fixture directory, with the relative `AssetRoot` resolved
+against `IHostEnvironment.ContentRootPath`.
 
 ## Example: register and resolve
 
