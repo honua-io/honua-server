@@ -81,8 +81,15 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         var lastKey = long.MinValue;
         var hasMore = true;
 
-        while (hasMore && !cancellationToken.IsCancellationRequested)
+        while (hasMore)
         {
+            // Throw on cancellation between batches so a cancelled
+            // generation does not silently complete with partial data.
+            // The previous loop condition `!cancellationToken.IsCancellationRequested`
+            // exited normally on cancellation, which let the executor
+            // treat a partial feature list as complete.
+            cancellationToken.ThrowIfCancellationRequested();
+
             var batch = await ReadBatchAsync(sql, lastKey, attributeFields, cancellationToken).ConfigureAwait(false);
             if (batch.Count == 0)
             {

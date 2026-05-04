@@ -167,7 +167,7 @@ problem-detail helpers:
 | `SCENE_FEATURE_LIMIT_EXCEEDED` | 400 | The layer exceeds the configured maximum feature count. |
 | `SCENE_ATTRIBUTE_TYPE_UNSUPPORTED` | 400 | Reserved for future attribute-type validation surfaces. |
 | `SCENE_MODEL_ASSET_INVALID` | 400 | Reserved for the future glTF/GLB model-asset path. |
-| `SCENE_REGISTRATION_CONFLICT` | 409 | The requested scene id or display name collides with an existing dataset. The executor preflights this against the registry before any filesystem writes, so a duplicate request leaves any pre-existing scene assets unchanged. |
+| `SCENE_REGISTRATION_CONFLICT` | 409 | The requested scene id or display name collides with an existing dataset. The executor preflights against the registry and stages every generation under an intent-scoped `.staging-{intentId}` directory before promoting to `{sceneId}/`; the registry INSERT remains the canonical collision authority, and a losing request's staging bytes are deleted without ever touching the winner's final-path files. |
 | `SCENE_OPTIONS_INVALID` | 400 | Generation options failed validation. The executor runs the canonical `SceneDatasetValidator` checks (`sceneId`, `displayName`, `cacheMaxAgeSeconds`, `editionGate`) before doing any I/O so invalid input never produces a partial output directory. |
 
 ## Limits and known v1 limitations
@@ -188,7 +188,11 @@ problem-detail helpers:
   ingest semantic city models.
 - **Concurrent regeneration of the same layer is unsupported.** Each job
   produces its own scene id; the most recent registration wins on
-  collision unless the operator supplied an explicit `sceneId`.
+  collision unless the operator supplied an explicit `sceneId`. When two
+  concurrent requests resolve to the same explicit `sceneId`, the registry
+  INSERT determines the winner and the loser fails with
+  `SCENE_ID_CONFLICT` after its staging bytes are deleted — the winner's
+  final-path files are never overwritten.
 
 ## Deferred enterprise-scale work
 

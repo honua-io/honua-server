@@ -142,6 +142,80 @@ public sealed class GeometryTileBuilderTests
     }
 
     [UnitTest]
+    public void BuildGlb_AllNullStringMetadata_EmitsValidNonZeroValuesBufferView()
+    {
+        // glTF 2.0 requires bufferView.byteLength >= 1, so a STRING column
+        // whose values are all null (or all empty) must still emit a values
+        // buffer view of at least one byte. The string offsets stay at 0,
+        // so every feature still resolves to an empty string of length 0.
+        var features = new[]
+        {
+            new SceneFeature
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry
+                {
+                    Kind = SceneGeometryKind.Polygon,
+                    Vertices = SquareRing()
+                },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = null
+                }
+            },
+            new SceneFeature
+            {
+                Id = 2,
+                Geometry = new SceneFeatureGeometry
+                {
+                    Kind = SceneGeometryKind.Polygon,
+                    Vertices = SquareRing(offsetLon: 0.001)
+                },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = string.Empty
+                }
+            }
+        };
+
+        var schemas = new[]
+        {
+            new SceneAttributeSchema { PropertyId = "name", FieldName = "name", SchemaType = "STRING", SchemaComponentType = string.Empty }
+        };
+
+        var glb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null);
+        var json = ExtractJsonChunk(glb);
+
+        using var doc = JsonDocument.Parse(json);
+        var nameProperty = doc.RootElement.GetProperty("extensions").GetProperty("EXT_structural_metadata")
+            .GetProperty("propertyTables")[0]
+            .GetProperty("properties").GetProperty("name");
+        var valuesView = nameProperty.GetProperty("values").GetInt32();
+        var stringOffsetsView = nameProperty.GetProperty("stringOffsets").GetInt32();
+
+        var bufferViews = doc.RootElement.GetProperty("bufferViews");
+        var valuesByteLength = bufferViews[valuesView].GetProperty("byteLength").GetInt32();
+        var offsetsByteLength = bufferViews[stringOffsetsView].GetProperty("byteLength").GetInt32();
+
+        valuesByteLength.Should().BeGreaterThanOrEqualTo(1,
+            "glTF 2.0 forbids zero-length bufferViews; an all-null STRING column must pad its values view to at least one byte.");
+        offsetsByteLength.Should().Be((features.Length + 1) * 4,
+            "string offsets remain (count+1)*4 bytes regardless of value content; every offset is 0 for empty strings.");
+
+        // Verify every offset is 0 — readers slicing the values buffer with
+        // those offsets get zero-length spans (correct empty strings).
+        var binPayload = ExtractBinChunk(glb);
+        var offsetsByteOffset = bufferViews[stringOffsetsView].GetProperty("byteOffset").GetInt32();
+        for (var i = 0; i <= features.Length; i++)
+        {
+            var offset = BinaryPrimitives.ReadUInt32LittleEndian(
+                binPayload.AsSpan(offsetsByteOffset + i * 4, 4));
+            offset.Should().Be(0u,
+                "all-null/all-empty string offsets stay at 0 so every value decodes as empty string.");
+        }
+    }
+
+    [UnitTest]
     public void BuildGlb_PreservesInt64AttributesBeyondInt32Range()
     {
         var beyondMax = (long)int.MaxValue + 100L;

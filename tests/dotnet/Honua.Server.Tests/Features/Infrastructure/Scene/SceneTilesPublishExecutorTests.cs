@@ -414,6 +414,88 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_RegistrationConflictAfterPreflight_PreservesExistingFinalFiles()
+    {
+        // Simulate the concurrent-publish race: two requests with the same
+        // sceneId both pass the preflight (registry empty), the winner finishes
+        // first and registers, and the loser's RegisterAsync throws
+        // SceneDatasetAlreadyExistsException. The loser must NOT overwrite the
+        // winner's final-path files. Pre-creating the final-path bytes here
+        // models the post-winner state.
+        var finalDir = Path.Combine(_outputRoot, "concurrent-loser");
+        Directory.CreateDirectory(finalDir);
+        var winnerTileBytes = new byte[] { 0xAA, 0xBB, 0xCC };
+        var winnerTilesetBytes = Encoding.UTF8.GetBytes("{\"asset\":{\"version\":\"1.1\"},\"winner\":true}");
+        await File.WriteAllBytesAsync(Path.Combine(finalDir, "tile_0000.glb"), winnerTileBytes);
+        await File.WriteAllBytesAsync(Path.Combine(finalDir, "tileset.json"), winnerTilesetBytes);
+
+        // Preflight returns null (registry record is hidden) but RegisterAsync
+        // throws — this is the case the staging-then-promote path is meant to
+        // close.
+        _registration.RejectNextRegistration = true;
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: "concurrent-loser"), CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.SceneIdConflict);
+
+        // Winner's bytes survived: registration failed before the rename, and
+        // the loser's outputs were staged under a separate intent-scoped
+        // directory.
+        (await File.ReadAllBytesAsync(Path.Combine(finalDir, "tile_0000.glb")))
+            .Should().Equal(winnerTileBytes);
+        (await File.ReadAllBytesAsync(Path.Combine(finalDir, "tileset.json")))
+            .Should().Equal(winnerTilesetBytes);
+
+        // Staging directory must be cleaned up — only the final dir remains.
+        var stagingEntries = Directory.GetDirectories(_outputRoot, ".staging-*");
+        stagingEntries.Should().BeEmpty(
+            "the executor must remove its staging directory when registration rejects the publish.");
+    }
+
+    [UnitTest]
+    public async Task Execute_OverwritesStaleFinalDir_WhenRegistryHasNoRecord()
+    {
+        // A previous partial run can leave detritus at the final path even
+        // though the registry has no record (e.g. crash between move and a
+        // hypothetical post-promote step). The staging promotion path must
+        // overwrite the stale directory so the registry record and disk
+        // contents agree.
+        var finalDir = Path.Combine(_outputRoot, "stale-overwrite");
+        Directory.CreateDirectory(finalDir);
+        await File.WriteAllBytesAsync(Path.Combine(finalDir, "leftover.txt"),
+            Encoding.UTF8.GetBytes("orphaned"));
+
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var outcome = await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "stale-overwrite"), CancellationToken.None);
+
+        outcome.Result.SceneId.Should().Be("stale-overwrite");
+        File.Exists(Path.Combine(finalDir, "leftover.txt")).Should().BeFalse(
+            "stale detritus must be removed during staging promotion.");
+        File.Exists(Path.Combine(finalDir, "tile_0000.glb")).Should().BeTrue();
+        File.Exists(Path.Combine(finalDir, "tileset.json")).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task Execute_SuccessfulGeneration_LeavesNoStagingDirectory()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var outcome = await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "no-staging"), CancellationToken.None);
+
+        outcome.Result.SceneId.Should().Be("no-staging");
+        var stagingEntries = Directory.GetDirectories(_outputRoot, ".staging-*");
+        stagingEntries.Should().BeEmpty(
+            "successful generation promotes staging to the final scene path; no staging dir should linger.");
+    }
+
+    [UnitTest]
     public async Task Execute_BigIntegerValues_PreservedWithoutClamping()
     {
         var fields = new[]

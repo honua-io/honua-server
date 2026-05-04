@@ -206,83 +206,111 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             var editionGate = TryGetTargetConfig(intent, TargetConfigEditionGate);
 
             // Preflight registry lookup so a duplicate sceneId returns 409 BEFORE
-            // we create the output directory or overwrite any existing files. The
-            // registry INSERT below still races and remains the canonical
-            // collision authority, but the preflight closes the practical
+            // we create any directory. The registry INSERT below remains the
+            // canonical collision authority; this preflight closes the practical
             // overwrite window for sequential publishes against the same id.
             await PreflightSceneIdConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
 
+            // Stage outputs under an intent-scoped directory so concurrent
+            // publishes that pass the preflight (same sceneId, both running
+            // before either reaches RegisterAsync) cannot overwrite each
+            // other's final-path bytes. We register first — that INSERT is the
+            // single canonical collision authority — and only promote the
+            // winning staging directory to its final location after the
+            // registry record is durable.
             var outputDirectory = ResolveOutputDirectory(serverOptions, sceneId);
-            Directory.CreateDirectory(outputDirectory);
-
-            var glb = GeometryTileBuilder.BuildGlb(
-                collected.Features,
-                attributeSchemas,
-                extrusion,
-                serverOptions.GeneratorTag,
-                collected.Warnings);
-
-            var tileFileName = "tile_0000.glb";
-            await File.WriteAllBytesAsync(
-                Path.Combine(outputDirectory, tileFileName),
-                glb,
-                cancellationToken).ConfigureAwait(false);
-
-            var geometricError = ComputeGeometricError(bounds, minHeight, maxHeight);
-            var tileset = TilesetDocumentWriter.Build(
-                bounds,
-                minHeight,
-                maxHeight,
-                geometricError,
-                tileContentUris: [tileFileName],
-                serverOptions.GeneratorTag);
-            var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
-            await File.WriteAllBytesAsync(
-                Path.Combine(outputDirectory, "tileset.json"),
-                tilesetBytes,
-                cancellationToken).ConfigureAwait(false);
-
-            await TryRegisterSceneAsync(
-                sceneId,
-                displayName,
-                description,
-                outputDirectory,
-                bounds,
-                generationOptions.CacheMaxAgeSeconds,
-                editionGate,
-                createdBy: TryGetTargetConfig(intent, TargetConfigCreatedBy) ?? "publisher",
-                cancellationToken).ConfigureAwait(false);
-
-            stopwatch.Stop();
-            activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, collected.Features.Count);
-            activity?.SetTag("honua.scene.tile_count", 1);
-            activity?.SetTag("honua.scene.id", sceneId);
-            SceneGenerationLog.Completed(_logger, intent.IntentId, sceneId, collected.Features.Count, stopwatch.ElapsedMilliseconds);
-
-            foreach (var warning in collected.Warnings)
+            var stagingDirectory = ResolveStagingDirectory(serverOptions, intent.IntentId);
+            string? stagingToCleanup = stagingDirectory;
+            try
             {
-                SceneGenerationLog.Warning(_logger, intent.IntentId, warning);
-            }
+                Directory.CreateDirectory(stagingDirectory);
 
-            var summary = new SceneGenerationSummary
-            {
-                FeatureCount = collected.Features.Count,
-                TileCount = 1,
-                BoundingRegionDegrees = bounds,
-                GeometricError = geometricError,
-                Warnings = collected.Warnings.AsReadOnly()
-            };
+                var glb = GeometryTileBuilder.BuildGlb(
+                    collected.Features,
+                    attributeSchemas,
+                    extrusion,
+                    serverOptions.GeneratorTag,
+                    collected.Warnings);
 
-            return new SceneGenerationOutcome
-            {
-                Result = new SceneGenerationResult
+                var tileFileName = "tile_0000.glb";
+                await File.WriteAllBytesAsync(
+                    Path.Combine(stagingDirectory, tileFileName),
+                    glb,
+                    cancellationToken).ConfigureAwait(false);
+
+                var geometricError = ComputeGeometricError(bounds, minHeight, maxHeight);
+                var tileset = TilesetDocumentWriter.Build(
+                    bounds,
+                    minHeight,
+                    maxHeight,
+                    geometricError,
+                    tileContentUris: [tileFileName],
+                    serverOptions.GeneratorTag);
+                var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
+                await File.WriteAllBytesAsync(
+                    Path.Combine(stagingDirectory, "tileset.json"),
+                    tilesetBytes,
+                    cancellationToken).ConfigureAwait(false);
+
+                await TryRegisterSceneAsync(
+                    sceneId,
+                    displayName,
+                    description,
+                    outputDirectory,
+                    bounds,
+                    generationOptions.CacheMaxAgeSeconds,
+                    editionGate,
+                    createdBy: TryGetTargetConfig(intent, TargetConfigCreatedBy) ?? "publisher",
+                    cancellationToken).ConfigureAwait(false);
+
+                // Registration succeeded — promote staging to the final scene
+                // path. Directory.Move is atomic on the same filesystem, so any
+                // reader that observes the directory observes the final byte
+                // image. If the final path already holds detritus from a prior
+                // partial run, clear it before the rename — registration was
+                // the canonical authority, and the registry now points at this
+                // generation.
+                PromoteStagingToFinal(stagingDirectory, outputDirectory);
+                stagingToCleanup = null;
+
+                stopwatch.Stop();
+                activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, collected.Features.Count);
+                activity?.SetTag("honua.scene.tile_count", 1);
+                activity?.SetTag("honua.scene.id", sceneId);
+                SceneGenerationLog.Completed(_logger, intent.IntentId, sceneId, collected.Features.Count, stopwatch.ElapsedMilliseconds);
+
+                foreach (var warning in collected.Warnings)
                 {
-                    SceneId = sceneId,
-                    AssetRoot = outputDirectory,
-                    Summary = summary,
-                    Warnings = collected.Warnings.AsReadOnly()
+                    SceneGenerationLog.Warning(_logger, intent.IntentId, warning);
                 }
-            };
+
+                var summary = new SceneGenerationSummary
+                {
+                    FeatureCount = collected.Features.Count,
+                    TileCount = 1,
+                    BoundingRegionDegrees = bounds,
+                    GeometricError = geometricError,
+                    Warnings = collected.Warnings.AsReadOnly()
+                };
+
+                return new SceneGenerationOutcome
+                {
+                    Result = new SceneGenerationResult
+                    {
+                        SceneId = sceneId,
+                        AssetRoot = outputDirectory,
+                        Summary = summary,
+                        Warnings = collected.Warnings.AsReadOnly()
+                    }
+                };
+            }
+            finally
+            {
+                if (stagingToCleanup is not null)
+                {
+                    TryDeleteStaging(stagingToCleanup);
+                }
+            }
         }
         catch (ValidationException vex)
         {
@@ -600,6 +628,53 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         return Path.GetFullPath(Path.Combine(rooted, sceneId));
     }
 
+    private string ResolveStagingDirectory(SceneGenerationServerOptions serverOptions, string intentId)
+    {
+        var rooted = Path.IsPathRooted(serverOptions.OutputRoot)
+            ? serverOptions.OutputRoot
+            : Path.Combine(_environment.ContentRootPath, serverOptions.OutputRoot);
+        // Prefix with '.' so the directory name cannot collide with any valid
+        // sceneId (the canonical validator forbids leading dots/hyphens).
+        return Path.GetFullPath(Path.Combine(rooted, $".staging-{intentId}"));
+    }
+
+    private void PromoteStagingToFinal(string stagingDirectory, string finalDirectory)
+    {
+        var parentDir = Path.GetDirectoryName(finalDirectory);
+        if (!string.IsNullOrEmpty(parentDir))
+        {
+            Directory.CreateDirectory(parentDir);
+        }
+        if (Directory.Exists(finalDirectory))
+        {
+            // Detritus from a prior partial run that did not register; the
+            // canonical registry now points at the staging contents, so clear
+            // the stale path before the rename.
+            SceneGenerationLog.PromotionOverwroteStaleFinalDir(_logger, finalDirectory);
+            Directory.Delete(finalDirectory, recursive: true);
+        }
+        Directory.Move(stagingDirectory, finalDirectory);
+    }
+
+    private void TryDeleteStaging(string stagingDirectory)
+    {
+        try
+        {
+            if (Directory.Exists(stagingDirectory))
+            {
+                Directory.Delete(stagingDirectory, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Cleanup is best-effort: a failed delete leaves a hidden staging
+            // dir that is harmless (it never gets served, no registry record
+            // points at it). Log so operators can sweep with a janitor job if
+            // it accumulates.
+            SceneGenerationLog.StagingCleanupFailed(_logger, stagingDirectory, ex);
+        }
+    }
+
     private async Task TryRegisterSceneAsync(
         string sceneId,
         string displayName,
@@ -749,5 +824,13 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         [LoggerMessage(EventId = 8413, Level = LogLevel.Information,
             Message = "Scene generation warning: intent {IntentId}, message {Message}")]
         public static partial void Warning(ILogger logger, string intentId, string message);
+
+        [LoggerMessage(EventId = 8414, Level = LogLevel.Warning,
+            Message = "Scene generation overwrote stale final directory {FinalDirectory} during staging promotion; the registry record now points at the new bytes.")]
+        public static partial void PromotionOverwroteStaleFinalDir(ILogger logger, string finalDirectory);
+
+        [LoggerMessage(EventId = 8415, Level = LogLevel.Warning,
+            Message = "Scene generation could not delete staging directory {StagingDirectory}; subsequent generations are unaffected but the directory may need a manual sweep.")]
+        public static partial void StagingCleanupFailed(ILogger logger, string stagingDirectory, Exception exception);
     }
 }

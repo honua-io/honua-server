@@ -795,6 +795,14 @@ internal sealed class SceneMetadataColumn
             offsets[i + 1] = (uint)stringBytes.Count;
         }
 
+        // glTF 2.0 requires bufferView.byteLength >= 1, so a column whose
+        // values are all null/empty would otherwise emit an invalid zero-byte
+        // values view. Pad with a single 0x00 byte; every offset stays at 0
+        // and every string therefore decodes as empty (length = next - prev).
+        var values = stringBytes.Count == 0
+            ? new byte[] { 0 }
+            : stringBytes.ToArray();
+
         var offsetBytes = new byte[offsets.Length * 4];
         for (var i = 0; i < offsets.Length; i++)
         {
@@ -806,7 +814,7 @@ internal sealed class SceneMetadataColumn
             PropertyId = schema.PropertyId,
             SchemaType = "STRING",
             SchemaComponentType = string.Empty,
-            Bytes = stringBytes.ToArray(),
+            Bytes = values,
             StringOffsetBytes = offsetBytes
         };
     }
