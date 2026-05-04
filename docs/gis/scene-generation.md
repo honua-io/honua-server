@@ -39,7 +39,7 @@ an admin-request timeout. Asynchronous job tracking through a durable
 | --- | --- | --- |
 | `layerId` | yes | Catalog id of a feature layer with a polygon, point, or linestring geometry column. |
 | `sceneId` | no | Stable URL slug, validated by the canonical `SceneDatasetValidator`: 1–64 chars, must match `[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?` (lowercased server-side, no trailing hyphen). When omitted, the server derives an ASCII slug from the layer name plus an 8-char intent suffix and rejects derivations that fail the same pattern. |
-| `displayName` | no | Human-readable name (≤ 128 characters); defaults to the layer name. |
+| `displayName` | no | Human-readable name (≤ 128 characters). When omitted, defaults to `"{layer.Name} ({sceneId})"` (truncated to fit), so repeated generations from the same layer never collide on the registry's name uniqueness constraint. Provide an explicit value to override. |
 | `description` | no | Optional description text. |
 | `includeAttributes` | no | Allowlist of attribute fields to project into the tileset's metadata schema. Empty means all numeric/string attributes. |
 | `maxFeatureCount` | no | Per-job override of the v1 50 000-feature cap; the smaller of the two values wins. |
@@ -110,6 +110,18 @@ viewer.scene.primitives.add(tileset);
   `SCALAR/INT64` and the corresponding bufferView is 8-byte aligned per the
   EXT_structural_metadata specification. `Double` and `Float` are encoded as
   `SCALAR/FLOAT32`. Other types are omitted from the metadata table.
+- **Row identifier**: when an attribute field is named `objectid`,
+  `object_id`, or `id` (case-insensitive), its metadata column is populated
+  from the source row's primary key rather than from the JSONB attributes
+  bag. The shared `features` table stores the identifier in the `objectid`
+  column, and reading `attributes ->> 'objectid'` returns null when the
+  JSONB does not duplicate the PK. Projecting from the PK keeps identify
+  workflows aligned with the source row.
+- **Property id deduplication**: source field names are sanitized to
+  `[A-Za-z0-9_]` for the `EXT_structural_metadata` property id. If two
+  field names sanitize to the same id (for example `a-b` and `a_b` both
+  collapse to `a_b`), the second occurrence receives a deterministic
+  `_2`/`_3`/... suffix in declaration order so neither column is shadowed.
 
 ## Output layout
 
@@ -182,7 +194,7 @@ problem-detail helpers:
 | `SCENE_ATTRIBUTE_TYPE_UNSUPPORTED` | 400 | Reserved for future attribute-type validation surfaces. |
 | `SCENE_MODEL_ASSET_INVALID` | 400 | Reserved for the future glTF/GLB model-asset path. |
 | `SCENE_REGISTRATION_CONFLICT` | 409 | The requested scene id or display name collides with an existing dataset (active OR inactive). The executor preflights against the registry and stages every generation under an intent-scoped `.staging-{intentId}` directory before promoting to `{sceneId}/`; the registry INSERT remains the canonical collision authority, and a losing request's staging bytes are deleted without ever touching the winner's final-path files. If a prior generation failed during staging promotion (e.g. permission denied on `Directory.Move`), the executor compensates by deactivating the inserted registry record so the serving path returns 404, but the inactive record still occupies the slug/name until the operator deletes the record via the admin scene CRUD path (#844). |
-| `SCENE_OPTIONS_INVALID` | 400 | Generation options failed validation. The executor runs the canonical `SceneDatasetValidator` checks (`sceneId`, `displayName`, `cacheMaxAgeSeconds`, `editionGate`) before doing any I/O so invalid input never produces a partial output directory. |
+| `SCENE_OPTIONS_INVALID` | 400 | Generation options failed validation. The executor runs the canonical `SceneDatasetValidator` checks (`sceneId`, `displayName`, `cacheMaxAgeSeconds`, `editionGate`) before doing any I/O so invalid input never produces a partial output directory. The executor also rejects an explicit `cacheMaxAgeSeconds` that is non-numeric or negative and an explicit `maxFeatureCount` that is non-numeric or non-positive, rather than silently falling back to the server defaults. |
 
 ## Limits and known v1 limitations
 

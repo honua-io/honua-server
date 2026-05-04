@@ -151,13 +151,27 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
             var attributes = new Dictionary<string, object?>(attributeFields.Count, StringComparer.Ordinal);
             for (var i = 0; i < attributeFields.Count; i++)
             {
+                var fieldName = attributeFields[i].Name;
+                if (IsObjectIdAlias(fieldName))
+                {
+                    // The shared features table stores the row identifier in
+                    // the objectid column, NOT in the attributes JSONB bag.
+                    // Reading attributes ->> 'objectid' returns null whenever
+                    // the JSONB does not duplicate the PK, which silently
+                    // wrote 0 into the GLB metadata column for identify
+                    // workflows. Project from the primary key so the
+                    // generated metadata always carries the source row id.
+                    attributes[fieldName] = pk;
+                    continue;
+                }
+
                 // attributes ->> @field returns TEXT; the GLB writer's
                 // ToInt32/ToInt64/ToFloat coercions parse string values
                 // back to the declared SCHEMA/COMPONENT type, so handing
                 // raw JSON text through is enough to round-trip integer,
                 // float, and string columns from the JSONB store.
                 var raw = reader.IsDBNull(2 + i) ? null : reader.GetValue(2 + i);
-                attributes[attributeFields[i].Name] = raw;
+                attributes[fieldName] = raw;
             }
 
             results.Add(new SceneFeature
@@ -188,6 +202,18 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         var allow = new HashSet<string>(includeAttributes, StringComparer.OrdinalIgnoreCase);
         return candidates.Where(f => allow.Contains(f.Name)).ToList();
     }
+
+    /// <summary>
+    /// Returns true when the supplied field name is one of the canonical
+    /// row-identifier aliases. Honua's shared <c>features</c> table stores
+    /// the identifier in the <c>objectid</c> column rather than in the
+    /// JSONB attributes bag, so the source must populate these slots from
+    /// the primary key value.
+    /// </summary>
+    private static bool IsObjectIdAlias(string name)
+        => string.Equals(name, "objectid", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "object_id", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "id", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>

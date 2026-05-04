@@ -200,7 +200,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             if (double.IsNegativeInfinity(maxHeight)) maxHeight = 0.0;
 
             var sceneId = ResolveSceneId(intent, layer);
-            var displayName = ResolveDisplayName(intent, layer);
+            var displayName = ResolveDisplayName(intent, layer, sceneId);
             ValidateDisplayName(displayName);
             var description = TryGetTargetConfig(intent, TargetConfigDescription);
             var editionGate = TryGetTargetConfig(intent, TargetConfigEditionGate);
@@ -449,19 +449,40 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
         var maxText = TryGetTargetConfig(intent, TargetConfigMaxFeatureCount);
         var maxFeatures = serverOptions.MaxFeatureCount;
-        if (!string.IsNullOrEmpty(maxText)
-            && int.TryParse(maxText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMax)
-            && parsedMax > 0)
+        if (!string.IsNullOrEmpty(maxText))
         {
+            // An explicit value that does not parse, is non-positive, or
+            // exceeds reasonable bounds must surface as SCENE_OPTIONS_INVALID
+            // rather than silently fall back to the server default — the
+            // caller asked for a specific cap and getting the server cap
+            // instead would produce a tileset that does not honor the
+            // request contract.
+            if (!int.TryParse(maxText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMax)
+                || parsedMax <= 0)
+            {
+                throw new ValidationException(
+                    $"{SceneGenerationErrorCodes.OptionsInvalid}: maxFeatureCount must be a positive integer.");
+            }
             maxFeatures = Math.Min(parsedMax, serverOptions.MaxFeatureCount);
         }
 
         var cacheText = TryGetTargetConfig(intent, TargetConfigCacheMaxAge);
         var cacheMaxAge = 3600;
-        if (!string.IsNullOrEmpty(cacheText)
-            && int.TryParse(cacheText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCache)
-            && parsedCache >= 0)
+        if (!string.IsNullOrEmpty(cacheText))
         {
+            // The docs bound cacheMaxAgeSeconds to [0, 86400] and require
+            // SCENE_OPTIONS_INVALID for invalid values. The previous code
+            // silently swallowed parse failures and negative values into the
+            // 3600-second default, which then passed SceneDatasetValidator's
+            // range check downstream. Reject the parse/negative case here so
+            // the contract holds; SceneDatasetValidator continues to enforce
+            // the upper bound after a successful parse.
+            if (!int.TryParse(cacheText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCache)
+                || parsedCache < 0)
+            {
+                throw new ValidationException(
+                    $"{SceneGenerationErrorCodes.OptionsInvalid}: cacheMaxAgeSeconds must be a non-negative integer.");
+            }
             cacheMaxAge = parsedCache;
         }
 
@@ -482,6 +503,13 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             : new HashSet<string>(includeAttributes, StringComparer.OrdinalIgnoreCase);
 
         var schemas = new List<SceneAttributeSchema>();
+        // SanitizePropertyId collapses any non-alphanumeric character to '_',
+        // so source field names like "a-b" and "a_b" both sanitize to "a_b"
+        // and would collide in the EXT_structural_metadata schema (the
+        // second column would shadow the first in the JSON dictionary).
+        // De-duplicate deterministically by appending "_2", "_3", ... in
+        // declaration order so the layout stays byte-identical across runs.
+        var seenPropertyIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var field in layer.AttributeFields)
         {
             if (allow is not null && !allow.Contains(field.Name))
@@ -495,9 +523,18 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 continue;
             }
 
+            var basePropertyId = SanitizePropertyId(field.Name);
+            var propertyId = basePropertyId;
+            var suffix = 2;
+            while (!seenPropertyIds.Add(propertyId))
+            {
+                propertyId = basePropertyId + "_" + suffix.ToString(CultureInfo.InvariantCulture);
+                suffix++;
+            }
+
             schemas.Add(new SceneAttributeSchema
             {
-                PropertyId = SanitizePropertyId(field.Name),
+                PropertyId = propertyId,
                 FieldName = field.Name,
                 SchemaType = schemaType,
                 SchemaComponentType = componentType
@@ -623,10 +660,31 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         return candidate;
     }
 
-    private static string ResolveDisplayName(PublishIntent intent, LayerDefinition layer)
+    private static string ResolveDisplayName(PublishIntent intent, LayerDefinition layer, string sceneId)
     {
         var name = TryGetTargetConfig(intent, TargetConfigDisplayName);
-        return string.IsNullOrEmpty(name) ? layer.Name : name;
+        if (!string.IsNullOrEmpty(name))
+        {
+            return name;
+        }
+        // The registry's name uniqueness constraint means defaulting to
+        // layer.Name causes the second auto-generated scene from the same
+        // layer to fail with a misleading SCENE_ID_CONFLICT (the conflict
+        // is on name, not id). Suffix with the resolved sceneId so the
+        // default is unique by construction; the operator can always
+        // override via the displayName field.
+        var layerName = string.IsNullOrWhiteSpace(layer.Name) ? "Scene" : layer.Name;
+        var suffix = $" ({sceneId})";
+        var available = SceneDatasetValidator.MaxSceneNameLength - suffix.Length;
+        if (available <= 0)
+        {
+            return sceneId;
+        }
+        if (layerName.Length > available)
+        {
+            layerName = layerName[..available];
+        }
+        return layerName + suffix;
     }
 
     private static string? TryGetTargetConfig(PublishIntent intent, string key)

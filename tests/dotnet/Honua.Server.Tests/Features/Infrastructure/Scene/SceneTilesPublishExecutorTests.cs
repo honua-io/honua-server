@@ -553,6 +553,151 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_DefaultDisplayName_IsUniquePerSceneId()
+    {
+        // Two generations of the same layer with different sceneIds must
+        // produce different default display names so the registry's name
+        // uniqueness constraint does not surface as SCENE_ID_CONFLICT.
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var first = await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "buildings-aaa"), CancellationToken.None);
+        var second = await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "buildings-bbb"), CancellationToken.None);
+
+        first.Result.SceneId.Should().Be("buildings-aaa");
+        second.Result.SceneId.Should().Be("buildings-bbb");
+        _registration.Records.Should().HaveCount(2);
+        var firstRecord = _registration.Records.Single(r => r.Id == "buildings-aaa");
+        var secondRecord = _registration.Records.Single(r => r.Id == "buildings-bbb");
+        firstRecord.Name.Should().Be("Buildings (buildings-aaa)");
+        secondRecord.Name.Should().Be("Buildings (buildings-bbb)");
+        firstRecord.Name.Should().NotBe(secondRecord.Name,
+            "default display names must be unique so repeated generations of the same layer do not collide on the registry name uniqueness constraint.");
+    }
+
+    [UnitTest]
+    public async Task Execute_ExplicitDisplayName_OverridesAutoSuffix()
+    {
+        // Explicit displayName is preserved as-is; the auto suffix only
+        // applies when the operator omits the field.
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "named-scene", displayName: "Custom Display"),
+            CancellationToken.None);
+
+        var record = _registration.Records.Single(r => r.Id == "named-scene");
+        record.Name.Should().Be("Custom Display");
+    }
+
+    [UnitTest]
+    public async Task Execute_PropertyIdCollision_DeduplicatesDeterministically()
+    {
+        // SanitizePropertyId collapses non-alphanumerics to '_', so source
+        // field names like "a-b" and "a_b" both map to "a_b" and would
+        // shadow each other in EXT_structural_metadata.schema.classes.
+        var fields = new[]
+        {
+            new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
+            new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
+            new FieldDefinition("a-b", FieldType.String, Length: 64, Nullable: true),
+            new FieldDefinition("a_b", FieldType.String, Length: 64, Nullable: true)
+        };
+        _catalog.Layer = new LayerDefinition(
+            LayerId, "Buildings", null, GeometryType.Polygon,
+            SpatialReference.Create(4326, 4326), fields);
+
+        var basePolygons = SamplePolygons();
+        var withCollidingFields = new List<SceneFeature>(basePolygons.Count);
+        foreach (var poly in basePolygons)
+        {
+            var attrs = new Dictionary<string, object?>(poly.Attributes, StringComparer.Ordinal)
+            {
+                ["a-b"] = "hyphen-source",
+                ["a_b"] = "underscore-source"
+            };
+            withCollidingFields.Add(poly with { Attributes = attrs });
+        }
+        _featureSource.Features = withCollidingFields;
+
+        var outcome = await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "collision-test"), CancellationToken.None);
+
+        var tile = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tile_0000.glb"));
+        using var doc = JsonDocument.Parse(ExtractJsonChunk(tile));
+        var properties = doc.RootElement
+            .GetProperty("extensions").GetProperty("EXT_structural_metadata")
+            .GetProperty("schema").GetProperty("classes")
+            .GetProperty("honua_feature_class").GetProperty("properties");
+
+        properties.TryGetProperty("a_b", out _).Should().BeTrue(
+            "the first sanitized id keeps the canonical name.");
+        properties.TryGetProperty("a_b_2", out _).Should().BeTrue(
+            "the second collision must receive a deterministic suffix so it is not lost.");
+    }
+
+    [UnitTest]
+    public async Task Execute_NegativeCacheMaxAgeSeconds_ReturnsOptionsInvalid()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var intent = BuildIntent(sceneId: "negative-cache");
+        var configWithNegative = new Dictionary<string, string>(intent.TargetConfig, StringComparer.Ordinal)
+        {
+            [SceneTilesPublishExecutor.TargetConfigCacheMaxAge] = "-1"
+        };
+        var bad = intent with { TargetConfig = configWithNegative };
+
+        var act = () => _executor.RunDirectAsync(bad, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+        ex.And.Message.Should().Contain("cacheMaxAgeSeconds");
+    }
+
+    [UnitTest]
+    public async Task Execute_NonNumericCacheMaxAgeSeconds_ReturnsOptionsInvalid()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var intent = BuildIntent(sceneId: "nan-cache");
+        var configWithNaN = new Dictionary<string, string>(intent.TargetConfig, StringComparer.Ordinal)
+        {
+            [SceneTilesPublishExecutor.TargetConfigCacheMaxAge] = "not-a-number"
+        };
+        var bad = intent with { TargetConfig = configWithNaN };
+
+        var act = () => _executor.RunDirectAsync(bad, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+    }
+
+    [UnitTest]
+    public async Task Execute_NonPositiveMaxFeatureCount_ReturnsOptionsInvalid()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var intent = BuildIntent(sceneId: "zero-cap");
+        var configWithZero = new Dictionary<string, string>(intent.TargetConfig, StringComparer.Ordinal)
+        {
+            [SceneTilesPublishExecutor.TargetConfigMaxFeatureCount] = "0"
+        };
+        var bad = intent with { TargetConfig = configWithZero };
+
+        var act = () => _executor.RunDirectAsync(bad, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+    }
+
+    [UnitTest]
     public async Task Execute_BigIntegerValues_PreservedWithoutClamping()
     {
         var fields = new[]
