@@ -69,8 +69,51 @@ public class MySqlOptionsValidatorTests
         Assert.Null(ex);
     }
 
+    [Theory]
+    [InlineData("Pont")]      // typo for "Point"
+    [InlineData("polygons")]  // plural typo
+    [InlineData("Curve")]     // unsupported type
+    [InlineData("xyz")]
+    public void ThrowIfInvalid_InvalidGeometryType_Throws(string geometryType)
+    {
+        // A typo in GeometryType used to silently fall back to Point at mapping-build
+        // time, allowing point-only SQL paths (distance filters) to run against non-point
+        // data. The validator now rejects unknown values up front.
+        var options = new MySqlOptions
+        {
+            ConnectionString = "Server=localhost;",
+            Layers = [BuildLayer(geometryType: geometryType)]
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => MySqlOptionsValidator.ThrowIfInvalid(options));
+        Assert.Contains("GeometryType", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(geometryType, ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Point")]
+    [InlineData("point")]
+    [InlineData("MULTIPOINT")]
+    [InlineData("LineString")]
+    [InlineData("Polygon")]
+    [InlineData("MultiPolygon")]
+    [InlineData("GeometryCollection")]
+    [InlineData("None")]
+    public void ThrowIfInvalid_ValidGeometryType_DoesNotThrow(string geometryType)
+    {
+        var options = new MySqlOptions
+        {
+            ConnectionString = "Server=localhost;",
+            Layers = [BuildLayer(geometryType: geometryType)]
+        };
+
+        var ex = Record.Exception(() => MySqlOptionsValidator.ThrowIfInvalid(options));
+        Assert.Null(ex);
+    }
+
     private static MySqlLayerOptions BuildLayer(
-        int id = 1, string name = "Parcels", string table = "parcels", string[]? attributes = null)
+        int id = 1, string name = "Parcels", string table = "parcels", string[]? attributes = null,
+        string geometryType = "Polygon")
         => new()
         {
             Id = id,
@@ -79,7 +122,7 @@ public class MySqlOptionsValidatorTests
             GeometryColumn = "geom",
             PrimaryKeyColumn = "id",
             Srid = 4326,
-            GeometryType = "Polygon",
+            GeometryType = geometryType,
             Attributes = attributes ?? ["name"]
         };
 }

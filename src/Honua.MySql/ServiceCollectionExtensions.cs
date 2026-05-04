@@ -110,9 +110,10 @@ internal static class ServiceCollectionExtensions
                 MySqlIdentifier.ValidateFieldName(attr);
             }
 
-            var geometryType = Enum.TryParse<GeometryType>(layer.GeometryType, ignoreCase: true, out var gt)
-                ? gt
-                : GeometryType.Point;
+            // GeometryType is pre-validated by MySqlOptionsValidator; Parse (not TryParse)
+            // surfaces any future regression that lets an unknown value through instead
+            // of silently defaulting to Point.
+            var geometryType = Enum.Parse<GeometryType>(layer.GeometryType, ignoreCase: true);
 
             mappings.Add(new MySqlLayerMapping
             {
@@ -140,9 +141,7 @@ internal static class ServiceCollectionExtensions
 
         foreach (var layerOpt in options.Layers)
         {
-            var geometryType = Enum.TryParse<GeometryType>(layerOpt.GeometryType, ignoreCase: true, out var gt)
-                ? gt
-                : GeometryType.Point;
+            var geometryType = Enum.Parse<GeometryType>(layerOpt.GeometryType, ignoreCase: true);
 
             var srs = SpatialReference.Create(layerOpt.Srid);
 

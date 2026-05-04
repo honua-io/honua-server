@@ -217,7 +217,11 @@ internal sealed class MySqlFeatureStore :
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var remainingBudget = requestedLimit.HasValue && requestedLimit.Value > 0
+            // Treat any present Limit as a budget — including 0. A FeatureQuery with
+            // Limit = 0 is a valid request for "no rows" (used by capability probes /
+            // metadata fetches that reuse the streaming surface), and must short-circuit
+            // before issuing a SELECT. Only a missing limit means "stream all rows".
+            var remainingBudget = requestedLimit.HasValue
                 ? requestedLimit.Value - emitted
                 : (int?)null;
 

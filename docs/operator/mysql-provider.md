@@ -15,7 +15,7 @@ edits, statistics, MVT, and analytics. Use the
 |----------------------------------------------|-----------|
 | `QueryAsync` (feature read with attributes)  | Yes       |
 | `CountAsync`                                 | Yes       |
-| `GetExtentAsync` (per-row `ST_Envelope`)     | Yes       |
+| `GetExtentAsync` (Point and Polygon/MultiPolygon layers) | Yes       |
 | `QueryObjectIdsAsync`                        | Yes       |
 | `GetAsync` (single feature by id)            | Yes       |
 | `QueryPageAsync` (paged read without count)  | Yes       |
@@ -191,16 +191,43 @@ filter geometries to the layer SRID before querying.
 Output SRID transforms (`FeatureQuery.OutputSrid`) are likewise rejected.
 Callers must pre-project geometries before invoking the provider.
 
-## Extent Performance Note
+## Extent Behaviour and Limitations
 
-`GetExtentAsync` derives the layer bounding box via per-row `ST_Envelope` and
-`ST_PointN(ST_ExteriorRing(...), N)` aggregation. MySQL 8.0+/MariaDB 10.6+
-do not allow `ST_Envelope` on geographic SRSes directly, so the geometry is
-retagged with `ST_SRID(geom, 0)` (Cartesian) before envelope extraction —
-this preserves the underlying coordinates. The result is portable across
-both engines but is **O(n)** on the table or filtered subset. For large
-tables, cache the extent with the layer metadata; do not call
-`GetExtentAsync` on every request.
+`GetExtentAsync` is supported for two geometry-type families, each with its own
+SQL pattern:
+
+- **Point layers** — `MIN/MAX(ST_X(geom))` and `MIN/MAX(ST_Y(geom))` aggregated
+  over the (filtered) table.
+- **Polygon / MultiPolygon layers** — `ST_PointN(ST_ExteriorRing(ST_Envelope(geom)), 1)`
+  for the lower-left corner and `... PointN(..., 3)` for the upper-right, each
+  aggregated with `MIN`/`MAX`.
+
+Other geometry types (MultiPoint, LineString, MultiLineString,
+GeometryCollection, None) raise `NotSupportedException`. The slice rejects them
+because:
+
+- `ST_X` / `ST_Y` are documented as Point-only on MySQL.
+- `ST_Envelope` of a degenerate (vertical or horizontal) LineString returns a
+  LineString rather than a Polygon, so `ST_ExteriorRing` returns NULL.
+- The two-argument `ST_SRID(geom, srid)` "retag" form used previously is
+  **MySQL-only** — MariaDB only exposes the read accessor. Avoiding it keeps the
+  emitted SQL portable.
+
+Compute extents in the application layer or migrate to a PostGIS-backed layer
+when the rejected types are needed.
+
+The aggregation is **O(n)** on the table or filtered subset, even for the
+supported types. For large tables, cache the extent with the layer metadata;
+do not call `GetExtentAsync` on every request.
+
+### Axis order
+
+`ST_X` / `ST_Y` return the first / second stored axis. For a geographic SRS such
+as EPSG:4326, MySQL 8 reports values in the SRS's declared axis order
+(latitude-first), while MariaDB reports them in WKB order. The provider does
+not normalise this — extent values are returned "as stored". Callers that need
+canonical longitude-first results should configure the layer SRID accordingly
+or post-process the extent.
 
 ## Identifier Quoting
 
@@ -285,7 +312,12 @@ fixture is added in a follow-on slice.
 - Distance filters require Point/MultiPoint geometry. The point-only guard is
   enforced both for `FeatureQuery.SpatialFilter` and for CQL2 distance
   predicates translated through `MySqlSqlFilterTranslator`.
+- Extent queries are supported only for Point, Polygon, and MultiPolygon
+  layers. MultiPoint, LineString, MultiLineString, GeometryCollection, and
+  None layers raise `NotSupportedException`.
 - Per-row extent is O(n); cache the result.
+- Invalid `GeometryType` configuration values are rejected at startup (no
+  silent fallback to `Point`).
 
 ## Cloud-Hosted Deployment Notes
 

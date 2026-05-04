@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog.Domain;
+
 namespace Honua.MySql;
 
 /// <summary>
@@ -60,6 +62,18 @@ internal static class MySqlOptionsValidator
             if (layer.Srid <= 0)
             {
                 errors.Add($"MySql layer '{layer.Name}' must declare a positive Srid.");
+            }
+
+            // Reject typos in GeometryType so a non-point layer cannot silently fall back
+            // to Point and inherit point-only behaviour (e.g. distance-filter SQL). The
+            // default-initialised "Point" value parses cleanly, so omitted configuration
+            // remains valid.
+            if (!Enum.TryParse<GeometryType>(layer.GeometryType, ignoreCase: true, out _))
+            {
+                errors.Add(
+                    $"MySql layer '{layer.Name}' has invalid GeometryType '{layer.GeometryType}'. " +
+                    "Expected one of: Point, MultiPoint, LineString, MultiLineString, Polygon, " +
+                    "MultiPolygon, GeometryCollection, None.");
             }
 
             if (layer.Attributes.Length == 0)

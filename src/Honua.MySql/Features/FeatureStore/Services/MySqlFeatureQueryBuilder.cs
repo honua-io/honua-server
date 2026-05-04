@@ -94,34 +94,45 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 0;
 
-        // MySQL 8.0+ / MariaDB 10.6+ have two extent gotchas: ST_Envelope is rejected on
-        // geographic SRSes, and ST_Envelope of a degenerate geometry (point or vertical/
-        // horizontal line) is not a 5-point polygon, so ST_ExteriorRing/PointN return NULL.
+        // Extent SQL must work on both MySQL 8.0.11+ and MariaDB 10.6+. Two engine
+        // divergences shape the strategy:
+        //   * MariaDB only supports the 1-arg ST_SRID(geom). The 2-arg setter is MySQL-only,
+        //     so we cannot retag geometries to Cartesian inline.
+        //   * MySQL ST_X/ST_Y are documented as point-only; using them on MultiPoint or
+        //     LineString errors out. ST_Envelope of a degenerate (vertical/horizontal)
+        //     LineString returns a LineString, not a Polygon, breaking ST_ExteriorRing.
         //
-        // Strategy:
-        //   * Points/MultiPoints → MIN/MAX of ST_X/ST_Y per row (works on geographic SRS,
-        //     no envelope needed).
-        //   * Other geometries → first ST_SRID(geom, 0) to retag as Cartesian (preserves
-        //     coordinates), then extract the envelope corners via ST_PointN(ST_ExteriorRing).
-        // Use ST_SRID(..., 0) to retag as Cartesian; ST_X/ST_Y on a geographic point
-        // observes axis order (lat-lon for EPSG:4326), which yields swapped coordinates
-        // versus the as-stored representation. Cartesian retagging keeps coordinates
-        // consistent with what callers wrote.
-        var cartesianGeom = $"ST_SRID({mapping.QuotedGeometryColumn}, 0)";
-
-        var extentSelect = mapping.GeometryType is GeometryType.Point or GeometryType.MultiPoint
-            ? $"""
-                MIN(ST_X({cartesianGeom})),
-                MIN(ST_Y({cartesianGeom})),
-                MAX(ST_X({cartesianGeom})),
-                MAX(ST_Y({cartesianGeom}))
-                """
-            : $"""
-                MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope({cartesianGeom})), 1))),
-                MIN(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope({cartesianGeom})), 1))),
-                MAX(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope({cartesianGeom})), 3))),
-                MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope({cartesianGeom})), 3)))
-                """;
+        // Supported per-row patterns:
+        //   * Point: MIN/MAX of ST_X/ST_Y on the column directly.
+        //   * Polygon/MultiPolygon: ST_Envelope is always a Polygon (polygons have area),
+        //     so ST_PointN(ST_ExteriorRing(ST_Envelope(geom)), 1|3) is safe.
+        //
+        // Other types (MultiPoint, LineString, MultiLineString, GeometryCollection, None)
+        // are rejected explicitly — callers should compute extents in the application
+        // layer or use a PostGIS-backed layer.
+        //
+        // Axis order: ST_X/ST_Y return the first/second stored axis. For MySQL 8 with a
+        // geographic SRS (e.g. 4326) that is latitude-first; for MariaDB it is the WKB
+        // order. The slice does not normalize this; the documented contract is "as stored".
+        var extentSelect = mapping.GeometryType switch
+        {
+            GeometryType.Point => $"""
+                MIN(ST_X({mapping.QuotedGeometryColumn})),
+                MIN(ST_Y({mapping.QuotedGeometryColumn})),
+                MAX(ST_X({mapping.QuotedGeometryColumn})),
+                MAX(ST_Y({mapping.QuotedGeometryColumn}))
+                """,
+            GeometryType.Polygon or GeometryType.MultiPolygon => $"""
+                MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 1))),
+                MIN(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 1))),
+                MAX(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 3))),
+                MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope({mapping.QuotedGeometryColumn})), 3)))
+                """,
+            _ => throw new NotSupportedException(
+                $"Extent queries on {mapping.GeometryType} layers are not supported by the MySQL/MariaDB " +
+                "provider in this slice. Supported geometry types: Point, Polygon, MultiPolygon. " +
+                "Compute extents in the application layer or use a PostGIS-backed layer.")
+        };
 
         sb.Append(CultureInfo.InvariantCulture,
             $"""

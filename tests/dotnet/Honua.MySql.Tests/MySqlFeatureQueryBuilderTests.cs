@@ -294,15 +294,40 @@ public class MySqlFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildExtentQuery_PolygonLayer_UsesPerRowEnvelopeWithSridReset()
+    public void BuildExtentQuery_PolygonLayer_UsesEnvelopeWithoutTwoArgStSrid()
     {
-        // Default test layer is Polygon; envelope corners come via ST_PointN(ST_ExteriorRing(...))
+        // Default test layer is Polygon; envelope corners come via ST_PointN(ST_ExteriorRing(...)).
+        // ST_SRID(geom, 0) (the 2-arg setter) is MySQL-only and breaks MariaDB, so the slice
+        // applies envelope/PointN directly to the column without retagging.
         var result = _builder.BuildExtentQuery(LayerId, new FeatureQuery());
 
-        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 1)", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 3)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 1)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 3)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_SRID(`geom`, 0)", result.Sql, StringComparison.Ordinal);
         Assert.Contains("FROM `honua`.`parcels`", result.Sql, StringComparison.Ordinal);
         Assert.Contains("`geom` IS NOT NULL", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildExtentQuery_MultiPolygonLayer_UsesEnvelopePattern()
+    {
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 42,
+            TableName = "regions",
+            GeometryColumn = "shape",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.MultiPolygon
+        };
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([mapping]));
+
+        var result = builder.BuildExtentQuery(42, new FeatureQuery());
+
+        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(`shape`)), 1)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(`shape`)), 3)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_SRID(`shape`, 0)", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -323,9 +348,39 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = builder.BuildExtentQuery(99, new FeatureQuery());
 
-        Assert.Contains("MIN(ST_X(ST_SRID(`loc`, 0)))", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("MAX(ST_Y(ST_SRID(`loc`, 0)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MIN(ST_X(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Y(`loc`))", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_SRID(`loc`, 0)", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_Envelope", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(GeometryType.MultiPoint)]
+    [InlineData(GeometryType.LineString)]
+    [InlineData(GeometryType.MultiLineString)]
+    [InlineData(GeometryType.GeometryCollection)]
+    [InlineData(GeometryType.None)]
+    public void BuildExtentQuery_UnsupportedGeometryType_ThrowsNotSupported(GeometryType geometryType)
+    {
+        // ST_X is point-only and ST_Envelope of a degenerate (vertical/horizontal) line
+        // returns a LineString — both break the per-row extent pattern. The slice rejects
+        // these geometry types instead of emitting SQL that fails at runtime on MySQL or
+        // produces NULL extents on MariaDB.
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 7,
+            TableName = "items",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            GeometryType = geometryType
+        };
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([mapping]));
+
+        var ex = Assert.Throws<NotSupportedException>(() => builder.BuildExtentQuery(7, new FeatureQuery()));
+        Assert.Contains(geometryType.ToString(), ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Point, Polygon, MultiPolygon", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
