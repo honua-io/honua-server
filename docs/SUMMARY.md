@@ -61,6 +61,7 @@
 - [Overview](developer/README.md)
 - [API Examples](developer/API_EXAMPLES.md)
 - [Integration Patterns](developer/INTEGRATION_PATTERNS.md)
+- [NVIDIA Construction Demo Fixture](demo/nvidia-construction.md)
 - [Scene Dataset Registry (Admin API)](admin-api/scene-dataset-registry.md)
 - [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [Mobile SDK Roadmap](developer/mobile-sdk-roadmap.md)

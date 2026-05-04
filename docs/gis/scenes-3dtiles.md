@@ -34,7 +34,12 @@ implementation behind that interface projects each record to the lean
 
 The original `Scenes` configuration section remains in the codebase for
 local-dev/test scenarios where Postgres is not available. In production it
-is replaced at runtime by the registry; mixing both should be avoided.
+is replaced at runtime by the registry; mixing both should be avoided. The
+[NVIDIA construction demo fixture](../demo/nvidia-construction.md) is a
+worked example of this fallback path — two scene datasets registered through
+`Scenes:Datasets` against a committed fixture under
+`tests/fixtures/scenes/nvidia-construction/`, served end-to-end without any
+cloud dependency.
 
 ```json
 {

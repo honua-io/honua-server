@@ -1,0 +1,73 @@
+{
+  "asset": {
+    "version": "1.1",
+    "tilesetVersion": "honua-nvidia-construction-1.0",
+    "generator": "honua-demo-fixture"
+  },
+  "extras": {
+    "attribution": "© Honua Demo 2026 — placeholder construction site dataset",
+    "layerKind": "structure",
+    "layerId": "nvidia-construction",
+    "cameraHint": {
+      "longitude": -121.9750,
+      "latitude": 37.3750,
+      "height": 350.0,
+      "heading": 30.0,
+      "pitch": -25.0,
+      "roll": 0.0
+    },
+    "bounds": {
+      "west": -121.98,
+      "south": 37.37,
+      "east": -121.96,
+      "north": 37.38,
+      "minHeight": 0.0,
+      "maxHeight": 80.0
+    },
+    "projectMeta": {
+      "id": "nvidia-construction-demo-2026",
+      "name": "Santa Clara Expansion Site",
+      "description": "Deterministic construction fixture for the NVIDIA demo. Placeholder tile geometry; real generation is tracked in honua-server-899.",
+      "phase": "foundation",
+      "completionRatio": 0.35,
+      "startDate": "2026-01-15",
+      "expectedEndDate": "2027-06-30",
+      "stakeholders": [
+        { "role": "general_contractor", "name": "Honua Demo Builders" },
+        { "role": "owner", "name": "Honua Demo Owner Co." },
+        { "role": "structural_engineer", "name": "Honua Demo Structural" }
+      ],
+      "workPackages": [
+        { "id": "wp-foundation", "name": "Foundation", "status": "in_progress", "plannedCompletionRatio": 0.65, "observedCompletionRatio": 0.62 },
+        { "id": "wp-structure", "name": "Structural Frame", "status": "in_progress", "plannedCompletionRatio": 0.30, "observedCompletionRatio": 0.28 },
+        { "id": "wp-envelope", "name": "Building Envelope", "status": "not_started", "plannedCompletionRatio": 0.0, "observedCompletionRatio": 0.0 }
+      ],
+      "parcels": [
+        { "id": "parcel-a", "name": "Parcel A — Main Tower Footprint" },
+        { "id": "parcel-b", "name": "Parcel B — Equipment Yard" }
+      ]
+    },
+    "observationsLayer": {
+      "sidecarUri": "observations.json",
+      "tilesetSceneId": "nvidia-construction-obs"
+    }
+  },
+  "geometricError": 500.0,
+  "root": {
+    "boundingVolume": {
+      "region": [
+        -2.1289533602,
+        0.6522348048,
+        -2.1286042488,
+        0.6524093556,
+        0.0,
+        80.0
+      ]
+    },
+    "geometricError": 200.0,
+    "refine": "REPLACE",
+    "content": {
+      "uri": "tiles/structure.b3dm"
+    }
+  }
+}
