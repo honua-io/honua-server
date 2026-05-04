@@ -283,6 +283,15 @@ The `Honua.MySql.FeatureDataAccess` source is registered with the central
 OpenTelemetry tracer in `Honua.ServiceDefaults`, so spans are exported to the
 configured OTLP endpoint when tracing is enabled.
 
+## Readiness Probe
+
+The `/ready` endpoint resolves the provider's `IDatabaseHealthChecker` and
+runs a `SELECT 1` against the same pooled `MySqlDataSource` the feature store
+uses. Health-check failures (EventId 8903, level Warning) flip readiness to
+`Database unavailable`. Command timeout is fixed at 5 seconds. No registration
+is required beyond setting `DataSource:Provider=mysql`/`mariadb`; the checker
+is wired alongside the rest of the MySQL services.
+
 ## Testing
 
 ### Unit tests
@@ -341,6 +350,13 @@ fixture is added in a follow-on slice.
   duplicated or skipped rows when they advance through pages. Caller-supplied
   `OrderBy` is honored verbatim; non-paginated reads do not gain an injected
   sort.
+- **Offset without limit.** `Offset > 0` with no `Limit` (e.g. OData `$skip`
+  without `$top`) is rewritten as `LIMIT 18446744073709551615 OFFSET <n>` —
+  the canonical MySQL "skip N, take all remaining" idiom from the [MySQL
+  reference](https://dev.mysql.com/doc/refman/8.4/en/select.html). MySQL
+  rejects bare `OFFSET` without `LIMIT` as a syntax error, so the builder
+  emits the BIGINT UNSIGNED max as a sentinel literal. Combined `Limit` +
+  `Offset` is unaffected.
 - No statistics, top-features, bins, H3, density, cluster, buffer-aggregate, or
   spatial-join paths.
 - No temporal (`datetime`) filters — OGC API Features `datetime`, STAC

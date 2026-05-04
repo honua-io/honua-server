@@ -561,14 +561,22 @@ public class MySqlFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelectQuery_WithOffsetOnly_InjectsPrimaryKeyOrder()
+    public void BuildSelectQuery_WithOffsetOnly_EmitsSentinelLimitBeforeOffset()
     {
-        // OFFSET without LIMIT is uncommon but legal; the same determinism rule applies.
+        // MySQL pagination syntax requires LIMIT before OFFSET — bare OFFSET is a syntax
+        // error. OData $skip without $top maps to Offset without Limit, so the builder must
+        // emit a valid statement on this shape. Per the MySQL reference, the canonical "skip
+        // N, take all remaining" idiom is `LIMIT 18446744073709551615 OFFSET N`.
         var query = new FeatureQuery { Offset = 50 };
 
         var result = _builder.BuildSelectQuery(LayerId, query);
 
-        Assert.Contains("ORDER BY `id` ASC OFFSET @p0", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(
+            "ORDER BY `id` ASC LIMIT 18446744073709551615 OFFSET @p0",
+            result.Sql,
+            StringComparison.Ordinal);
+        Assert.Single(result.WhereParameters);
+        Assert.Equal(50, result.WhereParameters[0]);
     }
 
     [Fact]
@@ -580,6 +588,25 @@ public class MySqlFeatureQueryBuilderTests
         var result = _builder.BuildSelectQuery(LayerId, new FeatureQuery());
 
         Assert.DoesNotContain("ORDER BY", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithLimitAndOffset_EmitsLimitBeforeOffset()
+    {
+        // Combined LIMIT and OFFSET is the canonical paged-read shape; verify the parameter
+        // order so the regression that introduced the bare-OFFSET path (now using a sentinel
+        // LIMIT for offset-only) cannot reappear.
+        var query = new FeatureQuery { Limit = 10, Offset = 20 };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains(
+            "LIMIT @p0 OFFSET @p1",
+            result.Sql,
+            StringComparison.Ordinal);
+        Assert.Equal(2, result.WhereParameters.Count);
+        Assert.Equal(10, result.WhereParameters[0]);
+        Assert.Equal(20, result.WhereParameters[1]);
     }
 
     [Fact]

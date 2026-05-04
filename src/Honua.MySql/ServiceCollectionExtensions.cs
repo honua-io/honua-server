@@ -5,12 +5,14 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.MySql.Features.Catalog;
 using Honua.MySql.Features.FeatureStore;
 using Honua.MySql.Features.FeatureStore.Services;
+using Honua.MySql.Features.HealthCheck;
 using Honua.MySql.Features.Infrastructure;
 using Honua.MySql.Queries.Filters;
 using Microsoft.Extensions.Configuration;
@@ -79,6 +81,11 @@ internal static class ServiceCollectionExtensions
 
         services.AddScoped<IFeatureCacheManager>(sp =>
             new MySqlFeatureCacheManager(sp.GetRequiredService<MySqlLayerMappingRegistry>()));
+
+        // ReadinessCheckService requires IDatabaseHealthChecker; without this registration
+        // resolving /ready under DataSource:Provider=mysql would fail DI activation. The
+        // checker drives a SELECT 1 through the same pooled MySqlDataSource the store uses.
+        services.AddScoped<IDatabaseHealthChecker, MySqlDatabaseHealthChecker>();
 
         services.AddScoped<MySqlFeatureStore>();
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<MySqlFeatureStore>());

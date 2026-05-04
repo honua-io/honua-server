@@ -4,8 +4,10 @@
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.MySql.Features.FeatureStore;
 using Honua.MySql.Features.FeatureStore.Services;
+using Honua.MySql.Features.HealthCheck;
 using Honua.MySql.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -79,6 +81,7 @@ public class MySqlProviderResolutionTests
     [InlineData(typeof(IChangeTracker))]
     [InlineData(typeof(ITileProvider))]
     [InlineData(typeof(IGmlFeatureStore))]
+    [InlineData(typeof(IDatabaseHealthChecker))]
     public void AddMySqlServices_RegistersProtocolFallbacks_ForAdvertisedProtocolHandlers(Type serviceType)
     {
         // The MySQL slice advertises EnabledProtocols including FeatureServer, OgcFeatures,
@@ -130,6 +133,19 @@ public class MySqlProviderResolutionTests
         Assert.Null(await repo.GetAsync("anything"));
         var listed = await repo.ListByServiceAsync("anything");
         Assert.Empty(listed);
+    }
+
+    [Fact]
+    public void AddMySqlServices_RegistersMySqlDatabaseHealthChecker()
+    {
+        // ReadinessCheckService requires IDatabaseHealthChecker; without this registration
+        // the /ready endpoint would fail DI activation under DataSource:Provider=mysql.
+        using var provider = BuildMySqlServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var checker = scope.ServiceProvider.GetRequiredService<IDatabaseHealthChecker>();
+
+        Assert.IsType<MySqlDatabaseHealthChecker>(checker);
     }
 
     private static ServiceProvider BuildMySqlServiceProvider()

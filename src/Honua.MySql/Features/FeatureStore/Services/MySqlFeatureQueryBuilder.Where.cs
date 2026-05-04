@@ -103,11 +103,28 @@ internal sealed partial class MySqlFeatureQueryBuilder
         {
             sb.Append(CultureInfo.InvariantCulture, $" LIMIT @p{paramIndex++}");
             parameters.Add(query.Limit.Value);
+
+            if (query.Offset is > 0)
+            {
+                sb.Append(CultureInfo.InvariantCulture, $" OFFSET @p{paramIndex++}");
+                parameters.Add(query.Offset.Value);
+            }
+
+            return;
         }
 
         if (query.Offset is > 0)
         {
-            sb.Append(CultureInfo.InvariantCulture, $" OFFSET @p{paramIndex++}");
+            // MySQL pagination syntax requires LIMIT before OFFSET; standalone OFFSET is a
+            // syntax error. OData $skip can map to Offset without $top → Limit, so this path
+            // must still emit a valid statement. Per the MySQL reference ("To retrieve all
+            // rows from a certain offset up to the end of the result set, you can use some
+            // large number for the second parameter"), we emit the BIGINT UNSIGNED max
+            // (18446744073709551615) inline so callers that omit Limit get the documented
+            // "skip N, take all remaining" behaviour.
+            // https://dev.mysql.com/doc/refman/8.4/en/select.html
+            sb.Append(CultureInfo.InvariantCulture,
+                $" LIMIT 18446744073709551615 OFFSET @p{paramIndex++}");
             parameters.Add(query.Offset.Value);
         }
     }
