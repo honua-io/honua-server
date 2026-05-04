@@ -8,6 +8,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Protocols.Scene.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -24,9 +25,35 @@ internal static partial class SceneEndpoints
 {
     private const string ScenesTag = "Scenes";
 
+    // Comma-separated `Vary` value for credential-authorized protected scene
+    // responses. `Authorization` covers Bearer and Basic-compat (used by
+    // ApiKeyAuthenticationHandler) auth; `X-API-Key` covers the canonical
+    // API-key transport. Both are required so a private cache cannot reuse a
+    // response across requests with different credentials when only one of the
+    // two headers carried the credential that authorized the body.
+    private const string CredentialVaryHeaders = "Authorization, X-API-Key";
+
     public static IEndpointRouteBuilder MapSceneEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
+
+        endpoints.MapPost(
+                "/scenes/{sceneId}/access-envelope",
+                HandleIssueAccessEnvelope)
+            .WithName("IssueSceneAccessEnvelope")
+            .WithDisplayName("Issue Scene Access Envelope")
+            .WithSummary("Issue a short-lived signed envelope for a protected scene")
+            .WithDescription(
+                "Returns a short-lived HMAC-signed token that authorizes CesiumJS-style "
+                + "nested tile/glTF/texture requests under the scene's asset prefix. The "
+                + "caller must already hold a valid bearer credential for the scene.")
+            .WithTags(ScenesTag)
+            .Produces<SceneAccessEnvelope>(StatusCodes.Status200OK, contentType: "application/json")
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
 
         endpoints.MapMethods(
                 "/scenes/{sceneId}/tileset.json",
@@ -44,7 +71,8 @@ internal static partial class SceneEndpoints
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
 
         endpoints.MapMethods(
                 "/scenes/{sceneId}/{*assetPath}",
@@ -71,9 +99,85 @@ internal static partial class SceneEndpoints
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status500InternalServerError);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> HandleIssueAccessEnvelope(
+        string sceneId,
+        HttpContext context,
+        [FromServices] ISceneDatasetRegistry registry,
+        [FromServices] ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
+    {
+        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Scene.SceneEndpoints");
+
+        if (string.IsNullOrWhiteSpace(sceneId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Scene identifier is required.");
+        }
+
+        var scene = await registry.FindAsync(sceneId, cancellationToken).ConfigureAwait(false);
+        if (scene is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
+        }
+
+        if (scene.Metadata?.AccessPolicy is not { } accessPolicy)
+        {
+            // Public scenes do not need an envelope; returning one would
+            // grant an opaque token whose signature carries no incremental
+            // authorization. Make the contract explicit.
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Access envelopes are not issued for public scenes.");
+        }
+
+        var deniedResult = AccessPolicyHelpers.RequireAccess(
+            context,
+            layerPolicy: accessPolicy,
+            servicePolicy: null,
+            scope: AccessScope.Read);
+        if (deniedResult is not null)
+        {
+            return deniedResult;
+        }
+
+        SceneAccessEnvelope envelope;
+        try
+        {
+            // Resolve the envelope service lazily inside the try block.
+            // SceneAccessEnvelopeService throws InvalidOperationException
+            // from its constructor when any binding option is invalid
+            // (SigningKey unset, TokenTtlMinutes or RefreshAfterFractionOfTtl
+            // out of range); routing the resolve through [FromServices]
+            // would surface that exception during parameter binding before
+            // the catch could intercept it.
+            var envelopeService = context.RequestServices
+                .GetRequiredService<ISceneAccessEnvelopeService>();
+            envelope = envelopeService.Issue(scene.Id);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Envelope options invalid (or hash unexpectedly failed). Log the
+            // misconfiguration reason so the operator can see which option is
+            // broken; return a structured 500 rather than leaking the internal
+            // message. The exception message is constructed from well-known
+            // option keys and bounded constants only — never from caller or
+            // sensitive values — so it is safe to log verbatim.
+            SceneAccessLog.OptionsMisconfigured(logger, scene.Id, ex.Message);
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "Scene access envelope issuance is not configured.");
+        }
+
+        SceneAccessLog.EnvelopeIssued(logger, scene.Id, envelope.ExpiresAt);
+
+        // Tokens are short-lived credentials; never store, never share.
+        context.Response.Headers[HeaderNames.CacheControl] = "no-store";
+        return Results.Json(envelope, SceneAccessEnvelopeJsonContext.Default.SceneAccessEnvelope);
     }
 
     private static Task<IResult> HandleGetTilesetRoot(
@@ -137,16 +241,78 @@ internal static partial class SceneEndpoints
         // delivers signed-URL handoff). Skip the auth check when the scene
         // explicitly opted out by leaving its access policy unset.
         var isProtected = scene.Metadata?.AccessPolicy is not null;
+        var tokenTransport = SceneAccessTokenTransport.None;
         if (scene.Metadata?.AccessPolicy is { } accessPolicy)
         {
-            var deniedResult = AccessPolicyHelpers.RequireAccess(
+            var policyDecision = AccessPolicyHelpers.EvaluateAccess(
                 context,
                 layerPolicy: accessPolicy,
                 servicePolicy: null,
                 scope: AccessScope.Read);
-            if (deniedResult is not null)
+
+            if (!policyDecision.IsAllowed)
             {
-                return deniedResult;
+                // Bearer/API-key auth missing or insufficient. Try the
+                // signed-envelope path before failing — Cesium browser
+                // clients cannot attach Authorization headers to nested
+                // asset fetches and rely entirely on the envelope token.
+                var rawToken = BypassOutputCacheOnSceneAccessTokenPolicy.TryExtractToken(
+                    context,
+                    out var extractedTokenTransport);
+                if (!string.IsNullOrEmpty(rawToken))
+                {
+                    EnvelopeValidationResult validation;
+                    try
+                    {
+                        // SceneAccessEnvelopeService throws
+                        // InvalidOperationException from its constructor
+                        // when any binding option is invalid (signing key
+                        // unset, TTL or refresh fraction out of range).
+                        // Resolving inside this try block keeps the
+                        // misconfiguration response structured (matches the
+                        // issue endpoint) rather than surfacing as an
+                        // unhandled 500.
+                        var envelopeService = context.RequestServices
+                            .GetRequiredService<ISceneAccessEnvelopeService>();
+                        validation = envelopeService.Validate(rawToken, scene.Id);
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        SceneAccessLog.OptionsMisconfigured(logger, scene.Id, ex.Message);
+                        return StandardErrorHelpers.CreateInternalServerError(
+                            context,
+                            "Scene access envelope verification is not configured.");
+                    }
+
+                    switch (validation)
+                    {
+                        case EnvelopeValidationResult.Allowed:
+                            tokenTransport = extractedTokenTransport;
+                            break;
+                        case EnvelopeValidationResult.Expired:
+                            SceneAccessLog.TokenExpired(logger, scene.Id);
+                            return StandardErrorHelpers.CreateUnauthorized(
+                                context,
+                                "Scene access envelope has expired.");
+                        case EnvelopeValidationResult.Tampered:
+                            SceneAccessLog.TokenTampered(logger, scene.Id);
+                            return StandardErrorHelpers.CreateUnauthorized(
+                                context,
+                                "Scene access envelope is invalid.");
+                        case EnvelopeValidationResult.WrongScene:
+                            SceneAccessLog.TokenWrongScene(logger, scene.Id);
+                            return StandardErrorHelpers.CreateForbidden(
+                                context,
+                                "Scene access envelope is bound to a different scene.");
+                    }
+                }
+
+                if (tokenTransport is SceneAccessTokenTransport.None)
+                {
+                    SceneAccessLog.TokenMissing(logger, scene.Id);
+                    return AccessPolicyHelpers.CreateAccessDeniedResult(context, policyDecision)
+                        ?? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
+                }
             }
         }
 
@@ -166,7 +332,7 @@ internal static partial class SceneEndpoints
         }
 
         var etag = ComputeETag(resolved.File);
-        SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected, scene.CachePolicy);
+        SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected, scene.CachePolicy, tokenTransport);
 
         var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
         if (!string.IsNullOrEmpty(ifNoneMatch) && IfNoneMatchMatches(ifNoneMatch, etag))
@@ -217,7 +383,14 @@ internal static partial class SceneEndpoints
     private static string ComputeETag(FileInfo file)
         => $"\"{file.LastWriteTimeUtc.Ticks:X16}-{file.Length:X16}\"";
 
-    private static void SetCacheHeaders(HttpContext context, string etag, FileInfo file, TimeSpan maxAge, bool isProtected, SceneCachePolicy? scenePolicy)
+    private static void SetCacheHeaders(
+        HttpContext context,
+        string etag,
+        FileInfo file,
+        TimeSpan maxAge,
+        bool isProtected,
+        SceneCachePolicy? scenePolicy,
+        SceneAccessTokenTransport tokenTransport)
     {
         var headers = context.Response.Headers;
         headers[HeaderNames.ETag] = etag;
@@ -235,23 +408,38 @@ internal static partial class SceneEndpoints
         // Protected scenes go through the dataset access policy on every
         // request. `Cache-Control: public` would let a shared cache (CDN,
         // forward proxy) store and re-serve the body to other clients without
-        // re-running the policy, so emit `private` plus `Vary: Authorization`
-        // and keep the same max-age semantics. The output cache layer also
-        // disables storage for authenticated requests via
-        // `AnonymousOnlyOutputCachePolicy`, but the response headers must be
-        // correct for downstream caches that Honua does not control.
+        // re-running the policy, so emit `private` and vary by the credential
+        // transport that authorized the response. Credential-authorized
+        // responses vary on both `Authorization` (Bearer / Basic-compat) and
+        // `X-API-Key` because either header may have authorized the request;
+        // omitting one risks a private cache reusing a response across
+        // different credentials. Query-token responses vary by URL already;
+        // header-token responses need `Vary: X-Honua-Token` so browser/private
+        // caches do not reuse a tokenized response for a later request with a
+        // different or missing header.
         if (noStore)
         {
             headers[HeaderNames.CacheControl] = "no-store";
-            if (isProtected)
+            if (isProtected && tokenTransport is SceneAccessTokenTransport.None)
             {
-                headers[HeaderNames.Vary] = "Authorization";
+                headers[HeaderNames.Vary] = CredentialVaryHeaders;
+            }
+            else if (isProtected && tokenTransport is SceneAccessTokenTransport.Header)
+            {
+                headers[HeaderNames.Vary] = BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader;
             }
         }
         else if (isProtected)
         {
             headers[HeaderNames.CacheControl] = $"private, max-age={maxAgeSeconds}";
-            headers[HeaderNames.Vary] = "Authorization";
+            if (tokenTransport is SceneAccessTokenTransport.None)
+            {
+                headers[HeaderNames.Vary] = CredentialVaryHeaders;
+            }
+            else if (tokenTransport is SceneAccessTokenTransport.Header)
+            {
+                headers[HeaderNames.Vary] = BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader;
+            }
         }
         else
         {
@@ -286,13 +474,15 @@ internal static partial class SceneEndpoints
         return false;
     }
 
+    // EventIds 8404 / 8405 reserved here. 8401-8403 are owned by
+    // Honua.Core's MonitoredCacheLog; 8410-8415 are owned by SceneAccessLog.
     private static partial class Log
     {
-        [LoggerMessage(EventId = 8401, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = 8404, Level = LogLevel.Warning,
             Message = "Rejected scene asset request for scene {SceneId}: {Reason} (path: {AssetPath})")]
         public static partial void RejectedAssetPath(ILogger logger, string sceneId, string reason, string assetPath);
 
-        [LoggerMessage(EventId = 8402, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = 8405, Level = LogLevel.Debug,
             Message = "Serving scene asset {SceneId}/{AssetPath} as {ContentType} ({Bytes} bytes)")]
         public static partial void ServingAsset(ILogger logger, string sceneId, string assetPath, string contentType, long bytes);
     }
