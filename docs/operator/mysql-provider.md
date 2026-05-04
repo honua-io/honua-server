@@ -325,10 +325,15 @@ fixture is added in a follow-on slice.
 - No native MVT, FlatGeobuf, Geobuf, GML; no streaming GeoJSON.
 - Streaming `Feature` / batch paths are supported as a buffered, paged fallback
   over the standard select path (no native MySQL cursor). Use small batches for
-  large datasets. When the caller does not supply a `FeatureQuery.OrderBy`, the
-  provider injects an ascending sort on the layer's primary key column to
-  guarantee a stable page sequence; without that default, repeated
-  `LIMIT`/`OFFSET` reads can repeat or skip rows.
+  large datasets.
+- **Deterministic pagination.** When the caller does not supply a
+  `FeatureQuery.OrderBy` and the query has a `Limit` or `Offset`, the provider
+  emits `ORDER BY <primary key> ASC` automatically. This applies uniformly to
+  `QueryAsync`, `QueryPageAsync`, `QueryObjectIdsAsync`, and the
+  `IStreamingFeatureStore` paths so consumers cannot accidentally observe
+  duplicated or skipped rows when they advance through pages. Caller-supplied
+  `OrderBy` is honored verbatim; non-paginated reads do not gain an injected
+  sort.
 - No statistics, top-features, bins, H3, density, cluster, buffer-aggregate, or
   spatial-join paths.
 - No temporal (`datetime`) filters — OGC API Features `datetime`, STAC

@@ -131,6 +131,63 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Equal("commercial", result.WhereParameters[0]);
     }
 
+    [Theory]
+    [InlineData("start_and_end = 1")]   // 'and' embedded between underscores
+    [InlineData("and_flag = 1")]         // 'and' as a leading token
+    [InlineData("end_and = 1")]          // 'and' as a trailing token
+    public void BuildSelectQuery_WithUnderscoreIdentifierContainingAnd_ParsesAsSingleField(string whereClause)
+    {
+        // The WHERE splitter treats AND as a logical operator only when adjacent characters
+        // are not part of an identifier. Underscore is a legal MySQL identifier character so
+        // it must NOT split tokens — otherwise valid columns like start_and_end or and_flag
+        // get rejected as malformed expressions before SQL generation.
+        // We register the column on the layer mapping so the splitter has a concrete identifier
+        // to recover; the SQL itself just needs a single AND-joined clause for the comparison.
+        var fieldName = whereClause.Split(' ')[0];
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 200,
+            TableName = "events",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = [fieldName],
+            GeometryType = GeometryType.Point
+        };
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([mapping]));
+
+        var query = new FeatureQuery { Where = whereClause };
+        var result = builder.BuildSelectQuery(200, query);
+
+        Assert.Contains($"AND (`{fieldName}` = @p0)", result.Sql, StringComparison.Ordinal);
+        Assert.Single(result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WhereClauseChainingMultipleUnderscoreFields_SplitsOnLogicalAndOnly()
+    {
+        // Combine an embedded-and identifier with a logical AND to confirm the splitter
+        // distinguishes them: only the standalone AND should separate the comparisons.
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 201,
+            TableName = "events",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["start_and_end", "name"],
+            GeometryType = GeometryType.Point
+        };
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([mapping]));
+
+        var query = new FeatureQuery { Where = "start_and_end = 1 AND name = 'x'" };
+        var result = builder.BuildSelectQuery(201, query);
+
+        Assert.Contains("`start_and_end` = @p0", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("`name` = @p1", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(2, result.WhereParameters.Count);
+    }
+
     [Fact]
     public void BuildSelectQuery_WithIntersectsSpatialFilter_AddsMbrAndStIntersectsClauses()
     {
@@ -486,6 +543,73 @@ public class MySqlFeatureQueryBuilderTests
 
         Assert.Contains("ST_AsWKB(`geom`)", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("axis-order", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithPaginationAndNoOrderBy_InjectsPrimaryKeyOrder()
+    {
+        // SQL row order is unspecified without ORDER BY; LIMIT/OFFSET on top of an unordered
+        // result set lets pages repeat or skip rows. The builder injects an ascending sort on
+        // the configured primary key column whenever LIMIT or OFFSET is set without a
+        // caller-supplied OrderBy. This covers BuildSelectQuery, BuildObjectIdsQuery, and
+        // every store path that flows through them (QueryAsync, QueryPageAsync, streaming).
+        var query = new FeatureQuery { Limit = 10 };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("ORDER BY `id` ASC LIMIT @p0", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithOffsetOnly_InjectsPrimaryKeyOrder()
+    {
+        // OFFSET without LIMIT is uncommon but legal; the same determinism rule applies.
+        var query = new FeatureQuery { Offset = 50 };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("ORDER BY `id` ASC OFFSET @p0", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_NoPaginationAndNoOrderBy_OmitsOrderBy()
+    {
+        // Unpaginated reads materialise the entire result set; the caller is responsible for
+        // any stable ordering. Don't inject ORDER BY here — it would force a sort the caller
+        // didn't ask for and add cost on hot non-paginated paths.
+        var result = _builder.BuildSelectQuery(LayerId, new FeatureQuery());
+
+        Assert.DoesNotContain("ORDER BY", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithCallerOrderBy_DoesNotAppendPrimaryKey()
+    {
+        // Caller-supplied OrderBy is honored as-is — appending the primary key would change
+        // tie-breaking semantics the caller didn't ask for.
+        var query = new FeatureQuery
+        {
+            Limit = 10,
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc("name"))
+        };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("ORDER BY `name` ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`id` ASC", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildObjectIdsQuery_WithPaginationAndNoOrderBy_InjectsPrimaryKeyOrder()
+    {
+        // BuildObjectIdsQuery shares the OrderBy/Pagination append helpers, so the same
+        // deterministic-order rule applies — paginated object-id reads must be reproducible
+        // across calls.
+        var query = new FeatureQuery { Limit = 5 };
+
+        var result = _builder.BuildObjectIdsQuery(LayerId, query);
+
+        Assert.Contains("ORDER BY `id` ASC LIMIT @p0", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

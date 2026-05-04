@@ -78,13 +78,14 @@ public class MySqlFeatureStoreTests
     }
 
     [Fact]
-    public async Task StreamFeatureBatchesAsync_WithoutOrderBy_AddsPrimaryKeyOrdering()
+    public async Task StreamFeatureBatchesAsync_WithoutOrderBy_EmitsPrimaryKeyOrderingSql()
     {
         // Paged streaming uses repeated LIMIT/OFFSET queries; without a deterministic ORDER BY,
-        // MySQL/MariaDB result order between pages is unspecified, so the slice injects an
-        // ascending primary-key sort when the caller hasn't supplied one. This guarantees a
-        // stable page sequence for canonical IStreamingFeatureStore consumers (export, OData,
-        // gRPC, GeoServices) that don't know to request a MySQL-specific order.
+        // MySQL/MariaDB result order between pages is unspecified, so the query builder injects
+        // an ascending primary-key sort when LIMIT or OFFSET is set without a caller-supplied
+        // OrderBy. This guarantees a stable page sequence for canonical IStreamingFeatureStore
+        // consumers (export, OData, gRPC, GeoServices) that don't know to request a
+        // MySQL-specific order.
         var dataAccess = new RecordingFeatureDataAccess(
             pages: [ImmutableArray.Create(Feature.Create(1, null))]);
         var store = CreateStore(dataAccess);
@@ -93,14 +94,23 @@ public class MySqlFeatureStoreTests
         {
         }
 
-        Assert.NotNull(dataAccess.LastFeatureQuery);
-        Assert.NotNull(dataAccess.LastFeatureQuery!.Value.OrderBy);
-        var orderBy = dataAccess.LastFeatureQuery.Value.OrderBy!.Value;
-        Assert.Single(orderBy);
-        Assert.Equal("id", orderBy[0].Field);
-        Assert.True(orderBy[0].Ascending);
+        Assert.NotNull(dataAccess.LastSql);
+        Assert.Contains("ORDER BY `id` ASC", dataAccess.LastSql, StringComparison.Ordinal);
+    }
 
-        // The emitted SQL also reflects the injected ORDER BY clause.
+    [Fact]
+    public async Task QueryPageAsync_WithoutOrderBy_EmitsPrimaryKeyOrderingSql()
+    {
+        // QueryPageAsync builds a (Limit + 1) page query to detect HasMore without an exact
+        // COUNT. Because LIMIT is always set on that page query, the builder injects the
+        // primary-key ORDER BY automatically — this test guards against a future regression
+        // that bypasses the builder for paginated reads.
+        var dataAccess = new RecordingFeatureDataAccess(
+            pages: [ImmutableArray.Create(Feature.Create(1, null))]);
+        var store = CreateStore(dataAccess);
+
+        await store.QueryPageAsync(LayerId, new FeatureQuery { Limit = 5 });
+
         Assert.NotNull(dataAccess.LastSql);
         Assert.Contains("ORDER BY `id` ASC", dataAccess.LastSql, StringComparison.Ordinal);
     }
@@ -123,10 +133,9 @@ public class MySqlFeatureStoreTests
         {
         }
 
-        Assert.NotNull(dataAccess.LastFeatureQuery);
-        var orderBy = dataAccess.LastFeatureQuery!.Value.OrderBy!.Value;
-        Assert.Single(orderBy);
-        Assert.Equal("name", orderBy[0].Field);
+        Assert.NotNull(dataAccess.LastSql);
+        Assert.Contains("ORDER BY `name` ASC", dataAccess.LastSql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`id` ASC", dataAccess.LastSql, StringComparison.Ordinal);
     }
 
     private static MySqlFeatureStore CreateStore(IFeatureDataAccess dataAccess)
@@ -143,7 +152,7 @@ public class MySqlFeatureStoreTests
         };
         var registry = new MySqlLayerMappingRegistry([mapping]);
         var queryBuilder = new MySqlFeatureQueryBuilder(registry);
-        return new MySqlFeatureStore(queryBuilder, dataAccess, registry);
+        return new MySqlFeatureStore(queryBuilder, dataAccess);
     }
 
     private sealed class RecordingFeatureDataAccess : IFeatureDataAccess

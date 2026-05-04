@@ -65,20 +65,32 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
     private static void AppendOrderByClause(StringBuilder sb, MySqlLayerMapping mapping, FeatureQuery query)
     {
-        if (query.OrderBy is not { IsDefaultOrEmpty: false } orderBy)
+        if (query.OrderBy is { IsDefaultOrEmpty: false } orderBy)
         {
+            var clauses = new List<string>(orderBy.Length);
+            foreach (var clause in orderBy)
+            {
+                MySqlIdentifier.ValidateFieldName(clause.Field);
+                var direction = clause.Ascending ? "ASC" : "DESC";
+                clauses.Add($"{MySqlIdentifier.Quote(clause.Field)} {direction}");
+            }
+
+            sb.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");
             return;
         }
 
-        var clauses = new List<string>(orderBy.Length);
-        foreach (var clause in orderBy)
+        // No caller-supplied OrderBy. SQL row order is unspecified without ORDER BY, so any
+        // LIMIT/OFFSET pagination is non-deterministic — pages can repeat or skip rows. The
+        // streaming path (StreamFeatureBatchesAsync) and the paged read paths (QueryPageAsync,
+        // BuildObjectIdsQuery) all flow through this builder, so injecting an ascending sort
+        // on the configured primary key column once here covers every caller. No ORDER BY is
+        // emitted for unpaginated queries — that path is fully materialised and stable order
+        // there is the caller's responsibility.
+        if (query.Limit.HasValue || query.Offset is > 0)
         {
-            MySqlIdentifier.ValidateFieldName(clause.Field);
-            var direction = clause.Ascending ? "ASC" : "DESC";
-            clauses.Add($"{MySqlIdentifier.Quote(clause.Field)} {direction}");
+            sb.Append(CultureInfo.InvariantCulture,
+                $" ORDER BY {mapping.QuotedPrimaryKeyColumn} ASC");
         }
-
-        sb.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");
     }
 
     private static void AppendPagination(
@@ -233,8 +245,8 @@ internal sealed partial class MySqlFeatureQueryBuilder
             }
             else if (!inQuotes && i + 3 <= whereClause.Length &&
                      whereClause.AsSpan(i, 3).Equals("AND", StringComparison.OrdinalIgnoreCase) &&
-                     (i == 0 || !char.IsLetterOrDigit(whereClause[i - 1])) &&
-                     (i + 3 >= whereClause.Length || !char.IsLetterOrDigit(whereClause[i + 3])))
+                     (i == 0 || !IsIdentifierChar(whereClause[i - 1])) &&
+                     (i + 3 >= whereClause.Length || !IsIdentifierChar(whereClause[i + 3])))
             {
                 parts.Add(current.ToString());
                 current.Clear();
@@ -253,4 +265,12 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
         return parts;
     }
+
+    // Identifier-boundary helper used by SplitOnAnd. Mirrors the regex character class
+    // [a-zA-Z0-9_] used by ComparisonRegex / NullCheckRegex so column names that contain
+    // or begin with "and" (e.g. start_and_end, and_flag) are not falsely split as
+    // logical AND boundaries. Underscore is a legal identifier character in MySQL/MariaDB
+    // and must not separate tokens.
+    private static bool IsIdentifierChar(char c)
+        => char.IsLetterOrDigit(c) || c == '_';
 }
