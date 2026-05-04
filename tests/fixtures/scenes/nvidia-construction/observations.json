@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "1.0",
+  "sceneId": "nvidia-construction",
+  "projectId": "nvidia-construction-demo-2026",
+  "attribution": "© Honua Demo 2026",
+  "generatedAt": "2026-05-01T00:00:00Z",
+  "observations": [
+    {
+      "id": "obs-001",
+      "kind": "safety_issue",
+      "status": "open",
+      "severity": "high",
+      "title": "Unprotected edge at grid F-7",
+      "description": "Edge protection missing on north face of pour deck.",
+      "longitude": -121.9685,
+      "latitude": 37.3714,
+      "elevation": 12.5,
+      "recordedAt": "2026-04-10T08:23:00Z",
+      "evidenceKind": "field_photo",
+      "evidenceCount": 3,
+      "evidenceUris": [
+        "evidence/obs-001-photo-1.jpg",
+        "evidence/obs-001-photo-2.jpg",
+        "evidence/obs-001-photo-3.jpg"
+      ],
+      "workPackageId": "wp-structure",
+      "assignee": "site-inspector-01"
+    },
+    {
+      "id": "obs-002",
+      "kind": "progress",
+      "status": "resolved",
+      "severity": "info",
+      "title": "Foundation pour complete – grid C-4",
+      "description": "Pour confirmed against design strength after 28-day cure.",
+      "longitude": -121.9672,
+      "latitude": 37.3708,
+      "elevation": 0.5,
+      "recordedAt": "2026-03-28T14:10:00Z",
+      "evidenceKind": "drone_capture",
+      "evidenceCount": 1,
+      "evidenceUris": [
+        "evidence/obs-002-drone-1.jpg"
+      ],
+      "workPackageId": "wp-foundation",
+      "assignee": null
+    },
+    {
+      "id": "obs-003",
+      "kind": "deviation",
+      "status": "open",
+      "severity": "medium",
+      "title": "Beam alignment offset +3cm at column J-2",
+      "description": "Survey reports beam centerline offset by +3 cm; structural review pending.",
+      "longitude": -121.9679,
+      "latitude": 37.3712,
+      "elevation": 18.0,
+      "recordedAt": "2026-04-22T11:45:00Z",
+      "evidenceKind": "measurement",
+      "evidenceCount": 2,
+      "evidenceUris": [
+        "evidence/obs-003-measurement-1.json",
+        "evidence/obs-003-photo-1.jpg"
+      ],
+      "workPackageId": "wp-structure",
+      "assignee": "structural-qa-02"
+    },
+    {
+      "id": "obs-004",
+      "kind": "material_delivery",
+      "status": "resolved",
+      "severity": "info",
+      "title": "Rebar delivery confirmed – zone B",
+      "description": "Delivery matched purchase order; staged in parcel B yard.",
+      "longitude": -121.9691,
+      "latitude": 37.3706,
+      "elevation": 1.0,
+      "recordedAt": "2026-04-15T09:00:00Z",
+      "evidenceKind": "field_photo",
+      "evidenceCount": 4,
+      "evidenceUris": [
+        "evidence/obs-004-photo-1.jpg",
+        "evidence/obs-004-photo-2.jpg",
+        "evidence/obs-004-photo-3.jpg",
+        "evidence/obs-004-photo-4.jpg"
+      ],
+      "workPackageId": "wp-foundation",
+      "assignee": null
+    },
+    {
+      "id": "obs-005",
+      "kind": "safety_issue",
+      "status": "open",
+      "severity": "high",
+      "title": "Missing safety netting – grid H-5 upper deck",
+      "description": "Perimeter netting absent on upper deck north corner.",
+      "longitude": -121.9683,
+      "latitude": 37.3718,
+      "elevation": 25.0,
+      "recordedAt": "2026-04-30T07:55:00Z",
+      "evidenceKind": "field_photo",
+      "evidenceCount": 2,
+      "evidenceUris": [
+        "evidence/obs-005-photo-1.jpg",
+        "evidence/obs-005-photo-2.jpg"
+      ],
+      "workPackageId": "wp-structure",
+      "assignee": "site-inspector-01"
+    }
+  ]
+}

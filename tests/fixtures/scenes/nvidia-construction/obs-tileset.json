@@ -1,0 +1,50 @@
+{
+  "asset": {
+    "version": "1.1",
+    "tilesetVersion": "honua-nvidia-construction-obs-1.0",
+    "generator": "honua-demo-fixture"
+  },
+  "extras": {
+    "attribution": "© Honua Demo 2026 — observation pins layer",
+    "layerKind": "observations",
+    "layerId": "nvidia-construction-obs",
+    "cameraHint": {
+      "longitude": -121.9750,
+      "latitude": 37.3750,
+      "height": 350.0,
+      "heading": 30.0,
+      "pitch": -25.0,
+      "roll": 0.0
+    },
+    "bounds": {
+      "west": -121.98,
+      "south": 37.37,
+      "east": -121.97,
+      "north": 37.38,
+      "minHeight": 0.0,
+      "maxHeight": 80.0
+    },
+    "observationsSidecar": {
+      "uri": "observations.json",
+      "schemaVersion": "1.0"
+    }
+  },
+  "geometricError": 100.0,
+  "root": {
+    "boundingVolume": {
+      "region": [
+        -2.1289533602,
+        0.6522348048,
+        -2.1287788015,
+        0.6524093556,
+        0.0,
+        80.0
+      ]
+    },
+    "geometricError": 0.0,
+    "refine": "REPLACE",
+    "content": {
+      "uri": "tiles/obs-pin.b3dm"
+    }
+  }
+}
