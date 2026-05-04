@@ -318,6 +318,8 @@ builder.Services.AddResilientHttpClient(
     "control-plane-azure-batch",
     HttpResiliencePolicies.FastApiDefaults);
 builder.Services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
+builder.Services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
+builder.Services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
 builder.Services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
 builder.Services.AddSingleton<IAzureContainerAppsRevisionClient, AzureManagementContainerAppsRevisionClient>();
 builder.Services.AddSingleton<IAzureBatchClient, AzureBatchDataPlaneClient>();
@@ -329,12 +331,14 @@ builder.Services.AddSingleton<DeployWorkflowService>();
 builder.Services.AddSingleton<IDeployTelemetrySignalEvaluator, PrometheusDeployTelemetrySignalEvaluator>();
 builder.Services.AddSingleton<KubernetesGitOpsDeployBackend>();
 builder.Services.AddSingleton<AwsEcsGitOpsDeployBackend>();
+builder.Services.AddSingleton<AwsEcsAlbDeployBackend>();
 builder.Services.AddSingleton<AzureContainerAppsGitOpsDeployBackend>();
 builder.Services.AddSingleton<AzureContainerAppsRevisionDeployBackend>();
 builder.Services.AddSingleton<AwsLambdaGitOpsDeployBackend>();
 builder.Services.AddSingleton<AzureFunctionsGitOpsDeployBackend>();
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsAlbDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsGitOpsDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsRevisionDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());

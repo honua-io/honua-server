@@ -74,6 +74,8 @@
 
   <ItemGroup>
     <PackageReference Include="AWSSDK.Batch" />
+    <PackageReference Include="AWSSDK.ECS" />
+    <PackageReference Include="AWSSDK.ElasticLoadBalancingV2" />
     <PackageReference Include="AWSSDK.Lambda" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" />
     <PackageReference Include="AWSSDK.SQS" />

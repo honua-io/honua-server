@@ -399,7 +399,15 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
             => spec.TargetKind switch
             {
                 DeployTargetKind.Kubernetes => "kubernetes-honua-http",
-                DeployTargetKind.AwsEcs => HasCanarySignalConfiguration(spec.Parameters) ? "aws-alb-canary" : "honua-http",
+                // ECS canary deploys are configured by setting a canary weight via
+                // aws.ecs.canary_weight_percentage or the generic
+                // deployment.canary_weight_percentage; either key implies the rollout
+                // is gated on canary-only telemetry. Without that signal the runbook
+                // and PlanAsync would advertise a canary policy while the evaluator
+                // silently fell back to aggregate Honua HTTP metrics.
+                DeployTargetKind.AwsEcs => HasCanarySignalConfiguration(spec.Parameters) || HasCanaryWeight(spec.Parameters)
+                    ? "aws-alb-canary"
+                    : "honua-http",
                 DeployTargetKind.AwsLambda => HasCanarySignalConfiguration(spec.Parameters) ? "aws-lambda-canary" : "honua-http",
                 DeployTargetKind.AzureContainerApps => HasCanarySignalConfiguration(spec.Parameters) ? "azure-aca-canary" : "honua-http",
                 DeployTargetKind.AzureFunctions => "honua-http",
@@ -409,6 +417,13 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
         private static bool HasCanarySignalConfiguration(IReadOnlyDictionary<string, string> parameters)
             => parameters.ContainsKey("telemetry.prometheus.canary_selector")
                || parameters.ContainsKey("telemetry.prometheus.canary_job");
+
+        private static bool HasCanaryWeight(IReadOnlyDictionary<string, string> parameters)
+            => HasNonEmpty(parameters, "aws.ecs.canary_weight_percentage")
+               || HasNonEmpty(parameters, "deployment.canary_weight_percentage");
+
+        private static bool HasNonEmpty(IReadOnlyDictionary<string, string> parameters, string key)
+            => parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value);
 
         private static DeployTelemetryPolicy CreateHonuaHttpPreset(IReadOnlyDictionary<string, string> parameters)
         {

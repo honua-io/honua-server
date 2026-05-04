@@ -12,6 +12,8 @@
     <PackageVersion Include="Aspire.Npgsql" Version="13.2.2" />
     <PackageVersion Include="Aspire.StackExchange.Redis.DistributedCaching" Version="13.2.2" />
     <PackageVersion Include="AWSSDK.Batch" Version="4.0.8.8" />
+    <PackageVersion Include="AWSSDK.ECS" Version="4.0.9" />
+    <PackageVersion Include="AWSSDK.ElasticLoadBalancingV2" Version="4.0.5" />
     <PackageVersion Include="AWSSDK.Lambda" Version="4.0.14.1" />
     <PackageVersion Include="AWSSDK.LocationService" Version="4.0.3.25" />
     <PackageVersion Include="AWSSDK.S3" Version="4.0.21.2" />
