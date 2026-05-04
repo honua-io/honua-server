@@ -174,7 +174,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             // INSERT below remains the canonical collision authority; this
             // preflight closes the practical overwrite window for sequential
             // publishes against the same id.
-            await PreflightSceneIdConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
+            await PreflightSceneRegistrationConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
 
             var extrusion = generationOptions.ExtrusionOverride ?? layer.Metadata?.Extrusion;
             var attributeSchemas = BuildAttributeSchemas(layer, includeAttributes);
@@ -525,7 +525,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
     }
 
-    private async Task PreflightSceneIdConflictAsync(string sceneId, CancellationToken cancellationToken)
+    private async Task PreflightSceneRegistrationConflictAsync(string sceneId, CancellationToken cancellationToken)
     {
         if (_registration is null)
         {
@@ -535,7 +535,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         if (existing is not null)
         {
             throw new ValidationException(
-                $"{SceneGenerationErrorCodes.SceneIdConflict}: A scene dataset with id '{sceneId}' already exists.");
+                $"{SceneGenerationErrorCodes.SceneRegistrationConflict}: A scene dataset with id '{sceneId}' already exists.");
         }
     }
 
@@ -770,7 +770,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
         // The registry's name uniqueness constraint means defaulting to
         // layer.Name causes the second auto-generated scene from the same
-        // layer to fail with a misleading SCENE_ID_CONFLICT (the conflict
+        // layer to fail with a misleading id-conflict message (the conflict
         // is on name, not id). Suffix with the resolved sceneId so the
         // default is unique by construction; the operator can always
         // override via the displayName field.

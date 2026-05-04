@@ -263,7 +263,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         var ex = await act.Should().ThrowAsync<ValidationException>();
         ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.SceneRegistrationConflict);
-        ex.And.Message.Should().Contain("id 'duplicate-scene' or name");
+        ex.And.Message.Should().Contain("id 'duplicate' or name");
     }
 
     [UnitTest]
@@ -383,7 +383,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: "existing-scene"), CancellationToken.None);
 
         var ex = await act.Should().ThrowAsync<ValidationException>();
-        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.SceneIdConflict);
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.SceneRegistrationConflict);
 
         // Files must remain byte-identical — preflight catches the duplicate
         // before Directory.CreateDirectory or File.WriteAllBytesAsync runs.
@@ -526,7 +526,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: "concurrent-loser"), CancellationToken.None);
         var ex = await act.Should().ThrowAsync<ValidationException>();
-        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.SceneIdConflict);
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.SceneRegistrationConflict);
 
         // Winner's bytes survived: registration failed before the rename, and
         // the loser's outputs were staged under a separate intent-scoped
@@ -645,7 +645,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     {
         // Two generations of the same layer with different sceneIds must
         // produce different default display names so the registry's name
-        // uniqueness constraint does not surface as SCENE_ID_CONFLICT.
+        // uniqueness constraint does not surface as an id-only conflict.
         _catalog.Layer = BuildLayer();
         _featureSource.Features = SamplePolygons();
 
@@ -774,7 +774,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             BuildIntent(sceneId: "preexisting-scene"), CancellationToken.None);
 
         var ex = await act.Should().ThrowAsync<ValidationException>();
-        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.SceneIdConflict);
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.SceneRegistrationConflict);
         _featureSource.StreamInvocationCount.Should().Be(0,
             "the registry preflight must reject duplicate sceneIds before enumerating the feature source.");
     }

@@ -233,7 +233,7 @@ problem-detail helpers:
   collision unless the operator supplied an explicit `sceneId`. When two
   concurrent requests resolve to the same explicit `sceneId`, the registry
   INSERT determines the winner and the loser fails with
-  `SCENE_ID_CONFLICT` after its staging bytes are deleted — the winner's
+  `SCENE_REGISTRATION_CONFLICT` after its staging bytes are deleted — the winner's
   final-path files are never overwritten.
 
 ## Deferred enterprise-scale work
