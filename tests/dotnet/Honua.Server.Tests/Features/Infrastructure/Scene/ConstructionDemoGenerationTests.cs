@@ -3,18 +3,13 @@
 
 using System.Buffers.Binary;
 using System.Globalization;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Publishing.Domain;
-using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Server.Features.Infrastructure.Scene;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -332,95 +327,4 @@ public sealed class ConstructionDemoGenerationTests : IDisposable
             .GetProperty("values").GetInt32();
     }
 
-    private sealed class StubLayerCatalog : ILayerCatalog
-    {
-        public LayerDefinition? Layer { get; set; }
-
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Layer);
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(Layer is null ? Array.Empty<LayerDefinition>() : new[] { Layer });
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult<ServiceDefinition?>(null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<ServiceDefinition>());
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Layer is not null);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
-    }
-
-    private sealed class StubFeatureSource : ISceneFeatureSource
-    {
-        public IReadOnlyList<SceneFeature> Features { get; set; } = [];
-
-        public async IAsyncEnumerable<SceneFeature> StreamAsync(
-            LayerDefinition layer,
-            IReadOnlyList<string> includeAttributes,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            foreach (var feature in Features)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                yield return feature;
-                await Task.Yield();
-            }
-        }
-    }
-
-    private sealed class StubRegistrationService : ISceneRegistrationService
-    {
-        public List<SceneDatasetRecord> Records { get; } = new();
-        public List<Guid> DeactivatedDatasetIds { get; } = new();
-
-        public Task<SceneDatasetRecord> RegisterAsync(SceneDatasetRecord record, CancellationToken cancellationToken = default)
-        {
-            Records.Add(record);
-            return Task.FromResult(record);
-        }
-
-        public Task<SceneDatasetRecord?> GetAsync(Guid datasetId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Records.Find(r => r.DatasetId == datasetId));
-
-        public Task<SceneDatasetRecord?> GetBySceneIdAsync(string id, CancellationToken cancellationToken = default)
-            => Task.FromResult(Records.Find(r => r.Id == id));
-
-        public Task<IReadOnlyList<SceneDatasetRecord>> ListAsync(bool includeInactive = false, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<SceneDatasetRecord>>(Records);
-
-        public Task<SceneDatasetRecord> UpdateAsync(SceneDatasetRecord record, CancellationToken cancellationToken = default)
-            => Task.FromResult(record);
-
-        public Task<bool> DeactivateAsync(Guid datasetId, CancellationToken cancellationToken = default)
-        {
-            DeactivatedDatasetIds.Add(datasetId);
-            var idx = Records.FindIndex(r => r.DatasetId == datasetId);
-            if (idx < 0)
-            {
-                return Task.FromResult(false);
-            }
-            Records[idx] = Records[idx] with { Status = SceneDatasetStatus.Inactive };
-            return Task.FromResult(true);
-        }
-    }
-
-    private sealed class TestHostEnvironment : IHostEnvironment
-    {
-        public string ApplicationName { get; set; } = "Honua.Tests";
-        public string EnvironmentName { get; set; } = "Test";
-        public string ContentRootPath { get; set; } = Path.GetTempPath();
-        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } =
-            new Microsoft.Extensions.FileProviders.NullFileProvider();
-    }
 }

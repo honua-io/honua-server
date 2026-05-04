@@ -286,20 +286,33 @@ neither the registry slug nor the URL the client loads.
 
 ### Prebuilt vs generated toggle
 
-The `nvidia-construction` scene can resolve to either the prebuilt b3dm
-fixture (#898) or the freshly generated GLB output of this pipeline by
-swapping `AssetRoot` in configuration — no client contract or URL change
-is required:
+The `nvidia-construction` scene id can resolve to either the prebuilt b3dm
+fixture (#898) or the freshly generated GLB output of this pipeline. The
+hosted serving layer keys its cache and authorization on `sceneId` — not
+`AssetRoot` — so the toggle is transparent to the demo client.
+
+Which path serves the slug depends on the registry composition. Under the
+default Postgres profile (`DataSource:Provider` unset or set to
+`postgres`/`postgresql`/`postgis`), the `CompositeSceneDatasetRegistry`
+queries the Postgres-backed registry first and only falls through to
+`Scenes:Datasets` when Postgres has no record for the slug — and a
+deactivated Postgres record suppresses the fallback so deactivation stays
+authoritative ([scene-dataset-registry.md](../admin-api/scene-dataset-registry.md)).
+
+**Before any `POST /api/v1/admin/scenes/generate` call** — `Scenes:Datasets`
+in `appsettings.Development.json` owns the slug through the configuration
+fallback. The `AssetRoot` here is relative to `IHostEnvironment.ContentRootPath`
+(which is `src/Honua.Server/` when running `dotnet run`):
 
 ```jsonc
-// appsettings.Development.json — prebuilt (default)
+// src/Honua.Server/appsettings.Development.json — prebuilt (default)
 {
   "Scenes": {
     "Datasets": [
       {
         "Id": "nvidia-construction",
-        "Name": "NVIDIA Construction Site",
-        "AssetRoot": "tests/fixtures/scenes/nvidia-construction",
+        "Name": "NVIDIA Demo – Santa Clara Construction Site",
+        "AssetRoot": "../../tests/fixtures/scenes/nvidia-construction",
         "TilesetFileName": "tileset.json"
       }
     ]
@@ -307,24 +320,28 @@ is required:
 }
 ```
 
-```jsonc
-// appsettings.Development.json — generated
-{
-  "Scenes": {
-    "Datasets": [
-      {
-        "Id": "nvidia-construction",
-        "Name": "NVIDIA Construction Site",
-        "AssetRoot": "scenes-generated/nvidia-construction",
-        "TilesetFileName": "tileset.json"
-      }
-    ]
-  }
-}
-```
+**After running generate** — the executor inserts a Postgres registry record
+that points at the absolute `{SceneGeneration:OutputRoot}/nvidia-construction/`
+directory. The composite registry now returns that record for the slug, so
+the client transparently picks up the freshly generated tileset bytes; no
+configuration change is required.
 
-The hosted serving layer keys its cache and authorization on `sceneId`,
-not `AssetRoot`, so the toggle is transparent to the demo client.
+**Switching back to the prebuilt fixture under the Postgres profile**
+requires removing the Postgres ownership of the slug. The `Scenes:Datasets`
+entry alone is not enough because the composite stops at the Postgres
+record:
+
+- Delete the registered scene through the admin scene CRUD path (#844)
+  (`DELETE /api/v1/admin/scenes/{datasetId}`), or
+- Run with the configuration-only profile by setting `DataSource:Provider`
+  to a non-Postgres provider (e.g. `duckdb`), which prevents the Postgres
+  registry from registering and leaves `Scenes:Datasets` as the active
+  `ISceneDatasetRegistry`.
+
+Deactivating the Postgres record alone is not sufficient: the composite
+deliberately suppresses the configuration fallback for slugs the Postgres
+store owns but has marked inactive, so the slug returns 404 until the
+record is deleted outright.
 
 ### Demo determinism
 

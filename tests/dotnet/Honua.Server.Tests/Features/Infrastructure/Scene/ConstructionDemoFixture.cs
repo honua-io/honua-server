@@ -88,10 +88,16 @@ internal static class ConstructionDemoFixture
     /// <summary>Five deterministic polygon footprints covering all three work packages.</summary>
     public static IReadOnlyList<SceneFeature> Features { get; } = BuildFeatures();
 
+    // objectids match the demo seed in tests/seed/server.yaml (PK rows
+    // 9001-9005). PostgresSceneFeatureSource projects the row PK into the
+    // metadata `objectid` column for any attribute whose field is named
+    // `objectid` / `object_id` / `id`, so the in-memory fixture must use the
+    // same values to keep the seeded admin-generation path and the hermetic
+    // unit fixture observationally identical.
     private static SceneFeature[] BuildFeatures() =>
     [
         BuildFeature(
-            objectid: 1,
+            objectid: 9001,
             name: "Main Tower — Foundation",
             heightMeters: 8.0,
             phase: "foundation",
@@ -105,7 +111,7 @@ internal static class ConstructionDemoFixture
                 new SceneVertex(-121.9786, 37.3784, 0.0)
             ]),
         BuildFeature(
-            objectid: 2,
+            objectid: 9002,
             name: "Main Tower — Structural Frame",
             heightMeters: 60.0,
             phase: "structure",
@@ -119,7 +125,7 @@ internal static class ConstructionDemoFixture
                 new SceneVertex(-121.9742, 37.3778, 0.0)
             ]),
         BuildFeature(
-            objectid: 3,
+            objectid: 9003,
             name: "Equipment Yard Slab",
             heightMeters: 8.0,
             phase: "foundation",
@@ -133,7 +139,7 @@ internal static class ConstructionDemoFixture
                 new SceneVertex(-121.9782, 37.3710, 0.0)
             ]),
         BuildFeature(
-            objectid: 4,
+            objectid: 9004,
             name: "Tower Annex",
             heightMeters: 35.0,
             phase: "structure",
@@ -147,7 +153,7 @@ internal static class ConstructionDemoFixture
                 new SceneVertex(-121.9724, 37.3723, 0.0)
             ]),
         BuildFeature(
-            objectid: 5,
+            objectid: 9005,
             name: "Envelope Shell — Planned",
             heightMeters: 80.0,
             phase: "not_started",

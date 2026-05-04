@@ -1000,33 +1000,38 @@ sql:
       ON CONFLICT (service_name, layer_id) DO UPDATE SET
           layer_order = EXCLUDED.layer_order;
   - |
+      -- objectid in jsonb mirrors the row PK so the JSONB stays internally
+      -- consistent. PostgresSceneFeatureSource projects the PK (not the
+      -- JSONB) into the GLB metadata column, but matching values keep the
+      -- seed self-explanatory and remove the apparent 1-5 vs 9001-9005
+      -- divergence with ConstructionDemoFixture.
       INSERT INTO features (objectid, layer_id, geometry, attributes)
       VALUES
           (9001, 9,
               ST_SetSRID(ST_GeomFromText(
                   'POLYGON((-121.9786 37.3784, -121.9784 37.3784, -121.9784 37.3786, -121.9786 37.3786, -121.9786 37.3784))'
               ), 4326),
-              jsonb_build_object('objectid', 1, 'name', 'Main Tower — Foundation', 'height_m', 8.0, 'phase', 'foundation', 'work_package_id', 'wp-foundation')),
+              jsonb_build_object('objectid', 9001, 'name', 'Main Tower — Foundation', 'height_m', 8.0, 'phase', 'foundation', 'work_package_id', 'wp-foundation')),
           (9002, 9,
               ST_SetSRID(ST_GeomFromText(
                   'POLYGON((-121.9742 37.3778, -121.9738 37.3778, -121.9738 37.3782, -121.9742 37.3782, -121.9742 37.3778))'
               ), 4326),
-              jsonb_build_object('objectid', 2, 'name', 'Main Tower — Structural Frame', 'height_m', 60.0, 'phase', 'structure', 'work_package_id', 'wp-structure')),
+              jsonb_build_object('objectid', 9002, 'name', 'Main Tower — Structural Frame', 'height_m', 60.0, 'phase', 'structure', 'work_package_id', 'wp-structure')),
           (9003, 9,
               ST_SetSRID(ST_GeomFromText(
                   'POLYGON((-121.9782 37.3710, -121.9778 37.3710, -121.9778 37.3714, -121.9782 37.3714, -121.9782 37.3710))'
               ), 4326),
-              jsonb_build_object('objectid', 3, 'name', 'Equipment Yard Slab', 'height_m', 8.0, 'phase', 'foundation', 'work_package_id', 'wp-foundation')),
+              jsonb_build_object('objectid', 9003, 'name', 'Equipment Yard Slab', 'height_m', 8.0, 'phase', 'foundation', 'work_package_id', 'wp-foundation')),
           (9004, 9,
               ST_SetSRID(ST_GeomFromText(
                   'POLYGON((-121.9724 37.3723, -121.9720 37.3723, -121.9720 37.3727, -121.9724 37.3727, -121.9724 37.3723))'
               ), 4326),
-              jsonb_build_object('objectid', 4, 'name', 'Tower Annex', 'height_m', 35.0, 'phase', 'structure', 'work_package_id', 'wp-structure')),
+              jsonb_build_object('objectid', 9004, 'name', 'Tower Annex', 'height_m', 35.0, 'phase', 'structure', 'work_package_id', 'wp-structure')),
           (9005, 9,
               ST_SetSRID(ST_GeomFromText(
                   'POLYGON((-121.9662 37.3758, -121.9658 37.3758, -121.9658 37.3762, -121.9662 37.3762, -121.9662 37.3758))'
               ), 4326),
-              jsonb_build_object('objectid', 5, 'name', 'Envelope Shell — Planned', 'height_m', 80.0, 'phase', 'not_started', 'work_package_id', 'wp-envelope'))
+              jsonb_build_object('objectid', 9005, 'name', 'Envelope Shell — Planned', 'height_m', 80.0, 'phase', 'not_started', 'work_package_id', 'wp-envelope'))
       ON CONFLICT (objectid) DO UPDATE SET
           layer_id = EXCLUDED.layer_id,
           geometry = EXCLUDED.geometry,
