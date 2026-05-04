@@ -847,14 +847,11 @@ internal sealed class SceneMetadataColumn
                 return (int)l;
             case short s: return s;
             case float f:
-                if (f < int.MinValue || f > int.MaxValue) clampedCount++;
-                return (int)f;
+                return ClampFiniteFloatingToInt32(f, ref clampedCount);
             case double d:
-                if (d < int.MinValue || d > int.MaxValue) clampedCount++;
-                return (int)d;
+                return ClampFiniteFloatingToInt32(d, ref clampedCount);
             case decimal m:
-                if (m < int.MinValue || m > int.MaxValue) clampedCount++;
-                return (int)m;
+                return ClampDecimalToInt32(m, ref clampedCount);
             case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v):
                 return v;
             default: return 0;
@@ -881,19 +878,125 @@ internal sealed class SceneMetadataColumn
                 }
                 return (long)ul;
             case float f:
-                if (f < long.MinValue || f > long.MaxValue) coercedCount++;
-                return (long)f;
+                return CoerceFiniteFloatingToInt64(f, ref coercedCount);
             case double d:
-                if (d < long.MinValue || d > long.MaxValue) coercedCount++;
-                return (long)d;
+                return CoerceFiniteFloatingToInt64(d, ref coercedCount);
             case decimal m:
-                if (m < long.MinValue || m > long.MaxValue) coercedCount++;
-                return (long)m;
-            case string s when long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v):
-                return v;
+                return CoerceDecimalToInt64(m, ref coercedCount);
+            case string s:
+                if (long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    return parsed;
+                }
+                coercedCount++;
+                return 0L;
             default:
                 coercedCount++;
                 return 0L;
         }
+    }
+
+    private static int ClampFiniteFloatingToInt32(double value, ref int clampedCount)
+    {
+        // NaN and ±Infinity have no defensible Int32 representation; treat as
+        // "outside INT32 range" so the documented clamping warning fires
+        // rather than letting the implementation-defined cast surface
+        // garbage.
+        if (!double.IsFinite(value))
+        {
+            clampedCount++;
+            return 0;
+        }
+        if (value <= int.MinValue)
+        {
+            clampedCount++;
+            return int.MinValue;
+        }
+        if (value >= (double)int.MaxValue + 1.0)
+        {
+            clampedCount++;
+            return int.MaxValue;
+        }
+        return (int)value;
+    }
+
+    private static int ClampDecimalToInt32(decimal value, ref int clampedCount)
+    {
+        // (int)decimal cast is checked in C# and throws OverflowException for
+        // out-of-range values, which would crash generation rather than
+        // surface as the documented non-fatal warning. Clamp explicitly
+        // before the cast.
+        if (value < int.MinValue)
+        {
+            clampedCount++;
+            return int.MinValue;
+        }
+        if (value > int.MaxValue)
+        {
+            clampedCount++;
+            return int.MaxValue;
+        }
+        return (int)value;
+    }
+
+    private static long CoerceFiniteFloatingToInt64(double value, ref int coercedCount)
+    {
+        // Non-finite (NaN / ±Infinity) is non-integral by definition; emit
+        // the documented coercion warning and return zero so the buffer is
+        // deterministic.
+        if (!double.IsFinite(value))
+        {
+            coercedCount++;
+            return 0L;
+        }
+        // (double)long.MinValue is exactly -2^63 (representable). The cast
+        // (long)(-2^63) is well-defined and equals long.MinValue, so values
+        // strictly less than it must clamp.
+        if (value < long.MinValue)
+        {
+            coercedCount++;
+            return long.MinValue;
+        }
+        // (double)long.MaxValue rounds UP to 2^63 because (2^63 - 1) is not
+        // representable as a finite double; values >= 2^63 are NOT valid
+        // longs and the cast is implementation-defined, so clamp them.
+        if (value >= (double)long.MaxValue)
+        {
+            coercedCount++;
+            return long.MaxValue;
+        }
+        // In-range fractional values are still non-integral per the doc
+        // contract — truncating 12.5 to 12 silently would lose the warning
+        // that callers rely on to catch unexpected source types.
+        var truncated = Math.Truncate(value);
+        if (truncated != value)
+        {
+            coercedCount++;
+        }
+        return (long)truncated;
+    }
+
+    private static long CoerceDecimalToInt64(decimal value, ref int coercedCount)
+    {
+        // (long)decimal cast is checked in C# and throws OverflowException
+        // outside [Int64.MinValue, Int64.MaxValue]. Clamp explicitly so a
+        // non-integral source value produces the documented warning instead
+        // of a 503-equivalent crash.
+        if (value < long.MinValue)
+        {
+            coercedCount++;
+            return long.MinValue;
+        }
+        if (value > long.MaxValue)
+        {
+            coercedCount++;
+            return long.MaxValue;
+        }
+        var truncated = decimal.Truncate(value);
+        if (truncated != value)
+        {
+            coercedCount++;
+        }
+        return (long)truncated;
     }
 }

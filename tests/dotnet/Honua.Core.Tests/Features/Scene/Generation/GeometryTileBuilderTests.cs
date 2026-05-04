@@ -281,6 +281,166 @@ public sealed class GeometryTileBuilderTests
         BinaryPrimitives.ReadInt64LittleEndian(binPayload.AsSpan(byteOffset + 8, 8)).Should().Be(beyondMin);
     }
 
+    [UnitTest]
+    public void BuildGlb_Int64Column_FractionalDoubleEmitsCoercionWarning()
+    {
+        // The doc contract says fractional values are non-integral and must
+        // emit the coercion warning. The previous implementation only
+        // counted out-of-range values, so a fractional in-range double like
+        // 12.5 was silently truncated.
+        var features = NumericFeaturePair(
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = 12.5 },
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = 99.75 });
+
+        var schemas = new[]
+        {
+            new SceneAttributeSchema { PropertyId = "big_id", FieldName = "big_id", SchemaType = "SCALAR", SchemaComponentType = "INT64" }
+        };
+        var warnings = new List<string>();
+
+        var glb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null, warnings: warnings);
+
+        warnings.Should().ContainSingle(w => w.Contains("big_id", StringComparison.Ordinal)
+            && w.Contains("coerced", StringComparison.Ordinal)
+            && w.Contains("INT64", StringComparison.Ordinal),
+            "fractional doubles on an INT64 metadata column must surface the documented non-integral coercion warning.");
+
+        var (byteOffset, _) = GetInt64BufferRange(glb, "big_id");
+        var binPayload = ExtractBinChunk(glb);
+        // Math.Truncate(12.5) = 12; Math.Truncate(99.75) = 99
+        BinaryPrimitives.ReadInt64LittleEndian(binPayload.AsSpan(byteOffset, 8)).Should().Be(12L);
+        BinaryPrimitives.ReadInt64LittleEndian(binPayload.AsSpan(byteOffset + 8, 8)).Should().Be(99L);
+    }
+
+    [UnitTest]
+    public void BuildGlb_Int64Column_DecimalMaxValueClampsWithoutThrowing()
+    {
+        // (long)decimal.MaxValue is a CHECKED cast in C# and throws
+        // OverflowException; the previous implementation would crash the
+        // generation rather than emitting the documented non-fatal warning.
+        var features = NumericFeaturePair(
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = decimal.MaxValue },
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = decimal.MinValue });
+
+        var schemas = new[]
+        {
+            new SceneAttributeSchema { PropertyId = "big_id", FieldName = "big_id", SchemaType = "SCALAR", SchemaComponentType = "INT64" }
+        };
+        var warnings = new List<string>();
+
+        Action act = () => GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null, warnings: warnings);
+        act.Should().NotThrow<OverflowException>();
+
+        var glb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null, warnings: warnings);
+        var (byteOffset, _) = GetInt64BufferRange(glb, "big_id");
+        var binPayload = ExtractBinChunk(glb);
+        BinaryPrimitives.ReadInt64LittleEndian(binPayload.AsSpan(byteOffset, 8)).Should().Be(long.MaxValue);
+        BinaryPrimitives.ReadInt64LittleEndian(binPayload.AsSpan(byteOffset + 8, 8)).Should().Be(long.MinValue);
+
+        warnings.Should().Contain(w => w.Contains("big_id", StringComparison.Ordinal)
+            && w.Contains("coerced", StringComparison.Ordinal),
+            "out-of-range decimals must surface the non-integral coercion warning instead of throwing.");
+    }
+
+    [UnitTest]
+    public void BuildGlb_Int64Column_NonFiniteFloatingClampsToZeroWithWarning()
+    {
+        var features = NumericFeaturePair(
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = double.PositiveInfinity },
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = double.NaN });
+
+        var schemas = new[]
+        {
+            new SceneAttributeSchema { PropertyId = "big_id", FieldName = "big_id", SchemaType = "SCALAR", SchemaComponentType = "INT64" }
+        };
+        var warnings = new List<string>();
+
+        var glb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null, warnings: warnings);
+        var (byteOffset, _) = GetInt64BufferRange(glb, "big_id");
+        var binPayload = ExtractBinChunk(glb);
+        BinaryPrimitives.ReadInt64LittleEndian(binPayload.AsSpan(byteOffset, 8)).Should().Be(0L,
+            "non-finite values have no defensible Int64 representation; coerce to zero deterministically.");
+        BinaryPrimitives.ReadInt64LittleEndian(binPayload.AsSpan(byteOffset + 8, 8)).Should().Be(0L);
+
+        warnings.Should().Contain(w => w.Contains("big_id", StringComparison.Ordinal)
+            && w.Contains("coerced", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void BuildGlb_Int32Column_DecimalMaxValueClampsWithoutThrowing()
+    {
+        // Companion fix: (int)decimal cast also throws on out-of-range
+        // values. Ensure the Integer column's clamping helper survives
+        // decimal.MaxValue without crashing the generation.
+        var features = NumericFeaturePair(
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["height"] = decimal.MaxValue },
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["height"] = decimal.MinValue });
+
+        var schemas = new[]
+        {
+            new SceneAttributeSchema { PropertyId = "height", FieldName = "height", SchemaType = "SCALAR", SchemaComponentType = "INT32" }
+        };
+        var warnings = new List<string>();
+
+        Action act = () => GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null, warnings: warnings);
+        act.Should().NotThrow<OverflowException>();
+
+        var glb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null, warnings: warnings);
+        var (byteOffset, _) = GetInt32BufferRange(glb, "height");
+        var binPayload = ExtractBinChunk(glb);
+        BinaryPrimitives.ReadInt32LittleEndian(binPayload.AsSpan(byteOffset, 4)).Should().Be(int.MaxValue);
+        BinaryPrimitives.ReadInt32LittleEndian(binPayload.AsSpan(byteOffset + 4, 4)).Should().Be(int.MinValue);
+
+        warnings.Should().Contain(w => w.Contains("height", StringComparison.Ordinal)
+            && w.Contains("clamped", StringComparison.Ordinal));
+    }
+
+    private static SceneFeature[] NumericFeaturePair(
+        Dictionary<string, object?> firstAttrs,
+        Dictionary<string, object?> secondAttrs)
+    {
+        return new[]
+        {
+            new SceneFeature
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = SquareRing() },
+                Attributes = firstAttrs
+            },
+            new SceneFeature
+            {
+                Id = 2,
+                Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = SquareRing(offsetLon: 0.001) },
+                Attributes = secondAttrs
+            }
+        };
+    }
+
+    private static (int ByteOffset, int ByteLength) GetInt64BufferRange(byte[] glb, string propertyId)
+        => GetMetadataBufferRange(glb, propertyId, expectedAlignmentMod: 8);
+
+    private static (int ByteOffset, int ByteLength) GetInt32BufferRange(byte[] glb, string propertyId)
+        => GetMetadataBufferRange(glb, propertyId, expectedAlignmentMod: null);
+
+    private static (int ByteOffset, int ByteLength) GetMetadataBufferRange(byte[] glb, string propertyId, int? expectedAlignmentMod)
+    {
+        var json = ExtractJsonChunk(glb);
+        using var doc = JsonDocument.Parse(json);
+        var viewIndex = doc.RootElement.GetProperty("extensions").GetProperty("EXT_structural_metadata")
+            .GetProperty("propertyTables")[0]
+            .GetProperty("properties").GetProperty(propertyId)
+            .GetProperty("values").GetInt32();
+        var bufferView = doc.RootElement.GetProperty("bufferViews")[viewIndex];
+        var byteOffset = bufferView.GetProperty("byteOffset").GetInt32();
+        var byteLength = bufferView.GetProperty("byteLength").GetInt32();
+        if (expectedAlignmentMod is { } mod)
+        {
+            (byteOffset % mod).Should().Be(0,
+                $"the {propertyId} bufferView must satisfy {mod}-byte alignment for the declared component type.");
+        }
+        return (byteOffset, byteLength);
+    }
+
     private static byte[] BuildSimpleSquare()
     {
         var features = new[]
