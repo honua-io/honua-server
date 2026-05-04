@@ -9,9 +9,10 @@ Cesium ion, or any live drone/point-cloud pipeline.
 > deterministic generation path that produces a real GLB tileset for the
 > same `nvidia-construction` scene id has landed in `honua-server-899` —
 > see [3D Tiles Generation Pipeline](../gis/scene-generation.md#demo-fixture-nvidia-construction-site-899)
-> for the prebuilt-vs-generated `AssetRoot` toggle and the seed entry that
-> drives `POST /api/v1/admin/scenes/generate`. Production-scale tiling,
-> LOD, and BIM/point-cloud inputs remain tracked in `honua-server-842`.
+> for the prebuilt-vs-generated registry toggle (Postgres-first composite,
+> with `Scenes:Datasets` as the fallback) and the seed entry that drives
+> `POST /api/v1/admin/scenes/generate`. Production-scale tiling, LOD, and
+> BIM/point-cloud inputs remain tracked in `honua-server-842`.
 
 ## What ships
 
