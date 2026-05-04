@@ -376,6 +376,7 @@ public static class EndpointRegistry
         new("GET", "/terrain/{datasetId}/{z}/{x}/{y}.png"),
 
         // Hosted 3D Tiles scene serving (#837).
+        new("POST", "/scenes/{sceneId}/access-envelope"),
         new("GET", "/scenes/{sceneId}/tileset.json"),
         new("HEAD", "/scenes/{sceneId}/tileset.json"),
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
