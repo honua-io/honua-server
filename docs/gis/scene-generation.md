@@ -246,9 +246,125 @@ problem-detail helpers:
 - CityGML/IFC ingestion.
 - Native I3S output (informed by #843).
 
+## Demo fixture: NVIDIA construction site (#899)
+
+The construction demo (#899) uses this pipeline to materialise the
+`nvidia-construction` tileset that drives the NVIDIA preview client. The
+demo is a thin slice on top of the v1 generation path — it neither extends
+the producer nor changes the scene-serving contract.
+
+### Fixture data
+
+A reserved layer (id `9`, slug `NVIDIA Construction Site`) is provisioned
+through the standard server seed (`tests/seed/server.yaml`). It contains
+five polygon footprints near (-121.975°, 37.375°) with three work-package
+tokens (`wp-foundation` / `wp-structure` / `wp-envelope`) and heights from
+8 m to 80 m. The same coordinates are mirrored in the in-memory test
+fixture at `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Scene/ConstructionDemoFixture.cs`,
+so unit tests can exercise the executor without standing up Postgres.
+
+### Generating the tileset
+
+With the seed applied, materialise the demo tileset through the standard
+admin endpoint:
+
+```http
+POST /api/v1/admin/scenes/generate
+Content-Type: application/json
+
+{
+  "layerId": 9,
+  "sceneId": "nvidia-construction",
+  "displayName": "NVIDIA Construction Site"
+}
+```
+
+This produces `{SceneGeneration:OutputRoot}/nvidia-construction/`
+containing the deterministic `tile_0000.glb` and `tileset.json`. The same
+slug is used by the prebuilt fixture (#898), so generation overwrites
+neither the registry slug nor the URL the client loads.
+
+### Prebuilt vs generated toggle
+
+The `nvidia-construction` scene can resolve to either the prebuilt b3dm
+fixture (#898) or the freshly generated GLB output of this pipeline by
+swapping `AssetRoot` in configuration — no client contract or URL change
+is required:
+
+```jsonc
+// appsettings.Development.json — prebuilt (default)
+{
+  "Scenes": {
+    "Datasets": [
+      {
+        "Id": "nvidia-construction",
+        "Name": "NVIDIA Construction Site",
+        "AssetRoot": "tests/fixtures/scenes/nvidia-construction",
+        "TilesetFileName": "tileset.json"
+      }
+    ]
+  }
+}
+```
+
+```jsonc
+// appsettings.Development.json — generated
+{
+  "Scenes": {
+    "Datasets": [
+      {
+        "Id": "nvidia-construction",
+        "Name": "NVIDIA Construction Site",
+        "AssetRoot": "scenes-generated/nvidia-construction",
+        "TilesetFileName": "tileset.json"
+      }
+    ]
+  }
+}
+```
+
+The hosted serving layer keys its cache and authorization on `sceneId`,
+not `AssetRoot`, so the toggle is transparent to the demo client.
+
+### Demo determinism
+
+`ConstructionDemoGenerationTests` exercises three guarantees the demo
+relies on:
+
+- Two runs of the executor against the construction fixture produce
+  byte-identical `tile_0000.glb` and `tileset.json` files.
+- `objectid`, `name`, `phase`, and `work_package_id` round-trip into the
+  GLB's `EXT_structural_metadata` schema and property table; CesiumJS
+  identify can resolve a picked building back to its Honua catalog row
+  and work package.
+- The published bounding region encloses every fixture vertex and the
+  tallest 80 m extrusion.
+
+### v1 metadata bridge differences
+
+The prebuilt fixture publishes `extras.projectMeta` directly in the
+tileset.json (work packages, stakeholders, parcels). The generated path
+encodes per-feature attribution through `EXT_structural_metadata` feature
+ids on the GLB instead — the demo client resolves work-package metadata
+by joining a picked feature's `work_package_id` against an out-of-band
+catalog. Adding `extras.projectMeta` to the generated tileset (typed
+`Extras` on `TilesetDocument`) is intentionally deferred and tracked as a
+follow-on under #842; the v1 demo does not require it.
+
+### Upgrade path
+
+This demo slice is deliberately small. The following limits documented
+in this file apply unchanged: 50 000-feature cap, single-tile output,
+fan triangulation, no inner-ring or model-asset support, and no streaming
+LOD. The full producer roadmap that lifts these limits — quadtree
+partitioning, mesh decimation, distributed tiling, glTF model assets,
+CityGML/IFC ingestion — is tracked in #842. Drone and point-cloud paths
+are tracked separately in #900.
+
 ## Related
 
 - [Hosted 3D Tiles serving](scenes-3dtiles.md) (#837)
 - [Scene dataset registry admin API](../admin-api/scene-dataset-registry.md) (#844)
 - [Extruded 3D feature layers](extruded-3d-feature-layers.md) (#841)
 - [Point cloud, drone, and reality-capture ingest](point-cloud-reality-capture-ingest.md) (#900) — spike recommendation that complements this generation pipeline by registering pre-tiled drone/scanner output through the same scene dataset registry.
+- [NVIDIA construction demo fixture](../../tests/fixtures/scenes/nvidia-construction/) (#898)
