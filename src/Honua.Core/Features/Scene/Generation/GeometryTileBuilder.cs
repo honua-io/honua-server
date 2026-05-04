@@ -434,6 +434,12 @@ public static class GeometryTileBuilder
             writer.WriteEndObject();
 
             writer.WriteNumber("mode", primitiveMode);
+            // Reference the doubleSided default material so triangle-mode
+            // primitives are not culled by glTF's CCW-front-face rule when
+            // source rings ship with CW winding. The material has no
+            // visual effect on POINTS/LINES modes; emitting it
+            // unconditionally keeps the GLB self-consistent across kinds.
+            writer.WriteNumber("material", 0);
 
             writer.WriteStartObject("extensions");
             writer.WriteStartObject("EXT_mesh_features");
@@ -475,6 +481,20 @@ public static class GeometryTileBuilder
             writer.WriteNumber("componentType", 5126);
             writer.WriteNumber("count", vertexCount);
             writer.WriteString("type", "SCALAR");
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+
+            // Default double-sided material — referenced by `material: 0`
+            // on every primitive. glTF 2.0 §3.6.4 says doubleSided=false is
+            // the default; without an override, viewers cull triangles that
+            // face away from the camera. Source PostGIS polygon rings can
+            // be CW or CCW, so a single double-sided material is the
+            // smallest v1 fix that keeps every viewer (Cesium, three.js,
+            // any OpenGL-derived stack) honest about both faces.
+            writer.WriteStartArray("materials");
+            writer.WriteStartObject();
+            writer.WriteString("name", "honua_default");
+            writer.WriteBoolean("doubleSided", true);
             writer.WriteEndObject();
             writer.WriteEndArray();
 
@@ -852,10 +872,42 @@ internal sealed class SceneMetadataColumn
                 return ClampFiniteFloatingToInt32(d, ref clampedCount);
             case decimal m:
                 return ClampDecimalToInt32(m, ref clampedCount);
-            case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v):
-                return v;
+            case string s:
+                return ParseStringToInt32(s, ref clampedCount);
             default: return 0;
         }
+    }
+
+    private static int ParseStringToInt32(string s, ref int clampedCount)
+    {
+        if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v))
+        {
+            return v;
+        }
+        // Postgres scene feature source reads JSONB attributes through
+        // `attributes ->> @field` which always returns TEXT. A native
+        // bigint or numeric value lands here as the text "2147483648" or
+        // "9999999999.5" — the documented INT32 clamping warning has to
+        // fire, otherwise out-of-range numeric strings silently flatten to
+        // 0 with no operator signal.
+        if (long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var l))
+        {
+            if (l < int.MinValue || l > int.MaxValue)
+            {
+                clampedCount++;
+                return (int)Math.Clamp(l, int.MinValue, int.MaxValue);
+            }
+            return (int)l;
+        }
+        if (decimal.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var dec))
+        {
+            return ClampDecimalToInt32(dec, ref clampedCount);
+        }
+        if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var dbl))
+        {
+            return ClampFiniteFloatingToInt32(dbl, ref clampedCount);
+        }
+        return 0;
     }
 
     private static long ToInt64(object? value, ref int coercedCount)

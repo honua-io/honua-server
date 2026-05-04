@@ -239,18 +239,38 @@ internal static class WkbGeometryReader
     {
         var byteOrder = cursor.ReadByte();
         var type = cursor.ReadUInt32(byteOrder);
-        var hasZ = (type & 0x80000000u) != 0 || ((type / 1000u) is 1u or 3u);
+
+        // Two encodings carry higher-dimension geometry:
+        //  * EWKB (PostGIS) stores Z/M/SRID as high bits of the type word:
+        //      0x80000000 = Z, 0x40000000 = M, 0x20000000 = SRID prefix.
+        //    `ST_AsBinary` strips the SRID prefix; Z and M may still ride
+        //    along on layers declared with those dimensions.
+        //  * ISO SQL/MM (OGC) uses the higher type ranges:
+        //      1xxx = XYZ, 2xxx = XYM, 3xxx = XYZM.
+        //
+        // Previously the reader detected hasZ for both encodings but skipped
+        // hasM entirely, so a LineStringM or PolygonZM stream left the M
+        // ordinate in the buffer and the next vertex's "X" silently read M
+        // from the prior vertex — corrupting the geometry without warning.
+        var hasZ = (type & 0x80000000u) != 0;
+        var hasM = (type & 0x40000000u) != 0;
         var baseType = type & 0xFFFFu;
-        if (baseType > 1000)
+        if (baseType >= 1000u && baseType < 4000u)
         {
+            switch (baseType / 1000u)
+            {
+                case 1u: hasZ = true; break;
+                case 2u: hasM = true; break;
+                case 3u: hasZ = true; hasM = true; break;
+            }
             baseType %= 1000u;
         }
 
         return baseType switch
         {
-            1 => ReadPoint(ref cursor, byteOrder, hasZ),
-            2 => ReadLineString(ref cursor, byteOrder, hasZ),
-            3 => ReadPolygon(ref cursor, byteOrder, hasZ),
+            1 => ReadPoint(ref cursor, byteOrder, hasZ, hasM),
+            2 => ReadLineString(ref cursor, byteOrder, hasZ, hasM),
+            3 => ReadPolygon(ref cursor, byteOrder, hasZ, hasM),
             4 => ReadMultiPoint(ref cursor, byteOrder),
             5 => ReadMultiLineString(ref cursor, byteOrder),
             6 => ReadMultiPolygon(ref cursor, byteOrder),
@@ -258,11 +278,18 @@ internal static class WkbGeometryReader
         };
     }
 
-    private static SceneFeatureGeometry ReadPoint(ref WkbCursor cursor, byte byteOrder, bool hasZ)
+    private static SceneFeatureGeometry ReadPoint(ref WkbCursor cursor, byte byteOrder, bool hasZ, bool hasM)
     {
         var x = cursor.ReadDouble(byteOrder);
         var y = cursor.ReadDouble(byteOrder);
         double? z = hasZ ? cursor.ReadDouble(byteOrder) : null;
+        // M is irrelevant to 3D Tiles output but must still be consumed so
+        // any following geometry's first ordinate does not slide into the
+        // unread M bytes.
+        if (hasM)
+        {
+            cursor.ReadDouble(byteOrder);
+        }
         return new SceneFeatureGeometry
         {
             Kind = SceneGeometryKind.Point,
@@ -270,7 +297,7 @@ internal static class WkbGeometryReader
         };
     }
 
-    private static SceneFeatureGeometry ReadLineString(ref WkbCursor cursor, byte byteOrder, bool hasZ)
+    private static SceneFeatureGeometry ReadLineString(ref WkbCursor cursor, byte byteOrder, bool hasZ, bool hasM)
     {
         var count = cursor.ReadUInt32(byteOrder);
         var vertices = new SceneVertex[count];
@@ -279,6 +306,10 @@ internal static class WkbGeometryReader
             var x = cursor.ReadDouble(byteOrder);
             var y = cursor.ReadDouble(byteOrder);
             double? z = hasZ ? cursor.ReadDouble(byteOrder) : null;
+            if (hasM)
+            {
+                cursor.ReadDouble(byteOrder);
+            }
             vertices[i] = new SceneVertex(x, y, z);
         }
         return new SceneFeatureGeometry
@@ -288,7 +319,7 @@ internal static class WkbGeometryReader
         };
     }
 
-    private static SceneFeatureGeometry ReadPolygon(ref WkbCursor cursor, byte byteOrder, bool hasZ)
+    private static SceneFeatureGeometry ReadPolygon(ref WkbCursor cursor, byte byteOrder, bool hasZ, bool hasM)
     {
         var ringCount = cursor.ReadUInt32(byteOrder);
         SceneVertex[] outer = [];
@@ -301,6 +332,10 @@ internal static class WkbGeometryReader
                 var x = cursor.ReadDouble(byteOrder);
                 var y = cursor.ReadDouble(byteOrder);
                 double? z = hasZ ? cursor.ReadDouble(byteOrder) : null;
+                if (hasM)
+                {
+                    cursor.ReadDouble(byteOrder);
+                }
                 ring[i] = new SceneVertex(x, y, z);
             }
             if (r == 0)

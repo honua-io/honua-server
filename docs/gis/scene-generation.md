@@ -165,6 +165,12 @@ registry; no separate `POST /api/v1/admin/scenes` call is required.
     (`EXT_mesh_features`).
   - One `propertyTable` row per feature with values for each included
     attribute (`EXT_structural_metadata`).
+  - A single default material with `doubleSided: true` is referenced
+    by every primitive. glTF 2.0's default material has
+    `doubleSided: false` and back-face culling enabled, which would
+    drop polygon triangles whose source ring winds clockwise; the
+    explicit double-sided material lets the GLB render correctly
+    regardless of source winding.
 
 ## Determinism guarantees
 

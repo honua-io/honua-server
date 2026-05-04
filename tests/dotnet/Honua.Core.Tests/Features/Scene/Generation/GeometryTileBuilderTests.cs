@@ -367,6 +367,62 @@ public sealed class GeometryTileBuilderTests
     }
 
     [UnitTest]
+    public void BuildGlb_Int32Column_OutOfRangeNumericStringClampsWithWarning()
+    {
+        // Postgres scene feature source projects JSONB attributes through
+        // `attributes ->> @field` which always returns TEXT. A native
+        // bigint value above Int32.MaxValue therefore reaches the writer
+        // as the string "2147483648"; without explicit string-numeric
+        // fallback it silently becomes 0 with no clamping warning.
+        var features = NumericFeaturePair(
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["height"] = "2147483648" },
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["height"] = "-2147483649" });
+
+        var schemas = new[]
+        {
+            new SceneAttributeSchema { PropertyId = "height", FieldName = "height", SchemaType = "SCALAR", SchemaComponentType = "INT32" }
+        };
+        var warnings = new List<string>();
+
+        var glb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null, warnings: warnings);
+
+        var (byteOffset, _) = GetInt32BufferRange(glb, "height");
+        var binPayload = ExtractBinChunk(glb);
+        BinaryPrimitives.ReadInt32LittleEndian(binPayload.AsSpan(byteOffset, 4)).Should().Be(int.MaxValue,
+            "out-of-range positive integer strings must clamp to Int32.MaxValue, not silently flatten to 0.");
+        BinaryPrimitives.ReadInt32LittleEndian(binPayload.AsSpan(byteOffset + 4, 4)).Should().Be(int.MinValue,
+            "out-of-range negative integer strings must clamp to Int32.MinValue.");
+
+        warnings.Should().Contain(w => w.Contains("height", StringComparison.Ordinal)
+            && w.Contains("clamped", StringComparison.Ordinal),
+            "out-of-range numeric strings on an INT32 column must surface the documented clamping warning.");
+    }
+
+    [UnitTest]
+    public void BuildGlb_EmitsDoubleSidedMaterialReferencedByPrimitive()
+    {
+        // glTF 2.0 §3.6.4: the default material has doubleSided=false, so
+        // back-face culling drops triangles whose vertices wind clockwise
+        // when viewed from the camera. PostGIS polygon outer rings are
+        // typically CCW but not guaranteed; emit a single double-sided
+        // default material so any source winding renders both sides in
+        // every standards-compliant viewer.
+        var glb = BuildSimpleSquare();
+        var json = ExtractJsonChunk(glb);
+
+        using var doc = JsonDocument.Parse(json);
+
+        var materials = doc.RootElement.GetProperty("materials");
+        materials.GetArrayLength().Should().Be(1);
+        materials[0].GetProperty("doubleSided").GetBoolean().Should().BeTrue();
+
+        var primitive = doc.RootElement.GetProperty("meshes")[0]
+            .GetProperty("primitives")[0];
+        primitive.GetProperty("material").GetInt32().Should().Be(0,
+            "every primitive must reference the double-sided material so back-face culling cannot drop CW rings.");
+    }
+
+    [UnitTest]
     public void BuildGlb_Int32Column_DecimalMaxValueClampsWithoutThrowing()
     {
         // Companion fix: (int)decimal cast also throws on out-of-range
