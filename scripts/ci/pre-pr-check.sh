@@ -50,104 +50,41 @@ dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
     --results-directory ./tests/TestResults \
     -- RunConfiguration.MaxCpuCount=1
 
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests" \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
+if ! command -v jq >/dev/null 2>&1; then
+    echo "❌ jq is required to read .github/ci-shards.json"
+    exit 1
+fi
 
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName~Honua.Server.Tests.Admin.|FullyQualifiedName~Honua.Server.Tests.Infrastructure.|FullyQualifiedName~Honua.Server.Tests.AdminEndpointTests" \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
+echo "   Running Honua.Server.Tests shards from .github/ci-shards.json..."
+while IFS= read -r shard_json; do
+    shard_name="$(jq -r '.shard_name' <<< "${shard_json}")"
+    log_name="$(jq -r '.log_name' <<< "${shard_json}")"
+    filter="$(jq -r '.filter' <<< "${shard_json}")"
+    max_cpu_count="$(jq -r '.max_cpu_count' <<< "${shard_json}")"
+    test_timeout_minutes="$(jq -r '.test_timeout_minutes' <<< "${shard_json}")"
 
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Cog|FullyQualifiedName~Honua.Server.Tests.Contract." \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
-
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName~Honua.Server.Tests.Import." \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
-
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName~Honua.Server.Tests.Performance." \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
-
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName~Honua.Server.Tests.Comprehensive." \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
-
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeoServicesSpatialFilterBuilderTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Features|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac|FullyQualifiedName~Honua.Server.Tests.Features.API" \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
-
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData" \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
-
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Tiles" \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
-
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling" \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
-
-dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    --no-build \
-    --no-restore \
-    --configuration Release \
-    --filter "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer" \
-    --logger "console;verbosity=minimal" \
-    --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=1
+    echo "   - ${shard_name} (test timeout ${test_timeout_minutes}m)"
+    HONUA_SERVER_TEST_SHARD_NAME="${shard_name}" \
+    HONUA_SERVER_TEST_FILTER="${filter}" \
+    HONUA_SERVER_TEST_LOG_NAME="${log_name}" \
+    HONUA_SERVER_TEST_TIMEOUT_MINUTES="${HONUA_PRE_PR_SERVER_TEST_TIMEOUT_MINUTES:-${test_timeout_minutes}}" \
+    HONUA_SERVER_TEST_MAX_CPU_COUNT="${HONUA_PRE_PR_MAX_CPU_COUNT:-${max_cpu_count}}" \
+    HONUA_SERVER_TEST_RESULTS_DIR="./tests/TestResults" \
+    HONUA_SERVER_TEST_CONFIGURATION="Release" \
+    HONUA_SERVER_TEST_HEARTBEAT_SECONDS="${HONUA_PRE_PR_HEARTBEAT_SECONDS:-30}" \
+    scripts/ci/run-server-test-shard.sh
+done < <(
+    jq -c '
+      .shards[]
+      | {
+          shard_name,
+          log_name,
+          filter,
+          max_cpu_count: (.max_cpu_count // ""),
+          test_timeout_minutes: ((.test_timeout_minutes // .timeout_minutes) | tostring)
+        }
+    ' .github/ci-shards.json
+)
 
 dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
     --no-build \
