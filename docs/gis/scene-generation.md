@@ -68,6 +68,20 @@ hosted serving routes:
 - `GET /scenes/{sceneId}/tileset.json` — root document.
 - `GET /scenes/{sceneId}/tile_0000.glb` — single tile content.
 
+#### Response warnings
+
+`warnings[]` carries non-fatal advisories from the executor and GLB writer.
+The disk artifact is still valid when warnings are present; the response
+remains `201 Created`. Warnings are also forwarded to the admin log channel
+(via the scene-generation logger) so systemic issues are visible in
+telemetry, not only in the per-call response.
+
+| Trigger | Warning text |
+| --- | --- |
+| Layer has neither Z values nor an `extrusionInfo` block configured. | `Layer has no Z values and no extrusion configured; output is flat at Z=0.` |
+| An `Integer`-mapped column observes a value outside the INT32 range (uncommon for native `Integer` fields, possible when an unexpected type lands in the column). | `Attribute '<field>' clamped <N> value(s) to INT32 range; widen the schema mapping if exact values are required.` |
+| A `BigInteger`-mapped column observes a non-integral value (float/decimal out of range, unparseable string, `ulong` > `Int64.MaxValue`, etc.). `BigInteger` integral values are preserved exactly across the full INT64 range. | `Attribute '<field>' coerced <N> non-integral value(s) to INT64; check the source layer for unexpected types.` |
+
 CesiumJS loads the result with no client-side URL rewriting:
 
 ```js
@@ -167,7 +181,7 @@ problem-detail helpers:
 | `SCENE_FEATURE_LIMIT_EXCEEDED` | 400 | The layer exceeds the configured maximum feature count. |
 | `SCENE_ATTRIBUTE_TYPE_UNSUPPORTED` | 400 | Reserved for future attribute-type validation surfaces. |
 | `SCENE_MODEL_ASSET_INVALID` | 400 | Reserved for the future glTF/GLB model-asset path. |
-| `SCENE_REGISTRATION_CONFLICT` | 409 | The requested scene id or display name collides with an existing dataset. The executor preflights against the registry and stages every generation under an intent-scoped `.staging-{intentId}` directory before promoting to `{sceneId}/`; the registry INSERT remains the canonical collision authority, and a losing request's staging bytes are deleted without ever touching the winner's final-path files. |
+| `SCENE_REGISTRATION_CONFLICT` | 409 | The requested scene id or display name collides with an existing dataset (active OR inactive). The executor preflights against the registry and stages every generation under an intent-scoped `.staging-{intentId}` directory before promoting to `{sceneId}/`; the registry INSERT remains the canonical collision authority, and a losing request's staging bytes are deleted without ever touching the winner's final-path files. If a prior generation failed during staging promotion (e.g. permission denied on `Directory.Move`), the executor compensates by deactivating the inserted registry record so the serving path returns 404, but the inactive record still occupies the slug/name until the operator deletes the record via the admin scene CRUD path (#844). |
 | `SCENE_OPTIONS_INVALID` | 400 | Generation options failed validation. The executor runs the canonical `SceneDatasetValidator` checks (`sceneId`, `displayName`, `cacheMaxAgeSeconds`, `editionGate`) before doing any I/O so invalid input never produces a partial output directory. |
 
 ## Limits and known v1 limitations

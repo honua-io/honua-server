@@ -42,39 +42,38 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         ArgumentNullException.ThrowIfNull(layer);
         ArgumentNullException.ThrowIfNull(includeAttributes);
 
-        var mapping = layer.StorageMapping
-            ?? throw new InvalidOperationException(
-                $"Layer {layer.Id} has no storage mapping; cannot stream features for scene generation.");
-
-        if (string.IsNullOrEmpty(mapping.GeometryColumn))
-        {
-            throw new InvalidOperationException(
-                $"Layer {layer.Id} has no geometry column; cannot generate 3D Tiles.");
-        }
-
-        var quotedTable = QuoteIdentifier(mapping.TableName);
-        var quotedSchema = string.IsNullOrEmpty(mapping.SchemaName)
-            ? null
-            : QuoteIdentifier(mapping.SchemaName!);
-        var qualifiedTable = quotedSchema is null ? quotedTable : $"{quotedSchema}.{quotedTable}";
-        var quotedKey = QuoteIdentifier(mapping.PrimaryKeyColumn);
-        var quotedGeom = QuoteIdentifier(mapping.GeometryColumn!);
-
+        // Align with the canonical Postgres feature storage contract: every
+        // Honua feature lives in the shared `features` table (objectid PK,
+        // layer_id discriminator, geometry, attributes JSONB). The catalog's
+        // per-layer StorageMapping advertises this table for every Postgres
+        // layer; we read attributes from the JSONB column rather than as
+        // physical columns, and we constrain the stream to the requested
+        // layer.
+        var qualifiedTable = DatabaseSchema.GetFeaturesTableName(layer.StorageMapping?.SchemaName);
         var attributeFields = ResolveAttributeFields(layer, includeAttributes);
+
+        // ST_Force3D was previously wrapped around the geometry to ensure the
+        // GLB writer always saw a Z component, but it masked the documented
+        // "no Z and no extrusion" warning by promoting 2D rows to Z=0
+        // silently. The WKB reader respects the geometry's hasZ flag, and the
+        // GLB writer treats null vertex.Height as 0, so dropping the wrapper
+        // preserves dimensionality without losing the writer's contract.
         var selectColumns = new StringBuilder();
-        selectColumns.Append(quotedKey).Append(" AS pk, ");
-        selectColumns.Append("ST_AsBinary(ST_Transform(ST_Force3D(").Append(quotedGeom).Append("), 4326)) AS geom_wkb");
-        foreach (var field in attributeFields)
+        selectColumns.Append(DatabaseSchema.ObjectIdColumn).Append(" AS pk, ");
+        selectColumns.Append("ST_AsBinary(ST_Transform(").Append(DatabaseSchema.GeometryColumn).Append(", 4326)) AS geom_wkb");
+        for (var i = 0; i < attributeFields.Count; i++)
         {
-            selectColumns.Append(", ").Append(QuoteIdentifier(field.Name)).Append(" AS ")
-                .Append(QuoteIdentifier($"a_{field.Name}"));
+            selectColumns.Append(", ").Append(DatabaseSchema.AttributesColumn)
+                .Append(" ->> @attr_").Append(i.ToString(CultureInfo.InvariantCulture))
+                .Append(" AS \"a_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('"');
         }
 
         var sql = $"""
             SELECT {selectColumns}
             FROM {qualifiedTable}
-            WHERE {quotedKey} > @last_key
-            ORDER BY {quotedKey} ASC
+            WHERE {DatabaseSchema.LayerIdColumn} = @layer_id
+              AND {DatabaseSchema.ObjectIdColumn} > @last_key
+            ORDER BY {DatabaseSchema.ObjectIdColumn} ASC
             LIMIT {PageSize}
             """;
 
@@ -90,7 +89,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
             // treat a partial feature list as complete.
             cancellationToken.ThrowIfCancellationRequested();
 
-            var batch = await ReadBatchAsync(sql, lastKey, attributeFields, cancellationToken).ConfigureAwait(false);
+            var batch = await ReadBatchAsync(sql, layer.Id, lastKey, attributeFields, cancellationToken).ConfigureAwait(false);
             if (batch.Count == 0)
             {
                 hasMore = false;
@@ -109,6 +108,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
 
     private async Task<List<SceneFeature>> ReadBatchAsync(
         string sql,
+        int layerId,
         long lastKey,
         List<FieldDefinition> attributeFields,
         CancellationToken cancellationToken)
@@ -116,7 +116,19 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
+        command.Parameters.Add(new NpgsqlParameter("@layer_id", layerId));
         command.Parameters.Add(new NpgsqlParameter("@last_key", lastKey));
+        // Pass attribute field names as JSON-path parameters so the SQL itself
+        // never interpolates field names (defense in depth — fields come from
+        // the trusted catalog, but parameter binding keeps the contract
+        // explicit and avoids surprises if a field name ever escapes the
+        // existing catalog validation).
+        for (var i = 0; i < attributeFields.Count; i++)
+        {
+            command.Parameters.Add(new NpgsqlParameter(
+                $"@attr_{i.ToString(CultureInfo.InvariantCulture)}",
+                attributeFields[i].Name));
+        }
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var results = new List<SceneFeature>(PageSize);
@@ -139,6 +151,11 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
             var attributes = new Dictionary<string, object?>(attributeFields.Count, StringComparer.Ordinal);
             for (var i = 0; i < attributeFields.Count; i++)
             {
+                // attributes ->> @field returns TEXT; the GLB writer's
+                // ToInt32/ToInt64/ToFloat coercions parse string values
+                // back to the declared SCHEMA/COMPONENT type, so handing
+                // raw JSON text through is enough to round-trip integer,
+                // float, and string columns from the JSONB store.
                 var raw = reader.IsDBNull(2 + i) ? null : reader.GetValue(2 + i);
                 attributes[attributeFields[i].Name] = raw;
             }
@@ -170,15 +187,6 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
 
         var allow = new HashSet<string>(includeAttributes, StringComparer.OrdinalIgnoreCase);
         return candidates.Where(f => allow.Contains(f.Name)).ToList();
-    }
-
-    private static string QuoteIdentifier(string identifier)
-    {
-        if (string.IsNullOrEmpty(identifier))
-        {
-            throw new InvalidOperationException("Identifier may not be empty.");
-        }
-        return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
     }
 }
 

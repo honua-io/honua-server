@@ -496,6 +496,63 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_NoZValuesAndNoExtrusion_EmitsFlatZeroWarning()
+    {
+        // 2D layers without an extrusionInfo block must surface the
+        // documented "flat at Z=0" warning so operators and admin tooling
+        // can spot when a generated tileset lost vertical fidelity. The
+        // Postgres scene source previously wrapped geometry in ST_Force3D
+        // (Z=0 for every 2D vertex), which masked this branch — the warning
+        // only fires when no vertex carries a Height value.
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygonsWithoutZ();
+
+        var outcome = await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "flat-warning"), CancellationToken.None);
+
+        outcome.Result.Warnings.Should().Contain(
+            "Layer has no Z values and no extrusion configured; output is flat at Z=0.",
+            "the flat-Z=0 warning must fire when neither vertex Z nor extrusion is configured.");
+    }
+
+    [UnitTest]
+    public async Task Execute_PromotionFailureAfterRegistration_DeactivatesRegistryRecord()
+    {
+        // Pre-create a regular file at the final path. Directory.Exists()
+        // returns false (it's a file, not a directory), so the promotion
+        // path skips the stale-dir delete and proceeds straight to
+        // Directory.Move — which throws because the destination file
+        // already occupies the slot. The executor must then compensate
+        // by deactivating the registry record it inserted moments before.
+        Directory.CreateDirectory(_outputRoot);
+        var finalPath = Path.Combine(_outputRoot, "promo-fail");
+        await File.WriteAllTextAsync(finalPath, "blocks-move");
+
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var act = () => _executor.RunDirectAsync(
+            BuildIntent(sceneId: "promo-fail"), CancellationToken.None);
+        await act.Should().ThrowAsync<ServiceUnavailableException>();
+
+        // The registry insert preceded the failed promotion, but the
+        // executor must call DeactivateAsync on the inserted record so
+        // the serving path does not resolve a record whose AssetRoot
+        // bytes were never written.
+        _registration.Records.Should().ContainSingle(r => r.Id == "promo-fail");
+        var record = _registration.Records.Single(r => r.Id == "promo-fail");
+        _registration.DeactivatedDatasetIds.Should().Contain(record.DatasetId,
+            "the executor must compensate the registration when staging promotion fails.");
+        record.Status.Should().Be(SceneDatasetStatus.Inactive,
+            "the compensated record must reflect the inactive status the serving path filters on.");
+
+        // Staging directory is still cleaned up via the finally block.
+        var stagingEntries = Directory.GetDirectories(_outputRoot, ".staging-*");
+        stagingEntries.Should().BeEmpty(
+            "the executor's finally block must remove the staging directory even when promotion fails.");
+    }
+
+    [UnitTest]
     public async Task Execute_BigIntegerValues_PreservedWithoutClamping()
     {
         var fields = new[]
@@ -550,6 +607,34 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             sr,
             fields,
             Metadata: extrusion is null ? null : new CatalogMetadata { Extrusion = extrusion });
+    }
+
+    private static List<SceneFeature> SamplePolygonsWithoutZ()
+    {
+        // Models a 2D PostGIS layer streamed without ST_Force3D: every
+        // vertex has Height=null so SawAnyHeight stays false and the
+        // executor's flat-Z=0 warning fires.
+        var ring = new[]
+        {
+            new SceneVertex(-122.5, 37.7, null),
+            new SceneVertex(-122.4, 37.7, null),
+            new SceneVertex(-122.4, 37.8, null),
+            new SceneVertex(-122.5, 37.8, null),
+            new SceneVertex(-122.5, 37.7, null)
+        };
+        return new List<SceneFeature>
+        {
+            new()
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = ring },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = "flat",
+                    ["height"] = 0
+                }
+            }
+        };
     }
 
     private static List<SceneFeature> SamplePolygons(double? baseHeight = null)
@@ -690,6 +775,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     private sealed class StubRegistrationService : ISceneRegistrationService
     {
         public List<SceneDatasetRecord> Records { get; } = new();
+        public List<Guid> DeactivatedDatasetIds { get; } = new();
         public bool RejectNextRegistration { get; set; }
 
         public Task<SceneDatasetRecord> RegisterAsync(SceneDatasetRecord record, CancellationToken cancellationToken = default)
@@ -715,7 +801,16 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             => Task.FromResult(record);
 
         public Task<bool> DeactivateAsync(Guid datasetId, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
+        {
+            DeactivatedDatasetIds.Add(datasetId);
+            var idx = Records.FindIndex(r => r.DatasetId == datasetId);
+            if (idx < 0)
+            {
+                return Task.FromResult(false);
+            }
+            Records[idx] = Records[idx] with { Status = SceneDatasetStatus.Inactive };
+            return Task.FromResult(true);
+        }
     }
 
     private sealed class TestHostEnvironment : IHostEnvironment

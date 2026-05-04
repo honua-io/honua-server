@@ -252,7 +252,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     tilesetBytes,
                     cancellationToken).ConfigureAwait(false);
 
-                await TryRegisterSceneAsync(
+                var registeredDatasetId = await TryRegisterSceneAsync(
                     sceneId,
                     displayName,
                     description,
@@ -269,8 +269,22 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 // image. If the final path already holds detritus from a prior
                 // partial run, clear it before the rename — registration was
                 // the canonical authority, and the registry now points at this
-                // generation.
-                PromoteStagingToFinal(stagingDirectory, outputDirectory);
+                // generation. If promotion fails (permission denied, disk
+                // full, stale-dir delete fails) we MUST deactivate the
+                // already-inserted registry record so the serving path does
+                // not resolve a record whose AssetRoot has no bytes.
+                try
+                {
+                    PromoteStagingToFinal(stagingDirectory, outputDirectory);
+                }
+                catch
+                {
+                    if (registeredDatasetId is { } datasetId)
+                    {
+                        await CompensateRegistrationAsync(datasetId, sceneId).ConfigureAwait(false);
+                    }
+                    throw;
+                }
                 stagingToCleanup = null;
 
                 stopwatch.Stop();
@@ -675,7 +689,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
     }
 
-    private async Task TryRegisterSceneAsync(
+    private async Task<Guid?> TryRegisterSceneAsync(
         string sceneId,
         string displayName,
         string? description,
@@ -688,7 +702,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     {
         if (_registration is null)
         {
-            return;
+            return null;
         }
 
         var record = new SceneDatasetRecord
@@ -717,13 +731,40 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
         try
         {
-            await _registration.RegisterAsync(record, cancellationToken).ConfigureAwait(false);
+            var saved = await _registration.RegisterAsync(record, cancellationToken).ConfigureAwait(false);
+            // Implementations are free to overwrite the supplied DatasetId
+            // (Postgres regenerates Guid.Empty); use the returned record's id
+            // when present so a later compensation targets the durable row.
+            return saved?.DatasetId is { } id && id != Guid.Empty ? id : record.DatasetId;
         }
         catch (SceneDatasetAlreadyExistsException ex)
         {
             throw new ValidationException(
                 $"{SceneGenerationErrorCodes.SceneRegistrationConflict}: A scene dataset with id '{sceneId}' or name '{displayName}' already exists.",
                 ex);
+        }
+    }
+
+    private async Task CompensateRegistrationAsync(Guid datasetId, string sceneId)
+    {
+        if (_registration is null)
+        {
+            return;
+        }
+        // Use CancellationToken.None so a cancelled request does not skip
+        // compensation — once the row exists, leaving it Active points the
+        // serving path at AssetRoot bytes that promotion never wrote.
+        try
+        {
+            var deactivated = await _registration.DeactivateAsync(datasetId, CancellationToken.None).ConfigureAwait(false);
+            SceneGenerationLog.RegistrationCompensated(_logger, sceneId, datasetId, deactivated);
+        }
+        catch (Exception ex)
+        {
+            // Compensation is best-effort: a failure leaves an Active record
+            // with no bytes on disk. Log loudly so operators can clean up via
+            // the admin scene CRUD path.
+            SceneGenerationLog.RegistrationCompensationFailed(_logger, sceneId, datasetId, ex);
         }
     }
 
@@ -832,5 +873,13 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         [LoggerMessage(EventId = 8415, Level = LogLevel.Warning,
             Message = "Scene generation could not delete staging directory {StagingDirectory}; subsequent generations are unaffected but the directory may need a manual sweep.")]
         public static partial void StagingCleanupFailed(ILogger logger, string stagingDirectory, Exception exception);
+
+        [LoggerMessage(EventId = 8416, Level = LogLevel.Warning,
+            Message = "Scene generation deactivated registry record for scene {SceneId} ({DatasetId}) after staging promotion failed; deactivated={Deactivated}.")]
+        public static partial void RegistrationCompensated(ILogger logger, string sceneId, Guid datasetId, bool deactivated);
+
+        [LoggerMessage(EventId = 8417, Level = LogLevel.Error,
+            Message = "Scene generation could not deactivate registry record for scene {SceneId} ({DatasetId}) after staging promotion failed; record remains Active and the operator must clean it up via the admin scene CRUD path.")]
+        public static partial void RegistrationCompensationFailed(ILogger logger, string sceneId, Guid datasetId, Exception exception);
     }
 }
