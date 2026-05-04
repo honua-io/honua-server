@@ -97,6 +97,8 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 ## Capabilities
 
+The source-backed feature map is maintained in [docs/features/README.md](docs/features/README.md).
+
 **Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions. Query output in JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow (Arrow IPC) formats, plus GeoBuf when the configured feature store supports native GeoBuf output, with Accept-header content negotiation.
 
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
