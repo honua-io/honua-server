@@ -22,6 +22,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 - [Terrain-RGB Tiles](terrain-tiles.md) — DEM/raster elevation tiles for MapLibre/Mapbox `raster-dem` clients
 - [Hosted 3D Tiles Scenes](scenes-3dtiles.md) — Already-hosted OGC 3D Tiles tilesets for CesiumJS and other 3D Tiles clients
 - [OpenUSD and Omniverse Export Path](openusd-omniverse-export-path.md) — Spike recommendation for a conservative USDA stage-manifest path for Honua scenes
+- [3D Tiles Generation Pipeline (v1)](scene-generation.md) — Deterministic OGC 3D Tiles 1.1 tilesets produced from PostGIS feature layers via the admin publishing path
 - [Extruded 3D Feature Layers (v1)](extruded-3d-feature-layers.md) — Height-driven extrusion metadata on FeatureServer layers (precedes 3D Tiles generation)
 - [Elevation Query and Profile API](elevation-api.md) — Numeric point/line elevation lookup over registered raster datasets
 

@@ -52,7 +52,12 @@ public enum PublishTargetKind
     /// <summary>
     /// A static file export or download surface.
     /// </summary>
-    StaticExport
+    StaticExport,
+
+    /// <summary>
+    /// A hosted 3D Tiles scene generated from a feature layer.
+    /// </summary>
+    SceneService
 }
 
 /// <summary>

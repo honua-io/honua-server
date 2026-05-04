@@ -7,9 +7,9 @@ relative tile, glTF, texture, and binary asset URIs without any client-side URL
 rewriting.
 
 This is the foundation slice of Honua's 3D support. It covers serving;
-generating 3D Tiles from PostGIS, raster, or model sources is a separate
-deliverable, and exporting hosted scenes to OpenUSD/Omniverse is documented
-in the roadmap spike at
+the [3D Tiles generation pipeline](scene-generation.md) (#842) covers
+producing tilesets from PostGIS feature layers, while exporting hosted scenes
+to OpenUSD/Omniverse is documented in the roadmap spike at
 [OpenUSD and Omniverse Export Path](openusd-omniverse-export-path.md)
 (`honua-server-901`; first-artifact implementation tracked in
 `honua-server-904`).
@@ -35,6 +35,11 @@ introduced in #844. The hosted serving routes resolve a dataset by its
 URL slug via `ISceneDatasetRegistry.FindAsync`; the Postgres-backed
 implementation behind that interface projects each record to the lean
 `SceneDataset` shape served below.
+
+The [3D Tiles generation pipeline](scene-generation.md) (#842) auto-registers
+its outputs through the same registry, so producer-side workflows never need
+a separate `POST /api/v1/admin/scenes` step. The configuration block below
+remains for already-hosted (externally produced) bundles.
 
 The original `Scenes` configuration section remains in the codebase for
 local-dev/test scenarios where Postgres is not available. In production it

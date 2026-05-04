@@ -3,8 +3,10 @@
 Honua surfaces simple height-driven extrusion metadata on feature layers so
 2D footprint data can drive client-side 3D rendering and downstream 3D
 Tiles generation without breaking existing 2D feature services. This is a
-metadata-only slice — Honua does not generate meshes or 3D Tiles in this
-release. Mesh generation arrives in [`honua-server-842`](https://github.com/honua-io/honua-server/issues/842).
+metadata-only slice — Honua does not generate meshes from this surface
+itself. The catalog `extrusionInfo` block defined here is consumed by the
+[3D Tiles generation pipeline](scene-generation.md) (`honua-server-842`),
+which produces extruded GLB tiles from the same metadata.
 
 ## What v1 covers
 
@@ -107,6 +109,8 @@ heuristic step between catalog config and downstream consumers.
 
 ## Related references
 
+- [3D Tiles generation pipeline](./scene-generation.md) — produces extruded
+  GLB tiles from the `extrusionInfo` defined here (#842).
 - [Hosted 3D Tiles scenes](./scenes-3dtiles.md) — serving already-built
   3D Tiles, complementary to v1 extrusion.
 - [I3S compatibility matrix](./i3s-compatibility-matrix.md) — production
