@@ -51,17 +51,21 @@ without it, the composite raises HTTP 500 on the first Postgres query before
 the fallback runs.
 
 ```bash
-# Bring up the local Postgres that ships with the repo (uses port 5432;
-# the Development profile expects 5433 — adjust POSTGRES_PORT or
-# ConnectionStrings:DefaultConnection to match).
-docker compose up -d postgres
+# Reusable external PostGIS on port 5433 with database honua_test and
+# user/password test/test — matches the Development profile's
+# ConnectionStrings:DefaultConnection out of the box.
+docker compose -f docker/docker-compose.test-db.yml up -d
 
 dotnet run --project src/Honua.Server
 ```
 
-The hermetic configuration-only path (no Postgres) is exercised by
-`NvidiaConstructionFixtureTests`, which registers the same fixture via
-in-memory configuration through `WebAppFixture`.
+The hermetic on-disk fixture is verified by
+`NvidiaConstructionFixtureFileTests` (no web host, no Postgres, fast tier).
+Hosted-endpoint coverage in `NvidiaConstructionFixtureTests` registers the
+same fixture via in-memory configuration through `WebAppFixture`, which
+provisions a test-managed Postgres testcontainer so the configuration
+registry composes behind the same `CompositeSceneDatasetRegistry` that
+production runs.
 
 | URL | What it returns |
 |---|---|
@@ -199,8 +203,12 @@ No terrain tileset is committed. The demo client should use Cesium's
 
 ## Testing
 
-`tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/NvidiaConstructionFixtureTests.cs`
-covers:
+Tests are split so the on-disk fixture invariants run on the fast tier
+without booting a server, while the hosted-endpoint coverage stays in the
+integration class with a test-managed Postgres testcontainer:
+
+`tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/NvidiaConstructionFixtureFileTests.cs`
+(fast tier, no web host, no Postgres) covers:
 
 - both tilesets parse, declare `asset.version == "1.1"`, and have valid
   bounding regions in WGS-84 radians;
@@ -211,14 +219,18 @@ covers:
   the sidecar coordinates clients render;
 - `observations.json` has 5 unique stable IDs and required per-entry fields;
 - both b3dm placeholders start with the `b3dm` magic header;
-- content URIs are safe relative paths (no traversal, no remote URLs);
-- HTTP integration: both scene IDs serve their tilesets and the sidecar via
-  the hosted scene endpoints, with `nvidia-construction-obs` resolving to
-  `obs-tileset.json` even though it shares the same `AssetRoot`.
+- content URIs are safe relative paths (no traversal, no remote URLs).
+
+`tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/NvidiaConstructionFixtureTests.cs`
+(integration tier, `WebAppFixture` + Postgres testcontainer) covers:
+
+- both scene IDs serve their tilesets and the sidecar via the hosted scene
+  endpoints, with `nvidia-construction-obs` resolving to `obs-tileset.json`
+  even though it shares the same `AssetRoot`.
 
 Run only this fixture's tests:
 
 ```bash
 dotnet test tests/dotnet/Honua.Server.Tests \
-  --filter "FullyQualifiedName~NvidiaConstructionFixtureTests"
+  --filter "FullyQualifiedName~NvidiaConstructionFixture"
 ```
