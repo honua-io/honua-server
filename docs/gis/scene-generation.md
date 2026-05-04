@@ -327,21 +327,29 @@ the client transparently picks up the freshly generated tileset bytes; no
 configuration change is required.
 
 **Switching back to the prebuilt fixture under the Postgres profile**
-requires removing the Postgres ownership of the slug. The `Scenes:Datasets`
-entry alone is not enough because the composite stops at the Postgres
-record:
+requires removing the Postgres ownership of the slug. The admin scene
+CRUD surface (#844) only exposes a soft-delete: `DELETE /api/v1/admin/
+scenes/{datasetId}` calls `DeactivateAsync`, which sets
+`scene_datasets.status = 'inactive'` and leaves the row in place. The
+composite registry deliberately suppresses the configuration fallback
+for any slug `ISceneRegistrationService.GetBySceneIdAsync` returns —
+including inactive rows — so the soft-delete keeps the slug returning
+404 instead of restoring the prebuilt fixture. There is no hard-delete
+endpoint in v1; the supported switch-back paths are therefore:
 
-- Delete the registered scene through the admin scene CRUD path (#844)
-  (`DELETE /api/v1/admin/scenes/{datasetId}`), or
-- Run with the configuration-only profile by setting `DataSource:Provider`
-  to a non-Postgres provider (e.g. `duckdb`), which prevents the Postgres
-  registry from registering and leaves `Scenes:Datasets` as the active
-  `ISceneDatasetRegistry`.
+- Run with a configuration-only profile by setting `DataSource:Provider`
+  to a non-Postgres provider (e.g. `duckdb`). Under non-Postgres profiles
+  the Postgres-backed registry does not register, so `Scenes:Datasets`
+  becomes the active `ISceneDatasetRegistry` and the prebuilt fixture
+  serves immediately. This is the recommended demo toggle.
+- For a Postgres-profile database an operator controls, manually remove
+  the row directly:
+  `DELETE FROM honua.scene_datasets WHERE id = 'nvidia-construction';`
+  Once the row is gone the composite falls through to `Scenes:Datasets`.
 
-Deactivating the Postgres record alone is not sufficient: the composite
-deliberately suppresses the configuration fallback for slugs the Postgres
-store owns but has marked inactive, so the slug returns 404 until the
-record is deleted outright.
+Adding a hard-delete admin endpoint that also restores configuration
+fallback is intentionally out of scope for this demo slice; the
+soft-delete contract is the canonical scene CRUD behavior owned by #844.
 
 ### Demo determinism
 
