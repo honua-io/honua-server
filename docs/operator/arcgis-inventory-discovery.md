@@ -7,7 +7,9 @@ downstream automation can review before any data is migrated.
 
 This document describes what the discovery slice does, how to invoke it, what
 the artifact contains, and how the slice fits into the larger migration
-workflow.
+workflow. After discovery, continue with the shared
+[Migration Toolkit](migration-toolkit.md) manifest, parity evidence, and
+cutover-readiness workflow.
 
 ## Non-goals for this slice
 

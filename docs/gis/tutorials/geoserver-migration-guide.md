@@ -4,7 +4,7 @@ Migrate from GeoServer to Honua Server, covering endpoint equivalence, inventory
 
 ## Overview
 
-Honua provides GeoServer migration tooling for discovery, compatibility classification, and dry-run import validation. The migration scanner is discovery-only: it returns a deterministic planning artifact before any connection, service, layer, or style changes are applied. GeoServer import remains a separate dry-run workflow, and style conversion still requires manual follow-up. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
+Honua provides GeoServer migration tooling for discovery, compatibility classification, and dry-run import validation. The migration scanner is discovery-only: it returns a deterministic planning artifact before any connection, service, layer, or style changes are applied. GeoServer import remains a separate dry-run workflow, and style conversion still requires manual follow-up. Use the shared [Migration Toolkit](../../operator/migration-toolkit.md) workflow for manifest translation, parity evidence, and cutover readiness after discovery. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
 
 ## Endpoint Equivalence Mapping
 

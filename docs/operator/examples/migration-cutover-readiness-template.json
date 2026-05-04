@@ -1,0 +1,52 @@
+{
+  "items": [
+    {
+      "id": "inventory-confirmed",
+      "state": "unknown",
+      "evidence": [
+        "TODO: link to reviewed source inventory artifact"
+      ],
+      "owner": "TODO"
+    },
+    {
+      "id": "manifest-reviewed",
+      "state": "unknown",
+      "evidence": [
+        "TODO: link to reviewed migration manifest artifact"
+      ],
+      "owner": "TODO"
+    },
+    {
+      "id": "parity-report-reviewed",
+      "state": "unknown",
+      "evidence": [
+        "TODO: link to reviewed parity evidence pack"
+      ],
+      "owner": "TODO"
+    },
+    {
+      "id": "known-gaps-accepted",
+      "state": "unknown",
+      "evidence": [
+        "TODO: link to accepted fail/unknown gap list or set state to not-applicable only after the evidence pack has no fail or unknown items"
+      ],
+      "owner": "TODO"
+    },
+    {
+      "id": "rollback-plan-documented",
+      "state": "unknown",
+      "evidence": [
+        "TODO: link to rollback plan or runbook section"
+      ],
+      "owner": "TODO"
+    },
+    {
+      "id": "traffic-switch-planned",
+      "state": "unknown",
+      "evidence": [
+        "TODO: link to DNS, load-balancer, or client endpoint change plan"
+      ],
+      "owner": "TODO"
+    }
+  ]
+}
