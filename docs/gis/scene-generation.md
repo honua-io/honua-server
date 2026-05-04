@@ -251,3 +251,4 @@ problem-detail helpers:
 - [Hosted 3D Tiles serving](scenes-3dtiles.md) (#837)
 - [Scene dataset registry admin API](../admin-api/scene-dataset-registry.md) (#844)
 - [Extruded 3D feature layers](extruded-3d-feature-layers.md) (#841)
+- [Point cloud, drone, and reality-capture ingest](point-cloud-reality-capture-ingest.md) (#900) — spike recommendation that complements this generation pipeline by registering pre-tiled drone/scanner output through the same scene dataset registry.

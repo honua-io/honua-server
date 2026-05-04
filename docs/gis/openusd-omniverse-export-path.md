@@ -171,5 +171,5 @@ issue for the first artifact only. Larger ecosystem work remains separate.
 - [NVIDIA Omniverse USD Connections overview](https://docs.omniverse.nvidia.com/connect/latest/overview.html)
 - [NVIDIA Omniverse connector development overview](https://docs.omniverse.nvidia.com/connect/latest/developing-connectors.html)
 - [Cesium 3D Tiles overview](https://cesium.com/3d-tiles/)
-- Honua scene references: [Hosted 3D Tiles Scenes](scenes-3dtiles.md), [NVIDIA Construction Demo Fixture](../demo/nvidia-construction.md), and [Scene Dataset Registry](../admin-api/scene-dataset-registry.md).
+- Honua scene references: [Hosted 3D Tiles Scenes](scenes-3dtiles.md), [NVIDIA Construction Demo Fixture](../demo/nvidia-construction.md), [Scene Dataset Registry](../admin-api/scene-dataset-registry.md), and [Point Cloud, Drone, and Reality-Capture Ingest](point-cloud-reality-capture-ingest.md) (`honua-server-900`, sibling spike covering the inbound side of this 3D pipeline).
 - Follow-up issue: `honua-server-904`.
