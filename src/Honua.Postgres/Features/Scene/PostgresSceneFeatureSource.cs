@@ -5,6 +5,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
@@ -277,10 +278,13 @@ internal static class WkbGeometryReader
             // Anything outside Point/Line/Polygon (and their Multis) is a
             // type the v1 generator does not support: GeometryCollection,
             // CircularString, CompoundCurve, CurvePolygon, Triangle, TIN,
-            // PolyhedralSurface, etc. Silently skipping these rows produces
-            // a tileset that quietly misses data; surface the documented
-            // SCENE_UNSUPPORTED_GEOMETRY_TYPE so callers get a clean 400.
-            _ => throw new System.ComponentModel.DataAnnotations.ValidationException(
+            // PolyhedralSurface, etc. The thrown type must be the project's
+            // canonical Honua.Core.Exceptions.ValidationException — that is
+            // what SceneTilesPublishExecutor's catch block recognises and
+            // maps to SCENE_UNSUPPORTED_GEOMETRY_TYPE / 400. Throwing the
+            // System.ComponentModel.DataAnnotations type instead falls
+            // through to the catch-all and surfaces as 503.
+            _ => throw new ValidationException(
                 $"{SceneGenerationErrorCodes.UnsupportedGeometryType}: WKB geometry type {baseType} is not supported by the v1 3D Tiles generator.")
         };
     }

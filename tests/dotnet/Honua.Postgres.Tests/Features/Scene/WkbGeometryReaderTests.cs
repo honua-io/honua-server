@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers.Binary;
-using System.ComponentModel.DataAnnotations;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Postgres.Features.Scene;
 
