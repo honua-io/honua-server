@@ -8,8 +8,11 @@ rewriting.
 
 This is the foundation slice of Honua's 3D support. It covers serving;
 the [3D Tiles generation pipeline](scene-generation.md) (#842) covers
-producing tilesets from PostGIS feature layers, while exporting hosted scenes
-to OpenUSD/Omniverse is documented in the roadmap spike at
+producing tilesets from PostGIS feature layers; ingesting drone, point-cloud,
+and reality-capture data into hosted tilesets is documented in the spike at
+[Point Cloud, Drone, and Reality-Capture Ingest](point-cloud-reality-capture-ingest.md)
+(`honua-server-900`); and exporting hosted scenes to OpenUSD/Omniverse is
+documented in the roadmap spike at
 [OpenUSD and Omniverse Export Path](openusd-omniverse-export-path.md)
 (`honua-server-901`; first-artifact implementation tracked in
 `honua-server-904`).

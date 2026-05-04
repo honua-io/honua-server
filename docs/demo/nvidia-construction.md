@@ -212,6 +212,16 @@ documented in
 (`honua-server-901`); the bounded first-artifact implementation is tracked in
 `honua-server-904`.
 
+## Drone / point-cloud / reality-capture handoff
+
+The placeholder b3dm tiles in this fixture stand in for real drone or
+reality-capture output. The recommended first ingest path — pre-tiled 3D
+Tiles registered through the existing scene dataset registry, with bounded
+follow-ups for COPC streaming and CPU/GPU PDAL conversion — is documented in
+[Point Cloud, Drone, and Reality-Capture Ingest](../gis/point-cloud-reality-capture-ingest.md)
+(`honua-server-900`). Replacing the fixture's placeholders with real
+captures is a content swap; no code changes are required to serve them.
+
 ## Testing
 
 Tests are split so the on-disk fixture invariants run on the fast tier
