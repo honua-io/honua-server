@@ -116,7 +116,7 @@ ticket; they reference the existing `SceneDataset` rather than replacing it.
 | `capturedAt` | DateTimeOffset | UTC. Enables temporal comparison across sessions. |
 | `captureMethod` | enum | `Drone`, `Terrestrial`, `Handheld`, `Mobile`, `Synthetic`. |
 | `sourceFiles` | string[] | Storage URIs (or registered blob paths) for raw input artifacts. |
-| `extent` | object? | WGS-84 axis-aligned bounding box `{ xMin, yMin, xMax, yMax, zMin?, zMax? }`. Same shape the registry already uses. |
+| `extent` | object? | WGS-84 axis-aligned bounding box. The horizontal bounds `{ xMin, yMin, xMax, yMax }` reuse the registry's `SceneExtent` shape (all four required when supplied). Capture metadata adds an optional vertical range `{ zMin, zMax }` for point-cloud sessions; it lives on the capture-session record only and would require new validation plus vertical-datum handling — `SceneExtent` is strictly 2D today and is not extended by this spike. |
 | `crs` | string? | Authority token for the capture's source CRS (`EPSG:32610`, `EPSG:4979`); never assumed. |
 | `pointCount` | long? | Total points in the source artifact when known. |
 | `nominalAccuracyM` | double? | Stated horizontal accuracy in meters. |
@@ -312,7 +312,7 @@ should be answered before child #1 is filed:
 | A demo ingest path is chosen: pre-tiled assets, local conversion, or server-side job. | "Recommendation" and "Demo ingest path" choose pre-tiled assets registered through the existing scene dataset registry. |
 | NVIDIA relevance is explicit: GPU acceleration, tiling, reconstruction, segmentation, change detection, or simulation. | "NVIDIA relevance (explicit)" maps each capability to a tool, phase, and Honua surface. |
 | Follow-up implementation issues are specific enough for AgentFlow. | "Proposed implementation sequence and child issues" lists seven bounded tickets with repo, scope, dependencies, and status. |
-| The recommendation does not require cloud spend for the first local demo. | "Demo ingest path (local, no cloud spend)" runs on `LocalFileStorage` and the existing hosted serving routes; no Batch, S3, Azure, or Cesium ion call is made. |
+| The recommendation does not require cloud spend for the first local demo. | "Demo ingest path (local, no cloud spend)" registers a local filesystem (or mounted) `AssetRoot` with the existing scene dataset registry and serves it through the hosted scene routes; no Batch, S3, Azure, or Cesium ion call is made. `LocalFileStorage` only enters the picture when raw-source upload through `ICloudFileStorage` is added in Phase 2. |
 
 ## References
 
