@@ -98,7 +98,6 @@ public class MySqlOptionsValidatorTests
     [InlineData("Polygon")]
     [InlineData("MultiPolygon")]
     [InlineData("GeometryCollection")]
-    [InlineData("None")]
     public void ThrowIfInvalid_ValidGeometryType_DoesNotThrow(string geometryType)
     {
         var options = new MySqlOptions
@@ -109,6 +108,27 @@ public class MySqlOptionsValidatorTests
 
         var ex = Record.Exception(() => MySqlOptionsValidator.ThrowIfInvalid(options));
         Assert.Null(ex);
+    }
+
+    [Theory]
+    [InlineData("None")]
+    [InlineData("none")]
+    [InlineData("NONE")]
+    public void ThrowIfInvalid_GeometryTypeNone_Throws(string geometryType)
+    {
+        // The MySQL provider always emits ST_AsWKB on the configured geometry column,
+        // so non-spatial layers would parse but fail at the first query. Reject None up
+        // front instead of activating the layer with a latent runtime error.
+        var options = new MySqlOptions
+        {
+            ConnectionString = "Server=localhost;",
+            Layers = [BuildLayer(geometryType: geometryType)]
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => MySqlOptionsValidator.ThrowIfInvalid(options));
+        Assert.Contains("GeometryType", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(geometryType, ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("None.", ex.Message, StringComparison.Ordinal);
     }
 
     [Theory]

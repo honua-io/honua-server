@@ -114,7 +114,7 @@ section to `appsettings.json`:
 | `GeometryColumn`    | Yes      | `geom`  | Geometry column name. |
 | `PrimaryKeyColumn`  | Yes      | `id`    | Primary key / object-id column. |
 | `Srid`              | Yes      | `4326`  | Storage SRID; must match `ST_SRID(geom)`. |
-| `GeometryType`      | No       | `Point` | Used for catalog metadata and to gate distance filters. |
+| `GeometryType`      | No       | `Point` | Used for catalog metadata and to gate distance/extent filters. Accepted: `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`, `GeometryCollection`. `None` is rejected at startup — the provider always selects the geometry column. |
 | `Attributes`        | Yes      | `[]`    | Explicit attribute column list. **No schema introspection in this slice.** |
 | `AttributeTypes`    | No       | `{}`    | Optional column-type hints for catalog field-type mapping. |
 
@@ -227,7 +227,7 @@ SQL pattern:
   aggregated with `MIN`/`MAX`.
 
 Other geometry types (MultiPoint, LineString, MultiLineString,
-GeometryCollection, None) raise `NotSupportedException`. The slice rejects them
+GeometryCollection) raise `NotSupportedException`. The slice rejects them
 because:
 
 - `ST_X` / `ST_Y` are documented as Point-only on MySQL.
@@ -346,11 +346,12 @@ fixture is added in a follow-on slice.
   enforced both for `FeatureQuery.SpatialFilter` and for CQL2 distance
   predicates translated through `MySqlSqlFilterTranslator`.
 - Extent queries are supported only for Point, Polygon, and MultiPolygon
-  layers. MultiPoint, LineString, MultiLineString, GeometryCollection, and
-  None layers raise `NotSupportedException`.
+  layers. MultiPoint, LineString, MultiLineString, and GeometryCollection
+  layers raise `NotSupportedException`.
 - Per-row extent is O(n); cache the result.
 - Invalid `GeometryType` configuration values are rejected at startup (no
-  silent fallback to `Point`).
+  silent fallback to `Point`); `None` is also rejected because the provider
+  unconditionally selects the geometry column.
 - WKB axis order is engine-specific. `EngineFlavor=Mysql` adds the
   `'axis-order=long-lat'` option to `ST_AsWKB` and `ST_GeomFromWKB`;
   `EngineFlavor=MariaDb` uses the 2-argument forms. Misconfiguration produces

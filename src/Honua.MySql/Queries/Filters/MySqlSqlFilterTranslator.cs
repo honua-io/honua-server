@@ -149,14 +149,22 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         var field = layer.Fields.FirstOrDefault(f =>
             f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
 
-        if (field is null && !IsGeometryAlias(property.PropertyName))
+        if (field is not null)
         {
-            throw new ArgumentException(
-                $"Field '{property.PropertyName}' is not defined on layer '{layer.Name}'.");
+            return MySqlIdentifier.Quote(field.Name);
         }
 
-        var name = field?.Name ?? property.PropertyName;
-        return MySqlIdentifier.Quote(name);
+        // No matching field. Geometry aliases (geom/shape/geometry) resolve to the layer's
+        // configured geometry column so predicates such as `geom IS NOT NULL` keep working
+        // when the backing column has a non-default name. This mirrors the alias handling
+        // in TranslateGeometryExpression so attribute and spatial paths agree.
+        if (IsGeometryAlias(property.PropertyName))
+        {
+            return GetGeometryColumnExpression(layer);
+        }
+
+        throw new ArgumentException(
+            $"Field '{property.PropertyName}' is not defined on layer '{layer.Name}'.");
     }
 
     private string TranslateLiteral(Literal literal)

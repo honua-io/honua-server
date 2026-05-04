@@ -295,6 +295,68 @@ public class MySqlSqlFilterTranslatorTests
         Assert.Equal("TRUE", result.Sql);
     }
 
+    [Theory]
+    [InlineData("geom")]
+    [InlineData("shape")]
+    [InlineData("geometry")]
+    [InlineData("GEOM")]
+    public void Translate_GeometryAliasIsNotNull_ResolvesToConfiguredGeometryColumn(string alias)
+    {
+        // When a CQL2 / OGC filter references a geometry alias (geom/shape/geometry) outside
+        // a spatial predicate — e.g. `geom IS NOT NULL` — the translator must resolve the
+        // alias to the layer's configured geometry column. Quoting the alias text directly
+        // would emit SQL against a non-existent column whenever the backing geometry column
+        // has a non-default name. Mirrors the alias handling in spatial-expression paths so
+        // attribute and spatial filters agree.
+        var layer = new LayerDefinition(
+            Id: 5,
+            Name: "non_default_geom",
+            Description: null,
+            GeometryType: GeometryType.Polygon,
+            SpatialReference: SpatialReference.Create(4326),
+            Fields:
+            [
+                new("id", FieldType.BigInteger, Nullable: false),
+                new("the_geom", FieldType.Geometry, Nullable: false)
+            ]);
+
+        var filter = new UnaryExpression(UnaryOperator.IsNotNull, new PropertyReference(alias));
+
+        var result = _translator.Translate(filter, layer);
+
+        Assert.Equal("`the_geom` IS NOT NULL", result.Sql);
+    }
+
+    [Fact]
+    public void Translate_GeometryAliasShadowedByAttribute_PrefersAttributeColumn()
+    {
+        // If a layer happens to expose an attribute literally named "geom" (and the geometry
+        // column is something else), filters referencing "geom" target the attribute, not the
+        // geometry. Field-by-name lookup wins over alias resolution to avoid silently
+        // redirecting user filters away from the column they explicitly named.
+        var layer = new LayerDefinition(
+            Id: 6,
+            Name: "geom_attribute",
+            Description: null,
+            GeometryType: GeometryType.Polygon,
+            SpatialReference: SpatialReference.Create(4326),
+            Fields:
+            [
+                new("id", FieldType.BigInteger, Nullable: false),
+                new("geom", FieldType.String),
+                new("the_geom", FieldType.Geometry, Nullable: false)
+            ]);
+
+        var filter = new BinaryExpression(
+            new PropertyReference("geom"),
+            BinaryOperator.Equal,
+            new Literal("x", LiteralType.Text));
+
+        var result = _translator.Translate(filter, layer);
+
+        Assert.Equal("`geom` = @p0", result.Sql);
+    }
+
     [Fact]
     public void Translate_MariaDbFlavor_OmitsAxisOrderOption()
     {

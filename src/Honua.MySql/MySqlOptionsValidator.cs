@@ -78,13 +78,16 @@ internal static class MySqlOptionsValidator
             // Reject typos in GeometryType so a non-point layer cannot silently fall back
             // to Point and inherit point-only behaviour (e.g. distance-filter SQL). The
             // default-initialised "Point" value parses cleanly, so omitted configuration
-            // remains valid.
-            if (!Enum.TryParse<GeometryType>(layer.GeometryType, ignoreCase: true, out _))
+            // remains valid. GeometryType.None is rejected explicitly: BuildSelectQuery
+            // unconditionally emits ST_AsWKB on the configured geometry column, so a
+            // non-spatial layer would pass validation but fail at the first query.
+            if (!Enum.TryParse<GeometryType>(layer.GeometryType, ignoreCase: true, out var parsedGeometryType) ||
+                parsedGeometryType == GeometryType.None)
             {
                 errors.Add(
                     $"MySql layer '{layer.Name}' has invalid GeometryType '{layer.GeometryType}'. " +
                     "Expected one of: Point, MultiPoint, LineString, MultiLineString, Polygon, " +
-                    "MultiPolygon, GeometryCollection, None.");
+                    "MultiPolygon, GeometryCollection.");
             }
 
             if (layer.Attributes.Length == 0)
