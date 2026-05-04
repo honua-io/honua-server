@@ -116,6 +116,21 @@ public class MySqlFeatureStoreTests
     }
 
     [Fact]
+    public async Task QueryFlatGeobufAsync_Throws_NotSupportedException()
+    {
+        // The provider does not support native FlatGeobuf — capability flag is false and the
+        // FeatureServer guard rejects f=fgb before the store is ever called. Returning null
+        // here would let any direct caller produce an empty success response with the
+        // FlatGeobuf media type, so the store throws as defense-in-depth instead.
+        var store = CreateStore(new RecordingFeatureDataAccess());
+
+        var ex = await Assert.ThrowsAsync<NotSupportedException>(
+            () => store.QueryFlatGeobufAsync(LayerId, new FeatureQuery()));
+
+        Assert.Contains("FlatGeobuf", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task StreamFeatureBatchesAsync_WithCallerOrderBy_PreservesCallerSort()
     {
         // Caller-supplied OrderBy is honored as-is — the caller already accepts responsibility

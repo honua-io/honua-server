@@ -658,6 +658,14 @@ internal sealed class FeatureServerQueryHandler(
                             ["returnDistinctValues is not supported when f=fgb."]);
                     }
 
+                    if (!await _queryExecutor.SupportsFlatGeobufOutputAsync(service, layer, cancellationToken))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "Unsupported output format",
+                            ["Output format 'fgb' is not supported by the configured feature store."]);
+                    }
+
                     var fgbStopwatch = Stopwatch.StartNew();
                     var flatGeobufPayload = await _queryExecutor.QueryFlatGeobufWithValidationAsync(service, layer, query, cancellationToken);
                     fgbStopwatch.Stop();

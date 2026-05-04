@@ -78,7 +78,10 @@ internal sealed class MySqlFeatureStore :
 
     /// <inheritdoc />
     public Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-        => Task.FromResult<byte[]?>(null);
+        => throw new NotSupportedException(
+            "Native FlatGeobuf output is not supported by the MySQL/MariaDB provider in this slice. " +
+            "The FeatureServer guard rejects f=fgb against this provider before reaching the store; " +
+            "this throw is defense-in-depth in case a caller invokes the reader directly.");
 
     /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(

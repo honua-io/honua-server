@@ -20,7 +20,7 @@ edits, statistics, MVT, and analytics. Use the
 | `GetAsync` (single feature by id)            | Yes       |
 | `QueryPageAsync` (paged read without count)  | Yes       |
 | Spatial filters: Intersects, Within, Contains, Crosses, Touches, Overlaps, Disjoint, Equals, EnvelopeIntersects | Yes |
-| Distance filters (Point layers only)         | Yes (approximate, `ST_Distance_Sphere`) |
+| Distance filters (Point/MultiPoint layers only) | Yes (approximate, `ST_Distance_Sphere`) |
 | Attribute `Where`, `SqlFilter`, `ObjectIds`  | Yes       |
 | Pagination, `OrderBy`                        | Yes       |
 | Edits (Create / Update / Delete)             | **No**    |
@@ -170,14 +170,17 @@ and to filter expressions translated through `MySqlSqlFilterTranslator`.
 | `Within`              | `ST_Within(col, ST_GeomFromWKB(?, srid))` |
 | `Contains`            | `ST_Contains(col, ST_GeomFromWKB(?, srid))` |
 | `Crosses` / `Touches` / `Overlaps` / `Disjoint` / `Equals` | matching `ST_*` function |
-| `WithinDistance` (Point only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid)) <= ?` |
-| `BeyondDistance` (Point only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid)) > ?` |
+| `WithinDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid)) <= ?` |
+| `BeyondDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid)) > ?` |
 | `NearestNeighbor`     | `NotSupportedException` — not implemented |
 
 `ST_Distance_Sphere` is documented by both engines as a WGS84 spherical
 **approximation**; the resulting distance differs from a true geodesic
 calculation. For accurate geodesic distance use a PostGIS-backed layer.
-Distance filters on non-`Point` layers raise `NotSupportedException`.
+Distance filters on layers whose geometry type is anything other than
+`Point` or `MultiPoint` raise `NotSupportedException`. The guard is
+applied uniformly in `MySqlFeatureQueryBuilder.Spatial` and
+`MySqlSqlFilterTranslator`.
 
 ## Engine Flavor and Axis Order
 
@@ -323,6 +326,10 @@ fixture is added in a follow-on slice.
   them; calls to write-shaped APIs raise `NotSupportedException`.
 - No schema introspection — declare attribute columns in configuration.
 - No native MVT, FlatGeobuf, Geobuf, GML; no streaming GeoJSON.
+  FeatureServer rejects `f=fgb` with HTTP 400 (`Unsupported output
+  format`) when the layer is backed by MySQL/MariaDB; the provider
+  does not implement `IFlatGeobufFeatureStore`, and the dispatch
+  guard mirrors the existing `f=geobuf` check.
 - Streaming `Feature` / batch paths are supported as a buffered, paged fallback
   over the standard select path (no native MySQL cursor). Use small batches for
   large datasets.
