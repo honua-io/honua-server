@@ -692,7 +692,7 @@ sql:
   - "DELETE FROM honua.layer_fields;"
   - "DELETE FROM honua.layers;"
   - "DELETE FROM honua.services;"
-  - "DELETE FROM features WHERE layer_id IN (0, 1, 2);"
+  - "DELETE FROM features WHERE layer_id IN (0, 1, 2, 9);"
   - |
       INSERT INTO honua.encryption_keys (key_version, key_hash, created_by)
       VALUES (1, '\x0000000000000000000000000000000000000000000000000000000000000000', 'seed')
@@ -931,3 +931,114 @@ sql:
           valid_pixel_count = EXCLUDED.valid_pixel_count,
           nodata_pixel_count = EXCLUDED.nodata_pixel_count,
           computed_at = NOW();
+  # ── NVIDIA construction demo layer (#899) ──────────────────────────
+  # Reserved layer id 9 with extruded polygon footprints. Drives the
+  # `POST /api/v1/admin/scenes/generate { "layerId": 9 }` smoke path
+  # that materialises the `nvidia-construction` tileset.
+  # Coordinates match tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Scene/ConstructionDemoFixture.cs.
+  - |
+      INSERT INTO honua.layers (
+          layer_id,
+          layer_name,
+          description,
+          table_schema,
+          table_name,
+          geometry_type,
+          srid,
+          extent,
+          default_visibility,
+          metadata
+      )
+      VALUES (
+          9,
+          'NVIDIA Construction Site',
+          'Demo-grade NVIDIA construction site footprints for #899.',
+          current_schema(),
+          'features',
+          'Polygon',
+          4326,
+          ST_MakeEnvelope(-121.98, 37.37, -121.96, 37.38, 4326),
+          true,
+          '{"extrusion":{"heightField":"height_m","unit":"meters","defaultHeight":10.0}}'::jsonb
+      )
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name,
+          description = EXCLUDED.description,
+          table_schema = EXCLUDED.table_schema,
+          table_name = EXCLUDED.table_name,
+          geometry_type = EXCLUDED.geometry_type,
+          srid = EXCLUDED.srid,
+          extent = EXCLUDED.extent,
+          default_visibility = EXCLUDED.default_visibility,
+          metadata = EXCLUDED.metadata;
+  - |
+      INSERT INTO honua.layer_fields (
+          layer_id,
+          field_name,
+          field_type,
+          field_order,
+          max_length,
+          nullable,
+          description
+      )
+      VALUES
+          (9, 'objectid',        'Integer',  0, null, false, 'Stable building id'),
+          (9, 'name',             'String',  1,   64, false, 'Display name'),
+          (9, 'height_m',         'Double',  2, null, false, 'Extrusion height in meters'),
+          (9, 'phase',            'String',  3,   32, false, 'Construction phase token'),
+          (9, 'work_package_id',  'String',  4,   32, false, 'Owning work package id'),
+          (9, 'shape',          'Geometry',  5, null, false, 'Polygon footprint')
+      ON CONFLICT (layer_id, field_name) DO UPDATE SET
+          field_type = EXCLUDED.field_type,
+          field_order = EXCLUDED.field_order,
+          max_length = EXCLUDED.max_length,
+          nullable = EXCLUDED.nullable,
+          description = EXCLUDED.description;
+  - |
+      INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+      VALUES ('test', 9, 3)
+      ON CONFLICT (service_name, layer_id) DO UPDATE SET
+          layer_order = EXCLUDED.layer_order;
+  - |
+      -- objectid in jsonb mirrors the row PK so the JSONB stays internally
+      -- consistent. PostgresSceneFeatureSource projects the PK (not the
+      -- JSONB) into the GLB metadata column, but matching values keep the
+      -- seed self-explanatory and remove the apparent 1-5 vs 9001-9005
+      -- divergence with ConstructionDemoFixture.
+      INSERT INTO features (objectid, layer_id, geometry, attributes)
+      VALUES
+          (9001, 9,
+              ST_SetSRID(ST_GeomFromText(
+                  'POLYGON((-121.9786 37.3784, -121.9784 37.3784, -121.9784 37.3786, -121.9786 37.3786, -121.9786 37.3784))'
+              ), 4326),
+              jsonb_build_object('objectid', 9001, 'name', 'Main Tower — Foundation', 'height_m', 8.0, 'phase', 'foundation', 'work_package_id', 'wp-foundation')),
+          (9002, 9,
+              ST_SetSRID(ST_GeomFromText(
+                  'POLYGON((-121.9742 37.3778, -121.9738 37.3778, -121.9738 37.3782, -121.9742 37.3782, -121.9742 37.3778))'
+              ), 4326),
+              jsonb_build_object('objectid', 9002, 'name', 'Main Tower — Structural Frame', 'height_m', 60.0, 'phase', 'structure', 'work_package_id', 'wp-structure')),
+          (9003, 9,
+              ST_SetSRID(ST_GeomFromText(
+                  'POLYGON((-121.9782 37.3710, -121.9778 37.3710, -121.9778 37.3714, -121.9782 37.3714, -121.9782 37.3710))'
+              ), 4326),
+              jsonb_build_object('objectid', 9003, 'name', 'Equipment Yard Slab', 'height_m', 8.0, 'phase', 'foundation', 'work_package_id', 'wp-foundation')),
+          (9004, 9,
+              ST_SetSRID(ST_GeomFromText(
+                  'POLYGON((-121.9724 37.3723, -121.9720 37.3723, -121.9720 37.3727, -121.9724 37.3727, -121.9724 37.3723))'
+              ), 4326),
+              jsonb_build_object('objectid', 9004, 'name', 'Tower Annex', 'height_m', 35.0, 'phase', 'structure', 'work_package_id', 'wp-structure')),
+          (9005, 9,
+              ST_SetSRID(ST_GeomFromText(
+                  'POLYGON((-121.9662 37.3758, -121.9658 37.3758, -121.9658 37.3762, -121.9662 37.3762, -121.9662 37.3758))'
+              ), 4326),
+              jsonb_build_object('objectid', 9005, 'name', 'Envelope Shell — Planned', 'height_m', 80.0, 'phase', 'not_started', 'work_package_id', 'wp-envelope'))
+      ON CONFLICT (objectid) DO UPDATE SET
+          layer_id = EXCLUDED.layer_id,
+          geometry = EXCLUDED.geometry,
+          attributes = EXCLUDED.attributes,
+          updated_at = NOW();
+  - |
+      SELECT setval(
+          pg_get_serial_sequence('features', 'objectid'),
+          (SELECT COALESCE(MAX(objectid), 0) FROM features)
+      );

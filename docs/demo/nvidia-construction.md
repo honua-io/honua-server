@@ -5,9 +5,14 @@ serves as hosted 3D Tiles plus an observations sidecar. Designed for the
 NVIDIA demo so the web client and SDK work can proceed without AWS, Azure,
 Cesium ion, or any live drone/point-cloud pipeline.
 
-> Status: placeholder geometry. Real generation is tracked in
-> `honua-server-899` and `honua-server-842`. This ticket (`honua-server-898`)
-> only commits the fixture layout, scene metadata, and observations sidecar.
+> Status: prebuilt placeholder geometry committed by `honua-server-898`. A
+> deterministic generation path that produces a real GLB tileset for the
+> same `nvidia-construction` scene id has landed in `honua-server-899` —
+> see [3D Tiles Generation Pipeline](../gis/scene-generation.md#demo-fixture-nvidia-construction-site-899)
+> for the prebuilt-vs-generated registry toggle (Postgres-first composite,
+> with `Scenes:Datasets` as the fallback) and the seed entry that drives
+> `POST /api/v1/admin/scenes/generate`. Production-scale tiling, LOD, and
+> BIM/point-cloud inputs remain tracked in `honua-server-842`.
 
 ## What ships
 
