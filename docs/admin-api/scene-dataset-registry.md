@@ -140,9 +140,11 @@ lean `SceneDataset` it serves:
   routes use `cachePolicy.maxAgeSeconds` to pin the response `Cache-Control`
   header, and emit `Cache-Control: no-store` when `noStore = true`. Protected
   no-store responses still vary by the credential request header that
-  authorized the body (`Authorization` or `X-Honua-Token`). A no-store response
-  also disables server-side output-cache storage on the matching scene route so
-  a previously cached body cannot outlive the dataset's no-store directive.
+  authorized the body (`Authorization, X-API-Key` for Bearer / API-key
+  requests, or `X-Honua-Token` for the native-header token transport). A
+  no-store response also disables server-side output-cache storage on the
+  matching scene route so a previously cached body cannot outlive the
+  dataset's no-store directive.
 - `assetRoot` is canonicalized against the server content root before
   projection, so relative asset roots stored at registration survive the
   hosted asset resolver's path-containment check.

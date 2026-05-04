@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.ComponentModel.DataAnnotations;
-
 namespace Honua.Server.Features.Protocols.Scene;
 
 /// <summary>
@@ -15,6 +13,17 @@ namespace Honua.Server.Features.Protocols.Scene;
 /// rotating it invalidates every outstanding envelope on the next request.
 /// Resolve the value from environment variables or a secret store; never check
 /// it into source.
+/// <para>
+/// All bounds checks (signing-key presence, TTL range, refresh fraction range)
+/// are enforced by the <see cref="SceneAccessEnvelopeService"/> constructor as
+/// <see cref="InvalidOperationException"/> throws so the scene endpoints'
+/// <c>catch (InvalidOperationException)</c> blocks can surface a structured 500
+/// + <see cref="SceneAccessLog.OptionsMisconfigured"/> log. Data-annotation
+/// validation (<c>[Required]</c>, <c>[Range]</c>) is intentionally avoided
+/// because it surfaces as <see cref="Microsoft.Extensions.Options.OptionsValidationException"/>,
+/// which the catch sites do not intercept and which therefore silently bypasses
+/// the structured misconfiguration handling.
+/// </para>
 /// </remarks>
 internal sealed class SceneAccessSigningOptions
 {
@@ -28,6 +37,12 @@ internal sealed class SceneAccessSigningOptions
     /// </summary>
     public const int DefaultTokenTtlMinutes = 15;
 
+    /// <summary>Minimum allowed value for <see cref="TokenTtlMinutes"/>.</summary>
+    public const int MinTokenTtlMinutes = 1;
+
+    /// <summary>Maximum allowed value for <see cref="TokenTtlMinutes"/> (24 hours).</summary>
+    public const int MaxTokenTtlMinutes = 1440;
+
     /// <summary>
     /// Default fraction of the TTL after which clients should refresh.
     /// </summary>
@@ -38,28 +53,18 @@ internal sealed class SceneAccessSigningOptions
     /// protected scenes; the issuer/verifier fail closed when this is
     /// unset. Never logged or returned to clients.
     /// </summary>
-    /// <remarks>
-    /// The presence check is enforced by the
-    /// <see cref="SceneAccessEnvelopeService"/> constructor (throws
-    /// <see cref="InvalidOperationException"/>) rather than a
-    /// <c>[Required]</c> data annotation. <c>[Required]</c> would surface
-    /// as <see cref="Microsoft.Extensions.Options.OptionsValidationException"/>
-    /// from <c>IOptions&lt;T&gt;.Value</c>, which the endpoint handlers do
-    /// not catch — bypassing the structured <c>SigningMisconfigured</c> log
-    /// event.
-    /// </remarks>
     public string SigningKey { get; set; } = string.Empty;
 
     /// <summary>
-    /// Envelope lifetime in minutes. Default <c>15</c>.
+    /// Envelope lifetime in minutes. Default <c>15</c>; valid range
+    /// <c>[<see cref="MinTokenTtlMinutes"/>, <see cref="MaxTokenTtlMinutes"/>]</c>.
     /// </summary>
-    [Range(1, 1440)]
     public int TokenTtlMinutes { get; set; } = DefaultTokenTtlMinutes;
 
     /// <summary>
     /// Fraction of the TTL that must elapse before clients should refresh.
-    /// Default <c>0.5</c> (refresh halfway through the lifetime).
+    /// Default <c>0.5</c> (refresh halfway through the lifetime); valid
+    /// range <c>[0.0, 1.0]</c>.
     /// </summary>
-    [Range(0.0, 1.0)]
     public double RefreshAfterFractionOfTtl { get; set; } = DefaultRefreshAfterFraction;
 }

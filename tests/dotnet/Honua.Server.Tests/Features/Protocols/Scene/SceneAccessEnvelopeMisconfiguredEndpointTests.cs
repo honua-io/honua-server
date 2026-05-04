@@ -124,3 +124,92 @@ public sealed class SceneAccessEnvelopeMisconfiguredEndpointTests : IAsyncLifeti
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }
+
+/// <summary>
+/// Integration coverage for the misconfigured TTL/refresh-fraction path.
+/// A deployment that sets <c>Honua:SceneAccessSigning:TokenTtlMinutes</c> outside
+/// the supported range must surface the same structured 500 +
+/// <c>OptionsMisconfigured</c> log as the missing-signing-key path, rather
+/// than silently clamping or escaping as an unhandled
+/// <c>OptionsValidationException</c> from data-annotation validation.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Scene)]
+public sealed class SceneAccessEnvelopeBadTtlEndpointTests : IAsyncLifetime
+{
+    private const string AdminPassword = "scene-envelope-bad-ttl-test-key";
+    private const string SigningKey = "scene-envelope-bad-ttl-test-signing-key-aHcUZ4tQwT8a";
+    private readonly WebAppFixture _fixture;
+    private HttpClient _authenticatedClient = null!;
+
+    public SceneAccessEnvelopeBadTtlEndpointTests()
+    {
+        var fixtureRoot = SceneFixturePaths.ResolveFixtureRoot();
+
+        _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        [$"Scenes:Datasets:0:Id"] = SceneFixturePaths.ProtectedSceneId,
+                        [$"Scenes:Datasets:0:Name"] = "Protected Fixture",
+                        [$"Scenes:Datasets:0:AssetRoot"] = fixtureRoot,
+                        [$"Scenes:Datasets:0:AccessPolicy:AllowAnonymous"] = "false",
+
+                        // Signing key is set, but TTL is below the supported
+                        // minimum. The signing service constructor must throw
+                        // InvalidOperationException so the endpoints surface
+                        // a structured 500 + OptionsMisconfigured log.
+                        ["Honua:SceneAccessSigning:SigningKey"] = SigningKey,
+                        ["Honua:SceneAccessSigning:TokenTtlMinutes"] = "0",
+                    });
+                });
+            });
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _authenticatedClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+    }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("POST /scenes/{sceneId}/access-envelope")]
+    public async Task IssueEnvelope_BadTtl_Returns500()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/scenes/{SceneFixturePaths.ProtectedSceneId}/access-envelope");
+        var response = await _authenticatedClient.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        // Internal config keys must not surface to the client even though
+        // the structured log records them for the operator.
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("TokenTtlMinutes");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
+    public async Task GetSceneAsset_BadTtl_WithToken_Returns500()
+    {
+        // An anonymous request carrying a stray token reaches the
+        // token-verification branch, which resolves the signing service —
+        // the constructor throws because TtlMinutes is invalid. The catch
+        // site must convert that into a structured 500 with no internal
+        // detail leaked.
+        var response = await _fixture.Client.GetAsync(
+            $"/scenes/{SceneFixturePaths.ProtectedSceneId}/tiles/0.b3dm?token=any-stray-token-value");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+}

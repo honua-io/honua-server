@@ -1523,7 +1523,7 @@
       "displayName": "Hosted OGC 3D Tiles scenes",
       "surfaceKind": "http-route-family",
       "protocol": "3D-Tiles",
-      "canonicalIdentifier": "/scenes/{sceneId}/tileset.json + /scenes/{sceneId}/{*assetPath}",
+      "canonicalIdentifier": "/scenes/{sceneId}/tileset.json + /scenes/{sceneId}/{*assetPath} + /scenes/{sceneId}/access-envelope",
       "parentSurfaceId": null,
       "endpointPrefixes": [
         "/scenes/"
@@ -1540,7 +1540,8 @@
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneTilesetEndpointTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAuthorizationTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAuthorizationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAccessEnvelopeEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1561,6 +1562,21 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#837",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Browser-safe access envelope: POST issuance gated by access policy (public scene -> 400, unauthorized -> 401/403), HMAC-SHA256 signed token, ?token= and X-Honua-Token transports honored on nested asset cascades, validation outcomes (tampered/expired/wrong-scene/path-traversal), private cache-control with output-cache bypass on token-authorized requests, and structured 500 + OptionsMisconfigured (8415) log on unset signing key or out-of-range TTL/refresh fraction exercised by service unit tests and endpoint integration tests",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAccessEnvelopeEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAccessEnvelopeServiceTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAccessEnvelopeMisconfiguredEndpointTests.cs",
+            "docs/gis/scenes-3dtiles.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#849",
           "versionCaptureRule": null
         }
       ]

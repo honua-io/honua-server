@@ -26,25 +26,21 @@ internal static class SceneServiceCollectionExtensions
         services.Configure<SceneDatasetOptions>(configuration.GetSection(SceneDatasetOptions.SectionName));
         services.TryAddSingleton<ISceneDatasetRegistry, ConfigurationSceneDatasetRegistry>();
 
-        // Bind scene access signing options. ValidateOnStart() is
-        // intentionally NOT called: deployments that serve only public
-        // scenes (no AccessPolicy on any registered scene) must be able
-        // to start without a SigningKey configured. ValidateDataAnnotations
-        // enforces [Range] on the TTL/refresh fields lazily on the first
-        // IOptions resolve. The SigningKey presence check is intentionally
-        // NOT a [Required] data annotation — that would surface as
-        // OptionsValidationException from IOptions.Value, which the endpoint
-        // handlers' catch (InvalidOperationException) blocks would not
-        // catch, silencing the structured SigningMisconfigured (8415) log.
-        // Instead the SceneAccessEnvelopeService constructor is the
-        // runtime fail-closed guard — it throws InvalidOperationException
-        // if SigningKey is unset, and the scene endpoints catch that at
-        // the resolve site and surface a structured 500 + log entry so a
-        // misconfigured protected-scene deployment is operationally
-        // visible without taking the rest of the server down.
+        // Bind scene access signing options without ValidateOnStart() and
+        // without ValidateDataAnnotations(): deployments that serve only
+        // public scenes (no AccessPolicy on any registered scene) must be
+        // able to start without a SigningKey configured, and data-annotation
+        // validation throws OptionsValidationException, which is not a
+        // subclass of InvalidOperationException and would silently bypass
+        // the SceneAccessEnvelopeService constructor's structured fail-closed
+        // path. The constructor enforces all bounds (signing-key presence,
+        // TTL range, refresh fraction range) as InvalidOperationException
+        // throws, which the scene endpoints catch at the resolve site to
+        // surface a structured 500 + OptionsMisconfigured (8415) log so a
+        // misconfigured protected-scene deployment is operationally visible
+        // without taking the rest of the server down.
         services.AddOptions<SceneAccessSigningOptions>()
-            .Bind(configuration.GetSection(SceneAccessSigningOptions.SectionName))
-            .ValidateDataAnnotations();
+            .Bind(configuration.GetSection(SceneAccessSigningOptions.SectionName));
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ISceneAccessEnvelopeService, SceneAccessEnvelopeService>();

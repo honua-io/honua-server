@@ -16,6 +16,7 @@ deliverable.
 | --- | --- | --- |
 | `/scenes/{sceneId}/tileset.json` | GET, HEAD | Root 3D Tiles document (`application/json`). |
 | `/scenes/{sceneId}/{*assetPath}` | GET, HEAD | Tile, glTF, texture, JSON, or binary payload under the scene's asset prefix. |
+| `/scenes/{sceneId}/access-envelope` | POST | Mint a short-lived signed access envelope for browser-safe rendering of a protected scene. Authorized callers only; public scenes return `400`. See [Browser-safe access via signed envelope](#browser-safe-access-via-signed-envelope). |
 
 `sceneId` is operator-defined and stable; clients hard-code it the same way
 they do for layer ids on other Honua endpoints. CesiumJS resolves nested

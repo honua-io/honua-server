@@ -150,19 +150,24 @@ internal static partial class SceneEndpoints
         {
             // Resolve the envelope service lazily inside the try block.
             // SceneAccessEnvelopeService throws InvalidOperationException
-            // from its constructor when SigningKey is unset; routing the
-            // resolve through [FromServices] would surface that exception
-            // during parameter binding before the catch could intercept it.
+            // from its constructor when any binding option is invalid
+            // (SigningKey unset, TokenTtlMinutes or RefreshAfterFractionOfTtl
+            // out of range); routing the resolve through [FromServices]
+            // would surface that exception during parameter binding before
+            // the catch could intercept it.
             var envelopeService = context.RequestServices
                 .GetRequiredService<ISceneAccessEnvelopeService>();
             envelope = envelopeService.Issue(scene.Id);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            // Signing key not configured (or hash unexpectedly failed).
-            // Log the misconfiguration so the operator can see it; return
-            // a structured 500 rather than leaking the internal message.
-            SceneAccessLog.SigningMisconfigured(logger, scene.Id);
+            // Envelope options invalid (or hash unexpectedly failed). Log the
+            // misconfiguration reason so the operator can see which option is
+            // broken; return a structured 500 rather than leaking the internal
+            // message. The exception message is constructed from well-known
+            // option keys and bounded constants only — never from caller or
+            // sensitive values — so it is safe to log verbatim.
+            SceneAccessLog.OptionsMisconfigured(logger, scene.Id, ex.Message);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Scene access envelope issuance is not configured.");
@@ -261,17 +266,19 @@ internal static partial class SceneEndpoints
                     {
                         // SceneAccessEnvelopeService throws
                         // InvalidOperationException from its constructor
-                        // when SigningKey is unset. Resolving inside this
-                        // try block keeps the misconfiguration response
-                        // structured (matches the issue endpoint) rather
-                        // than surfacing as an unhandled 500.
+                        // when any binding option is invalid (signing key
+                        // unset, TTL or refresh fraction out of range).
+                        // Resolving inside this try block keeps the
+                        // misconfiguration response structured (matches the
+                        // issue endpoint) rather than surfacing as an
+                        // unhandled 500.
                         var envelopeService = context.RequestServices
                             .GetRequiredService<ISceneAccessEnvelopeService>();
                         validation = envelopeService.Validate(rawToken, scene.Id);
                     }
-                    catch (InvalidOperationException)
+                    catch (InvalidOperationException ex)
                     {
-                        SceneAccessLog.SigningMisconfigured(logger, scene.Id);
+                        SceneAccessLog.OptionsMisconfigured(logger, scene.Id, ex.Message);
                         return StandardErrorHelpers.CreateInternalServerError(
                             context,
                             "Scene access envelope verification is not configured.");

@@ -7,6 +7,10 @@ namespace Honua.Server.Features.Protocols.Scene;
 /// Source-generated logging events for scene access envelope issuance and
 /// validation. EventId range 8410–8419. No log entry contains the raw token,
 /// HMAC value, signing key, storage credential, or absolute filesystem path.
+/// The <see cref="OptionsMisconfigured"/> reason is constructed from
+/// well-known option keys (e.g. <c>Honua:SceneAccessSigning:SigningKey</c>)
+/// and bounded constants — never from caller-supplied or sensitive values —
+/// so it is safe to log verbatim.
 /// </summary>
 internal static partial class SceneAccessLog
 {
@@ -31,6 +35,6 @@ internal static partial class SceneAccessLog
     public static partial void TokenMissing(ILogger logger, string sceneId);
 
     [LoggerMessage(EventId = 8415, Level = LogLevel.Error,
-        Message = "Scene access envelope service is misconfigured for scene {SceneId}: signing key is unset; deployment must set Honua:SceneAccessSigning:SigningKey to use protected scenes")]
-    public static partial void SigningMisconfigured(ILogger logger, string sceneId);
+        Message = "Scene access envelope service is misconfigured for scene {SceneId}: {Reason}")]
+    public static partial void OptionsMisconfigured(ILogger logger, string sceneId, string reason);
 }

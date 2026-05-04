@@ -187,6 +187,47 @@ public sealed class SceneAccessEnvelopeServiceTests
             .WithMessage("*SigningKey*");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(SceneAccessSigningOptions.MaxTokenTtlMinutes + 1)]
+    [Trait("Category", "Unit")]
+    public void Constructor_ThrowsWhenTokenTtlMinutesOutOfRange(int ttlMinutes)
+    {
+        // Out-of-range TTL must throw InvalidOperationException so the scene
+        // endpoints' catch (InvalidOperationException) blocks can surface a
+        // structured 500 + OptionsMisconfigured log. Data-annotation validation
+        // would throw OptionsValidationException, which the catch sites do not
+        // intercept.
+        var options = Options.Create(new SceneAccessSigningOptions
+        {
+            SigningKey = SigningKey,
+            TokenTtlMinutes = ttlMinutes
+        });
+        Action act = () => _ = new SceneAccessEnvelopeService(options, new TestTimeProvider());
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*TokenTtlMinutes*");
+    }
+
+    [Theory]
+    [InlineData(-0.01)]
+    [InlineData(1.01)]
+    [InlineData(double.NaN)]
+    [Trait("Category", "Unit")]
+    public void Constructor_ThrowsWhenRefreshFractionOutOfRange(double fraction)
+    {
+        var options = Options.Create(new SceneAccessSigningOptions
+        {
+            SigningKey = SigningKey,
+            RefreshAfterFractionOfTtl = fraction
+        });
+        Action act = () => _ = new SceneAccessEnvelopeService(options, new TestTimeProvider());
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*RefreshAfterFractionOfTtl*");
+    }
+
     private sealed class TestTimeProvider : TimeProvider
     {
         private DateTimeOffset _now = new(2026, 5, 3, 12, 0, 0, TimeSpan.Zero);

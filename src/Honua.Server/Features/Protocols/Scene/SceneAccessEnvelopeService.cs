@@ -37,6 +37,12 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(timeProvider);
 
+        // All bounds checks throw InvalidOperationException so the scene
+        // endpoints' catch (InvalidOperationException) blocks surface a
+        // structured 500 + OptionsMisconfigured log on misconfigured
+        // deployments. Data-annotation validation is deliberately not used —
+        // it would throw OptionsValidationException, which the catch sites
+        // do not intercept.
         var value = options.Value;
         if (string.IsNullOrEmpty(value.SigningKey))
         {
@@ -44,9 +50,26 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
                 "Honua:SceneAccessSigning:SigningKey is required to issue scene access envelopes.");
         }
 
+        if (value.TokenTtlMinutes < SceneAccessSigningOptions.MinTokenTtlMinutes
+            || value.TokenTtlMinutes > SceneAccessSigningOptions.MaxTokenTtlMinutes)
+        {
+            throw new InvalidOperationException(
+                $"Honua:SceneAccessSigning:TokenTtlMinutes must be between "
+                + $"{SceneAccessSigningOptions.MinTokenTtlMinutes} and "
+                + $"{SceneAccessSigningOptions.MaxTokenTtlMinutes} minutes.");
+        }
+
+        if (double.IsNaN(value.RefreshAfterFractionOfTtl)
+            || value.RefreshAfterFractionOfTtl < 0.0
+            || value.RefreshAfterFractionOfTtl > 1.0)
+        {
+            throw new InvalidOperationException(
+                "Honua:SceneAccessSigning:RefreshAfterFractionOfTtl must be between 0.0 and 1.0.");
+        }
+
         _signingKey = Encoding.UTF8.GetBytes(value.SigningKey);
-        _ttl = TimeSpan.FromMinutes(Math.Max(1, value.TokenTtlMinutes));
-        _refreshFraction = Math.Clamp(value.RefreshAfterFractionOfTtl, 0.0, 1.0);
+        _ttl = TimeSpan.FromMinutes(value.TokenTtlMinutes);
+        _refreshFraction = value.RefreshAfterFractionOfTtl;
         _timeProvider = timeProvider;
     }
 
