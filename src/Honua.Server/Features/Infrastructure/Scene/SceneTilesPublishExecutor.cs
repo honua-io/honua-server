@@ -156,6 +156,26 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     $"{SceneGenerationErrorCodes.LayerCrsUnknown}: Layer {layerId} has no resolvable spatial reference.");
             }
 
+            // Resolve and validate sceneId / displayName / preflight conflict
+            // BEFORE streaming features. An invalid sceneId or duplicate
+            // registration would otherwise drag a full 50k-feature page
+            // through PostGIS only to fail with 400/409 — wasted DB work, and
+            // worse, the project rule is to reject identifiers before any
+            // provider call. The bounds-dependent extrusion math still runs
+            // after collection because it needs per-feature Z values.
+            var sceneId = ResolveSceneId(intent, layer);
+            var displayName = ResolveDisplayName(intent, layer, sceneId);
+            ValidateDisplayName(displayName);
+            var description = TryGetTargetConfig(intent, TargetConfigDescription);
+            var editionGate = TryGetTargetConfig(intent, TargetConfigEditionGate);
+
+            // Preflight registry lookup so a duplicate sceneId returns 409 BEFORE
+            // we create any directory or stream a single feature. The registry
+            // INSERT below remains the canonical collision authority; this
+            // preflight closes the practical overwrite window for sequential
+            // publishes against the same id.
+            await PreflightSceneIdConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
+
             var extrusion = generationOptions.ExtrusionOverride ?? layer.Metadata?.Extrusion;
             var attributeSchemas = BuildAttributeSchemas(layer, includeAttributes);
             var collected = await CollectFeaturesAsync(
@@ -198,18 +218,6 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
             if (double.IsPositiveInfinity(minHeight)) minHeight = 0.0;
             if (double.IsNegativeInfinity(maxHeight)) maxHeight = 0.0;
-
-            var sceneId = ResolveSceneId(intent, layer);
-            var displayName = ResolveDisplayName(intent, layer, sceneId);
-            ValidateDisplayName(displayName);
-            var description = TryGetTargetConfig(intent, TargetConfigDescription);
-            var editionGate = TryGetTargetConfig(intent, TargetConfigEditionGate);
-
-            // Preflight registry lookup so a duplicate sceneId returns 409 BEFORE
-            // we create any directory. The registry INSERT below remains the
-            // canonical collision authority; this preflight closes the practical
-            // overwrite window for sequential publishes against the same id.
-            await PreflightSceneIdConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
 
             // Stage outputs under an intent-scoped directory so concurrent
             // publishes that pass the preflight (same sceneId, both running
@@ -260,6 +268,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     bounds,
                     generationOptions.CacheMaxAgeSeconds,
                     editionGate,
+                    layer.Metadata?.AccessPolicy,
                     createdBy: TryGetTargetConfig(intent, TargetConfigCreatedBy) ?? "publisher",
                     cancellationToken).ConfigureAwait(false);
 
@@ -764,6 +773,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         double[] bounds,
         int cacheMaxAgeSeconds,
         string? editionGate,
+        AccessPolicy? layerAccessPolicy,
         string createdBy,
         CancellationToken cancellationToken)
     {
@@ -771,6 +781,16 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         {
             return null;
         }
+
+        // Carry the source layer's access policy through to the registered
+        // scene so a tileset materialised from a protected feature layer
+        // does NOT silently expose its geometry and attributes to the
+        // anonymous serving path. The hosted-serving registry projects
+        // CatalogMetadata.AccessPolicy from RequiresAuth/AllowedRoles, so
+        // missing this mapping previously turned every protected source
+        // layer into a public scene — a real RBAC bypass for AEC and field
+        // workflows.
+        var (isPublic, requiresAuth, allowedRoles) = ResolveSceneAccess(layerAccessPolicy);
 
         var record = new SceneDatasetRecord
         {
@@ -785,9 +805,9 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             Crs = "EPSG:4979",
             CachePolicy = new SceneCachePolicy(cacheMaxAgeSeconds, NoStore: false),
             EditionGate = editionGate,
-            RequiresAuth = false,
-            IsPublic = true,
-            AllowedRoles = null,
+            RequiresAuth = requiresAuth,
+            IsPublic = isPublic,
+            AllowedRoles = allowedRoles,
             Status = SceneDatasetStatus.Active,
             ValidationMessage = null,
             Revision = 1,
@@ -810,6 +830,42 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 $"{SceneGenerationErrorCodes.SceneRegistrationConflict}: A scene dataset with id '{sceneId}' or name '{displayName}' already exists.",
                 ex);
         }
+    }
+
+    /// <summary>
+    /// Maps the source layer's access policy onto the
+    /// <see cref="SceneDatasetRecord"/> public/protected fields. The registry
+    /// expects exactly one of <c>IsPublic</c> / <c>RequiresAuth</c> to be
+    /// true — anonymous reads on the source layer fold into a public scene,
+    /// while a non-anonymous source layer protects the generated tileset and
+    /// forwards the role allow-list verbatim.
+    /// </summary>
+    private static (bool IsPublic, bool RequiresAuth, string[]? AllowedRoles) ResolveSceneAccess(
+        AccessPolicy? layerAccessPolicy)
+    {
+        // No layer-level access policy ⇒ historic default (public scene).
+        // Existing public layers continue to materialise public tilesets.
+        if (layerAccessPolicy is null)
+        {
+            return (IsPublic: true, RequiresAuth: false, AllowedRoles: null);
+        }
+
+        // Anonymous reads accepted on the source ⇒ public scene. Even if a
+        // role allow-list is set on the layer it is a *write* gate; the scene
+        // tileset is read-only so the public branch is correct.
+        if (layerAccessPolicy.AllowAnonymous)
+        {
+            return (IsPublic: true, RequiresAuth: false, AllowedRoles: null);
+        }
+
+        // Protected source ⇒ protected scene. AllowedRoles is forwarded; an
+        // empty/null list keeps the dataset role-unrestricted but
+        // authentication is still required, mirroring how the manual scene-
+        // registry endpoint maps RequiresAuth = true with no roles.
+        return (
+            IsPublic: false,
+            RequiresAuth: true,
+            AllowedRoles: layerAccessPolicy.AllowedRoles is { Length: > 0 } roles ? roles : null);
     }
 
     private async Task CompensateRegistrationAsync(Guid datasetId, string sceneId)

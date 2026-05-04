@@ -274,7 +274,14 @@ internal static class WkbGeometryReader
             4 => ReadMultiPoint(ref cursor, byteOrder),
             5 => ReadMultiLineString(ref cursor, byteOrder),
             6 => ReadMultiPolygon(ref cursor, byteOrder),
-            _ => null
+            // Anything outside Point/Line/Polygon (and their Multis) is a
+            // type the v1 generator does not support: GeometryCollection,
+            // CircularString, CompoundCurve, CurvePolygon, Triangle, TIN,
+            // PolyhedralSurface, etc. Silently skipping these rows produces
+            // a tileset that quietly misses data; surface the documented
+            // SCENE_UNSUPPORTED_GEOMETRY_TYPE so callers get a clean 400.
+            _ => throw new System.ComponentModel.DataAnnotations.ValidationException(
+                $"{SceneGenerationErrorCodes.UnsupportedGeometryType}: WKB geometry type {baseType} is not supported by the v1 3D Tiles generator.")
         };
     }
 

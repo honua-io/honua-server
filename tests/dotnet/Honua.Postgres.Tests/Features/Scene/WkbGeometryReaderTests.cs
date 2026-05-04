@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Postgres.Features.Scene;
 
@@ -109,6 +110,42 @@ public sealed class WkbGeometryReaderTests
         geometry.Vertices.Should().HaveCount(4);
         geometry.Vertices[2].Longitude.Should().Be(1.0);
         geometry.Vertices[2].Latitude.Should().Be(1.0);
+    }
+
+    [Fact]
+    public void Parse_GeometryCollection_ThrowsUnsupportedGeometryType()
+    {
+        // OGC type 7 = GeometryCollection. The v1 generator only supports
+        // Point/LineString/Polygon and their Multi variants; an unsupported
+        // type must surface as SCENE_UNSUPPORTED_GEOMETRY_TYPE rather than
+        // be silently skipped (which would quietly produce a tileset with
+        // missing data).
+        var buffer = new byte[1 + 4 + 4]; // header + count, no actual contents needed
+        var span = buffer.AsSpan();
+        span[0] = 1; // little-endian
+        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(1, 4), 7u); // GeometryCollection
+        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), 0u);
+
+        var act = () => WkbGeometryReader.Parse(buffer);
+
+        var ex = act.Should().Throw<ValidationException>().Which;
+        ex.Message.Should().StartWith(SceneGenerationErrorCodes.UnsupportedGeometryType);
+        ex.Message.Should().Contain("7");
+    }
+
+    [Fact]
+    public void Parse_CircularString_ThrowsUnsupportedGeometryType()
+    {
+        // OGC type 8 = CircularString. Same rule as GeometryCollection.
+        var buffer = new byte[1 + 4];
+        var span = buffer.AsSpan();
+        span[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(1, 4), 8u);
+
+        var act = () => WkbGeometryReader.Parse(buffer);
+
+        act.Should().Throw<ValidationException>()
+            .Which.Message.Should().StartWith(SceneGenerationErrorCodes.UnsupportedGeometryType);
     }
 
     [Fact]

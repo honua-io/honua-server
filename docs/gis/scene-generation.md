@@ -151,6 +151,16 @@ content root). Configure it via `appsettings.json`:
 The generated tileset is automatically registered with the scene dataset
 registry; no separate `POST /api/v1/admin/scenes` call is required.
 
+The source layer's `Metadata.AccessPolicy` is forwarded onto the
+registered scene so a tileset materialised from a protected layer is
+served with the same RBAC the underlying feature service applies:
+
+| Source layer | Registered scene |
+| --- | --- |
+| No `AccessPolicy` (open layer) | `IsPublic = true`, `RequiresAuth = false`, no role list. |
+| `AllowAnonymous = true` | `IsPublic = true`, `RequiresAuth = false`, no role list. (Anonymous reads are accepted on the source, so the read-only scene tileset stays public regardless of any write-side `AllowedRoles`.) |
+| `AllowAnonymous = false` (with or without `AllowedRoles`) | `IsPublic = false`, `RequiresAuth = true`, role list forwarded verbatim. |
+
 ### Tileset shape
 
 - `asset.version = "1.1"`

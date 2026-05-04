@@ -594,6 +594,121 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_ProtectedLayer_RegistersSceneAsProtectedWithRoles()
+    {
+        // High/correctness regression: source layers with a non-anonymous
+        // access policy must materialise non-public scenes that forward
+        // the role allow-list. Without this mapping, generating a tileset
+        // from a protected layer would publish its geometry/attributes
+        // anonymously through /scenes/{sceneId}/... — an RBAC bypass.
+        var allowedRoles = new[] { "fieldops", "engineering" };
+        var protectedPolicy = new AccessPolicy
+        {
+            AllowAnonymous = false,
+            AllowedRoles = allowedRoles
+        };
+        _catalog.Layer = BuildLayer(accessPolicy: protectedPolicy);
+        _featureSource.Features = SamplePolygons();
+
+        await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "protected-scene"), CancellationToken.None);
+
+        var record = _registration.Records.Single(r => r.Id == "protected-scene");
+        record.IsPublic.Should().BeFalse(
+            "scenes derived from protected layers must not be served anonymously.");
+        record.RequiresAuth.Should().BeTrue();
+        record.AllowedRoles.Should().NotBeNull().And.BeEquivalentTo(allowedRoles,
+            "the layer's role allow-list must travel with the scene record.");
+    }
+
+    [UnitTest]
+    public async Task Execute_AnonymousLayer_RegistersSceneAsPublic()
+    {
+        // AllowAnonymous=true on the source layer means anonymous reads
+        // are accepted, so the scene tileset stays public.
+        var anonymousPolicy = new AccessPolicy { AllowAnonymous = true };
+        _catalog.Layer = BuildLayer(accessPolicy: anonymousPolicy);
+        _featureSource.Features = SamplePolygons();
+
+        await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "anon-scene"), CancellationToken.None);
+
+        var record = _registration.Records.Single(r => r.Id == "anon-scene");
+        record.IsPublic.Should().BeTrue();
+        record.RequiresAuth.Should().BeFalse();
+        record.AllowedRoles.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task Execute_NoAccessPolicy_DefaultsToPublic()
+    {
+        // Layers with no AccessPolicy keep the historic public-scene
+        // default; only an explicit AllowAnonymous=false flips the bit.
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        await _executor.RunDirectAsync(
+            BuildIntent(sceneId: "default-scene"), CancellationToken.None);
+
+        var record = _registration.Records.Single(r => r.Id == "default-scene");
+        record.IsPublic.Should().BeTrue();
+        record.RequiresAuth.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task Execute_DuplicateSceneId_DoesNotEnumerateFeatureSource()
+    {
+        // Performance regression: validators and registry preflight must
+        // run BEFORE feature streaming so a 409 does not drag a full
+        // 50 000-feature page through PostGIS first. Pre-seed the registry
+        // with the target sceneId, then verify the executor refuses
+        // before the StubFeatureSource records a single Stream call.
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+        _registration.Records.Add(new SceneDatasetRecord
+        {
+            DatasetId = Guid.NewGuid(),
+            Id = "preexisting-scene",
+            Name = "Existing",
+            AssetRoot = "/var/lib/honua/scenes/preexisting-scene",
+            TilesetFileName = "tileset.json",
+            DatasetType = SceneDatasetType.HostedTiles,
+            CachePolicy = new SceneCachePolicy(3600, NoStore: false),
+            IsPublic = true,
+            RequiresAuth = false,
+            Status = SceneDatasetStatus.Active,
+            Revision = 1,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = "test"
+        });
+
+        var act = () => _executor.RunDirectAsync(
+            BuildIntent(sceneId: "preexisting-scene"), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.SceneIdConflict);
+        _featureSource.StreamInvocationCount.Should().Be(0,
+            "the registry preflight must reject duplicate sceneIds before enumerating the feature source.");
+    }
+
+    [UnitTest]
+    public async Task Execute_InvalidExplicitSceneId_DoesNotEnumerateFeatureSource()
+    {
+        // Mirror of the duplicate-id case for invalid sceneId values:
+        // an unparseable slug must be rejected before any DB streaming.
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var act = () => _executor.RunDirectAsync(
+            BuildIntent(sceneId: "not valid id with spaces"), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+        _featureSource.StreamInvocationCount.Should().Be(0,
+            "sceneId validation must run before any feature-source enumeration.");
+    }
+
+    [UnitTest]
     public async Task Execute_PropertyIdCollision_DeduplicatesDeterministically()
     {
         // SanitizePropertyId collapses non-alphanumerics to '_', so source
@@ -734,7 +849,8 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
     private LayerDefinition BuildLayer(
         SpatialReference? spatialReference = null,
-        LayerExtrusionInfo? extrusion = null)
+        LayerExtrusionInfo? extrusion = null,
+        AccessPolicy? accessPolicy = null)
     {
         var sr = spatialReference ?? SpatialReference.Create(4326, 4326);
         var fields = new[]
@@ -744,6 +860,11 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
             new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true)
         };
+        var metadata = (extrusion, accessPolicy) switch
+        {
+            (null, null) => null,
+            _ => new CatalogMetadata { Extrusion = extrusion, AccessPolicy = accessPolicy }
+        };
         return new LayerDefinition(
             LayerId,
             "Buildings",
@@ -751,7 +872,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             GeometryType.Polygon,
             sr,
             fields,
-            Metadata: extrusion is null ? null : new CatalogMetadata { Extrusion = extrusion });
+            Metadata: metadata);
     }
 
     private static List<SceneFeature> SamplePolygonsWithoutZ()
@@ -902,12 +1023,14 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     private sealed class StubFeatureSource : ISceneFeatureSource
     {
         public List<SceneFeature> Features { get; set; } = new();
+        public int StreamInvocationCount { get; private set; }
 
         public async IAsyncEnumerable<SceneFeature> StreamAsync(
             LayerDefinition layer,
             IReadOnlyList<string> includeAttributes,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            StreamInvocationCount++;
             foreach (var feature in Features)
             {
                 cancellationToken.ThrowIfCancellationRequested();
