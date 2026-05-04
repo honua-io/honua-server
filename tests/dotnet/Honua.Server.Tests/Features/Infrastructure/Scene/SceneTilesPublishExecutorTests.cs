@@ -171,6 +171,61 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_FeaturesWithMixedGeometryKinds_ReturnsUnsupportedGeometryType()
+    {
+        // GeometryTileBuilder.BuildGlb requires every feature in a tile to
+        // share a single SceneGeometryKind. Without the executor's mixed-kind
+        // pre-check the build phase throws ArgumentException, which the
+        // catch-all wrapped in ServiceUnavailableException → 503. The
+        // documented contract is SCENE_UNSUPPORTED_GEOMETRY_TYPE → 400.
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = MixedKindFeatures();
+
+        var act = () => _executor.RunDirectAsync(
+            BuildIntent(sceneId: "mixed-kinds"), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.UnsupportedGeometryType);
+        ex.And.Message.Should().Contain("mixes geometry kinds");
+    }
+
+    [UnitTest]
+    public async Task Execute_AllPolygonsDegenerate_ReturnsOptionsInvalid()
+    {
+        // Every polygon collapses to <3 distinct ring vertices, so
+        // GeometryTileBuilder would emit zero triangles and throw
+        // InvalidOperationException("No vertices produced for tile.").
+        // The executor's degeneracy pre-check must surface this as
+        // SCENE_OPTIONS_INVALID / 400 instead of letting it 503.
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = DegeneratePolygons();
+
+        var act = () => _executor.RunDirectAsync(
+            BuildIntent(sceneId: "degenerate-polygons"), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+        ex.And.Message.Should().Contain("degenerate");
+    }
+
+    [UnitTest]
+    public async Task Execute_AllLineStringsDegenerate_ReturnsOptionsInvalid()
+    {
+        // Sibling case: lines need at least 2 vertices to emit an edge.
+        // Single-vertex line features collapse to no output and would
+        // 503 at build time without the pre-check.
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = DegenerateLineStrings();
+
+        var act = () => _executor.RunDirectAsync(
+            BuildIntent(sceneId: "degenerate-lines"), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
+        ex.And.Message.Should().Contain("degenerate");
+    }
+
+    [UnitTest]
     public async Task Execute_AppliesExtrusionOverrideToProduceVerticalGeometry()
     {
         _catalog.Layer = BuildLayer(extrusion: new LayerExtrusionInfo
@@ -949,6 +1004,97 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
                 Id = 2,
                 Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = ringB },
                 Attributes = attrsB
+            }
+        };
+    }
+
+    private static List<SceneFeature> MixedKindFeatures()
+    {
+        // Layer mixes a polygon with a point — would silently fail during
+        // GLB build with ArgumentException ("All features in a tile must
+        // share the same geometry kind") before the executor's pre-check.
+        var polygonRing = new[]
+        {
+            new SceneVertex(-122.5, 37.7, 0),
+            new SceneVertex(-122.4, 37.7, 0),
+            new SceneVertex(-122.4, 37.8, 0),
+            new SceneVertex(-122.5, 37.8, 0),
+            new SceneVertex(-122.5, 37.7, 0)
+        };
+        return new List<SceneFeature>
+        {
+            new()
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = polygonRing },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = "polygon-feature",
+                    ["height"] = 12
+                }
+            },
+            new()
+            {
+                Id = 2,
+                Geometry = new SceneFeatureGeometry
+                {
+                    Kind = SceneGeometryKind.Point,
+                    Vertices = new[] { new SceneVertex(-122.45, 37.75, 0) }
+                },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = "point-feature",
+                    ["height"] = 0
+                }
+            }
+        };
+    }
+
+    private static List<SceneFeature> DegeneratePolygons()
+    {
+        // Every "polygon" has only two distinct vertices (closed-ring with
+        // first==last counts as 2 distinct), which falls below the 3-vertex
+        // minimum the GLB writer needs to emit any triangle.
+        var ring = new[]
+        {
+            new SceneVertex(-122.5, 37.7, 0),
+            new SceneVertex(-122.4, 37.7, 0),
+            new SceneVertex(-122.5, 37.7, 0)
+        };
+        return new List<SceneFeature>
+        {
+            new()
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry { Kind = SceneGeometryKind.Polygon, Vertices = ring },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = "degenerate-1",
+                    ["height"] = 0
+                }
+            }
+        };
+    }
+
+    private static List<SceneFeature> DegenerateLineStrings()
+    {
+        // Single-vertex "lines" cannot emit any edges; every feature is
+        // degenerate, so the executor must reject before the build phase.
+        return new List<SceneFeature>
+        {
+            new()
+            {
+                Id = 1,
+                Geometry = new SceneFeatureGeometry
+                {
+                    Kind = SceneGeometryKind.LineString,
+                    Vertices = new[] { new SceneVertex(-122.5, 37.7, 0) }
+                },
+                Attributes = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = "single-vertex",
+                    ["height"] = 0
+                }
             }
         };
     }

@@ -370,6 +370,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         CancellationToken cancellationToken)
     {
         var collected = new CollectedFeatures();
+        SceneGeometryKind? expectedKind = null;
+        var nonDegenerateCount = 0;
 
         await foreach (var feature in _featureSource
             .StreamAsync(layer, includeAttributes, cancellationToken)
@@ -386,6 +388,27 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             {
                 throw new ValidationException(
                     $"{SceneGenerationErrorCodes.UnsupportedGeometryType}: Geometry kind '{feature.Geometry.Kind}' is not supported in v1.");
+            }
+
+            // GeometryTileBuilder.BuildGlb requires every feature in a tile to
+            // share a single SceneGeometryKind. The mixed-kind invariant is
+            // enforced here so callers see SCENE_UNSUPPORTED_GEOMETRY_TYPE / 400
+            // instead of the catch-all 503 wrapping an ArgumentException from
+            // the build phase.
+            if (expectedKind is null)
+            {
+                expectedKind = feature.Geometry.Kind;
+            }
+            else if (feature.Geometry.Kind != expectedKind.Value)
+            {
+                throw new ValidationException(
+                    $"{SceneGenerationErrorCodes.UnsupportedGeometryType}: Layer {layer.Id} mixes geometry kinds " +
+                    $"('{expectedKind.Value}' and '{feature.Geometry.Kind}'); v1 requires a single kind per layer.");
+            }
+
+            if (WillProduceVertices(feature))
+            {
+                nonDegenerateCount++;
             }
 
             foreach (var vertex in feature.Geometry.Vertices)
@@ -411,7 +434,59 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 $"{SceneGenerationErrorCodes.OptionsInvalid}: Layer {layer.Id} contains no features to generate.");
         }
 
+        // GeometryTileBuilder.BuildGlb throws InvalidOperationException("No
+        // vertices produced for tile.") when every feature is degenerate
+        // (e.g. polygons collapse to <3 distinct ring vertices, lines have
+        // <2 vertices). Pre-validate here so the failure surfaces as the
+        // documented SCENE_OPTIONS_INVALID / 400 instead of a 503.
+        if (nonDegenerateCount == 0)
+        {
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: Layer {layer.Id} contains only degenerate features; " +
+                "no feature has enough vertices to produce geometry.");
+        }
+
         return collected;
+    }
+
+    /// <summary>
+    /// Mirrors <see cref="GeometryTileBuilder"/>'s per-kind vertex-emission
+    /// criteria so the executor can short-circuit the all-degenerate case
+    /// with a 400 instead of letting the build phase throw.
+    /// </summary>
+    private static bool WillProduceVertices(SceneFeature feature)
+    {
+        var vertices = feature.Geometry.Vertices;
+        return feature.Geometry.Kind switch
+        {
+            SceneGeometryKind.Point => vertices.Count >= 1,
+            SceneGeometryKind.LineString => vertices.Count >= 2,
+            SceneGeometryKind.Polygon => CountDistinctRingVertices(vertices) >= 3,
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Returns the polygon ring's vertex count, dropping a duplicate closing
+    /// vertex if the ring is closed — matching <see cref="GeometryTileBuilder"/>'s
+    /// internal accounting so the executor's degeneracy check stays in sync
+    /// with the build phase's silent-skip threshold.
+    /// </summary>
+    private static int CountDistinctRingVertices(IReadOnlyList<SceneVertex> ring)
+    {
+        if (ring.Count < 3)
+        {
+            return ring.Count;
+        }
+        var first = ring[0];
+        var last = ring[ring.Count - 1];
+        if (first.Longitude == last.Longitude
+            && first.Latitude == last.Latitude
+            && (first.Height ?? 0.0) == (last.Height ?? 0.0))
+        {
+            return ring.Count - 1;
+        }
+        return ring.Count;
     }
 
     private static void ValidateRegistryBoundOptions(
