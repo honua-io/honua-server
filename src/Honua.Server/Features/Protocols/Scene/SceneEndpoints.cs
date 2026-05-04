@@ -25,6 +25,14 @@ internal static partial class SceneEndpoints
 {
     private const string ScenesTag = "Scenes";
 
+    // Comma-separated `Vary` value for credential-authorized protected scene
+    // responses. `Authorization` covers Bearer and Basic-compat (used by
+    // ApiKeyAuthenticationHandler) auth; `X-API-Key` covers the canonical
+    // API-key transport. Both are required so a private cache cannot reuse a
+    // response across requests with different credentials when only one of the
+    // two headers carried the credential that authorized the body.
+    private const string CredentialVaryHeaders = "Authorization, X-API-Key";
+
     public static IEndpointRouteBuilder MapSceneEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -394,16 +402,20 @@ internal static partial class SceneEndpoints
         // request. `Cache-Control: public` would let a shared cache (CDN,
         // forward proxy) store and re-serve the body to other clients without
         // re-running the policy, so emit `private` and vary by the credential
-        // transport that authorized the response. Query-token responses vary
-        // by URL already; header-token responses need `Vary: X-Honua-Token`
-        // so browser/private caches do not reuse a tokenized response for a
-        // later request with a different or missing header.
+        // transport that authorized the response. Credential-authorized
+        // responses vary on both `Authorization` (Bearer / Basic-compat) and
+        // `X-API-Key` because either header may have authorized the request;
+        // omitting one risks a private cache reusing a response across
+        // different credentials. Query-token responses vary by URL already;
+        // header-token responses need `Vary: X-Honua-Token` so browser/private
+        // caches do not reuse a tokenized response for a later request with a
+        // different or missing header.
         if (noStore)
         {
             headers[HeaderNames.CacheControl] = "no-store";
             if (isProtected && tokenTransport is SceneAccessTokenTransport.None)
             {
-                headers[HeaderNames.Vary] = "Authorization";
+                headers[HeaderNames.Vary] = CredentialVaryHeaders;
             }
             else if (isProtected && tokenTransport is SceneAccessTokenTransport.Header)
             {
@@ -415,7 +427,7 @@ internal static partial class SceneEndpoints
             headers[HeaderNames.CacheControl] = $"private, max-age={maxAgeSeconds}";
             if (tokenTransport is SceneAccessTokenTransport.None)
             {
-                headers[HeaderNames.Vary] = "Authorization";
+                headers[HeaderNames.Vary] = CredentialVaryHeaders;
             }
             else if (tokenTransport is SceneAccessTokenTransport.Header)
             {

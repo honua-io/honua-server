@@ -117,11 +117,14 @@ Both routes set `ETag`, `Last-Modified`, and `Accept-Ranges: bytes`. The
 - **Public scenes** (no `AccessPolicy`): `Cache-Control: public, max-age=...`
   so CDNs and shared proxies can store and re-serve the payload.
 - **Protected scenes** (any `AccessPolicy`): `Cache-Control: private, max-age=...`.
-  Bearer/API-key responses include `Vary: Authorization`; `?token=` responses
-  vary by tokenized URL; `X-Honua-Token` responses include
-  `Vary: X-Honua-Token`. Shared caches must not store the body — every request
-  needs to re-run the dataset access policy — but a user agent's private cache
-  may still revalidate within `max-age`.
+  Credential-authorized responses include `Vary: Authorization, X-API-Key` so a
+  private cache cannot reuse a response across requests where a different
+  header carried the credential (Bearer/Basic-compat ride on `Authorization`;
+  the canonical API key rides on `X-API-Key`). `?token=` responses vary by
+  tokenized URL; `X-Honua-Token` responses include `Vary: X-Honua-Token`.
+  Shared caches must not store the body — every request needs to re-run the
+  dataset access policy — but a user agent's private cache may still
+  revalidate within `max-age`.
 
 The default TTLs are:
 
@@ -136,7 +139,9 @@ replaces the configured default for the matching response, and
 `noStore = true` emits `Cache-Control: no-store` regardless of the global TTL —
 useful for rotated debug datasets or short-lived previews. Protected no-store
 responses still vary by the credential transport when a request header
-authorized the body (`Authorization` or `X-Honua-Token`). When the response carries
+authorized the body (`Authorization, X-API-Key` for credential-authorized
+requests, or `X-Honua-Token` for native-header token transport). When the
+response carries
 `Cache-Control: no-store` the scene output-cache policies also suppress
 server-side cache storage so a no-store body cannot be replayed on
 subsequent requests until the configured TTL expires. The

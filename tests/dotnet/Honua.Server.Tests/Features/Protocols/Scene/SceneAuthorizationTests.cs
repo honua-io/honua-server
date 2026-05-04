@@ -105,7 +105,11 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         // Shared caches (CDNs, forward proxies) must not store protected scene
         // payloads keyed only by URL — they would re-serve the body to clients
         // that did not pass the dataset access policy. The response must
-        // therefore declare `private` cacheability and `Vary: Authorization`.
+        // therefore declare `private` cacheability and vary on every header
+        // that may have authorized it: `Authorization` (Bearer / Basic-compat)
+        // and `X-API-Key` (canonical API-key transport — what this fixture
+        // sends). Omitting either risks a private cache reusing a response
+        // across credentials.
         var response = await _authenticatedClient.GetAsync($"/scenes/{SceneFixturePaths.ProtectedSceneId}/tileset.json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -113,6 +117,7 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         response.Headers.CacheControl?.Public.Should().BeFalse();
         response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
         response.Headers.Vary.Should().Contain("Authorization");
+        response.Headers.Vary.Should().Contain("X-API-Key");
     }
 
     [IntegrationTest]
@@ -122,13 +127,17 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
     {
         // Cache-Control discipline must hold for nested assets too — these are
         // the requests Cesium issues by URL-resolution, so they are the most
-        // likely to traverse intermediary caches.
+        // likely to traverse intermediary caches. Vary must also list every
+        // credential header that could have authorized the body so a private
+        // cache cannot reuse a response across requests authenticated by a
+        // different transport.
         var response = await _authenticatedClient.GetAsync($"/scenes/{SceneFixturePaths.ProtectedSceneId}/tiles/0.b3dm");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.CacheControl?.Private.Should().BeTrue();
         response.Headers.CacheControl?.Public.Should().BeFalse();
         response.Headers.Vary.Should().Contain("Authorization");
+        response.Headers.Vary.Should().Contain("X-API-Key");
     }
 
     [IntegrationTest]
@@ -145,5 +154,6 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         response.Headers.CacheControl?.Public.Should().BeTrue();
         response.Headers.CacheControl?.Private.Should().BeFalse();
         response.Headers.Vary.Should().NotContain("Authorization");
+        response.Headers.Vary.Should().NotContain("X-API-Key");
     }
 }
