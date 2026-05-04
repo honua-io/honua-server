@@ -92,4 +92,33 @@ public class SceneGenerationEndpointsTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/generate")]
+    public async Task Generate_NegativeCacheMaxAgeSeconds_Returns400()
+    {
+        // The endpoint must forward explicit invalid numeric options to the
+        // executor instead of silently dropping them; the executor surfaces
+        // SCENE_OPTIONS_INVALID as a 400. Without the forwarding, the request
+        // would silently fall back to the server's 3600-second default and
+        // surface as 404 (layer-not-found) downstream.
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/scenes/generate",
+            new GenerateSceneRequest { LayerId = int.MaxValue, CacheMaxAgeSeconds = -1 },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/generate")]
+    public async Task Generate_NonPositiveMaxFeatureCount_Returns400()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/scenes/generate",
+            new GenerateSceneRequest { LayerId = int.MaxValue, MaxFeatureCount = 0 },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

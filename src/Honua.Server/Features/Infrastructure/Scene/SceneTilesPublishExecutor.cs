@@ -339,9 +339,18 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
-            SceneGenerationLog.Failed(_logger, intent.IntentId, intent.SourceId, ex.GetType().Name);
+            // Use a dedicated event id with an Exception parameter so the
+            // server log captures the full stack trace and message; the
+            // existing 8412 Failed event takes a string reason and would
+            // otherwise drop everything except the exception type name.
+            SceneGenerationLog.FailedUnexpected(_logger, intent.IntentId, intent.SourceId, ex);
+            // Preserve the inner exception on the wrapping
+            // ServiceUnavailableException so any catch site that inspects
+            // .InnerException (or just calls ToString) still sees the
+            // diagnostic detail; the endpoint sanitizes the response body.
             throw new ServiceUnavailableException(
-                $"{SceneGenerationErrorCodes.OptionsInvalid}: Scene generation failed; see server logs for diagnostic detail.");
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: Scene generation failed; see server logs for diagnostic detail.",
+                ex);
         }
     }
 
@@ -939,5 +948,9 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         [LoggerMessage(EventId = 8417, Level = LogLevel.Error,
             Message = "Scene generation could not deactivate registry record for scene {SceneId} ({DatasetId}) after staging promotion failed; record remains Active and the operator must clean it up via the admin scene CRUD path.")]
         public static partial void RegistrationCompensationFailed(ILogger logger, string sceneId, Guid datasetId, Exception exception);
+
+        [LoggerMessage(EventId = 8418, Level = LogLevel.Error,
+            Message = "Scene generation failed unexpectedly: intent {IntentId}, source {SourceId}")]
+        public static partial void FailedUnexpected(ILogger logger, string intentId, string sourceId, Exception exception);
     }
 }

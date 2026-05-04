@@ -163,13 +163,20 @@ internal static partial class SceneGenerationEndpoints
             config[SceneTilesPublishExecutor.TargetConfigIncludeAttributes] =
                 string.Join(',', request.IncludeAttributes);
         }
-        if (request.MaxFeatureCount is { } max && max > 0)
+        if (request.MaxFeatureCount is { } max)
         {
+            // Forward the value verbatim (even when non-positive). The executor
+            // is the canonical authority for SCENE_OPTIONS_INVALID, and silently
+            // dropping a non-positive request value here would let the caller
+            // observe the server default instead of the documented 400.
             config[SceneTilesPublishExecutor.TargetConfigMaxFeatureCount] =
                 max.ToString(CultureInfo.InvariantCulture);
         }
-        if (request.CacheMaxAgeSeconds is { } cache && cache >= 0)
+        if (request.CacheMaxAgeSeconds is { } cache)
         {
+            // Same forwarding rule as maxFeatureCount: a negative value must
+            // surface as SCENE_OPTIONS_INVALID via the executor rather than
+            // being silently coerced to the 3600-second default.
             config[SceneTilesPublishExecutor.TargetConfigCacheMaxAge] =
                 cache.ToString(CultureInfo.InvariantCulture);
         }
