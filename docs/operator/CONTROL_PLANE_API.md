@@ -746,4 +746,4 @@ GET /healthz/live
 - [Security](security.md)
 - [Control Plane Versioning Policy](../developer/CONTROL_PLANE_VERSIONING_POLICY.md)
 - [Control Plane Migration Guide](../developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
-- [Upgrade and Rollback Runbook](runbooks/UPGRADE_AND_ROLLBACK.md) — deploy backend configuration for Azure Functions, Azure Container Apps, and Kubernetes
+- [Upgrade and Rollback Runbook](runbooks/UPGRADE_AND_ROLLBACK.md) — deploy backend configuration for AWS Lambda, Azure Functions, Azure Container Apps, and Kubernetes

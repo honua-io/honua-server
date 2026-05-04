@@ -153,6 +153,40 @@ public sealed class DeployTelemetrySignalEvaluatorTests
     }
 
     [Fact]
+    public async Task EvaluateAsync_AwsLambdaCanary_AcceptsExplicitQueryOverridesWithoutCanarySelector()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: CreateSuccessfulResponses("18", "0.01", "120"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AwsLambda,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.policy"] = "aws-lambda-canary",
+                ["telemetry.error_rate.query"] = "sum(rate(lambda_function_errors_total[5m])) / clamp_min(sum(rate(lambda_function_invocations_total[5m])), 0.001)",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.latency_p95.query"] = "histogram_quantile(0.95, sum(rate(lambda_function_duration_ms_bucket[5m])) by (le))",
+                ["telemetry.latency_p95.threshold_ms"] = "2000",
+                ["telemetry.sample_count.query"] = "sum(rate(lambda_function_invocations_total[5m])) * 300",
+                ["telemetry.sample_count.minimum"] = "10"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeFalse();
+        decision.RollbackRecommended.Should().BeFalse();
+
+        var queries = capturedQueries.ToArray();
+        queries.Should().HaveCount(3);
+        queries[0].Should().Be("sum(rate(lambda_function_invocations_total[5m])) * 300");
+        queries[1].Should().Contain("lambda_function_errors_total");
+        queries[2].Should().Contain("lambda_function_duration_ms_bucket");
+    }
+
+    [Fact]
     public async Task EvaluateAsync_WithPrivateTelemetryBaseUrl_DoesNotSendRequests()
     {
         var capturedQueries = new ConcurrentQueue<string>();
