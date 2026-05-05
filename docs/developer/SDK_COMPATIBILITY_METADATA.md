@@ -14,6 +14,17 @@ Example response fragment:
 {
   "success": true,
   "data": {
+    "resourceKinds": [
+      "Service",
+      "Layer",
+      "Relationship",
+      "Style",
+      "Connection",
+      "MapTemplate",
+      "Theme",
+      "Group",
+      "SourceDescriptor"
+    ],
     "compatibility": {
       "serverVersion": "1.2.3",
       "releaseChannel": "stable",
@@ -52,6 +63,37 @@ Example response fragment:
 4. Prefer the newest `metadataSchemas` entry where `deprecated` is `false`.
 5. Use `features` for coarse branches such as manifest workflows instead of probing endpoints.
 6. Treat `releaseChannel` as rollout metadata and `serverVersion` as a minimum-version floor within the same major, not as the full feature contract.
+
+## Catalog Metadata Kinds
+
+`data.resourceKinds` advertises the metadata-resource kinds available through the generic CRUD surface. For catalog clients, `Group` and `SourceDescriptor` are first-class `honua.io/v1alpha1` kinds:
+
+- `Group`: use `metadata.name` and `metadata.namespace` as the group identity. `spec.description` is optional display text.
+- `SourceDescriptor`: store the SDK source descriptor in `spec.sourceDescriptor`. The descriptor must include non-empty `id` and `protocol` strings. Optional `locator`, `capabilities`, `schema`, and `attribution` fields follow `Honua.Sdk.Abstractions.Features.SourceDescriptor`.
+
+Example `SourceDescriptor` metadata resource:
+
+```json
+{
+  "apiVersion": "honua.io/v1alpha1",
+  "kind": "SourceDescriptor",
+  "metadata": {
+    "name": "parks-source",
+    "namespace": "default"
+  },
+  "spec": {
+    "sourceDescriptor": {
+      "id": "parks-source",
+      "protocol": "geoservices-feature-service",
+      "locator": {
+        "serviceId": "parks",
+        "layerId": 0
+      },
+      "capabilities": ["Query"]
+    }
+  }
+}
+```
 
 ## Minimum Version Check Rule
 

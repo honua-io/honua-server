@@ -44,6 +44,16 @@ public static class MetadataResourceKinds
     public const string Theme = "Theme";
 
     /// <summary>
+    /// Catalog group resource kind.
+    /// </summary>
+    public const string Group = "Group";
+
+    /// <summary>
+    /// Saved SDK source descriptor resource kind.
+    /// </summary>
+    public const string SourceDescriptor = "SourceDescriptor";
+
+    /// <summary>
     /// All supported resource kinds.
     /// </summary>
     public static readonly IReadOnlyList<string> All =
@@ -54,6 +64,8 @@ public static class MetadataResourceKinds
         Style,
         Connection,
         MapTemplate,
-        Theme
+        Theme,
+        Group,
+        SourceDescriptor
     ];
 }

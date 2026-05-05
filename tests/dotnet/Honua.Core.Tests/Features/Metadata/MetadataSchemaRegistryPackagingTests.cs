@@ -34,6 +34,20 @@ public sealed class MetadataSchemaRegistryPackagingTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void MetadataResourceKinds_All_ContainsGroup()
+    {
+        MetadataResourceKinds.All.Should().Contain("Group");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void MetadataResourceKinds_All_ContainsSourceDescriptor()
+    {
+        MetadataResourceKinds.All.Should().Contain("SourceDescriptor");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void ValidateAndUpgrade_MapTemplate_WithRequiredFields_Succeeds()
     {
         var resource = CreateResource("MapTemplate", """{"name":"Base Topo","category":"basemap"}""");
@@ -94,6 +108,90 @@ public sealed class MetadataSchemaRegistryPackagingTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void ValidateAndUpgrade_Group_WithEmptySpec_Succeeds()
+    {
+        var resource = CreateResource("Group", """{}""");
+
+        var result = _registry.ValidateAndUpgrade(resource);
+
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void ValidateAndUpgrade_SourceDescriptor_WithRequiredFields_Succeeds()
+    {
+        var resource = CreateResource(
+            "SourceDescriptor",
+            """
+            {
+              "sourceDescriptor": {
+                "id": "parks-source",
+                "protocol": "geoservices-feature-service",
+                "locator": {
+                  "serviceId": "parks",
+                  "layerId": 0
+                },
+                "capabilities": ["Query"]
+              }
+            }
+            """);
+
+        var result = _registry.ValidateAndUpgrade(resource);
+
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void ValidateAndUpgrade_SourceDescriptor_MissingProtocol_Fails()
+    {
+        var resource = CreateResource(
+            "SourceDescriptor",
+            """
+            {
+              "sourceDescriptor": {
+                "id": "parks-source",
+                "locator": {
+                  "serviceId": "parks",
+                  "layerId": 0
+                }
+              }
+            }
+            """);
+
+        var result = _registry.ValidateAndUpgrade(resource);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.Contains("spec.sourceDescriptor.protocol"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void ValidateAndUpgrade_SourceDescriptor_NonStringCapability_Fails()
+    {
+        var resource = CreateResource(
+            "SourceDescriptor",
+            """
+            {
+              "sourceDescriptor": {
+                "id": "parks-source",
+                "protocol": "geoservices-feature-service",
+                "capabilities": ["Query", 42]
+              }
+            }
+            """);
+
+        var result = _registry.ValidateAndUpgrade(resource);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.Contains("capabilities entries"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void ValidateAndUpgrade_Style_StillValidates()
     {
         var resource = CreateResource("Style", """{"layerId":"layer-1","style":{"type":"fill"}}""");
@@ -128,6 +226,24 @@ public sealed class MetadataSchemaRegistryPackagingTests
     public void GetSupportedApiVersions_Theme_ReturnsCurrentVersion()
     {
         var versions = _registry.GetSupportedApiVersions("Theme");
+
+        versions.Should().ContainSingle().Which.Should().Be(MetadataSchemaRegistry.CurrentVersion);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void GetSupportedApiVersions_Group_ReturnsCurrentVersion()
+    {
+        var versions = _registry.GetSupportedApiVersions("Group");
+
+        versions.Should().ContainSingle().Which.Should().Be(MetadataSchemaRegistry.CurrentVersion);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void GetSupportedApiVersions_SourceDescriptor_ReturnsCurrentVersion()
+    {
+        var versions = _registry.GetSupportedApiVersions("SourceDescriptor");
 
         versions.Should().ContainSingle().Which.Should().Be(MetadataSchemaRegistry.CurrentVersion);
     }
