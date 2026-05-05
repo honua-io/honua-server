@@ -157,8 +157,8 @@ jobs:
   # integration runs execute every shard. See ADR-0037.
   # Per ADR-0037 .github/ci-shards.json is the single source of truth for both
   # the shard routing data (paths) and the matrix-runtime metadata
-  # (artifact_suffix, log_name, timeout_minutes, max_cpu_count, upload flags,
-  # filter). This job emits two outputs:
+  # (artifact_suffix, log_name, timeout_minutes, test_timeout_minutes,
+  # max_cpu_count, upload flags, filter). This job emits two outputs:
   #   - descriptor: the {run_all, shards, reason} structure from the targeted-
   #     tests script (kept for visibility in logs).
   #   - matrix_include: a JSON array of matrix entries built from ci-shards.json
@@ -204,6 +204,7 @@ jobs:
                 artifact_suffix,
                 log_name,
                 timeout_minutes,
+                test_timeout_minutes,
                 max_cpu_count,
                 upload_operator_eval_report,
                 upload_odata_evidence,
@@ -408,45 +409,16 @@ jobs:
 
       - name: Run server test shard
         shell: bash
+        env:
+          HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
+          HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}
+          HONUA_SERVER_TEST_LOG_NAME: ${{ matrix.log_name }}
+          HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
+          HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
+          HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
+          HONUA_SERVER_TEST_CONFIGURATION: Release
         run: |
-          set +e
-          # Per ADR-0037 the PR shard lane is the Integration tier; Slow-tagged
-          # tests ([EmulatorTest], [ScaleTest], [ExternalServiceTest],
-          # [CloudTest]) belong to nightly-slow-tier.yml. Compose the matrix
-          # FQN filter with `&Tier!=Slow` here so ci-shards.json stays a pure
-          # FQN→shard map and the tier exclusion lives at a single,
-          # reviewable point.
-          filter="(${{ matrix.filter }})&Tier!=Slow"
-          log_file="./tests/TestResults/${{ matrix.log_name }}.log"
-          trx_file="${{ matrix.log_name }}.trx"
-          extra_args=()
-          if [ -n "${{ matrix.max_cpu_count }}" ]; then
-            extra_args+=(-- "RunConfiguration.MaxCpuCount=${{ matrix.max_cpu_count }}")
-          fi
-
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --filter "$filter" \
-            --logger "trx;LogFileName=$trx_file" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            "${extra_args[@]}" \
-            > "$log_file" 2>&1 &
-          test_pid=$!
-
-          while kill -0 "$test_pid" 2>/dev/null; do
-            echo "[${{ matrix.log_name }}-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
-            sleep 30
-          done
-
-          wait "$test_pid"
-          test_exit_code=$?
-          set -e
-
-          cat "$log_file"
-          exit "$test_exit_code"
+          scripts/ci/run-server-test-shard.sh
 
       - name: Upload Operator Eval Report
         if: ${{ always() && matrix.upload_operator_eval_report }}

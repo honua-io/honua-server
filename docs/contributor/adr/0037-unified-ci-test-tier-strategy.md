@@ -7,8 +7,9 @@ Accepted
 ## Context
 
 The .NET test suite has grown to the point where every pull request runs every
-test that is wired into `ci.yml`. The 11-shard `Honua.Server.Tests` matrix is
-the largest contributor: each shard runs 20–45 minutes wall-clock, and the
+test that is wired into `ci.yml`. The `Honua.Server.Tests` matrix is the
+largest contributor: oversized protocol shards have run 30-60 minutes
+wall-clock, and the
 cumulative runner contention has produced three concrete failure modes in the
 last quarter:
 
@@ -33,8 +34,8 @@ Existing infrastructure that this ADR builds on:
   `CloudTestAttribute` already emit a `Category` trait and (for the
   env-gated ones) a `Skip` reason when required environment variables are
   absent.
-- The 11-shard matrix in `.github/workflows/ci.yml::server-tests` already
-  partitions `Honua.Server.Tests` along namespace boundaries.
+- The matrix in `.github/workflows/ci.yml::server-tests` already partitions
+  `Honua.Server.Tests` along namespace boundaries.
 - `Honua.Architecture.Tests` enforces 100% API-surface and operation coverage
   via static reflection over the `EndpointRegistry` /
   `OperationRegistry` against the
@@ -42,7 +43,7 @@ Existing infrastructure that this ADR builds on:
 
 What is missing: a shared **`Tier`** trait, a CI schedule that maps each tier
 to an event, a selective-test entry point so PRs that touch one feature do not
-have to run all eleven shards, and a flaky-quarantine reporting workflow.
+have to run every configured shard, and a flaky-quarantine reporting workflow.
 
 This ADR is the convention source. Sibling repositories (`honua-sdk-js`,
 `honua-sdk-python`, `honua-sdk-dotnet`, `honua-server-admin`) adopt the
@@ -83,7 +84,7 @@ default mapping. The mapping is documented in
 |-----------------|---------------------------------------|-------------------------------------------------------------------------------------------------------|
 | Pull Request    | `ci.yml`                              | Build + format + Architecture tests + Tier=Fast across all projects + targeted shards (`server-tests`) composed as `(matrix.filter)&Tier!=Slow` so Slow-tagged tests stay out of the PR lane. |
 | Merge to trunk  | `trunk-sanity.yml`                    | Restore and build only. Heavy integration coverage comes from PR gates plus scheduled/manual full integration runs. |
-| Full integration | `ci.yml` (schedule / workflow_dispatch) | Full 11-shard `server-tests` matrix and the Postgres compat matrix. The `&Tier!=Slow` exclusion still applies — Slow remains nightly-only. |
+| Full integration | `ci.yml` (schedule / workflow_dispatch) | Full configured `server-tests` matrix and the Postgres compat matrix. The `&Tier!=Slow` exclusion still applies — Slow remains nightly-only. |
 | Nightly (slow)  | `nightly-slow-tier.yml`               | `Tier=Slow&Category=Emulator` (LocalStack S3 + Azurite + Postgres). Scale/Cloud/External slow subfamilies need additional fixtures and are tracked as separate workflows. |
 | Nightly (flake) | `flaky-detection.yml`                 | Re-runs the Integration tier 3× and emits a candidate-flake report.                                   |
 
@@ -123,19 +124,20 @@ emits a JSON descriptor consumed by the `server-tests` matrix:
 The `targeted-shards` job then projects the selected shard names into a
 `matrix_include` JSON array by joining against the rich shard records in
 `.github/ci-shards.json` (each record carries `shard_name`,
-`artifact_suffix`, `log_name`, `timeout_minutes`, `max_cpu_count`,
+`artifact_suffix`, `log_name`, `timeout_minutes`, `test_timeout_minutes`,
+`max_cpu_count`,
 `upload_operator_eval_report`, `upload_odata_evidence`, and `filter`).
 `server-tests` then declares its matrix as
 `strategy.matrix.include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}`.
 This means **unselected shards never instantiate a runner job at all** —
 GitHub Actions only schedules matrix entries that exist in the include list,
 so there is no per-shard checkout, build, service container, or runner cost
-for shards a PR did not select. (Earlier iterations kept the full 11-entry
+for shards a PR did not select. (Earlier iterations kept the full configured
 matrix and gated each entry with a step-level skip, which still incurred
 runner startup and Postgres service container cost for every shard. The
 current dynamic-matrix model eliminates that cost.) On `push` and
 `workflow_dispatch` events the descriptor is forced to `run_all: true`, so
-all eleven entries appear in `matrix_include` and run.
+every configured shard entry appears in `matrix_include` and runs.
 
 `.github/ci-shards.json` is the single source of truth for both routing
 (`paths`) and matrix-runtime metadata. Adding a shard means editing one
@@ -150,11 +152,12 @@ already Fast-tier). This honours the "Tier=Fast across all projects on every
 PR" contract and prevents a PR with no matching shard from skipping the fast
 server unit tests.
 
-**Slow tests stay out of PR shards.** The `Run server test shard` step in
-`ci.yml` composes the matrix-supplied filter as `(matrix.filter)&Tier!=Slow`
-before invoking `dotnet test`. The `ci-shards.json` `filter` field expresses
-pure FQN→shard routing; the Tier exclusion is layered in at a single,
-reviewable point at the test-invocation step. This prevents `[EmulatorTest]`
+**Slow tests stay out of PR shards.** `scripts/ci/run-server-test-shard.sh`
+composes the matrix-supplied filter as `(matrix.filter)&Tier!=Slow` before
+invoking `dotnet test`. The `ci-shards.json` `filter` field expresses pure
+FQN→shard routing; the Tier exclusion is layered in at a single, reviewable
+test-invocation entry point shared by CI and `scripts/ci/pre-pr-check.sh`.
+This prevents `[EmulatorTest]`
 / `[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods sitting in
 a shard's namespace (e.g. `Honua.Server.Tests.Import.*`) from running on
 PRs. As a consequence, PR shards never need LocalStack/Azurite emulators —
@@ -199,7 +202,7 @@ remove it from the coverage ledger.
 ### Positive
 
 - PR turnaround drops sharply for PRs that touch a single feature directory
-  (one shard + Fast tier instead of all 11 shards). Target: < 10 min wall-clock
+  (one shard + Fast tier instead of every configured shard). Target: < 10 min wall-clock
   on the happy path.
 - Slow / external / emulator tests have a real home (nightly) instead of
   silently no-op-ing on PRs because their env vars aren't set.
@@ -219,7 +222,8 @@ remove it from the coverage ledger.
   truth for both the routing data (`paths`, `infrastructure_paths`,
   `unmapped_source_run_all_prefixes`, `default_shards_when_no_match`) and
   the matrix-runtime metadata each shard provides (`shard_name`, `filter`,
-  `artifact_suffix`, `log_name`, `timeout_minutes`, `max_cpu_count`, upload
+  `artifact_suffix`, `log_name`, `timeout_minutes`, `test_timeout_minutes`,
+  `max_cpu_count`, upload
   flags). The `Detect Targeted Server-Tests Shards` job builds the
   `matrix_include` array directly from this file, so there is no second
   source to drift from. Drift between source layout and shard mapping (a
@@ -266,10 +270,15 @@ remove it from the coverage ledger.
 - Any new shard is added to `.github/ci-shards.json` only — there is no
   separate matrix entry in `ci.yml`. Each shard record carries both routing
   data (`paths`) and matrix-runtime metadata (`shard_name`,
-  `artifact_suffix`, `log_name`, `timeout_minutes`, `max_cpu_count`, upload
+  `artifact_suffix`, `log_name`, `timeout_minutes`, `test_timeout_minutes`,
+  `max_cpu_count`, upload
   flags, `filter`). The runtime `&Tier!=Slow` composition is applied
-  uniformly to every shard at the test-invocation step in `ci.yml` and is
-  not encoded in `ci-shards.json`.
+  uniformly to every shard by `scripts/ci/run-server-test-shard.sh` and is
+  not encoded in `ci-shards.json`. The shared runner also emits heartbeat
+  lines, periodic tails of normal-verbosity test logs, and
+  `<log_name>.timing.json`, and it enforces `test_timeout_minutes` inside
+  the outer GitHub Actions `timeout_minutes` so diagnostic artifacts survive
+  a slow shard.
 - `nightly-slow-tier.yml` currently runs `Tier=Slow&Category=Emulator`
   because LocalStack S3 + Azurite + Postgres are the only fixtures
   provisioned. The Scale, Cloud, and ExternalService subfamilies need
