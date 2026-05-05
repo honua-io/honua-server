@@ -64,6 +64,62 @@ public sealed class FeatureServerExceptionMappingTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WhenReaderThrowsNotSupportedException_ReturnsBadRequest()
+    {
+        // MySQL/MariaDB raises NotSupportedException for client-driven query shapes the provider
+        // cannot honour (e.g. distance filter on a polygon layer, projected-SRID distance filter,
+        // KNN/nearest-neighbor, cross-SRID transform, extent on unsupported geometry types). Prior
+        // to this fix the catch (Exception) fall-through mapped them to 500; the new
+        // catch (NotSupportedException) block returns 400 so callers see a client error.
+        var fixture = CreateQueryFixture(() => new NotSupportedException(
+            "Distance spatial filters require Point or MultiPoint geometry in the MySQL/MariaDB provider."));
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.Client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1%3D1&f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var payload = await response.Content.ReadAsStringAsync();
+            payload.Should().NotContain("Distance spatial filters require Point");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WhenProviderRouterReportsCapabilityMissing_ReturnsBadRequest()
+    {
+        // FeatureProviderQueryRouter throws InvalidOperationException("Feature provider 'X' does
+        // not support Y operations.") when the resolved provider's capability bit is false (e.g.
+        // outStatistics on MySQL/MariaDB which has SupportsStatistics=false). The IsClientSafe
+        // check now matches "does not support" so capability mismatches surface as 400 instead
+        // of falling through to 500.
+        var fixture = CreateQueryFixture(() => new InvalidOperationException(
+            "Feature provider 'mysql' does not support statistics operations."));
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.Client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1%3D1&f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var payload = await response.Content.ReadAsStringAsync();
+            payload.Should().NotContain("Feature provider 'mysql' does not support");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WhenServiceThrowsUnexpectedInvalidOperation_ReturnsInternalServerError()

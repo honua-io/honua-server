@@ -37,7 +37,10 @@ The capability set is published at
 `Honua.Core.Features.FeatureStore.Domain.FeatureProviderCapabilities.ReadOnlyMySql`.
 Callers must check `SupportsStatistics`, `SupportsNativeMvt`, etc. before
 invoking those paths; the provider raises `NotSupportedException` with a
-descriptive message for any unsupported operation.
+descriptive message for any unsupported operation. The FeatureServer query
+handler maps these client-driven capability/shape mismatches to **HTTP 400
+Bad Request** rather than HTTP 500, matching the existing `f=fgb`,
+WHERE-field, and `Category=MySql` integration-test conventions.
 
 ## Version Floor
 
@@ -113,7 +116,7 @@ section to `appsettings.json`:
 | `Schema`            | No       | `null`  | Optional database/schema qualifier. |
 | `GeometryColumn`    | Yes      | `geom`  | Geometry column name. |
 | `PrimaryKeyColumn`  | Yes      | `id`    | Primary key / object-id column. |
-| `Srid`              | Yes      | `4326`  | Storage SRID; must match `ST_SRID(geom)`. |
+| `Srid`              | Yes      | `4326`  | Storage SRID; must match `ST_SRID(geom)`. `0` is accepted (the MySQL/MariaDB "no SRS" sentinel — distance filters then assume Cartesian lon/lat). Negative values are rejected at startup. |
 | `GeometryType`      | No       | `Point` | Used for catalog metadata and to gate distance/extent filters. Accepted: `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`, `GeometryCollection`. `None` is rejected at startup — the provider always selects the geometry column. |
 | `Attributes`        | Yes      | `[]`    | Explicit attribute column list. **No schema introspection in this slice.** |
 | `AttributeTypes`    | No       | `{}`    | Optional column-type hints for catalog field-type mapping. |
