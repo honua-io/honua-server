@@ -63,20 +63,42 @@ internal static class TemporalExtentHelpers
     /// agree on whether the dimension is usable.
     /// </summary>
     public static bool HasOptInTemporalFields(LayerDefinition layer)
+        => TryResolveOptInTemporalFields(layer, out _);
+
+    /// <summary>
+    /// Strict opt-in resolver that returns the resolved start/end fields when
+    /// the layer is opt-in time-aware AND every configured temporal field
+    /// resolves to a <c>Date</c>/<c>DateTime</c> attribute. Mirrors the
+    /// no-fallback rules used by <see cref="TryResolveTemporalRangeAsync"/> so
+    /// capability advertising and request validation share a single source of
+    /// truth (used by WMS GetMap and WMTS GetTile/GetFeatureInfo TIME parsing
+    /// to avoid accepting requests for layers that capabilities will not
+    /// advertise).
+    /// </summary>
+    public static bool TryResolveOptInTemporalFields(
+        LayerDefinition layer,
+        out TemporalFieldSelection selection)
     {
+        selection = default;
         var timeInfo = layer.Metadata?.TimeInfo;
         if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
         {
             return false;
         }
 
-        return TryResolveTemporalFields(
-            layer,
-            allowFallbackWhenMissingStart: false,
-            out _,
-            out _,
-            out _,
-            out _);
+        if (!TryResolveTemporalFields(
+                layer,
+                allowFallbackWhenMissingStart: false,
+                out var startField,
+                out var endField,
+                out _,
+                out _))
+        {
+            return false;
+        }
+
+        selection = new TemporalFieldSelection(startField!, endField);
+        return true;
     }
 
     public static TemporalFieldSelection ResolveTemporalFieldsOrThrow(LayerDefinition layer)

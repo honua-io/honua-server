@@ -146,6 +146,69 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetCapabilities_InvalidEndTimeField_DoesNotAdvertiseTimeDimension()
+    {
+        // Capabilities-side parity for WMTS: when the configured EndTimeField
+        // does not resolve to a Date/DateTime attribute,
+        // TryResolveTemporalRangeAsync returns null and the WMS handler must
+        // not emit a <Dimension name="time">. The contract documented in
+        // docs/gis/temporal-animation-api.md says capabilities and the request
+        // path agree.
+        await ConfigureLayerWithInvalidEndTimeFieldAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().NotContain("<Dimension name=\"time\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_InvalidEndTimeField_WithTime_ReturnsServiceException()
+    {
+        // Companion to the GetCapabilities case: when capabilities does not
+        // advertise a time dimension because EndTimeField is misconfigured,
+        // GetMap with TIME= must be rejected with InvalidDimensionValue —
+        // matching the documented contract that capabilities and request
+        // validation share the same opt-in resolvability gate (now via
+        // TemporalExtentHelpers.TryResolveOptInTemporalFields).
+        await ConfigureLayerWithInvalidEndTimeFieldAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=2024-06-15T12:00:00Z");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidDimensionValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_InvalidStartTimeField_WithTime_ReturnsServiceException()
+    {
+        // Pre-existing behavior pinned by the new shared opt-in resolver:
+        // a non-existent StartTimeField must reject TIME with
+        // InvalidDimensionValue, not silently fall through to a filter
+        // referencing a non-temporal column.
+        await ConfigureLayerWithInvalidStartTimeFieldAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=2024-06-15T12:00:00Z");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidDimensionValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_CiteAutosLayer_WithTimeCurrent_BypassesGenericParser()
     {
         // CITE Autos rendering parses TIME directly (current/CSV/intervals) in
@@ -209,6 +272,39 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
             new CatalogMetadata
             {
                 TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" }
+            });
+    }
+
+    private Task ConfigureLayerWithInvalidEndTimeFieldAsync()
+    {
+        // Valid StartTimeField + an EndTimeField that does not resolve to a
+        // Date/DateTime attribute: simulates the misconfiguration that the
+        // metadata update path allows today (no field-type validation). The
+        // capabilities/request gate must treat this layer as not time-aware.
+        var updater = _fixture.GetService<ILayerMetadataUpdater>();
+        return updater.UpdateLayerMetadataAsync(
+            WebAppFixture.TestLayerId,
+            new CatalogMetadata
+            {
+                TimeInfo = new LayerTimeInfo
+                {
+                    StartTimeField = "timestamp",
+                    EndTimeField = "name"
+                }
+            });
+    }
+
+    private Task ConfigureLayerWithInvalidStartTimeFieldAsync()
+    {
+        // The seeded "name" attribute is a string column, not a Date/DateTime,
+        // so configuring it as StartTimeField simulates the misconfiguration
+        // the metadata update path allows today.
+        var updater = _fixture.GetService<ILayerMetadataUpdater>();
+        return updater.UpdateLayerMetadataAsync(
+            WebAppFixture.TestLayerId,
+            new CatalogMetadata
+            {
+                TimeInfo = new LayerTimeInfo { StartTimeField = "name" }
             });
     }
 

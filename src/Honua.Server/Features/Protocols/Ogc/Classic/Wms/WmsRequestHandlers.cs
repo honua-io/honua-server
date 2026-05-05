@@ -851,8 +851,15 @@ internal static class WmsRequestHandlers
         {
             var layer = layers[i];
 
-            var timeInfo = layer.Metadata?.TimeInfo;
-            if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+            // Match the capabilities contract: a layer is time-aware only when
+            // its TimeInfo declares a StartTimeField AND both the start and
+            // (optional) end fields resolve to Date/DateTime attributes. WMS
+            // GetCapabilities uses the same gate (TryResolveTemporalRangeAsync
+            // returns null when EndTimeField does not resolve), so a layer
+            // whose EndTimeField is misconfigured does not advertise a
+            // <Dimension name="time"> and must not accept TIME on GetMap
+            // either. Documented in docs/gis/temporal-animation-api.md.
+            if (!TemporalExtentHelpers.TryResolveOptInTemporalFields(layer, out var selection))
             {
                 return (null, CreateWmsServiceException(
                     context,
@@ -860,25 +867,7 @@ internal static class WmsRequestHandlers
                     $"Layer '{layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture)}' does not support a TIME dimension."));
             }
 
-            FieldDefinition? startField = null;
-            foreach (var field in layer.AttributeFields)
-            {
-                if (field.Name.Equals(timeInfo.StartTimeField, StringComparison.OrdinalIgnoreCase) &&
-                    field.Type is FieldType.DateTime or FieldType.Date)
-                {
-                    startField = field;
-                    break;
-                }
-            }
-
-            if (startField is null)
-            {
-                return (null, CreateWmsServiceException(
-                    context,
-                    "InvalidDimensionValue",
-                    $"Layer '{layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture)}' has an invalid temporal field configuration."));
-            }
-
+            var startField = selection.StartField;
             temporalFilters[i] = new TemporalFilter
             {
                 PropertyName = startField.Name,
