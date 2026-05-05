@@ -132,6 +132,48 @@ public class MySqlFeatureQueryBuilderTests
     }
 
     [Theory]
+    [InlineData("missing_field = 1")]
+    [InlineData("missing_field IS NULL")]
+    [InlineData("name = 'x' AND missing_field = 2")]
+    public void BuildSelectQuery_WhereReferencesUnknownField_ThrowsArgumentException(string whereClause)
+    {
+        // Without layer-aware validation, an unknown field ("missing_field") would be
+        // emitted as `\`missing_field\` = ...` and only fail at MySQL with a DbException —
+        // the data-access layer wraps that as InvalidOperationException, which protocol
+        // adapters map to HTTP 500. Throw ArgumentException up front so the request
+        // surfaces as a client error (HTTP 400).
+        var query = new FeatureQuery { Where = whereClause };
+
+        var ex = Assert.Throws<ArgumentException>(() => _builder.BuildSelectQuery(LayerId, query));
+        Assert.Contains("missing_field", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WhereReferencesPrimaryKey_DoesNotThrow()
+    {
+        // The primary-key column ("id") is implicit in the layer mapping rather than the
+        // attribute list, but it is a legitimate WHERE target. Confirm the validation
+        // does not over-reject it.
+        var query = new FeatureQuery { Where = "id = 42" };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("AND (`id` = @p0)", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WhereReferencesGeometryColumn_DoesNotThrow()
+    {
+        // The geometry column is similarly implicit in the mapping; predicates such as
+        // `geom IS NOT NULL` are valid WHERE targets and must not be rejected.
+        var query = new FeatureQuery { Where = "geom IS NOT NULL" };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("`geom` IS NOT NULL", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("start_and_end = 1")]   // 'and' embedded between underscores
     [InlineData("and_flag = 1")]         // 'and' as a leading token
     [InlineData("end_and = 1")]          // 'and' as a trailing token

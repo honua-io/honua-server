@@ -274,6 +274,14 @@ at startup: any identifier containing characters outside `[a-zA-Z0-9_]` is
 rejected with a descriptive message. Embedded backticks in catalog names
 (rare) are doubled per MySQL convention.
 
+Field references inside the legacy `Where` string are checked against the
+configured layer mapping (primary-key, geometry, attribute columns;
+case-insensitive match) **before** SQL is generated. A reference to an
+undeclared column raises `ArgumentException` so protocol adapters return
+HTTP 400 instead of leaking the eventual MySQL error as HTTP 500. Use
+explicit `Attributes` configuration to expose every column you intend to
+filter on.
+
 ## Connection Pooling
 
 The provider builds a singleton `MySqlConnector.MySqlDataSource` from the

@@ -170,9 +170,42 @@ public class MySqlOptionsValidatorTests
         Assert.Null(ex);
     }
 
+    [Fact]
+    public void ThrowIfInvalid_Srid0Layer_DoesNotThrow()
+    {
+        // SRID 0 is a legitimate operator configuration in MySQL/MariaDB: the geometry
+        // column has no SRS attached, ST_Distance_Sphere accepts it (treating coordinates
+        // as lon/lat on the default sphere), and the canonical X/Y WKB I/O does not need
+        // an SRS tag. The validator must accept it so docs and the query-builder distance
+        // helper (which both list SRID 0 as supported) stay internally consistent.
+        var options = new MySqlOptions
+        {
+            ConnectionString = "Server=localhost;",
+            Layers = [BuildLayer(srid: 0)]
+        };
+
+        var ex = Record.Exception(() => MySqlOptionsValidator.ThrowIfInvalid(options));
+        Assert.Null(ex);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-4326)]
+    public void ThrowIfInvalid_NegativeSrid_Throws(int srid)
+    {
+        var options = new MySqlOptions
+        {
+            ConnectionString = "Server=localhost;",
+            Layers = [BuildLayer(srid: srid)]
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => MySqlOptionsValidator.ThrowIfInvalid(options));
+        Assert.Contains("Srid", ex.Message, StringComparison.Ordinal);
+    }
+
     private static MySqlLayerOptions BuildLayer(
         int id = 1, string name = "Parcels", string table = "parcels", string[]? attributes = null,
-        string geometryType = "Polygon")
+        string geometryType = "Polygon", int srid = 4326)
         => new()
         {
             Id = id,
@@ -180,7 +213,7 @@ public class MySqlOptionsValidatorTests
             Table = table,
             GeometryColumn = "geom",
             PrimaryKeyColumn = "id",
-            Srid = 4326,
+            Srid = srid,
             GeometryType = geometryType,
             Attributes = attributes ?? ["name"]
         };

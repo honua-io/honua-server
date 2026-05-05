@@ -70,9 +70,13 @@ internal static class MySqlOptionsValidator
                 errors.Add($"MySql layer '{layer.Name}' must declare a non-empty PrimaryKeyColumn.");
             }
 
-            if (layer.Srid <= 0)
+            // SRID 0 means "no spatial reference" in MySQL/MariaDB and is a legitimate
+            // operator configuration — ST_Distance_Sphere accepts it (treating coordinates
+            // as lon/lat on the default sphere) and the canonical X/Y WKB I/O does not need
+            // an SRS tag. Negative SRIDs are not valid in MySQL — reject those.
+            if (layer.Srid < 0)
             {
-                errors.Add($"MySql layer '{layer.Name}' must declare a positive Srid.");
+                errors.Add($"MySql layer '{layer.Name}' must declare a non-negative Srid (use 0 for layers without an SRS).");
             }
 
             // Reject typos in GeometryType so a non-point layer cannot silently fall back

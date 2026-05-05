@@ -45,7 +45,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         }
         else if (!string.IsNullOrWhiteSpace(query.Where))
         {
-            var parameterized = ParseAndParameterizeWhereClause(query.Where.Trim(), ref paramIndex, parameters);
+            var parameterized = ParseAndParameterizeWhereClause(mapping, query.Where.Trim(), ref paramIndex, parameters);
             sb.Append(CultureInfo.InvariantCulture, $" AND ({parameterized})");
         }
 
@@ -147,6 +147,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
     }
 
     private static string ParseAndParameterizeWhereClause(
+        MySqlLayerMapping mapping,
         string whereClause,
         ref int paramIndex,
         List<object> parameters)
@@ -181,6 +182,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
             {
                 var field = nullMatch.Groups["field"].Value;
                 MySqlIdentifier.ValidateFieldName(field);
+                EnsureFieldIsConfigured(mapping, field);
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
                 translated.Add($"{MySqlIdentifier.Quote(field)} IS {notClause}NULL");
@@ -192,6 +194,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
             {
                 var field = compMatch.Groups["field"].Value;
                 MySqlIdentifier.ValidateFieldName(field);
+                EnsureFieldIsConfigured(mapping, field);
                 var op = NormalizeOperator(compMatch.Groups["op"].Value);
                 var value = ParseValueToken(compMatch.Groups["value"].Value);
                 translated.Add($"{MySqlIdentifier.Quote(field)} {op} @p{paramIndex++}");
@@ -203,6 +206,32 @@ internal sealed partial class MySqlFeatureQueryBuilder
         }
 
         return string.Join(" AND ", translated);
+    }
+
+    // Reject WHERE field references that are not declared in the layer mapping. Without
+    // this guard, a typo like `missing_field = 1` would reach MySQL as `\`missing_field\`
+    // = 1`, surface as a DbException, and be wrapped to InvalidOperationException by the
+    // data-access layer — which protocol adapters (FeatureServer / OGC API Features)
+    // map to HTTP 500 instead of HTTP 400. Throw ArgumentException here so the request
+    // fails as a client error.
+    private static void EnsureFieldIsConfigured(MySqlLayerMapping mapping, string field)
+    {
+        if (mapping.PrimaryKeyColumn.Equals(field, StringComparison.OrdinalIgnoreCase) ||
+            mapping.GeometryColumn.Equals(field, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        foreach (var column in mapping.AttributeColumns)
+        {
+            if (column.Equals(field, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        throw new ArgumentException(
+            $"WHERE field '{field}' is not declared on layer {mapping.LayerId}.");
     }
 
     private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
