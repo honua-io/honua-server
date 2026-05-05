@@ -247,8 +247,12 @@ the existing cache entries unchanged.
 - The `temporalExtent` endpoint and GeoServices REST layer metadata both share
   the `"LayerMetadata"` cache tag and are invalidated whenever the layer's
   catalog metadata is updated.
-- WMS / WMTS GetCapabilities are output-cached by the existing protocol caches
-  and pick up new temporal extents on the next miss.
+- WMS and WMTS GetCapabilities responses are **not** output-cached on the
+  current baseline — the WMTS routes explicitly opt out via `NoCache` and the
+  WMS routes register no `CacheOutput` policy. The temporal `<Dimension>` /
+  `<Default>` / `<Value>` advertised on each request is computed live from the
+  layer's resolved temporal range, so newly ingested rows are reflected on the
+  next GetCapabilities response without any output-cache invalidation step.
 
 ## Related tickets
 

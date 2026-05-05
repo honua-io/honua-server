@@ -1615,11 +1615,13 @@ internal static class WmtsRequestHandlers
         errorResult = Results.Empty;
 
         var dimensions = GetWmtsDimensionDefinitions(layer);
-        if (dimensions.Length == 0)
-        {
-            return true;
-        }
 
+        // Reject unknown query keys (including dimension identifiers such as
+        // `time` or `elevation` that the layer does not advertise) even when
+        // the layer publishes no dimensions at all. Without this scan a
+        // non-time-aware layer would silently accept and ignore `time=` and
+        // diverge from the docs/contract that says such requests must return
+        // InvalidParameterValue.
         var dimensionLookup = dimensions.ToDictionary(dimension => dimension.Identifier, StringComparer.OrdinalIgnoreCase);
         foreach (var key in query.Keys)
         {
