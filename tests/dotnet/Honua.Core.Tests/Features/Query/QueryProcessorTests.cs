@@ -135,6 +135,47 @@ public sealed class QueryProcessorTests
     }
 
     [Fact]
+    public void BuildCacheKey_TemporalFilterEndPropertyName_DoesNotCollide()
+    {
+        // EndPropertyName changes the SQL predicate from instant filtering on
+        // PropertyName alone to interval intersection over [PropertyName,
+        // COALESCE(EndPropertyName, PropertyName)] (#379). Two filters that
+        // differ only by EndPropertyName produce different result sets, so
+        // the cache key must distinguish them; otherwise an interval-style
+        // request would collide with the instant-style cache entry.
+        var instantStart = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var instantEnd = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero);
+
+        var instantFilterQuery = new UnifiedQuery
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "start_time",
+                PropertyType = TemporalPropertyType.DateTime,
+                Start = instantStart,
+                End = instantEnd
+            }
+        };
+
+        var intervalFilterQuery = instantFilterQuery with
+        {
+            TemporalFilter = new TemporalFilter
+            {
+                PropertyName = "start_time",
+                PropertyType = TemporalPropertyType.DateTime,
+                EndPropertyName = "end_time",
+                Start = instantStart,
+                End = instantEnd
+            }
+        };
+
+        var instantKey = _processor.BuildCacheKey(instantFilterQuery, _layer, "test");
+        var intervalKey = _processor.BuildCacheKey(intervalFilterQuery, _layer, "test");
+
+        instantKey.Should().NotBe(intervalKey);
+    }
+
+    [Fact]
     public void ToFeatureQuery_IncludeNullGeometryExtension_PropagatesToFeatureQuery()
     {
         var query = new UnifiedQuery

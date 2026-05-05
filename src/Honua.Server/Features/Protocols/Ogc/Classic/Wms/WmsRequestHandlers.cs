@@ -820,12 +820,12 @@ internal static class WmsRequestHandlers
             return (null, null);
         }
 
-        var hasCiteAutos = false;
+        var allCiteAutos = layers.Length > 0;
         foreach (var layer in layers)
         {
-            if (string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
             {
-                hasCiteAutos = true;
+                allCiteAutos = false;
                 break;
             }
         }
@@ -833,12 +833,14 @@ internal static class WmsRequestHandlers
         if (!OgcTemporalFilterParser.TryParseRange(timeParam, out var start, out var end, out var parseError))
         {
             // CITE Autos uses synthetic rendering with its own TIME parser
-            // (`current`, comma-separated instants). When the request targets
-            // that layer, surface the unparsed value to TryHandleCiteWmsGetMap
-            // instead of rejecting the request. Without this fallback, CITE
-            // forms like "current" would return InvalidDimensionValue before
-            // the synthetic CITE handler can resolve them.
-            if (hasCiteAutos)
+            // (`current`, comma-separated instants). When the *entire* request
+            // targets cite:Autos, surface the unparsed value to
+            // TryHandleCiteWmsGetMap instead of rejecting it. A mixed request
+            // (cite:Autos + a normal layer) must not silently drop TIME for
+            // the normal layer — reject those with InvalidDimensionValue
+            // since a CITE-only TIME form cannot apply to a regular layer's
+            // temporal column.
+            if (allCiteAutos)
             {
                 return (null, null);
             }

@@ -240,6 +240,41 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_CiteAutosMixedWithRegularLayer_RejectsUnparseableTime()
+    {
+        // The CITE Autos parse-error bypass lets TIME forms like "current" or
+        // CSV instants reach TryHandleCiteWmsGetMap unchanged when the *entire*
+        // request targets cite:Autos. A mixed request (cite:Autos + a normal
+        // layer) cannot rely on the bypass — TIME=current does not apply to a
+        // regular layer's temporal column, so silently dropping TIME for the
+        // normal layer would diverge from the documented temporal contract.
+        // The handler must reject the request with InvalidDimensionValue
+        // instead of returning a (null, null) filter array for everyone.
+        await ConfigureLayerAsTimeAwareAsync();
+
+        // Rename layer 1 to cite:Autos so the request can mix both layers in
+        // a single LAYERS= argument while keeping layer 0 time-aware.
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;";
+            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
+            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = 1 });
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId},1&STYLES=,&FORMAT=image/png&TIME=current");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidDimensionValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_CiteAutosLayer_WithCsvTimeInstants_BypassesGenericParser()
     {
         // Comma-separated TIME instants are CITE-supported but rejected by
