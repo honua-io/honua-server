@@ -41,6 +41,13 @@ dimension in WMS/WMTS capabilities or expose a `temporalExtent` endpoint, even
 if a `Date`/`DateTime` column is present. This is intentional: temporal
 discovery is opt-in to avoid surprising clients with arbitrary defaults.
 
+If `timeInfo.startTimeField` (or `endTimeField`) is configured but the named
+attribute does not exist on the layer as a `Date`/`DateTime` column, the layer
+is treated as not time-aware: WMS/WMTS capabilities do not advertise a time
+dimension, `temporalExtent` returns 404, and `time=` requests are rejected
+exactly as for an unconfigured layer. This keeps the capabilities document
+aligned with what the request path can actually fulfill.
+
 ## Accepted date/time formats
 
 All temporal request parameters share the same parsing semantics:
@@ -141,9 +148,11 @@ GET /rest/services/test/FeatureServer/0/queryDateBins?binField=event_start
   &f=json
 ```
 
-`bin` accepts either `calendarBin` (year, month, week, day, hour, minute,
-second) or `fixedBin` (`intervalCount`, `intervalUnit`, optional `origin` as
-Unix ms). `outStatistics` is optional; the default returns `count`.
+`bin` accepts either `calendarBin` (`unit` is one of `year`, `quarter`,
+`month`, `week`, `day`, `hour`, `minute`, `second`) or `fixedBin`
+(`intervalCount` plus `intervalUnit` of `seconds`, `minutes`, `hours`,
+`days`, or `weeks`, optional `origin` as Unix ms). `outStatistics` is
+optional; the default returns `count`.
 
 `queryDateBins` requires the **Pro** edition (feature key
 `temporal.histogram`). Community-tier requests are rejected with a
@@ -247,7 +256,7 @@ the existing cache entries unchanged.
 | --- | --- |
 | `time=null,null` (both bounds empty) | Treated as "no filter"; full result set returned. |
 | `time=` parameter omitted | Existing non-temporal behavior, unchanged. |
-| Layer has no `timeInfo` configured (regardless of whether a `Date`/`DateTime` column exists) | `temporalExtent` returns 404; WMS/WMTS GetCapabilities omit the time dimension; GeoServices REST `query?time=` rejected with HTTP 400; WMS `GetMap` `TIME=` rejected with `InvalidDimensionValue`; WMTS `GetTile`/`GetFeatureInfo` `time=` rejected with `InvalidParameterValue`. |
+| Layer has no `timeInfo` configured, OR `timeInfo.startTimeField` (or `endTimeField`) does not resolve to an existing `Date`/`DateTime` attribute | `temporalExtent` returns 404; WMS/WMTS GetCapabilities omit the time dimension; GeoServices REST `query?time=` rejected with HTTP 400; WMS `GetMap` `TIME=` rejected with `InvalidDimensionValue`; WMTS `GetTile`/`GetFeatureInfo` `time=` rejected with `InvalidParameterValue` (unknown query key). |
 | Layer has `timeInfo` but no rows ingested | `temporalExtent` still returns 200 with `startTimeField` populated and `min`/`max` set to `null`. WMTS `time=default`/`current` on this layer applies no filter (full extent) rather than rejecting the request, preserving the optional-dimension contract. |
 | `time=` reversed (start > end) | Rejected with HTTP 400 / `InvalidDimensionValue` (WMS) / `InvalidParameterValue` (WMTS) before any database call. |
 

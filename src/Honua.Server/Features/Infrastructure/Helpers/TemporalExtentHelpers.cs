@@ -51,6 +51,34 @@ internal static class TemporalExtentHelpers
         MismatchedTypes
     }
 
+    /// <summary>
+    /// Returns true when the layer is opt-in time-aware AND the configured
+    /// <c>TimeInfo.StartTimeField</c> (and optional <c>EndTimeField</c>) actually
+    /// resolve to <c>Date</c>/<c>DateTime</c> attributes on the layer. Used to
+    /// gate WMTS capabilities so an unusable time dimension is never advertised
+    /// when layer metadata stores a non-existent or wrong-typed field name.
+    /// Mirrors the resolution rules used by
+    /// <see cref="TryResolveTemporalRangeAsync"/> (no fallback when
+    /// <c>StartTimeField</c> is missing) so capabilities and the request path
+    /// agree on whether the dimension is usable.
+    /// </summary>
+    public static bool HasOptInTemporalFields(LayerDefinition layer)
+    {
+        var timeInfo = layer.Metadata?.TimeInfo;
+        if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+        {
+            return false;
+        }
+
+        return TryResolveTemporalFields(
+            layer,
+            allowFallbackWhenMissingStart: false,
+            out _,
+            out _,
+            out _,
+            out _);
+    }
+
     public static TemporalFieldSelection ResolveTemporalFieldsOrThrow(LayerDefinition layer)
     {
         if (!TryResolveTemporalFields(

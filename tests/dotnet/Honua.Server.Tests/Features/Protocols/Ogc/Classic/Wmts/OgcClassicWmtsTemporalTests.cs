@@ -269,6 +269,51 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_InvalidTimeInfo_DoesNotAdvertiseTimeDimension()
+    {
+        // Layer metadata updates do not validate that the configured
+        // StartTimeField actually exists as a Date/DateTime attribute. If we
+        // advertise a time dimension solely because TimeInfo.StartTimeField is
+        // non-empty, GetCapabilities will publish an unusable dimension that
+        // OgcTemporalFilterParser cannot fulfill (the layer's AttributeFields
+        // do not contain that field as Date/DateTime). The WMTS handler must
+        // therefore gate the dimension on the same opt-in resolvability check
+        // used by TryResolveTemporalRangeAsync.
+        await ConfigureLayerWithInvalidTimeInfoAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().NotContain("<ows:Identifier>time</ows:Identifier>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetTile_InvalidTimeInfo_WithTime_ReturnsInvalidParameterValue()
+    {
+        // Companion to the GetCapabilities case: when capabilities does not
+        // advertise a time dimension, a GetTile request that supplies time=
+        // must be rejected as an unknown query key by the dimension validator
+        // — same behavior as a layer with no TimeInfo at all. This proves the
+        // capabilities/runtime contract stays aligned even when layer metadata
+        // stores a misconfigured TimeInfo.
+        await ConfigureLayerWithInvalidTimeInfoAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png&time=2024-06-15T12:00:00Z");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("InvalidParameterValue");
+        content.Should().Contain("time");
+    }
+
     private Task ConfigureLayerAsTimeAwareAsync()
     {
         // Use the seeded "timestamp" DateTime field that is registered in
@@ -280,6 +325,20 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
             new CatalogMetadata
             {
                 TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" }
+            });
+    }
+
+    private Task ConfigureLayerWithInvalidTimeInfoAsync()
+    {
+        // The seeded "name" attribute is a string column, not a Date/DateTime,
+        // so configuring it as StartTimeField simulates the misconfiguration
+        // the metadata update path allows today (no field-type validation).
+        var updater = _fixture.GetService<ILayerMetadataUpdater>();
+        return updater.UpdateLayerMetadataAsync(
+            WebAppFixture.TestLayerId,
+            new CatalogMetadata
+            {
+                TimeInfo = new LayerTimeInfo { StartTimeField = "name" }
             });
     }
 

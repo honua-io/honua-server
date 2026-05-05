@@ -1375,9 +1375,14 @@ internal static class WmtsRequestHandlers
         // Time-aware feature layers advertise a continuous "time" dimension so
         // tile/GetFeatureInfo validation accepts a TIME parameter. The default
         // and extent values are computed asynchronously from the layer's
-        // temporal range in GetWmtsDimensionDefinitionsAsync.
-        var timeInfo = layer.Metadata?.TimeInfo;
-        if (timeInfo is not null && !string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+        // temporal range in GetWmtsDimensionDefinitionsAsync. Only emit the
+        // dimension when TimeInfo's configured start (and optional end) field
+        // actually resolves to a Date/DateTime attribute — otherwise
+        // capabilities would advertise a dimension that the request path
+        // cannot fulfill (TryResolveTemporalRangeAsync would return null and
+        // OgcTemporalFilterParser would reject any value the dimension
+        // validator accepts).
+        if (TemporalExtentHelpers.HasOptInTemporalFields(layer))
         {
             return
             [
