@@ -220,9 +220,15 @@ internal sealed class FeatureServerEditsHandler(
         {
             try
             {
+                // Capture request intent before BuildFeatureFromGeoServicesAsync runs;
+                // for adds existingFeature is null so the post-merge geometry equals the
+                // request's, but using request.Adds[i].Geometry directly keeps the rule
+                // identical to the update path.
+                var requestHasGeometry = request.Adds[i].Geometry != null;
                 var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, layer, cancellationToken);
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
+                context.CreateGeometryChanged.Add(requestHasGeometry);
                 context.CreateResponseObjectIds.Add(TryGetObjectId(newFeature.Attributes.ToDictionary(), layer, out var responseObjectId)
                     ? responseObjectId
                     : null);
@@ -284,6 +290,11 @@ internal sealed class FeatureServerEditsHandler(
                 }
 
                 var internalObjectId = existingFeature?.Id ?? objectId;
+                // Capture request intent BEFORE BuildFeatureFromGeoServicesAsync runs;
+                // that helper preserves existingFeature.Geometry when update.Geometry is
+                // null, so the post-merge feature's WKB cannot distinguish an attribute-
+                // only update on a spatial row from a geometry change.
+                var requestHasGeometry = update.Geometry != null;
                 var updateFeature = await BuildFeatureFromGeoServicesAsync(
                     update,
                     internalObjectId,
@@ -293,6 +304,7 @@ internal sealed class FeatureServerEditsHandler(
                 context.UpdateFeatures.Add(updateFeature);
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
+                context.UpdateGeometryChanged.Add(requestHasGeometry);
             }
             catch (ArgumentException ex)
             {
@@ -414,12 +426,12 @@ internal sealed class FeatureServerEditsHandler(
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
         var httpContext = _httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException("HttpContext is required for FeatureServer edit dispatch.");
-        // Per-row geometry-change semantics mirror the inline publish path
-        // (PublishFeatureChangeEventsAsync below): a row is considered to have changed
-        // geometry when the request feature carries non-null WKB. Deletes default to false.
-        // Without these queues an attribute-only update would over-report as a geometry
-        // change because the post-mutation snapshot still carries the prior WKB.
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(editBatch);
+        // Per-row geometry-change semantics: read the request-intent flags captured by
+        // ProcessAdd/UpdateOperationsAsync BEFORE BuildFeatureFromGeoServicesAsync merged
+        // the request with the existing row. Deriving from editBatch.Updates[i].Geometry
+        // would over-report attribute-only updates as geometry changes because that
+        // helper preserves the prior WKB when the request omits geometry.
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(context);
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             httpContext,
             layerId,
@@ -442,31 +454,34 @@ internal sealed class FeatureServerEditsHandler(
     }
 
     /// <summary>
-    /// Build per-operation-kind queues of geometry-change flags in the same order
-    /// ApplyEditsAsync iterates rows, so the outbox payload's <c>GeometryChanged</c>
-    /// field tracks the originating request's intent rather than inferring from the
-    /// post-mutation snapshot. Deletes default to false (the inline publish path also
-    /// defaults to false for delete events).
+    /// Build per-operation-kind queues of geometry-change flags from the request-intent
+    /// flags captured during request parsing (before merging with existing rows). The
+    /// queues match the order ApplyEditsAsync iterates rows for each kind so each
+    /// outbox row's <c>GeometryChanged</c> tracks the originating request's intent
+    /// rather than the post-merge feature's WKB. Deletes default to false (the inline
+    /// publish path also defaults to false for delete events).
     /// </summary>
-    private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
+    private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(EditOperationContext context)
     {
-        if (editBatch.Creates.IsDefaultOrEmpty && editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
+        if (context.CreateGeometryChanged.Count == 0
+            && context.UpdateGeometryChanged.Count == 0
+            && context.DeleteIds.Count == 0)
         {
             return null;
         }
 
         var result = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal);
-        if (!editBatch.Creates.IsDefaultOrEmpty)
+        if (context.CreateGeometryChanged.Count > 0)
         {
-            result["create"] = editBatch.Creates.Select(static f => f.Geometry is { Length: > 0 }).ToImmutableArray();
+            result["create"] = context.CreateGeometryChanged.ToImmutableArray();
         }
-        if (!editBatch.Updates.IsDefaultOrEmpty)
+        if (context.UpdateGeometryChanged.Count > 0)
         {
-            result["update"] = editBatch.Updates.Select(static f => f.Geometry is { Length: > 0 }).ToImmutableArray();
+            result["update"] = context.UpdateGeometryChanged.ToImmutableArray();
         }
-        if (!editBatch.Deletes.IsDefaultOrEmpty)
+        if (context.DeleteIds.Count > 0)
         {
-            result["delete"] = Enumerable.Repeat(false, editBatch.Deletes.Length).ToImmutableArray();
+            result["delete"] = Enumerable.Repeat(false, context.DeleteIds.Count).ToImmutableArray();
         }
         return result;
     }
@@ -616,9 +631,23 @@ internal sealed class FeatureServerEditsHandler(
         public List<int> CreateIndexes { get; } = new();
         public List<long?> CreateResponseObjectIds { get; } = new();
         public List<long?> CreateEventObjectIds { get; } = new();
+        /// <summary>
+        /// Per-create flag: true when the originating request body included a Geometry;
+        /// captured before merging so the outbox payload's GeometryChanged tracks the
+        /// request's intent rather than the post-merge feature's WKB.
+        /// </summary>
+        public List<bool> CreateGeometryChanged { get; } = new();
         public List<Feature> UpdateFeatures { get; } = new();
         public List<int> UpdateIndexes { get; } = new();
         public List<long> UpdateObjectIds { get; } = new();
+        /// <summary>
+        /// Per-update flag: true when the originating request body included a Geometry;
+        /// captured before <c>BuildFeatureFromGeoServicesAsync</c> merges with the existing
+        /// row, since BuildFeatureFromGeoServicesAsync preserves <c>existingFeature.Geometry</c>
+        /// when the request omits geometry, otherwise an attribute-only update on a spatial
+        /// row would be reported as a geometry change.
+        /// </summary>
+        public List<bool> UpdateGeometryChanged { get; } = new();
         public List<long> DeleteIds { get; } = new();
         public List<long> DeleteResponseObjectIds { get; } = new();
         public List<Feature?> DeleteFeatures { get; } = new();

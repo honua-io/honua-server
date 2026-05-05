@@ -640,6 +640,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             try
             {
+                // PATCH preserves existing geometry when the request body omits Geometry, so
+                // the merged Feature's WKB cannot tell us whether geometry actually changed.
+                // Thread patchRequest.HasGeometry through as an explicit override so the
+                // outbox payload tracks the request's intent rather than the preserved WKB.
                 var editResult = await ExecuteEditAsync(
                     context,
                     layerId,
@@ -651,7 +655,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         ObjectId = objectId,
                         IfMatch = ifMatch
                     },
-                    cancellationToken);
+                    cancellationToken,
+                    geometryChangedOverride: patchRequest.HasGeometry);
                 var updateResult = editResult.UpdateResults.FirstOrDefault();
                 if (!updateResult.IsSuccess)
                 {
@@ -755,7 +760,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         LayerDefinition layer,
         OgcFeaturesEditRequest request,
         CancellationToken cancellationToken,
-        IReadOnlyDictionary<string, IReadOnlyList<string>>? perOperationRequestIds = null)
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? perOperationRequestIds = null,
+        bool? geometryChangedOverride = null)
     {
         var editAdapterResult = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
         if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
@@ -771,12 +777,22 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
-        // Per-row geometry-change semantics mirror the inline publish path
-        // (HandleBatchOperationAsync above): a row is considered to have changed geometry
-        // when the request feature carries non-null WKB. Deletes default to false. Without
-        // this, an attribute-only PATCH would over-report as a geometry change because the
-        // post-mutation snapshot still carries the prior WKB.
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(editBatch);
+        // Per-row geometry-change semantics: derive from the input edit batch (whose Feature
+        // entries reflect the request body for non-PATCH paths because OgcFeatureMutationHelpers
+        // sets WKB only when the request had geometry). For PATCH (single-op) the caller passes
+        // geometryChangedOverride from patchRequest.HasGeometry so attribute-only PATCH on a
+        // spatial row is not over-reported by the merged-feature WKB. Deletes default to false.
+        Dictionary<string, IReadOnlyList<bool>>? perOperationGeometryChanged = null;
+        bool? geometryChanged = null;
+        if (geometryChangedOverride.HasValue)
+        {
+            geometryChanged = geometryChangedOverride.Value;
+        }
+        else
+        {
+            perOperationGeometryChanged = BuildPerOperationGeometryChanged(editBatch);
+        }
+
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             context,
             layerId,
@@ -784,6 +800,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             serviceProtocol: ServiceProtocols.OgcFeatures,
             layerSrid: layer.SpatialReference.Wkid,
             perOperationRequestIds: perOperationRequestIds,
+            geometryChanged: geometryChanged,
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);

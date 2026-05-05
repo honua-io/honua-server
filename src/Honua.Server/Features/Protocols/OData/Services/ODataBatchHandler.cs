@@ -380,8 +380,8 @@ internal sealed partial class ODataBatchHandler
         var rollback = false;
 
         // Collect all operations for atomic execution
-        var createRequests = new Dictionary<int, List<(string requestId, Feature feature)>>();
-        var updateRequests = new Dictionary<int, List<(string requestId, long objectId, Feature feature)>>();
+        var createRequests = new Dictionary<int, List<(string requestId, Feature feature, bool geometryChanged)>>();
+        var updateRequests = new Dictionary<int, List<(string requestId, long objectId, Feature feature, bool geometryChanged)>>();
         var deleteRequests = new Dictionary<int, List<(string requestId, long objectId, Feature existingFeature)>>();
         var reads = new List<(string requestId, int layerId, long? objectId)>();
         var writeLayerIds = new HashSet<int>();
@@ -532,6 +532,12 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             Feature parsedFeature;
+                            // Parse the body once to capture the request-intent geometry flag
+                            // before CreateFeatureFromBodyAsync re-parses internally; the flag
+                            // tracks whether the originating body specified a Geometry property
+                            // (rather than the post-merge feature's WKB), so the outbox payload's
+                            // GeometryChanged matches the inline publish path's contract.
+                            var requestGeometryChanged = TryGetGeometrySpecified(request.Body);
                             try
                             {
                                 parsedFeature = await CreateFeatureFromBodyAsync(request.Body, layer, cancellationToken: cancellationToken);
@@ -564,11 +570,11 @@ internal sealed partial class ODataBatchHandler
                             var feature = createValidation.Batch.Value.Creates[0];
                             if (!createRequests.TryGetValue(layerId.Value, out var createList))
                             {
-                                createList = new List<(string requestId, Feature feature)>();
+                                createList = new List<(string requestId, Feature feature, bool geometryChanged)>();
                                 createRequests[layerId.Value] = createList;
                             }
 
-                            createList.Add((request.Id, feature));
+                            createList.Add((request.Id, feature, requestGeometryChanged));
                             writeLayerIds.Add(layerId.Value);
                             break;
                         }
@@ -626,6 +632,11 @@ internal sealed partial class ODataBatchHandler
                             Feature? mergeExisting = isPatch ? existing.Value : null;
 
                             Feature parsedFeature;
+                            // PATCH preserves existing geometry when the body omits Geometry;
+                            // capture the request-intent flag from the body before merging so
+                            // the outbox payload's GeometryChanged matches the request, not
+                            // the merged feature's WKB.
+                            var requestGeometryChanged = TryGetGeometrySpecified(request.Body);
                             try
                             {
                                 parsedFeature = await CreateFeatureFromBodyAsync(
@@ -668,11 +679,11 @@ internal sealed partial class ODataBatchHandler
                             var feature = updateValidation.Batch.Value.Updates[0];
                             if (!updateRequests.TryGetValue(layerId.Value, out var updateList))
                             {
-                                updateList = new List<(string requestId, long objectId, Feature feature)>();
+                                updateList = new List<(string requestId, long objectId, Feature feature, bool geometryChanged)>();
                                 updateRequests[layerId.Value] = updateList;
                             }
 
-                            updateList.Add((request.Id, objectId.Value, feature));
+                            updateList.Add((request.Id, objectId.Value, feature, requestGeometryChanged));
                             writeLayerIds.Add(layerId.Value);
                             break;
                         }
@@ -939,7 +950,7 @@ internal sealed partial class ODataBatchHandler
                             .Select(item => $"{context.TraceIdentifier}:{item.requestId}")
                             .ToImmutableArray();
                         perOperationGeometryChanged["create"] = layerCreates
-                            .Select(static item => item.feature.Geometry is { Length: > 0 })
+                            .Select(static item => item.geometryChanged)
                             .ToImmutableArray();
                     }
                     if (layerUpdates is { Count: > 0 })
@@ -947,8 +958,12 @@ internal sealed partial class ODataBatchHandler
                         perOperationRequestIds["update"] = layerUpdates
                             .Select(item => $"{context.TraceIdentifier}:{item.requestId}")
                             .ToImmutableArray();
+                        // Use the per-row request-intent flag captured before
+                        // CreateFeatureFromBodyAsync merged with the existing row;
+                        // attribute-only PATCH on a spatial feature would otherwise
+                        // be reported as a geometry change.
                         perOperationGeometryChanged["update"] = layerUpdates
-                            .Select(static item => item.feature.Geometry is { Length: > 0 })
+                            .Select(static item => item.geometryChanged)
                             .ToImmutableArray();
                     }
                     if (layerDeletes is { Count: > 0 })
@@ -979,7 +994,7 @@ internal sealed partial class ODataBatchHandler
                     for (var i = 0; i < result.CreateResults.Length && i < layerCreates.Count; i++)
                     {
                         var createResult = result.CreateResults[i];
-                        var (requestId, requestedFeature) = layerCreates[i];
+                        var (requestId, requestedFeature, _) = layerCreates[i];
 
                         if (createResult.IsSuccess && createResult.ObjectId.HasValue)
                         {
@@ -1022,7 +1037,7 @@ internal sealed partial class ODataBatchHandler
                     for (var i = 0; i < result.UpdateResults.Length && i < layerUpdates.Count; i++)
                     {
                         var updateResult = result.UpdateResults[i];
-                        var (requestId, _, updatedFeature) = layerUpdates[i];
+                        var (requestId, _, updatedFeature, _) = layerUpdates[i];
 
                         if (updateResult.IsSuccess)
                         {
@@ -1084,7 +1099,7 @@ internal sealed partial class ODataBatchHandler
             // Mark all write operations as failed
             foreach (var createList in createRequests.Values)
             {
-                foreach (var (requestId, _) in createList.Where(c => !responses.Any(r => r.Id == c.requestId)))
+                foreach (var (requestId, _, _) in createList.Where(c => !responses.Any(r => r.Id == c.requestId)))
                 {
                     responses.Add(CreateErrorResponse(requestId, 500, "TransactionFailed", "Atomic group transaction failed."));
                 }
@@ -1092,7 +1107,7 @@ internal sealed partial class ODataBatchHandler
 
             foreach (var updateList in updateRequests.Values)
             {
-                foreach (var (requestId, _, _) in updateList.Where(u => !responses.Any(r => r.Id == u.requestId)))
+                foreach (var (requestId, _, _, _) in updateList.Where(u => !responses.Any(r => r.Id == u.requestId)))
                 {
                     responses.Add(CreateErrorResponse(requestId, 500, "TransactionFailed", "Atomic group transaction failed."));
                 }
@@ -2011,6 +2026,26 @@ internal sealed partial class ODataBatchHandler
                 Attributes = new Dictionary<string, object?>(feature.Attributes, StringComparer.OrdinalIgnoreCase)
             }
         };
+
+    /// <summary>
+    /// Returns whether the OData request body explicitly specified a Geometry property.
+    /// PATCH and POST both run through CreateFeatureFromBodyAsync, which preserves the
+    /// existing row's geometry on partial-update requests; reading the post-merge feature
+    /// would report attribute-only PATCH as a geometry change. This helper parses the
+    /// raw body once so the outbox queue can be seeded with the request's actual intent.
+    /// Parse failures return false because the same body will fail
+    /// <c>CreateFeatureFromBodyAsync</c> and the request will not reach the outbox queue.
+    /// </summary>
+    private static bool TryGetGeometrySpecified(Dictionary<string, object?>? body)
+    {
+        if (body is null || body.Count == 0)
+        {
+            return false;
+        }
+
+        return ODataFeaturePayloadParser.TryParse(body, out var payload, out _)
+            && payload.GeometrySpecified;
+    }
 
     private async Task<Feature> CreateFeatureFromBodyAsync(
         Dictionary<string, object?> body,
