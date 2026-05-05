@@ -211,6 +211,19 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
                 $"(layer geometry is {layer.GeometryType}). ST_Distance_Sphere expects point geometries.");
         }
 
+        // Mirror the MySqlFeatureQueryBuilder.Spatial SRID guard: ST_Distance_Sphere is
+        // documented for EPSG:4326 / SRID 0 only. Projected SRSes raise
+        // ER_INVALID_GIS_DATA at the engine; other geographic SRSes use a different
+        // mean radius. Reject up front so the CQL2 / OGC API Features filter path fails
+        // with the same descriptive contract as the FeatureQuery.SpatialFilter path.
+        if (!MySqlSpatialSql.IsDistanceSphereCompatibleSrid(layer.SpatialReference.Wkid))
+        {
+            throw new NotSupportedException(
+                $"Distance spatial filters require the layer SRID to be EPSG:4326 or SRID 0 in the MySQL/MariaDB provider " +
+                $"(layer SRID is {layer.SpatialReference.Wkid}). ST_Distance_Sphere is documented as a WGS84 spherical approximation; " +
+                $"pre-project the layer to EPSG:4326 before issuing distance filters.");
+        }
+
         var left = TranslateGeometryExpression(spatial.Left, layer);
         var right = TranslateGeometryExpression(spatial.Right, layer);
         var distance = TranslateExpression(spatial.Distance, layer);

@@ -234,6 +234,68 @@ public class MySqlSqlFilterTranslatorTests
         Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(3857)]
+    [InlineData(2154)]
+    [InlineData(4269)]
+    public void Translate_SpatialDistance_NonGeographicLayerSrid_ThrowsNotSupported(int layerSrid)
+    {
+        // ST_Distance_Sphere is documented for EPSG:4326 / SRID 0 only. Mirror the
+        // FeatureQuery.SpatialFilter SRID guard so OGC API Features / OData distance
+        // predicates against non-WGS84 layers fail with the same descriptive contract
+        // instead of leaking ER_INVALID_GIS_DATA from the engine.
+        var layer = new LayerDefinition(
+            Id: 5,
+            Name: "stations",
+            Description: null,
+            GeometryType: GeometryType.Point,
+            SpatialReference: SpatialReference.Create(layerSrid),
+            Fields:
+            [
+                new("id", FieldType.BigInteger, Nullable: false),
+                new("geometry", FieldType.Geometry, Nullable: false)
+            ]);
+
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geometry"),
+            new GeometryLiteral([0x01], layerSrid, "POINT"),
+            new Literal(100.0, LiteralType.Number));
+
+        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, layer));
+        Assert.Contains("EPSG:4326 or SRID 0", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(layerSrid.ToString(System.Globalization.CultureInfo.InvariantCulture), ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Translate_DWithinDistance_Srid0PointLayer_UsesStDistanceSphere()
+    {
+        // SRID 0 (Cartesian, no SRS) is the second SRID MySQL ST_Distance_Sphere
+        // documents as accepted. Mirror the MySqlFeatureQueryBuilder coverage so the
+        // CQL2 path is consistent.
+        var srid0Layer = new LayerDefinition(
+            Id: 6,
+            Name: "stations_no_srs",
+            Description: null,
+            GeometryType: GeometryType.Point,
+            SpatialReference: SpatialReference.Create(0),
+            Fields:
+            [
+                new("id", FieldType.BigInteger, Nullable: false),
+                new("geometry", FieldType.Geometry, Nullable: false)
+            ]);
+
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geometry"),
+            new GeometryLiteral([0x01], 0, "POINT"),
+            new Literal(100.0, LiteralType.Number));
+
+        var result = _translator.Translate(filter, srid0Layer);
+
+        Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Translate_GeometryLiteralCrossSrid_ThrowsNotSupported()
     {

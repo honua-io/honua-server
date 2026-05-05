@@ -37,4 +37,15 @@ internal static class MySqlSpatialSql
             ? $"ST_GeomFromWKB({wkbParam}, {sridLiteral}, {MysqlAxisOrderOption})"
             : $"ST_GeomFromWKB({wkbParam}, {sridLiteral})";
     }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="srid"/> is an SRS the provider supports for
+    /// <c>ST_Distance_Sphere</c>. Restricted to EPSG:4326 (WGS84) and SRID 0 — the
+    /// combinations that match the documented "WGS84 spherical approximation" contract.
+    /// MySQL <c>ST_Distance_Sphere</c> raises <c>ER_INVALID_GIS_DATA</c> on projected SRSes
+    /// (e.g. EPSG:3857) and other geographic SRSes (e.g. NAD83) compute a result using a
+    /// different mean radius — pre-project to EPSG:4326 before issuing distance filters.
+    /// </summary>
+    public static bool IsDistanceSphereCompatibleSrid(int srid) =>
+        srid is 0 or 4326;
 }

@@ -272,6 +272,69 @@ public class MySqlFeatureQueryBuilderTests
         Assert.Contains("point layers", ex.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(3857)]
+    [InlineData(2154)]
+    [InlineData(4269)]
+    public void BuildSelectQuery_DistanceFilter_NonGeographicLayerSrid_ThrowsNotSupported(int layerSrid)
+    {
+        // ST_Distance_Sphere is documented for EPSG:4326 / SRID 0 only. Projected SRSes
+        // (3857/2154) raise ER_INVALID_GIS_DATA at the engine; other geographic SRSes
+        // (NAD83 = 4269) compute against a different mean radius, so the provider
+        // rejects them up front with a descriptive NotSupportedException. Restricted to
+        // a Point layer here so the upstream point-only guard does not short-circuit
+        // the SRID check we are exercising.
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 300,
+            TableName = "stations",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = layerSrid,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.Point
+        };
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([mapping]));
+
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.CreateDistanceFilter([0x01], distance: 100, srid: layerSrid)
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(() => builder.BuildSelectQuery(300, query));
+        Assert.Contains("EPSG:4326 or SRID 0", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(layerSrid.ToString(System.Globalization.CultureInfo.InvariantCulture), ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_DistanceFilter_Srid0PointLayer_EmitsStDistanceSphere()
+    {
+        // SRID 0 (Cartesian, no SRS) is the second SRID MySQL ST_Distance_Sphere documents
+        // as accepted; the function treats the X/Y coordinates as longitude/latitude on
+        // the default sphere. Verify the provider lets this case through to the engine
+        // instead of rejecting it alongside projected SRSes.
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 301,
+            TableName = "stations",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 0,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.Point
+        };
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([mapping]));
+
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.CreateDistanceFilter([0x01], distance: 100, srid: 0)
+        };
+
+        var result = builder.BuildSelectQuery(301, query);
+
+        Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
     {

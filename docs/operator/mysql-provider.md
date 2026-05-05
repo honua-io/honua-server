@@ -182,6 +182,16 @@ Distance filters on layers whose geometry type is anything other than
 applied uniformly in `MySqlFeatureQueryBuilder.Spatial` and
 `MySqlSqlFilterTranslator`.
 
+Distance filters also require the layer SRID to be **EPSG:4326** (WGS84)
+or **SRID 0** (Cartesian, lon/lat-assumed). MySQL `ST_Distance_Sphere`
+raises `ER_INVALID_GIS_DATA` on projected SRSes such as EPSG:3857, and
+other geographic SRSes (e.g. NAD83) compute a result with a different
+mean radius — the provider rejects them at the query builder /
+filter-translator boundary so callers get a descriptive
+`NotSupportedException` rather than an engine error or an ambiguous
+result. Pre-project the layer to EPSG:4326 before issuing distance
+filters.
+
 ## Engine Flavor and Axis Order
 
 MySQL 8 and MariaDB 10.6 differ in how they encode WKB for geographic SRSes. The
@@ -285,12 +295,13 @@ configured OTLP endpoint when tracing is enabled.
 
 ## Readiness Probe
 
-The `/ready` endpoint resolves the provider's `IDatabaseHealthChecker` and
-runs a `SELECT 1` against the same pooled `MySqlDataSource` the feature store
-uses. Health-check failures (EventId 8903, level Warning) flip readiness to
-`Database unavailable`. Command timeout is fixed at 5 seconds. No registration
-is required beyond setting `DataSource:Provider=mysql`/`mariadb`; the checker
-is wired alongside the rest of the MySQL services.
+The `/healthz/ready` endpoint resolves the provider's `IDatabaseHealthChecker`
+and runs a `SELECT 1` against the same pooled `MySqlDataSource` the feature
+store uses. Health-check failures (EventId 8903, level Warning) flip readiness
+to `Database unavailable` (HTTP 503, body `Not Ready`). Command timeout is
+fixed at 5 seconds. No registration is required beyond setting
+`DataSource:Provider=mysql`/`mariadb`; the checker is wired alongside the rest
+of the MySQL services.
 
 ## Testing
 
@@ -309,16 +320,25 @@ dotnet test tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj \
 
 `MySqlFeatureStoreIntegrationTests` exercises the full stack against a MySQL
 8 container provisioned by Testcontainers. They are tagged
-`[Trait("Category", "MySql")]` and are **opt-in**:
+`[Trait("Category", "MySql")]` and are **opt-in**: the `Category=MySql`
+filter selects them, and the test fixture additionally requires
+`HONUA_TEST_MYSQL=1` so a stray `--filter Category=MySql` cannot start
+Docker containers in CI environments without Docker.
 
 ```bash
-# Requires Docker and the MySQL 8 image.
-dotnet test tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj \
+# Requires Docker and the MySQL 8 image. Both the category filter AND the
+# environment variable are required — the env gate keeps the suite inert
+# unless explicitly enabled.
+HONUA_TEST_MYSQL=1 dotnet test tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj \
     --filter "Category=MySql"
 ```
 
-The tests skip gracefully if Docker is unavailable. They are not part of the
-default PR test suite.
+If `HONUA_TEST_MYSQL` is unset (or not exactly `1`) the fixture short-circuits
+in `InitializeAsync` and every test in the class returns without exercising
+the container — a passing run with this gate disabled does **not** mean the
+integration suite ran. The same shape applies if Docker is unavailable: the
+fixture catches the container start failure and skips. They are not part of
+the default PR test suite.
 
 ### MariaDB compatibility
 
@@ -368,6 +388,11 @@ fixture is added in a follow-on slice.
 - Distance filters require Point/MultiPoint geometry. The point-only guard is
   enforced both for `FeatureQuery.SpatialFilter` and for CQL2 distance
   predicates translated through `MySqlSqlFilterTranslator`.
+- Distance filters require the layer SRID to be EPSG:4326 or SRID 0.
+  Other SRIDs raise `NotSupportedException` ("Distance spatial filters
+  require the layer SRID to be EPSG:4326 or SRID 0"). The same dual-guard
+  contract applies — both `FeatureQuery.SpatialFilter` and CQL2 distance
+  predicates are checked.
 - Extent queries are supported only for Point, Polygon, and MultiPolygon
   layers. MultiPoint, LineString, MultiLineString, and GeometryCollection
   layers raise `NotSupportedException`.

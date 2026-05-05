@@ -111,6 +111,18 @@ internal sealed partial class MySqlFeatureQueryBuilder
                 $"(layer geometry is {mapping.GeometryType}). ST_Distance_Sphere expects point geometries.");
         }
 
+        // ST_Distance_Sphere is documented for geographic SRSes or SRID 0; projected SRSes
+        // (e.g. EPSG:3857) raise ER_INVALID_GIS_DATA at the engine and other geographic
+        // SRSes use a different mean radius. Restrict to EPSG:4326 and SRID 0 — the
+        // canonical WGS84-approximation contract documented in mysql-provider.md.
+        if (!MySqlSpatialSql.IsDistanceSphereCompatibleSrid(mapping.Srid))
+        {
+            throw new NotSupportedException(
+                $"Distance spatial filters require the layer SRID to be EPSG:4326 or SRID 0 in the MySQL/MariaDB provider " +
+                $"(layer SRID is {mapping.Srid}). ST_Distance_Sphere is documented as a WGS84 spherical approximation; " +
+                $"pre-project the layer to EPSG:4326 before issuing distance filters.");
+        }
+
         var distanceMeters = ConvertDistanceToMeters(filter.Distance!.Value, filter.DistanceUnit);
         var distanceParam = $"@p{paramIndex++}";
         parameters.Add(distanceMeters);
