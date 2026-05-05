@@ -26,7 +26,7 @@
 | `cross-server-consume-nightly.yml` | Cross-Server Consume Nightly | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:00am UTC; runs Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers via the Test-environment `/__test/cross-server-consume/proxy` endpoint, uploads TRX/report artifacts, and best-effort commits the refreshed gap report (warns instead of failing if push is blocked) |
 | `windows-client-compat-nightly.yml` | Windows Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:15am UTC; full CERT-\* matrix (18 test cases × 4 protocol lanes: FeatureServer, OGC Features, MapServer, OData) with per-protocol `.cert.json` envelopes under `certification/`, plus `overall-summary.json`, per-lane transcripts, and `pack/`; supports `--profile smoke` (11-check MVP) and `--profile full` (default) |
 | `pyqgis-client-compat-nightly.yml` | PyQGIS Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:30am UTC; PyQGIS desktop client compatibility using real QGIS providers against `client-compat-v1.sql`; produces `desktop-qgis-ogc-features.cert.json` and `desktop-qgis-wfs.cert.json` envelopes |
-| `sdk-server-compatibility.yml` | SDK Server Compatibility | nightly | `schedule`, `workflow_dispatch` | No | Manifest-driven last-3 server refs x last-3 SDK sets matrix from `docs/developer/sdk-compatibility-versions.json`; runs live compatibility smoke checks through checked-out `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`, validates admin compatibility metadata plus seeded FeatureServer and OGC API Features surfaces, uploads per-cell JSON evidence, and publishes `sdk-compatibility-matrix-<run-id>` with supported-cell regression failure |
+| `sdk-server-compatibility.yml` | SDK Server Compatibility | nightly | `schedule`, `workflow_dispatch` | No | Manifest-driven last-3 server refs x last-3 SDK sets matrix from `docs/developer/sdk-compatibility-versions.json`; runs live compatibility smoke checks through checked-out `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`, records package versions/server commit/seed profile/surfaces/diagnostics in per-cell JSON evidence, and publishes `sdk-compatibility-matrix-<run-id>` with supported-cell regression failure |
 | `client-interop-nightly.yml` | Real-Client Interop Matrix (Nightly) | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:00am UTC; runs the docker/client-compat matrix (`gdal`, `pyqgis`, `openlayers`, `cesium`, `arcgis-stub`) via Docker harnesses, diffs the per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` (gated by `expected-pairs.json`), refreshes `docs/gis/gap-report.md`, and fails strict mode on any baseline `pass`→non-`pass` regression, missing lane envelope, missing expected-pair, or new `fail` in an unbaselined case. Promote to PR-blocking once 30 consecutive nightly passes are observed (#806) |
 | `gdal-driver-e2e.yml` | GDAL Driver End-to-End | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:45am UTC; runs `ogrinfo` + `ogr2ogr` against honua-server using GDAL's built-in `OAPIF:` stand-in driver. Tracks ADR-0034; swaps to `HONUA:` once the `honua-gdal` plugin ships |
 | `load-soak-nightly.yml` | Load/Soak Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled load/soak tests |
@@ -38,7 +38,7 @@
 | `nuget-publish.yml` | NuGet Publish | release | `push`, `workflow_dispatch` | No | Release-only publishing |
 | `deploy.yml` | Deploy | deploy | `push` (tags), `workflow_dispatch` | No | Environment promotion |
 | `deploy-platform-images.yml` | Deploy Platform Images | deploy | `push` (tags), `workflow_dispatch` | No | Platform image deployment |
-| `reusable-sdk-pr-gate.yml` | SDK PR Gate | PR | `workflow_call` | Yes (via caller) | Reusable gate for honua-sdk-js and honua-sdk-dotnet |
+| `reusable-sdk-pr-gate.yml` | SDK PR Gate | PR | `workflow_call` | Yes (via caller) | Reusable gate for honua-sdk-js, honua-sdk-dotnet, and honua-sdk-python |
 | `cloud-post-apply-validation.yml` | Cloud Post-Apply Validation | deploy | `workflow_call`, `workflow_dispatch` | No | Post-deploy validation |
 
 ## honua-sdk-js
@@ -46,6 +46,8 @@
 | Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
 |---|---|---|---|---|---|
 | `ci.yml` | CI | PR | `pull_request`, `push` | Yes | Core SDK PR gate |
+| `integration.yml` | Integration | integration | `workflow_dispatch` / configured repo target | No | Repo-local Honua Server integration lane for `honua-sdk-js#39`; uploads integration metadata when a real server target is configured |
+| `quickstart-staging.yml` | Quickstart Staging | integration | `workflow_dispatch` / staging | No | Staging quickstart smoke against Honua Server |
 | `publish-js-sdk.yml` | Publish JS SDK | release | `workflow_dispatch`, `push` | No | Release-only |
 | `publish-mcp-server.yml` | Publish MCP Server | release | `workflow_dispatch`, `push` | No | Release-only |
 | `release-please.yml` | Release Please | maintenance | `push` | No | Version automation |
@@ -55,7 +57,17 @@
 | Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
 |---|---|---|---|---|---|
 | `ci.yml` | CI | PR | `pull_request`, `push` | Yes | Core SDK PR gate |
+| `staging-integration.yml` | Staging Integration | integration | `workflow_dispatch` / staging | No | Repo-local Honua Server integration lane for `honua-sdk-dotnet#31` |
 | `publish-dotnet-sdk.yml` | Publish .NET SDK | release | `workflow_dispatch`, `push` | No | Release-only |
+| `release-please.yml` | Release Please | maintenance | `push` | No | Version automation |
+
+## honua-sdk-python
+
+| Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
+|---|---|---|---|---|---|
+| `ci.yml` | CI | PR | `pull_request`, `push` | Yes | Core SDK PR gate |
+| `staging-integration.yml` | Staging Integration | integration | `workflow_dispatch` / staging | No | Repo-local Honua Server integration lane for `honua-sdk-python#21` |
+| `publish-python-sdk.yml` | Publish Python SDK | release | `workflow_dispatch`, `push` | No | Release-only |
 | `release-please.yml` | Release Please | maintenance | `push` | No | Version automation |
 
 ## Changes Made in This Audit (Ticket #485)

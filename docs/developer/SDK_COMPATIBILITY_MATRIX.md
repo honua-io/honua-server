@@ -62,10 +62,55 @@ schedule. It publishes per-cell JSON evidence plus a
 `sdk-compatibility-matrix-<run-id>` artifact containing a Markdown table and
 machine-readable summary.
 
-The per-SDK `#4` work can now use this manifest as the server-side compatibility
-contract and call `.github/workflows/reusable-sdk-pr-gate.yml` from each SDK
+The per-SDK integration lanes use this manifest as the server-side compatibility
+contract and can call `.github/workflows/reusable-sdk-pr-gate.yml` from each SDK
 repository for PR-local checks. The cross-version gate remains owned here so SDK
 repos do not need to duplicate the server ref policy.
+
+## Repo-Local SDK Trackers
+
+Each SDK repo owns its implementation lane and CI command. The issue body is the
+repo-local implementation plan; this server repo owns only seed/bootstrap
+contracts, matrix policy, and release evidence consumption.
+
+| SDK repo | Tracker | Server contract consumed |
+|---|---|---|
+| `honua-sdk-js` | [`honua-io/honua-sdk-js#39`](https://github.com/honua-io/honua-sdk-js/issues/39) | Real seeded server, public JS SDK APIs, protocol-surface diagnostics |
+| `honua-sdk-dotnet` | [`honua-io/honua-sdk-dotnet#31`](https://github.com/honua-io/honua-sdk-dotnet/issues/31) | Real seeded server, public .NET SDK APIs, protocol-surface diagnostics |
+| `honua-sdk-python` | [`honua-io/honua-sdk-python#21`](https://github.com/honua-io/honua-sdk-python/issues/21) | Real seeded server, public Python SDK APIs, protocol-surface diagnostics |
+
+## Server Bootstrap Contract
+
+The server-owned compatibility target is a real Honua Server process backed by
+PostGIS and seeded with `tests/seed/base-schema.sql`.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `HONUA_SERVER_BASE_URL` | `http://localhost:5000` | Base URL used by SDK integration tests |
+| `HONUA_ADMIN_API_KEY` | `ci-admin-password` | Admin key for compatibility metadata and admin SDK checks |
+| `HONUA_SDK_SERVICE_ID` | `test_service` | Seeded service used by FeatureServer/catalog checks |
+| `HONUA_SDK_LAYER_ID` | `0` | Seeded layer used by read/query checks |
+| `HONUA_SDK_SEED_PROFILE` | `tests/seed/base-schema.sql:test_service:layer0` | Human-readable seed profile recorded into evidence |
+
+SDK repos may either connect to an externally supplied server using these
+variables or start an equivalent seeded server. Mock-handler-only results do not
+qualify as release compatibility evidence.
+
+## Evidence Contract
+
+Each `compat-result.json` cell emitted by `sdk-server-compatibility.yml`
+records:
+
+- SDK package versions and checked-out refs for JavaScript, Python, and .NET
+- Honua Server ref, resolved commit, channel, and image field when image-based
+  runs are introduced
+- seed profile, service id, layer id, and protocol surfaces exercised
+- pass/fail status, exit code, workflow run metadata, server log path, run log
+  path, and a bounded failure log tail for reproduction
+
+The generated `sdk-compatibility-summary.json` embeds these cell records so
+release owners can review both the matrix decision and the raw evidence fields
+from one artifact.
 
 ## SDK Families
 

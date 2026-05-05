@@ -35,6 +35,20 @@ public sealed partial class PublicInterfaceProofLedgerTests
         "bounded-child-ticket"
     };
 
+    private static readonly HashSet<string> SdkCompatibilitySurfaceIds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "control-plane-admin",
+        "feature-server",
+        "ogc-api-features"
+    };
+
+    private static readonly Dictionary<string, string> SdkIntegrationTicketsByOwnerRepo = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["honua-sdk-js"] = "#39",
+        ["honua-sdk-dotnet"] = "#31",
+        ["honua-sdk-python"] = "#21"
+    };
+
     private static readonly Regex MarkdownLinkRegex =
         new(@"\[[^\]]+\]\((?<path>[^)]+)\)", RegexOptions.Compiled);
 
@@ -251,6 +265,15 @@ public sealed partial class PublicInterfaceProofLedgerTests
                    proof.EvidenceLocations.Any(IsGeospatialGrpcRepositoryUrl);
         }
 
+        if (SdkCompatibilitySurfaceIds.Contains(surfaceId))
+        {
+            return string.Equals(proof.ProofClass, "tool-interoperability", StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(proof.ExecutionLane, "nightly:sdk-server-compatibility", StringComparison.OrdinalIgnoreCase) &&
+                   SdkIntegrationTicketsByOwnerRepo.TryGetValue(proof.OwnerRepo, out var linkedTicket) &&
+                   string.Equals(proof.LinkedTicket, linkedTicket, StringComparison.Ordinal) &&
+                   proof.EvidenceLocations.Any(location => IsSdkIntegrationIssueUrl(location, proof.OwnerRepo, linkedTicket));
+        }
+
         return false;
     }
 
@@ -263,6 +286,21 @@ public sealed partial class PublicInterfaceProofLedgerTests
         => Uri.TryCreate(evidenceLocation, UriKind.Absolute, out var uri) &&
            string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase) &&
            string.Equals(uri.AbsolutePath.TrimEnd('/'), "/honua-io/geospatial-grpc", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSdkIntegrationIssueUrl(string evidenceLocation, string ownerRepo, string linkedTicket)
+    {
+        if (!Uri.TryCreate(evidenceLocation, UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var issueNumber = linkedTicket.TrimStart('#');
+        return string.Equals(
+            uri.AbsolutePath.TrimEnd('/'),
+            $"/honua-io/{ownerRepo}/issues/{issueNumber}",
+            StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string FormatOperationKey(string protocol, string operation) =>
         $"{protocol}::{operation}";

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-04-30T00:00:00Z",
+  "updatedUtc": "2026-05-05T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -90,6 +90,51 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": null
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "First-party JavaScript SDK compatibility lane validates admin compatibility metadata against a real seeded server; the server matrix replays pinned SDK refs for release confidence.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-js/issues/39"
+          ],
+          "ownerRepo": "honua-sdk-js",
+          "status": "implemented",
+          "linkedTicket": "#39",
+          "versionCaptureRule": "The sdk-server-compatibility workflow records @honua/sdk-js package version, SDK ref, Honua Server commit, seed profile, protocol surface list, and failure diagnostics in compat-result.json."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "First-party Python SDK compatibility lane validates admin compatibility metadata against a real seeded server; the server matrix replays pinned SDK refs for release confidence.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-python/issues/21"
+          ],
+          "ownerRepo": "honua-sdk-python",
+          "status": "implemented",
+          "linkedTicket": "#21",
+          "versionCaptureRule": "The sdk-server-compatibility workflow records honua-sdk and honua-admin package versions, SDK ref, Honua Server commit, seed profile, protocol surface list, and failure diagnostics in compat-result.json."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "First-party .NET SDK compatibility lane validates admin compatibility metadata against a real seeded server; the server matrix replays pinned SDK refs for release confidence.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-dotnet/issues/31"
+          ],
+          "ownerRepo": "honua-sdk-dotnet",
+          "status": "implemented",
+          "linkedTicket": "#31",
+          "versionCaptureRule": "The sdk-server-compatibility workflow records Honua.Sdk.Admin, Honua.Sdk.GeoServices, and Honua.Sdk.OgcFeatures package versions where present, SDK ref, Honua Server commit, seed profile, protocol surface list, and failure diagnostics in compat-result.json."
         }
       ]
     },
@@ -361,6 +406,51 @@
           "status": "implemented",
           "linkedTicket": "#463",
           "versionCaptureRule": "Reporter resolves client_version from the installed esri-leaflet package in node_modules."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "First-party JavaScript SDK integration lane exercises FeatureServer metadata and query flows against a real seeded server.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-js/issues/39"
+          ],
+          "ownerRepo": "honua-sdk-js",
+          "status": "implemented",
+          "linkedTicket": "#39",
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the feature-server surface, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "First-party Python SDK integration lane exercises FeatureServer metadata and query flows against a real seeded server.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-python/issues/21"
+          ],
+          "ownerRepo": "honua-sdk-python",
+          "status": "implemented",
+          "linkedTicket": "#21",
+          "versionCaptureRule": "The SDK compatibility evidence records honua-sdk package version, Honua Server commit, seed profile, the feature-server surface, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "First-party .NET SDK integration lane exercises FeatureServer read/query flows against a real seeded server from the SDK repo and is coordinated by the server compatibility matrix.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-dotnet/issues/31"
+          ],
+          "ownerRepo": "honua-sdk-dotnet",
+          "status": "implemented",
+          "linkedTicket": "#31",
+          "versionCaptureRule": "The SDK compatibility evidence records Honua.Sdk.GeoServices package version where present, Honua Server commit, seed profile, the feature-server surface, and bounded failure diagnostics."
         }
       ]
     },
@@ -896,6 +986,51 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "Record the exact QGIS version, run date, and immutable OGC API Features .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "First-party JavaScript SDK integration lane exercises OGC API Features discovery against a real seeded server.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-js/issues/39"
+          ],
+          "ownerRepo": "honua-sdk-js",
+          "status": "implemented",
+          "linkedTicket": "#39",
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the ogc-api-features surface, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "First-party Python SDK integration lane exercises OGC API Features query flows against a real seeded server from the SDK repo and is coordinated by the server compatibility matrix.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-python/issues/21"
+          ],
+          "ownerRepo": "honua-sdk-python",
+          "status": "implemented",
+          "linkedTicket": "#21",
+          "versionCaptureRule": "The SDK compatibility evidence records honua-sdk package version, Honua Server commit, seed profile, the ogc-api-features surface, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "First-party .NET SDK integration lane exercises OGC API Features read/query flows against a real seeded server from the SDK repo and is coordinated by the server compatibility matrix.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-dotnet/issues/31"
+          ],
+          "ownerRepo": "honua-sdk-dotnet",
+          "status": "implemented",
+          "linkedTicket": "#31",
+          "versionCaptureRule": "The SDK compatibility evidence records Honua.Sdk.OgcFeatures package version where present, Honua Server commit, seed profile, the ogc-api-features surface, and bounded failure diagnostics."
         }
       ]
     },

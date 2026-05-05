@@ -1,5 +1,6 @@
 # Reusable SDK PR gate workflow.
-# Provides a shared PR-gate contract for honua-sdk-js and honua-sdk-dotnet.
+# Provides a shared PR-gate contract for honua-sdk-js, honua-sdk-dotnet,
+# and honua-sdk-python.
 # See docs/ci/gate-model.md and docs/ci/config-conventions.md.
 
 name: SDK PR Gate
@@ -27,6 +28,11 @@ on:
         default: ''
       dotnet-version:
         description: '.NET SDK version (for .NET SDKs)'
+        required: false
+        type: string
+        default: ''
+      python-version:
+        description: 'Python version (for Python SDKs)'
         required: false
         type: string
         default: ''
@@ -69,6 +75,13 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Setup Python
+        if: inputs.python-version != ''
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: 'pip'
 
       - name: Cache NuGet
         if: inputs.dotnet-version != ''

@@ -2,7 +2,7 @@
 
 This document covers the cross-repo testing setup for Honua's MCP surface.
 
-In the public-interface proof ledger, MCP is the only sanctioned cross-repo child surface. `honua-server` owns seed data, CI wiring, and release-proof plumbing; `honua-sdk-js` owns the deterministic certification scripts, artifact generation, and LLM smoke implementation behind child ticket `#484`.
+In the public-interface proof ledger, MCP is a sanctioned cross-repo child surface. `honua-server` owns seed data, CI wiring, and release-proof plumbing; `honua-sdk-js` owns the deterministic certification scripts, artifact generation, and LLM smoke implementation behind child ticket `#484`.
 
 ## Repo ownership split
 

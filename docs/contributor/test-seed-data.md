@@ -75,7 +75,7 @@ runner.apply(postgis.get_connection(schema), schema=schema, profile="core")
 
 | File | Purpose | Applied by |
 |------|---------|------------|
-| `tests/seed/base-schema.sql` | Shared base schema, tables, indexes, and deterministic `test_service` + layer 0 feature seed data | All CI integration-test jobs (`js-integration-tests`, `esri-leaflet-browser-tests`, `mcp-certification`, `mcp-llm-smoke`) |
+| `tests/seed/base-schema.sql` | Shared base schema, tables, indexes, and deterministic `test_service` + layer 0 feature seed data; recorded as `tests/seed/base-schema.sql:test_service:layer0` in SDK compatibility evidence | All CI integration-test jobs (`js-integration-tests`, `esri-leaflet-browser-tests`, `mcp-certification`, `mcp-llm-smoke`, `sdk-server-compatibility`) |
 | `tests/seed/client-compat-v1.sql` | Versioned client compatibility certification seed snapshot; canonical source for desktop/BI smoke evidence and the Python STAC client compatibility lane | `windows-client-compat-nightly.yml`, `tests/python/stac_client` |
 | `tests/seed/mobile-offline-demo-v1.sql` | Deterministic SDK-backed mobile offline field-operations fixture with service/layer/form metadata, provisional offline manifest metadata, baseline edit records, and safe reset semantics | Manual local/staging/cloud provisioning for honua-server#895; see [Mobile Offline Demo Fixture](../developer/mobile-offline-demo-fixture.md) |
 | `tests/seed/mobile-offline-demo-conflict-delta.sql` | Advances the mobile offline conflict target from `sync_version = 1` to `sync_version = 2` after package download | Manual/mobile harness conflict scenario for honua-server#895 |
