@@ -46,17 +46,23 @@ public interface IFeatureChangeOutboxRepository
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Marks a row as successfully dispatched. Idempotent for rows already in the
-    /// dispatched state.
+    /// Marks a row as successfully dispatched, but only if <paramref name="ownerNodeId"/>
+    /// still holds the active claim. Returns <c>false</c> when the claim has been recovered
+    /// or reclaimed by another node so the caller can log a stale-claim warning instead of
+    /// overwriting a state owned by a different worker.
     /// </summary>
-    Task MarkDispatchedAsync(Guid outboxId, CancellationToken cancellationToken);
+    Task<bool> MarkDispatchedAsync(Guid outboxId, string ownerNodeId, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Records a dispatch failure. Increments retry count; transitions to
-    /// <c>dead_lettered</c> when retry count reaches <paramref name="maxRetries"/>.
+    /// Records a dispatch failure if <paramref name="ownerNodeId"/> still holds the active
+    /// claim. Increments retry count; transitions to <c>dead_lettered</c> when retry count
+    /// reaches <paramref name="maxRetries"/>. Returns <c>false</c> when the claim has been
+    /// recovered or reclaimed by another node so the caller can skip retry-bookkeeping for
+    /// a row it no longer owns.
     /// </summary>
-    Task MarkFailedAsync(
+    Task<bool> MarkFailedAsync(
         Guid outboxId,
+        string ownerNodeId,
         string errorMessage,
         int maxRetries,
         CancellationToken cancellationToken);

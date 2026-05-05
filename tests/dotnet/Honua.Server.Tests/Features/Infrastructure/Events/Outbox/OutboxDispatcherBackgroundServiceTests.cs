@@ -24,12 +24,13 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     public async Task ExecuteOnceAsync_DispatchesPendingRow_AndMarksDispatched()
     {
         // Happy path: dispatcher claims a pending row, decodes the canonical payload, publishes,
-        // and marks the row dispatched. Verifies that the canonical event_payload field flows end-to-end.
+        // and marks the row dispatched. Verifies that the canonical event_payload field flows end-to-end
+        // and that the strict publish path (#692) is the one driven by the dispatcher.
         var (repository, capability) = BuildRepository(includePendingRow: true, eventId: "evt-happy");
         var publisher = Substitute.For<IFeatureChangeEventPublisher>();
         FeatureChangeEventRequest? captured = null;
         publisher
-            .When(p => p.PublishAsync(Arg.Any<FeatureChangeEventRequest>(), Arg.Any<CancellationToken>()))
+            .When(p => p.PublishStrictAsync(Arg.Any<FeatureChangeEventRequest>(), Arg.Any<CancellationToken>()))
             .Do(call => captured = call.Arg<FeatureChangeEventRequest>());
 
         var dispatcher = BuildDispatcher(repository, capability, publisher);
@@ -39,8 +40,15 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         dispatched.Should().Be(1);
         captured.Should().NotBeNull();
         captured!.EventId.Should().Be("evt-happy");
-        repository.DispatchedIds.Should().ContainSingle().Which.Should().Be(repository.OnlyOutboxId);
-        repository.FailedIds.Should().BeEmpty();
+        repository.Dispatched.Should().ContainSingle()
+            .Which.OutboxId.Should().Be(repository.OnlyOutboxId);
+        // The terminal update must use the same claim owner the row was claimed with so a
+        // recovered/reclaimed lease can no-op stale workers (#692).
+        repository.Dispatched[0].OwnerNodeId.Should().Be(repository.LastClaimNodeId);
+        repository.Failed.Should().BeEmpty();
+        // The dispatcher must not fall back to the best-effort publish path; otherwise a
+        // failed durable append would be silently swapped for a retry-queue enqueue.
+        await publisher.DidNotReceiveWithAnyArgs().PublishAsync(default!, default);
     }
 
     [UnitTest]
@@ -49,7 +57,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         var (repository, capability) = BuildRepository(includePendingRow: true, eventId: "evt-fail");
         var publisher = Substitute.For<IFeatureChangeEventPublisher>();
         publisher
-            .PublishAsync(Arg.Any<FeatureChangeEventRequest>(), Arg.Any<CancellationToken>())
+            .PublishStrictAsync(Arg.Any<FeatureChangeEventRequest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new InvalidOperationException("downstream offline")));
 
         var dispatcher = BuildDispatcher(repository, capability, publisher);
@@ -57,8 +65,10 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         var dispatched = await dispatcher.ExecuteOnceAsync(CancellationToken.None);
 
         dispatched.Should().Be(0, "publish failure must not count as dispatched");
-        repository.FailedIds.Should().ContainSingle().Which.Should().Be(repository.OnlyOutboxId);
-        repository.DispatchedIds.Should().BeEmpty();
+        repository.Failed.Should().ContainSingle()
+            .Which.OutboxId.Should().Be(repository.OnlyOutboxId);
+        repository.Failed[0].OwnerNodeId.Should().Be(repository.LastClaimNodeId);
+        repository.Dispatched.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -78,7 +88,32 @@ public sealed class OutboxDispatcherBackgroundServiceTests
 
         dispatched.Should().Be(0);
         await publisher.DidNotReceiveWithAnyArgs().PublishAsync(default!, default);
-        repository.FailedIds.Should().ContainSingle().Which.Should().Be(corruptEntry.OutboxId);
+        await publisher.DidNotReceiveWithAnyArgs().PublishStrictAsync(default!, default);
+        repository.Failed.Should().ContainSingle();
+        repository.Failed[0].OutboxId.Should().Be(corruptEntry.OutboxId);
+        repository.Failed[0].OwnerNodeId.Should().Be(repository.LastClaimNodeId);
+        repository.Failed[0].Error.Should().Be("Outbox payload decode failed.");
+    }
+
+    [UnitTest]
+    public async Task ExecuteOnceAsync_StaleClaimAfterPublish_DoesNotCountAsDispatched()
+    {
+        // Recovery race (#692): the worker publishes successfully but its claim was already
+        // recovered (and possibly reclaimed by another node) by the time MarkDispatchedAsync
+        // runs. The repository returns false; the dispatcher must not count the row as
+        // dispatched and must not overwrite the new owner's eventual terminal state.
+        var (repository, capability) = BuildRepository(includePendingRow: true, eventId: "evt-stale");
+        var pendingEntry = repository.Pending.First();
+        repository.StaleClaims.Add(pendingEntry.OutboxId);
+
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var dispatcher = BuildDispatcher(repository, capability, publisher, nodeId: "node-stale");
+
+        var dispatched = await dispatcher.ExecuteOnceAsync(CancellationToken.None);
+
+        dispatched.Should().Be(0, "a stale-claim outcome must not count as dispatched");
+        repository.Dispatched.Should().BeEmpty("the row's terminal state belongs to the new owner now");
+        repository.Failed.Should().BeEmpty("a stale claim is neither dispatched nor failed from this worker's perspective");
     }
 
     [UnitTest]
@@ -246,10 +281,17 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     private sealed class FakeOutboxRepository : IFeatureChangeOutboxRepository
     {
         public ConcurrentQueue<FeatureChangeOutboxEntry> Pending { get; } = new();
-        public List<Guid> DispatchedIds { get; } = new();
-        public List<Guid> FailedIds { get; } = new();
+        public List<(Guid OutboxId, string OwnerNodeId)> Dispatched { get; } = new();
+        public List<(Guid OutboxId, string OwnerNodeId, string Error)> Failed { get; } = new();
         public int RecoverCallCount { get; private set; }
         public int ExpiredClaimsToRecover { get; set; }
+        /// <summary>
+        /// The node id stamped on the most recent ClaimPendingAsync call. Used by tests to
+        /// assert that the dispatcher threads the claim owner back through MarkDispatchedAsync
+        /// and MarkFailedAsync, since the dispatcher's internal _nodeId derives from the host
+        /// environment rather than a constructor parameter.
+        /// </summary>
+        public string? LastClaimNodeId { get; private set; }
         public OutboxBacklogMetrics Backlog { get; set; } = new()
         {
             PendingCount = 0,
@@ -257,7 +299,17 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             OldestPendingAgeSeconds = 0,
         };
 
-        public Guid OnlyOutboxId => Pending.FirstOrDefault()?.OutboxId ?? DispatchedIds.Concat(FailedIds).Single();
+        /// <summary>
+        /// Set of outbox ids whose claims should be considered stale (e.g. recovered or
+        /// reclaimed by another node). MarkDispatchedAsync/MarkFailedAsync return false for
+        /// these ids without recording the terminal update.
+        /// </summary>
+        public HashSet<Guid> StaleClaims { get; } = new();
+
+        public List<Guid> DispatchedIds => Dispatched.Select(static x => x.OutboxId).ToList();
+        public List<Guid> FailedIds => Failed.Select(static x => x.OutboxId).ToList();
+
+        public Guid OnlyOutboxId => Pending.FirstOrDefault()?.OutboxId ?? Dispatched.Select(static x => x.OutboxId).Concat(Failed.Select(static x => x.OutboxId)).Single();
 
         public Task WriteOutboxRowAsync(DbConnection connection, DbTransaction transaction,
             FeatureChangeOutboxEntry entry, CancellationToken cancellationToken)
@@ -275,6 +327,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         public Task<IReadOnlyList<FeatureChangeOutboxEntry>> ClaimPendingAsync(
             string nodeId, int batchSize, TimeSpan claimTtl, CancellationToken cancellationToken)
         {
+            LastClaimNodeId = nodeId;
             var claimed = new List<FeatureChangeOutboxEntry>(batchSize);
             for (var i = 0; i < batchSize && Pending.TryDequeue(out var entry); i++)
             {
@@ -289,16 +342,24 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             return Task.FromResult<IReadOnlyList<FeatureChangeOutboxEntry>>(claimed);
         }
 
-        public Task MarkDispatchedAsync(Guid outboxId, CancellationToken cancellationToken)
+        public Task<bool> MarkDispatchedAsync(Guid outboxId, string ownerNodeId, CancellationToken cancellationToken)
         {
-            DispatchedIds.Add(outboxId);
-            return Task.CompletedTask;
+            if (StaleClaims.Contains(outboxId))
+            {
+                return Task.FromResult(false);
+            }
+            Dispatched.Add((outboxId, ownerNodeId));
+            return Task.FromResult(true);
         }
 
-        public Task MarkFailedAsync(Guid outboxId, string errorMessage, int maxRetries, CancellationToken cancellationToken)
+        public Task<bool> MarkFailedAsync(Guid outboxId, string ownerNodeId, string errorMessage, int maxRetries, CancellationToken cancellationToken)
         {
-            FailedIds.Add(outboxId);
-            return Task.CompletedTask;
+            if (StaleClaims.Contains(outboxId))
+            {
+                return Task.FromResult(false);
+            }
+            Failed.Add((outboxId, ownerNodeId, errorMessage));
+            return Task.FromResult(true);
         }
 
         public Task<int> RecoverExpiredClaimsAsync(CancellationToken cancellationToken)

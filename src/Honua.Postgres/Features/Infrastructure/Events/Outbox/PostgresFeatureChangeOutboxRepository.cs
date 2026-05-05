@@ -108,8 +108,14 @@ RETURNING
         return results;
     }
 
-    public async Task MarkDispatchedAsync(Guid outboxId, CancellationToken cancellationToken)
+    public async Task<bool> MarkDispatchedAsync(Guid outboxId, string ownerNodeId, CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerNodeId);
+
+        // Bind the terminal update to the active claim owner. After RecoverExpiredClaimsAsync
+        // resets a stalled lease, a different worker may have re-claimed the row; this guard
+        // makes the stale worker's MarkDispatched a no-op so it cannot overwrite the new
+        // owner's state.
         const string sql = @"
 UPDATE honua.feature_change_outbox
 SET status = 'dispatched',
@@ -118,25 +124,32 @@ SET status = 'dispatched',
     claim_expires_at = NULL,
     last_error = NULL
 WHERE outbox_id = @outbox_id
-  AND status IN ('claimed', 'pending', 'failed')";
+  AND status = 'claimed'
+  AND claim_node_id = @owner_node_id";
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("outbox_id", NpgsqlDbType.Uuid, outboxId);
-        _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        command.Parameters.AddWithValue("owner_node_id", NpgsqlDbType.Text, ownerNodeId);
+        var rows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return rows > 0;
     }
 
-    public async Task MarkFailedAsync(
+    public async Task<bool> MarkFailedAsync(
         Guid outboxId,
+        string ownerNodeId,
         string errorMessage,
         int maxRetries,
         CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerNodeId);
         ArgumentNullException.ThrowIfNull(errorMessage);
 
-        // Increment retry count atomically. If the next attempt count would meet
-        // or exceed maxRetries, transition to dead_lettered so the dispatcher
-        // stops re-claiming and the operator is alerted via the health check.
+        // Increment retry count atomically only when this node still owns the claim.
+        // If the next attempt count would meet or exceed maxRetries, transition to
+        // dead_lettered so the dispatcher stops re-claiming and the operator is
+        // alerted via the health check. A recovered/reclaimed lease causes 0 rows
+        // updated and a stale-claim outcome to the caller.
         const string sql = @"
 UPDATE honua.feature_change_outbox
 SET status = CASE WHEN retry_count + 1 >= @max_retries THEN 'dead_lettered' ELSE 'failed' END,
@@ -144,14 +157,18 @@ SET status = CASE WHEN retry_count + 1 >= @max_retries THEN 'dead_lettered' ELSE
     last_error = @error,
     claim_node_id = NULL,
     claim_expires_at = NULL
-WHERE outbox_id = @outbox_id";
+WHERE outbox_id = @outbox_id
+  AND status = 'claimed'
+  AND claim_node_id = @owner_node_id";
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("outbox_id", NpgsqlDbType.Uuid, outboxId);
+        command.Parameters.AddWithValue("owner_node_id", NpgsqlDbType.Text, ownerNodeId);
         command.Parameters.AddWithValue("max_retries", NpgsqlDbType.Integer, maxRetries);
         command.Parameters.AddWithValue("error", NpgsqlDbType.Text, Truncate(errorMessage, 4000));
-        _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        var rows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return rows > 0;
     }
 
     public async Task<int> RecoverExpiredClaimsAsync(CancellationToken cancellationToken)

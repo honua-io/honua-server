@@ -139,6 +139,11 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         FeatureChangeOutboxEntry entry,
         CancellationToken cancellationToken)
     {
+        // ClaimPendingAsync stamps claim_node_id on the returned entry; the dispatcher
+        // must thread that token back into terminal updates so a row whose lease was
+        // recovered by another worker is never overwritten by this one.
+        var ownerNodeId = entry.ClaimNodeId ?? _nodeId;
+
         FeatureChangeEventRequest? request;
         try
         {
@@ -151,22 +156,35 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
             // Payload corruption is permanent — mark as failed and let the retry budget burn out
             // so the dead-letter health check surfaces the row for operator review.
             Log.PayloadDecodeFailed(_logger, entry.OutboxId, ex);
-            await SafeMarkFailedAsync(repository, entry.OutboxId, "Outbox payload decode failed.", cancellationToken).ConfigureAwait(false);
+            await SafeMarkFailedAsync(repository, entry.OutboxId, ownerNodeId, "Outbox payload decode failed.", cancellationToken).ConfigureAwait(false);
             OutboxMetrics.Failed.Add(1);
             return false;
         }
 
         if (request is null)
         {
-            await SafeMarkFailedAsync(repository, entry.OutboxId, "Outbox payload deserialized to null.", cancellationToken).ConfigureAwait(false);
+            await SafeMarkFailedAsync(repository, entry.OutboxId, ownerNodeId, "Outbox payload deserialized to null.", cancellationToken).ConfigureAwait(false);
             OutboxMetrics.Failed.Add(1);
             return false;
         }
 
         try
         {
-            await publisher.PublishAsync(request, cancellationToken).ConfigureAwait(false);
-            await repository.MarkDispatchedAsync(entry.OutboxId, cancellationToken).ConfigureAwait(false);
+            // Strict publish: a failed durable append must not be silently traded for a
+            // best-effort retry-queue enqueue. The outbox row stays claimed/failed and is
+            // re-dispatched on the next pass.
+            await publisher.PublishStrictAsync(request, cancellationToken).ConfigureAwait(false);
+            var marked = await repository.MarkDispatchedAsync(entry.OutboxId, ownerNodeId, cancellationToken).ConfigureAwait(false);
+            if (!marked)
+            {
+                // The lease was recovered (or reclaimed) before our update landed. Do not
+                // count this as a dispatch — the new owner will publish again and update
+                // the row's terminal state itself. Telemetry surfaces the recovered claim
+                // so operators can correlate with dispatcher pauses.
+                Log.StaleClaimAfterDispatch(_logger, entry.OutboxId, ownerNodeId);
+                return false;
+            }
+
             _lastDispatchAt = DateTimeOffset.UtcNow;
             OutboxMetrics.Dispatched.Add(1);
             return true;
@@ -180,7 +198,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         catch (Exception ex)
         {
             Log.DispatchFailed(_logger, entry.OutboxId, entry.RetryCount + 1, ex);
-            await SafeMarkFailedAsync(repository, entry.OutboxId, BuildSafeError(ex), cancellationToken).ConfigureAwait(false);
+            await SafeMarkFailedAsync(repository, entry.OutboxId, ownerNodeId, BuildSafeError(ex), cancellationToken).ConfigureAwait(false);
             // The repository transitions to dead_lettered when retries are exhausted; we count
             // the eventual transition by inspecting the post-update retry count + status, but
             // for simplicity emit failed_total here and dead_lettered_total once the next
@@ -200,12 +218,19 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
     private async Task SafeMarkFailedAsync(
         IFeatureChangeOutboxRepository repository,
         Guid outboxId,
+        string ownerNodeId,
         string error,
         CancellationToken cancellationToken)
     {
         try
         {
-            await repository.MarkFailedAsync(outboxId, error, _options.MaxRetries, cancellationToken).ConfigureAwait(false);
+            var marked = await repository.MarkFailedAsync(outboxId, ownerNodeId, error, _options.MaxRetries, cancellationToken).ConfigureAwait(false);
+            if (!marked)
+            {
+                // Stale claim — another worker now owns this row's lifecycle. Skip the
+                // bookkeeping silently rather than retrying so we do not race the new owner.
+                Log.StaleClaimAfterFailure(_logger, outboxId, ownerNodeId);
+            }
         }
         catch (Exception ex)
         {
@@ -292,5 +317,11 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
 
         [LoggerMessage(EventId = 9309, Level = LogLevel.Debug, Message = "Outbox backlog query failed.")]
         public static partial void BacklogQueryFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 9310, Level = LogLevel.Information, Message = "Outbox row {OutboxId} no longer owned by node {OwnerNodeId} when marking dispatched; another worker will re-publish.")]
+        public static partial void StaleClaimAfterDispatch(ILogger logger, Guid outboxId, string ownerNodeId);
+
+        [LoggerMessage(EventId = 9311, Level = LogLevel.Information, Message = "Outbox row {OutboxId} no longer owned by node {OwnerNodeId} when recording failure; new owner will record terminal state.")]
+        public static partial void StaleClaimAfterFailure(ILogger logger, Guid outboxId, string ownerNodeId);
     }
 }

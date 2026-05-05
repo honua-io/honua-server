@@ -107,6 +107,58 @@ public sealed class FeatureStreamPublisherTests : IDisposable
     }
 
     [UnitTest]
+    public async Task PublishStrictAsync_WhenAppendFails_ThrowsAndDoesNotQueueRetry()
+    {
+        // Outbox dispatcher contract (#692): a failed durable append must surface as an
+        // exception so the dispatcher can keep the outbox row claimed/failed instead of
+        // silently transferring durability to the best-effort retry queue.
+        using var session = _sessionManager.CreateSession("WebSocket", null);
+        var retryQueue = new RecordingRetryQueue();
+        var publisher = new FeatureStreamPublisher(
+            new ThrowingFeatureChangeEventStore(),
+            _sessionManager,
+            NullLogger<FeatureStreamPublisher>.Instance,
+            retryQueue);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await publisher.PublishStrictAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = "svc-1",
+                LayerId = 0,
+                ObjectId = 1,
+                Operation = "update",
+                Protocol = "rest",
+                RequestId = "req-strict-fail"
+            }));
+
+        Assert.False(session.Reader.TryRead(out _));
+        Assert.Empty(retryQueue.Requests);
+    }
+
+    [UnitTest]
+    public async Task PublishStrictAsync_OnSuccess_PersistsAndBroadcasts()
+    {
+        // Strict path keeps the streaming fan-out so dispatcher-published events still
+        // reach live subscribers with the same envelope contract as the inline path.
+        using var session = _sessionManager.CreateSession("WebSocket", null);
+
+        await _publisher.PublishStrictAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "svc-strict",
+            LayerId = 0,
+            ObjectId = 7,
+            Operation = "create",
+            Protocol = "outbox",
+            RequestId = "req-strict-ok"
+        });
+
+        var stored = await _store.QueryAsync(null, null, null, 10);
+        Assert.Single(stored);
+        Assert.True(session.Reader.TryRead(out var msg));
+        Assert.Equal("svc-strict", msg.Envelope.ServiceId);
+    }
+
+    [UnitTest]
     public async Task PublishAsync_WhenAppendFailsAndRetryQueueFails_ThrowsAndDoesNotBroadcast()
     {
         using var session = _sessionManager.CreateSession("WebSocket", null);
