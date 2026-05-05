@@ -34,7 +34,7 @@ Sources:
 
 | Operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
-| WMTS | `.../MapServer/WMTS` | GET | Partial | `GET /rest/services/{serviceId}/MapServer/WMTS`, `GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}`, `GET /ogc/services/{serviceId}/wmts` | Supports `GetCapabilities`, `GetTile`, and `GetFeatureInfo`, but scope remains WebMercatorQuad-only. Time-aware tile layers advertise a continuous `time` dimension; `GetTile` accepts `time=` as an RFC 3339 instant or interval. See [Temporal Animation API](temporal-animation-api.md). |
+| WMTS | `.../MapServer/WMTS` | GET | Partial | `GET /rest/services/{serviceId}/MapServer/WMTS`, `GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}`, `GET /ogc/services/{serviceId}/wmts` | Supports `GetCapabilities`, `GetTile`, and `GetFeatureInfo`, but scope remains WebMercatorQuad-only. Time-aware tile layers advertise a continuous `time` dimension; both `GetTile` and `GetFeatureInfo` accept `time=` as an RFC 3339 instant or interval and apply it to the layer's start time field via the shared temporal-filter pipeline. See [Temporal Animation API](temporal-animation-api.md). |
 
 ### Not implemented
 

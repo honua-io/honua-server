@@ -499,11 +499,17 @@ internal static class WmtsRequestHandlers
         }
 
         // Build the optional temporal filter from the validated `time` dimension.
-        // The validator guarantees the value is parseable; treat unsupported layers
-        // as InvalidParameterValue to match the GetCapabilities advertising contract.
-        if (!TryBuildWmtsLayerTemporalFilter(context, query, layer!, out var tileTemporalFilter, out var temporalFilterError))
+        // The validator guarantees the value is parseable, "default", or "current";
+        // this resolver maps default/current to the layer's max timestamp via the
+        // shared TemporalExtentHelpers so request handling matches what
+        // GetCapabilities advertised.
+        var tileTemporalCancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var tileTemporalFeatureReader = context.RequestServices.GetService<IFeatureReader>();
+        var (tileTemporalFilter, tileTemporalFilterError) = await TryBuildWmtsLayerTemporalFilterAsync(
+            context, query, layer!, tileTemporalFeatureReader, tileTemporalCancellationToken).ConfigureAwait(false);
+        if (tileTemporalFilterError is not null)
         {
-            return temporalFilterError!;
+            return tileTemporalFilterError;
         }
 
         if (!TryGetRequiredQueryValue(query, "FORMAT", out var formatValue))
@@ -589,7 +595,7 @@ internal static class WmtsRequestHandlers
             tileRow,
             tileCol,
             maxFeatures,
-            TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context),
+            tileTemporalCancellationToken,
             tileTemporalFilter is null ? null : [tileTemporalFilter]).ConfigureAwait(false);
 
         return renderResult.IsSuccess
@@ -680,9 +686,15 @@ internal static class WmtsRequestHandlers
             return dimensionError;
         }
 
-        if (!TryBuildWmtsLayerTemporalFilter(context, query, layer!, out var featureInfoTemporalFilter, out var temporalFilterError))
+        var (featureInfoTemporalFilter, featureInfoTemporalFilterError) = await TryBuildWmtsLayerTemporalFilterAsync(
+            context,
+            query,
+            layer!,
+            context.RequestServices.GetService<IFeatureReader>(),
+            cancellationToken).ConfigureAwait(false);
+        if (featureInfoTemporalFilterError is not null)
         {
-            return temporalFilterError!;
+            return featureInfoTemporalFilterError;
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIXSET", out var tileMatrixSet))
@@ -1704,6 +1716,34 @@ internal static class WmtsRequestHandlers
         resolvedValue = string.Empty;
         var normalized = rawValue.Trim();
 
+        // The continuous time dimension is dynamically populated in
+        // GetCapabilities (default/current = max timestamp) but the sync
+        // validator stub leaves DefaultValue/CurrentValue null. Accept the
+        // "default" and "current" tokens here so they pass validation; the
+        // request handler resolves them to the actual timestamp via the async
+        // TemporalExtentHelpers in TryBuildWmtsLayerTemporalFilterAsync.
+        if (string.Equals(dimension.Identifier, "time", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.Equals(normalized, "default", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "current", StringComparison.OrdinalIgnoreCase))
+            {
+                resolvedValue = normalized;
+                return true;
+            }
+
+            // The continuous time dimension does not enumerate discrete values;
+            // accept any RFC 3339 instant or interval and let downstream
+            // rendering ignore values that do not intersect data (empty tile).
+            if (OgcTemporalFilterParser.TryParseRange(normalized, out var start, out var end, out _) &&
+                (start is not null || end is not null))
+            {
+                resolvedValue = normalized;
+                return true;
+            }
+
+            return false;
+        }
+
         if (string.Equals(normalized, "default", StringComparison.OrdinalIgnoreCase))
         {
             if (string.IsNullOrWhiteSpace(dimension.DefaultValue))
@@ -1729,21 +1769,6 @@ internal static class WmtsRequestHandlers
             return resolvedValue.Length > 0;
         }
 
-        // The continuous time dimension does not enumerate discrete values;
-        // accept any RFC 3339 instant or interval and let downstream rendering
-        // ignore values that do not intersect data (returning an empty tile).
-        if (string.Equals(dimension.Identifier, "time", StringComparison.OrdinalIgnoreCase))
-        {
-            if (OgcTemporalFilterParser.TryParseRange(normalized, out var start, out var end, out _) &&
-                (start is not null || end is not null))
-            {
-                resolvedValue = normalized;
-                return true;
-            }
-
-            return false;
-        }
-
         var matching = dimension.Values.FirstOrDefault(value =>
             string.Equals(value, normalized, StringComparison.OrdinalIgnoreCase));
         if (matching is null)
@@ -1759,55 +1784,84 @@ internal static class WmtsRequestHandlers
     /// Builds the optional <see cref="TemporalFilter"/> for a WMTS GetTile or
     /// GetFeatureInfo request from the validated <c>time</c> dimension value.
     /// The validator (<see cref="TryValidateWmtsDimensionParameters"/>) has
-    /// already accepted the value as an RFC 3339 instant or interval. CITE
-    /// Terrain owns its own non-temporal "time" handling and is bypassed so
-    /// existing CITE behavior is preserved. Layers without configured TimeInfo
-    /// also bypass — those layers do not advertise the dimension and the
-    /// validator would have rejected an unknown parameter.
+    /// already accepted the value as <c>default</c>/<c>current</c> or as an
+    /// RFC 3339 instant or interval; this helper resolves <c>default</c>/
+    /// <c>current</c> to the layer's max timestamp via
+    /// <see cref="TemporalExtentHelpers.TryResolveTemporalRangeAsync"/> so it
+    /// matches the dimension that GetCapabilities advertises. CITE Terrain
+    /// owns its own non-temporal "time" handling and is bypassed so existing
+    /// CITE behavior is preserved. Layers without configured TimeInfo also
+    /// bypass — those layers do not advertise the dimension and the validator
+    /// would have rejected an unknown parameter.
     /// </summary>
-    private static bool TryBuildWmtsLayerTemporalFilter(
+    private static async Task<(TemporalFilter? Filter, IResult? Error)> TryBuildWmtsLayerTemporalFilterAsync(
         HttpContext context,
         IQueryCollection query,
         LayerDefinition layer,
-        out TemporalFilter? temporalFilter,
-        out IResult? errorResult)
+        IFeatureReader? featureReader,
+        CancellationToken cancellationToken)
     {
-        temporalFilter = null;
-        errorResult = null;
-
         if (!query.ContainsKey("time"))
         {
-            return true;
+            return (null, null);
         }
 
         var rawValue = GetQueryValue(query, "time");
         if (string.IsNullOrWhiteSpace(rawValue))
         {
-            return true;
+            return (null, null);
         }
 
         if (string.Equals(layer.Name, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase))
         {
-            return true;
+            return (null, null);
         }
 
         var timeInfo = layer.Metadata?.TimeInfo;
         if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
         {
-            return true;
+            return (null, null);
         }
 
-        if (!OgcTemporalFilterParser.TryParse(rawValue, layer, out var parsed, out var parseError))
+        var normalized = rawValue.Trim();
+        var parseInput = normalized;
+
+        // GetCapabilities advertises <Default> and <Current> as the layer's
+        // max timestamp; resolve "default"/"current" to that same value here so
+        // request handling is consistent with the advertised contract.
+        if (string.Equals(normalized, "default", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "current", StringComparison.OrdinalIgnoreCase))
         {
-            errorResult = CreateWmtsExceptionReport(context,
+            if (featureReader is null)
+            {
+                return (null, null);
+            }
+
+            var range = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
+                layer, featureReader, cancellationToken).ConfigureAwait(false);
+            if (range is null || !range.Value.HasExtent || range.Value.Max is null)
+            {
+                // Capabilities only advertises default/current when an extent
+                // exists, so an empty layer here means apply no filter (full
+                // extent) rather than reject — preserves the optional-dimension
+                // contract documented in temporal-animation-api.md.
+                return (null, null);
+            }
+
+            parseInput = range.Value.Max.Value.UtcDateTime.ToString(
+                "yyyy-MM-ddTHH:mm:ssZ",
+                CultureInfo.InvariantCulture);
+        }
+
+        if (!OgcTemporalFilterParser.TryParse(parseInput, layer, out var parsed, out var parseError))
+        {
+            return (null, CreateWmtsExceptionReport(context,
                 "InvalidParameterValue",
                 "time",
-                parseError ?? "Invalid value for time parameter.");
-            return false;
+                parseError ?? "Invalid value for time parameter."));
         }
 
-        temporalFilter = parsed;
-        return true;
+        return (parsed, null);
     }
 
     private static string BuildWmtsMinimalCapabilities()

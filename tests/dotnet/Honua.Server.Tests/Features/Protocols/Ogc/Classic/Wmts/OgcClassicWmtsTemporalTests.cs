@@ -108,6 +108,59 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetTile_TimeAwareLayer_WithTimeDefault_ReturnsTile()
+    {
+        // GetCapabilities advertises the dynamic time dimension's <Default>
+        // and <Current> as the layer's max timestamp. Requests sending those
+        // tokens must therefore validate and resolve to a real instant rather
+        // than be rejected as InvalidParameterValue.
+        await ConfigureLayerAsTimeAwareAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png&time=default");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetTile_TimeAwareLayer_WithTimeCurrent_ReturnsTile()
+    {
+        await ConfigureLayerAsTimeAwareAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png&time=current");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetFeatureInfo_TimeAwareLayer_WithTimeCurrent_ReturnsFeatures()
+    {
+        // GetFeatureInfo must accept the same tokens GetCapabilities
+        // advertises. With "current" resolved to the layer's max timestamp,
+        // the seeded 2023 features remain in the temporal window.
+        await ConfigureLayerAsTimeAwareAsync();
+
+        var url =
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0" +
+            $"&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png" +
+            "&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=128&J=128" +
+            "&INFOFORMAT=application/json" +
+            "&time=current";
+
+        var response = await _fixture.Client.GetAsync(url);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetFeatureInfo_TimeAwareLayer_OutOfRangeTime_ReturnsEmptyFeatures()
     {
         // Seeded test layer rows have `timestamp` values in 2022–2023; a time

@@ -820,6 +820,19 @@ internal static class WmsRequestHandlers
             return (null, null);
         }
 
+        // CITE Autos uses synthetic rendering with its own TIME parser
+        // (`current`, comma-separated instants, intervals). Bypass the generic
+        // OgcTemporalFilterParser entirely when the request targets that layer
+        // so CITE-supported values are not rejected before TryHandleCiteWmsGetMap
+        // can resolve them.
+        foreach (var layer in layers)
+        {
+            if (string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
+            {
+                return (null, null);
+            }
+        }
+
         if (!OgcTemporalFilterParser.TryParseRange(timeParam, out var start, out var end, out var parseError))
         {
             return (null, CreateWmsServiceException(
@@ -837,14 +850,6 @@ internal static class WmsRequestHandlers
         for (var i = 0; i < layers.Length; i++)
         {
             var layer = layers[i];
-
-            // CITE Autos uses synthetic rendering keyed by TIME; bypass to keep
-            // CITE conformance intact. TryHandleCiteWmsGetMap parses TIME directly.
-            if (string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
-            {
-                temporalFilters[i] = null;
-                continue;
-            }
 
             var timeInfo = layer.Metadata?.TimeInfo;
             if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))

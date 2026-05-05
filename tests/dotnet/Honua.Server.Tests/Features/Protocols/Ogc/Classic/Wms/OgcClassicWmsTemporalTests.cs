@@ -8,6 +8,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
@@ -140,6 +141,61 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_CiteAutosLayer_WithTimeCurrent_BypassesGenericParser()
+    {
+        // CITE Autos rendering parses TIME directly (current/CSV/intervals) in
+        // TryHandleCiteWmsGetMap; the generic OgcTemporalFilterParser must be
+        // bypassed when the request targets that layer or it would reject
+        // CITE-supported tokens like "current" before the CITE branch runs.
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;";
+            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
+            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=current");
+
+        // Without the bypass this would be HTTP 400 with InvalidDimensionValue
+        // because OgcTemporalFilterParser cannot parse "current". The bypass
+        // lets the request fall through to standard rendering (the test
+        // service is not the CITE service, so synthetic CITE rendering is
+        // skipped and the response is the layer's full-extent image).
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(content));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_CiteAutosLayer_WithCsvTimeInstants_BypassesGenericParser()
+    {
+        // Comma-separated TIME instants are CITE-supported but rejected by
+        // OgcTemporalFilterParser (only RFC 3339 instants/intervals). Verify
+        // the bypass also covers this CITE-only form.
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;";
+            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
+            command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=2000-01-01T00:00:00Z,2000-01-01T00:00:30Z");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(content));
     }
 
     private Task ConfigureLayerAsTimeAwareAsync()

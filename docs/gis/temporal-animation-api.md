@@ -53,6 +53,7 @@ All temporal request parameters share the same parsing semantics:
 | Open-ended start | `null,1735689599000` or `../2024-12-31T23:59:59Z` | GeoServices `time` (`null,...`); OGC `datetime` (`..`/`..`) |
 | Open-ended end | `1640995200000,null` or `2024-01-01T00:00:00Z/..` | Same |
 | Unix epoch milliseconds | `1718452800000` | GeoServices `time`, MVT `?time=` |
+| `default` / `current` token | `default`, `current` | WMTS `time` (resolves to the layer's max timestamp) |
 
 A bare instant T is treated as the half-open interval `[T, T]`. Reversed ranges
 (`start > end`) are rejected with HTTP 400. Empty / both-null ranges are
@@ -198,11 +199,14 @@ Supplying `TIME=` against a layer without `timeInfo` configuration returns a
 ```
 
 GetTile and GetFeatureInfo accept `time=` as a normal KVP parameter; the value
-can be any RFC 3339 instant or interval. The bounds are applied to the layer's
-configured start time field via the same temporal-filter pipeline as WMS GetMap
-and the GeoServices `query?time=` parameter, so out-of-range values produce an
-empty tile / empty feature-info response. Omitting `time=` returns the layer's
-full extent.
+can be any RFC 3339 instant or interval, or the special tokens `default` /
+`current`. `default` and `current` resolve to the layer's max timestamp (the
+same value the dimension's `<Default>` / `<Current>` advertises) so request
+behavior matches the capabilities contract. Other values are applied to the
+layer's configured start time field via the same temporal-filter pipeline as
+WMS GetMap and the GeoServices `query?time=` parameter, so out-of-range values
+produce an empty tile / empty feature-info response. Omitting `time=` returns
+the layer's full extent.
 
 ## Honua-native MVT
 
