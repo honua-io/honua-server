@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -33,6 +34,39 @@ public sealed partial class PublicInterfaceProofLedgerTests
         "implemented",
         "planned",
         "bounded-child-ticket"
+    };
+
+    private static readonly HashSet<string> SdkCompatibilitySurfaceIds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "control-plane-admin",
+        "feature-server",
+        "ogc-api-features"
+    };
+
+    private static readonly Dictionary<string, string> SdkIntegrationTicketsByOwnerRepo = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["honua-sdk-js"] = "#39",
+        ["honua-sdk-dotnet"] = "#31",
+        ["honua-sdk-python"] = "#21"
+    };
+
+    private static readonly Dictionary<string, HashSet<string>> ImplementedSdkCompatibilitySurfaceIdsByOwnerRepo = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["honua-sdk-js"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "control-plane-admin",
+            "feature-server",
+            "ogc-api-features"
+        },
+        ["honua-sdk-python"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "control-plane-admin",
+            "feature-server"
+        },
+        ["honua-sdk-dotnet"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "control-plane-admin"
+        }
     };
 
     private static readonly Regex MarkdownLinkRegex =
@@ -218,6 +252,140 @@ public sealed partial class PublicInterfaceProofLedgerTests
             "only approved bounded-child surfaces may point at external owner repos");
     }
 
+    [ArchitectureTest]
+    public void SdkCompatibilityProofs_ShouldNotOverstateImplementedServerMatrixSurfaces()
+    {
+        var ledger = LoadLedger();
+
+        var sdkProofs = ledger.Surfaces
+            .Where(surface => SdkCompatibilitySurfaceIds.Contains(surface.SurfaceId))
+            .SelectMany(surface => surface.Proofs
+                .Where(proof => SdkIntegrationTicketsByOwnerRepo.ContainsKey(proof.OwnerRepo))
+                .Select(proof => new { surface.SurfaceId, Proof = proof }))
+            .ToArray();
+
+        var expectedPairs = SdkIntegrationTicketsByOwnerRepo.Keys
+            .SelectMany(ownerRepo => SdkCompatibilitySurfaceIds.Select(surfaceId => $"{ownerRepo}:{surfaceId}"))
+            .ToArray();
+
+        sdkProofs.Select(entry => $"{entry.Proof.OwnerRepo}:{entry.SurfaceId}")
+            .Should()
+            .BeEquivalentTo(expectedPairs,
+                "the SDK compatibility ledger must keep both implemented and bounded-child SDK surfaces visible");
+
+        foreach (var entry in sdkProofs)
+        {
+            var isImplementedSurface =
+                ImplementedSdkCompatibilitySurfaceIdsByOwnerRepo.TryGetValue(entry.Proof.OwnerRepo, out var implementedSurfaceIds) &&
+                implementedSurfaceIds.Contains(entry.SurfaceId);
+
+            if (isImplementedSurface)
+            {
+                entry.Proof.Status.Should().Be("implemented",
+                    $"{entry.Proof.OwnerRepo} currently exercises '{entry.SurfaceId}' in sdk-server-compatibility.yml");
+            }
+            else
+            {
+                entry.Proof.Status.Should().Be("bounded-child-ticket",
+                    $"{entry.Proof.OwnerRepo} must not mark '{entry.SurfaceId}' implemented until the SDK lane exercises it");
+            }
+        }
+    }
+
+    [ArchitectureTest]
+    public void SdkCompatibilityWorkflow_ShouldResolveEvidenceIdentityFromCheckedOutSources()
+    {
+        var workflow = LoadSdkCompatibilityWorkflow();
+
+        workflow.Should().Contain("git rev-parse HEAD",
+            "server_commit must be the resolved checkout SHA, not the requested branch or tag ref");
+        workflow.Should().Contain("--arg serverCommit \"$server_commit\"");
+        workflow.Should().Contain("server_commit: $serverCommit");
+        workflow.Should().Contain("commit: $serverCommit");
+        workflow.Should().NotContain("server_commit: $serverCheckoutRef");
+        workflow.Should().NotContain("commit: $serverCheckoutRef");
+
+        workflow.Should().Contain("dotnet msbuild \"$path\" -nologo -v:q -getProperty:\"$property_name\"",
+            ".NET package versions must be evaluated through MSBuild so Directory.Build.props is honored");
+    }
+
+    [ArchitectureTest]
+    public void SdkCompatibilityWorkflow_ShouldConvertSmokeTimeoutsIntoCellEvidence()
+    {
+        var workflow = LoadSdkCompatibilityWorkflow();
+        const int RequiredSetupAndEvidenceBudgetSeconds = 30 * 60;
+
+        var jobTimeoutSeconds = ExtractRequiredInt32(
+            SdkCompatibilityMatrixJobTimeoutRegex().Match(workflow),
+            "minutes") * 60;
+        var smokeTimeoutSeconds = ExtractRequiredInt32(
+            SdkCompatibilitySmokeTimeoutRegex().Match(workflow),
+            "seconds");
+        var killAfterSeconds = ExtractRequiredInt32(
+            SdkCompatibilityKillAfterRegex().Match(workflow),
+            "seconds");
+
+        workflow.Should().Contain("timeout --kill-after=30s \"$SDK_COMPATIBILITY_TIMEOUT_SECONDS\"",
+            "the smoke command should time out before the job timeout so the evidence writer still runs");
+        jobTimeoutSeconds.Should().BeGreaterThanOrEqualTo(
+            smokeTimeoutSeconds + killAfterSeconds + RequiredSetupAndEvidenceBudgetSeconds,
+            "the job-level timeout must leave setup, kill-grace, and evidence-writing budget after the smoke timeout");
+        workflow.Should().Contain("timed out after %ss.");
+        workflow.Should().Contain("- name: Write compatibility result\n        if: always()");
+        workflow.Should().Contain("- name: Upload SDK compatibility cell evidence\n        if: always()");
+        workflow.Should().Contain("always() && matrix.expected_supported == true && steps.compatibility.outcome != 'success'");
+        workflow.Should().Contain("COMPATIBILITY_EXIT_CODE: ${{ steps.compatibility.outputs.exit_code }}");
+        workflow.Should().Contain("failure_diagnostics");
+    }
+
+    [ArchitectureTest]
+    public void SdkCompatibilityWorkflow_ShouldUseProofLedgerSurfaceIdsInProtocolEvidence()
+    {
+        var ledger = LoadLedger();
+        var workflow = LoadSdkCompatibilityWorkflow();
+
+        var knownSurfaceIds = ledger.Surfaces
+            .Select(surface => surface.SurfaceId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var protocolSurfaces = ExtractWorkflowProtocolSurfaceArray(workflow, "protocol_surfaces");
+        var protocolSurfacesBySdk = ExtractWorkflowProtocolSurfacesBySdk(workflow);
+
+        protocolSurfaces.Should().Contain([
+            "control-plane-admin",
+            "platform-http",
+            "geoservices-catalog",
+            "feature-server",
+            "ogc-api-features"
+        ]);
+        protocolSurfacesBySdk.Keys.Should().BeEquivalentTo(["js", "python", "dotnet"],
+            "compat-result.json should preserve per-SDK protocol-surface diagnostics");
+
+        var aggregateSurfaceIds = protocolSurfacesBySdk.Values
+            .SelectMany(surfaceIds => surfaceIds)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(surfaceId => surfaceId, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        protocolSurfaces
+            .OrderBy(surfaceId => surfaceId, StringComparer.OrdinalIgnoreCase)
+            .Should()
+            .Equal(aggregateSurfaceIds,
+                "the aggregate protocol_surfaces list must reconcile to protocol_surfaces_by_sdk");
+
+        var emittedSurfaceIds = protocolSurfaces
+            .Concat(protocolSurfacesBySdk.Values.SelectMany(surfaceIds => surfaceIds))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(surfaceId => surfaceId, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var unknownSurfaceIds = emittedSurfaceIds
+            .Where(surfaceId => !knownSurfaceIds.Contains(surfaceId))
+            .ToArray();
+
+        unknownSurfaceIds.Should().BeEmpty(
+            "compat-result.json protocol surfaces should align with public-interface-proof.json surface ids");
+    }
+
     private static PublicInterfaceProofLedger LoadLedger()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
@@ -226,6 +394,70 @@ public sealed partial class PublicInterfaceProofLedgerTests
         using var stream = File.OpenRead(ledgerPath);
         return JsonSerializer.Deserialize(stream, PublicInterfaceProofLedgerJsonContext.Default.PublicInterfaceProofLedger)
             ?? throw new InvalidOperationException("Unable to deserialize public-interface-proof.json.");
+    }
+
+    private static string LoadSdkCompatibilityWorkflow()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        return File.ReadAllText(Path.Combine(repoRoot, ".github", "workflows", "sdk-server-compatibility.yml"));
+    }
+
+    private static string[] ExtractWorkflowProtocolSurfaceArray(string workflow, string propertyName)
+    {
+        var propertyIndex = workflow.IndexOf($"{propertyName}: [", StringComparison.Ordinal);
+        if (propertyIndex < 0)
+        {
+            throw new InvalidOperationException($"Unable to find '{propertyName}' in sdk-server-compatibility.yml.");
+        }
+
+        var arrayStartIndex = workflow.IndexOf('[', propertyIndex);
+        var arrayEndIndex = workflow.IndexOf(']', arrayStartIndex);
+        if (arrayStartIndex < 0 || arrayEndIndex < 0)
+        {
+            throw new InvalidOperationException($"Unable to parse '{propertyName}' in sdk-server-compatibility.yml.");
+        }
+
+        return ExtractQuotedSurfaceIds(workflow[arrayStartIndex..(arrayEndIndex + 1)]);
+    }
+
+    private static Dictionary<string, string[]> ExtractWorkflowProtocolSurfacesBySdk(string workflow)
+    {
+        const string PropertyName = "protocol_surfaces_by_sdk";
+
+        var propertyIndex = workflow.IndexOf($"{PropertyName}: {{", StringComparison.Ordinal);
+        if (propertyIndex < 0)
+        {
+            throw new InvalidOperationException($"Unable to find '{PropertyName}' in sdk-server-compatibility.yml.");
+        }
+
+        var blockEndIndex = workflow.IndexOf("cell_status:", propertyIndex, StringComparison.Ordinal);
+        if (blockEndIndex < 0)
+        {
+            throw new InvalidOperationException($"Unable to parse '{PropertyName}' in sdk-server-compatibility.yml.");
+        }
+
+        var block = workflow[propertyIndex..blockEndIndex];
+        var surfacesBySdk = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match match in SdkProtocolSurfaceBlockRegex().Matches(block))
+        {
+            var sdkName = match.Groups["sdk"].Value;
+            surfacesBySdk[sdkName] = ExtractQuotedSurfaceIds(match.Groups["surfaces"].Value);
+        }
+
+        return surfacesBySdk;
+    }
+
+    private static string[] ExtractQuotedSurfaceIds(string text) =>
+        QuotedSurfaceIdRegex().Matches(text)
+            .Select(match => match.Groups["surfaceId"].Value)
+            .ToArray();
+
+    private static int ExtractRequiredInt32(Match match, string groupName)
+    {
+        match.Success.Should().BeTrue($"sdk-server-compatibility.yml must declare '{groupName}' for timeout evidence validation");
+        match.Groups[groupName].Success.Should().BeTrue($"sdk-server-compatibility.yml must expose '{groupName}' for timeout evidence validation");
+        return int.Parse(match.Groups[groupName].Value, CultureInfo.InvariantCulture);
     }
 
     private static bool MatchesEndpoint(PublicInterfaceSurface surface, string path)
@@ -251,6 +483,15 @@ public sealed partial class PublicInterfaceProofLedgerTests
                    proof.EvidenceLocations.Any(IsGeospatialGrpcRepositoryUrl);
         }
 
+        if (SdkCompatibilitySurfaceIds.Contains(surfaceId))
+        {
+            return string.Equals(proof.ProofClass, "tool-interoperability", StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(proof.ExecutionLane, "nightly:sdk-server-compatibility", StringComparison.OrdinalIgnoreCase) &&
+                   SdkIntegrationTicketsByOwnerRepo.TryGetValue(proof.OwnerRepo, out var linkedTicket) &&
+                   string.Equals(proof.LinkedTicket, linkedTicket, StringComparison.Ordinal) &&
+                   proof.EvidenceLocations.Any(location => IsSdkIntegrationIssueUrl(location, proof.OwnerRepo, linkedTicket));
+        }
+
         return false;
     }
 
@@ -264,8 +505,38 @@ public sealed partial class PublicInterfaceProofLedgerTests
            string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase) &&
            string.Equals(uri.AbsolutePath.TrimEnd('/'), "/honua-io/geospatial-grpc", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsSdkIntegrationIssueUrl(string evidenceLocation, string ownerRepo, string linkedTicket)
+    {
+        if (!Uri.TryCreate(evidenceLocation, UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var issueNumber = linkedTicket.TrimStart('#');
+        return string.Equals(
+            uri.AbsolutePath.TrimEnd('/'),
+            $"/honua-io/{ownerRepo}/issues/{issueNumber}",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string FormatOperationKey(string protocol, string operation) =>
         $"{protocol}::{operation}";
+
+    [GeneratedRegex(@"(?<sdk>js|python|dotnet):\s*\[(?<surfaces>.*?)\]", RegexOptions.Singleline)]
+    private static partial Regex SdkProtocolSurfaceBlockRegex();
+
+    [GeneratedRegex(@"sdk-compat-matrix:[\s\S]*?timeout-minutes:\s*(?<minutes>\d+)")]
+    private static partial Regex SdkCompatibilityMatrixJobTimeoutRegex();
+
+    [GeneratedRegex(@"SDK_COMPATIBILITY_TIMEOUT_SECONDS:\s*'(?<seconds>\d+)'")]
+    private static partial Regex SdkCompatibilitySmokeTimeoutRegex();
+
+    [GeneratedRegex(@"timeout --kill-after=(?<seconds>\d+)s ""\$SDK_COMPATIBILITY_TIMEOUT_SECONDS""")]
+    private static partial Regex SdkCompatibilityKillAfterRegex();
+
+    [GeneratedRegex("\"(?<surfaceId>[a-z0-9.-]+)\"")]
+    private static partial Regex QuotedSurfaceIdRegex();
 }
 
 internal sealed class PublicInterfaceProofLedger

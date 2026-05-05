@@ -2,9 +2,9 @@
 
 This page is the canonical compatibility contract for Honua Server SDKs. The
 versioning contract applies to the generated JavaScript/TypeScript, Python, and
-.NET admin clients backed by `/api/v*/admin/*`; the CI gate also runs basic
-live smoke coverage for seeded FeatureServer and OGC API Features surfaces so
-SDK regressions that break common read paths are visible before release.
+.NET admin clients backed by `/api/v*/admin/*`; the CI gate also records the
+current per-SDK live smoke coverage for seeded read paths so SDK regressions
+that break common workflows are visible before release.
 
 Use this page first when you need to:
 - choose an SDK artifact for a server release
@@ -20,10 +20,12 @@ Use it together with:
 
 ## Scope and Invariants
 
-- This matrix versions the control-plane/admin API contract and gates basic SDK
-  smoke coverage for seeded FeatureServer and OGC API Features routes. It is
-  not a comprehensive standards-conformance matrix for FeatureServer, OGC,
-  OData, WMS, WMTS, or other protocol adapters.
+- This matrix versions the control-plane/admin API contract and gates the
+  protocol surfaces each SDK actually exercises today. JavaScript covers
+  FeatureServer and OGC API Features smoke paths, Python covers readiness,
+  catalog, and FeatureServer smoke paths, and .NET currently covers admin
+  compatibility. It is not a comprehensive standards-conformance matrix for
+  FeatureServer, OGC, OData, WMS, WMTS, or other protocol adapters.
 - Current admin API major in this repo: `v1`.
 - JavaScript/TypeScript, Python, and .NET SDK artifacts are generated from the
   same curated admin OpenAPI contract and should be treated as one versioned
@@ -62,10 +64,64 @@ schedule. It publishes per-cell JSON evidence plus a
 `sdk-compatibility-matrix-<run-id>` artifact containing a Markdown table and
 machine-readable summary.
 
-The per-SDK `#4` work can now use this manifest as the server-side compatibility
-contract and call `.github/workflows/reusable-sdk-pr-gate.yml` from each SDK
+The per-SDK integration lanes use this manifest as the server-side compatibility
+contract and can call `.github/workflows/reusable-sdk-pr-gate.yml` from each SDK
 repository for PR-local checks. The cross-version gate remains owned here so SDK
 repos do not need to duplicate the server ref policy.
+
+## Repo-Local SDK Trackers
+
+Each SDK repo owns its implementation lane and CI command. The issue body is the
+repo-local implementation plan; this server repo owns only seed/bootstrap
+contracts, matrix policy, and release evidence consumption.
+
+| SDK repo | Tracker | Server contract consumed |
+|---|---|---|
+| `honua-sdk-js` | [`honua-io/honua-sdk-js#39`](https://github.com/honua-io/honua-sdk-js/issues/39) | Real seeded server, public JS SDK APIs, protocol-surface diagnostics |
+| `honua-sdk-dotnet` | [`honua-io/honua-sdk-dotnet#31`](https://github.com/honua-io/honua-sdk-dotnet/issues/31) | Real seeded server, public .NET SDK APIs, protocol-surface diagnostics |
+| `honua-sdk-python` | [`honua-io/honua-sdk-python#21`](https://github.com/honua-io/honua-sdk-python/issues/21) | Real seeded server, public Python SDK APIs, protocol-surface diagnostics |
+
+## Server Bootstrap Contract
+
+The server-owned compatibility target is a real Honua Server process backed by
+PostGIS and seeded with `tests/seed/base-schema.sql`.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `HONUA_SERVER_BASE_URL` | `http://localhost:5000` | Base URL used by SDK integration tests |
+| `HONUA_ADMIN_API_KEY` | `ci-admin-password` | Admin key for compatibility metadata and admin SDK checks |
+| `HONUA_SDK_SERVICE_ID` | `test_service` | Seeded service used by FeatureServer/catalog checks |
+| `HONUA_SDK_LAYER_ID` | `0` | Seeded layer used by read/query checks |
+| `HONUA_SDK_SEED_PROFILE` | `tests/seed/base-schema.sql:test_service:layer0` | Human-readable seed profile recorded into evidence |
+
+SDK repos may either connect to an externally supplied server using these
+variables or start an equivalent seeded server. Mock-handler-only results do not
+qualify as release compatibility evidence.
+
+## Evidence Contract
+
+Each `compat-result.json` cell emitted by `sdk-server-compatibility.yml`
+records:
+
+- SDK package versions and checked-out refs for JavaScript, Python, and .NET
+- Honua Server ref, resolved commit, channel, and image field when image-based
+  runs are introduced
+- seed profile, service id, layer id, and `protocol_surfaces_by_sdk` for the
+  exact surfaces each SDK exercised in that cell
+- pass/fail status, exit code, workflow run metadata, server log path, run log
+  path, and a bounded failure log tail for reproduction
+
+Do not infer implemented per-SDK protocol coverage from package-version capture
+alone; the proof ledger must follow `protocol_surfaces_by_sdk`.
+
+The smoke command uses a 40-minute command timeout inside a 75-minute job
+timeout. The remaining job budget covers checkout/setup, kill grace, evidence
+writing, artifact upload, and supported-cell failure handling so timed-out cells
+still emit `exit_code: 124` and failure diagnostics.
+
+The generated `sdk-compatibility-summary.json` embeds these cell records so
+release owners can review both the matrix decision and the raw evidence fields
+from one artifact.
 
 ## SDK Families
 
