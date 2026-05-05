@@ -8,6 +8,7 @@ Build applications and integrations with Honua APIs and SDKs.
 - [Integration Patterns](INTEGRATION_PATTERNS.md) — Common integration approaches with code samples
 - [Scene Dataset Registry (Admin API)](../admin-api/scene-dataset-registry.md) — Register, list, update, deactivate, and resolve hosted 3D scene datasets
 - [NVIDIA Construction Demo Fixture](../demo/nvidia-construction.md) — Local-first 3D Tiles + observations sidecar fixture for the NVIDIA demo (no AWS, Azure, or Cesium ion)
+- [FieldCollection Mobile Sync API](fieldcollection-mobile-sync-api.md) — Generation, sync-cursor, pull, and push endpoints under `/api/v1/fieldcollection/` consumed by the `honua-mobile` offline sync clients
 - [OpenAPI Specs](api-specs/) — Machine-readable API definitions
   - [Admin API](api-specs/admin-api.json) (curated subset; use `/api/v1/admin/config` for full discovery)
   - [OGC API Features](api-specs/ogc-api-features.json)

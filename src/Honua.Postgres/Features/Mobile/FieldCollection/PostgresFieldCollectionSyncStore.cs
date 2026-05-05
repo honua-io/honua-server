@@ -88,6 +88,16 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
             @change_id, @feature_id, @layer_id, @operation, @outcome, @response_payload, now())
         """;
 
+    // Two-key advisory lock keyed by (namespace, hashtext(change_id)). pg_advisory_xact_lock
+    // serializes concurrent pushes that share a change_id; the lock is released on commit
+    // or rollback so we never leak it across requests. The namespace constant keeps this
+    // lock space distinct from other features (e.g. raster import) that also use advisory
+    // locks. The literal mirrors ticket #894 to make grep-by-ticket easy.
+    private const int FieldCollectionPushLockNamespace = 0x0894_FC5C;
+
+    private const string AcquireChangeIdLockSql =
+        "SELECT pg_advisory_xact_lock(@namespace, hashtext(@change_id))";
+
     private readonly IDatabaseConnectionProvider _connectionProvider;
 
     public PostgresFieldCollectionSyncStore(IDatabaseConnectionProvider connectionProvider)
@@ -183,9 +193,14 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
                 ? changes[^1].Generation
                 : Math.Max(sinceGeneration, currentGeneration);
 
-            if (changes.Count > 0)
+            // Advance the per-client cursor on every successful pull, including empty
+            // pages. Without this, a client that has caught up to the current server
+            // generation but observes a non-FieldCollection write that bumped the
+            // shared sequence keeps re-pulling the same window forever. The
+            // ON CONFLICT clause already clamps the stored value with GREATEST so
+            // late-arriving smaller cursors cannot regress the watermark.
+            await using (var advanceCmd = new NpgsqlCommand(AdvanceCursorSql, connection))
             {
-                await using var advanceCmd = new NpgsqlCommand(AdvanceCursorSql, connection);
                 advanceCmd.Parameters.AddWithValue("client_id", NpgsqlDbType.Text, clientId);
                 advanceCmd.Parameters.AddWithValue("generation", NpgsqlDbType.Bigint, nextCursor);
                 _ = await advanceCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -209,6 +224,9 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+        // Fast path: a previous request with this change_id committed an idempotency
+        // record outside any transaction, so we can return it without taking the
+        // advisory lock or starting a transaction.
         var existing = await TryReadIdempotencyResponseAsync(connection, request.ChangeId, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
         {
@@ -220,6 +238,12 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         FieldCollectionPushResult result;
         try
         {
+            // Serialize concurrent duplicate-changeId requests. The transaction-scoped
+            // advisory lock guarantees the loser waits until the winner commits its
+            // idempotency row, then the post-lock read returns the stored response —
+            // never a unique-violation surfaced as a 5xx.
+            await AcquireChangeIdLockAsync(connection, transaction, request.ChangeId, cancellationToken).ConfigureAwait(false);
+
             existing = await TryReadIdempotencyResponseAsync(connection, request.ChangeId, transaction, cancellationToken).ConfigureAwait(false);
             if (existing is not null)
             {
@@ -562,6 +586,18 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         command.Parameters.AddWithValue("outcome", NpgsqlDbType.Smallint, (short)result.Outcome);
         command.Parameters.AddWithValue("response_payload", NpgsqlDbType.Jsonb, serializedResponse);
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task AcquireChangeIdLockAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string changeId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(AcquireChangeIdLockSql, connection, transaction);
+        command.Parameters.AddWithValue("namespace", NpgsqlDbType.Integer, FieldCollectionPushLockNamespace);
+        command.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, changeId);
+        _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static Task<FieldCollectionPushResult?> TryReadIdempotencyResponseAsync(

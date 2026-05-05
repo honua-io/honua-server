@@ -7,6 +7,7 @@ using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Mobile.FieldCollection;
@@ -18,17 +19,34 @@ namespace Honua.Server.Features.Mobile.FieldCollection;
 /// </summary>
 internal static class FieldCollectionSyncEndpoints
 {
-    private const string ActivitySourceName = "Honua.Server.Mobile.FieldCollection";
+    internal const string ClientIdHeader = "X-Honua-Client-Id";
+    private const string ProtocolTag = "fieldcollection-mobile-sync";
+    private const int MaxClientIdLength = 128;
+    private const string DefaultClientId = "default";
     private const int DefaultPullLimit = 200;
     private const int MaxPullLimit = 1_000;
-
-    private static readonly ActivitySource _activitySource = new(ActivitySourceName);
 
     /// <summary>
     /// Maps the four FieldCollection mobile sync endpoints to the supplied app.
     /// </summary>
+    /// <remarks>
+    /// No-op when <see cref="IFieldCollectionSyncStore"/> is not registered, which
+    /// is the case for non-Postgres data-source profiles (DuckDB, MySQL/MariaDB,
+    /// SQL Server). Without this gate, requests would fail with an internal DI
+    /// resolution error instead of a deliberate 404. Registration is probed via
+    /// <see cref="IServiceProviderIsService"/> so that the scoped store is not
+    /// constructed from the root provider during route mapping.
+    /// </remarks>
     public static void MapFieldCollectionSyncEndpoints(this WebApplication app)
     {
+        ArgumentNullException.ThrowIfNull(app);
+
+        var serviceInspector = app.Services.GetService<IServiceProviderIsService>();
+        if (serviceInspector is not null && !serviceInspector.IsService(typeof(IFieldCollectionSyncStore)))
+        {
+            return;
+        }
+
         var group = app.MapGroup("/api/v{version:apiVersion}/fieldcollection")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
@@ -62,10 +80,13 @@ internal static class FieldCollectionSyncEndpoints
         [FromServices] IFieldCollectionSyncStore store,
         [FromServices] ILoggerFactory loggerFactory)
     {
-        using var activity = _activitySource.StartActivity("FieldCollectionSync.Generation");
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("FieldCollectionSync.Generation");
+        activity?.SetTag("honua.protocol", ProtocolTag);
+        activity?.SetTag("honua.operation", "generation");
         var logger = loggerFactory.CreateLogger(typeof(FieldCollectionSyncEndpoints));
 
         var serverGeneration = await store.GetCurrentGenerationAsync(context.RequestAborted).ConfigureAwait(false);
+        activity?.SetTag("honua.fieldcollection.server_generation", serverGeneration);
         FieldCollectionSyncLog.GenerationServed(logger, serverGeneration);
 
         ApplyOfflineCacheHeaders(context.Response);
@@ -79,11 +100,15 @@ internal static class FieldCollectionSyncEndpoints
         [FromServices] IFieldCollectionSyncStore store,
         [FromServices] ILoggerFactory loggerFactory)
     {
-        using var activity = _activitySource.StartActivity("FieldCollectionSync.SyncCursor");
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("FieldCollectionSync.SyncCursor");
+        activity?.SetTag("honua.protocol", ProtocolTag);
+        activity?.SetTag("honua.operation", "sync-cursor");
         var logger = loggerFactory.CreateLogger(typeof(FieldCollectionSyncEndpoints));
 
         var clientId = ResolveClientId(context);
+        activity?.SetTag("honua.fieldcollection.client_id", clientId);
         var cursor = await store.GetSyncCursorAsync(clientId, context.RequestAborted).ConfigureAwait(false);
+        activity?.SetTag("honua.fieldcollection.last_sync_generation", cursor.LastSyncGeneration);
         FieldCollectionSyncLog.SyncCursorServed(logger, cursor.ClientId, cursor.LastSyncGeneration);
 
         ApplyOfflineCacheHeaders(context.Response);
@@ -103,7 +128,9 @@ internal static class FieldCollectionSyncEndpoints
         long? sinceGeneration = null,
         int? limit = null)
     {
-        using var activity = _activitySource.StartActivity("FieldCollectionSync.Pull");
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("FieldCollectionSync.Pull");
+        activity?.SetTag("honua.protocol", ProtocolTag);
+        activity?.SetTag("honua.operation", "pull");
         var logger = loggerFactory.CreateLogger(typeof(FieldCollectionSyncEndpoints));
 
         var since = sinceGeneration ?? 0L;
@@ -125,7 +152,15 @@ internal static class FieldCollectionSyncEndpoints
         }
 
         var clientId = ResolveClientId(context);
+        activity?.SetTag("honua.fieldcollection.client_id", clientId);
+        activity?.SetTag("honua.fieldcollection.since_generation", since);
+        activity?.SetTag("honua.fieldcollection.limit", effectiveLimit);
+
         var page = await store.GetChangesAsync(clientId, since, effectiveLimit, context.RequestAborted).ConfigureAwait(false);
+
+        activity?.SetTag("honua.fieldcollection.returned", page.Changes.Count);
+        activity?.SetTag("honua.fieldcollection.has_more", page.HasMore);
+        activity?.SetTag("honua.fieldcollection.server_generation", page.ServerGeneration);
 
         var changes = new FieldCollectionServerChange[page.Changes.Count];
         for (var i = 0; i < page.Changes.Count; i++)
@@ -170,7 +205,9 @@ internal static class FieldCollectionSyncEndpoints
         [FromServices] IFieldCollectionSyncStore store,
         [FromServices] ILoggerFactory loggerFactory)
     {
-        using var activity = _activitySource.StartActivity("FieldCollectionSync.Push");
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("FieldCollectionSync.Push");
+        activity?.SetTag("honua.protocol", ProtocolTag);
+        activity?.SetTag("honua.operation", "push");
         var logger = loggerFactory.CreateLogger(typeof(FieldCollectionSyncEndpoints));
 
         if (body is null)
@@ -214,6 +251,9 @@ internal static class FieldCollectionSyncEndpoints
         }
 
         var clientId = ResolveClientId(context);
+        activity?.SetTag("honua.fieldcollection.client_id", clientId);
+        activity?.SetTag("honua.fieldcollection.layer_id", body.LayerId.Value);
+        activity?.SetTag("honua.fieldcollection.change_operation", OperationToWire(operation));
 
         var pushRequest = new FieldCollectionPushRequest
         {
@@ -227,6 +267,8 @@ internal static class FieldCollectionSyncEndpoints
         };
 
         var result = await store.PushChangeAsync(pushRequest, context.RequestAborted).ConfigureAwait(false);
+        activity?.SetTag("honua.fieldcollection.outcome", OutcomeToWire(result.Outcome));
+        activity?.SetTag("honua.fieldcollection.server_generation", result.ServerGeneration);
 
         var response = new FieldCollectionPushResponse
         {
@@ -268,14 +310,38 @@ internal static class FieldCollectionSyncEndpoints
     }
 
     /// <summary>
-    /// Resolves a stable per-client identifier from the authenticated principal.
-    /// Falls back to a deterministic literal when no principal name is set
-    /// (test/dev bypass scenarios).
+    /// Resolves a stable per-client identifier for sync-cursor partitioning.
+    /// Mobile clients should send <c>X-Honua-Client-Id</c> on every sync call so
+    /// that multiple field devices sharing one API key keep independent cursors.
+    /// When the header is absent (legacy callers, server-to-server probes,
+    /// admin clients) the principal name from <see cref="ApiKeyAuthenticationHandler"/>
+    /// is used; that handler emits a single <c>"admin"</c> name, so callers in
+    /// this branch share one cursor by design.
     /// </summary>
     private static string ResolveClientId(HttpContext context)
     {
+        if (context.Request.Headers.TryGetValue(ClientIdHeader, out var headerValues))
+        {
+            for (var i = 0; i < headerValues.Count; i++)
+            {
+                var raw = headerValues[i];
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    continue;
+                }
+
+                var trimmed = raw.Trim();
+                if (trimmed.Length > MaxClientIdLength)
+                {
+                    trimmed = trimmed[..MaxClientIdLength];
+                }
+
+                return trimmed;
+            }
+        }
+
         var name = context.User?.Identity?.Name;
-        return string.IsNullOrWhiteSpace(name) ? "anonymous" : name.Trim();
+        return string.IsNullOrWhiteSpace(name) ? DefaultClientId : name.Trim();
     }
 
     private static bool TryParseOperation(string? raw, out FieldCollectionChangeOperation operation)

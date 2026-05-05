@@ -22,10 +22,10 @@ internal sealed class RawJsonElementConverter : JsonConverter<string?>
                 return null;
             case JsonTokenType.StartObject:
             case JsonTokenType.StartArray:
-            {
-                using var document = JsonDocument.ParseValue(ref reader);
-                return document.RootElement.GetRawText();
-            }
+                {
+                    using var document = JsonDocument.ParseValue(ref reader);
+                    return document.RootElement.GetRawText();
+                }
             default:
                 throw new JsonException("FieldCollection feature payload must be a JSON object or array.");
         }

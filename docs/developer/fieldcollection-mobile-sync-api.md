@@ -18,8 +18,22 @@ Unauthorized` with a problem-details body.
 X-API-Key: <api-key>
 ```
 
-The authenticated principal name is treated as the `clientId` for per-client
-sync cursor tracking.
+## Client identity
+
+Multiple field devices commonly share a single API key, so the API-key
+principal alone is not a stable per-device identity. Mobile clients should
+send `X-Honua-Client-Id` on every sync call (`sync-cursor`, pull, push) so
+that each device gets an independent cursor:
+
+```http
+X-Honua-Client-Id: <stable-device-id>
+```
+
+Recommended values are durable per-install identifiers (for example, the
+mobile SDK's persisted device GUID). Maximum length is 128 characters;
+longer values are truncated. When the header is absent, the server falls
+back to the authenticated principal name — which means callers without
+the header collapse onto one shared cursor by design.
 
 ## Endpoints
 
@@ -59,8 +73,9 @@ stable.
 ### `GET /api/v1/fieldcollection/changes`
 
 Returns ordered FieldCollection changes after the supplied generation
-cursor. Successful pulls advance the per-client cursor as a side effect so
-the next call to `sync-cursor` reflects the new watermark.
+cursor. Every successful pull advances the per-client cursor as a side
+effect — including empty pages, which advance the cursor to the current
+server generation so a caught-up client never re-pulls the same window.
 
 **Query parameters**
 
@@ -204,6 +219,12 @@ replays the stored response payload without re-applying. Mobile clients
 should always reuse the same `changeId` when retrying after network or
 server failure.
 
+Concurrent pushes that share a `changeId` are serialized inside the server
+with a transaction-scoped advisory lock keyed on `changeId`. The first
+request commits the idempotency record; the second waits for that
+commit and then returns the stored response. Callers never observe a
+unique-violation surfaced as a 5xx for duplicate `changeId`.
+
 ## Generation cursor semantics
 
 The server uses the shared `honua.sync_generation` sequence so the cursor
@@ -211,3 +232,11 @@ is consistent with existing change-tracking infrastructure. Generation
 values can advance between pulls because of writes from other workflows;
 mobile clients may observe gaps in their pull stream and should treat
 them as no-ops.
+
+## Provider support
+
+The mobile sync surface ships against the PostgreSQL provider only. When
+the server is started against a non-Postgres provider (DuckDB, MySQL /
+MariaDB, SQL Server) the four routes are not registered and requests
+return `404 Not Found`. This is deliberate: the alternative would be a
+generic `500` from a missing-service resolution at request time.

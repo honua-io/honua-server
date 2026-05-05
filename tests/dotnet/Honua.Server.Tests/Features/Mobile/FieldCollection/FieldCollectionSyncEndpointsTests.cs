@@ -300,6 +300,115 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/fieldcollection/changes")]
+    public async Task Pull_EmptyPage_AdvancesCursorToCurrentGeneration()
+    {
+        // Force a known watermark, then ask for changes after a generation that is
+        // guaranteed to have nothing newer. The cursor must still advance so that
+        // a client which has caught up does not re-pull the same window forever.
+        var pullResponse = await _client.GetAsync($"{ChangesPath}?sinceGeneration=0&limit=200");
+        pullResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var pullJson = JsonDocument.Parse(await pullResponse.Content.ReadAsStringAsync());
+        var firstCursor = pullJson.RootElement.GetProperty("nextCursor").GetInt64();
+
+        var emptyResponse = await _client.GetAsync($"{ChangesPath}?sinceGeneration={firstCursor}&limit=200");
+        emptyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var emptyJson = JsonDocument.Parse(await emptyResponse.Content.ReadAsStringAsync());
+        emptyJson.RootElement.GetProperty("changes").GetArrayLength().Should().Be(0);
+        var emptyCursor = emptyJson.RootElement.GetProperty("nextCursor").GetInt64();
+        emptyCursor.Should().BeGreaterOrEqualTo(firstCursor);
+
+        var cursorResponse = await _client.GetAsync(SyncCursorPath);
+        cursorResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var cursorJson = JsonDocument.Parse(await cursorResponse.Content.ReadAsStringAsync());
+        cursorJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().BeGreaterOrEqualTo(emptyCursor);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/fieldcollection/sync-cursor")]
+    public async Task SyncCursor_PartitionsByClientIdHeader()
+    {
+        const string headerName = "X-Honua-Client-Id";
+        var clientA = $"device-a-{Guid.NewGuid():N}";
+        var clientB = $"device-b-{Guid.NewGuid():N}";
+
+        // Push something so a pull on clientA has at least the chance to advance
+        // its cursor past zero.
+        await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId = $"feat-{Guid.NewGuid():N}",
+            layerId = 130,
+            operation = "insert",
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: 1.0, latitude: 1.0),
+        });
+
+        using var pullForA = new HttpRequestMessage(HttpMethod.Get, $"{ChangesPath}?sinceGeneration=0&limit=200");
+        pullForA.Headers.Add(headerName, clientA);
+        var pullAResponse = await _client.SendAsync(pullForA);
+        pullAResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var pullAJson = JsonDocument.Parse(await pullAResponse.Content.ReadAsStringAsync());
+        var advancedCursor = pullAJson.RootElement.GetProperty("nextCursor").GetInt64();
+        advancedCursor.Should().BeGreaterOrEqualTo(0);
+
+        using var cursorForA = new HttpRequestMessage(HttpMethod.Get, SyncCursorPath);
+        cursorForA.Headers.Add(headerName, clientA);
+        var cursorAResponse = await _client.SendAsync(cursorForA);
+        cursorAResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var cursorAJson = JsonDocument.Parse(await cursorAResponse.Content.ReadAsStringAsync());
+        cursorAJson.RootElement.GetProperty("clientId").GetString().Should().Be(clientA);
+        var clientACursor = cursorAJson.RootElement.GetProperty("lastSyncGeneration").GetInt64();
+        clientACursor.Should().BeGreaterOrEqualTo(advancedCursor);
+
+        // ClientB never pulled, so its cursor is independent and zero.
+        using var cursorForB = new HttpRequestMessage(HttpMethod.Get, SyncCursorPath);
+        cursorForB.Headers.Add(headerName, clientB);
+        var cursorBResponse = await _client.SendAsync(cursorForB);
+        cursorBResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var cursorBJson = JsonDocument.Parse(await cursorBResponse.Content.ReadAsStringAsync());
+        cursorBJson.RootElement.GetProperty("clientId").GetString().Should().Be(clientB);
+        cursorBJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/changes")]
+    public async Task Push_ConcurrentSameChangeId_BothReturnSameOutcome()
+    {
+        var payload = new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId = $"feat-{Guid.NewGuid():N}",
+            layerId = 140,
+            operation = "insert",
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: -50.0, latitude: 5.0),
+        };
+
+        // Fire two pushes for the same changeId concurrently. The advisory lock
+        // must serialize them and the loser must replay the stored idempotent
+        // response — neither call may surface a 5xx from a unique violation.
+        var firstTask = _client.PostAsJsonAsync(ChangesPath, payload);
+        var secondTask = _client.PostAsJsonAsync(ChangesPath, payload);
+        await Task.WhenAll(firstTask, secondTask);
+
+        firstTask.Result.StatusCode.Should().Be(HttpStatusCode.OK);
+        secondTask.Result.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var firstJson = JsonDocument.Parse(await firstTask.Result.Content.ReadAsStringAsync());
+        using var secondJson = JsonDocument.Parse(await secondTask.Result.Content.ReadAsStringAsync());
+
+        firstJson.RootElement.GetProperty("changeId").GetString().Should().Be(payload.changeId);
+        secondJson.RootElement.GetProperty("changeId").GetString().Should().Be(payload.changeId);
+        firstJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
+        secondJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
+        secondJson.RootElement.GetProperty("serverGeneration").GetInt64()
+            .Should().Be(firstJson.RootElement.GetProperty("serverGeneration").GetInt64());
+        secondJson.RootElement.GetProperty("version").GetInt64()
+            .Should().Be(firstJson.RootElement.GetProperty("version").GetInt64());
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/fieldcollection/changes")]
     public async Task Pull_WithInvalidLimit_Returns400()
     {
         var response = await _client.GetAsync($"{ChangesPath}?limit=0");
