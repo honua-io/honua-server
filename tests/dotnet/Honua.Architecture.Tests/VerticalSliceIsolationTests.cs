@@ -25,6 +25,7 @@ public sealed class VerticalSliceIsolationTests
         "Grounding",
         "Orchestration",
         "Protocols",
+        "Mobile", // Parent container for mobile sub-feature slices (e.g. FieldCollection sync)
         "NlQuery",
         "Export",
         "Import",
@@ -100,9 +101,11 @@ public sealed class VerticalSliceIsolationTests
         {
             var featurePath = Path.Combine(featuresPath, featureDir);
 
-            // Skip infrastructure as it's a cross-cutting concern
+            // Skip infrastructure as it's a cross-cutting concern.
+            // Skip parent containers (Protocols, Mobile) whose vertical slices live in sub-directories.
             if (featureDir.Equals("Infrastructure", StringComparison.OrdinalIgnoreCase) ||
-                featureDir.Equals("Protocols", StringComparison.OrdinalIgnoreCase))
+                featureDir.Equals("Protocols", StringComparison.OrdinalIgnoreCase) ||
+                featureDir.Equals("Mobile", StringComparison.OrdinalIgnoreCase))
                 continue;
 
             // Each feature should have at least one of these files to be considered a proper vertical slice

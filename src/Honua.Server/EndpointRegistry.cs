@@ -282,6 +282,13 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/operations/active"),
         new("GET", "/api/v1/admin/operations/type/{operationType}"),
         new("GET", "/api/v1/admin/feature-events/replay"),
+
+        // FieldCollection mobile sync endpoints (#894)
+        new("GET", "/api/v1/fieldcollection/generation"),
+        new("GET", "/api/v1/fieldcollection/sync-cursor"),
+        new("GET", "/api/v1/fieldcollection/changes"),
+        new("POST", "/api/v1/fieldcollection/changes"),
+
         new("POST", "/api/v1/admin/tile-operations/jobs"),
         new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
         new("GET", "/api/v1/admin/tile-operations/jobs"),
