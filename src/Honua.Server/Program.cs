@@ -614,6 +614,13 @@ builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.Featur
 builder.Services.AddOptions<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptions>()
     .Bind(builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptions.SectionName))
     .ValidateOnStart();
+// Default capability provider for hosts that bypass RegisterInfrastructureServices (test
+// factories). The active provider's extension uses AddSingleton, so when it runs first
+// it wins over this TryAdd; when infrastructure registration is skipped, the dispatcher
+// still constructs and immediately exits because SupportsTransactionalOutbox is false.
+builder.Services.TryAddSingleton<
+    Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
+    Honua.Server.Features.Infrastructure.Events.Outbox.NoOpOutboxCapabilityProvider>();
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService>();
 builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxHealth>(sp =>
     sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService>());
