@@ -111,7 +111,7 @@ public sealed class OutboxHealthCheckTests
         // Storage-poll guard (#692): a dispatcher whose claim/recovery/backlog queries
         // throw (missing table, permission issue) reports IsDispatcherRunning=true and
         // LastBacklog=null indefinitely. The previous cold-start Healthy branch hid this
-        // from the readiness probe; the dispatcher now sets LastStorageFailureAt on each
+        // from the readiness probe; the dispatcher now sets IsStoragePollFailing on each
         // failure, so health surfaces it as Unhealthy until a poll succeeds.
         var capability = Substitute.For<IOutboxCapabilityProvider>();
         capability.SupportsTransactionalOutbox.Returns(true);
@@ -119,7 +119,8 @@ public sealed class OutboxHealthCheckTests
         var dispatcherHealth = Substitute.For<IOutboxHealth>();
         dispatcherHealth.IsDispatcherRunning.Returns(true);
         dispatcherHealth.LastBacklog.Returns((OutboxBacklogMetrics?)null);
-        dispatcherHealth.LastStorageFailureAt.Returns(DateTimeOffset.UtcNow);
+        dispatcherHealth.IsStoragePollFailing.Returns(true);
+        dispatcherHealth.LastClaimPollFailureAt.Returns(DateTimeOffset.UtcNow);
 
         var check = new OutboxHealthCheck(capability, dispatcherHealth, BuildOptions());
 
@@ -147,8 +148,9 @@ public sealed class OutboxHealthCheckTests
             DeadLetteredCount = 0,
             OldestPendingAgeSeconds = 5.0,
         });
-        dispatcherHealth.LastSuccessfulPollAt.Returns(DateTimeOffset.UtcNow.AddMinutes(-1));
-        dispatcherHealth.LastStorageFailureAt.Returns(DateTimeOffset.UtcNow);
+        dispatcherHealth.IsStoragePollFailing.Returns(true);
+        dispatcherHealth.LastBacklogPollSuccessAt.Returns(DateTimeOffset.UtcNow.AddMinutes(-1));
+        dispatcherHealth.LastBacklogPollFailureAt.Returns(DateTimeOffset.UtcNow);
 
         var check = new OutboxHealthCheck(capability, dispatcherHealth, BuildOptions());
 
@@ -156,6 +158,38 @@ public sealed class OutboxHealthCheckTests
 
         result.Status.Should().Be(HealthStatus.Degraded);
         result.Description.Should().Contain("storage poll failed");
+    }
+
+    [UnitTest]
+    public async Task CheckHealthAsync_StaleStorageWithDeadLetters_ReturnsUnhealthy()
+    {
+        // Precedence guard (#692): a known dead-letter snapshot must keep the probe at
+        // Unhealthy even when the most recent storage poll failed. Otherwise an
+        // intermittent claim/backlog hiccup would demote a row that already requires
+        // operator triage from Unhealthy → Degraded, hiding the actionable signal
+        // behind the noisier transient-failure signal.
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+
+        var dispatcherHealth = Substitute.For<IOutboxHealth>();
+        dispatcherHealth.IsDispatcherRunning.Returns(true);
+        dispatcherHealth.LastBacklog.Returns(new OutboxBacklogMetrics
+        {
+            PendingCount = 3,
+            DeadLetteredCount = 4,
+            OldestPendingAgeSeconds = 12.0,
+        });
+        // Storage poll is also failing — but dead-letter precedence wins.
+        dispatcherHealth.IsStoragePollFailing.Returns(true);
+        dispatcherHealth.LastBacklogPollSuccessAt.Returns(DateTimeOffset.UtcNow.AddMinutes(-1));
+        dispatcherHealth.LastBacklogPollFailureAt.Returns(DateTimeOffset.UtcNow);
+
+        var check = new OutboxHealthCheck(capability, dispatcherHealth, BuildOptions(unhealthyDeadLetter: 1));
+
+        var result = await check.CheckHealthAsync(_context);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain("dead-lettered");
     }
 
     [UnitTest]

@@ -3,11 +3,13 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Events.Outbox;
+using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
@@ -177,6 +179,44 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     }
 
     [UnitTest]
+    public async Task ExecuteOnceAsync_ClaimFailureWithBacklogSuccess_StillReportsPendingClaimFailure()
+    {
+        // Per-kind tracking guard (#692): when ClaimPendingAsync throws, the dispatcher's
+        // catch block still calls UpdateBacklogAsync to refresh the snapshot if backlog
+        // reads still work. With a single shared timestamp pair, the backlog success
+        // would post-date the claim failure and the probe would treat the failure as
+        // resolved — even though the claim path is still broken and no rows are being
+        // dispatched. Per-kind tracking keeps the claim-poll failure pending while the
+        // backlog kind reports its own success.
+        var (repository, capability) = BuildRepository(includePendingRow: false, eventId: "evt-claim-only");
+        repository.ClaimFailureFactory = () => new InvalidOperationException("relation honua.feature_change_outbox does not exist");
+        // RecoveryFailureFactory and BacklogFailureFactory remain null so those polls succeed.
+
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var dispatcher = BuildDispatcher(repository, capability, publisher);
+
+        var dispatched = await dispatcher.ExecuteOnceAsync(CancellationToken.None);
+
+        dispatched.Should().Be(0, "claim failed so no rows could be dispatched");
+        AssertClaimFailureMaskedByBacklogSuccess(dispatcher);
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1859:Use concrete types when possible for improved performance",
+        Justification = "Verifies the IOutboxHealth contract that the health-check probe consumes.")]
+    private static void AssertClaimFailureMaskedByBacklogSuccess(IOutboxHealth health)
+    {
+        health.IsStoragePollFailing.Should().BeTrue(
+            "claim is still failing even though backlog succeeded after it");
+        health.LastClaimPollFailureAt.Should().NotBeNull("the claim path threw");
+        health.LastClaimPollSuccessAt.Should().BeNull("no claim has ever succeeded on this dispatcher");
+        health.LastBacklogPollSuccessAt.Should().NotBeNull(
+            "backlog read after the claim failure must still record its own success");
+        health.LastBacklogPollFailureAt.Should().BeNull("backlog never threw in this test");
+    }
+
+    [UnitTest]
     public async Task ExecuteOnceAsync_StoragePollSuccess_ClearsPriorFailureFlag()
     {
         // Recovery guard: once a successful poll lands AFTER a failure, the readiness
@@ -204,6 +244,77 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         await dispatcher.ExecuteOnceAsync(CancellationToken.None);
 
         AssertPendingStorageFailure(dispatcher, expectPending: false);
+    }
+
+    [UnitTest]
+    public async Task ExecuteOnceAsync_StaleClaimAfterPublishFailure_DoesNotIncrementFailureCounter()
+    {
+        // Counter source-of-truth (#692): when MarkFailedAsync returns false (the claim
+        // was reset/reclaimed before we could record the terminal state), the dispatcher
+        // must not bump honua.outbox.failed_total or honua.outbox.dead_lettered_total.
+        // The new owner records its own terminal state and counter; double-counting here
+        // would inflate retry/dead-letter rates and trigger spurious alerts.
+        var (repository, capability) = BuildRepository(includePendingRow: true, eventId: "evt-stale-fail");
+        var pendingEntry = repository.Pending.First();
+        repository.StaleClaims.Add(pendingEntry.OutboxId);
+
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        publisher
+            .PublishStrictAsync(Arg.Any<FeatureChangeEventRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("downstream offline")));
+
+        var dispatcher = BuildDispatcher(repository, capability, publisher);
+
+        using var failedListener = MeterSampleCollector.Subscribe("honua.outbox.failed_total");
+        using var deadLetteredListener = MeterSampleCollector.Subscribe("honua.outbox.dead_lettered_total");
+
+        var dispatched = await dispatcher.ExecuteOnceAsync(CancellationToken.None);
+
+        dispatched.Should().Be(0);
+        repository.Failed.Should().BeEmpty(
+            "MarkFailedAsync returns false on a stale claim, so no terminal state is recorded by this worker");
+        failedListener.Total.Should().Be(0,
+            "stale-claim outcome must not increment the failure counter");
+        deadLetteredListener.Total.Should().Be(0,
+            "stale-claim outcome must not increment the dead-letter counter");
+    }
+
+    [UnitTest]
+    public async Task ExecuteOnceAsync_PayloadDecodeAtRetryExhaustion_RoutesToDeadLetterCounter()
+    {
+        // Symmetric counter routing (#692): the payload-decode failure path must go
+        // through the same dead-letter calculation as the publish-failure path. Before
+        // this fix, decode failures always incremented honua.outbox.failed_total even
+        // when retry_count + 1 reached MaxRetries and the row transitioned to
+        // dead_lettered, so honua.outbox.dead_lettered_total under-counted real
+        // dead-letter transitions originating from corrupt payloads.
+        var repository = new FakeOutboxRepository();
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+
+        // BuildDispatcher uses MaxRetries=3, so a row at RetryCount=2 will dead-letter
+        // on its next failure (retry_count + 1 = 3 >= maxRetries).
+        var entry = BuildEntry("evt-decode-deadletter") with
+        {
+            EventPayload = "{not-json",
+            RetryCount = 2,
+        };
+        repository.Pending.Enqueue(entry);
+
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var dispatcher = BuildDispatcher(repository, capability, publisher);
+
+        using var failedListener = MeterSampleCollector.Subscribe("honua.outbox.failed_total");
+        using var deadLetteredListener = MeterSampleCollector.Subscribe("honua.outbox.dead_lettered_total");
+
+        await dispatcher.ExecuteOnceAsync(CancellationToken.None);
+
+        repository.Failed.Should().ContainSingle(
+            "the payload-decode path must still record a terminal failure regardless of counter routing");
+        deadLetteredListener.Total.Should().Be(1,
+            "payload decode at retry exhaustion must route to the dead-letter counter, matching the publish-failure path");
+        failedListener.Total.Should().Be(0,
+            "the failure counter should not double-count a dead-letter transition");
     }
 
     [UnitTest]
@@ -328,28 +439,14 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         Justification = "Verifies the IOutboxHealth contract that the health-check probe consumes.")]
     private static void AssertPendingStorageFailure(IOutboxHealth health, bool expectPending)
     {
-        if (expectPending)
-        {
-            health.LastStorageFailureAt.Should().NotBeNull(
-                "a failed storage poll must stamp the failure timestamp");
-            // Pending means failure is AFTER any success (or success is null).
-            var failure = health.LastStorageFailureAt!.Value;
-            var pending = health.LastSuccessfulPollAt is null
-                || failure > health.LastSuccessfulPollAt.Value;
-            pending.Should().BeTrue(
-                "the readiness probe treats a failure newer than the latest success as a pending failure");
-        }
-        else
-        {
-            health.LastSuccessfulPollAt.Should().NotBeNull(
-                "a successful poll after recovery must stamp the success timestamp");
-            // Not pending means success is at-or-after failure (or no failure at all).
-            if (health.LastStorageFailureAt is { } failureAt)
-            {
-                health.LastSuccessfulPollAt!.Value.Should().BeOnOrAfter(failureAt,
-                    "the readiness probe treats failure-older-than-success as resolved");
-            }
-        }
+        // The readiness probe relies on IsStoragePollFailing, which is true when ANY
+        // poll kind (claim, recovery, backlog) has a failure timestamp newer than its
+        // own most recent success. The aggregate timestamps cannot encode this because
+        // a successful poll on one kind would mask a still-failing poll on another.
+        health.IsStoragePollFailing.Should().Be(expectPending,
+            expectPending
+                ? "the readiness probe treats a failure newer than the latest success on any kind as a pending failure"
+                : "all three poll kinds have a success at-or-after their last failure, so the probe sees no pending failure");
     }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -358,7 +455,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         Justification = "Verifies the IOutboxHealth contract that the health-check probe consumes.")]
     private static void AssertStorageFailureRecorded(IOutboxHealth health, bool expectFirstSuccessfulPoll)
     {
-        health.LastStorageFailureAt.Should().NotBeNull(
+        health.IsStoragePollFailing.Should().BeTrue(
             "the dispatcher must surface storage poll failures so the readiness probe stops reporting Healthy");
         if (expectFirstSuccessfulPoll)
         {
@@ -399,6 +496,43 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             capability,
             options,
             NullLogger<OutboxDispatcherBackgroundService>.Instance);
+    }
+
+    /// <summary>
+    /// Subscribes a <see cref="MeterListener"/> to a single named counter on the
+    /// shared Honua meter and accumulates the measurements observed during the
+    /// listener's lifetime. Tests use this to verify the dispatcher routes
+    /// terminal outcomes (Failed, DeadLettered, StaleClaim, Errored) onto the
+    /// expected counters rather than predicting from input shape.
+    /// </summary>
+    private sealed class MeterSampleCollector : IDisposable
+    {
+        private readonly MeterListener _listener;
+        private long _total;
+
+        public long Total => Interlocked.Read(ref _total);
+
+        private MeterSampleCollector(string instrumentName)
+        {
+            _listener = new MeterListener
+            {
+                InstrumentPublished = (instrument, l) =>
+                {
+                    if (instrument.Meter.Name == HonuaTelemetry.ServiceName
+                        && instrument.Name == instrumentName)
+                    {
+                        l.EnableMeasurementEvents(instrument);
+                    }
+                }
+            };
+            _listener.SetMeasurementEventCallback<long>((_, measurement, _, _) =>
+                Interlocked.Add(ref _total, measurement));
+            _listener.Start();
+        }
+
+        public static MeterSampleCollector Subscribe(string instrumentName) => new(instrumentName);
+
+        public void Dispose() => _listener.Dispose();
     }
 
     private sealed class FakeOutboxRepository : IFeatureChangeOutboxRepository

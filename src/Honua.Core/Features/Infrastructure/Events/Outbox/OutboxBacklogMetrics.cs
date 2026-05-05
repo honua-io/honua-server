@@ -8,7 +8,13 @@ namespace Honua.Core.Features.Infrastructure.Events.Outbox;
 /// </summary>
 public sealed record OutboxBacklogMetrics
 {
-    /// <summary>Rows currently waiting to be claimed (status = pending or failed).</summary>
+    /// <summary>
+    /// Rows currently in the dispatch backlog: <c>pending</c> (awaiting first claim),
+    /// <c>failed</c> (retriable on the next pass), and <c>claimed</c> (in flight on
+    /// some worker, or with an expired lease awaiting recovery). <c>dead_lettered</c>
+    /// is reported separately on <see cref="DeadLetteredCount"/> so the readiness
+    /// probe can distinguish "still progressing" from "needs operator action".
+    /// </summary>
     public required long PendingCount { get; init; }
 
     /// <summary>Rows that exhausted retries and require operator intervention.</summary>

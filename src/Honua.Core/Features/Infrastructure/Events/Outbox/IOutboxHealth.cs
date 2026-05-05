@@ -20,21 +20,45 @@ public interface IOutboxHealth
     OutboxBacklogMetrics? LastBacklog { get; }
 
     /// <summary>
-    /// UTC timestamp of the most recent successful storage poll (claim, recovery, or
-    /// backlog query). Used by the readiness probe to distinguish a freshly-started
-    /// dispatcher from one whose claim/backlog queries are repeatedly failing — without
-    /// this, a missing table or permission issue would leave <see cref="LastBacklog"/>
-    /// null and the probe would report Healthy ("awaiting first pass") indefinitely.
-    /// Null when no storage poll has succeeded yet.
+    /// True when at least one storage poll kind (claim, recovery, or backlog) has a
+    /// failure timestamp newer than its most recent success timestamp (or has never
+    /// succeeded at all). Each poll kind is tracked independently so a successful
+    /// backlog refresh does not mask a still-failing claim, and a successful claim
+    /// does not mask a still-failing recovery sweep.
+    /// </summary>
+    bool IsStoragePollFailing { get; }
+
+    /// <summary>UTC timestamp of the most recent successful <c>ClaimPendingAsync</c>, or null when none has occurred.</summary>
+    DateTimeOffset? LastClaimPollSuccessAt { get; }
+
+    /// <summary>UTC timestamp of the most recent <c>ClaimPendingAsync</c> failure, or null when none has occurred.</summary>
+    DateTimeOffset? LastClaimPollFailureAt { get; }
+
+    /// <summary>UTC timestamp of the most recent successful <c>RecoverExpiredClaimsAsync</c>, or null when none has occurred.</summary>
+    DateTimeOffset? LastRecoveryPollSuccessAt { get; }
+
+    /// <summary>UTC timestamp of the most recent <c>RecoverExpiredClaimsAsync</c> failure, or null when none has occurred.</summary>
+    DateTimeOffset? LastRecoveryPollFailureAt { get; }
+
+    /// <summary>UTC timestamp of the most recent successful <c>GetBacklogMetricsAsync</c>, or null when none has occurred.</summary>
+    DateTimeOffset? LastBacklogPollSuccessAt { get; }
+
+    /// <summary>UTC timestamp of the most recent <c>GetBacklogMetricsAsync</c> failure, or null when none has occurred.</summary>
+    DateTimeOffset? LastBacklogPollFailureAt { get; }
+
+    /// <summary>
+    /// Diagnostic aggregate: most recent successful storage poll across all kinds.
+    /// The readiness probe uses <see cref="IsStoragePollFailing"/> instead, since
+    /// the aggregate can mask a still-failing kind whenever a different kind has
+    /// succeeded more recently.
     /// </summary>
     DateTimeOffset? LastSuccessfulPollAt { get; }
 
     /// <summary>
-    /// UTC timestamp of the most recent storage poll failure (claim, recovery, or
-    /// backlog query). Cleared whenever a storage poll succeeds. The readiness probe
-    /// returns Degraded/Unhealthy when this is set after the most recent success so a
-    /// stuck dispatcher cannot silently report Healthy. Null when no failures have
-    /// occurred since the last successful poll.
+    /// Diagnostic aggregate: most recent storage poll failure across all kinds.
+    /// Both the success and failure aggregates are retained even after a recovery
+    /// pass — the dispatcher does not auto-clear either timestamp. Use
+    /// <see cref="IsStoragePollFailing"/> to determine pending failure status.
     /// </summary>
     DateTimeOffset? LastStorageFailureAt { get; }
 }

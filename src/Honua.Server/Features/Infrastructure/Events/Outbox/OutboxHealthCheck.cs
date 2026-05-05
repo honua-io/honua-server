@@ -63,6 +63,9 @@ internal sealed class OutboxHealthCheck : IHealthCheck
                 data: data));
         }
 
+        AddPollTimestampData(data, "claim", _dispatcherHealth.LastClaimPollSuccessAt, _dispatcherHealth.LastClaimPollFailureAt);
+        AddPollTimestampData(data, "recovery", _dispatcherHealth.LastRecoveryPollSuccessAt, _dispatcherHealth.LastRecoveryPollFailureAt);
+        AddPollTimestampData(data, "backlog", _dispatcherHealth.LastBacklogPollSuccessAt, _dispatcherHealth.LastBacklogPollFailureAt);
         if (_dispatcherHealth.LastStorageFailureAt is { } lastStorageFailureAt)
         {
             data["last_storage_failure_at"] = lastStorageFailureAt.ToString("o", CultureInfo.InvariantCulture);
@@ -72,17 +75,31 @@ internal sealed class OutboxHealthCheck : IHealthCheck
             data["last_successful_poll_at"] = lastSuccessfulPollAt.ToString("o", CultureInfo.InvariantCulture);
         }
 
-        // Storage-poll failures (claim, recovery, or backlog query) are surfaced before
-        // the cold-start branch so a dispatcher stuck on a missing table or permission
-        // issue cannot silently report Healthy by leaving LastBacklog=null. We compare
-        // the failure and success timestamps so a single transient hiccup followed by a
-        // healthy pass naturally clears the flag, while persistent failures with no
-        // intervening success remain visible.
         var backlog = _dispatcherHealth.LastBacklog;
-        var pendingStorageFailure = _dispatcherHealth.LastStorageFailureAt is { } failureAt
-            && (_dispatcherHealth.LastSuccessfulPollAt is null
-                || failureAt > _dispatcherHealth.LastSuccessfulPollAt.Value);
-        if (pendingStorageFailure)
+        if (backlog is not null)
+        {
+            data["pending_count"] = backlog.PendingCount;
+            data["dead_lettered_count"] = backlog.DeadLetteredCount;
+            data["oldest_pending_age_seconds"] = backlog.OldestPendingAgeSeconds;
+
+            // Dead-lettered rows demand operator triage regardless of whether the
+            // most recent storage poll just failed. Evaluating this before the
+            // storage-poll branch prevents a stale-but-known backlog with dead
+            // letters from being demoted to Degraded by an intermittent claim or
+            // backlog query failure.
+            if (backlog.DeadLetteredCount >= _options.UnhealthyDeadLetterThreshold)
+            {
+                return Task.FromResult(HealthCheckResult.Unhealthy(
+                    $"Outbox has {backlog.DeadLetteredCount.ToString(CultureInfo.InvariantCulture)} dead-lettered rows requiring operator triage.",
+                    data: data));
+            }
+        }
+
+        // Storage-poll failures are tracked per kind (claim, recovery, backlog)
+        // so a successful backlog read does not mask a still-failing claim or a
+        // still-failing recovery sweep. IsStoragePollFailing returns true when any
+        // kind has a failure timestamp newer than its own most recent success.
+        if (_dispatcherHealth.IsStoragePollFailing)
         {
             if (backlog is null)
             {
@@ -106,17 +123,6 @@ internal sealed class OutboxHealthCheck : IHealthCheck
                 data));
         }
 
-        data["pending_count"] = backlog.PendingCount;
-        data["dead_lettered_count"] = backlog.DeadLetteredCount;
-        data["oldest_pending_age_seconds"] = backlog.OldestPendingAgeSeconds;
-
-        if (backlog.DeadLetteredCount >= _options.UnhealthyDeadLetterThreshold)
-        {
-            return Task.FromResult(HealthCheckResult.Unhealthy(
-                $"Outbox has {backlog.DeadLetteredCount.ToString(CultureInfo.InvariantCulture)} dead-lettered rows requiring operator triage.",
-                data: data));
-        }
-
         if (backlog.PendingCount >= _options.DegradedBacklogThreshold)
         {
             return Task.FromResult(HealthCheckResult.Degraded(
@@ -125,5 +131,21 @@ internal sealed class OutboxHealthCheck : IHealthCheck
         }
 
         return Task.FromResult(HealthCheckResult.Healthy("Outbox dispatcher is healthy.", data));
+    }
+
+    private static void AddPollTimestampData(
+        Dictionary<string, object> data,
+        string kind,
+        DateTimeOffset? lastSuccessAt,
+        DateTimeOffset? lastFailureAt)
+    {
+        if (lastSuccessAt is { } success)
+        {
+            data[$"last_{kind}_poll_success_at"] = success.ToString("o", CultureInfo.InvariantCulture);
+        }
+        if (lastFailureAt is { } failure)
+        {
+            data[$"last_{kind}_poll_failure_at"] = failure.ToString("o", CultureInfo.InvariantCulture);
+        }
     }
 }

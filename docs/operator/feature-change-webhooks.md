@@ -52,6 +52,51 @@ non-capable backends the existing post-commit publish + Redis retry queue
 remain in place unchanged (best-effort durability with a small loss window if
 the process crashes between commit and append).
 
+Row state machine: `pending` → `claimed` → `dispatched` | `failed` → `claimed`
+(retry) | `dead_lettered`. `outbox_id` (the row's primary key) is internal;
+consumers continue to dedupe on the canonical `eventId` carried in the published
+envelope, which is reused across dispatcher retries.
+
+The persisted row's `operation` column reflects the producer-side vocabulary
+(`create`, `update`, `delete`); `InMemoryFeatureChangeEventStore.AppendAsync`
+normalizes `create` to `insert` at the canonical event boundary so webhook and
+replay consumers always see the canonical values listed above. The outbox table
+itself is the only place an operator querying directly will see `create`.
+
+Durability guarantees:
+
+- **Strict publish.** The dispatcher uses `IFeatureChangeEventPublisher.PublishStrictAsync`,
+  which surfaces durable-store append failures instead of silently swapping them
+  for a best-effort retry-queue enqueue. A failed publish leaves the outbox row
+  in `claimed`/`failed` and the next pass re-dispatches it; the durability
+  guarantee never silently transfers from the multi-node-safe outbox to the
+  in-process retry queue.
+- **Claim-owner-bound terminal updates.** `MarkDispatchedAsync` and `MarkFailedAsync`
+  filter on `status='claimed' AND claim_node_id=@owner`, so a stalled worker whose
+  lease was reset by `RecoverExpiredClaimsAsync` and re-claimed elsewhere cannot
+  overwrite the new owner's terminal state. Stale-claim outcomes are logged at
+  Information level and skipped without inflating dispatch/failure counters.
+- **Mutation-time event timestamps.** `EventPayload.Timestamp` and the row's
+  `created_at` are pinned to mutation time (captured once in `BuildEntry`) so a
+  delayed or retried dispatch publishes the same timestamp as the inline path.
+  Replay `from`/`to` filtering uses `FeatureChangeEvent.Timestamp` and therefore
+  remains correct for rows that linger in the outbox before delivery.
+- **Atomic outbox write on non-rollback batches.** GeoServices `applyEdits` and
+  WFS transactions with `RollbackOnFailure=false` previously autocommitted the
+  row mutation and appended the outbox row from a separate connection. Each
+  row's mutation + outbox INSERT now runs inside a per-row transaction so a
+  crash between commit and append cannot leave a committed feature row without
+  its CDC envelope. Batch-transactional and outbox-inactive paths still use
+  the autocommit fast path.
+- **Per-row request and geometry-intent correlation.** Atomic batches (OData
+  `$batch` atomic groups, OGC Features Transactions, GeoServices `applyEdits`,
+  WFS 2.0 transactions) thread per-row `requestId` and `geometryChanged` queues
+  into the outbox scope so each emitted envelope carries the same correlation
+  the inline post-commit publish would have used. `geometryChanged` is sourced
+  from the originating request intent rather than inferred from the post-mutation
+  snapshot, so PATCH-style updates that preserve existing geometry report
+  `geometryChanged=false`.
+
 Backend capability:
 
 - **PostgreSQL**: full transactional outbox.
@@ -79,9 +124,29 @@ Operational signals:
   Reports `Healthy` when the dispatcher is running and the backlog is below
   `DegradedBacklogThreshold`, `Degraded` once the backlog crosses that threshold,
   and `Unhealthy` when dead-lettered rows reach `UnhealthyDeadLetterThreshold`
-  or the dispatcher is not running. On non-capable providers the check stays
-  `Healthy` and surfaces the capability limitation as its description so
-  smoke probes do not flap.
+  or the dispatcher is not running. Dead-letter `Unhealthy` is evaluated before
+  the storage-poll branch, so a known dead-letter snapshot stays `Unhealthy`
+  even when the latest claim/recovery/backlog query happened to fail — the
+  triage signal outranks the transient storage-poll signal. On non-capable
+  providers the check stays `Healthy` and surfaces the capability limitation
+  as its description so smoke probes do not flap.
+- Storage-poll failure surfacing. The dispatcher tracks each storage kind
+  independently (`claim`, `recovery`, `backlog`) and exposes
+  `IsStoragePollFailing` plus a per-kind success/failure timestamp pair on
+  `IOutboxHealth`. Per-kind tracking is required because a successful backlog
+  refresh after a failed claim must NOT clear the still-failing claim — a
+  single shared timestamp pair would let the later success mask the earlier
+  failure even though no rows are being dispatched. Whenever any kind has a
+  failure timestamp newer than its own most recent success (or no success at
+  all), the readiness probe returns `Unhealthy` if no backlog snapshot has
+  been captured (cold-start failure, e.g. missing table or permissions) and
+  `Degraded` when a prior pass had succeeded but the latest poll failed (the
+  cached backlog snapshot may be stale). A subsequent successful pass on the
+  same kind naturally clears the flag without operator intervention. The probe
+  payload includes per-kind `last_<kind>_poll_success_at` /
+  `last_<kind>_poll_failure_at` plus aggregate `last_storage_failure_at` and
+  `last_successful_poll_at` so dashboards and alerts can correlate the
+  transition with downstream symptoms.
 
 ## Webhook Signature
 
