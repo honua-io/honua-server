@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -312,11 +313,27 @@ public sealed partial class PublicInterfaceProofLedgerTests
     public void SdkCompatibilityWorkflow_ShouldConvertSmokeTimeoutsIntoCellEvidence()
     {
         var workflow = LoadSdkCompatibilityWorkflow();
+        const int RequiredSetupAndEvidenceBudgetSeconds = 30 * 60;
 
-        workflow.Should().Contain("SDK_COMPATIBILITY_TIMEOUT_SECONDS: '2400'");
+        var jobTimeoutSeconds = ExtractRequiredInt32(
+            SdkCompatibilityMatrixJobTimeoutRegex().Match(workflow),
+            "minutes") * 60;
+        var smokeTimeoutSeconds = ExtractRequiredInt32(
+            SdkCompatibilitySmokeTimeoutRegex().Match(workflow),
+            "seconds");
+        var killAfterSeconds = ExtractRequiredInt32(
+            SdkCompatibilityKillAfterRegex().Match(workflow),
+            "seconds");
+
         workflow.Should().Contain("timeout --kill-after=30s \"$SDK_COMPATIBILITY_TIMEOUT_SECONDS\"",
             "the smoke command should time out before the job timeout so the evidence writer still runs");
+        jobTimeoutSeconds.Should().BeGreaterThanOrEqualTo(
+            smokeTimeoutSeconds + killAfterSeconds + RequiredSetupAndEvidenceBudgetSeconds,
+            "the job-level timeout must leave setup, kill-grace, and evidence-writing budget after the smoke timeout");
         workflow.Should().Contain("timed out after %ss.");
+        workflow.Should().Contain("- name: Write compatibility result\n        if: always()");
+        workflow.Should().Contain("- name: Upload SDK compatibility cell evidence\n        if: always()");
+        workflow.Should().Contain("always() && matrix.expected_supported == true && steps.compatibility.outcome != 'success'");
         workflow.Should().Contain("COMPATIBILITY_EXIT_CODE: ${{ steps.compatibility.outputs.exit_code }}");
         workflow.Should().Contain("failure_diagnostics");
     }
@@ -436,6 +453,13 @@ public sealed partial class PublicInterfaceProofLedgerTests
             .Select(match => match.Groups["surfaceId"].Value)
             .ToArray();
 
+    private static int ExtractRequiredInt32(Match match, string groupName)
+    {
+        match.Success.Should().BeTrue($"sdk-server-compatibility.yml must declare '{groupName}' for timeout evidence validation");
+        match.Groups[groupName].Success.Should().BeTrue($"sdk-server-compatibility.yml must expose '{groupName}' for timeout evidence validation");
+        return int.Parse(match.Groups[groupName].Value, CultureInfo.InvariantCulture);
+    }
+
     private static bool MatchesEndpoint(PublicInterfaceSurface surface, string path)
         => surface.EndpointExactMatches.Contains(path, StringComparer.OrdinalIgnoreCase)
         || surface.EndpointPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
@@ -501,6 +525,15 @@ public sealed partial class PublicInterfaceProofLedgerTests
 
     [GeneratedRegex(@"(?<sdk>js|python|dotnet):\s*\[(?<surfaces>.*?)\]", RegexOptions.Singleline)]
     private static partial Regex SdkProtocolSurfaceBlockRegex();
+
+    [GeneratedRegex(@"sdk-compat-matrix:[\s\S]*?timeout-minutes:\s*(?<minutes>\d+)")]
+    private static partial Regex SdkCompatibilityMatrixJobTimeoutRegex();
+
+    [GeneratedRegex(@"SDK_COMPATIBILITY_TIMEOUT_SECONDS:\s*'(?<seconds>\d+)'")]
+    private static partial Regex SdkCompatibilitySmokeTimeoutRegex();
+
+    [GeneratedRegex(@"timeout --kill-after=(?<seconds>\d+)s ""\$SDK_COMPATIBILITY_TIMEOUT_SECONDS""")]
+    private static partial Regex SdkCompatibilityKillAfterRegex();
 
     [GeneratedRegex("\"(?<surfaceId>[a-z0-9.-]+)\"")]
     private static partial Regex QuotedSurfaceIdRegex();

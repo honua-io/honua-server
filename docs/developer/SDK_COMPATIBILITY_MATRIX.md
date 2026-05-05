@@ -114,8 +114,10 @@ records:
 Do not infer implemented per-SDK protocol coverage from package-version capture
 alone; the proof ledger must follow `protocol_surfaces_by_sdk`.
 
-The smoke command uses a 40-minute command timeout inside the 45-minute job
-timeout so timed-out cells still emit `exit_code: 124` and failure diagnostics.
+The smoke command uses a 40-minute command timeout inside a 75-minute job
+timeout. The remaining job budget covers checkout/setup, kill grace, evidence
+writing, artifact upload, and supported-cell failure handling so timed-out cells
+still emit `exit_code: 124` and failure diagnostics.
 
 The generated `sdk-compatibility-summary.json` embeds these cell records so
 release owners can review both the matrix decision and the raw evidence fields

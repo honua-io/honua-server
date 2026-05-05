@@ -109,7 +109,7 @@ jobs:
     name: ${{ matrix.server_label }} x ${{ matrix.sdk_label }} (${{ matrix.cell_status }})
     needs: load-matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     continue-on-error: ${{ matrix.expected_supported == false }}
     strategy:
       fail-fast: false
