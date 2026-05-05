@@ -107,6 +107,100 @@ public sealed class FeatureMutationOutboxScopeTests
     }
 
     [UnitTest]
+    public async Task ResolveOutboxScopeAsync_SnapshotWithGeometry_EncodesGeometryChangedTrue()
+    {
+        // GeometryChanged regression guard: outbox-built FeatureChangeEventRequest must
+        // mirror the protocol-layer publish heuristic so streaming/webhook consumers can
+        // distinguish geometry-touching mutations from attribute-only updates after the
+        // outbox dispatcher publishes.
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+        var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
+
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-geom" };
+        var data = await service.ResolveOutboxScopeAsync(
+            context,
+            layerId: 7,
+            protocol: "OgcFeatures",
+            requestId: "req-geom",
+            layerSrid: 4326);
+
+        using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
+        var withGeometry = Feature.Create(11, geometry: new byte[] { 0x01, 0x02 }, ImmutableDictionary<string, object?>.Empty);
+        var entry = FeatureMutationOutboxScope.Current!.EntryFactory(11, "update", withGeometry);
+
+        entry.Should().NotBeNull();
+        entry!.EventPayload.Should().Contain("\"GeometryChanged\":true");
+    }
+
+    [UnitTest]
+    public async Task ResolveOutboxScopeAsync_SnapshotWithoutGeometry_EncodesGeometryChangedFalse()
+    {
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+        var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
+
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-attr" };
+        var data = await service.ResolveOutboxScopeAsync(
+            context,
+            layerId: 7,
+            protocol: "OgcFeatures",
+            requestId: "req-attr");
+
+        using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
+        var attributesOnly = Feature.Create(12, geometry: null, ImmutableDictionary<string, object?>.Empty);
+        var entry = FeatureMutationOutboxScope.Current!.EntryFactory(12, "update", attributesOnly);
+
+        entry.Should().NotBeNull();
+        entry!.EventPayload.Should().Contain("\"GeometryChanged\":false");
+    }
+
+    [UnitTest]
+    public async Task ResolveOutboxScopeAsync_PerOperationRequestIds_DequeuesInOrderAndFallsBack()
+    {
+        // Atomic batch correlation guard (#692): the entry factory must consume the
+        // per-operation queues in input order so each outbox row carries the originating
+        // subrequest id; once a queue is exhausted, subsequent rows fall back to the
+        // resolved scope-wide id (parent trace identifier when no requestId was provided).
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+        var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
+
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-batch" };
+        var perOpRequestIds = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["create"] = new[] { "trace-batch:c1", "trace-batch:c2" },
+            ["update"] = new[] { "trace-batch:u1" },
+        };
+
+        var data = await service.ResolveOutboxScopeAsync(
+            context,
+            layerId: 7,
+            protocol: "OData",
+            perOperationRequestIds: perOpRequestIds);
+
+        using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
+        var feature = Feature.Create(0, geometry: null, ImmutableDictionary<string, object?>.Empty);
+
+        var firstCreate = FeatureMutationOutboxScope.Current!.EntryFactory(101, "create", feature);
+        var secondCreate = FeatureMutationOutboxScope.Current!.EntryFactory(102, "create", feature);
+        var firstUpdate = FeatureMutationOutboxScope.Current!.EntryFactory(201, "update", feature);
+        // Queue exhausted: should fall back to the parent trace identifier.
+        var thirdCreate = FeatureMutationOutboxScope.Current!.EntryFactory(103, "create", feature);
+        // No queue for delete: also falls back to the parent trace identifier.
+        var firstDelete = FeatureMutationOutboxScope.Current!.EntryFactory(301, "delete", feature);
+
+        firstCreate!.RequestId.Should().Be("trace-batch:c1");
+        secondCreate!.RequestId.Should().Be("trace-batch:c2");
+        firstUpdate!.RequestId.Should().Be("trace-batch:u1");
+        thirdCreate!.RequestId.Should().Be("trace-batch");
+        firstDelete!.RequestId.Should().Be("trace-batch");
+    }
+
+    [UnitTest]
     public async Task PublishAsync_WhenOutboxEnabled_SkipsCanonicalPublish()
     {
         // Critical invariant for #692: when the outbox is the system of record for

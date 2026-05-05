@@ -59,6 +59,11 @@ internal sealed class FeatureMutationEventService(
     /// <see cref="AsyncLocal{T}"/> mutation lands in the caller's ExecutionContext (mutations
     /// inside this <c>async</c> method are not observed by the caller after the awaiter
     /// completes — the canonical .NET behavior for AsyncLocal in async callees).
+    /// When <c>perOperationRequestIds</c> is provided, the entry factory dequeues a
+    /// per-row request id from the kind-keyed queue ("create"/"update"/"delete") on each
+    /// invocation so batch protocol handlers (OData $batch atomic groups, OGC Features
+    /// transactions) preserve subrequest correlation; otherwise the resolved
+    /// <c>requestId</c> (or the parent trace identifier) flows through.
     /// </summary>
     public async Task<FeatureMutationOutboxScopeData?> ResolveOutboxScopeAsync(
         HttpContext context,
@@ -69,6 +74,7 @@ internal sealed class FeatureMutationEventService(
         string? serviceProtocol = null,
         string? requestId = null,
         int? layerSrid = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? perOperationRequestIds = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -91,18 +97,44 @@ internal sealed class FeatureMutationEventService(
 
         var resolvedSourceId = !string.IsNullOrWhiteSpace(sourceId) ? sourceId : protocol;
 
+        Dictionary<string, Queue<string>>? perOperationQueues = null;
+        if (perOperationRequestIds is { Count: > 0 })
+        {
+            perOperationQueues = new Dictionary<string, Queue<string>>(StringComparer.Ordinal);
+            foreach (var (operationKind, ids) in perOperationRequestIds)
+            {
+                if (string.IsNullOrWhiteSpace(operationKind) || ids is null || ids.Count == 0)
+                {
+                    continue;
+                }
+
+                perOperationQueues[operationKind] = new Queue<string>(ids);
+            }
+        }
+
         return new FeatureMutationOutboxScopeData
         {
-            EntryFactory = (objectId, operation, snapshot) => BuildEntry(
-                resolvedServiceId,
-                layerId,
-                objectId,
-                operation,
-                protocol,
-                resolvedSourceId,
-                resolvedRequestId,
-                snapshot,
-                layerSrid)
+            EntryFactory = (objectId, operation, snapshot) =>
+            {
+                // Per-row request id when the caller seeded the queue (atomic batch paths);
+                // otherwise the resolved scope-wide id flows through to BuildEntry.
+                var rowRequestId = perOperationQueues is not null
+                    && perOperationQueues.TryGetValue(operation, out var queue)
+                    && queue.Count > 0
+                        ? queue.Dequeue()
+                        : resolvedRequestId;
+
+                return BuildEntry(
+                    resolvedServiceId,
+                    layerId,
+                    objectId,
+                    operation,
+                    protocol,
+                    resolvedSourceId,
+                    rowRequestId,
+                    snapshot,
+                    layerSrid);
+            }
         };
     }
 
@@ -238,6 +270,13 @@ internal sealed class FeatureMutationEventService(
         }
 
         var eventId = Guid.NewGuid().ToString("N");
+        // Mirror the heuristic used by the protocol-layer publish path
+        // (HonuaFeatureService and OgcFeaturesTransactionHandler): a snapshot with
+        // non-empty WKB means geometry was created, replaced, or removed depending on
+        // the operation kind. Without this flag, dispatcher-published events always
+        // carry GeometryChanged=false, so streaming/webhook subscribers cannot tell
+        // attribute-only updates apart from geometry-touching ones.
+        var geometryChanged = snapshot?.Geometry is { Length: > 0 };
         var request = new FeatureChangeEventRequest
         {
             EventId = eventId,
@@ -248,6 +287,7 @@ internal sealed class FeatureMutationEventService(
             Operation = operation,
             Protocol = protocol,
             RequestId = requestId,
+            GeometryChanged = geometryChanged,
             GeometryEnvelope = enrichment.GeometryEnvelope,
             PropertiesJson = enrichment.PropertiesJson,
             GeometryJson = geometryJson,

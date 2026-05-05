@@ -51,11 +51,24 @@ internal sealed class OutboxHealthCheck : IHealthCheck
             data["last_dispatch_at"] = lastDispatchAt.ToString("o", CultureInfo.InvariantCulture);
         }
 
+        // Check dispatcher liveness before any "still warming up" branch. A dispatcher
+        // that exited before its first pass leaves LastBacklog=null but is no longer
+        // claiming rows, so pending events would accumulate silently if we treated the
+        // null-backlog state as Healthy. The runbook contract is "Unhealthy when the
+        // dispatcher is not running"; this guard honors that even on cold start.
+        if (!_dispatcherHealth.IsDispatcherRunning)
+        {
+            return Task.FromResult(HealthCheckResult.Unhealthy(
+                "Outbox dispatcher is not running; pending events will accumulate until it restarts.",
+                data: data));
+        }
+
         var backlog = _dispatcherHealth.LastBacklog;
         if (backlog is null)
         {
-            // First pass has not run yet (or the dispatcher is disabled). Report Healthy with
-            // a note so smoke checks immediately after startup do not flap on cold state.
+            // Dispatcher is running but the first pass has not produced a backlog snapshot
+            // yet. Report Healthy with a note so smoke checks immediately after startup do
+            // not flap on cold state.
             return Task.FromResult(HealthCheckResult.Healthy(
                 "Outbox dispatcher initialized; awaiting first pass.",
                 data));
@@ -69,13 +82,6 @@ internal sealed class OutboxHealthCheck : IHealthCheck
         {
             return Task.FromResult(HealthCheckResult.Unhealthy(
                 $"Outbox has {backlog.DeadLetteredCount.ToString(CultureInfo.InvariantCulture)} dead-lettered rows requiring operator triage.",
-                data: data));
-        }
-
-        if (!_dispatcherHealth.IsDispatcherRunning)
-        {
-            return Task.FromResult(HealthCheckResult.Unhealthy(
-                "Outbox dispatcher is not running; pending events will accumulate until it restarts.",
                 data: data));
         }
 

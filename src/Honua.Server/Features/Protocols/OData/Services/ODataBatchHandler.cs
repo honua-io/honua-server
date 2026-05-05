@@ -922,12 +922,40 @@ internal sealed partial class ODataBatchHandler
                 }
 
                 var axisOrder = await ResolveAxisOrderAsync(layer, cancellationToken);
+                // Preserve per-subrequest correlation in the outbox payload: ApplyEditsAsync
+                // invokes the entry factory once per row in creates-then-updates-then-deletes
+                // order, matching the order we capture from layerCreates/Updates/Deletes here.
+                Dictionary<string, IReadOnlyList<string>>? perOperationRequestIds = null;
+                if ((layerCreates?.Count ?? 0) + (layerUpdates?.Count ?? 0) + (layerDeletes?.Count ?? 0) > 0)
+                {
+                    perOperationRequestIds = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+                    if (layerCreates is { Count: > 0 })
+                    {
+                        perOperationRequestIds["create"] = layerCreates
+                            .Select(item => $"{context.TraceIdentifier}:{item.requestId}")
+                            .ToImmutableArray();
+                    }
+                    if (layerUpdates is { Count: > 0 })
+                    {
+                        perOperationRequestIds["update"] = layerUpdates
+                            .Select(item => $"{context.TraceIdentifier}:{item.requestId}")
+                            .ToImmutableArray();
+                    }
+                    if (layerDeletes is { Count: > 0 })
+                    {
+                        perOperationRequestIds["delete"] = layerDeletes
+                            .Select(item => $"{context.TraceIdentifier}:{item.requestId}")
+                            .ToImmutableArray();
+                    }
+                }
+
                 var atomicOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
                     context,
                     layerId,
                     HonuaTelemetry.Protocols.OData,
                     serviceProtocol: ServiceProtocols.OData,
                     layerSrid: layer.SpatialReference.Wkid,
+                    perOperationRequestIds: perOperationRequestIds,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
                 using var atomicOutboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(atomicOutboxScopeData);
                 var result = await _featureWriter.ApplyEditsAsync(layerId, batch, cancellationToken);

@@ -84,6 +84,28 @@ public sealed class OutboxHealthCheckTests
     }
 
     [UnitTest]
+    public async Task CheckHealthAsync_DispatcherStoppedBeforeFirstPass_ReturnsUnhealthy()
+    {
+        // Cold-start liveness guard (#692): a dispatcher that exits before producing
+        // its first backlog snapshot leaves LastBacklog=null, so the readiness check
+        // must consult IsDispatcherRunning before the cold-start branch. Otherwise
+        // a stopped dispatcher silently reports Healthy and pending events accumulate.
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+
+        var dispatcherHealth = Substitute.For<IOutboxHealth>();
+        dispatcherHealth.IsDispatcherRunning.Returns(false);
+        dispatcherHealth.LastBacklog.Returns((OutboxBacklogMetrics?)null);
+
+        var check = new OutboxHealthCheck(capability, dispatcherHealth, BuildOptions());
+
+        var result = await check.CheckHealthAsync(_context);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain("not running");
+    }
+
+    [UnitTest]
     public async Task CheckHealthAsync_BacklogAboveThreshold_ReturnsDegraded()
     {
         var capability = Substitute.For<IOutboxCapabilityProvider>();

@@ -123,6 +123,17 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
             else
             {
+                // Capture per-subrequest request ids in input order so the outbox payload
+                // preserves the same correlation that the legacy post-commit publish
+                // produced (TraceIdentifier:operationId). The data layer invokes the entry
+                // factory once per row, so per-kind queues align with ApplyEditsAsync's
+                // create-then-update-then-delete dispatch (or ordered ops when the adapter
+                // returns Operations).
+                var batchPerOperationRequestIds = BuildBatchPerOperationRequestIds(
+                    context.TraceIdentifier,
+                    preparedBatch.PreparedOperations,
+                    batchRequest.Operations);
+
                 var editResult = await ExecuteEditAsync(
                     context,
                     layerId,
@@ -146,7 +157,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                             })
                             .ToImmutableArray()
                     },
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    perOperationRequestIds: batchPerOperationRequestIds).ConfigureAwait(false);
 
                 objectIdsByOperationIndex = MapBatchObjectIdsByOperationIndex(
                     batchRequest.Operations.Count,
@@ -742,7 +754,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         int layerId,
         LayerDefinition layer,
         OgcFeaturesEditRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? perOperationRequestIds = null)
     {
         var editAdapterResult = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
         if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
@@ -764,6 +777,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             HonuaTelemetry.Protocols.OgcFeatures,
             serviceProtocol: ServiceProtocols.OgcFeatures,
             layerSrid: layer.SpatialReference.Wkid,
+            perOperationRequestIds: perOperationRequestIds,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
@@ -1165,6 +1179,67 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
 
         return results.ToList();
+    }
+
+    /// <summary>
+    /// Build per-operation-kind queues of <c>{traceIdentifier}:{operationId}</c> request ids
+    /// in the same order ApplyEditsAsync iterates rows for each kind, so the outbox payload
+    /// preserves subrequest correlation that the now no-op post-commit publish used to emit.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<string>>? BuildBatchPerOperationRequestIds(
+        string traceIdentifier,
+        ImmutableArray<PreparedBatchOperation> preparedOperations,
+        List<BatchOperationModel> requestOperations)
+    {
+        if (preparedOperations.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var creates = new List<string>();
+        var updates = new List<string>();
+        var deletes = new List<string>();
+
+        foreach (var preparedOperation in preparedOperations)
+        {
+            var operationId = preparedOperation.Index >= 0 && preparedOperation.Index < requestOperations.Count
+                ? requestOperations[preparedOperation.Index].Id
+                : null;
+            var rowRequestId = $"{traceIdentifier}:{operationId ?? "batch"}";
+
+            switch (preparedOperation.OperationKind)
+            {
+                case BatchOperationKind.Create:
+                    creates.Add(rowRequestId);
+                    break;
+                case BatchOperationKind.Update:
+                    updates.Add(rowRequestId);
+                    break;
+                case BatchOperationKind.Delete:
+                    deletes.Add(rowRequestId);
+                    break;
+            }
+        }
+
+        if (creates.Count == 0 && updates.Count == 0 && deletes.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        if (creates.Count > 0)
+        {
+            result["create"] = creates;
+        }
+        if (updates.Count > 0)
+        {
+            result["update"] = updates;
+        }
+        if (deletes.Count > 0)
+        {
+            result["delete"] = deletes;
+        }
+        return result;
     }
 
     private static long?[] MapBatchObjectIdsByOperationIndex(
