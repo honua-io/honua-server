@@ -111,9 +111,11 @@ server generation so a caught-up client never re-pulls the same window.
 
 `feature` is `null` for `delete` operations; CRS, datum, and coordinate
 precision in `feature` are preserved exactly as stored. Changes are
-ordered by ascending `generation` and the largest returned generation is
-echoed in `nextCursor`. When `hasMore` is `true`, repeat with
-`sinceGeneration=nextCursor` until empty.
+ordered by ascending `generation`. `nextCursor` echoes the largest
+returned generation when the page is non-empty, or the committed server
+watermark when the page is empty — so a caught-up client can persist
+`nextCursor` and never re-pull the same window. When `hasMore` is
+`true`, repeat with `sinceGeneration=nextCursor` until empty.
 
 **Error responses**
 

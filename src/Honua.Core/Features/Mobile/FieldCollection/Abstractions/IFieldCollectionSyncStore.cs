@@ -27,8 +27,11 @@ public interface IFieldCollectionSyncStore
 
     /// <summary>
     /// Returns ordered FieldCollection changes after <paramref name="sinceGeneration"/>,
-    /// up to <paramref name="limit"/> entries. Updates the per-client cursor to the
-    /// largest returned generation as a side effect of a successful pull.
+    /// up to <paramref name="limit"/> entries. Advances the per-client cursor as a
+    /// side effect of every successful pull: to the largest returned generation when
+    /// the page is non-empty, or to the committed server watermark when the page is
+    /// empty so a caught-up client never re-pulls the same window. The cursor advance
+    /// is monotonic — a smaller cursor value can never regress a larger one.
     /// </summary>
     Task<FieldCollectionChangesPage> GetChangesAsync(
         string clientId,

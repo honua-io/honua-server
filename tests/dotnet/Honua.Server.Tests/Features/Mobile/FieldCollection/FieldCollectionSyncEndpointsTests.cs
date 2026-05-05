@@ -413,6 +413,66 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/fieldcollection/changes")]
+    public async Task Push_ConcurrentInsertsForSameAbsentFeature_OneAppliesOneConflicts()
+    {
+        // Two distinct change_ids both target the same (feature_id, layer_id) for
+        // an absent feature. The change_id advisory lock does not serialize them
+        // (different keys), and SELECT ... FOR UPDATE locks nothing when the row
+        // is absent — so without the feature-identity advisory lock both would
+        // resolve as Applied and the second upsert would silently overwrite the
+        // first. With the fix, the loser re-reads the freshly committed row and
+        // resolves as Conflict. Exactly one applied + one conflict is the
+        // expected outcome.
+        var featureId = $"feat-{Guid.NewGuid():N}";
+        var layerId = 170;
+        var payloadA = new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId,
+            layerId,
+            operation = "insert",
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: -33.0, latitude: 11.0),
+        };
+        var payloadB = new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId,
+            layerId,
+            operation = "insert",
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: -34.0, latitude: 12.0),
+        };
+
+        var taskA = _client.PostAsJsonAsync(ChangesPath, payloadA);
+        var taskB = _client.PostAsJsonAsync(ChangesPath, payloadB);
+        await Task.WhenAll(taskA, taskB);
+
+        taskA.Result.StatusCode.Should().Be(HttpStatusCode.OK);
+        taskB.Result.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var jsonA = JsonDocument.Parse(await taskA.Result.Content.ReadAsStringAsync());
+        using var jsonB = JsonDocument.Parse(await taskB.Result.Content.ReadAsStringAsync());
+
+        var outcomeA = jsonA.RootElement.GetProperty("outcome").GetString();
+        var outcomeB = jsonB.RootElement.GetProperty("outcome").GetString();
+
+        // Exactly one push must apply and the other must conflict on the
+        // existing row. Without the feature-identity advisory lock both would
+        // resolve as Applied and the second upsert would silently overwrite.
+        (outcomeA == "applied" ^ outcomeB == "applied").Should().BeTrue(
+            "exactly one of the two concurrent inserts must apply; got A={0}, B={1}", outcomeA, outcomeB);
+        (outcomeA == "conflict" ^ outcomeB == "conflict").Should().BeTrue(
+            "exactly one of the two concurrent inserts must conflict; got A={0}, B={1}", outcomeA, outcomeB);
+
+        var conflictJson = outcomeA == "conflict" ? jsonA : jsonB;
+        conflictJson.RootElement.GetProperty("conflictType").GetString().Should().Be("update-update");
+        conflictJson.RootElement.TryGetProperty("serverVersion", out var serverVersion).Should().BeTrue();
+        serverVersion.GetInt64().Should().Be(1L);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/changes")]
     public async Task Push_DeleteWithNonNullFeature_Returns400()
     {
         // The contract requires 'feature' to be null for delete operations.

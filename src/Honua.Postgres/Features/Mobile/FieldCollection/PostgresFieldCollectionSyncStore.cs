@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
@@ -104,8 +105,21 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     // locks. The literal mirrors ticket #894 to make grep-by-ticket easy.
     private const int FieldCollectionPushLockNamespace = 0x0894_FC5C;
 
+    // Feature-identity advisory lock keyed by (namespace, hashtext("<layer_id>:<feature_id>")).
+    // Serializes concurrent pushes targeting the same (feature_id, layer_id) regardless of
+    // change_id. Required because SELECT … FOR UPDATE on fieldcollection_features only locks
+    // an existing row — concurrent inserts for an absent feature would otherwise both read
+    // current=null, both resolve as Applied, and the unconditional ON CONFLICT DO UPDATE
+    // upsert would let the second silently overwrite the first. The namespace constant is
+    // distinct from FieldCollectionPushLockNamespace so changeId and feature locks never
+    // alias inside the FieldCollection lock space. The literal mirrors ticket #894.
+    private const int FieldCollectionFeatureLockNamespace = 0x0894_FC5F;
+
     private const string AcquireChangeIdLockSql =
         "SELECT pg_advisory_xact_lock(@namespace, hashtext(@change_id))";
+
+    private const string AcquireFeatureLockSql =
+        "SELECT pg_advisory_xact_lock(@namespace, hashtext(@feature_lock_key))";
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
 
@@ -255,9 +269,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         // acquisition), which precedes the winner's commit — the loser would
         // see count=0 and fall through to a unique-violation. Per-statement
         // snapshots under ReadCommitted give us a fresh visibility horizon
-        // immediately after the advisory lock is released. The SELECT … FOR
-        // UPDATE on the feature row still serializes concurrent feature writes
-        // for conflict resolution.
+        // immediately after each advisory lock is released.
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
 
         FieldCollectionPushResult result;
@@ -275,6 +287,14 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return existing;
             }
+
+            // Serialize concurrent pushes that target the same (feature_id, layer_id),
+            // regardless of change_id. The SELECT … FOR UPDATE below only serializes
+            // the existing-row case; for an absent feature, two distinct change_ids
+            // could both observe current=null and both resolve their inserts as
+            // Applied. The feature advisory lock closes that race so the second
+            // entrant re-reads the freshly committed row and resolves as Conflict.
+            await AcquireFeatureLockAsync(connection, transaction, request.FeatureId, request.LayerId, cancellationToken).ConfigureAwait(false);
 
             var current = await ReadCurrentFeatureAsync(connection, transaction, request.FeatureId, request.LayerId, cancellationToken).ConfigureAwait(false);
             result = ResolveOutcome(request, current);
@@ -622,6 +642,27 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         await using var command = new NpgsqlCommand(AcquireChangeIdLockSql, connection, transaction);
         command.Parameters.AddWithValue("namespace", NpgsqlDbType.Integer, FieldCollectionPushLockNamespace);
         command.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, changeId);
+        _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task AcquireFeatureLockAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string featureId,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        // Composite key uses a colon separator between layer_id and feature_id so
+        // that "<n>" + "<m...>" cannot alias a different "<nm>" + "<...>" pair.
+        // hashtext collisions remain possible — they only cause unnecessary
+        // serialization between unrelated features, never correctness regressions.
+        var lockKey = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{layerId}:{featureId}");
+
+        await using var command = new NpgsqlCommand(AcquireFeatureLockSql, connection, transaction);
+        command.Parameters.AddWithValue("namespace", NpgsqlDbType.Integer, FieldCollectionFeatureLockNamespace);
+        command.Parameters.AddWithValue("feature_lock_key", NpgsqlDbType.Text, lockKey);
         _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
     }
 
