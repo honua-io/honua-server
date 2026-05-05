@@ -47,6 +47,10 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 - [Style Engine: Cross-Protocol Consumption](style-engine-protocol-consumption.md) — Canonical MapLibre style ingest, theme transforms (`dark`, `colorblind-safe`, `print`), revision metadata, and how stored styles flow into MVT, MapServer, and WMS rendering paths.
 
+## Time-aware Layers
+
+- [Temporal Animation API](temporal-animation-api.md) — Server-first contract for time-aware feature layers, including `timeInfo`/`timeExtent` discovery, OGC `TIME` dimension support, MVT `?time=` filtering, edition gates, and accepted date/time formats.
+
 ## Compatibility
 
 - [Known Limitations](MVP_COMPATIBILITY_CONTRACT.md) — Current protocol limitations

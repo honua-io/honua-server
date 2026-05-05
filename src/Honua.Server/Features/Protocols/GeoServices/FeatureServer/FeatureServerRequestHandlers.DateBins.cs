@@ -6,6 +6,8 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
@@ -81,6 +83,17 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
+        // queryDateBins is the temporal histogram surface (feature key
+        // `temporal.histogram` in FeatureCatalog) and is documented as Pro in
+        // docs/gis/temporal-animation-api.md. Unlike the MVT temporal tile
+        // path there is no documented no-op input that would render the gate
+        // a no-op, so the gate fires for any successful access here.
+        var editionError = RequireProEditionForDateBins(context);
+        if (editionError != null)
+        {
+            return editionError;
+        }
+
         // Parse required binField
         var binField = GetValueString(values, "binField");
         if (string.IsNullOrWhiteSpace(binField))
@@ -138,6 +151,29 @@ internal static partial class FeatureServerEndpoints
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Pro-edition gate for the queryDateBins temporal histogram. Mirrors
+    /// <c>RequireProEditionForTimeSeriesTiles</c> in FeatureServerRequestHandlers.Tiles.cs:
+    /// resolves the active license, returns an HTTP 403 with a remediation
+    /// message on Community, and lets Pro / Enterprise through. Exposed as
+    /// <c>internal</c> so the gate decision can be unit-tested directly without
+    /// booting the full HTTP pipeline (mirrors the
+    /// <c>SpatialAnalyticsRequestHandlers.RequireProEdition</c> shape).
+    /// </summary>
+    internal static IResult? RequireProEditionForDateBins(HttpContext context)
+    {
+        var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
+        var edition = licenseProvider.GetCurrentStatus().Edition;
+        if (edition >= HonuaEdition.Pro)
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateForbidden(
+            context,
+            $"Temporal histogram (queryDateBins) requires the Pro edition or higher. Current edition: {edition}.");
     }
 
     private static bool TryParseDateBin(string json, string binField, out DateBinDefinition dateBin, out string? error)

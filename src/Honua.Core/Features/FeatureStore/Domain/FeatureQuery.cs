@@ -179,7 +179,9 @@ public readonly record struct FeatureQuery
 public readonly record struct TemporalFilter
 {
     /// <summary>
-    /// Name of the temporal property to filter on
+    /// Name of the temporal property to filter on. For interval-style layers
+    /// this is the start time field; pair with <see cref="EndPropertyName"/>
+    /// to filter on the configured interval rather than just the start instant.
     /// </summary>
     public required string PropertyName { get; init; }
 
@@ -187,6 +189,16 @@ public readonly record struct TemporalFilter
     /// Type of the temporal property
     /// </summary>
     public required TemporalPropertyType PropertyType { get; init; }
+
+    /// <summary>
+    /// Optional end-time property for interval-style layers. When set, filters
+    /// apply interval-intersection semantics — the row's interval is
+    /// <c>[PropertyName, COALESCE(EndPropertyName, PropertyName)]</c> and
+    /// matches when it overlaps the requested <c>[Start, End]</c> window.
+    /// Mirrors the GeoServices REST <c>query?time=</c> behavior so render and
+    /// query paths share semantics. Null for instant-only layers.
+    /// </summary>
+    public string? EndPropertyName { get; init; }
 
     /// <summary>
     /// Inclusive start of the temporal interval (null for open start)

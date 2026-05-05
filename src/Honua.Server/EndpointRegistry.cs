@@ -361,6 +361,7 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins"),
+        new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryBins"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryBins"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryH3"),

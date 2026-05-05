@@ -136,4 +136,6 @@ namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(ServiceGetEstimatesResponse))]
 [JsonSerializable(typeof(ServiceLayerEstimateInfo))]
 [JsonSerializable(typeof(ServiceLayerEstimateInfo[]))]
+// Temporal extent endpoint (#379)
+[JsonSerializable(typeof(TemporalExtentResponse))]
 internal sealed partial class FeatureServerJsonContext : JsonSerializerContext;

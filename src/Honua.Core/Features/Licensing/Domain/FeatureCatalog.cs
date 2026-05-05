@@ -60,6 +60,9 @@ public static class FeatureCatalog
 
         /// <summary>Real-time feature streaming and subscriptions.</summary>
         public const string Streaming = "Streaming";
+
+        /// <summary>Temporal animation, time-aware filtering, and time-series tile features.</summary>
+        public const string Temporal = "Temporal";
     }
 
     /// <summary>
@@ -168,5 +171,19 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Buffer features by a fixed distance and dissolve or aggregate per group."),
         new("analytics.density", "Density Binning", Categories.Analytics,
             HonuaEdition.Pro, "Hex or square grid density (heatmap) binning over a filtered subset."),
+
+        // Temporal — Community (basic discovery)
+        new("temporal.filtering", "Temporal Query Filtering", Categories.Temporal,
+            HonuaEdition.Community, "Filter feature queries by a bounded or open-ended time range."),
+        new("temporal.extent-discovery", "Temporal Extent Discovery", Categories.Temporal,
+            HonuaEdition.Community, "Expose timeInfo, dedicated extent endpoint, and OGC time dimension metadata for time-aware layers."),
+
+        // Temporal — Pro (animation, playback, time-series tiles)
+        new("temporal.histogram", "Temporal Histogram (Date Bins)", Categories.Temporal,
+            HonuaEdition.Pro, "Count features per time bucket using calendar or fixed bins for animation frame planning."),
+        new("temporal.time-series-tiles", "Time-Series Tile Filtering", Categories.Temporal,
+            HonuaEdition.Pro, "Filter vector tile requests to a bounded time range via the time parameter."),
+        new("temporal.animation-api", "Animation API Contract", Categories.Temporal,
+            HonuaEdition.Pro, "Capability flag for SDK/admin TimeSlider and playback integration."),
     ];
 }

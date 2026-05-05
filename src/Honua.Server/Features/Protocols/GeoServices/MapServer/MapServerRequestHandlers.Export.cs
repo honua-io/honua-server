@@ -1219,6 +1219,16 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
+        // time=null,null parses as both bounds null — the documented no-op
+        // form. Treat it identically to an omitted time parameter so layer
+        // rendering does not invent a degenerate filter.
+        if (start is null && end is null && options?.TimeDataCumulative != true)
+        {
+            effectiveTime = null;
+            effectiveTimeRelation = null;
+            return true;
+        }
+
         if (options?.TimeDataCumulative == true)
         {
             start = null;

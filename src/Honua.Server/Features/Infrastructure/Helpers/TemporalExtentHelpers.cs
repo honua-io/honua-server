@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -9,6 +10,26 @@ namespace Honua.Server.Features.Infrastructure.Helpers;
 
 internal static class TemporalExtentHelpers
 {
+    /// <summary>
+    /// Canonical UTC formatter for OGC temporal capability values
+    /// (<c>TIME</c> dimensions, <c>&lt;Default&gt;</c>, <c>&lt;Current&gt;</c>,
+    /// extent literals). Uses second precision when the timestamp falls on a
+    /// whole second boundary and 7-digit fractional precision otherwise so
+    /// sub-second extents survive the round-trip from capabilities through to
+    /// the temporal filter pipeline. Postgres compares timestamps inclusively
+    /// at full precision; advertising a truncated max would exclude the row
+    /// containing the layer's actual maximum.
+    /// </summary>
+    public static string FormatOgcTemporalValue(DateTimeOffset value)
+    {
+        var utc = value.ToUniversalTime();
+        var format = utc.Ticks % TimeSpan.TicksPerSecond == 0
+            ? "yyyy-MM-ddTHH:mm:ss'Z'"
+            : "yyyy-MM-ddTHH:mm:ss.fffffff'Z'";
+        return utc.ToString(format, CultureInfo.InvariantCulture);
+    }
+
+
     internal readonly record struct TemporalRange(
         FieldDefinition StartField,
         FieldDefinition? EndField,
@@ -28,6 +49,56 @@ internal static class TemporalExtentHelpers
         EndFieldNotFound,
         NoTemporalField,
         MismatchedTypes
+    }
+
+    /// <summary>
+    /// Returns true when the layer is opt-in time-aware AND the configured
+    /// <c>TimeInfo.StartTimeField</c> (and optional <c>EndTimeField</c>) actually
+    /// resolve to <c>Date</c>/<c>DateTime</c> attributes on the layer. Used to
+    /// gate WMTS capabilities so an unusable time dimension is never advertised
+    /// when layer metadata stores a non-existent or wrong-typed field name.
+    /// Mirrors the resolution rules used by
+    /// <see cref="TryResolveTemporalRangeAsync"/> (no fallback when
+    /// <c>StartTimeField</c> is missing) so capabilities and the request path
+    /// agree on whether the dimension is usable.
+    /// </summary>
+    public static bool HasOptInTemporalFields(LayerDefinition layer)
+        => TryResolveOptInTemporalFields(layer, out _);
+
+    /// <summary>
+    /// Strict opt-in resolver that returns the resolved start/end fields when
+    /// the layer is opt-in time-aware AND every configured temporal field
+    /// resolves to a <c>Date</c>/<c>DateTime</c> attribute. Mirrors the
+    /// no-fallback rules used by <see cref="TryResolveTemporalRangeAsync"/> so
+    /// capability advertising and request validation share a single source of
+    /// truth (used by WMS GetMap and WMTS GetTile/GetFeatureInfo TIME parsing
+    /// to avoid accepting requests for layers that capabilities will not
+    /// advertise).
+    /// </summary>
+    public static bool TryResolveOptInTemporalFields(
+        LayerDefinition layer,
+        out TemporalFieldSelection selection)
+    {
+        selection = default;
+        var timeInfo = layer.Metadata?.TimeInfo;
+        if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+        {
+            return false;
+        }
+
+        if (!TryResolveTemporalFields(
+                layer,
+                allowFallbackWhenMissingStart: false,
+                out var startField,
+                out var endField,
+                out _,
+                out _))
+        {
+            return false;
+        }
+
+        selection = new TemporalFieldSelection(startField!, endField);
+        return true;
     }
 
     public static TemporalFieldSelection ResolveTemporalFieldsOrThrow(LayerDefinition layer)
@@ -75,28 +146,63 @@ internal static class TemporalExtentHelpers
             return null;
         }
 
-        TemporalExtentResult? startExtent = await featureReader.GetTemporalExtentAsync(
-            layer.Id,
-            startField!.Name,
-            startField.Type,
-            cancellationToken).ConfigureAwait(false);
+        // Read-only providers (MySQL/MariaDB, SQL Server) throw
+        // NotSupportedException from GetTemporalExtentAsync. Treat that as
+        // "no extent available" so capabilities/temporalExtent paths fall
+        // back to their non-time-aware contract (omit time dimension, return
+        // 404, etc.) instead of bubbling a 500 to the client. The layer is
+        // still time-aware in metadata terms; only extent discovery is
+        // unsupported on the backing store.
+        TemporalExtentResult? startExtent;
+        try
+        {
+            startExtent = await featureReader.GetTemporalExtentAsync(
+                layer.Id,
+                startField!.Name,
+                startField.Type,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
 
         TemporalExtentResult? endExtent = null;
         if (endField != null && !endField.Name.Equals(startField.Name, StringComparison.OrdinalIgnoreCase))
         {
-            endExtent = await featureReader.GetTemporalExtentAsync(
-                layer.Id,
-                endField.Name,
-                endField.Type,
-                cancellationToken).ConfigureAwait(false);
+            try
+            {
+                endExtent = await featureReader.GetTemporalExtentAsync(
+                    layer.Id,
+                    endField.Name,
+                    endField.Type,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (NotSupportedException)
+            {
+                return null;
+            }
         }
 
+        // Min comes from the earliest configured start; max effectively
+        // tracks COALESCE(end, start) so an interval-configured layer whose
+        // end column is null on every row still advertises the latest start
+        // timestamp. Without this fallback temporalExtent / WMS-WMTS
+        // <Default> would lose max for valid instant-style rows on layers
+        // where the operator configured an end field that no row has set.
         var min = startExtent?.Start;
-        var max = endField == null
-            ? startExtent?.End
-            : endExtent?.End ?? endExtent?.Start;
+        DateTimeOffset? max;
+        if (endField == null)
+        {
+            max = startExtent?.End;
+        }
+        else
+        {
+            max = endExtent?.End ?? endExtent?.Start ?? startExtent?.End;
+        }
 
-        return new TemporalRange(startField, endField, min, max, startExtent != null);
+        var hasExtent = startExtent != null || endExtent != null;
+        return new TemporalRange(startField, endField, min, max, hasExtent);
     }
 
     private static bool TryResolveTemporalFields(

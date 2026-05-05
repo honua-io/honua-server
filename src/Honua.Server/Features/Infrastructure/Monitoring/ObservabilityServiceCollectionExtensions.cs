@@ -313,7 +313,10 @@ internal static class ObservabilityServiceCollectionExtensions
             {
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
-                policy.SetVaryByQuery("where"); // Support for WHERE clause filtering
+                // `where` for attribute filtering; `time` for the temporal-animation
+                // contract (#379) so /tiles/...mvt?time=A,B does not collide with the
+                // unfiltered or other-range cache entries.
+                policy.SetVaryByQuery("where", "time");
                 policy.Tag("mvt-tiles", "tiles");
             });
 

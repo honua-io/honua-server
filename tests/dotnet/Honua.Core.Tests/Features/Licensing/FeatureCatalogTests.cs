@@ -52,6 +52,7 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.Raster);
         categories.Should().Contain(FeatureCatalog.Categories.Analytics);
         categories.Should().Contain(FeatureCatalog.Categories.Streaming);
+        categories.Should().Contain(FeatureCatalog.Categories.Temporal);
     }
 
     [Theory]
@@ -91,7 +92,29 @@ public sealed class FeatureCatalogTests
             .Select(f => f.Key)
             .ToList();
 
-        communityFeatures.Should().BeEquivalentTo(["styling.defaults"]);
+        communityFeatures.Should().BeEquivalentTo(
+        [
+            "styling.defaults",
+            "temporal.filtering",
+            "temporal.extent-discovery"
+        ]);
+    }
+
+    [Theory]
+    [InlineData("temporal.filtering", HonuaEdition.Community)]
+    [InlineData("temporal.extent-discovery", HonuaEdition.Community)]
+    [InlineData("temporal.histogram", HonuaEdition.Pro)]
+    [InlineData("temporal.time-series-tiles", HonuaEdition.Pro)]
+    [InlineData("temporal.animation-api", HonuaEdition.Pro)]
+    public void All_TemporalFeaturesHaveExpectedEdition(string key, HonuaEdition expectedEdition)
+    {
+        // Ticket #379 acceptance: capability reporting tells SDK/admin clients
+        // which temporal features are available and edition-gated.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == key);
+
+        feature.Should().NotBeNull($"feature catalog must define '{key}' for ticket #379");
+        feature!.Category.Should().Be(FeatureCatalog.Categories.Temporal);
+        feature.MinimumEdition.Should().Be(expectedEdition);
     }
 
     [Theory]

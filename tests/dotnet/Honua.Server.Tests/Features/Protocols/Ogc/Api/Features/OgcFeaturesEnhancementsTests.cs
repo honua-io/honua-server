@@ -1104,7 +1104,15 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
             .OrderBy(id => id)
             .ToArray();
 
-        ids.Should().Equal(1, 2);
+        // Layer 0 has TimeInfo {start: timestamp, end: event_date}, so the
+        // datetime filter applies interval-intersection semantics shared with
+        // GeoServices REST query?time= (see #379 docs/temporal-animation-api.md):
+        // a row matches when its [timestamp, COALESCE(event_date, timestamp)]
+        // interval overlaps [2023-01-01, 2023-01-10]. F1 (2023-01-02 → 2024-01-01),
+        // F2 (2023-01-05 → 2024-06-15), and F4 (2022-12-31 → 2024-10-15) all
+        // overlap; F3 starts 2023-02-10 (after end), F5 collapses to 2023-01-20
+        // (after end).
+        ids.Should().Equal(1, 2, 4);
     }
 
     #endregion

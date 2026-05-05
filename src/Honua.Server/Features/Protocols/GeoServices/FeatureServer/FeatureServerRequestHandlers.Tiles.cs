@@ -5,10 +5,13 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -61,7 +64,8 @@ internal static partial class FeatureServerEndpoints
         }
         var layer = layerValidation.Layer!;
 
-        var where = GetValueString(ToCaseInsensitiveDictionary(context.Request.Query), "where");
+        var queryValues = ToCaseInsensitiveDictionary(context.Request.Query);
+        var where = GetValueString(queryValues, "where");
         SqlFragment? sqlFilter = null;
         if (!string.IsNullOrWhiteSpace(where))
         {
@@ -87,22 +91,124 @@ internal static partial class FeatureServerEndpoints
                 sqlFilter = translationResult.SqlFilter;
             }
         }
+
+        TemporalFilter? temporalFilter = null;
+        var timeParam = GetValueString(queryValues, "time");
+        if (!string.IsNullOrWhiteSpace(timeParam))
+        {
+            // Parse first so the documented time=null,null no-op behaves like an
+            // omitted parameter — neither the Pro gate nor temporal-field
+            // resolution should fire when no actual filter is requested.
+            if (!TryBuildTileTemporalFilter(layer, timeParam, out temporalFilter, out var temporalError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid time parameter",
+                    [temporalError ?? "Invalid time parameter."]);
+            }
+
+            if (temporalFilter is not null)
+            {
+                var editionError = RequireProEditionForTimeSeriesTiles(context);
+                if (editionError != null)
+                {
+                    return editionError;
+                }
+            }
+        }
+
         var query = VectorTileExecution.CreateQuery(
             layer.SpatialReference.ToSrid(),
             where,
-            sqlFilter);
+            sqlFilter,
+            temporalFilter);
 
         var tileProvider = context.RequestServices.GetRequiredService<ITileProvider>();
-        return await VectorTileExecution.ExecuteAsync(
+        try
+        {
+            return await VectorTileExecution.ExecuteAsync(
+                context,
+                tileProvider,
+                layer,
+                x,
+                y,
+                z,
+                query,
+                tileOptions,
+                tileLimits,
+                cancellationToken);
+        }
+        catch (NotSupportedException) when (temporalFilter is not null)
+        {
+            // The configured feature provider (e.g., MySQL/MariaDB, SQL Server)
+            // does not support TemporalFilter SQL translation. Surface as a
+            // protocol-level 400 instead of letting the global error handler
+            // map it to 500, so MVT clients can distinguish "this layer's
+            // store can't filter by time" from "server failed".
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Temporal filtering is not supported",
+                ["Time-filtered vector tiles are not supported by the configured feature provider for this layer."]);
+        }
+    }
+
+    private static IResult? RequireProEditionForTimeSeriesTiles(HttpContext context)
+    {
+        var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
+        var edition = licenseProvider.GetCurrentStatus().Edition;
+        if (edition >= HonuaEdition.Pro)
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateForbidden(
             context,
-            tileProvider,
-            layer,
-            x,
-            y,
-            z,
-            query,
-            tileOptions,
-            tileLimits,
-            cancellationToken);
+            $"Time-filtered vector tiles require the Pro edition or higher. Current edition: {edition}.");
+    }
+
+    private static bool TryBuildTileTemporalFilter(
+        LayerDefinition layer,
+        string timeParam,
+        out TemporalFilter? temporalFilter,
+        out string? error)
+    {
+        temporalFilter = null;
+        error = null;
+
+        // Parse before resolving temporal fields so time=null,null (the
+        // documented no-op) does not require the layer to be time-aware.
+        if (!GeoServicesTemporalQueryBuilder.TryParseTimeParameter(timeParam, out var start, out var end))
+        {
+            error = $"Invalid time parameter format: {timeParam}";
+            return false;
+        }
+
+        if (start is null && end is null)
+        {
+            return true;
+        }
+
+        // Strict opt-in: a non-empty time= filter requires explicit
+        // TimeInfo.StartTimeField (and any configured EndTimeField) to resolve
+        // against real Date/DateTime attributes. Falling back to the first
+        // Date/DateTime attribute would silently filter on a non-temporal
+        // column (calls out in docs/gis/temporal-animation-api.md and matches
+        // GeoServices REST query?time= rejection on non-time-aware layers).
+        if (!TemporalExtentHelpers.TryResolveOptInTemporalFields(layer, out var selection))
+        {
+            error = $"Layer '{layer.Name}' is not configured as time-aware.";
+            return false;
+        }
+
+        temporalFilter = new TemporalFilter
+        {
+            PropertyName = selection.StartField.Name,
+            PropertyType = selection.StartField.Type == FieldType.Date
+                ? TemporalPropertyType.Date
+                : TemporalPropertyType.DateTime,
+            EndPropertyName = selection.EndField?.Name,
+            Start = start,
+            End = end
+        };
+        return true;
     }
 }

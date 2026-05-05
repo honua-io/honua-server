@@ -27,17 +27,18 @@ internal static class OgcTemporalFilterParser
             return true;
         }
 
-        if (!TryResolveTemporalField(layer, out var temporalField))
+        if (!TryResolveTemporalFields(layer, out var startField, out var endField))
         {
             errorMessage = "No temporal field is available for filtering.";
             return false;
         }
-        var resolvedField = temporalField!;
+        var resolvedField = startField!;
 
         temporalFilter = new TemporalFilter
         {
             PropertyName = resolvedField.Name,
             PropertyType = resolvedField.Type == FieldType.Date ? TemporalPropertyType.Date : TemporalPropertyType.DateTime,
+            EndPropertyName = endField?.Name,
             Start = start,
             End = end
         };
@@ -131,22 +132,50 @@ internal static class OgcTemporalFilterParser
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
             out parsed);
 
-    private static bool TryResolveTemporalField(LayerDefinition layer, out FieldDefinition? temporalField)
+    private static bool TryResolveTemporalFields(
+        LayerDefinition layer,
+        out FieldDefinition? startField,
+        out FieldDefinition? endField)
     {
-        temporalField = null;
+        startField = null;
+        endField = null;
 
         var timeInfo = layer.Metadata?.TimeInfo;
         var startFieldName = timeInfo?.StartTimeField;
         if (!string.IsNullOrWhiteSpace(startFieldName))
         {
-            temporalField = layer.AttributeFields.FirstOrDefault(field =>
+            startField = layer.AttributeFields.FirstOrDefault(field =>
                 field.Name.Equals(startFieldName, StringComparison.OrdinalIgnoreCase) &&
                 field.Type is FieldType.DateTime or FieldType.Date);
-            return temporalField != null;
+            if (startField is null)
+            {
+                return false;
+            }
+
+            // Optional EndTimeField, when configured, is propagated so the
+            // shared filter pipeline applies interval-intersection semantics
+            // (see TemporalFilter.EndPropertyName); ignore the configured end
+            // field if it does not resolve to a Date/DateTime attribute. Fields
+            // must share the same temporal type so the COALESCE in the SQL
+            // builder produces a homogeneous expression.
+            var endFieldName = timeInfo?.EndTimeField;
+            if (!string.IsNullOrWhiteSpace(endFieldName))
+            {
+                var startFieldType = startField.Type;
+                var candidate = layer.AttributeFields.FirstOrDefault(field =>
+                    field.Name.Equals(endFieldName, StringComparison.OrdinalIgnoreCase) &&
+                    field.Type == startFieldType);
+                if (candidate is not null)
+                {
+                    endField = candidate;
+                }
+            }
+
+            return true;
         }
 
-        temporalField = layer.AttributeFields.FirstOrDefault(field =>
+        startField = layer.AttributeFields.FirstOrDefault(field =>
             field.Type is FieldType.DateTime or FieldType.Date);
-        return temporalField != null;
+        return startField != null;
     }
 }

@@ -344,6 +344,18 @@ internal static partial class FeatureServerEndpoints
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/temporalExtent", (Delegate)HandleTemporalExtent)
+            .WithDisplayName("Get Temporal Extent")
+            .WithName("GetTemporalExtent")
+            .WithSummary("Get temporal extent for a time-aware layer")
+            .WithDescription("Returns deterministic min/max timestamps and selected temporal field metadata for a time-aware layer")
+            .WithTags("FeatureServer")
+            .CacheOutput("LayerMetadata")
+            .WithETag()
+            .Produces<TemporalExtentResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryBins", HandleQueryBinsGet)
             .WithDisplayName("Query Bins (GET)")
             .WithName("QueryBinsGet")
