@@ -144,12 +144,15 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
 
     private Task ConfigureLayerAsTimeAwareAsync()
     {
+        // Use the seeded "timestamp" DateTime field that is registered in
+        // honua.layer_fields for the shared test layer; the helper resolves
+        // an extent only when the configured field is a real attribute.
         var updater = _fixture.GetService<ILayerMetadataUpdater>();
         return updater.UpdateLayerMetadataAsync(
             WebAppFixture.TestLayerId,
             new CatalogMetadata
             {
-                TimeInfo = new LayerTimeInfo { StartTimeField = "created_at" }
+                TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" }
             });
     }
 

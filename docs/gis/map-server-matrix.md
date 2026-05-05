@@ -28,13 +28,13 @@ Sources:
 | Layer query | `.../MapServer/{layerId}/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/{layerId}/query` | Delegates to the FeatureServer query handler. See [FeatureServer Matrix](feature-server-matrix.md). |
 | Service-level query | `.../MapServer/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/query` | Delegates to the FeatureServer service-query handler using `layerId` or `layers`. |
 | Tile | `.../MapServer/tile/{z}/{y}/{x}` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}` | Returns rendered PNG map tiles. |
-| WMS | `.../MapServer/WMS` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/WMS`, `GET /ogc/services/{serviceId}/wms` | Supports WMS 1.3.0 and 1.1.1 `GetCapabilities`, `GetMap`, and `GetFeatureInfo` (KVP). |
+| WMS | `.../MapServer/WMS` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/WMS`, `GET /ogc/services/{serviceId}/wms` | Supports WMS 1.3.0 and 1.1.1 `GetCapabilities`, `GetMap`, and `GetFeatureInfo` (KVP). Time-aware feature layers advertise a continuous `<Dimension name="time">` in capabilities and accept the `TIME=` parameter on `GetMap`; see [Temporal Animation API](temporal-animation-api.md). |
 
 ### Partial
 
 | Operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
-| WMTS | `.../MapServer/WMTS` | GET | Partial | `GET /rest/services/{serviceId}/MapServer/WMTS`, `GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}`, `GET /ogc/services/{serviceId}/wmts` | Supports `GetCapabilities`, `GetTile`, and `GetFeatureInfo`, but scope remains WebMercatorQuad-only. |
+| WMTS | `.../MapServer/WMTS` | GET | Partial | `GET /rest/services/{serviceId}/MapServer/WMTS`, `GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}`, `GET /ogc/services/{serviceId}/wmts` | Supports `GetCapabilities`, `GetTile`, and `GetFeatureInfo`, but scope remains WebMercatorQuad-only. Time-aware tile layers advertise a continuous `time` dimension; `GetTile` accepts `time=` as an RFC 3339 instant or interval. See [Temporal Animation API](temporal-animation-api.md). |
 
 ### Not implemented
 

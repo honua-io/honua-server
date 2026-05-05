@@ -44,6 +44,7 @@
         "queryBins",
         "queryDateBins",
         "queryTopFeatures",
+        "temporalExtent (Honua extension, Community)",
         "queryClusters (Honua extension, Pro)",
         "spatialJoin (Honua extension, Pro)",
         "queryBufferAggregate (Honua extension, Pro)",
@@ -64,6 +65,8 @@
           "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Query.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Edits.cs",
           "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Replication.cs",
+          "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.TemporalExtent.cs",
+          "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Tiles.cs",
           "src/Honua.Server/Features/SpatialAnalytics/SpatialAnalyticsEndpoints.cs",
           "src/Honua.Server/Features/SpatialAnalytics/SpatialAnalyticsRequestHandlers.Clusters.cs",
           "src/Honua.Server/Features/SpatialAnalytics/SpatialAnalyticsRequestHandlers.SpatialJoin.cs",
@@ -74,6 +77,8 @@
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerQueryParameterTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerReplicationTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerMaintenanceTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerTemporalExtentEndpointTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/MvtTileTemporalEndpointTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsOgcTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsEditionGateTests.cs",
@@ -357,6 +362,20 @@
               "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures",
               "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures"
             ]
+          },
+          {
+            "name": "Temporal Extent (Honua extension)",
+            "esriPath": null,
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent"
+            ],
+            "extension": "honua-temporal-animation",
+            "edition": "Community",
+            "featureKey": "temporal.extent-discovery",
+            "notes": "Returns the resolved start/end time field names plus the layer's deterministic min/max timestamps as ISO 8601 UTC and Unix epoch milliseconds. Companion to the GeoServices REST timeInfo block on layer metadata. Returns 404 when the layer is not configured as time-aware (no timeInfo); returns 200 with null min/max when the layer is time-aware but has no rows. Output cached under the LayerMetadata tag and shares its invalidation. JSON only (f=json|pjson); other formats return 400. Community-tier (ADR-0024); see docs/gis/temporal-animation-api.md."
           },
           {
             "name": "Query Clusters (Honua extension)",
