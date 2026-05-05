@@ -107,12 +107,12 @@ public sealed class FeatureMutationOutboxScopeTests
     }
 
     [UnitTest]
-    public async Task ResolveOutboxScopeAsync_SnapshotWithGeometry_EncodesGeometryChangedTrue()
+    public async Task ResolveOutboxScopeAsync_ExplicitGeometryChangedTrue_EncodesTrue()
     {
-        // GeometryChanged regression guard: outbox-built FeatureChangeEventRequest must
-        // mirror the protocol-layer publish heuristic so streaming/webhook consumers can
-        // distinguish geometry-touching mutations from attribute-only updates after the
-        // outbox dispatcher publishes.
+        // GeometryChanged contract (#692): the outbox payload mirrors the protocol-layer
+        // publish path's explicit geometryChanged signal — the source of truth for whether
+        // the originating request intended to mutate geometry — rather than inferring from
+        // the post-mutation snapshot.
         var publisher = Substitute.For<IFeatureChangeEventPublisher>();
         var capability = Substitute.For<IOutboxCapabilityProvider>();
         capability.SupportsTransactionalOutbox.Returns(true);
@@ -124,7 +124,8 @@ public sealed class FeatureMutationOutboxScopeTests
             layerId: 7,
             protocol: "OgcFeatures",
             requestId: "req-geom",
-            layerSrid: 4326);
+            layerSrid: 4326,
+            geometryChanged: true);
 
         using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
         var withGeometry = Feature.Create(11, geometry: new byte[] { 0x01, 0x02 }, ImmutableDictionary<string, object?>.Empty);
@@ -135,26 +136,104 @@ public sealed class FeatureMutationOutboxScopeTests
     }
 
     [UnitTest]
-    public async Task ResolveOutboxScopeAsync_SnapshotWithoutGeometry_EncodesGeometryChangedFalse()
+    public async Task ResolveOutboxScopeAsync_PatchPreservesGeometry_EncodesGeometryChangedFalse()
     {
+        // OData PATCH regression guard (#692): an attribute-only PATCH on a spatial
+        // feature returns a snapshot with geometry (the prior WKB), but the protocol-
+        // layer geometryChanged signal is false. The outbox payload must follow the
+        // protocol signal, not the snapshot heuristic, otherwise PATCH is reported as
+        // a geometry change to streaming/webhook subscribers.
         var publisher = Substitute.For<IFeatureChangeEventPublisher>();
         var capability = Substitute.For<IOutboxCapabilityProvider>();
         capability.SupportsTransactionalOutbox.Returns(true);
         var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
 
-        var context = new DefaultHttpContext { TraceIdentifier = "trace-attr" };
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-patch" };
         var data = await service.ResolveOutboxScopeAsync(
             context,
             layerId: 7,
-            protocol: "OgcFeatures",
-            requestId: "req-attr");
+            protocol: "OData",
+            requestId: "req-patch",
+            geometryChanged: false);
 
         using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
-        var attributesOnly = Feature.Create(12, geometry: null, ImmutableDictionary<string, object?>.Empty);
-        var entry = FeatureMutationOutboxScope.Current!.EntryFactory(12, "update", attributesOnly);
+        // Snapshot still has geometry (PATCH preserves the prior WKB); the explicit
+        // geometryChanged: false from the protocol must win over the snapshot heuristic.
+        var preservedGeometrySnapshot = Feature.Create(12, geometry: new byte[] { 0x01, 0x02, 0x03 }, ImmutableDictionary<string, object?>.Empty);
+        var entry = FeatureMutationOutboxScope.Current!.EntryFactory(12, "update", preservedGeometrySnapshot);
 
         entry.Should().NotBeNull();
         entry!.EventPayload.Should().Contain("\"GeometryChanged\":false");
+    }
+
+    [UnitTest]
+    public async Task ResolveOutboxScopeAsync_DefaultGeometryChanged_EncodesFalse()
+    {
+        // When the protocol caller does not signal geometryChanged, default to false to
+        // match the inline publish path's contract (legacy callers that never set the
+        // parameter must not silently flip to true). This keeps PATCH/merge updates
+        // from being over-reported as geometry changes.
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+        var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
+
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-default" };
+        var data = await service.ResolveOutboxScopeAsync(
+            context,
+            layerId: 7,
+            protocol: "OData",
+            requestId: "req-default");
+
+        using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
+        var snapshotWithGeometry = Feature.Create(13, geometry: new byte[] { 0x42 }, ImmutableDictionary<string, object?>.Empty);
+        var entry = FeatureMutationOutboxScope.Current!.EntryFactory(13, "update", snapshotWithGeometry);
+
+        entry.Should().NotBeNull();
+        entry!.EventPayload.Should().Contain("\"GeometryChanged\":false");
+    }
+
+    [UnitTest]
+    public async Task ResolveOutboxScopeAsync_PerOperationGeometryChanged_DequeuesInOrderAndFallsBack()
+    {
+        // Atomic batch path (#692): per-row geometryChanged must dequeue from the kind-keyed
+        // queue in input order. When the queue runs out, fall back to the scope-wide bool
+        // (default false) so the row's GeometryChanged is never under-/over-reported by an
+        // out-of-band heuristic.
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+        var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
+
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-geom-batch" };
+        var perOpGeometryChanged = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal)
+        {
+            ["create"] = new[] { true, false },
+            ["update"] = new[] { false },
+        };
+
+        var data = await service.ResolveOutboxScopeAsync(
+            context,
+            layerId: 7,
+            protocol: "OData",
+            perOperationGeometryChanged: perOpGeometryChanged);
+
+        using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
+        var feature = Feature.Create(0, geometry: new byte[] { 0x01 }, ImmutableDictionary<string, object?>.Empty);
+
+        var firstCreate = FeatureMutationOutboxScope.Current!.EntryFactory(101, "create", feature);
+        var secondCreate = FeatureMutationOutboxScope.Current!.EntryFactory(102, "create", feature);
+        var firstUpdate = FeatureMutationOutboxScope.Current!.EntryFactory(201, "update", feature);
+        // Queue exhausted: should fall back to scope-wide default (false).
+        var thirdCreate = FeatureMutationOutboxScope.Current!.EntryFactory(103, "create", feature);
+        // No queue for delete: falls back to default false too.
+        var firstDelete = FeatureMutationOutboxScope.Current!.EntryFactory(301, "delete", feature);
+
+        firstCreate!.EventPayload.Should().Contain("\"GeometryChanged\":true");
+        secondCreate!.EventPayload.Should().Contain("\"GeometryChanged\":false");
+        firstUpdate!.EventPayload.Should().Contain("\"GeometryChanged\":false");
+        thirdCreate!.EventPayload.Should().Contain("\"GeometryChanged\":false");
+        firstDelete!.EventPayload.Should().Contain("\"GeometryChanged\":false");
     }
 
     [UnitTest]

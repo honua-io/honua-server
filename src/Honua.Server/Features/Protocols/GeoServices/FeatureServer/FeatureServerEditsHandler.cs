@@ -127,7 +127,7 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             // Execute edits in the database
-            var editResult = await ExecuteEdits(layer.Id, layer, editContext, request, cancellationToken);
+            var editResult = await ExecuteEdits(layer.Id, layer, editContext, request, serviceId, cancellationToken);
 
             if (!editResult.WasRolledBack &&
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0)
@@ -380,6 +380,7 @@ internal sealed class FeatureServerEditsHandler(
         LayerDefinition layer,
         EditOperationContext context,
         ApplyEditsRequest request,
+        string serviceId,
         CancellationToken cancellationToken)
     {
         if (context.CreateFeatures.Count == 0 && context.UpdateFeatures.Count == 0 && context.DeleteIds.Count == 0)
@@ -413,12 +414,20 @@ internal sealed class FeatureServerEditsHandler(
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
         var httpContext = _httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException("HttpContext is required for FeatureServer edit dispatch.");
+        // Per-row geometry-change semantics mirror the inline publish path
+        // (PublishFeatureChangeEventsAsync below): a row is considered to have changed
+        // geometry when the request feature carries non-null WKB. Deletes default to false.
+        // Without these queues an attribute-only update would over-report as a geometry
+        // change because the post-mutation snapshot still carries the prior WKB.
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(editBatch);
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             httpContext,
             layerId,
             HonuaTelemetry.Protocols.FeatureServer,
+            serviceId: serviceId,
             serviceProtocol: ServiceProtocols.FeatureServer,
             layerSrid: layer.SpatialReference.Wkid,
+            perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         var editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
@@ -430,6 +439,36 @@ internal sealed class FeatureServerEditsHandler(
         ApplyResults(context.DeleteResults, context.DeleteIndexes, editResult.DeleteResults, context.DeleteResponseObjectIds);
 
         return editResult;
+    }
+
+    /// <summary>
+    /// Build per-operation-kind queues of geometry-change flags in the same order
+    /// ApplyEditsAsync iterates rows, so the outbox payload's <c>GeometryChanged</c>
+    /// field tracks the originating request's intent rather than inferring from the
+    /// post-mutation snapshot. Deletes default to false (the inline publish path also
+    /// defaults to false for delete events).
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
+    {
+        if (editBatch.Creates.IsDefaultOrEmpty && editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal);
+        if (!editBatch.Creates.IsDefaultOrEmpty)
+        {
+            result["create"] = editBatch.Creates.Select(static f => f.Geometry is { Length: > 0 }).ToImmutableArray();
+        }
+        if (!editBatch.Updates.IsDefaultOrEmpty)
+        {
+            result["update"] = editBatch.Updates.Select(static f => f.Geometry is { Length: > 0 }).ToImmutableArray();
+        }
+        if (!editBatch.Deletes.IsDefaultOrEmpty)
+        {
+            result["delete"] = Enumerable.Repeat(false, editBatch.Deletes.Length).ToImmutableArray();
+        }
+        return result;
     }
 
     /// <summary>

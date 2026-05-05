@@ -336,6 +336,12 @@ internal sealed class ODataCrudHandler(
             resolvedLayerId.Value,
             HonuaTelemetry.Protocols.OData,
             serviceProtocol: ServiceProtocols.OData,
+            // GeometrySpecified tracks whether the request body explicitly carried a
+            // Geometry property; without this hint the outbox would default to false
+            // even when the create request set geometry. The inline publish path on
+            // non-outbox deployments doesn't pass geometryChanged for OData CRUD
+            // either, so this also closes that legacy gap on the dispatcher side.
+            geometryChanged: payload.GeometrySpecified,
             cancellationToken: effectiveToken).ConfigureAwait(false);
         ODataCrudResult<Dictionary<string, object?>> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(createOutboxScopeData))
@@ -540,11 +546,16 @@ internal sealed class ODataCrudHandler(
 
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
+        // GeometrySpecified is the OData PATCH/PUT contract for "the request body
+        // explicitly carried a Geometry property"; relying on the post-mutation
+        // snapshot would over-report PATCH attribute-only updates as geometry
+        // changes because the merged feature still carries the prior WKB.
         var updateOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             context,
             layerId,
             HonuaTelemetry.Protocols.OData,
             serviceProtocol: ServiceProtocols.OData,
+            geometryChanged: payload.GeometrySpecified,
             cancellationToken: effectiveToken).ConfigureAwait(false);
         ODataCrudResult<Dictionary<string, object?>> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(updateOutboxScopeData))

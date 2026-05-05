@@ -310,6 +310,13 @@ internal sealed partial class OgcFeaturesCrudHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        // Geometry-change semantics mirror the OGC Features Transaction batch handler:
+        // a row is considered to have changed geometry when the request feature carries
+        // non-null WKB. Delete operations default to false. Without this, an attribute-
+        // only PATCH would over-report as a geometry change because the post-mutation
+        // snapshot still carries the prior WKB.
+        var geometryChanged = request.Operation != OgcFeaturesEditOperation.Delete
+            && request.Feature?.Geometry is { Length: > 0 };
         // Resolve outbox scope data, then activate it synchronously in this method's
         // ExecutionContext so the AsyncLocal flows into ApplyEditsAsync and each mutated
         // row writes its outbox entry inside the same DbTransaction. Activation must be
@@ -321,6 +328,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             HonuaTelemetry.Protocols.OgcFeatures,
             serviceProtocol: ServiceProtocols.OgcFeatures,
             layerSrid: layer.SpatialReference.Wkid,
+            geometryChanged: geometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);

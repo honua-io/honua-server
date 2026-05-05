@@ -771,6 +771,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        // Per-row geometry-change semantics mirror the inline publish path
+        // (HandleBatchOperationAsync above): a row is considered to have changed geometry
+        // when the request feature carries non-null WKB. Deletes default to false. Without
+        // this, an attribute-only PATCH would over-report as a geometry change because the
+        // post-mutation snapshot still carries the prior WKB.
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(editBatch);
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             context,
             layerId,
@@ -778,9 +784,80 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             serviceProtocol: ServiceProtocols.OgcFeatures,
             layerSrid: layer.SpatialReference.Wkid,
             perOperationRequestIds: perOperationRequestIds,
+            perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Build per-operation-kind queues of geometry-change flags. Handles both ordered
+    /// Operations (the path OGC Features batch takes via <c>UnifiedEditRequest.WithOperations</c>)
+    /// and split Creates/Updates/Deletes batches: each kind's queue lists the flags in the
+    /// order the data layer dequeues them. Deletes default to false (the inline publish
+    /// path also defaults to false for delete events).
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
+    {
+        if (editBatch.IsEmpty)
+        {
+            return null;
+        }
+
+        var creates = new List<bool>();
+        var updates = new List<bool>();
+        var deletes = new List<bool>();
+
+        if (!editBatch.Operations.IsDefaultOrEmpty)
+        {
+            foreach (var operation in editBatch.Operations)
+            {
+                switch (operation.Kind)
+                {
+                    case FeatureEditOperationKind.Create:
+                        creates.Add(operation.Feature?.Geometry is { Length: > 0 });
+                        break;
+                    case FeatureEditOperationKind.Update:
+                        updates.Add(operation.Feature?.Geometry is { Length: > 0 });
+                        break;
+                    case FeatureEditOperationKind.Delete:
+                        deletes.Add(false);
+                        break;
+                }
+            }
+        }
+        else
+        {
+            if (!editBatch.Creates.IsDefaultOrEmpty)
+            {
+                foreach (var feature in editBatch.Creates)
+                {
+                    creates.Add(feature.Geometry is { Length: > 0 });
+                }
+            }
+            if (!editBatch.Updates.IsDefaultOrEmpty)
+            {
+                foreach (var feature in editBatch.Updates)
+                {
+                    updates.Add(feature.Geometry is { Length: > 0 });
+                }
+            }
+            if (!editBatch.Deletes.IsDefaultOrEmpty)
+            {
+                deletes.AddRange(Enumerable.Repeat(false, editBatch.Deletes.Length));
+            }
+        }
+
+        if (creates.Count == 0 && updates.Count == 0 && deletes.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal);
+        if (creates.Count > 0) result["create"] = creates;
+        if (updates.Count > 0) result["update"] = updates;
+        if (deletes.Count > 0) result["delete"] = deletes;
+        return result;
     }
 
     private static bool IsNotFound(EditOperationResult result)

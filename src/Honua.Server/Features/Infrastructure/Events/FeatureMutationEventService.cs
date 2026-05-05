@@ -64,6 +64,12 @@ internal sealed class FeatureMutationEventService(
     /// invocation so batch protocol handlers (OData $batch atomic groups, OGC Features
     /// transactions) preserve subrequest correlation; otherwise the resolved
     /// <c>requestId</c> (or the parent trace identifier) flows through.
+    /// <c>geometryChanged</c> and <c>perOperationGeometryChanged</c> let the protocol
+    /// layer signal whether the originating request actually intended to mutate geometry;
+    /// otherwise <c>GeometryChanged</c> defaults to <c>false</c> (matching the inline
+    /// publish path) so attribute-only PATCH/merge updates are not over-reported as
+    /// geometry changes by inferring from the post-mutation snapshot, which still carries
+    /// the prior geometry on partial updates.
     /// </summary>
     public async Task<FeatureMutationOutboxScopeData?> ResolveOutboxScopeAsync(
         HttpContext context,
@@ -75,6 +81,8 @@ internal sealed class FeatureMutationEventService(
         string? requestId = null,
         int? layerSrid = null,
         IReadOnlyDictionary<string, IReadOnlyList<string>>? perOperationRequestIds = null,
+        bool? geometryChanged = null,
+        IReadOnlyDictionary<string, IReadOnlyList<bool>>? perOperationGeometryChanged = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -96,11 +104,12 @@ internal sealed class FeatureMutationEventService(
             : context.TraceIdentifier;
 
         var resolvedSourceId = !string.IsNullOrWhiteSpace(sourceId) ? sourceId : protocol;
+        var resolvedGeometryChanged = geometryChanged ?? false;
 
-        Dictionary<string, Queue<string>>? perOperationQueues = null;
+        Dictionary<string, Queue<string>>? perOperationRequestIdQueues = null;
         if (perOperationRequestIds is { Count: > 0 })
         {
-            perOperationQueues = new Dictionary<string, Queue<string>>(StringComparer.Ordinal);
+            perOperationRequestIdQueues = new Dictionary<string, Queue<string>>(StringComparer.Ordinal);
             foreach (var (operationKind, ids) in perOperationRequestIds)
             {
                 if (string.IsNullOrWhiteSpace(operationKind) || ids is null || ids.Count == 0)
@@ -108,7 +117,22 @@ internal sealed class FeatureMutationEventService(
                     continue;
                 }
 
-                perOperationQueues[operationKind] = new Queue<string>(ids);
+                perOperationRequestIdQueues[operationKind] = new Queue<string>(ids);
+            }
+        }
+
+        Dictionary<string, Queue<bool>>? perOperationGeometryChangedQueues = null;
+        if (perOperationGeometryChanged is { Count: > 0 })
+        {
+            perOperationGeometryChangedQueues = new Dictionary<string, Queue<bool>>(StringComparer.Ordinal);
+            foreach (var (operationKind, flags) in perOperationGeometryChanged)
+            {
+                if (string.IsNullOrWhiteSpace(operationKind) || flags is null || flags.Count == 0)
+                {
+                    continue;
+                }
+
+                perOperationGeometryChangedQueues[operationKind] = new Queue<bool>(flags);
             }
         }
 
@@ -118,11 +142,23 @@ internal sealed class FeatureMutationEventService(
             {
                 // Per-row request id when the caller seeded the queue (atomic batch paths);
                 // otherwise the resolved scope-wide id flows through to BuildEntry.
-                var rowRequestId = perOperationQueues is not null
-                    && perOperationQueues.TryGetValue(operation, out var queue)
-                    && queue.Count > 0
-                        ? queue.Dequeue()
+                var rowRequestId = perOperationRequestIdQueues is not null
+                    && perOperationRequestIdQueues.TryGetValue(operation, out var requestIdQueue)
+                    && requestIdQueue.Count > 0
+                        ? requestIdQueue.Dequeue()
                         : resolvedRequestId;
+
+                // Per-row geometryChanged for batch paths; otherwise the scope-wide
+                // protocol-supplied bool flows through. This mirrors the inline publish
+                // path's contract — the protocol layer is the source of truth for whether
+                // the originating request intended to mutate geometry. Inferring from the
+                // post-mutation snapshot would over-report PATCH/merge updates that
+                // preserve the prior geometry untouched.
+                var rowGeometryChanged = perOperationGeometryChangedQueues is not null
+                    && perOperationGeometryChangedQueues.TryGetValue(operation, out var geometryChangedQueue)
+                    && geometryChangedQueue.Count > 0
+                        ? geometryChangedQueue.Dequeue()
+                        : resolvedGeometryChanged;
 
                 return BuildEntry(
                     resolvedServiceId,
@@ -133,7 +169,8 @@ internal sealed class FeatureMutationEventService(
                     resolvedSourceId,
                     rowRequestId,
                     snapshot,
-                    layerSrid);
+                    layerSrid,
+                    rowGeometryChanged);
             }
         };
     }
@@ -257,7 +294,8 @@ internal sealed class FeatureMutationEventService(
         string sourceId,
         string requestId,
         Feature? snapshot,
-        int? layerSrid)
+        int? layerSrid,
+        bool geometryChanged)
     {
         var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(snapshot, layerSrid);
         var geometryJson = enrichment.GeometryJson;
@@ -270,13 +308,6 @@ internal sealed class FeatureMutationEventService(
         }
 
         var eventId = Guid.NewGuid().ToString("N");
-        // Mirror the heuristic used by the protocol-layer publish path
-        // (HonuaFeatureService and OgcFeaturesTransactionHandler): a snapshot with
-        // non-empty WKB means geometry was created, replaced, or removed depending on
-        // the operation kind. Without this flag, dispatcher-published events always
-        // carry GeometryChanged=false, so streaming/webhook subscribers cannot tell
-        // attribute-only updates apart from geometry-touching ones.
-        var geometryChanged = snapshot?.Geometry is { Length: > 0 };
         var request = new FeatureChangeEventRequest
         {
             EventId = eventId,

@@ -1654,15 +1654,93 @@ internal sealed partial class Wfs20Handler
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        // WFS 2.0 transactions use ordered Operations; bin per-kind geometry-change flags
+        // in the same order each kind is dequeued so the outbox payload tracks the
+        // originating request's intent rather than inferring from the post-mutation
+        // snapshot. Deletes default to false (the inline publish path also defaults to
+        // false for delete events).
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(editBatch);
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             context,
             layerId,
             HonuaTelemetry.Protocols.Wfs20,
             serviceProtocol: ServiceProtocols.Wfs20,
             layerSrid: layer.SpatialReference.Wkid,
+            perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Build per-operation-kind queues of geometry-change flags. Handles both ordered
+    /// Operations and split Creates/Updates/Deletes batches: each kind's queue lists the
+    /// flags in the order the data layer dequeues them (creates-then-updates-then-deletes
+    /// for split batches; per-kind input order interleaved across the operation list for
+    /// ordered batches). Deletes default to false (the inline publish path also defaults
+    /// to false for delete events).
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
+    {
+        if (editBatch.IsEmpty)
+        {
+            return null;
+        }
+
+        var creates = new List<bool>();
+        var updates = new List<bool>();
+        var deletes = new List<bool>();
+
+        if (!editBatch.Operations.IsDefaultOrEmpty)
+        {
+            foreach (var operation in editBatch.Operations)
+            {
+                switch (operation.Kind)
+                {
+                    case FeatureEditOperationKind.Create:
+                        creates.Add(operation.Feature?.Geometry is { Length: > 0 });
+                        break;
+                    case FeatureEditOperationKind.Update:
+                        updates.Add(operation.Feature?.Geometry is { Length: > 0 });
+                        break;
+                    case FeatureEditOperationKind.Delete:
+                        deletes.Add(false);
+                        break;
+                }
+            }
+        }
+        else
+        {
+            if (!editBatch.Creates.IsDefaultOrEmpty)
+            {
+                foreach (var feature in editBatch.Creates)
+                {
+                    creates.Add(feature.Geometry is { Length: > 0 });
+                }
+            }
+            if (!editBatch.Updates.IsDefaultOrEmpty)
+            {
+                foreach (var feature in editBatch.Updates)
+                {
+                    updates.Add(feature.Geometry is { Length: > 0 });
+                }
+            }
+            if (!editBatch.Deletes.IsDefaultOrEmpty)
+            {
+                deletes.AddRange(Enumerable.Repeat(false, editBatch.Deletes.Length));
+            }
+        }
+
+        if (creates.Count == 0 && updates.Count == 0 && deletes.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal);
+        if (creates.Count > 0) result["create"] = creates;
+        if (updates.Count > 0) result["update"] = updates;
+        if (deletes.Count > 0) result["delete"] = deletes;
+        return result;
     }
 
 

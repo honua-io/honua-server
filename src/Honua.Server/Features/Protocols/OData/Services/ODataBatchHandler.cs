@@ -922,17 +922,24 @@ internal sealed partial class ODataBatchHandler
                 }
 
                 var axisOrder = await ResolveAxisOrderAsync(layer, cancellationToken);
-                // Preserve per-subrequest correlation in the outbox payload: ApplyEditsAsync
-                // invokes the entry factory once per row in creates-then-updates-then-deletes
-                // order, matching the order we capture from layerCreates/Updates/Deletes here.
+                // Preserve per-subrequest correlation and protocol-level geometry-change
+                // intent in the outbox payload: ApplyEditsAsync invokes the entry factory
+                // once per row in creates-then-updates-then-deletes order, matching the
+                // order we capture from layerCreates/Updates/Deletes here. Deletes default
+                // to false for geometryChanged.
                 Dictionary<string, IReadOnlyList<string>>? perOperationRequestIds = null;
+                Dictionary<string, IReadOnlyList<bool>>? perOperationGeometryChanged = null;
                 if ((layerCreates?.Count ?? 0) + (layerUpdates?.Count ?? 0) + (layerDeletes?.Count ?? 0) > 0)
                 {
                     perOperationRequestIds = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+                    perOperationGeometryChanged = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal);
                     if (layerCreates is { Count: > 0 })
                     {
                         perOperationRequestIds["create"] = layerCreates
                             .Select(item => $"{context.TraceIdentifier}:{item.requestId}")
+                            .ToImmutableArray();
+                        perOperationGeometryChanged["create"] = layerCreates
+                            .Select(static item => item.feature.Geometry is { Length: > 0 })
                             .ToImmutableArray();
                     }
                     if (layerUpdates is { Count: > 0 })
@@ -940,11 +947,17 @@ internal sealed partial class ODataBatchHandler
                         perOperationRequestIds["update"] = layerUpdates
                             .Select(item => $"{context.TraceIdentifier}:{item.requestId}")
                             .ToImmutableArray();
+                        perOperationGeometryChanged["update"] = layerUpdates
+                            .Select(static item => item.feature.Geometry is { Length: > 0 })
+                            .ToImmutableArray();
                     }
                     if (layerDeletes is { Count: > 0 })
                     {
                         perOperationRequestIds["delete"] = layerDeletes
                             .Select(item => $"{context.TraceIdentifier}:{item.requestId}")
+                            .ToImmutableArray();
+                        perOperationGeometryChanged["delete"] = Enumerable
+                            .Repeat(false, layerDeletes.Count)
                             .ToImmutableArray();
                     }
                 }
@@ -956,6 +969,7 @@ internal sealed partial class ODataBatchHandler
                     serviceProtocol: ServiceProtocols.OData,
                     layerSrid: layer.SpatialReference.Wkid,
                     perOperationRequestIds: perOperationRequestIds,
+                    perOperationGeometryChanged: perOperationGeometryChanged,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
                 using var atomicOutboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(atomicOutboxScopeData);
                 var result = await _featureWriter.ApplyEditsAsync(layerId, batch, cancellationToken);

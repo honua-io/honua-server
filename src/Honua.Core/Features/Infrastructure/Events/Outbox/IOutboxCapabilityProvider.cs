@@ -5,10 +5,10 @@ namespace Honua.Core.Features.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Reports whether the active database backend supports a transactional outbox
-/// for feature-change CDC. Backends that do (PostgreSQL, SQL Server) route the
-/// canonical event publish through <see cref="IFeatureChangeOutboxRepository"/>.
-/// Backends that do not (DuckDB read-only) fall back to the existing best-effort
-/// post-commit publish + retry-queue path.
+/// for feature-change CDC. PostgreSQL is the only backend that currently routes
+/// the canonical event publish through <see cref="IFeatureChangeOutboxRepository"/>;
+/// SQL Server and DuckDB are read-only in this slice and fall back to the existing
+/// best-effort post-commit publish + retry-queue path.
 /// </summary>
 public interface IOutboxCapabilityProvider
 {
