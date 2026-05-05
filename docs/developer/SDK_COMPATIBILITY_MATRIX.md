@@ -2,9 +2,9 @@
 
 This page is the canonical compatibility contract for Honua Server SDKs. The
 versioning contract applies to the generated JavaScript/TypeScript, Python, and
-.NET admin clients backed by `/api/v*/admin/*`; the CI gate also runs basic
-live smoke coverage for seeded FeatureServer and OGC API Features surfaces so
-SDK regressions that break common read paths are visible before release.
+.NET admin clients backed by `/api/v*/admin/*`; the CI gate also records the
+current per-SDK live smoke coverage for seeded read paths so SDK regressions
+that break common workflows are visible before release.
 
 Use this page first when you need to:
 - choose an SDK artifact for a server release
@@ -20,10 +20,12 @@ Use it together with:
 
 ## Scope and Invariants
 
-- This matrix versions the control-plane/admin API contract and gates basic SDK
-  smoke coverage for seeded FeatureServer and OGC API Features routes. It is
-  not a comprehensive standards-conformance matrix for FeatureServer, OGC,
-  OData, WMS, WMTS, or other protocol adapters.
+- This matrix versions the control-plane/admin API contract and gates the
+  protocol surfaces each SDK actually exercises today. JavaScript covers
+  FeatureServer and OGC API Features smoke paths, Python covers readiness,
+  catalog, and FeatureServer smoke paths, and .NET currently covers admin
+  compatibility. It is not a comprehensive standards-conformance matrix for
+  FeatureServer, OGC, OData, WMS, WMTS, or other protocol adapters.
 - Current admin API major in this repo: `v1`.
 - JavaScript/TypeScript, Python, and .NET SDK artifacts are generated from the
   same curated admin OpenAPI contract and should be treated as one versioned
@@ -104,9 +106,16 @@ records:
 - SDK package versions and checked-out refs for JavaScript, Python, and .NET
 - Honua Server ref, resolved commit, channel, and image field when image-based
   runs are introduced
-- seed profile, service id, layer id, and protocol surfaces exercised
+- seed profile, service id, layer id, and `protocol_surfaces_by_sdk` for the
+  exact surfaces each SDK exercised in that cell
 - pass/fail status, exit code, workflow run metadata, server log path, run log
   path, and a bounded failure log tail for reproduction
+
+Do not infer implemented per-SDK protocol coverage from package-version capture
+alone; the proof ledger must follow `protocol_surfaces_by_sdk`.
+
+The smoke command uses a 40-minute command timeout inside the 45-minute job
+timeout so timed-out cells still emit `exit_code: 124` and failure diagnostics.
 
 The generated `sdk-compatibility-summary.json` embeds these cell records so
 release owners can review both the matrix decision and the raw evidence fields

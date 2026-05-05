@@ -24,6 +24,7 @@ env:
   HONUA_SDK_SERVICE_ID: 'test_service'
   HONUA_SDK_LAYER_ID: '0'
   HONUA_SDK_SEED_PROFILE: 'tests/seed/base-schema.sql:test_service:layer0'
+  SDK_COMPATIBILITY_TIMEOUT_SECONDS: '2400'
   SDK_COMPATIBILITY_MANIFEST: docs/developer/sdk-compatibility-versions.json
 
 jobs:
@@ -149,6 +150,13 @@ jobs:
           ref: ${{ matrix.server_checkout_ref }}
           fetch-depth: 0
 
+      - name: Resolve honua-server commit
+        id: server-revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
@@ -213,8 +221,14 @@ jobs:
         run: |
           mkdir -p results
           set +e
-          bash "$RUNNER_TEMP/run-sdk-server-compatibility.sh" > results/compatibility-run.log 2>&1
+          timeout --kill-after=30s "$SDK_COMPATIBILITY_TIMEOUT_SECONDS" \
+            bash "$RUNNER_TEMP/run-sdk-server-compatibility.sh" \
+            > results/compatibility-run.log 2>&1
           exit_code=$?
+          if [ "$exit_code" -eq 124 ]; then
+            printf 'SDK compatibility smoke tests timed out after %ss.\n' "$SDK_COMPATIBILITY_TIMEOUT_SECONDS" \
+              >> results/compatibility-run.log
+          fi
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
           tail -n 200 results/compatibility-run.log || true
           exit "$exit_code"
@@ -226,6 +240,7 @@ jobs:
           SERVER_LABEL: ${{ matrix.server_label }}
           SERVER_REF: ${{ matrix.server_ref }}
           SERVER_CHECKOUT_REF: ${{ matrix.server_checkout_ref }}
+          SERVER_COMMIT: ${{ steps.server-revision.outputs.commit }}
           SERVER_CHANNEL: ${{ matrix.server_channel }}
           SDK_LABEL: ${{ matrix.sdk_label }}
           SDK_CHANNEL: ${{ matrix.sdk_channel }}
@@ -262,41 +277,56 @@ jobs:
           pyproject_version() {
             local path="$1"
             python - "$path" <<'PY'
-import sys
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib
+          import sys
+          try:
+              import tomllib
+          except ModuleNotFoundError:
+              import tomli as tomllib
 
-path = sys.argv[1]
-try:
-    with open(path, "rb") as handle:
-        data = tomllib.load(handle)
-    print(data.get("project", {}).get("version") or data.get("tool", {}).get("poetry", {}).get("version") or "unknown")
-except Exception:
-    print("unknown")
-PY
+          path = sys.argv[1]
+          try:
+              with open(path, "rb") as handle:
+                  data = tomllib.load(handle)
+              print(data.get("project", {}).get("version") or data.get("tool", {}).get("poetry", {}).get("version") or "unknown")
+          except Exception:
+              print("unknown")
+          PY
           }
 
           csproj_version() {
             local path="$1"
-            python - "$path" <<'PY'
-import sys
-import xml.etree.ElementTree as ET
+            local property_name
+            local value
 
-path = sys.argv[1]
-try:
-    root = ET.parse(path).getroot()
-    for tag in ("PackageVersion", "Version", "VersionPrefix"):
-        node = root.find(f".//{tag}")
-        if node is not None and node.text and node.text.strip():
-            print(node.text.strip())
-            break
-    else:
-        print("unknown")
-except Exception:
-    print("unknown")
-PY
+            if [ -f "$path" ] && command -v dotnet >/dev/null 2>&1; then
+              for property_name in PackageVersion Version VersionPrefix; do
+                if value="$(dotnet msbuild "$path" -nologo -v:q -getProperty:"$property_name" 2>/dev/null)"; then
+                  value="$(printf '%s\n' "$value" | awk 'NF { print; exit }')"
+                  if [ -n "$value" ]; then
+                    printf '%s\n' "$value"
+                    return
+                  fi
+                fi
+              done
+            fi
+
+            python - "$path" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          path = sys.argv[1]
+          try:
+              root = ET.parse(path).getroot()
+              for tag in ("PackageVersion", "Version", "VersionPrefix"):
+                  node = root.find(f".//{tag}")
+                  if node is not None and node.text and node.text.strip():
+                      print(node.text.strip())
+                      break
+              else:
+                  print("unknown")
+          except Exception:
+              print("unknown")
+          PY
           }
 
           js_package_version="$(json_version sdk/honua-sdk-js/package.json)"
@@ -305,6 +335,11 @@ PY
           dotnet_admin_package_version="$(csproj_version sdk/honua-sdk-dotnet/src/Honua.Sdk.Admin/Honua.Sdk.Admin.csproj)"
           dotnet_geoservices_package_version="$(csproj_version sdk/honua-sdk-dotnet/src/Honua.Sdk.GeoServices/Honua.Sdk.GeoServices.csproj)"
           dotnet_ogc_features_package_version="$(csproj_version sdk/honua-sdk-dotnet/src/Honua.Sdk.OgcFeatures/Honua.Sdk.OgcFeatures.csproj)"
+
+          server_commit="${SERVER_COMMIT:-}"
+          if [ -z "$server_commit" ]; then
+            server_commit="$(git rev-parse HEAD 2>/dev/null || printf '%s' "$SERVER_CHECKOUT_REF")"
+          fi
 
           failure_tail=""
           if [ "$passed" != "true" ] && [ -f results/compatibility-run.log ]; then
@@ -315,6 +350,7 @@ PY
             --arg serverLabel "$SERVER_LABEL" \
             --arg serverRef "$SERVER_REF" \
             --arg serverCheckoutRef "$SERVER_CHECKOUT_REF" \
+            --arg serverCommit "$server_commit" \
             --arg serverChannel "$SERVER_CHANNEL" \
             --arg sdkLabel "$SDK_LABEL" \
             --arg sdkChannel "$SDK_CHANNEL" \
@@ -342,12 +378,12 @@ PY
               server_label: $serverLabel,
               server_ref: $serverRef,
               server_checkout_ref: $serverCheckoutRef,
-              server_commit: $serverCheckoutRef,
+              server_commit: $serverCommit,
               server_image: null,
               server_channel: $serverChannel,
               server: {
                 ref: $serverRef,
-                commit: $serverCheckoutRef,
+                commit: $serverCommit,
                 image: null,
                 channel: $serverChannel
               },
@@ -383,21 +419,21 @@ PY
                 "control-plane-admin",
                 "platform-http-readiness",
                 "geoservices-catalog",
-                "geoservices-feature-server",
+                "feature-server",
                 "ogc-api-features"
               ],
               protocol_surfaces_by_sdk: {
                 js: [
                   "control-plane-admin",
                   "geoservices-catalog",
-                  "geoservices-feature-server",
+                  "feature-server",
                   "ogc-api-features"
                 ],
                 python: [
                   "control-plane-admin",
                   "platform-http-readiness",
                   "geoservices-catalog",
-                  "geoservices-feature-server"
+                  "feature-server"
                 ],
                 dotnet: [
                   "control-plane-admin"

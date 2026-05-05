@@ -49,6 +49,25 @@ public sealed partial class PublicInterfaceProofLedgerTests
         ["honua-sdk-python"] = "#21"
     };
 
+    private static readonly Dictionary<string, HashSet<string>> ImplementedSdkCompatibilitySurfaceIdsByOwnerRepo = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["honua-sdk-js"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "control-plane-admin",
+            "feature-server",
+            "ogc-api-features"
+        },
+        ["honua-sdk-python"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "control-plane-admin",
+            "feature-server"
+        },
+        ["honua-sdk-dotnet"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "control-plane-admin"
+        }
+    };
+
     private static readonly Regex MarkdownLinkRegex =
         new(@"\[[^\]]+\]\((?<path>[^)]+)\)", RegexOptions.Compiled);
 
@@ -232,6 +251,89 @@ public sealed partial class PublicInterfaceProofLedgerTests
             "only approved bounded-child surfaces may point at external owner repos");
     }
 
+    [ArchitectureTest]
+    public void SdkCompatibilityProofs_ShouldNotOverstateImplementedServerMatrixSurfaces()
+    {
+        var ledger = LoadLedger();
+
+        var sdkProofs = ledger.Surfaces
+            .Where(surface => SdkCompatibilitySurfaceIds.Contains(surface.SurfaceId))
+            .SelectMany(surface => surface.Proofs
+                .Where(proof => SdkIntegrationTicketsByOwnerRepo.ContainsKey(proof.OwnerRepo))
+                .Select(proof => new { surface.SurfaceId, Proof = proof }))
+            .ToArray();
+
+        var expectedPairs = SdkIntegrationTicketsByOwnerRepo.Keys
+            .SelectMany(ownerRepo => SdkCompatibilitySurfaceIds.Select(surfaceId => $"{ownerRepo}:{surfaceId}"))
+            .ToArray();
+
+        sdkProofs.Select(entry => $"{entry.Proof.OwnerRepo}:{entry.SurfaceId}")
+            .Should()
+            .BeEquivalentTo(expectedPairs,
+                "the SDK compatibility ledger must keep both implemented and bounded-child SDK surfaces visible");
+
+        foreach (var entry in sdkProofs)
+        {
+            var isImplementedSurface =
+                ImplementedSdkCompatibilitySurfaceIdsByOwnerRepo.TryGetValue(entry.Proof.OwnerRepo, out var implementedSurfaceIds) &&
+                implementedSurfaceIds.Contains(entry.SurfaceId);
+
+            if (isImplementedSurface)
+            {
+                entry.Proof.Status.Should().Be("implemented",
+                    $"{entry.Proof.OwnerRepo} currently exercises '{entry.SurfaceId}' in sdk-server-compatibility.yml");
+            }
+            else
+            {
+                entry.Proof.Status.Should().Be("bounded-child-ticket",
+                    $"{entry.Proof.OwnerRepo} must not mark '{entry.SurfaceId}' implemented until the SDK lane exercises it");
+            }
+        }
+    }
+
+    [ArchitectureTest]
+    public void SdkCompatibilityWorkflow_ShouldResolveEvidenceIdentityFromCheckedOutSources()
+    {
+        var workflow = LoadSdkCompatibilityWorkflow();
+
+        workflow.Should().Contain("git rev-parse HEAD",
+            "server_commit must be the resolved checkout SHA, not the requested branch or tag ref");
+        workflow.Should().Contain("--arg serverCommit \"$server_commit\"");
+        workflow.Should().Contain("server_commit: $serverCommit");
+        workflow.Should().Contain("commit: $serverCommit");
+        workflow.Should().NotContain("server_commit: $serverCheckoutRef");
+        workflow.Should().NotContain("commit: $serverCheckoutRef");
+
+        workflow.Should().Contain("dotnet msbuild \"$path\" -nologo -v:q -getProperty:\"$property_name\"",
+            ".NET package versions must be evaluated through MSBuild so Directory.Build.props is honored");
+    }
+
+    [ArchitectureTest]
+    public void SdkCompatibilityWorkflow_ShouldConvertSmokeTimeoutsIntoCellEvidence()
+    {
+        var workflow = LoadSdkCompatibilityWorkflow();
+
+        workflow.Should().Contain("SDK_COMPATIBILITY_TIMEOUT_SECONDS: '2400'");
+        workflow.Should().Contain("timeout --kill-after=30s \"$SDK_COMPATIBILITY_TIMEOUT_SECONDS\"",
+            "the smoke command should time out before the job timeout so the evidence writer still runs");
+        workflow.Should().Contain("timed out after %ss.");
+        workflow.Should().Contain("COMPATIBILITY_EXIT_CODE: ${{ steps.compatibility.outputs.exit_code }}");
+        workflow.Should().Contain("failure_diagnostics");
+    }
+
+    [ArchitectureTest]
+    public void SdkCompatibilityWorkflow_ShouldUseProofLedgerSurfaceIdsInProtocolEvidence()
+    {
+        var workflow = LoadSdkCompatibilityWorkflow();
+
+        workflow.Should().Contain("protocol_surfaces_by_sdk");
+        workflow.Should().Contain("\"control-plane-admin\"");
+        workflow.Should().Contain("\"feature-server\"");
+        workflow.Should().Contain("\"ogc-api-features\"");
+        workflow.Should().NotContain("\"geoservices-feature-server\"",
+            "compat-result.json protocol surfaces should align with public-interface-proof.json surface ids");
+    }
+
     private static PublicInterfaceProofLedger LoadLedger()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
@@ -240,6 +342,12 @@ public sealed partial class PublicInterfaceProofLedgerTests
         using var stream = File.OpenRead(ledgerPath);
         return JsonSerializer.Deserialize(stream, PublicInterfaceProofLedgerJsonContext.Default.PublicInterfaceProofLedger)
             ?? throw new InvalidOperationException("Unable to deserialize public-interface-proof.json.");
+    }
+
+    private static string LoadSdkCompatibilityWorkflow()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        return File.ReadAllText(Path.Combine(repoRoot, ".github", "workflows", "sdk-server-compatibility.yml"));
     }
 
     private static bool MatchesEndpoint(PublicInterfaceSurface surface, string path)
