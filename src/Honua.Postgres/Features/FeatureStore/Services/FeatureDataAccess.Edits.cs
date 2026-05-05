@@ -362,18 +362,15 @@ internal sealed partial class FeatureDataAccess
 
                     try
                     {
-                        var created = await CreateWithConnectionAsync(
-                            layerId,
-                            feature,
+                        var created = await RunRowMutationAtomicallyAsync(
                             connection,
                             transaction,
-                            cancellationToken).ConfigureAwait(false);
-                        await TryWriteOutboxRowForBatchAsync(
-                            connection,
-                            transaction,
-                            created.Id,
-                            "create",
-                            created,
+                            async (conn, tx, ct) =>
+                            {
+                                var c = await CreateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
+                                await TryWriteOutboxRowForBatchAsync(conn, tx, c.Id, "create", c, ct).ConfigureAwait(false);
+                                return c;
+                            },
                             cancellationToken).ConfigureAwait(false);
                         createdIds.Add(created.Id);
                         createResults.Add(EditOperationResult.Success(
@@ -395,18 +392,15 @@ internal sealed partial class FeatureDataAccess
 
                     try
                     {
-                        var updated = await UpdateWithConnectionAsync(
-                            layerId,
-                            feature,
+                        var updated = await RunRowMutationAtomicallyAsync(
                             connection,
                             transaction,
-                            cancellationToken).ConfigureAwait(false);
-                        await TryWriteOutboxRowForBatchAsync(
-                            connection,
-                            transaction,
-                            updated.Id,
-                            "update",
-                            updated,
+                            async (conn, tx, ct) =>
+                            {
+                                var u = await UpdateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
+                                await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
+                                return u;
+                            },
                             cancellationToken).ConfigureAwait(false);
                         updateResults.Add(EditOperationResult.Success(
                             updated.Id,
@@ -429,21 +423,21 @@ internal sealed partial class FeatureDataAccess
 
                     try
                     {
-                        var deleted = await DeleteWithConnectionAsync(
-                            layerId,
-                            objectId,
+                        var deleted = await RunRowMutationAtomicallyAsync(
                             connection,
                             transaction,
+                            async (conn, tx, ct) =>
+                            {
+                                var d = await DeleteWithConnectionAsync(layerId, objectId, conn, tx, ct).ConfigureAwait(false);
+                                if (d.Deleted)
+                                {
+                                    await TryWriteOutboxRowForBatchAsync(conn, tx, objectId, "delete", d.Snapshot, ct).ConfigureAwait(false);
+                                }
+                                return d;
+                            },
                             cancellationToken).ConfigureAwait(false);
                         if (deleted.Deleted)
                         {
-                            await TryWriteOutboxRowForBatchAsync(
-                                connection,
-                                transaction,
-                                objectId,
-                                "delete",
-                                deleted.Snapshot,
-                                cancellationToken).ConfigureAwait(false);
                             deleteResults.Add(EditOperationResult.Success(objectId));
                             return true;
                         }
@@ -772,8 +766,16 @@ internal sealed partial class FeatureDataAccess
         {
             try
             {
-                var created = await CreateWithConnectionAsync(layerId, feature, connection, transaction, cancellationToken);
-                await TryWriteOutboxRowForBatchAsync(connection, transaction, created.Id, "create", created, cancellationToken).ConfigureAwait(false);
+                var created = await RunRowMutationAtomicallyAsync(
+                    connection,
+                    transaction,
+                    async (conn, tx, ct) =>
+                    {
+                        var c = await CreateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
+                        await TryWriteOutboxRowForBatchAsync(conn, tx, c.Id, "create", c, ct).ConfigureAwait(false);
+                        return c;
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 createdIds.Add(created.Id);
                 results.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
@@ -946,8 +948,16 @@ internal sealed partial class FeatureDataAccess
         {
             try
             {
-                var updated = await UpdateWithConnectionAsync(layerId, feature, connection, transaction, cancellationToken);
-                await TryWriteOutboxRowForBatchAsync(connection, transaction, updated.Id, "update", updated, cancellationToken).ConfigureAwait(false);
+                var updated = await RunRowMutationAtomicallyAsync(
+                    connection,
+                    transaction,
+                    async (conn, tx, ct) =>
+                    {
+                        var u = await UpdateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
+                        await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
+                        return u;
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 updatedCount++;
                 results.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
@@ -979,10 +989,21 @@ internal sealed partial class FeatureDataAccess
         {
             try
             {
-                var deleted = await DeleteWithConnectionAsync(layerId, featureId, connection, transaction, cancellationToken);
+                var deleted = await RunRowMutationAtomicallyAsync(
+                    connection,
+                    transaction,
+                    async (conn, tx, ct) =>
+                    {
+                        var d = await DeleteWithConnectionAsync(layerId, featureId, conn, tx, ct).ConfigureAwait(false);
+                        if (d.Deleted)
+                        {
+                            await TryWriteOutboxRowForBatchAsync(conn, tx, featureId, "delete", d.Snapshot, ct).ConfigureAwait(false);
+                        }
+                        return d;
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 if (deleted.Deleted)
                 {
-                    await TryWriteOutboxRowForBatchAsync(connection, transaction, featureId, "delete", deleted.Snapshot, cancellationToken).ConfigureAwait(false);
                     deletedCount++;
                     results.Add(EditOperationResult.Success(featureId));
                 }
@@ -1030,18 +1051,46 @@ internal sealed partial class FeatureDataAccess
             return;
         }
 
-        if (transaction is not null)
+        if (transaction is null)
         {
-            await _outboxRepository.WriteOutboxRowAsync(connection, transaction, entry, cancellationToken).ConfigureAwait(false);
+            // Callers in the active-outbox batch path must wrap the row mutation and this
+            // INSERT in a per-row transaction via RunRowMutationAtomicallyAsync so the two
+            // commit atomically. Reaching this branch indicates a coding error; throwing
+            // here surfaces it loudly rather than silently splitting the mutation and the
+            // outbox row across separate connections (which would expose the CDC durability
+            // gap the outbox is meant to close).
+            throw new InvalidOperationException(
+                "Outbox writes require an active transaction when a feature mutation scope is open.");
         }
-        else
+
+        await _outboxRepository.WriteOutboxRowAsync(connection, transaction, entry, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs a row mutation paired with its outbox insert atomically. When the caller already
+    /// holds a batch transaction the work runs inside it; when the batch is non-transactional
+    /// (RollbackOnFailure=false) but an outbox scope is active, a per-row transaction wraps
+    /// the mutation and outbox INSERT so a crash between them cannot leave a committed feature
+    /// row without its CDC envelope. When no outbox scope is active the work runs directly on
+    /// the connection so the autocommit fast path is preserved. Per-row failures bubble up to
+    /// the caller's try/catch and are recorded as edit operation failures while preserving
+    /// partial-success semantics.
+    /// </summary>
+    private async Task<TResult> RunRowMutationAtomicallyAsync<TResult>(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? batchTransaction,
+        Func<NpgsqlConnection, NpgsqlTransaction?, CancellationToken, Task<TResult>> mutateAndAppendOutbox,
+        CancellationToken cancellationToken)
+    {
+        if (batchTransaction is not null || !TryUseTransactionalOutbox(out _))
         {
-            // Non-transactional batch path (RollbackOnFailure=false). Write the outbox row on
-            // the same connection so the row is visible immediately to the dispatcher and
-            // shares the connection's lifetime; callers ignore failures via the outer try/catch
-            // around per-row mutations and surface them as edit operation failures.
-            await _outboxRepository.WriteOutboxRowAsync(entry, cancellationToken).ConfigureAwait(false);
+            return await mutateAndAppendOutbox(connection, batchTransaction, cancellationToken).ConfigureAwait(false);
         }
+
+        await using var rowTransaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        var result = await mutateAndAppendOutbox(connection, (NpgsqlTransaction)rowTransaction, cancellationToken).ConfigureAwait(false);
+        await rowTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return result;
     }
 
     private static string GetSafeEditOperationError(Exception ex, string operation)
