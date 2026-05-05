@@ -96,17 +96,23 @@ internal static partial class FeatureServerEndpoints
         var timeParam = GetValueString(queryValues, "time");
         if (!string.IsNullOrWhiteSpace(timeParam))
         {
-            var editionError = RequireProEditionForTimeSeriesTiles(context);
-            if (editionError != null)
-            {
-                return editionError;
-            }
-
+            // Parse first so the documented time=null,null no-op behaves like an
+            // omitted parameter — neither the Pro gate nor temporal-field
+            // resolution should fire when no actual filter is requested.
             if (!TryBuildTileTemporalFilter(layer, timeParam, out temporalFilter, out var temporalError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid time parameter",
                     [temporalError ?? "Invalid time parameter."]);
+            }
+
+            if (temporalFilter is not null)
+            {
+                var editionError = RequireProEditionForTimeSeriesTiles(context);
+                if (editionError != null)
+                {
+                    return editionError;
+                }
             }
         }
 
@@ -153,17 +159,8 @@ internal static partial class FeatureServerEndpoints
         temporalFilter = null;
         error = null;
 
-        TemporalExtentHelpers.TemporalFieldSelection selection;
-        try
-        {
-            selection = TemporalExtentHelpers.ResolveTemporalFieldsOrThrow(layer);
-        }
-        catch (ArgumentException ex)
-        {
-            error = ex.Message;
-            return false;
-        }
-
+        // Parse before resolving temporal fields so time=null,null (the
+        // documented no-op) does not require the layer to be time-aware.
         if (!GeoServicesTemporalQueryBuilder.TryParseTimeParameter(timeParam, out var start, out var end))
         {
             error = $"Invalid time parameter format: {timeParam}";
@@ -173,6 +170,17 @@ internal static partial class FeatureServerEndpoints
         if (start is null && end is null)
         {
             return true;
+        }
+
+        TemporalExtentHelpers.TemporalFieldSelection selection;
+        try
+        {
+            selection = TemporalExtentHelpers.ResolveTemporalFieldsOrThrow(layer);
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+            return false;
         }
 
         temporalFilter = new TemporalFilter

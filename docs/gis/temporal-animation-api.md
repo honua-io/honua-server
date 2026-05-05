@@ -66,6 +66,12 @@ treated as "no temporal filter" and do not regress non-temporal queries.
   explicit offset are assumed to be UTC.
 - Output ISO 8601 timestamps in metadata responses use the trailing `Z` UTC
   suffix.
+- OGC capabilities (WMS `<Dimension>`, WMTS `<Default>` / `<Value>`) and the
+  WMTS `time=default` / `time=current` resolution preserve sub-second precision
+  when the layer's resolved extent has fractional seconds; whole-second
+  extents render with second precision. This matches the precision Postgres
+  compares against, so the advertised maximum is not truncated below the
+  actual layer maximum.
 - Epoch values are Unix milliseconds (consistent with ArcGIS REST).
 
 ## Edition gating

@@ -48,12 +48,20 @@ internal static class GeoServicesTemporalQueryBuilder
 
     private static FilterExpression? BuildTemporalExpressionCore(string time, string? timeRelation, LayerDefinition layer)
     {
-        var selection = TemporalExtentHelpers.ResolveTemporalFieldsOrThrow(layer);
         if (!TryParseTimeParameter(time, out var startTime, out var endTime))
         {
             throw new ArgumentException($"Invalid time parameter format: {time}");
         }
 
+        // time=null,null parses as both bounds null (documented no-op).
+        // Skip temporal field resolution so non-time-aware layers do not
+        // throw for the no-op form and so the documented contract holds.
+        if (startTime is null && endTime is null)
+        {
+            return null;
+        }
+
+        var selection = TemporalExtentHelpers.ResolveTemporalFieldsOrThrow(layer);
         var relation = ParseTimeRelation(timeRelation);
         var temporalType = selection.StartField.Type;
         var queryStart = ToTemporalLiteral(startTime, temporalType);
@@ -283,11 +291,11 @@ internal static class GeoServicesTemporalQueryBuilder
                 return false;
             }
 
-            if (!start.HasValue && !end.HasValue)
-            {
-                return false;
-            }
-
+            // Both bounds null is the documented "no temporal filter" form
+            // (docs/gis/temporal-animation-api.md): time=null,null parses as a
+            // valid no-op rather than an error so callers can treat it the
+            // same as omitting the parameter. Callers must still check
+            // (start, end) before constructing a real filter.
             if (start.HasValue && end.HasValue && start.Value > end.Value)
             {
                 return false;

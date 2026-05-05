@@ -66,6 +66,22 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
+        // Discovery is opt-in (docs/gis/temporal-animation-api.md): a layer is
+        // exposed via temporalExtent only when an explicit TimeInfo.StartTimeField
+        // has been configured. The shared TryResolveTemporalRangeAsync helper
+        // falls back to the first Date/DateTime attribute when TimeInfo is null
+        // (preserved for OGC API Features collection extents), but that fallback
+        // would surface temporal metadata for layers that were never marked
+        // time-aware. WMS/WMTS already gate on the same condition before calling
+        // the helper.
+        if (layer.Metadata?.TimeInfo is null ||
+            string.IsNullOrWhiteSpace(layer.Metadata.TimeInfo.StartTimeField))
+        {
+            return StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Layer '{layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture)}' is not configured as time-aware.");
+        }
+
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
             layer,

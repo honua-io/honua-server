@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -12,9 +14,10 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// Integration tests for the temporal extent endpoint introduced for ticket #379.
-/// Exercises the time-aware code path through the standard <see cref="WebAppFixture"/>
-/// — the seeded test layer has both a <c>created_at</c> DateTime and an
-/// <c>event_date</c> Date column, so the temporal extent helper resolves a range.
+/// Discovery is opt-in: layers without an explicit <see cref="LayerTimeInfo"/>
+/// configuration must not surface a temporal extent even if they have a Date /
+/// DateTime column. The happy path therefore configures TimeInfo via the
+/// admin metadata updater before issuing the request.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
@@ -31,6 +34,8 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent")]
     public async Task TemporalExtent_TimeAwareLayer_ReturnsExtentWithFields()
     {
+        await ConfigureLayerAsTimeAwareAsync();
+
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/temporalExtent?f=json");
 
@@ -102,5 +107,48 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/temporalExtent?where=1=1&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent")]
+    public async Task TemporalExtent_LayerWithoutTimeInfo_ReturnsNotFound()
+    {
+        // Discovery is opt-in: a layer with a Date / DateTime column but no
+        // TimeInfo.StartTimeField must NOT surface a temporal extent. The
+        // shared TryResolveTemporalRangeAsync helper falls back to the first
+        // temporal attribute for OGC API Features collection metadata; the
+        // FeatureServer endpoint guards against that fallback so SDK clients
+        // do not infer "time-aware" from arbitrary date columns. Other tests
+        // in the shared `Database` collection (WMS / WMTS temporal suites)
+        // may leave TimeInfo set on the same layer, so clear it first.
+        await ClearLayerTimeInfoAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/temporalExtent?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    private Task ConfigureLayerAsTimeAwareAsync()
+    {
+        // The seeded "timestamp" DateTime field is registered in honua.layer_fields
+        // for the shared test layer; the helper resolves an extent only when the
+        // configured field is a real attribute.
+        var updater = _fixture.GetService<ILayerMetadataUpdater>();
+        return updater.UpdateLayerMetadataAsync(
+            WebAppFixture.TestLayerId,
+            new CatalogMetadata
+            {
+                TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" }
+            });
+    }
+
+    private Task ClearLayerTimeInfoAsync()
+    {
+        var updater = _fixture.GetService<ILayerMetadataUpdater>();
+        return updater.UpdateLayerMetadataAsync(
+            WebAppFixture.TestLayerId,
+            new CatalogMetadata());
     }
 }

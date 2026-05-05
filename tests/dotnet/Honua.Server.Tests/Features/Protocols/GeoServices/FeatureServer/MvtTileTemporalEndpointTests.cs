@@ -93,6 +93,21 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
+    public async Task GetTile_WithBothBoundsNull_TreatedAsNoFilter()
+    {
+        // The temporal-animation contract documents time=null,null as a no-op
+        // ("Treated as no filter; full result set returned"). The MVT path
+        // must therefore parse it without invoking the Pro edition gate or
+        // requiring the layer to be time-aware — equivalent to omitting the
+        // parameter entirely.
+        var response = await _fixture.Client.GetAsync(
+            $"/tiles/{TestLayerId}/1/0/0.mvt?time=null,null");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
     public async Task GetTile_WithReversedTimeRange_ReturnsBadRequest()
     {
         // Start > End is rejected by GeoServicesTemporalQueryBuilder.TryParseTimeParameter

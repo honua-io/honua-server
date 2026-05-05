@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -9,6 +10,26 @@ namespace Honua.Server.Features.Infrastructure.Helpers;
 
 internal static class TemporalExtentHelpers
 {
+    /// <summary>
+    /// Canonical UTC formatter for OGC temporal capability values
+    /// (<c>TIME</c> dimensions, <c>&lt;Default&gt;</c>, <c>&lt;Current&gt;</c>,
+    /// extent literals). Uses second precision when the timestamp falls on a
+    /// whole second boundary and 7-digit fractional precision otherwise so
+    /// sub-second extents survive the round-trip from capabilities through to
+    /// the temporal filter pipeline. Postgres compares timestamps inclusively
+    /// at full precision; advertising a truncated max would exclude the row
+    /// containing the layer's actual maximum.
+    /// </summary>
+    public static string FormatOgcTemporalValue(DateTimeOffset value)
+    {
+        var utc = value.ToUniversalTime();
+        var format = utc.Ticks % TimeSpan.TicksPerSecond == 0
+            ? "yyyy-MM-ddTHH:mm:ss'Z'"
+            : "yyyy-MM-ddTHH:mm:ss.fffffff'Z'";
+        return utc.ToString(format, CultureInfo.InvariantCulture);
+    }
+
+
     internal readonly record struct TemporalRange(
         FieldDefinition StartField,
         FieldDefinition? EndField,

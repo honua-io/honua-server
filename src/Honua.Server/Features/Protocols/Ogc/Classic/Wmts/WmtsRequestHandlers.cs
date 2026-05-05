@@ -1424,8 +1424,8 @@ internal static class WmtsRequestHandlers
             return staticDimensions;
         }
 
-        var min = range.Value.Min.Value.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
-        var max = range.Value.Max.Value.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        var min = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Min.Value);
+        var max = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Max.Value);
         var populated = new WmtsDimensionDefinition(
             Identifier: "time",
             Values: [$"{min}/{max}/PT0S"],
@@ -1848,9 +1848,7 @@ internal static class WmtsRequestHandlers
                 return (null, null);
             }
 
-            parseInput = range.Value.Max.Value.UtcDateTime.ToString(
-                "yyyy-MM-ddTHH:mm:ssZ",
-                CultureInfo.InvariantCulture);
+            parseInput = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Max.Value);
         }
 
         if (!OgcTemporalFilterParser.TryParse(parseInput, layer, out var parsed, out var parseError))

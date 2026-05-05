@@ -2186,7 +2186,7 @@ internal static class WmsRequestHandlers
     }
 
     private static string FormatWmsTemporalInstant(DateTimeOffset value)
-        => value.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        => TemporalExtentHelpers.FormatOgcTemporalValue(value);
 
     private static void AppendWmsOnlineResource(StringBuilder sb, string indent, string href, bool isWms111)
     {
