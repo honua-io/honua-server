@@ -69,6 +69,7 @@
 - [Scene Dataset Registry (Admin API)](admin-api/scene-dataset-registry.md)
 - [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [Mobile SDK Roadmap](developer/mobile-sdk-roadmap.md)
+- [FieldCollection Mobile Sync API](developer/fieldcollection-mobile-sync-api.md)
 - [MCP Server](developer/MCP_SERVER.md)
 - [Spec Plan/Apply Engine](developer/SPEC_ENGINE.md)
 - [Grounding & Intent Drafting](developer/GROUNDING.md)

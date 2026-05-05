@@ -673,6 +673,54 @@ sql:
       $$ LANGUAGE plpgsql;
   - "DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;"
   - "CREATE TRIGGER trigger_track_feature_changes AFTER INSERT OR UPDATE OR DELETE ON features FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.fieldcollection_features (
+          feature_id  TEXT        NOT NULL,
+          layer_id    INT         NOT NULL,
+          version     BIGINT      NOT NULL,
+          payload     JSONB,
+          is_deleted  BOOLEAN     NOT NULL DEFAULT FALSE,
+          updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (feature_id, layer_id)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_fieldcollection_features_layer ON honua.fieldcollection_features(layer_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.fieldcollection_changes (
+          change_seq  BIGSERIAL   PRIMARY KEY,
+          generation  BIGINT      NOT NULL,
+          feature_id  TEXT        NOT NULL,
+          layer_id    INT         NOT NULL,
+          operation   SMALLINT    NOT NULL,
+          version     BIGINT      NOT NULL,
+          payload     JSONB,
+          changed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT fieldcollection_changes_valid_operation CHECK (operation IN (1, 2, 3))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_fieldcollection_changes_generation ON honua.fieldcollection_changes(generation);"
+  - "CREATE INDEX IF NOT EXISTS idx_fieldcollection_changes_feature ON honua.fieldcollection_changes(feature_id, layer_id, generation);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.fieldcollection_pushed_changes (
+          change_id        TEXT        NOT NULL PRIMARY KEY,
+          feature_id       TEXT        NOT NULL,
+          layer_id         INT         NOT NULL,
+          operation        SMALLINT    NOT NULL,
+          outcome          SMALLINT    NOT NULL,
+          response_payload JSONB       NOT NULL,
+          pushed_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT fieldcollection_pushed_changes_valid_operation CHECK (operation IN (1, 2, 3)),
+          CONSTRAINT fieldcollection_pushed_changes_valid_outcome CHECK (outcome IN (1, 2, 3))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_fieldcollection_pushed_changes_pushed_at ON honua.fieldcollection_pushed_changes(pushed_at);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.fieldcollection_sync_cursors (
+          client_id            TEXT        NOT NULL PRIMARY KEY,
+          last_sync_generation BIGINT      NOT NULL DEFAULT 0,
+          updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+  - "DELETE FROM honua.fieldcollection_changes;"
+  - "DELETE FROM honua.fieldcollection_pushed_changes;"
+  - "DELETE FROM honua.fieldcollection_sync_cursors;"
+  - "DELETE FROM honua.fieldcollection_features;"
   - "DELETE FROM honua.feature_changes;"
   - "DELETE FROM honua.gitops_change_records;"
   - "DELETE FROM honua.gitops_watch_configs;"

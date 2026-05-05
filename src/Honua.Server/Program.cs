@@ -44,6 +44,7 @@ using Honua.Server.Features.Infrastructure.RateLimiting;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Mobile.FieldCollection;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Streaming;
 using Honua.ServiceDefaults;
@@ -765,6 +766,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
         Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
+        Honua.Server.Features.Mobile.FieldCollection.FieldCollectionSyncJsonContext.Default,
         Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
         Honua.Server.Features.Admin.Models.ManifestApprovalJsonContext.Default,
@@ -1143,6 +1145,7 @@ app.MapExportEndpoints();
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();
 app.MapFeatureChangeEventsEndpoints();
+app.MapFieldCollectionSyncEndpoints();
 app.MapTileOperationsEndpoints();
 
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)

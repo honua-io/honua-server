@@ -169,6 +169,37 @@
       ]
     },
     {
+      "surfaceId": "fieldcollection-mobile-sync",
+      "displayName": "FieldCollection mobile sync API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Mobile",
+      "canonicalIdentifier": "/api/v1/fieldcollection/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/fieldcollection/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus FieldCollection sync integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Mobile/FieldCollection/FieldCollectionSyncEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Mobile/FieldCollection/FieldCollectionSyncEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#894",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "versioned-metrics",
       "displayName": "Versioned metrics endpoints",
       "surfaceKind": "http-route-family",

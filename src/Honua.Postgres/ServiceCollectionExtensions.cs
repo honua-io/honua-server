@@ -20,6 +20,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -41,6 +42,7 @@ using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Styling;
 using Honua.Postgres.Features.Metadata;
 using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Postgres.Features.Mobile.FieldCollection;
 using Honua.Postgres.Features.Raster;
 using Honua.Postgres.Features.Security;
 using Honua.Postgres.Queries.Filters;
@@ -118,6 +120,9 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
         services.AddScoped<IServiceMetadataUpdater, PostgresServiceMetadataUpdater>();
         services.AddScoped<ILayerMetadataUpdater, PostgresLayerMetadataUpdater>();
+
+        // Register FieldCollection mobile sync store (#894)
+        services.AddScoped<IFieldCollectionSyncStore, PostgresFieldCollectionSyncStore>();
 
         // Register metadata resource store (ADR-0023)
         services.AddScoped<IMetadataResourceStore>(serviceProvider =>

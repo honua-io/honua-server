@@ -125,6 +125,21 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 >
 > For usage examples, see the [API Examples Guide](../API_EXAMPLES.md#vector-tiles-mvt).
 
+## FieldCollection Mobile Sync API
+
+**Protocol**: REST API
+**Base URL**: `/api/v1/fieldcollection`
+**Authentication**: API Key (`X-API-Key`)
+
+> **Note**: The FieldCollection mobile sync endpoints (`generation`,
+> `sync-cursor` GET/POST, `changes` GET/POST) back the `honua-mobile`
+> offline sync clients. The pull endpoint is a pure read; the per-client
+> cursor is advanced only by an explicit `POST /sync-cursor` after local
+> persistence succeeds. The contract is documented in
+> [FieldCollection Mobile Sync API](../fieldcollection-mobile-sync-api.md) and
+> registered in the [public interface proof](../../gis/data/public-interface-proof.json)
+> under the `fieldcollection-mobile-sync` surface.
+
 ## Testing the APIs
 
 ### **Using the Interactive Docs**
