@@ -53,4 +53,10 @@ internal static partial class FieldCollectionSyncLog
         Level = LogLevel.Warning,
         Message = "FieldCollection push rejected. ChangeId={ChangeId} Reason={Reason}")]
     public static partial void PushRejected(ILogger logger, string changeId, string reason);
+
+    [LoggerMessage(
+        EventId = 8945,
+        Level = LogLevel.Information,
+        Message = "FieldCollection sync cursor acknowledged. ClientId={ClientId} LastSyncGeneration={LastSyncGeneration}")]
+    public static partial void SyncCursorAcknowledged(ILogger logger, string clientId, long lastSyncGeneration);
 }

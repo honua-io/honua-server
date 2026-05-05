@@ -14,6 +14,7 @@ namespace Honua.Server.Features.Mobile.FieldCollection;
 [JsonSourceGenerationOptions(JsonSerializerDefaults.General)]
 [JsonSerializable(typeof(FieldCollectionGenerationResponse))]
 [JsonSerializable(typeof(FieldCollectionSyncCursorResponse))]
+[JsonSerializable(typeof(FieldCollectionSyncCursorAckRequest))]
 [JsonSerializable(typeof(FieldCollectionPullResponse))]
 [JsonSerializable(typeof(FieldCollectionServerChange))]
 [JsonSerializable(typeof(FieldCollectionServerChange[]))]

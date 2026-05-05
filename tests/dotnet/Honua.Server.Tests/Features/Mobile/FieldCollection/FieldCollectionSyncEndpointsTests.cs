@@ -274,8 +274,16 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/fieldcollection/changes")]
-    public async Task Pull_AdvancesPerClientCursor()
+    public async Task Pull_DoesNotImplicitlyAcknowledgeServerCursor()
     {
+        // The server must never treat a successful pull response as a durable
+        // client acknowledgement. If the mobile client crashes after the
+        // response but before persisting the changes, an implicit advance
+        // would skip those unapplied changes on the next pull. The cursor is
+        // advanced only by the explicit ack endpoint after local persistence
+        // succeeds.
+        const string headerName = "X-Honua-Client-Id";
+        var clientId = $"pull-no-ack-{Guid.NewGuid():N}";
         var generationBefore = await GetServerGenerationAsync();
 
         await _client.PostAsJsonAsync(ChangesPath, new
@@ -288,55 +296,211 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
             feature = NewFeaturePayload(longitude: 0.0, latitude: 0.0),
         });
 
-        var pullResponse = await _client.GetAsync($"{ChangesPath}?sinceGeneration={generationBefore}");
+        using var pull = new HttpRequestMessage(HttpMethod.Get, $"{ChangesPath}?sinceGeneration={generationBefore}");
+        pull.Headers.Add(headerName, clientId);
+        var pullResponse = await _client.SendAsync(pull);
         pullResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var pullJson = JsonDocument.Parse(await pullResponse.Content.ReadAsStringAsync());
-        var nextCursor = pullJson.RootElement.GetProperty("nextCursor").GetInt64();
-        nextCursor.Should().BeGreaterThan(generationBefore);
+        pullJson.RootElement.GetProperty("nextCursor").GetInt64().Should().BeGreaterThan(generationBefore);
 
-        var cursorResponse = await _client.GetAsync(SyncCursorPath);
+        using var cursor = new HttpRequestMessage(HttpMethod.Get, SyncCursorPath);
+        cursor.Headers.Add(headerName, clientId);
+        var cursorResponse = await _client.SendAsync(cursor);
         cursorResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var cursorJson = JsonDocument.Parse(await cursorResponse.Content.ReadAsStringAsync());
-        cursorJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().BeGreaterOrEqualTo(nextCursor);
+        cursorJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().Be(0);
     }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/fieldcollection/changes")]
-    public async Task Pull_EmptyPage_AdvancesCursorToCurrentGeneration()
+    public async Task Pull_EmptyPage_NextCursorIsCommittedServerWatermark()
     {
-        // Force a known watermark, then ask for changes after a generation that is
-        // guaranteed to have nothing newer. The cursor must still advance so that
-        // a client which has caught up does not re-pull the same window forever.
-        var pullResponse = await _client.GetAsync($"{ChangesPath}?sinceGeneration=0&limit=200");
-        pullResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var pullJson = JsonDocument.Parse(await pullResponse.Content.ReadAsStringAsync());
-        var firstCursor = pullJson.RootElement.GetProperty("nextCursor").GetInt64();
+        // Asking for changes since the current server watermark must return an
+        // empty page whose nextCursor equals that watermark. The cursor is
+        // never advanced server-side without an explicit ack — the only place
+        // nextCursor comes from for an empty page is the committed watermark.
+        var serverGeneration = await GetServerGenerationAsync();
 
-        var emptyResponse = await _client.GetAsync($"{ChangesPath}?sinceGeneration={firstCursor}&limit=200");
+        var emptyResponse = await _client.GetAsync($"{ChangesPath}?sinceGeneration={serverGeneration}&limit=200");
         emptyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var emptyJson = JsonDocument.Parse(await emptyResponse.Content.ReadAsStringAsync());
         emptyJson.RootElement.GetProperty("changes").GetArrayLength().Should().Be(0);
         var emptyCursor = emptyJson.RootElement.GetProperty("nextCursor").GetInt64();
-        emptyCursor.Should().BeGreaterOrEqualTo(firstCursor);
-
-        var cursorResponse = await _client.GetAsync(SyncCursorPath);
-        cursorResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var cursorJson = JsonDocument.Parse(await cursorResponse.Content.ReadAsStringAsync());
-        cursorJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().BeGreaterOrEqualTo(emptyCursor);
+        var emptyServerGen = emptyJson.RootElement.GetProperty("serverGeneration").GetInt64();
+        emptyCursor.Should().Be(emptyServerGen, "empty pages echo the committed server watermark");
+        emptyServerGen.Should().BeGreaterOrEqualTo(serverGeneration);
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/fieldcollection/sync-cursor")]
-    public async Task SyncCursor_PartitionsByClientIdHeader()
+    [Endpoint("GET /api/v1/fieldcollection/changes")]
+    public async Task Pull_FutureSinceGeneration_NextCursorClampedToServerWatermark()
+    {
+        // A misbehaving or malicious caller might pass a sinceGeneration value
+        // far past the committed watermark. The empty-page nextCursor must
+        // never echo that future value back — under the previous
+        // Math.Max(sinceGeneration, currentGeneration) logic, a poisoned
+        // sinceGeneration would later become the persisted client cursor and
+        // future real changes below it would be skipped on subsequent pulls.
+        var serverGeneration = await GetServerGenerationAsync();
+        const long FutureOffset = 1_000_000_000L;
+        var poisonedSince = serverGeneration + FutureOffset;
+
+        var pullResponse = await _client.GetAsync($"{ChangesPath}?sinceGeneration={poisonedSince}&limit=200");
+        pullResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var pullJson = JsonDocument.Parse(await pullResponse.Content.ReadAsStringAsync());
+        pullJson.RootElement.GetProperty("changes").GetArrayLength().Should().Be(0);
+        pullJson.RootElement.GetProperty("nextCursor").GetInt64().Should().Be(serverGeneration);
+        pullJson.RootElement.GetProperty("serverGeneration").GetInt64().Should().Be(serverGeneration);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/sync-cursor")]
+    public async Task SyncCursor_AcknowledgePersistsClientCursor()
+    {
+        const string headerName = "X-Honua-Client-Id";
+        var clientId = $"ack-persists-{Guid.NewGuid():N}";
+
+        await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId = $"feat-{Guid.NewGuid():N}",
+            layerId = 121,
+            operation = "insert",
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: 5.0, latitude: 5.0),
+        });
+
+        using var pull = new HttpRequestMessage(HttpMethod.Get, $"{ChangesPath}?sinceGeneration=0&limit=200");
+        pull.Headers.Add(headerName, clientId);
+        var pullResponse = await _client.SendAsync(pull);
+        pullResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var pullJson = JsonDocument.Parse(await pullResponse.Content.ReadAsStringAsync());
+        var nextCursor = pullJson.RootElement.GetProperty("nextCursor").GetInt64();
+        nextCursor.Should().BeGreaterThan(0);
+
+        // Pull alone does not advance the server cursor.
+        using var preAck = new HttpRequestMessage(HttpMethod.Get, SyncCursorPath);
+        preAck.Headers.Add(headerName, clientId);
+        var preAckResponse = await _client.SendAsync(preAck);
+        using var preAckJson = JsonDocument.Parse(await preAckResponse.Content.ReadAsStringAsync());
+        preAckJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().Be(0);
+
+        // Ack persists the cursor.
+        using var ack = new HttpRequestMessage(HttpMethod.Post, SyncCursorPath)
+        {
+            Content = JsonContent.Create(new { lastSyncGeneration = nextCursor }),
+        };
+        ack.Headers.Add(headerName, clientId);
+        var ackResponse = await _client.SendAsync(ack);
+        ackResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var ackJson = JsonDocument.Parse(await ackResponse.Content.ReadAsStringAsync());
+        ackJson.RootElement.GetProperty("clientId").GetString().Should().Be(clientId);
+        ackJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().Be(nextCursor);
+
+        // Subsequent reads reflect the ack.
+        using var reread = new HttpRequestMessage(HttpMethod.Get, SyncCursorPath);
+        reread.Headers.Add(headerName, clientId);
+        var rereadResponse = await _client.SendAsync(reread);
+        using var rereadJson = JsonDocument.Parse(await rereadResponse.Content.ReadAsStringAsync());
+        rereadJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().Be(nextCursor);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/sync-cursor")]
+    public async Task SyncCursor_AcknowledgeIsMonotonic()
+    {
+        // A late-arriving smaller cursor must never regress a larger persisted
+        // value. The store clamps the upsert with GREATEST so out-of-order acks
+        // are safe; this guards against ack races between flaky retries.
+        const string headerName = "X-Honua-Client-Id";
+        var clientId = $"ack-monotonic-{Guid.NewGuid():N}";
+
+        await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId = $"feat-{Guid.NewGuid():N}",
+            layerId = 122,
+            operation = "insert",
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: 6.0, latitude: 6.0),
+        });
+        var serverGeneration = await GetServerGenerationAsync();
+
+        async Task<HttpResponseMessage> AckAsync(long value)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, SyncCursorPath)
+            {
+                Content = JsonContent.Create(new { lastSyncGeneration = value }),
+            };
+            req.Headers.Add(headerName, clientId);
+            return await _client.SendAsync(req);
+        }
+
+        var firstAck = await AckAsync(serverGeneration);
+        firstAck.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Stale ack with a smaller value must not regress the cursor.
+        var staleAck = await AckAsync(serverGeneration - 1);
+        staleAck.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var staleJson = JsonDocument.Parse(await staleAck.Content.ReadAsStringAsync());
+        staleJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().Be(serverGeneration);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/sync-cursor")]
+    public async Task SyncCursor_AcknowledgeFutureGeneration_Returns400()
+    {
+        // The server must reject ack values that exceed the committed
+        // watermark so a poisoned client cursor cannot persist a future
+        // generation. Future real changes below the poisoned cursor would
+        // otherwise be skipped on subsequent pulls.
+        const string headerName = "X-Honua-Client-Id";
+        var clientId = $"ack-future-{Guid.NewGuid():N}";
+        var serverGeneration = await GetServerGenerationAsync();
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, SyncCursorPath)
+        {
+            Content = JsonContent.Create(new { lastSyncGeneration = serverGeneration + 1_000_000_000L }),
+        };
+        req.Headers.Add(headerName, clientId);
+        var response = await _client.SendAsync(req);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // The cursor must remain at zero for this client.
+        using var read = new HttpRequestMessage(HttpMethod.Get, SyncCursorPath);
+        read.Headers.Add(headerName, clientId);
+        var readResponse = await _client.SendAsync(read);
+        using var readJson = JsonDocument.Parse(await readResponse.Content.ReadAsStringAsync());
+        readJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/sync-cursor")]
+    public async Task SyncCursor_AcknowledgeNegative_Returns400()
+    {
+        var response = await _client.PostAsJsonAsync(SyncCursorPath, new { lastSyncGeneration = -1L });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/sync-cursor")]
+    public async Task SyncCursor_AcknowledgeMissingBody_Returns400()
+    {
+        var response = await _client.PostAsJsonAsync(SyncCursorPath, new { });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/sync-cursor")]
+    public async Task SyncCursor_AcknowledgePartitionsByClientIdHeader()
     {
         const string headerName = "X-Honua-Client-Id";
         var clientA = $"device-a-{Guid.NewGuid():N}";
         var clientB = $"device-b-{Guid.NewGuid():N}";
 
-        // Push something so a pull on clientA has at least the chance to advance
-        // its cursor past zero.
+        // Push something so the watermark is non-zero.
         await _client.PostAsJsonAsync(ChangesPath, new
         {
             changeId = Guid.NewGuid().ToString("N"),
@@ -346,14 +510,17 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
             timestamp = DateTimeOffset.UtcNow,
             feature = NewFeaturePayload(longitude: 1.0, latitude: 1.0),
         });
+        var serverGeneration = await GetServerGenerationAsync();
+        serverGeneration.Should().BeGreaterThan(0);
 
-        using var pullForA = new HttpRequestMessage(HttpMethod.Get, $"{ChangesPath}?sinceGeneration=0&limit=200");
-        pullForA.Headers.Add(headerName, clientA);
-        var pullAResponse = await _client.SendAsync(pullForA);
-        pullAResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var pullAJson = JsonDocument.Parse(await pullAResponse.Content.ReadAsStringAsync());
-        var advancedCursor = pullAJson.RootElement.GetProperty("nextCursor").GetInt64();
-        advancedCursor.Should().BeGreaterOrEqualTo(0);
+        // ClientA explicitly acks the latest watermark.
+        using var ackForA = new HttpRequestMessage(HttpMethod.Post, SyncCursorPath)
+        {
+            Content = JsonContent.Create(new { lastSyncGeneration = serverGeneration }),
+        };
+        ackForA.Headers.Add(headerName, clientA);
+        var ackAResponse = await _client.SendAsync(ackForA);
+        ackAResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var cursorForA = new HttpRequestMessage(HttpMethod.Get, SyncCursorPath);
         cursorForA.Headers.Add(headerName, clientA);
@@ -361,10 +528,9 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
         cursorAResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var cursorAJson = JsonDocument.Parse(await cursorAResponse.Content.ReadAsStringAsync());
         cursorAJson.RootElement.GetProperty("clientId").GetString().Should().Be(clientA);
-        var clientACursor = cursorAJson.RootElement.GetProperty("lastSyncGeneration").GetInt64();
-        clientACursor.Should().BeGreaterOrEqualTo(advancedCursor);
+        cursorAJson.RootElement.GetProperty("lastSyncGeneration").GetInt64().Should().Be(serverGeneration);
 
-        // ClientB never pulled, so its cursor is independent and zero.
+        // ClientB never acked, so its cursor is independent and zero.
         using var cursorForB = new HttpRequestMessage(HttpMethod.Get, SyncCursorPath);
         cursorForB.Headers.Add(headerName, clientB);
         var cursorBResponse = await _client.SendAsync(cursorForB);
@@ -715,6 +881,16 @@ public sealed class FieldCollectionSyncAuthorizationTests : IAsyncLifetime
     public async Task SyncCursor_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.GetAsync("/api/v1/fieldcollection/sync-cursor");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/sync-cursor")]
+    public async Task SyncCursorAck_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.PostAsJsonAsync(
+            "/api/v1/fieldcollection/sync-cursor",
+            new { lastSyncGeneration = 0L });
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 

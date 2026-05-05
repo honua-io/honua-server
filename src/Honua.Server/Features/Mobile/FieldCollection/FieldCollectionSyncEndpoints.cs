@@ -64,6 +64,11 @@ internal static class FieldCollectionSyncEndpoints
             .WithSummary("Get last server-acknowledged generation for the calling client")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
 
+        _ = group.Map("/sync-cursor", HandlePostSyncCursor)
+            .WithName("AckFieldCollectionSyncCursor")
+            .WithSummary("Acknowledge the per-client cursor after local persistence succeeds")
+            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]));
+
         _ = group.Map("/changes", HandleGetChanges)
             .WithName("GetFieldCollectionChanges")
             .WithSummary("Pull ordered FieldCollection changes after a generation cursor")
@@ -110,6 +115,65 @@ internal static class FieldCollectionSyncEndpoints
         var cursor = await store.GetSyncCursorAsync(clientId, context.RequestAborted).ConfigureAwait(false);
         activity?.SetTag("honua.fieldcollection.last_sync_generation", cursor.LastSyncGeneration);
         FieldCollectionSyncLog.SyncCursorServed(logger, cursor.ClientId, cursor.LastSyncGeneration);
+
+        ApplyOfflineCacheHeaders(context.Response);
+        return Results.Json(
+            new FieldCollectionSyncCursorResponse
+            {
+                ClientId = cursor.ClientId,
+                LastSyncGeneration = cursor.LastSyncGeneration,
+            },
+            FieldCollectionSyncJsonContext.Default.FieldCollectionSyncCursorResponse);
+    }
+
+    private static async Task<IResult> HandlePostSyncCursor(
+        HttpContext context,
+        [FromBody] FieldCollectionSyncCursorAckRequest? body,
+        [FromServices] IFieldCollectionSyncStore store,
+        [FromServices] ILoggerFactory loggerFactory)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("FieldCollectionSync.SyncCursorAck");
+        activity?.SetTag("honua.protocol", ProtocolTag);
+        activity?.SetTag("honua.operation", "sync-cursor-ack");
+        var logger = loggerFactory.CreateLogger(typeof(FieldCollectionSyncEndpoints));
+
+        if (body?.LastSyncGeneration is not long lastSyncGeneration)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Field 'lastSyncGeneration' is required.");
+        }
+
+        if (lastSyncGeneration < 0)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Field 'lastSyncGeneration' must be greater than or equal to 0.");
+        }
+
+        var clientId = ResolveClientId(context);
+        activity?.SetTag("honua.fieldcollection.client_id", clientId);
+        activity?.SetTag("honua.fieldcollection.last_sync_generation", lastSyncGeneration);
+
+        try
+        {
+            await store.RecordSyncCursorAsync(clientId, lastSyncGeneration, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // Store rejected the value because it exceeds the committed server
+            // watermark. Surface as 400 to the caller — never as a 5xx — so a
+            // misbehaving client cannot poison the stored cursor.
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Field 'lastSyncGeneration' must not exceed the current server generation.");
+        }
+
+        var cursor = await store.GetSyncCursorAsync(clientId, context.RequestAborted).ConfigureAwait(false);
+        FieldCollectionSyncLog.SyncCursorAcknowledged(logger, cursor.ClientId, cursor.LastSyncGeneration);
 
         ApplyOfflineCacheHeaders(context.Response);
         return Results.Json(

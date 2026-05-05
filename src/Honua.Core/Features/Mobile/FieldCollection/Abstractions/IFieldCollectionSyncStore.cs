@@ -27,16 +27,31 @@ public interface IFieldCollectionSyncStore
 
     /// <summary>
     /// Returns ordered FieldCollection changes after <paramref name="sinceGeneration"/>,
-    /// up to <paramref name="limit"/> entries. Advances the per-client cursor as a
-    /// side effect of every successful pull: to the largest returned generation when
-    /// the page is non-empty, or to the committed server watermark when the page is
-    /// empty so a caught-up client never re-pulls the same window. The cursor advance
-    /// is monotonic — a smaller cursor value can never regress a larger one.
+    /// up to <paramref name="limit"/> entries. Pure read — never advances the per-client
+    /// cursor. Mobile clients drive the cursor explicitly via
+    /// <see cref="RecordSyncCursorAsync"/> after local persistence succeeds; treating the
+    /// HTTP response as an implicit acknowledgement would lose unapplied changes if the
+    /// caller crashed or failed local persistence between the response and the apply.
+    /// <see cref="FieldCollectionChangesPage.NextCursor"/> is a recommended next watermark
+    /// (the largest returned generation when the page is non-empty, otherwise the
+    /// committed server watermark clamped to that watermark) — it does not reflect any
+    /// stored state.
     /// </summary>
     Task<FieldCollectionChangesPage> GetChangesAsync(
         string clientId,
         long sinceGeneration,
         int limit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records the client's last-applied generation after local persistence succeeds.
+    /// Monotonic — a smaller value can never regress a larger one. Implementations must
+    /// reject values that exceed the committed server watermark so that a stale or
+    /// poisoned client cursor cannot persist a future generation.
+    /// </summary>
+    Task RecordSyncCursorAsync(
+        string clientId,
+        long lastSyncGeneration,
         CancellationToken cancellationToken = default);
 
     /// <summary>

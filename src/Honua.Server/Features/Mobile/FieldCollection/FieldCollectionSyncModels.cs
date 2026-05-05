@@ -55,7 +55,8 @@ internal sealed record FieldCollectionGenerationResponse
 }
 
 /// <summary>
-/// Response shape for <c>GET /api/v1/fieldcollection/sync-cursor</c>.
+/// Response shape for <c>GET /api/v1/fieldcollection/sync-cursor</c> and
+/// <c>POST /api/v1/fieldcollection/sync-cursor</c>.
 /// </summary>
 internal sealed record FieldCollectionSyncCursorResponse
 {
@@ -64,6 +65,17 @@ internal sealed record FieldCollectionSyncCursorResponse
 
     [JsonPropertyName("lastSyncGeneration")]
     public required long LastSyncGeneration { get; init; }
+}
+
+/// <summary>
+/// Request shape for <c>POST /api/v1/fieldcollection/sync-cursor</c>. Clients
+/// call this after local persistence succeeds to advance the server's
+/// per-client cursor; the server never advances it implicitly during pull.
+/// </summary>
+internal sealed record FieldCollectionSyncCursorAckRequest
+{
+    [JsonPropertyName("lastSyncGeneration")]
+    public long? LastSyncGeneration { get; init; }
 }
 
 /// <summary>

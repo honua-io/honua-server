@@ -286,6 +286,7 @@ public static class EndpointRegistry
         // FieldCollection mobile sync endpoints (#894)
         new("GET", "/api/v1/fieldcollection/generation"),
         new("GET", "/api/v1/fieldcollection/sync-cursor"),
+        new("POST", "/api/v1/fieldcollection/sync-cursor"),
         new("GET", "/api/v1/fieldcollection/changes"),
         new("POST", "/api/v1/fieldcollection/changes"),
 

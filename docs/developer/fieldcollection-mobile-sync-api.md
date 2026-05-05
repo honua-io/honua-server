@@ -1,8 +1,8 @@
 # FieldCollection Mobile Sync API
 
-This document describes the four FieldCollection mobile sync endpoints
-(`#894`) consumed by the `honua-mobile` FieldCollection offline sync clients.
-The API is the server-side contract that backs the mobile interfaces
+This document describes the FieldCollection mobile sync endpoints (`#894`)
+consumed by the `honua-mobile` FieldCollection offline sync clients. The
+API is the server-side contract that backs the mobile interfaces
 `IFieldCollectionChangePuller` and `IFieldCollectionChangeUploader`. All
 endpoints are versioned under `/api/v1/fieldcollection/`, require
 `X-API-Key` authentication, and emit `Cache-Control: no-store`.
@@ -41,6 +41,7 @@ the header collapse onto one shared cursor by design.
 |--------|------|------------------|
 | `GET`  | `/api/v1/fieldcollection/generation`   | `IFieldCollectionChangePuller.GetLatestServerGenerationAsync()` |
 | `GET`  | `/api/v1/fieldcollection/sync-cursor`  | `IFieldCollectionChangePuller.GetLastSyncedGenerationAsync()` |
+| `POST` | `/api/v1/fieldcollection/sync-cursor`  | Explicit cursor acknowledgement after local persistence |
 | `GET`  | `/api/v1/fieldcollection/changes`      | `IFieldCollectionChangePuller.GetChangesAsync(sinceGeneration)` |
 | `POST` | `/api/v1/fieldcollection/changes`      | `IFieldCollectionChangeUploader.UploadChangeAsync(change)` |
 
@@ -57,9 +58,10 @@ offline clients to persist as the watermark for the next pull.
 
 ### `GET /api/v1/fieldcollection/sync-cursor`
 
-Returns the last server-acknowledged generation for the calling client. The
-server creates a zero-valued cursor on first read so the response shape is
-stable.
+Returns the last generation the calling client has explicitly
+acknowledged via `POST /api/v1/fieldcollection/sync-cursor`. The server
+creates a zero-valued cursor on first read so the response shape is
+stable. Pull responses are pure reads — they never advance this value.
 
 **Response 200 OK**
 
@@ -70,12 +72,51 @@ stable.
 }
 ```
 
+### `POST /api/v1/fieldcollection/sync-cursor`
+
+Records the client's last-applied generation after local persistence
+succeeds. This is the explicit acknowledgement that decouples the HTTP
+pull response from the durable client cursor: the server never advances
+the per-client cursor implicitly, so a client that crashes or fails to
+persist a pulled page never has its cursor jump past unapplied changes.
+
+**Request body**
+
+```json
+{ "lastSyncGeneration": 1042 }
+```
+
+| Field                | Type    | Required | Notes |
+|----------------------|---------|----------|-------|
+| `lastSyncGeneration` | integer | yes      | Last applied generation. Must be ≥ 0 and ≤ the current `serverGeneration`. |
+
+**Response 200 OK**
+
+```json
+{
+  "clientId": "field-tablet-01",
+  "lastSyncGeneration": 1042
+}
+```
+
+The persisted value is monotonic — a smaller `lastSyncGeneration` from a
+late-arriving retry can never regress a larger one, so concurrent acks
+are safe.
+
+**Error responses**
+
+- `400 Bad Request` when `lastSyncGeneration` is missing, negative, or
+  greater than the current committed `serverGeneration` (a future or
+  poisoned cursor cannot be persisted).
+- `401 Unauthorized` when the `X-API-Key` header is missing or invalid.
+
 ### `GET /api/v1/fieldcollection/changes`
 
 Returns ordered FieldCollection changes after the supplied generation
-cursor. Every successful pull advances the per-client cursor as a side
-effect — including empty pages, which advance the cursor to the current
-server generation so a caught-up client never re-pulls the same window.
+cursor. The pull is a pure read — the per-client cursor is never
+advanced as a side effect. Mobile clients drive the cursor explicitly
+by calling `POST /api/v1/fieldcollection/sync-cursor` after local
+persistence succeeds.
 
 **Query parameters**
 
@@ -111,11 +152,16 @@ server generation so a caught-up client never re-pulls the same window.
 
 `feature` is `null` for `delete` operations; CRS, datum, and coordinate
 precision in `feature` are preserved exactly as stored. Changes are
-ordered by ascending `generation`. `nextCursor` echoes the largest
-returned generation when the page is non-empty, or the committed server
-watermark when the page is empty — so a caught-up client can persist
-`nextCursor` and never re-pull the same window. When `hasMore` is
-`true`, repeat with `sinceGeneration=nextCursor` until empty.
+ordered by ascending `generation`. `nextCursor` is the recommended
+watermark for the next pull: the largest returned generation when the
+page is non-empty, or the committed server watermark when the page is
+empty. The response value is always clamped to the committed server
+watermark — a misbehaving client that supplies a `sinceGeneration`
+greater than `serverGeneration` cannot poison the response cursor with a
+future value. When `hasMore` is `true`, repeat with
+`sinceGeneration=nextCursor` until empty. To persist progress on the
+server side, send `nextCursor` to `POST /api/v1/fieldcollection/sync-cursor`
+after local persistence completes.
 
 **Error responses**
 
@@ -228,6 +274,13 @@ request commits the idempotency record; the second waits for that
 commit and then returns the stored response. Callers never observe a
 unique-violation surfaced as a 5xx for duplicate `changeId`.
 
+Concurrent pushes that target the same `(featureId, layerId)` with
+distinct `changeId` values are also serialized so exactly one push
+applies and the others observe the freshly committed state as a
+`conflict`. This is the contract guarantee mobile clients should rely
+on when multiple devices race against the same feature: concurrent
+inserts cannot silently overwrite each other.
+
 ## Generation cursor semantics
 
 The server uses the shared `honua.sync_generation` sequence to allocate
@@ -240,17 +293,29 @@ them as no-ops.
 `serverGeneration` and `nextCursor` are computed from the committed
 maximum generation in `honua.fieldcollection_changes`, never from the
 sequence's raw `last_value`. This guarantees that an empty pull cannot
-advance a client cursor past a write that has allocated a sequence
-value but not yet committed — the next pull will still observe that
-change once it lands. Pulls bound their result page by the same
-committed watermark, so a row that commits in between the watermark
-read and the result scan is excluded from the page and surfaces on the
-next pull instead of being skipped.
+report a watermark past a write that has allocated a sequence value but
+not yet committed — the next pull will still observe that change once it
+lands. Pulls bound their result page by the same committed watermark, so
+a row that commits in between the watermark read and the result scan is
+excluded from the page and surfaces on the next pull instead of being
+skipped.
+
+The pull endpoint is a pure read. The per-client cursor stored in
+`honua.fieldcollection_sync_cursors` is advanced only by an explicit
+`POST /api/v1/fieldcollection/sync-cursor` after the client has durably
+persisted the changes it pulled. Treating the HTTP pull response as an
+implicit acknowledgement would silently advance the cursor past changes
+the client never wrote to disk if the client crashed between receiving
+the response and applying it. The acknowledgement endpoint also rejects
+values greater than the committed server watermark, so a poisoned or
+buggy `lastSyncGeneration` cannot persist a future cursor that would
+later cause real changes to be skipped.
 
 ## Provider support
 
 The mobile sync surface ships against the PostgreSQL provider only. When
 the server is started against a non-Postgres provider (DuckDB, MySQL /
-MariaDB, SQL Server) the four routes are not registered and requests
-return `404 Not Found`. This is deliberate: the alternative would be a
-generic `500` from a missing-service resolution at request time.
+MariaDB, SQL Server) the FieldCollection routes are not registered and
+requests return `404 Not Found`. This is deliberate: the alternative
+would be a generic `500` from a missing-service resolution at request
+time.

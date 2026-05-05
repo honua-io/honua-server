@@ -169,81 +169,113 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
         var changes = new List<FieldCollectionChange>(Math.Min(limit, 256));
         long currentGeneration;
 
-        await using (var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false))
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Capture the committed watermark first, then bound the changes SELECT
+        // by it. Reading the watermark after the SELECT would let a row that
+        // commits in between escape the result page while still advancing the
+        // returned cursor past it. With this order, every returned change has
+        // generation in (sinceGeneration, currentGeneration] and the suggested
+        // nextCursor never exceeds currentGeneration.
+        await using (var generationCmd = new NpgsqlCommand(CurrentGenerationSql, connection))
         {
-            // Capture the committed watermark first, then bound the changes SELECT
-            // by it. Reading the watermark after the SELECT would let a row that
-            // commits in between escape the result page while still advancing the
-            // returned cursor past it — the bug the watermark switch is meant to
-            // prevent. With this order, every returned change has generation in
-            // (sinceGeneration, currentGeneration] and the cursor advance never
-            // exceeds currentGeneration.
-            await using (var generationCmd = new NpgsqlCommand(CurrentGenerationSql, connection))
-            {
-                var result = await generationCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                currentGeneration = result is long gen ? gen : 0L;
-            }
-
-            await using (var selectCmd = new NpgsqlCommand(SelectChangesSql, connection))
-            {
-                selectCmd.Parameters.AddWithValue("since_generation", NpgsqlDbType.Bigint, sinceGeneration);
-                selectCmd.Parameters.AddWithValue("watermark", NpgsqlDbType.Bigint, currentGeneration);
-                selectCmd.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, fetchLimit);
-
-                await using var reader = await selectCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                {
-                    var generation = reader.GetInt64(0);
-                    var featureId = reader.GetString(1);
-                    var layerId = reader.GetInt32(2);
-                    var operation = (FieldCollectionChangeOperation)reader.GetInt16(3);
-                    var version = reader.GetInt64(4);
-                    var payloadJson = reader.IsDBNull(5) ? null : reader.GetFieldValue<string>(5);
-                    var changedAt = reader.GetFieldValue<DateTimeOffset>(6);
-
-                    changes.Add(new FieldCollectionChange
-                    {
-                        Generation = generation,
-                        FeatureId = featureId,
-                        LayerId = layerId,
-                        Operation = operation,
-                        Version = version,
-                        Timestamp = changedAt,
-                        FeaturePayloadJson = payloadJson,
-                    });
-                }
-            }
-
-            var hasMore = changes.Count > limit;
-            if (hasMore)
-            {
-                changes.RemoveRange(limit, changes.Count - limit);
-            }
-
-            var nextCursor = changes.Count > 0
-                ? changes[^1].Generation
-                : Math.Max(sinceGeneration, currentGeneration);
-
-            // Advance the per-client cursor on every successful pull, including empty
-            // pages. The cursor advances only as far as the committed watermark
-            // captured above, never past an in-flight nextval allocation. The
-            // ON CONFLICT clause already clamps the stored value with GREATEST so
-            // late-arriving smaller cursors cannot regress the watermark.
-            await using (var advanceCmd = new NpgsqlCommand(AdvanceCursorSql, connection))
-            {
-                advanceCmd.Parameters.AddWithValue("client_id", NpgsqlDbType.Text, clientId);
-                advanceCmd.Parameters.AddWithValue("generation", NpgsqlDbType.Bigint, nextCursor);
-                _ = await advanceCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            return new FieldCollectionChangesPage
-            {
-                Changes = changes,
-                ServerGeneration = currentGeneration,
-                NextCursor = nextCursor,
-                HasMore = hasMore,
-            };
+            var result = await generationCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            currentGeneration = result is long gen ? gen : 0L;
         }
+
+        await using (var selectCmd = new NpgsqlCommand(SelectChangesSql, connection))
+        {
+            selectCmd.Parameters.AddWithValue("since_generation", NpgsqlDbType.Bigint, sinceGeneration);
+            selectCmd.Parameters.AddWithValue("watermark", NpgsqlDbType.Bigint, currentGeneration);
+            selectCmd.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, fetchLimit);
+
+            await using var reader = await selectCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var generation = reader.GetInt64(0);
+                var featureId = reader.GetString(1);
+                var layerId = reader.GetInt32(2);
+                var operation = (FieldCollectionChangeOperation)reader.GetInt16(3);
+                var version = reader.GetInt64(4);
+                var payloadJson = reader.IsDBNull(5) ? null : reader.GetFieldValue<string>(5);
+                var changedAt = reader.GetFieldValue<DateTimeOffset>(6);
+
+                changes.Add(new FieldCollectionChange
+                {
+                    Generation = generation,
+                    FeatureId = featureId,
+                    LayerId = layerId,
+                    Operation = operation,
+                    Version = version,
+                    Timestamp = changedAt,
+                    FeaturePayloadJson = payloadJson,
+                });
+            }
+        }
+
+        var hasMore = changes.Count > limit;
+        if (hasMore)
+        {
+            changes.RemoveRange(limit, changes.Count - limit);
+        }
+
+        // Pure-read pull: never write to honua.fieldcollection_sync_cursors here.
+        // The server cursor is advanced only by the explicit ack endpoint after
+        // the client has durably persisted its applied changes. Without this
+        // separation, an HTTP response served before the client's local apply
+        // would silently advance the server cursor past changes the client
+        // never wrote to disk. nextCursor is bounded by currentGeneration so a
+        // future or poisoned sinceGeneration cannot leak into the response.
+        var nextCursor = changes.Count > 0
+            ? changes[^1].Generation
+            : currentGeneration;
+
+        return new FieldCollectionChangesPage
+        {
+            Changes = changes,
+            ServerGeneration = currentGeneration,
+            NextCursor = nextCursor,
+            HasMore = hasMore,
+        };
+    }
+
+    public async Task RecordSyncCursorAsync(
+        string clientId,
+        long lastSyncGeneration,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
+        ArgumentOutOfRangeException.ThrowIfNegative(lastSyncGeneration);
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Reject values past the committed watermark so a misbehaving client
+        // cannot poison the stored cursor with a future generation. The watermark
+        // read and the upsert run on the same connection in autocommit mode.
+        // Concurrent writers can only push the watermark higher; a value that
+        // satisfied the check here would still be valid afterward, so a single
+        // statement-level snapshot suffices and we do not need an explicit
+        // transaction. The GREATEST clamp on the upsert ensures monotonicity even
+        // under concurrent ack races for the same clientId.
+        long currentGeneration;
+        await using (var generationCmd = new NpgsqlCommand(CurrentGenerationSql, connection))
+        {
+            var result = await generationCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            currentGeneration = result is long gen ? gen : 0L;
+        }
+
+        if (lastSyncGeneration > currentGeneration)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(lastSyncGeneration),
+                lastSyncGeneration,
+                "lastSyncGeneration must not exceed the current committed server generation.");
+        }
+
+        await using var advanceCmd = new NpgsqlCommand(AdvanceCursorSql, connection);
+        advanceCmd.Parameters.AddWithValue("client_id", NpgsqlDbType.Text, clientId);
+        advanceCmd.Parameters.AddWithValue("generation", NpgsqlDbType.Bigint, lastSyncGeneration);
+        _ = await advanceCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<FieldCollectionPushResult> PushChangeAsync(
