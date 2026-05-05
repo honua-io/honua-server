@@ -395,6 +395,17 @@ internal static partial class FeatureServerEndpoints
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
+        // Discovery is opt-in (docs/gis/temporal-animation-api.md): the
+        // FeatureServer layer metadata only emits timeInfo / timeExtent for
+        // layers with explicit TimeInfo.StartTimeField (and any configured
+        // EndTimeField) resolving to a real Date/DateTime attribute.
+        // Falling back to the first temporal column would diverge from the
+        // temporalExtent endpoint and the WMS/WMTS dimension contract.
+        if (!TemporalExtentHelpers.HasOptInTemporalFields(layer))
+        {
+            return null;
+        }
+
         var temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
             layer,
             featureReader,

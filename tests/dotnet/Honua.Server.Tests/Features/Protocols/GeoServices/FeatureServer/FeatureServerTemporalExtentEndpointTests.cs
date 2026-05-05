@@ -130,6 +130,99 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task LayerMetadata_LayerWithoutTimeInfo_DoesNotEmitTimeInfo()
+    {
+        // Companion to TemporalExtent_LayerWithoutTimeInfo_ReturnsNotFound:
+        // FeatureServer layer metadata must mirror the same opt-in contract
+        // (docs/gis/temporal-animation-api.md). Layers with a Date / DateTime
+        // column but no TimeInfo.StartTimeField must NOT publish timeInfo on
+        // /rest/services/{id}/FeatureServer/{layerId} either, otherwise SDK
+        // clients would infer "time-aware" from arbitrary date columns and
+        // diverge from the temporalExtent endpoint and the WMS/WMTS time
+        // dimension contract that already gate on opt-in.
+        await ClearLayerTimeInfoAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        if (root.TryGetProperty("timeInfo", out var timeInfoElement))
+        {
+            timeInfoElement.ValueKind.Should().Be(JsonValueKind.Null,
+                "non-time-aware layers must not publish a timeInfo block");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_NonTimeAwareLayer_WithTime_ReturnsBadRequest()
+    {
+        // The temporal-animation contract requires query?time= to reject
+        // non-time-aware layers with HTTP 400 (docs/gis/temporal-animation-api.md
+        // "Empty-range and non-time-aware behavior" table). The previous
+        // GeoServicesTemporalQueryBuilder fell back to the first Date /
+        // DateTime attribute when TimeInfo was absent, silently filtering on
+        // a non-temporal column instead of rejecting the request — same gap
+        // the MVT path used to have.
+        await ClearLayerTimeInfoAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query"
+            + "?time=2024-06-15T12:00:00Z&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_NonTimeAwareLayer_WithTimeNullPair_ReturnsOk()
+    {
+        // Non-regression: time=null,null is the documented no-op (treated as
+        // "no temporal filter") — it must not trip the new opt-in gate so
+        // SDK clients can pass a parameter unconditionally.
+        await ClearLayerTimeInfoAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query"
+            + "?time=null,null&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task LayerMetadata_TimeAwareLayer_EmitsTimeInfo()
+    {
+        // Companion confirmation that opt-in layers still publish the timeInfo
+        // block — the new opt-in gate must not regress configured layers.
+        await ConfigureLayerAsTimeAwareAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.TryGetProperty("timeInfo", out var timeInfoElement).Should().BeTrue();
+        timeInfoElement.ValueKind.Should().Be(JsonValueKind.Object);
+        timeInfoElement.GetProperty("startTimeField").GetString()
+            .Should().Be("timestamp");
+    }
+
     private Task ConfigureLayerAsTimeAwareAsync()
     {
         // The seeded "timestamp" DateTime field is registered in honua.layer_fields

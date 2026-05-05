@@ -820,21 +820,29 @@ internal static class WmsRequestHandlers
             return (null, null);
         }
 
-        // CITE Autos uses synthetic rendering with its own TIME parser
-        // (`current`, comma-separated instants, intervals). Bypass the generic
-        // OgcTemporalFilterParser entirely when the request targets that layer
-        // so CITE-supported values are not rejected before TryHandleCiteWmsGetMap
-        // can resolve them.
+        var hasCiteAutos = false;
         foreach (var layer in layers)
         {
             if (string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
             {
-                return (null, null);
+                hasCiteAutos = true;
+                break;
             }
         }
 
         if (!OgcTemporalFilterParser.TryParseRange(timeParam, out var start, out var end, out var parseError))
         {
+            // CITE Autos uses synthetic rendering with its own TIME parser
+            // (`current`, comma-separated instants). When the request targets
+            // that layer, surface the unparsed value to TryHandleCiteWmsGetMap
+            // instead of rejecting the request. Without this fallback, CITE
+            // forms like "current" would return InvalidDimensionValue before
+            // the synthetic CITE handler can resolve them.
+            if (hasCiteAutos)
+            {
+                return (null, null);
+            }
+
             return (null, CreateWmsServiceException(
                 context,
                 "InvalidDimensionValue",
@@ -850,6 +858,17 @@ internal static class WmsRequestHandlers
         for (var i = 0; i < layers.Length; i++)
         {
             var layer = layers[i];
+
+            // CITE Autos has its own synthetic rendering path; leave its slot
+            // null so TryHandleCiteWmsGetMap handles the TIME value itself
+            // (the previous early-out disabled TIME filtering for every layer
+            // in a mixed request, which silently dropped a valid TIME value
+            // for non-CITE layers).
+            if (string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
+            {
+                temporalFilters[i] = null;
+                continue;
+            }
 
             // Match the capabilities contract: a layer is time-aware only when
             // its TimeInfo declares a StartTimeField AND both the start and

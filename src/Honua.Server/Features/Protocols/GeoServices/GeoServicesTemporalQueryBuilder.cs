@@ -61,7 +61,18 @@ internal static class GeoServicesTemporalQueryBuilder
             return null;
         }
 
-        var selection = TemporalExtentHelpers.ResolveTemporalFieldsOrThrow(layer);
+        // Strict opt-in: a non-empty time= filter requires explicit
+        // TimeInfo.StartTimeField (and any configured EndTimeField) to resolve
+        // against real Date/DateTime attributes. The fallback to the first
+        // Date/DateTime attribute would silently filter on a non-temporal
+        // column on layers that temporalExtent and WMS/WMTS treat as
+        // not-time-aware (docs/gis/temporal-animation-api.md).
+        if (!TemporalExtentHelpers.TryResolveOptInTemporalFields(layer, out var selection))
+        {
+            throw new ArgumentException(
+                $"Layer '{layer.Name}' is not configured as time-aware.");
+        }
+
         var relation = ParseTimeRelation(timeRelation);
         var temporalType = selection.StartField.Type;
         var queryStart = ToTemporalLiteral(startTime, temporalType);
