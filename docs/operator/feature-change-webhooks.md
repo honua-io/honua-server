@@ -115,6 +115,9 @@ Tune via `FeatureChangeEvents:Outbox`:
 - `DegradedBacklogThreshold` rows above which readiness reports `Degraded` (default `1000`)
 - `UnhealthyDeadLetterThreshold` dead-lettered rows that flip readiness to `Unhealthy` (default `1`)
 
+All seven settings are validated at startup; a non-positive value fails the
+host with an explicit message rather than silently disabling the dispatcher.
+
 Operational signals:
 
 - `honua.outbox.dispatched_total`, `honua.outbox.failed_total`, `honua.outbox.dead_lettered_total`

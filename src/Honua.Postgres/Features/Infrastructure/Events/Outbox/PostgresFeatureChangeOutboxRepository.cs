@@ -43,17 +43,6 @@ internal sealed class PostgresFeatureChangeOutboxRepository : IFeatureChangeOutb
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task WriteOutboxRowAsync(
-        FeatureChangeOutboxEntry entry,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(entry);
-
-        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = BuildInsertCommand(lease, entry);
-        _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
     public async Task<IReadOnlyList<FeatureChangeOutboxEntry>> ClaimPendingAsync(
         string nodeId,
         int batchSize,

@@ -12,24 +12,14 @@ namespace Honua.Core.Features.Infrastructure.Events.Outbox;
 public interface IFeatureChangeOutboxRepository
 {
     /// <summary>
-    /// Inserts an outbox row inside an existing connection + transaction. Use this
-    /// overload when the caller already holds the mutation transaction so the outbox
-    /// row commits atomically with the feature mutation.
+    /// Inserts an outbox row inside an existing connection + transaction so the outbox
+    /// row commits atomically with the feature mutation. This is the only supported
+    /// write path: the dispatcher's atomic-write contract requires the row to be
+    /// committed in the same transaction as the mutation, with no auto-commit fallback.
     /// </summary>
     Task WriteOutboxRowAsync(
         DbConnection connection,
         DbTransaction transaction,
-        FeatureChangeOutboxEntry entry,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Inserts an outbox row using a freshly-opened connection (auto-commit). Used by
-    /// callers that have already committed the mutation (single-statement create/update/delete
-    /// paths). The window between the mutation commit and this insert is sub-millisecond
-    /// in normal operation; restart safety is provided by the dispatcher's recovery loop
-    /// for any rows that were committed before a crash.
-    /// </summary>
-    Task WriteOutboxRowAsync(
         FeatureChangeOutboxEntry entry,
         CancellationToken cancellationToken);
 

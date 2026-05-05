@@ -575,12 +575,6 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             return Task.CompletedTask;
         }
 
-        public Task WriteOutboxRowAsync(FeatureChangeOutboxEntry entry, CancellationToken cancellationToken)
-        {
-            Pending.Enqueue(entry);
-            return Task.CompletedTask;
-        }
-
         /// <summary>
         /// Set this to a thrown exception factory to simulate ClaimPendingAsync failure
         /// (missing table, permission issue, transient connectivity failure). When set,

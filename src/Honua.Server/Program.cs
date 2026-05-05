@@ -611,6 +611,9 @@ builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.Featur
 // and metrics. The outbox repository itself is registered by the active provider's
 // service-collection extension (Postgres registers a working repository; SQL Server and
 // DuckDB register only the capability provider since they do not support feature writes).
+builder.Services.AddSingleton<
+    Microsoft.Extensions.Options.IValidateOptions<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptions>,
+    Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptionsValidator>();
 builder.Services.AddOptions<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptions>()
     .Bind(builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptions.SectionName))
     .ValidateOnStart();

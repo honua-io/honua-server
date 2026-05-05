@@ -326,9 +326,9 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
             case MarkFailedOutcome.DeadLettered:
                 OutboxMetrics.DeadLettered.Add(1);
                 break;
-            // StaleClaim and Errored: the row's terminal state belongs elsewhere
-            // (a different node, or a future pass), so this dispatcher must not
-            // count it. The eventual owner records its own outcome.
+                // StaleClaim and Errored: the row's terminal state belongs elsewhere
+                // (a different node, or a future pass), so this dispatcher must not
+                // count it. The eventual owner records its own outcome.
         }
     }
 
