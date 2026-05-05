@@ -21,6 +21,9 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 public sealed class MetadataResourceEndpointsTests : IAsyncLifetime
 {
+    private static readonly string[] _queryCapabilities = ["Query"];
+    private static readonly string[] _queryEditingCapabilities = ["Query", "Editing"];
+
     private readonly WebAppFixture _fixture = new();
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
@@ -66,6 +69,8 @@ public sealed class MetadataResourceEndpointsTests : IAsyncLifetime
         apiResponse!.Success.Should().BeTrue();
         apiResponse.Data.Should().NotBeNull();
         apiResponse.Data!.ResourceKinds.Should().Contain(MetadataResourceKinds.Layer);
+        apiResponse.Data.ResourceKinds.Should().Contain(MetadataResourceKinds.Group);
+        apiResponse.Data.ResourceKinds.Should().Contain(MetadataResourceKinds.SourceDescriptor);
         apiResponse.Data.MetadataApiVersions.Should().Contain(MetadataSchemaRegistry.CurrentVersion);
         apiResponse.Data.Compatibility.ServerVersion.Should().NotBeNullOrWhiteSpace();
         apiResponse.Data.Compatibility.ReleaseChannel.Should().NotBeNullOrWhiteSpace();
@@ -288,6 +293,138 @@ public sealed class MetadataResourceEndpointsTests : IAsyncLifetime
         deleteResponse.Be200Ok();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/metadata/resources")]
+    [Endpoint("GET /api/v1/admin/metadata/resources")]
+    [Endpoint("GET /api/v1/admin/metadata/resources/{kind}/{namespace}/{name}")]
+    [Endpoint("PUT /api/v1/admin/metadata/resources/{kind}/{namespace}/{name}")]
+    public async Task MetadataResourceCrud_WithCatalogGroupAndSourceDescriptor_RoundTrips()
+    {
+        var client = _fixture.CreateAdminClient();
+        var group = CreateGroupResource();
+        var sourceDescriptor = CreateSourceDescriptorResource();
+
+        var createGroupResponse = await client.PostAsync(
+            "/api/v1/admin/metadata/resources",
+            JsonContent.Create(group, MetadataResourceJsonContext.Default.MetadataResource));
+        createGroupResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.Created);
+
+        var createSourceDescriptorResponse = await client.PostAsync(
+            "/api/v1/admin/metadata/resources",
+            JsonContent.Create(sourceDescriptor, MetadataResourceJsonContext.Default.MetadataResource));
+        createSourceDescriptorResponse.StatusCode.Should().Be(System.Net.HttpStatusCode.Created);
+
+        var listGroupsResponse = await client.GetAsync("/api/v1/admin/metadata/resources?kind=Group&namespace=default");
+        listGroupsResponse.Be200Ok();
+        var groupsPayload = await listGroupsResponse.Content.ReadAsStringAsync();
+        var groups = JsonSerializer.Deserialize(
+            groupsPayload,
+            MetadataResourceJsonContext.Default.ApiResponseMetadataResourceArray);
+        groups.Should().NotBeNull();
+        groups!.Data.Should().Contain(resource =>
+            resource.Kind == MetadataResourceKinds.Group &&
+            resource.Metadata != null &&
+            resource.Metadata.Name == group.Metadata!.Name);
+
+        var getGroupResponse = await client.GetAsync($"/api/v1/admin/metadata/resources/Group/default/{group.Metadata!.Name}");
+        getGroupResponse.Be200Ok();
+        var groupEtag = getGroupResponse.Headers.ETag?.ToString();
+        groupEtag.Should().NotBeNullOrEmpty();
+
+        var updatedGroup = CreateGroupResource(
+            group.Metadata!.Name,
+            JsonSerializer.SerializeToElement(new
+            {
+                description = "Updated field operations catalog group"
+            }));
+        var updateGroupRequest = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/api/v1/admin/metadata/resources/Group/default/{group.Metadata!.Name}")
+        {
+            Content = JsonContent.Create(updatedGroup, MetadataResourceJsonContext.Default.MetadataResource)
+        };
+        updateGroupRequest.Headers.TryAddWithoutValidation("If-Match", groupEtag);
+
+        var updateGroupResponse = await client.SendAsync(updateGroupRequest);
+        updateGroupResponse.Be200Ok();
+
+        var getSourceDescriptorResponse = await client.GetAsync(
+            $"/api/v1/admin/metadata/resources/SourceDescriptor/default/{sourceDescriptor.Metadata!.Name}");
+        getSourceDescriptorResponse.Be200Ok();
+        var sourceDescriptorEtag = getSourceDescriptorResponse.Headers.ETag?.ToString();
+        sourceDescriptorEtag.Should().NotBeNullOrEmpty();
+        var sourceDescriptorPayload = await getSourceDescriptorResponse.Content.ReadAsStringAsync();
+        var sourceDescriptorResource = JsonSerializer.Deserialize(
+            sourceDescriptorPayload,
+            MetadataResourceJsonContext.Default.ApiResponseMetadataResource);
+        sourceDescriptorResource.Should().NotBeNull();
+        sourceDescriptorResource!.Data!.Spec
+            .GetProperty("sourceDescriptor")
+            .GetProperty("protocol")
+            .GetString()
+            .Should()
+            .Be("geoservices-feature-service");
+
+        var updatedSourceDescriptor = CreateSourceDescriptorResource(
+            sourceDescriptor.Metadata!.Name,
+            JsonSerializer.SerializeToElement(new
+            {
+                sourceDescriptor = new
+                {
+                    id = "parks-source",
+                    protocol = "geoservices-feature-service",
+                    locator = new { serviceId = "parks", layerId = 0 },
+                    capabilities = _queryEditingCapabilities,
+                    attribution = "City GIS"
+                }
+            }));
+        var updateSourceDescriptorRequest = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/api/v1/admin/metadata/resources/SourceDescriptor/default/{sourceDescriptor.Metadata!.Name}")
+        {
+            Content = JsonContent.Create(updatedSourceDescriptor, MetadataResourceJsonContext.Default.MetadataResource)
+        };
+        updateSourceDescriptorRequest.Headers.TryAddWithoutValidation("If-Match", sourceDescriptorEtag);
+
+        var updateSourceDescriptorResponse = await client.SendAsync(updateSourceDescriptorRequest);
+        updateSourceDescriptorResponse.Be200Ok();
+
+        var listSourceDescriptorsResponse = await client.GetAsync("/api/v1/admin/metadata/resources?kind=SourceDescriptor&namespace=default");
+        listSourceDescriptorsResponse.Be200Ok();
+        var sourceDescriptorsPayload = await listSourceDescriptorsResponse.Content.ReadAsStringAsync();
+        var sourceDescriptors = JsonSerializer.Deserialize(
+            sourceDescriptorsPayload,
+            MetadataResourceJsonContext.Default.ApiResponseMetadataResourceArray);
+        sourceDescriptors.Should().NotBeNull();
+        sourceDescriptors!.Data.Should().Contain(resource =>
+            resource.Kind == MetadataResourceKinds.SourceDescriptor &&
+            resource.Metadata != null &&
+            resource.Metadata.Name == sourceDescriptor.Metadata!.Name);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/metadata/resources")]
+    public async Task CreateMetadataResource_WithInvalidSourceDescriptor_ReturnsBadRequest()
+    {
+        var client = _fixture.CreateAdminClient();
+        var resource = CreateSourceDescriptorResource(
+            spec: JsonSerializer.SerializeToElement(new
+            {
+                sourceDescriptor = new
+                {
+                    id = "broken-source"
+                }
+            }));
+
+        var response = await client.PostAsync(
+            "/api/v1/admin/metadata/resources",
+            JsonContent.Create(resource, MetadataResourceJsonContext.Default.MetadataResource));
+
+        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+    }
+
     private static MetadataResource CreateLayerResource(
         string? name = null,
         JsonElement? spec = null,
@@ -306,6 +443,58 @@ public sealed class MetadataResourceEndpointsTests : IAsyncLifetime
         {
             ApiVersion = apiVersion ?? MetadataSchemaRegistry.CurrentVersion,
             Kind = MetadataResourceKinds.Layer,
+            Metadata = new ResourceMetadata
+            {
+                Name = resourceName,
+                Namespace = "default"
+            },
+            Spec = resourceSpec
+        };
+    }
+
+    private static MetadataResource CreateGroupResource(
+        string? name = null,
+        JsonElement? spec = null)
+    {
+        var resourceName = name ?? $"group-{Guid.NewGuid():N}";
+        var resourceSpec = spec ?? JsonSerializer.SerializeToElement(new
+        {
+            description = "Field operations catalog group"
+        });
+
+        return new MetadataResource
+        {
+            ApiVersion = MetadataSchemaRegistry.CurrentVersion,
+            Kind = MetadataResourceKinds.Group,
+            Metadata = new ResourceMetadata
+            {
+                Name = resourceName,
+                Namespace = "default"
+            },
+            Spec = resourceSpec
+        };
+    }
+
+    private static MetadataResource CreateSourceDescriptorResource(
+        string? name = null,
+        JsonElement? spec = null)
+    {
+        var resourceName = name ?? $"source-{Guid.NewGuid():N}";
+        var resourceSpec = spec ?? JsonSerializer.SerializeToElement(new
+        {
+            sourceDescriptor = new
+            {
+                id = "parks-source",
+                protocol = "geoservices-feature-service",
+                locator = new { serviceId = "parks", layerId = 0 },
+                capabilities = _queryCapabilities
+            }
+        });
+
+        return new MetadataResource
+        {
+            ApiVersion = MetadataSchemaRegistry.CurrentVersion,
+            Kind = MetadataResourceKinds.SourceDescriptor,
             Metadata = new ResourceMetadata
             {
                 Name = resourceName,

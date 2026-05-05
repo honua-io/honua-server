@@ -117,6 +117,12 @@ public sealed class MetadataSchemaRegistry : IMetadataSchemaRegistry
             }
         }
 
+        if (errors.Count == 0 &&
+            string.Equals(schema.Kind, MetadataResourceKinds.SourceDescriptor, StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateSourceDescriptorSpec(resource.Spec, errors);
+        }
+
         if (errors.Count > 0)
         {
             return new MetadataSchemaValidationResult(false, null, errors, wasUpConverted);
@@ -220,6 +226,18 @@ public sealed class MetadataSchemaRegistry : IMetadataSchemaRegistry
                 Kind = MetadataResourceKinds.Theme,
                 Description = "Theme metadata resource",
                 RequiredSpecFields = new[] { "name" }
+            },
+            new ResourceSchemaDefinition
+            {
+                ApiVersion = CurrentVersion,
+                Kind = MetadataResourceKinds.Group,
+                Description = "Catalog group metadata resource"
+            },
+            new ResourceSchemaDefinition
+            {
+                ApiVersion = CurrentVersion,
+                Kind = MetadataResourceKinds.SourceDescriptor,
+                Description = "Saved SDK source descriptor metadata resource"
             }
         };
 
@@ -233,6 +251,65 @@ public sealed class MetadataSchemaRegistry : IMetadataSchemaRegistry
         }
 
         return registry;
+    }
+
+    private static void ValidateSourceDescriptorSpec(JsonElement spec, List<string> errors)
+    {
+        if (!spec.TryGetProperty("sourceDescriptor", out var descriptor))
+        {
+            errors.Add("spec.sourceDescriptor is required.");
+            return;
+        }
+
+        if (descriptor.ValueKind != JsonValueKind.Object)
+        {
+            errors.Add("spec.sourceDescriptor must be a JSON object.");
+            return;
+        }
+
+        ValidateRequiredString(descriptor, "id", "spec.sourceDescriptor.id", errors);
+        ValidateRequiredString(descriptor, "protocol", "spec.sourceDescriptor.protocol", errors);
+
+        if (descriptor.TryGetProperty("locator", out var locator) &&
+            locator.ValueKind != JsonValueKind.Object)
+        {
+            errors.Add("spec.sourceDescriptor.locator must be a JSON object.");
+        }
+
+        if (descriptor.TryGetProperty("capabilities", out var capabilities))
+        {
+            if (capabilities.ValueKind != JsonValueKind.Array)
+            {
+                errors.Add("spec.sourceDescriptor.capabilities must be a JSON array.");
+            }
+            else
+            {
+                foreach (var capability in capabilities.EnumerateArray())
+                {
+                    if (capability.ValueKind != JsonValueKind.String)
+                    {
+                        errors.Add("spec.sourceDescriptor.capabilities entries must be strings.");
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (descriptor.TryGetProperty("schema", out var sourceSchema) &&
+            sourceSchema.ValueKind != JsonValueKind.Object)
+        {
+            errors.Add("spec.sourceDescriptor.schema must be a JSON object.");
+        }
+    }
+
+    private static void ValidateRequiredString(JsonElement element, string propertyName, string path, List<string> errors)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.String ||
+            string.IsNullOrWhiteSpace(property.GetString()))
+        {
+            errors.Add($"{path} is required.");
+        }
     }
 
     private sealed class ApiKindComparer : IEqualityComparer<(string ApiVersion, string Kind)>

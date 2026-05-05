@@ -453,6 +453,12 @@ The public `GET /api/styles/{layerId}.json` endpoint accepts an optional `?theme
 | `/api/v1/admin/metadata/layers/{layerId}/style/export-sld` | GET | Export the stored MapLibre style as an `application/xml` SLD 1.0 document. Diagnostic count surfaces in the `X-Sld-Diagnostic-Count` response header. |
 | `/api/styles/{layerId}.json` | GET | Public MapLibre style fetch with optional `?theme=default\|dark\|colorblind-safe\|print` deterministic transform; output cache varies per theme. |
 
+`Group` and `SourceDescriptor` are stable `honua.io/v1alpha1` metadata resource kinds on the generic CRUD surface. SDKs can list them with `GET /api/v1/admin/metadata/resources?kind=Group` and `GET /api/v1/admin/metadata/resources?kind=SourceDescriptor` instead of probing undocumented catalog endpoints.
+
+`Group` resources use `metadata.name` and `metadata.namespace` as the stable group identity. `spec.description` is optional and should contain the human-readable group summary when present.
+
+`SourceDescriptor` resources must store the SDK descriptor in `spec.sourceDescriptor`. The descriptor object must include non-empty `id` and `protocol` strings aligned with `Honua.Sdk.Abstractions.Features.SourceDescriptor`; optional `locator`, `capabilities`, `schema`, and `attribution` fields follow the SDK shape.
+
 ### **SDK Compatibility Handshake**
 
 SDKs should call `GET /api/v1/admin/capabilities` once per authenticated session and cache the `data.compatibility` object.
