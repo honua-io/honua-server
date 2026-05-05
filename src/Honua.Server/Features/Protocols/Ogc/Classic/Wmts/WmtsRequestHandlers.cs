@@ -498,6 +498,14 @@ internal static class WmtsRequestHandlers
             return dimensionError;
         }
 
+        // Build the optional temporal filter from the validated `time` dimension.
+        // The validator guarantees the value is parseable; treat unsupported layers
+        // as InvalidParameterValue to match the GetCapabilities advertising contract.
+        if (!TryBuildWmtsLayerTemporalFilter(context, query, layer!, out var tileTemporalFilter, out var temporalFilterError))
+        {
+            return temporalFilterError!;
+        }
+
         if (!TryGetRequiredQueryValue(query, "FORMAT", out var formatValue))
         {
             return CreateWmtsExceptionReport(context, "MissingParameterValue", "format", "FORMAT parameter is required.");
@@ -581,7 +589,8 @@ internal static class WmtsRequestHandlers
             tileRow,
             tileCol,
             maxFeatures,
-            TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)).ConfigureAwait(false);
+            TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context),
+            tileTemporalFilter is null ? null : [tileTemporalFilter]).ConfigureAwait(false);
 
         return renderResult.IsSuccess
             ? Results.Bytes(renderResult.ImageBytes, PngMimeType)
@@ -669,6 +678,11 @@ internal static class WmtsRequestHandlers
         if (!TryValidateWmtsDimensionParameters(context, query, layer!, includeFeatureInfoParameters: true, out var dimensionError))
         {
             return dimensionError;
+        }
+
+        if (!TryBuildWmtsLayerTemporalFilter(context, query, layer!, out var featureInfoTemporalFilter, out var temporalFilterError))
+        {
+            return temporalFilterError!;
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIXSET", out var tileMatrixSet))
@@ -838,7 +852,8 @@ internal static class WmtsRequestHandlers
             SpatialFilter = spatialFilter,
             SpatialReferenceSrid = service.SpatialReference.Srid,
             OutputSrid = service.SpatialReference.Srid,
-            Limit = remaining
+            Limit = remaining,
+            TemporalFilter = featureInfoTemporalFilter
         };
 
         var queryResult = await featureReader.QueryAsync(layer!.Id, featureQuery, cancellationToken);
@@ -1737,6 +1752,61 @@ internal static class WmtsRequestHandlers
         }
 
         resolvedValue = matching;
+        return true;
+    }
+
+    /// <summary>
+    /// Builds the optional <see cref="TemporalFilter"/> for a WMTS GetTile or
+    /// GetFeatureInfo request from the validated <c>time</c> dimension value.
+    /// The validator (<see cref="TryValidateWmtsDimensionParameters"/>) has
+    /// already accepted the value as an RFC 3339 instant or interval. CITE
+    /// Terrain owns its own non-temporal "time" handling and is bypassed so
+    /// existing CITE behavior is preserved. Layers without configured TimeInfo
+    /// also bypass — those layers do not advertise the dimension and the
+    /// validator would have rejected an unknown parameter.
+    /// </summary>
+    private static bool TryBuildWmtsLayerTemporalFilter(
+        HttpContext context,
+        IQueryCollection query,
+        LayerDefinition layer,
+        out TemporalFilter? temporalFilter,
+        out IResult? errorResult)
+    {
+        temporalFilter = null;
+        errorResult = null;
+
+        if (!query.ContainsKey("time"))
+        {
+            return true;
+        }
+
+        var rawValue = GetQueryValue(query, "time");
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return true;
+        }
+
+        if (string.Equals(layer.Name, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var timeInfo = layer.Metadata?.TimeInfo;
+        if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+        {
+            return true;
+        }
+
+        if (!OgcTemporalFilterParser.TryParse(rawValue, layer, out var parsed, out var parseError))
+        {
+            errorResult = CreateWmtsExceptionReport(context,
+                "InvalidParameterValue",
+                "time",
+                parseError ?? "Invalid value for time parameter.");
+            return false;
+        }
+
+        temporalFilter = parsed;
         return true;
     }
 

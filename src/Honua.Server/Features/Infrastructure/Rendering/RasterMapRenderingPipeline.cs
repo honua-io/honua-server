@@ -63,7 +63,8 @@ internal static class RasterMapRenderingPipeline
         int y,
         int x,
         int maxFeatures,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
     {
         var tileBounds = TileMath.GetTileBounds(x, y, z);
         var renderExtent = new SkiaMapRenderer.RenderExtent(
@@ -116,8 +117,9 @@ internal static class RasterMapRenderingPipeline
         canvas.Clear(SKColors.Transparent);
         var transform = SkiaMapRenderer.BuildTransform(renderExtent, TileSize, TileSize);
 
-        foreach (var layer in renderLayers)
+        for (var layerIndex = 0; layerIndex < renderLayers.Count; layerIndex++)
         {
+            var layer = renderLayers[layerIndex];
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!layer.HasGeometry)
@@ -134,7 +136,10 @@ internal static class RasterMapRenderingPipeline
                 spatialFilter,
                 service.SpatialReference.Srid,
                 TileSrid,
-                maxFeatures);
+                maxFeatures,
+                temporalFilter: layerTemporalFilters is { Count: > 0 } && layerIndex < layerTemporalFilters.Count
+                    ? layerTemporalFilters[layerIndex]
+                    : null);
 
             var renderedPointCount = await TryRenderRasterPointFastPathAsync(
                 canvas,

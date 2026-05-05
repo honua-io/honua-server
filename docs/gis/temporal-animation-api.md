@@ -197,8 +197,12 @@ Supplying `TIME=` against a layer without `timeInfo` configuration returns a
 </Layer>
 ```
 
-GetTile accepts `time=` as a normal KVP parameter; the value can be any
-RFC 3339 instant or interval. Omitting `time=` returns the layer's full extent.
+GetTile and GetFeatureInfo accept `time=` as a normal KVP parameter; the value
+can be any RFC 3339 instant or interval. The bounds are applied to the layer's
+configured start time field via the same temporal-filter pipeline as WMS GetMap
+and the GeoServices `query?time=` parameter, so out-of-range values produce an
+empty tile / empty feature-info response. Omitting `time=` returns the layer's
+full extent.
 
 ## Honua-native MVT
 
@@ -207,9 +211,10 @@ GET /tiles/0/8/40/96.mvt?time=2024-01-01T00:00:00Z,2024-12-31T23:59:59Z
 ```
 
 The HTTP cache automatically distinguishes time-filtered tiles because the
-`CacheOutput("MvtTile")` policy varies by full query string. Non-temporal tile
-requests (without `?time=`) are unaffected and continue to be served from the
-existing cache entries.
+`CacheOutput("MvtTile")` policy explicitly varies by the `time` query parameter
+(in addition to `where`). Two distinct `?time=` ranges resolve to two distinct
+cache entries, and tile requests without `?time=` continue to be served from
+the existing cache entries unchanged.
 
 `?time=` requires the **Pro** edition. Community-tier requests receive a
 `403 Forbidden` problem response with a clear remediation message.
@@ -226,8 +231,9 @@ existing cache entries.
 
 ## Cache keys and invalidation
 
-- The MVT tile cache (`"MvtTile"` tag) is keyed by the full request query
-  string, so a `?time=` value automatically yields a distinct cache entry.
+- The MVT tile cache (`"MvtTile"` tag) varies by route (`layerId`/`z`/`x`/`y`)
+  plus the `where` and `time` query parameters, so a `?time=` value yields a
+  distinct cache entry from unfiltered tiles or other time ranges.
 - The `temporalExtent` endpoint and GeoServices REST layer metadata both share
   the `"LayerMetadata"` cache tag and are invalidated whenever the layer's
   catalog metadata is updated.

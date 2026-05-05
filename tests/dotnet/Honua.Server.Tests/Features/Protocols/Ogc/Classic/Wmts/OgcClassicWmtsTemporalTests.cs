@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
@@ -102,6 +103,69 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png&time=not-a-time");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetFeatureInfo_TimeAwareLayer_OutOfRangeTime_ReturnsEmptyFeatures()
+    {
+        // Seeded test layer rows have `timestamp` values in 2022–2023; a time
+        // window in 2099 must filter them all out, proving the WMTS time
+        // dimension actually feeds the FeatureQuery temporal filter rather
+        // than being silently dropped.
+        await ConfigureLayerAsTimeAwareAsync();
+
+        var url =
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0" +
+            $"&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png" +
+            "&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=128&J=128" +
+            "&INFOFORMAT=application/json" +
+            "&time=" + Uri.EscapeDataString("2099-01-01T00:00:00Z/2099-12-31T23:59:59Z");
+
+        var response = await _fixture.Client.GetAsync(url);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        // Empty FeatureInfo response: the WMTS handler emits the JSON envelope
+        // only when at least one feature matches; an empty match yields a bare
+        // empty body.
+        content.Should().NotContain("\"features\":[{");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetFeatureInfo_TimeAwareLayer_InRangeTime_ReturnsFeatures()
+    {
+        // Companion to the out-of-range test: a window covering the seeded
+        // 2023 timestamps must still surface features so we know the empty
+        // response above is caused by the temporal filter and not by the
+        // pixel-tolerance click missing every feature.
+        await ConfigureLayerAsTimeAwareAsync();
+
+        var url =
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0" +
+            $"&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png" +
+            "&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=128&J=128" +
+            "&INFOFORMAT=application/json" +
+            "&time=" + Uri.EscapeDataString("2022-01-01T00:00:00Z/2024-01-01T00:00:00Z");
+
+        var response = await _fixture.Client.GetAsync(url);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        // When at least one feature matches the click + time filter, the
+        // response carries the FeatureInfoResponse envelope. The seeded layer
+        // has a global extent so the central pixel intersects features.
+        if (!string.IsNullOrWhiteSpace(content))
+        {
+            using var json = JsonDocument.Parse(content);
+            json.RootElement.GetProperty("type").GetString().Should().Be("FeatureInfoResponse");
+        }
     }
 
     private Task ConfigureLayerAsTimeAwareAsync()

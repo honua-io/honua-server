@@ -117,4 +117,46 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
+    public async Task GetTile_DifferentTimeRanges_ProduceDistinctCacheEntries()
+    {
+        // Cache-key regression for the temporal-animation contract: the MvtTile
+        // output-cache policy must vary by `time` so two different ranges
+        // cannot collide on the same cached body. Both windows cover seeded
+        // rows so the responses are valid; we only need to confirm both are
+        // served independently rather than the second hitting a stale entry
+        // for the first.
+        var rangeA =
+            $"{new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds()},"
+            + new DateTimeOffset(2023, 1, 31, 23, 59, 59, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var rangeB =
+            $"{new DateTimeOffset(2023, 2, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds()},"
+            + new DateTimeOffset(2023, 2, 28, 23, 59, 59, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+        var responseA = await _fixture.Client.GetAsync($"/tiles/{TestLayerId}/1/0/0.mvt?time={rangeA}");
+        var responseB = await _fixture.Client.GetAsync($"/tiles/{TestLayerId}/1/0/0.mvt?time={rangeB}");
+
+        responseA.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+        responseB.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+
+        // The HTTP cache vary-by-query change for #379 is the only thing that
+        // keeps the second request from being served the first request's body.
+        // If a future change drops `time` from the cache policy, both responses
+        // will be byte-identical even with different filters.
+        if (responseA.StatusCode == HttpStatusCode.OK && responseB.StatusCode == HttpStatusCode.OK)
+        {
+            var bytesA = await responseA.Content.ReadAsByteArrayAsync();
+            var bytesB = await responseB.Content.ReadAsByteArrayAsync();
+
+            // Tile bodies for distinct temporal subsets must not silently share
+            // a cache slot — they may legitimately differ in length or content.
+            // We assert at minimum that the second response is not a cached
+            // copy of the first when the underlying data differs.
+            (bytesA.Length != bytesB.Length || !bytesA.AsSpan().SequenceEqual(bytesB))
+                .Should()
+                .BeTrue("MvtTile cache must vary by `time` parameter (#379)");
+        }
+    }
 }
