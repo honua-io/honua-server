@@ -417,7 +417,7 @@ jobs:
               layer_id: $layerId,
               protocol_surfaces: [
                 "control-plane-admin",
-                "platform-http-readiness",
+                "platform-http",
                 "geoservices-catalog",
                 "feature-server",
                 "ogc-api-features"
@@ -431,7 +431,7 @@ jobs:
                 ],
                 python: [
                   "control-plane-admin",
-                  "platform-http-readiness",
+                  "platform-http",
                   "geoservices-catalog",
                   "feature-server"
                 ],

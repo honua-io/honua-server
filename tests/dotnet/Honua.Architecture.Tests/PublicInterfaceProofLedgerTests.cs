@@ -324,13 +324,48 @@ public sealed partial class PublicInterfaceProofLedgerTests
     [ArchitectureTest]
     public void SdkCompatibilityWorkflow_ShouldUseProofLedgerSurfaceIdsInProtocolEvidence()
     {
+        var ledger = LoadLedger();
         var workflow = LoadSdkCompatibilityWorkflow();
 
-        workflow.Should().Contain("protocol_surfaces_by_sdk");
-        workflow.Should().Contain("\"control-plane-admin\"");
-        workflow.Should().Contain("\"feature-server\"");
-        workflow.Should().Contain("\"ogc-api-features\"");
-        workflow.Should().NotContain("\"geoservices-feature-server\"",
+        var knownSurfaceIds = ledger.Surfaces
+            .Select(surface => surface.SurfaceId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var protocolSurfaces = ExtractWorkflowProtocolSurfaceArray(workflow, "protocol_surfaces");
+        var protocolSurfacesBySdk = ExtractWorkflowProtocolSurfacesBySdk(workflow);
+
+        protocolSurfaces.Should().Contain([
+            "control-plane-admin",
+            "platform-http",
+            "geoservices-catalog",
+            "feature-server",
+            "ogc-api-features"
+        ]);
+        protocolSurfacesBySdk.Keys.Should().BeEquivalentTo(["js", "python", "dotnet"],
+            "compat-result.json should preserve per-SDK protocol-surface diagnostics");
+
+        var aggregateSurfaceIds = protocolSurfacesBySdk.Values
+            .SelectMany(surfaceIds => surfaceIds)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(surfaceId => surfaceId, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        protocolSurfaces
+            .OrderBy(surfaceId => surfaceId, StringComparer.OrdinalIgnoreCase)
+            .Should()
+            .Equal(aggregateSurfaceIds,
+                "the aggregate protocol_surfaces list must reconcile to protocol_surfaces_by_sdk");
+
+        var emittedSurfaceIds = protocolSurfaces
+            .Concat(protocolSurfacesBySdk.Values.SelectMany(surfaceIds => surfaceIds))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(surfaceId => surfaceId, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var unknownSurfaceIds = emittedSurfaceIds
+            .Where(surfaceId => !knownSurfaceIds.Contains(surfaceId))
+            .ToArray();
+
+        unknownSurfaceIds.Should().BeEmpty(
             "compat-result.json protocol surfaces should align with public-interface-proof.json surface ids");
     }
 
@@ -349,6 +384,57 @@ public sealed partial class PublicInterfaceProofLedgerTests
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         return File.ReadAllText(Path.Combine(repoRoot, ".github", "workflows", "sdk-server-compatibility.yml"));
     }
+
+    private static string[] ExtractWorkflowProtocolSurfaceArray(string workflow, string propertyName)
+    {
+        var propertyIndex = workflow.IndexOf($"{propertyName}: [", StringComparison.Ordinal);
+        if (propertyIndex < 0)
+        {
+            throw new InvalidOperationException($"Unable to find '{propertyName}' in sdk-server-compatibility.yml.");
+        }
+
+        var arrayStartIndex = workflow.IndexOf('[', propertyIndex);
+        var arrayEndIndex = workflow.IndexOf(']', arrayStartIndex);
+        if (arrayStartIndex < 0 || arrayEndIndex < 0)
+        {
+            throw new InvalidOperationException($"Unable to parse '{propertyName}' in sdk-server-compatibility.yml.");
+        }
+
+        return ExtractQuotedSurfaceIds(workflow[arrayStartIndex..(arrayEndIndex + 1)]);
+    }
+
+    private static Dictionary<string, string[]> ExtractWorkflowProtocolSurfacesBySdk(string workflow)
+    {
+        const string PropertyName = "protocol_surfaces_by_sdk";
+
+        var propertyIndex = workflow.IndexOf($"{PropertyName}: {{", StringComparison.Ordinal);
+        if (propertyIndex < 0)
+        {
+            throw new InvalidOperationException($"Unable to find '{PropertyName}' in sdk-server-compatibility.yml.");
+        }
+
+        var blockEndIndex = workflow.IndexOf("cell_status:", propertyIndex, StringComparison.Ordinal);
+        if (blockEndIndex < 0)
+        {
+            throw new InvalidOperationException($"Unable to parse '{PropertyName}' in sdk-server-compatibility.yml.");
+        }
+
+        var block = workflow[propertyIndex..blockEndIndex];
+        var surfacesBySdk = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match match in SdkProtocolSurfaceBlockRegex().Matches(block))
+        {
+            var sdkName = match.Groups["sdk"].Value;
+            surfacesBySdk[sdkName] = ExtractQuotedSurfaceIds(match.Groups["surfaces"].Value);
+        }
+
+        return surfacesBySdk;
+    }
+
+    private static string[] ExtractQuotedSurfaceIds(string text) =>
+        QuotedSurfaceIdRegex().Matches(text)
+            .Select(match => match.Groups["surfaceId"].Value)
+            .ToArray();
 
     private static bool MatchesEndpoint(PublicInterfaceSurface surface, string path)
         => surface.EndpointExactMatches.Contains(path, StringComparer.OrdinalIgnoreCase)
@@ -412,6 +498,12 @@ public sealed partial class PublicInterfaceProofLedgerTests
 
     private static string FormatOperationKey(string protocol, string operation) =>
         $"{protocol}::{operation}";
+
+    [GeneratedRegex(@"(?<sdk>js|python|dotnet):\s*\[(?<surfaces>.*?)\]", RegexOptions.Singleline)]
+    private static partial Regex SdkProtocolSurfaceBlockRegex();
+
+    [GeneratedRegex("\"(?<surfaceId>[a-z0-9.-]+)\"")]
+    private static partial Regex QuotedSurfaceIdRegex();
 }
 
 internal sealed class PublicInterfaceProofLedger
