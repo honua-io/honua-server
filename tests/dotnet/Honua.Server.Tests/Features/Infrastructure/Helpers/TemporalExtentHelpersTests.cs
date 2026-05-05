@@ -121,6 +121,54 @@ public sealed class TemporalExtentHelpersTests
         range.Value.Max.Should().Be(endMax);
     }
 
+    [Fact]
+    public async Task TryResolveTemporalRangeAsync_ProviderThrowsNotSupported_ReturnsNull()
+    {
+        // Read-only providers (MySQL/MariaDB, SQL Server) throw
+        // NotSupportedException from GetTemporalExtentAsync. The shared
+        // helper must catch that and return null so capabilities and the
+        // temporalExtent endpoint fall back to their non-time-aware
+        // contract (omit time dimension, return 404) instead of escaping
+        // a 500 to the public surface (#379).
+        var layer = BuildLayerWithIntervalTimeInfo();
+        var reader = Substitute.For<IFeatureReader>();
+        reader.GetTemporalExtentAsync(
+                Arg.Any<int>(),
+                Arg.Any<string>(),
+                Arg.Any<FieldType>(),
+                Arg.Any<CancellationToken>())
+            .Returns<TemporalExtentResult?>(_ => throw new NotSupportedException(
+                "Temporal extent queries are not supported by the test provider."));
+
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
+            layer, reader, CancellationToken.None);
+
+        range.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TryResolveTemporalRangeAsync_EndExtentThrowsNotSupported_ReturnsNull()
+    {
+        // Same contract on the second extent fetch: even when start
+        // succeeds, an end-field NotSupportedException must be swallowed
+        // and surfaced as "no extent available" so the layer falls back
+        // to non-time-aware behavior consistently.
+        var layer = BuildLayerWithIntervalTimeInfo();
+        var startMin = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var startMax = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero);
+
+        var reader = Substitute.For<IFeatureReader>();
+        reader.GetTemporalExtentAsync(layer.Id, "start_time", FieldType.DateTime, Arg.Any<CancellationToken>())
+            .Returns(TemporalExtentResult.Create(startMin, startMax));
+        reader.GetTemporalExtentAsync(layer.Id, "end_time", FieldType.DateTime, Arg.Any<CancellationToken>())
+            .Returns<TemporalExtentResult?>(_ => throw new NotSupportedException("end-field extent unsupported"));
+
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
+            layer, reader, CancellationToken.None);
+
+        range.Should().BeNull();
+    }
+
     private static LayerDefinition BuildLayerWithIntervalTimeInfo()
     {
         var fields = new[]

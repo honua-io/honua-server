@@ -146,20 +146,42 @@ internal static class TemporalExtentHelpers
             return null;
         }
 
-        TemporalExtentResult? startExtent = await featureReader.GetTemporalExtentAsync(
-            layer.Id,
-            startField!.Name,
-            startField.Type,
-            cancellationToken).ConfigureAwait(false);
+        // Read-only providers (MySQL/MariaDB, SQL Server) throw
+        // NotSupportedException from GetTemporalExtentAsync. Treat that as
+        // "no extent available" so capabilities/temporalExtent paths fall
+        // back to their non-time-aware contract (omit time dimension, return
+        // 404, etc.) instead of bubbling a 500 to the client. The layer is
+        // still time-aware in metadata terms; only extent discovery is
+        // unsupported on the backing store.
+        TemporalExtentResult? startExtent;
+        try
+        {
+            startExtent = await featureReader.GetTemporalExtentAsync(
+                layer.Id,
+                startField!.Name,
+                startField.Type,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
 
         TemporalExtentResult? endExtent = null;
         if (endField != null && !endField.Name.Equals(startField.Name, StringComparison.OrdinalIgnoreCase))
         {
-            endExtent = await featureReader.GetTemporalExtentAsync(
-                layer.Id,
-                endField.Name,
-                endField.Type,
-                cancellationToken).ConfigureAwait(false);
+            try
+            {
+                endExtent = await featureReader.GetTemporalExtentAsync(
+                    layer.Id,
+                    endField.Name,
+                    endField.Type,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (NotSupportedException)
+            {
+                return null;
+            }
         }
 
         // Min comes from the earliest configured start; max effectively
