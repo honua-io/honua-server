@@ -63,7 +63,39 @@ internal sealed class OutboxHealthCheck : IHealthCheck
                 data: data));
         }
 
+        if (_dispatcherHealth.LastStorageFailureAt is { } lastStorageFailureAt)
+        {
+            data["last_storage_failure_at"] = lastStorageFailureAt.ToString("o", CultureInfo.InvariantCulture);
+        }
+        if (_dispatcherHealth.LastSuccessfulPollAt is { } lastSuccessfulPollAt)
+        {
+            data["last_successful_poll_at"] = lastSuccessfulPollAt.ToString("o", CultureInfo.InvariantCulture);
+        }
+
+        // Storage-poll failures (claim, recovery, or backlog query) are surfaced before
+        // the cold-start branch so a dispatcher stuck on a missing table or permission
+        // issue cannot silently report Healthy by leaving LastBacklog=null. We compare
+        // the failure and success timestamps so a single transient hiccup followed by a
+        // healthy pass naturally clears the flag, while persistent failures with no
+        // intervening success remain visible.
         var backlog = _dispatcherHealth.LastBacklog;
+        var pendingStorageFailure = _dispatcherHealth.LastStorageFailureAt is { } failureAt
+            && (_dispatcherHealth.LastSuccessfulPollAt is null
+                || failureAt > _dispatcherHealth.LastSuccessfulPollAt.Value);
+        if (pendingStorageFailure)
+        {
+            if (backlog is null)
+            {
+                return Task.FromResult(HealthCheckResult.Unhealthy(
+                    "Outbox dispatcher is running but storage polling is failing and no backlog snapshot has been captured.",
+                    data: data));
+            }
+
+            return Task.FromResult(HealthCheckResult.Degraded(
+                "Outbox dispatcher is running but the most recent storage poll failed; backlog snapshot may be stale.",
+                data: data));
+        }
+
         if (backlog is null)
         {
             // Dispatcher is running but the first pass has not produced a backlog snapshot

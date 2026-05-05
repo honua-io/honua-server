@@ -106,6 +106,59 @@ public sealed class OutboxHealthCheckTests
     }
 
     [UnitTest]
+    public async Task CheckHealthAsync_StoragePollFailingWithoutBacklog_ReturnsUnhealthy()
+    {
+        // Storage-poll guard (#692): a dispatcher whose claim/recovery/backlog queries
+        // throw (missing table, permission issue) reports IsDispatcherRunning=true and
+        // LastBacklog=null indefinitely. The previous cold-start Healthy branch hid this
+        // from the readiness probe; the dispatcher now sets LastStorageFailureAt on each
+        // failure, so health surfaces it as Unhealthy until a poll succeeds.
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+
+        var dispatcherHealth = Substitute.For<IOutboxHealth>();
+        dispatcherHealth.IsDispatcherRunning.Returns(true);
+        dispatcherHealth.LastBacklog.Returns((OutboxBacklogMetrics?)null);
+        dispatcherHealth.LastStorageFailureAt.Returns(DateTimeOffset.UtcNow);
+
+        var check = new OutboxHealthCheck(capability, dispatcherHealth, BuildOptions());
+
+        var result = await check.CheckHealthAsync(_context);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain("storage polling is failing");
+    }
+
+    [UnitTest]
+    public async Task CheckHealthAsync_StoragePollFailingWithStaleBacklog_ReturnsDegraded()
+    {
+        // After a successful pass, intermittent storage-poll failures keep the backlog
+        // snapshot but flip the failure flag. Health surfaces this as Degraded so the
+        // operator sees the stale snapshot and the failure together rather than a
+        // misleading Healthy response.
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+
+        var dispatcherHealth = Substitute.For<IOutboxHealth>();
+        dispatcherHealth.IsDispatcherRunning.Returns(true);
+        dispatcherHealth.LastBacklog.Returns(new OutboxBacklogMetrics
+        {
+            PendingCount = 3,
+            DeadLetteredCount = 0,
+            OldestPendingAgeSeconds = 5.0,
+        });
+        dispatcherHealth.LastSuccessfulPollAt.Returns(DateTimeOffset.UtcNow.AddMinutes(-1));
+        dispatcherHealth.LastStorageFailureAt.Returns(DateTimeOffset.UtcNow);
+
+        var check = new OutboxHealthCheck(capability, dispatcherHealth, BuildOptions());
+
+        var result = await check.CheckHealthAsync(_context);
+
+        result.Status.Should().Be(HealthStatus.Degraded);
+        result.Description.Should().Contain("storage poll failed");
+    }
+
+    [UnitTest]
     public async Task CheckHealthAsync_BacklogAboveThreshold_ReturnsDegraded()
     {
         var capability = Substitute.For<IOutboxCapabilityProvider>();

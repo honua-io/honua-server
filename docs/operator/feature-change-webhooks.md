@@ -17,7 +17,9 @@ Each event envelope includes:
 - `serviceId`
 - `layerId`
 - `objectId`
-- `operation` (`insert`, `update`, `delete`)
+- `operation` (`insert`, `update`, `delete`) — producers may use `create` internally;
+  the canonical event boundary normalizes to `insert` so consumers always receive the
+  values listed here.
 - `protocol`
 - `requestId`
 

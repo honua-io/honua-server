@@ -31,6 +31,8 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
     private DateTimeOffset _lastRecoveryAt = DateTimeOffset.MinValue;
     private DateTimeOffset? _lastDispatchAt;
     private OutboxBacklogMetrics? _lastBacklog;
+    private DateTimeOffset? _lastSuccessfulPollAt;
+    private DateTimeOffset? _lastStorageFailureAt;
     private int _running;
 
     public OutboxDispatcherBackgroundService(
@@ -49,6 +51,8 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
     public bool IsDispatcherRunning => Volatile.Read(ref _running) == 1;
     public DateTimeOffset? LastDispatchAt => _lastDispatchAt;
     public OutboxBacklogMetrics? LastBacklog => _lastBacklog;
+    public DateTimeOffset? LastSuccessfulPollAt => _lastSuccessfulPollAt;
+    public DateTimeOffset? LastStorageFailureAt => _lastStorageFailureAt;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -111,10 +115,14 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
                 _options.BatchSize,
                 TimeSpan.FromSeconds(_options.ClaimTtlSeconds),
                 cancellationToken).ConfigureAwait(false);
+            RecordStoragePollSuccess();
         }
         catch (Exception ex)
         {
             Log.ClaimFailed(_logger, ex);
+            RecordStoragePollFailure();
+            // Still try to refresh the backlog snapshot so health reflects the latest
+            // state if backlog reads still work; if both fail, both failures are recorded.
             await UpdateBacklogAsync(repository, cancellationToken).ConfigureAwait(false);
             return 0;
         }
@@ -254,10 +262,12 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
                 OutboxMetrics.RecoveredClaims.Add(recovered);
                 Log.ClaimsRecovered(_logger, recovered);
             }
+            RecordStoragePollSuccess();
         }
         catch (Exception ex)
         {
             Log.RecoveryFailed(_logger, ex);
+            RecordStoragePollFailure();
         }
         finally
         {
@@ -272,11 +282,35 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
             var backlog = await repository.GetBacklogMetricsAsync(cancellationToken).ConfigureAwait(false);
             _lastBacklog = backlog;
             OutboxMetrics.RecordBacklog(backlog.PendingCount, backlog.DeadLetteredCount, backlog.OldestPendingAgeSeconds);
+            RecordStoragePollSuccess();
         }
         catch (Exception ex)
         {
             Log.BacklogQueryFailed(_logger, ex);
+            RecordStoragePollFailure();
         }
+    }
+
+    /// <summary>
+    /// Stamp the most recent successful storage poll. Both timestamps are kept and
+    /// never auto-cleared so the readiness probe can compare them: a pending failure
+    /// (failure timestamp newer than success) flags the dispatcher; once a success
+    /// follows the failure, the timestamp comparison naturally clears the flag.
+    /// </summary>
+    private void RecordStoragePollSuccess()
+    {
+        _lastSuccessfulPollAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Stamp the most recent storage poll failure. Health surfaces this as Degraded
+    /// when a prior pass had succeeded, or as Unhealthy when no pass has succeeded yet
+    /// (cold start where the table or permissions are missing) so dispatcher stalls do
+    /// not silently accumulate pending events behind a Healthy readiness probe.
+    /// </summary>
+    private void RecordStoragePollFailure()
+    {
+        _lastStorageFailureAt = DateTimeOffset.UtcNow;
     }
 
     private static string BuildSafeError(Exception ex)

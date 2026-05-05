@@ -134,6 +134,79 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     }
 
     [UnitTest]
+    public async Task ExecuteOnceAsync_ClaimFailure_RecordsStorageFailureForReadinessProbe()
+    {
+        // Storage-poll guard (#692): a missing outbox table or permission issue causes
+        // every storage call (recovery, claim, backlog) to throw on every pass. The
+        // dispatcher must surface the failure on IOutboxHealth so the readiness probe
+        // stops reporting Healthy ("awaiting first pass") indefinitely. With all three
+        // factories set, no successful storage poll has been recorded so the failure
+        // timestamp is "pending" relative to a null success timestamp.
+        var (repository, capability) = BuildRepository(includePendingRow: true, eventId: "evt-claim-fail");
+        var fault = () => (Exception)new InvalidOperationException("relation honua.feature_change_outbox does not exist");
+        repository.RecoveryFailureFactory = fault;
+        repository.ClaimFailureFactory = fault;
+        repository.BacklogFailureFactory = fault;
+
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var dispatcher = BuildDispatcher(repository, capability, publisher);
+
+        var dispatched = await dispatcher.ExecuteOnceAsync(CancellationToken.None);
+
+        dispatched.Should().Be(0);
+        AssertStorageFailureRecorded(dispatcher, expectFirstSuccessfulPoll: false);
+    }
+
+    [UnitTest]
+    public async Task ExecuteOnceAsync_BacklogFailureAfterClaimSuccess_FlipsStorageFailureFlag()
+    {
+        // After a healthy pass, an intermittent backlog query failure (e.g., transient
+        // DB hiccup) flips LastStorageFailureAt. LastSuccessfulPollAt remains set from
+        // the prior claim success, so health reports Degraded with a stale snapshot
+        // rather than Unhealthy.
+        var (repository, capability) = BuildRepository(includePendingRow: true, eventId: "evt-backlog-fail");
+        repository.BacklogFailureFactory = () => new InvalidOperationException("connection terminated");
+
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var dispatcher = BuildDispatcher(repository, capability, publisher);
+
+        var dispatched = await dispatcher.ExecuteOnceAsync(CancellationToken.None);
+
+        dispatched.Should().Be(1, "the row dispatched even though the post-pass backlog refresh failed");
+        AssertStorageFailureRecorded(dispatcher, expectFirstSuccessfulPoll: true);
+    }
+
+    [UnitTest]
+    public async Task ExecuteOnceAsync_StoragePollSuccess_ClearsPriorFailureFlag()
+    {
+        // Recovery guard: once a successful poll lands AFTER a failure, the readiness
+        // probe stops reporting Degraded — the dispatcher keeps both timestamps so the
+        // probe compares them, naturally resolving when the underlying storage problem
+        // recovers without the dispatcher having to explicitly clear the failure marker
+        // (which would mask persistent claim failures whose backlog reads still work).
+        var (repository, capability) = BuildRepository(includePendingRow: false, eventId: "evt-resume");
+        var fault = () => (Exception)new InvalidOperationException("transient");
+        repository.RecoveryFailureFactory = fault;
+        repository.ClaimFailureFactory = fault;
+        repository.BacklogFailureFactory = fault;
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var dispatcher = BuildDispatcher(repository, capability, publisher);
+
+        await dispatcher.ExecuteOnceAsync(CancellationToken.None);
+        AssertPendingStorageFailure(dispatcher, expectPending: true);
+
+        // Storage recovers — next pass succeeds and the success timestamp now post-dates
+        // the failure so the probe sees no pending failure on inspection.
+        repository.RecoveryFailureFactory = null;
+        repository.ClaimFailureFactory = null;
+        repository.BacklogFailureFactory = null;
+        await Task.Delay(5).ConfigureAwait(false); // ensure success timestamp clearly > failure timestamp
+        await dispatcher.ExecuteOnceAsync(CancellationToken.None);
+
+        AssertPendingStorageFailure(dispatcher, expectPending: false);
+    }
+
+    [UnitTest]
     public async Task ExecuteOnceAsync_RecoversExpiredClaims_OnFirstPass()
     {
         // Restart-recovery scenario: a previous worker exited mid-dispatch leaving a row in
@@ -249,6 +322,56 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         health.LastDispatchAt.Should().NotBeNull();
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1859:Use concrete types when possible for improved performance",
+        Justification = "Verifies the IOutboxHealth contract that the health-check probe consumes.")]
+    private static void AssertPendingStorageFailure(IOutboxHealth health, bool expectPending)
+    {
+        if (expectPending)
+        {
+            health.LastStorageFailureAt.Should().NotBeNull(
+                "a failed storage poll must stamp the failure timestamp");
+            // Pending means failure is AFTER any success (or success is null).
+            var failure = health.LastStorageFailureAt!.Value;
+            var pending = health.LastSuccessfulPollAt is null
+                || failure > health.LastSuccessfulPollAt.Value;
+            pending.Should().BeTrue(
+                "the readiness probe treats a failure newer than the latest success as a pending failure");
+        }
+        else
+        {
+            health.LastSuccessfulPollAt.Should().NotBeNull(
+                "a successful poll after recovery must stamp the success timestamp");
+            // Not pending means success is at-or-after failure (or no failure at all).
+            if (health.LastStorageFailureAt is { } failureAt)
+            {
+                health.LastSuccessfulPollAt!.Value.Should().BeOnOrAfter(failureAt,
+                    "the readiness probe treats failure-older-than-success as resolved");
+            }
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1859:Use concrete types when possible for improved performance",
+        Justification = "Verifies the IOutboxHealth contract that the health-check probe consumes.")]
+    private static void AssertStorageFailureRecorded(IOutboxHealth health, bool expectFirstSuccessfulPoll)
+    {
+        health.LastStorageFailureAt.Should().NotBeNull(
+            "the dispatcher must surface storage poll failures so the readiness probe stops reporting Healthy");
+        if (expectFirstSuccessfulPoll)
+        {
+            health.LastSuccessfulPollAt.Should().NotBeNull(
+                "a prior successful claim should leave its timestamp visible alongside the new failure marker");
+        }
+        else
+        {
+            health.LastSuccessfulPollAt.Should().BeNull(
+                "no storage poll has succeeded yet on this dispatcher");
+        }
+    }
+
     private static OutboxDispatcherBackgroundService BuildDispatcher(
         IFeatureChangeOutboxRepository? repository,
         IOutboxCapabilityProvider capability,
@@ -324,10 +447,34 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Set this to a thrown exception factory to simulate ClaimPendingAsync failure
+        /// (missing table, permission issue, transient connectivity failure). When set,
+        /// every call throws and no rows are dequeued.
+        /// </summary>
+        public Func<Exception>? ClaimFailureFactory { get; set; }
+
+        /// <summary>
+        /// Set this to simulate GetBacklogMetricsAsync failure. When set, every call throws.
+        /// </summary>
+        public Func<Exception>? BacklogFailureFactory { get; set; }
+
+        /// <summary>
+        /// Set this to simulate RecoverExpiredClaimsAsync failure. The dispatcher's
+        /// RecoveryIntervalSeconds default in the test BuildDispatcher is 0 so recovery
+        /// runs every pass; set this factory alongside ClaimFailureFactory to simulate a
+        /// total storage outage (e.g. missing outbox table) where no query succeeds.
+        /// </summary>
+        public Func<Exception>? RecoveryFailureFactory { get; set; }
+
         public Task<IReadOnlyList<FeatureChangeOutboxEntry>> ClaimPendingAsync(
             string nodeId, int batchSize, TimeSpan claimTtl, CancellationToken cancellationToken)
         {
             LastClaimNodeId = nodeId;
+            if (ClaimFailureFactory is not null)
+            {
+                throw ClaimFailureFactory();
+            }
             var claimed = new List<FeatureChangeOutboxEntry>(batchSize);
             for (var i = 0; i < batchSize && Pending.TryDequeue(out var entry); i++)
             {
@@ -365,12 +512,22 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         public Task<int> RecoverExpiredClaimsAsync(CancellationToken cancellationToken)
         {
             RecoverCallCount++;
+            if (RecoveryFailureFactory is not null)
+            {
+                throw RecoveryFailureFactory();
+            }
             var count = ExpiredClaimsToRecover;
             ExpiredClaimsToRecover = 0;
             return Task.FromResult(count);
         }
 
         public Task<OutboxBacklogMetrics> GetBacklogMetricsAsync(CancellationToken cancellationToken)
-            => Task.FromResult(Backlog);
+        {
+            if (BacklogFailureFactory is not null)
+            {
+                throw BacklogFailureFactory();
+            }
+            return Task.FromResult(Backlog);
+        }
     }
 }
