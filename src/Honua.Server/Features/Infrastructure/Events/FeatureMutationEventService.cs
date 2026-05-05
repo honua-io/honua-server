@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,12 +14,21 @@ namespace Honua.Server.Features.Infrastructure.Events;
 internal sealed class FeatureMutationEventService(
     IFeatureChangeEventPublisher featureChangeEventPublisher,
     OutputCacheInvalidationService? outputCacheInvalidationService = null,
-    ILogger<FeatureMutationEventService>? logger = null)
+    ILogger<FeatureMutationEventService>? logger = null,
+    IOutboxCapabilityProvider? outboxCapabilityProvider = null)
 {
     private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = featureChangeEventPublisher
         ?? throw new ArgumentNullException(nameof(featureChangeEventPublisher));
     private readonly OutputCacheInvalidationService? _outputCacheInvalidationService = outputCacheInvalidationService;
     private readonly ILogger<FeatureMutationEventService> _logger = logger ?? NullLogger<FeatureMutationEventService>.Instance;
+    private readonly IOutboxCapabilityProvider? _outboxCapabilityProvider = outboxCapabilityProvider;
+
+    /// <summary>
+    /// True when the active provider records feature-change events through the durable
+    /// transactional outbox. Protocol handlers use this to skip the redundant post-commit
+    /// publish and let the dispatcher own delivery.
+    /// </summary>
+    public bool OutboxEnabled => _outboxCapabilityProvider?.SupportsTransactionalOutbox == true;
 
     public Task InvalidateLayerAsync(string? serviceId, int layerId, CancellationToken cancellationToken)
         => _outputCacheInvalidationService?.InvalidateLayerAsync(serviceId, layerId, cancellationToken)
@@ -38,6 +49,61 @@ internal sealed class FeatureMutationEventService(
             cancellationToken).ConfigureAwait(false);
 
         return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Resolve a transactional outbox scope for the next feature-mutation call. Returns
+    /// <c>null</c> when the active provider does not support a transactional outbox so the
+    /// caller's <c>using</c> wrapper becomes a no-op. The caller activates the scope
+    /// synchronously via <see cref="FeatureMutationOutboxScope.BeginIfNotNull"/> so the
+    /// <see cref="AsyncLocal{T}"/> mutation lands in the caller's ExecutionContext (mutations
+    /// inside this <c>async</c> method are not observed by the caller after the awaiter
+    /// completes — the canonical .NET behavior for AsyncLocal in async callees).
+    /// </summary>
+    public async Task<FeatureMutationOutboxScopeData?> ResolveOutboxScopeAsync(
+        HttpContext context,
+        int layerId,
+        string protocol,
+        string? sourceId = null,
+        string? serviceId = null,
+        string? serviceProtocol = null,
+        string? requestId = null,
+        int? layerSrid = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(protocol);
+
+        if (!OutboxEnabled)
+        {
+            return null;
+        }
+
+        var resolvedServiceId = !string.IsNullOrWhiteSpace(serviceId)
+            ? serviceId
+            : !string.IsNullOrWhiteSpace(serviceProtocol)
+                ? await ResolveServiceIdAsync(context, layerId, serviceProtocol, cancellationToken).ConfigureAwait(false)
+                : layerId.ToString(CultureInfo.InvariantCulture);
+
+        var resolvedRequestId = !string.IsNullOrWhiteSpace(requestId)
+            ? requestId
+            : context.TraceIdentifier;
+
+        var resolvedSourceId = !string.IsNullOrWhiteSpace(sourceId) ? sourceId : protocol;
+
+        return new FeatureMutationOutboxScopeData
+        {
+            EntryFactory = (objectId, operation, snapshot) => BuildEntry(
+                resolvedServiceId,
+                layerId,
+                objectId,
+                operation,
+                protocol,
+                resolvedSourceId,
+                resolvedRequestId,
+                snapshot,
+                layerSrid)
+        };
     }
 
     public async Task PublishAsync(
@@ -61,6 +127,15 @@ internal sealed class FeatureMutationEventService(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
         ArgumentException.ThrowIfNullOrWhiteSpace(protocol);
+
+        // When the active provider supports a transactional outbox, the outbox row was
+        // committed inside the mutation transaction and the dispatcher will publish it.
+        // Skipping this fire-and-forget publish prevents a duplicate event from racing the
+        // dispatcher and avoids charging the request hot path for an extra Redis/append round trip.
+        if (OutboxEnabled)
+        {
+            return;
+        }
 
         var resolvedServiceId = !string.IsNullOrWhiteSpace(serviceId)
             ? serviceId
@@ -140,4 +215,65 @@ internal sealed class FeatureMutationEventService(
                 ex);
         }
     }
+
+    private static FeatureChangeOutboxEntry BuildEntry(
+        string serviceId,
+        int layerId,
+        long objectId,
+        string operation,
+        string protocol,
+        string sourceId,
+        string requestId,
+        Feature? snapshot,
+        int? layerSrid)
+    {
+        var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(snapshot, layerSrid);
+        var geometryJson = enrichment.GeometryJson;
+        var geometrySrid = enrichment.GeometrySrid;
+        if (geometryJson is null || geometrySrid is null)
+        {
+            // Geodesy invariant — strip both halves of the pair when either is missing.
+            geometryJson = null;
+            geometrySrid = null;
+        }
+
+        var eventId = Guid.NewGuid().ToString("N");
+        var request = new FeatureChangeEventRequest
+        {
+            EventId = eventId,
+            SourceId = sourceId,
+            ServiceId = serviceId,
+            LayerId = layerId,
+            ObjectId = objectId,
+            Operation = operation,
+            Protocol = protocol,
+            RequestId = requestId,
+            GeometryEnvelope = enrichment.GeometryEnvelope,
+            PropertiesJson = enrichment.PropertiesJson,
+            GeometryJson = geometryJson,
+            GeometrySrid = geometrySrid,
+        };
+
+        var payload = JsonSerializer.Serialize(
+            request,
+            FeatureChangeEventsJsonContext.Default.FeatureChangeEventRequest);
+
+        return new FeatureChangeOutboxEntry
+        {
+            OutboxId = Guid.NewGuid(),
+            ServiceId = serviceId,
+            LayerId = layerId,
+            ObjectId = objectId,
+            Operation = operation,
+            Protocol = protocol,
+            SourceId = sourceId,
+            RequestId = requestId,
+            EventId = eventId,
+            EventPayload = payload,
+            Status = OutboxStatuses.Pending,
+            RetryCount = 0,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+    }
+
 }

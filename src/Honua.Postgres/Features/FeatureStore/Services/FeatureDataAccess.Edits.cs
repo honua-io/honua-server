@@ -6,6 +6,7 @@ using System.Data;
 using System.Data.Common;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Events.Outbox;
 using NetTopologySuite.IO;
 using Npgsql;
 using NpgsqlTypes;
@@ -16,20 +17,135 @@ internal sealed partial class FeatureDataAccess
 {
     public async Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
     {
+        // When an outbox scope is active and the provider supports transactional outbox,
+        // wrap the single-row insert in an explicit transaction so the outbox row commits
+        // atomically with the feature row. This closes the post-commit append gap that
+        // single-row autocommit paths would otherwise expose to a process crash.
+        if (TryUseTransactionalOutbox(out var outboxScope))
+        {
+            return await ExecuteSingleRowMutationWithOutboxAsync(
+                "create",
+                outboxScope!,
+                async (connection, transaction, ct) =>
+                {
+                    var created = await CreateWithConnectionAsync(layerId, feature, connection, transaction, ct).ConfigureAwait(false);
+                    return (created.Id, (Feature?)created);
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await CreateWithConnectionAsync(layerId, feature, connection, transaction: null, cancellationToken);
     }
 
     public async Task<Feature> UpdateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
     {
+        if (TryUseTransactionalOutbox(out var outboxScope))
+        {
+            return await ExecuteSingleRowMutationWithOutboxAsync(
+                "update",
+                outboxScope!,
+                async (connection, transaction, ct) =>
+                {
+                    var updated = await UpdateWithConnectionAsync(layerId, feature, connection, transaction, ct).ConfigureAwait(false);
+                    return (updated.Id, (Feature?)updated);
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await UpdateWithConnectionAsync(layerId, feature, connection, transaction: null, cancellationToken);
     }
 
     public async Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
     {
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await DeleteWithConnectionAsync(layerId, featureId, connection, transaction: null, cancellationToken);
+        if (TryUseTransactionalOutbox(out var outboxScope))
+        {
+            // Single-row delete path with outbox: open a transaction so the DELETE ... RETURNING
+            // capture and the outbox INSERT commit together. The recorder runs only when the
+            // RETURNING row was actually deleted; missing rows skip the outbox write entirely.
+            var (Connection, Transaction) = await _connectionProvider.OpenTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+            await using var _ = Connection;
+            await using var __ = Transaction;
+            var npgsql = Connection.RequireNpgsqlConnection();
+            var npgsqlTransaction = (NpgsqlTransaction)Transaction;
+
+            var deleted = await DeleteWithConnectionAsync(layerId, featureId, npgsql, npgsqlTransaction, cancellationToken).ConfigureAwait(false);
+            if (deleted.Deleted)
+            {
+                await TryWriteOutboxRowAsync(
+                    outboxScope!,
+                    Connection,
+                    Transaction,
+                    featureId,
+                    "delete",
+                    deleted.Snapshot,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            await Transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return deleted.Deleted;
+        }
+
+        await using var conn = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var simpleDelete = await DeleteWithConnectionAsync(layerId, featureId, conn, transaction: null, cancellationToken).ConfigureAwait(false);
+        return simpleDelete.Deleted;
+    }
+
+    private bool TryUseTransactionalOutbox(out FeatureMutationOutboxScopeData? scope)
+    {
+        scope = FeatureMutationOutboxScope.Current;
+        return scope is not null && _outboxRepository is not null;
+    }
+
+    private async Task<Feature> ExecuteSingleRowMutationWithOutboxAsync(
+        string operation,
+        FeatureMutationOutboxScopeData scope,
+        Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<(long ObjectId, Feature? Snapshot)>> mutate,
+        CancellationToken cancellationToken)
+    {
+        var (Connection, Transaction) = await _connectionProvider.OpenTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await using var _ = Connection;
+        await using var __ = Transaction;
+        var npgsql = Connection.RequireNpgsqlConnection();
+        var npgsqlTransaction = (NpgsqlTransaction)Transaction;
+
+        var (objectId, snapshot) = await mutate(npgsql, npgsqlTransaction, cancellationToken).ConfigureAwait(false);
+
+        await TryWriteOutboxRowAsync(
+            scope,
+            Connection,
+            Transaction,
+            objectId,
+            operation,
+            snapshot,
+            cancellationToken).ConfigureAwait(false);
+
+        await Transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return snapshot ?? throw new InvalidOperationException("Mutation returned no snapshot.");
+    }
+
+    private async Task TryWriteOutboxRowAsync(
+        FeatureMutationOutboxScopeData scope,
+        DbConnection connection,
+        DbTransaction transaction,
+        long objectId,
+        string operation,
+        Feature? snapshot,
+        CancellationToken cancellationToken)
+    {
+        if (_outboxRepository is null)
+        {
+            return;
+        }
+
+        var entry = scope.EntryFactory(objectId, operation, snapshot);
+        if (entry is null)
+        {
+            return;
+        }
+
+        await _outboxRepository.WriteOutboxRowAsync(connection, transaction, entry, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken)
@@ -252,6 +368,13 @@ internal sealed partial class FeatureDataAccess
                             connection,
                             transaction,
                             cancellationToken).ConfigureAwait(false);
+                        await TryWriteOutboxRowForBatchAsync(
+                            connection,
+                            transaction,
+                            created.Id,
+                            "create",
+                            created,
+                            cancellationToken).ConfigureAwait(false);
                         createdIds.Add(created.Id);
                         createResults.Add(EditOperationResult.Success(
                             created.Id,
@@ -277,6 +400,13 @@ internal sealed partial class FeatureDataAccess
                             feature,
                             connection,
                             transaction,
+                            cancellationToken).ConfigureAwait(false);
+                        await TryWriteOutboxRowForBatchAsync(
+                            connection,
+                            transaction,
+                            updated.Id,
+                            "update",
+                            updated,
                             cancellationToken).ConfigureAwait(false);
                         updateResults.Add(EditOperationResult.Success(
                             updated.Id,
@@ -305,8 +435,15 @@ internal sealed partial class FeatureDataAccess
                             connection,
                             transaction,
                             cancellationToken).ConfigureAwait(false);
-                        if (deleted)
+                        if (deleted.Deleted)
                         {
+                            await TryWriteOutboxRowForBatchAsync(
+                                connection,
+                                transaction,
+                                objectId,
+                                "delete",
+                                deleted.Snapshot,
+                                cancellationToken).ConfigureAwait(false);
                             deleteResults.Add(EditOperationResult.Success(objectId));
                             return true;
                         }
@@ -487,13 +624,47 @@ internal sealed partial class FeatureDataAccess
         return await ReadFeatureAsync(reader, cancellationToken);
     }
 
-    private async Task<bool> DeleteWithConnectionAsync(
+    private async Task<DeleteOutcome> DeleteWithConnectionAsync(
         int layerId,
         long featureId,
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
+        // When an outbox scope is active we use DELETE ... RETURNING to capture
+        // the pre-delete snapshot inside the same statement so the dispatcher can
+        // emit a delete event whose payload reflects the row that actually existed.
+        // This avoids a second round-trip and removes the TOCTOU window where a
+        // concurrent vacuum or a follow-up delete could erase the snapshot.
+        var captureSnapshot = FeatureMutationOutboxScope.Current is not null && _outboxRepository is not null;
+
+        if (captureSnapshot)
+        {
+            var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+            var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
+            var sqlReturning = $@"
+                DELETE FROM {_tableName}
+                WHERE layer_id = $1 AND objectid = $2
+                RETURNING objectid, {geometrySelect}, attributes";
+
+            await using var commandReturning = new NpgsqlCommand(sqlReturning, connection)
+            {
+                Transaction = transaction
+            };
+            ApplyCommandTimeout(commandReturning, _queryTimeoutSeconds);
+            commandReturning.Parameters.AddWithValue(layerId);
+            commandReturning.Parameters.AddWithValue(featureId);
+
+            await using var reader = await commandReturning.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return new DeleteOutcome(false, null);
+            }
+
+            var snapshot = await ReadFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
+            return new DeleteOutcome(true, snapshot);
+        }
+
         var sql = $@"
             DELETE FROM {_tableName}
             WHERE layer_id = $1 AND objectid = $2";
@@ -507,8 +678,10 @@ internal sealed partial class FeatureDataAccess
         command.Parameters.AddWithValue(featureId);
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
-        return rowsAffected > 0;
+        return new DeleteOutcome(rowsAffected > 0, null);
     }
+
+    private readonly record struct DeleteOutcome(bool Deleted, Feature? Snapshot);
 
     private static void ValidateGeometrySrid(byte[]? geometry, int? layerSrid)
     {
@@ -556,7 +729,14 @@ internal sealed partial class FeatureDataAccess
             return (ImmutableArray<long>.Empty, ImmutableArray<EditOperationResult>.Empty);
         }
 
-        if (transaction == null && features.Length > 1)
+        // When an outbox scope is active we serialize creates so the per-row snapshot
+        // returned by CreateWithConnectionAsync can drive the outbox factory. The fast
+        // bulk INSERT path returns ids only and would force a second projection just to
+        // satisfy the outbox payload — single-row inserts give us the snapshot directly
+        // and remain inside the same connection/transaction so atomicity is preserved.
+        var outboxActive = FeatureMutationOutboxScope.Current is not null && _outboxRepository is not null;
+
+        if (transaction == null && features.Length > 1 && !outboxActive)
         {
             return await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
                 features,
@@ -593,6 +773,7 @@ internal sealed partial class FeatureDataAccess
             try
             {
                 var created = await CreateWithConnectionAsync(layerId, feature, connection, transaction, cancellationToken);
+                await TryWriteOutboxRowForBatchAsync(connection, transaction, created.Id, "create", created, cancellationToken).ConfigureAwait(false);
                 createdIds.Add(created.Id);
                 results.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
@@ -765,9 +946,10 @@ internal sealed partial class FeatureDataAccess
         {
             try
             {
-                await UpdateWithConnectionAsync(layerId, feature, connection, transaction, cancellationToken);
+                var updated = await UpdateWithConnectionAsync(layerId, feature, connection, transaction, cancellationToken);
+                await TryWriteOutboxRowForBatchAsync(connection, transaction, updated.Id, "update", updated, cancellationToken).ConfigureAwait(false);
                 updatedCount++;
-                results.Add(EditOperationResult.Success(feature.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+                results.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
             catch (Exception ex)
             {
@@ -798,8 +980,9 @@ internal sealed partial class FeatureDataAccess
             try
             {
                 var deleted = await DeleteWithConnectionAsync(layerId, featureId, connection, transaction, cancellationToken);
-                if (deleted)
+                if (deleted.Deleted)
                 {
+                    await TryWriteOutboxRowForBatchAsync(connection, transaction, featureId, "delete", deleted.Snapshot, cancellationToken).ConfigureAwait(false);
                     deletedCount++;
                     results.Add(EditOperationResult.Success(featureId));
                 }
@@ -815,6 +998,50 @@ internal sealed partial class FeatureDataAccess
         }
 
         return (deletedCount, results.ToImmutableArray());
+    }
+
+    /// <summary>
+    /// Writes an outbox row inside the in-flight mutation transaction (or in a new auto-commit
+    /// statement on the same connection if no transaction is active). Used by the batch and
+    /// ordered-edit paths where the connection/transaction are already managed by ApplyEdits.
+    /// </summary>
+    private async Task TryWriteOutboxRowForBatchAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        long objectId,
+        string operation,
+        Feature? snapshot,
+        CancellationToken cancellationToken)
+    {
+        if (_outboxRepository is null)
+        {
+            return;
+        }
+
+        var scope = FeatureMutationOutboxScope.Current;
+        if (scope is null)
+        {
+            return;
+        }
+
+        var entry = scope.EntryFactory(objectId, operation, snapshot);
+        if (entry is null)
+        {
+            return;
+        }
+
+        if (transaction is not null)
+        {
+            await _outboxRepository.WriteOutboxRowAsync(connection, transaction, entry, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // Non-transactional batch path (RollbackOnFailure=false). Write the outbox row on
+            // the same connection so the row is visible immediately to the dispatcher and
+            // shares the connection's lifetime; callers ignore failures via the outer try/catch
+            // around per-row mutations and surface them as edit operation failures.
+            await _outboxRepository.WriteOutboxRowAsync(entry, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static string GetSafeEditOperationError(Exception ex, string operation)

@@ -25,7 +25,8 @@ internal sealed record FeatureDataAccessDependencies(
     IOptions<PerformanceMonitoringOptions>? PerformanceOptions,
     IOptions<LimitsOptions>? LimitsOptions,
     IPerformanceMonitor? PerformanceMonitor,
-    string? SchemaName);
+    string? SchemaName,
+    Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository? OutboxRepository = null);
 
 /// <summary>
 /// Handles database data access operations for PostgreSQL feature store
@@ -39,6 +40,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     private readonly PreparedStatementCache? _statementCache;
     private readonly IPerformanceMonitor? _performanceMonitor;
     private readonly ILogger<FeatureDataAccess> _logger;
+    private readonly Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository? _outboxRepository;
     private readonly double _slowQueryThresholdMs;
     private readonly int _queryTimeoutSeconds;
     private readonly int _tileTimeoutSeconds;
@@ -55,6 +57,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         _statementCache = dependencies.StatementCache;
         _performanceMonitor = dependencies.PerformanceMonitor;
         _logger = dependencies.Logger ?? throw new ArgumentNullException(nameof(dependencies), "Logger is required.");
+        _outboxRepository = dependencies.OutboxRepository;
         _slowQueryThresholdMs = (dependencies.PerformanceOptions?.Value.SlowRequestThreshold ?? TimeSpan.FromSeconds(1))
             .TotalMilliseconds;
 

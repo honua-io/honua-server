@@ -18,6 +18,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.OData.Models;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.WebUtilities;
 
@@ -38,6 +39,7 @@ internal sealed partial class ODataBatchHandler
     private readonly IETagService _etagService;
     private readonly IEditParameterAdapter<ODataEditRequest> _editParameterAdapter;
     private readonly IEditProcessor _editProcessor;
+    private readonly Honua.Server.Features.Infrastructure.Events.FeatureMutationEventService _mutationEventService;
     private readonly ILogger _logger;
     private readonly Dictionary<int, AxisOrder> _axisOrderCache = new();
 
@@ -60,6 +62,7 @@ internal sealed partial class ODataBatchHandler
         _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
         _editParameterAdapter = dependencies.EditParameterAdapter;
         _editProcessor = dependencies.EditProcessor;
+        _mutationEventService = dependencies.MutationEventService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -919,6 +922,14 @@ internal sealed partial class ODataBatchHandler
                 }
 
                 var axisOrder = await ResolveAxisOrderAsync(layer, cancellationToken);
+                var atomicOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+                    context,
+                    layerId,
+                    HonuaTelemetry.Protocols.OData,
+                    serviceProtocol: ServiceProtocols.OData,
+                    layerSrid: layer.SpatialReference.Wkid,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                using var atomicOutboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(atomicOutboxScopeData);
                 var result = await _featureWriter.ApplyEditsAsync(layerId, batch, cancellationToken);
 
                 if (layerCreates != null)

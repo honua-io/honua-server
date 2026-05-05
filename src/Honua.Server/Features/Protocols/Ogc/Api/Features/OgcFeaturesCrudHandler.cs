@@ -100,6 +100,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 ?? throw new InvalidOperationException("Feature build result was missing the feature payload.");
 
             var editResult = await ExecuteEditAsync(
+                context,
                 layerId,
                 layer,
                 new OgcFeaturesEditRequest
@@ -212,6 +213,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var objectId = resolvedFeature.Value.ObjectId;
 
             var editResult = await ExecuteEditAsync(
+                context,
                 layerId,
                 layer,
                 new OgcFeaturesEditRequest
@@ -288,6 +290,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
     }
 
     private async Task<FeatureEditResult> ExecuteEditAsync(
+        HttpContext context,
         int layerId,
         LayerDefinition layer,
         OgcFeaturesEditRequest request,
@@ -307,7 +310,20 @@ internal sealed partial class OgcFeaturesCrudHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
-        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+        // Resolve outbox scope data, then activate it synchronously in this method's
+        // ExecutionContext so the AsyncLocal flows into ApplyEditsAsync and each mutated
+        // row writes its outbox entry inside the same DbTransaction. Activation must be
+        // synchronous (caller-side) because AsyncLocal mutations from an async callee do
+        // not propagate back to the caller.
+        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
+            layerId,
+            HonuaTelemetry.Protocols.OgcFeatures,
+            serviceProtocol: ServiceProtocols.OgcFeatures,
+            layerSrid: layer.SpatialReference.Wkid,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
+        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsNotFound(EditOperationResult result)

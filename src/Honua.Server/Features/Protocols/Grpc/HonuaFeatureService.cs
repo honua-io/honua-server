@@ -288,6 +288,18 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
         }
 
+        var grpcHttpContext = context.GetHttpContext()
+            ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
+        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            grpcHttpContext,
+            request.LayerId,
+            HonuaTelemetry.Protocols.Grpc,
+            sourceId: request.ServiceId,
+            serviceProtocol: ServiceProtocols.Grpc,
+            layerSrid: layer.SpatialReference.Wkid,
+            cancellationToken: context.CancellationToken).ConfigureAwait(false);
+        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
+
         var result = await _featureWriter.ApplyEditsAsync(
             request.LayerId,
             editBatch,

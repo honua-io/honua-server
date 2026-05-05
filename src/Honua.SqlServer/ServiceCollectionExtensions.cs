@@ -6,6 +6,7 @@ using Honua.SqlServer.Features.FeatureStore;
 using Honua.SqlServer.Features.FeatureStore.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.SqlServer;
 
@@ -39,6 +40,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SqlServerFeatureStore>();
 
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<SqlServerFeatureStore>());
+
+        // Capability provider for the feature-change transactional outbox (#692). SQL Server
+        // is read-only in this slice and reports SupportsTransactionalOutbox = false so the
+        // server skips dispatcher startup for SQL-Server-only deployments. Registered with
+        // TryAdd so PostgreSQL's true-capability provider wins when both providers are active.
+        services.TryAddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
+            Honua.SqlServer.Features.Infrastructure.Events.Outbox.SqlServerOutboxCapabilityProvider>();
 
         return services;
     }

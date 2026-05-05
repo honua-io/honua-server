@@ -411,7 +411,17 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
-        var editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+        var httpContext = _httpContextAccessor.HttpContext
+            ?? throw new InvalidOperationException("HttpContext is required for FeatureServer edit dispatch.");
+        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            httpContext,
+            layerId,
+            HonuaTelemetry.Protocols.FeatureServer,
+            serviceProtocol: ServiceProtocols.FeatureServer,
+            layerSrid: layer.SpatialReference.Wkid,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
+        var editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
 
         ApplyResults(context.AddResults, context.CreateIndexes, editResult.CreateResults);
         ApplyCreateResponseObjectIds(context);

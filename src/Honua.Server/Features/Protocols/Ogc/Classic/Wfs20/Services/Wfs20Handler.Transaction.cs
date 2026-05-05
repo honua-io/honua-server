@@ -90,6 +90,7 @@ internal sealed partial class Wfs20Handler
             Wfs20Log.TransactionRequested(_logger, prepared.InsertCount, prepared.UpdateCount, prepared.DeleteCount);
 
             var editResult = await ApplyPreparedTransactionAsync(
+                context,
                 prepared,
                 rollbackOnFailure,
                 cancellationToken).ConfigureAwait(false);
@@ -1491,6 +1492,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<FeatureEditResult> ApplyPreparedTransactionAsync(
+        HttpContext context,
         TransactionPreparationResult prepared,
         bool rollbackOnFailure,
         CancellationToken cancellationToken)
@@ -1498,6 +1500,7 @@ internal sealed partial class Wfs20Handler
         if (prepared.LayerIdCount <= 1)
         {
             return await ExecutePreparedEditAsync(
+                context,
                 prepared.LayerId,
                 prepared.Operations
                     .Select(static operation => operation.EditOperation)
@@ -1545,6 +1548,7 @@ internal sealed partial class Wfs20Handler
         {
             var operations = layerGroup.OrderBy(static operation => operation.Sequence).ToImmutableArray();
             var layerResult = await ExecutePreparedEditAsync(
+                context,
                 layerGroup.Key,
                 operations
                     .Select(static operation => operation.EditOperation)
@@ -1620,6 +1624,7 @@ internal sealed partial class Wfs20Handler
     }
 
     private async Task<FeatureEditResult> ExecutePreparedEditAsync(
+        HttpContext context,
         int layerId,
         ImmutableArray<FeatureEditOperation> operations,
         bool rollbackOnFailure,
@@ -1649,6 +1654,14 @@ internal sealed partial class Wfs20Handler
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
+            layerId,
+            HonuaTelemetry.Protocols.Wfs20,
+            serviceProtocol: ServiceProtocols.Wfs20,
+            layerSrid: layer.SpatialReference.Wkid,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 

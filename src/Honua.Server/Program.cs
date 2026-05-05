@@ -606,6 +606,19 @@ builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatu
         sp.GetRequiredService<ILogger<Honua.Server.Features.Streaming.FeatureStreamPublisher>>(),
         sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeRetryQueue>()));
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.FeatureMutationEventService>();
+
+// Feature-change transactional outbox (#692). Capability provider, dispatcher, health,
+// and metrics. The outbox repository itself is registered by the active provider's
+// service-collection extension (Postgres registers a working repository; SQL Server and
+// DuckDB register only the capability provider since they do not support feature writes).
+builder.Services.AddOptions<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptions>()
+    .Bind(builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService>();
+builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxHealth>(sp =>
+    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService>());
+builder.Services.AddHostedService(sp =>
+    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService>());
 builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Events.FeatureChangeRetryBackgroundService>();
 builder.Services.AddScoped<Honua.Server.Features.Streaming.FeatureStreamDependencies>();
 builder.Services.AddHostedService<Honua.Server.Features.Streaming.FeatureStreamHeartbeatService>();

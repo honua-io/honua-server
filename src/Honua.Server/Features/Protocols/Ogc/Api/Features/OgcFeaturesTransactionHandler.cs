@@ -124,6 +124,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             else
             {
                 var editResult = await ExecuteEditAsync(
+                    context,
                     layerId,
                     layer,
                     new OgcFeaturesEditRequest
@@ -344,6 +345,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             try
             {
                 var editResult = await ExecuteEditAsync(
+                    context,
                     layerId,
                     layer,
                     new OgcFeaturesEditRequest
@@ -627,6 +629,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             try
             {
                 var editResult = await ExecuteEditAsync(
+                    context,
                     layerId,
                     layer,
                     new OgcFeaturesEditRequest
@@ -735,6 +738,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private async Task<FeatureEditResult> ExecuteEditAsync(
+        HttpContext context,
         int layerId,
         LayerDefinition layer,
         OgcFeaturesEditRequest request,
@@ -754,6 +758,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
+            layerId,
+            HonuaTelemetry.Protocols.OgcFeatures,
+            serviceProtocol: ServiceProtocols.OgcFeatures,
+            layerSrid: layer.SpatialReference.Wkid,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 

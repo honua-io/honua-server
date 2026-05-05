@@ -51,6 +51,8 @@
     <InternalsVisibleTo Include="Honua.DuckDB" />
     <InternalsVisibleTo Include="Honua.MySql" />
     <InternalsVisibleTo Include="Honua.MySql.Tests" />
+    <InternalsVisibleTo Include="Honua.SqlServer" />
+    <InternalsVisibleTo Include="Honua.SqlServer.Tests" />
   </ItemGroup>
 
 </Project>

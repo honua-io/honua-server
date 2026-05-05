@@ -121,6 +121,14 @@ internal static class ServiceCollectionExtensions
             return new DuckDBLayerCatalog(layers, serviceDefs, sp.GetRequiredService<ILogger<DuckDBLayerCatalog>>());
         });
 
+        // Capability provider for the feature-change transactional outbox (#692). DuckDB is
+        // read-only so it reports SupportsTransactionalOutbox = false. The dispatcher will
+        // skip startup; mutation event delivery falls through to the post-commit publish +
+        // retry queue path. Registered via TryAdd so the Postgres provider wins when both
+        // backends are configured.
+        services.TryAddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
+            Honua.DuckDB.Features.Infrastructure.Events.Outbox.DuckDbOutboxCapabilityProvider>();
+
         return services;
     }
 

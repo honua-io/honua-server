@@ -331,7 +331,17 @@ internal sealed class ODataCrudHandler(
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
-        var result = await _crudService.CreateFeatureAsync(resolvedLayerId.Value, payload, baseUrl, effectiveToken);
+        var createOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
+            resolvedLayerId.Value,
+            HonuaTelemetry.Protocols.OData,
+            serviceProtocol: ServiceProtocols.OData,
+            cancellationToken: effectiveToken).ConfigureAwait(false);
+        ODataCrudResult<Dictionary<string, object?>> result;
+        using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(createOutboxScopeData))
+        {
+            result = await _crudService.CreateFeatureAsync(resolvedLayerId.Value, payload, baseUrl, effectiveToken);
+        }
         if (result.IsSuccess)
         {
             var preferMinimal = ODataUtilityService.ShouldReturnMinimal(context.Request.Headers["Prefer"].ToString());
@@ -530,15 +540,25 @@ internal sealed class ODataCrudHandler(
 
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
-        var result = await _crudService.UpdateFeatureAsync(
+        var updateOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
             layerId,
-            objectId,
-            payload,
-            baseUrl,
-            ifMatch,
-            ifNoneMatch,
-            replace,
-            effectiveToken);
+            HonuaTelemetry.Protocols.OData,
+            serviceProtocol: ServiceProtocols.OData,
+            cancellationToken: effectiveToken).ConfigureAwait(false);
+        ODataCrudResult<Dictionary<string, object?>> result;
+        using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(updateOutboxScopeData))
+        {
+            result = await _crudService.UpdateFeatureAsync(
+                layerId,
+                objectId,
+                payload,
+                baseUrl,
+                ifMatch,
+                ifNoneMatch,
+                replace,
+                effectiveToken);
+        }
         if (result.IsSuccess)
         {
             var preferMinimal = ODataUtilityService.ShouldReturnMinimal(context.Request.Headers["Prefer"].ToString());
@@ -623,7 +643,17 @@ internal sealed class ODataCrudHandler(
 
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
-        var result = await _crudService.DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, effectiveToken);
+        var deleteOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
+            layerId,
+            HonuaTelemetry.Protocols.OData,
+            serviceProtocol: ServiceProtocols.OData,
+            cancellationToken: effectiveToken).ConfigureAwait(false);
+        ODataCrudResult<object> result;
+        using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(deleteOutboxScopeData))
+        {
+            result = await _crudService.DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, effectiveToken);
+        }
         if (result.IsSuccess)
         {
             if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))

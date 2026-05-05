@@ -23,6 +23,7 @@ internal static class ProductionHealthChecks
     private static readonly string[] UploadTags = ["upload", "queue"];
     private static readonly string[] ExternalServiceTags = ["external", "http"];
     private static readonly string[] MetricsTags = ["metrics", "monitoring"];
+    private static readonly string[] OutboxTags = ["outbox", "events"];
 
     /// <summary>
     /// Adds production health checks to the service collection.
@@ -72,6 +73,14 @@ internal static class ProductionHealthChecks
             "production-metrics",
             HealthStatus.Degraded,
             MetricsTags);
+
+        // Feature-change transactional outbox dispatcher (#692). Surfaces dispatch backlog
+        // and dead-letter accumulation on the readiness endpoint so deployments observe
+        // CDC durability regressions before they cause silent event loss.
+        healthChecksBuilder.AddCheck<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxHealthCheck>(
+            "feature-change-outbox",
+            HealthStatus.Degraded,
+            OutboxTags);
 
         return services;
     }
