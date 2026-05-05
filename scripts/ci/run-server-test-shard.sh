@@ -54,8 +54,21 @@ test_command=(
 )
 
 run_command=("${test_command[@]}")
+timeout_command=""
 if [[ -n "${timeout_minutes}" ]]; then
-  run_command=(timeout --kill-after=30s "${timeout_minutes}m" "${test_command[@]}")
+  if [[ -n "${HONUA_SERVER_TEST_TIMEOUT_COMMAND:-}" ]]; then
+    timeout_command="${HONUA_SERVER_TEST_TIMEOUT_COMMAND}"
+  elif command -v timeout >/dev/null 2>&1; then
+    timeout_command="timeout"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    timeout_command="gtimeout"
+  else
+    echo "::warning::No GNU timeout command found; running shard '${shard_name}' without an inner timeout." >&2
+  fi
+
+  if [[ -n "${timeout_command}" ]]; then
+    run_command=("${timeout_command}" --kill-after=30s "${timeout_minutes}m" "${test_command[@]}")
+  fi
 fi
 
 started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -68,6 +81,7 @@ start_epoch="$(date +%s)"
   echo "Configuration: ${configuration}"
   echo "Console verbosity: ${console_verbosity}"
   echo "Timeout minutes: ${timeout_minutes:-none}"
+  echo "Timeout command: ${timeout_command:-none}"
   echo "Max CPU count: ${max_cpu_count:-default}"
   echo "Filter: ${filter}"
   echo ""
@@ -105,7 +119,7 @@ status="failed"
 
 if [[ "${test_exit_code}" -eq 0 ]]; then
   status="passed"
-elif [[ "${test_exit_code}" -eq 124 || "${test_exit_code}" -eq 137 ]]; then
+elif [[ -n "${timeout_command}" && "${test_exit_code}" -eq 124 ]]; then
   status="timed_out"
   timed_out="true"
 fi
