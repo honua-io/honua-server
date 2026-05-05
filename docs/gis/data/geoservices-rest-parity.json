@@ -349,7 +349,10 @@
             "honuaEndpoints": [
               "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins",
               "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins"
-            ]
+            ],
+            "edition": "Pro",
+            "featureKey": "temporal.histogram",
+            "notes": "Bins features into time intervals on a Date/DateTime field. bin accepts calendarBin (unit: year, quarter, month, week, day, hour, minute, second; mapped to Postgres date_trunc) or fixedBin (intervalCount + intervalUnit: seconds, minutes, hours, days, weeks; days default if unrecognized; optional origin in Unix ms). outStatistics is optional and defaults to count. Pro-tier per the temporal animation contract (ADR-0024); the gate fires after successful service/layer access and before bin parameter parsing on both GET and POST, so Community-tier requests return HTTP 403 Forbidden with a remediation message regardless of how the bin payload is supplied. See docs/gis/temporal-animation-api.md."
           },
           {
             "name": "Query Top Features",
