@@ -632,11 +632,17 @@ internal sealed partial class ODataBatchHandler
                             Feature? mergeExisting = isPatch ? existing.Value : null;
 
                             Feature parsedFeature;
-                            // PATCH preserves existing geometry when the body omits Geometry;
-                            // capture the request-intent flag from the body before merging so
-                            // the outbox payload's GeometryChanged matches the request, not
-                            // the merged feature's WKB.
-                            var requestGeometryChanged = TryGetGeometrySpecified(request.Body);
+                            // PATCH preserves existing geometry when the body omits Geometry,
+                            // so the request-intent flag from the body is the right signal.
+                            // PUT (replace) re-sets geometry to whatever the body carries (or
+                            // null if absent); a body-less PUT therefore clears any existing
+                            // geometry, so flag the change when the request body specified
+                            // Geometry OR the existing row already had geometry that PUT will
+                            // overwrite. Reading the merged feature's WKB would over-report
+                            // PATCH attribute-only updates because the merge preserves the
+                            // prior WKB.
+                            var requestGeometryChanged = TryGetGeometrySpecified(request.Body)
+                                || (!isPatch && existing.Value.Geometry is { Length: > 0 });
                             try
                             {
                                 parsedFeature = await CreateFeatureFromBodyAsync(

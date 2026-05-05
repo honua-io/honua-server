@@ -546,16 +546,22 @@ internal sealed class ODataCrudHandler(
 
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
-        // GeometrySpecified is the OData PATCH/PUT contract for "the request body
-        // explicitly carried a Geometry property"; relying on the post-mutation
-        // snapshot would over-report PATCH attribute-only updates as geometry
-        // changes because the merged feature still carries the prior WKB.
+        // PATCH preserves omitted geometry, so GeometrySpecified is the right intent
+        // signal — relying on the post-mutation snapshot would over-report PATCH
+        // attribute-only updates as geometry changes because the merged feature still
+        // carries the prior WKB. PUT (replace) re-sets geometry to whatever the body
+        // carries (or null if absent), so a body-less PUT clears any existing
+        // geometry. Mark replace operations as a geometry change so consumers see
+        // the cleared state without an extra pre-fetch of the existing row; the
+        // benign over-report is PUT-with-no-body-geometry against a feature that
+        // was already null, which is acceptable per the spec hint that
+        // GeometryChanged is a best-effort delta signal.
         var updateOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             context,
             layerId,
             HonuaTelemetry.Protocols.OData,
             serviceProtocol: ServiceProtocols.OData,
-            geometryChanged: payload.GeometrySpecified,
+            geometryChanged: replace || payload.GeometrySpecified,
             cancellationToken: effectiveToken).ConfigureAwait(false);
         ODataCrudResult<Dictionary<string, object?>> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(updateOutboxScopeData))
@@ -599,6 +605,11 @@ internal sealed class ODataCrudHandler(
             if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
             {
                 await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                // Inline publish on non-outbox backends. Mirror the outbox scope's
+                // geometry-change formula so consumers see a consistent contract: PUT
+                // (replace) always reports GeometryChanged=true because the operation
+                // either supplies new geometry or clears existing geometry, while PATCH
+                // honors the request-intent flag from the body.
                 await _mutationEventService.PublishAsync(
                     context,
                     layerId,
@@ -607,7 +618,8 @@ internal sealed class ODataCrudHandler(
                     HonuaTelemetry.Protocols.OData,
                     CancellationToken.None,
                     mutationFeature: result.MutationFeature,
-                    serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+                    serviceProtocol: ServiceProtocols.OData,
+                    geometryChanged: replace || payload.GeometrySpecified).ConfigureAwait(false);
             }
             HonuaTelemetry.SetSuccess(activity);
         }

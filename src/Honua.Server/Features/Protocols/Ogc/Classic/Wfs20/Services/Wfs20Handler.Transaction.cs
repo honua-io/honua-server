@@ -595,8 +595,13 @@ internal sealed partial class Wfs20Handler
             targetIds[0],
             featureElement,
             cancellationToken).ConfigureAwait(false);
-        // Replace constructs a fresh feature from the request payload, so the built
-        // feature's WKB tracks the request's intent.
+        // Replace constructs a fresh feature from the request payload (or null when
+        // the body omits geometry), and the operation overwrites the existing row.
+        // Mark the change when either side has geometry so a body-less Replace that
+        // clears an existing non-null geometry surfaces the cleared state to
+        // consumers; the only no-change case is null-to-null, which we keep as
+        // false. This avoids the under-report from inferring solely from the
+        // replacement's WKB.
         operations.Add(new PreparedTransactionOperation(
             operations.Count,
             descriptor,
@@ -607,6 +612,7 @@ internal sealed partial class Wfs20Handler
             null)
         {
             RequestGeometryChanged = replacement.Geometry is { Length: > 0 }
+                || existing.Value.Geometry is { Length: > 0 }
         });
 
         return null;

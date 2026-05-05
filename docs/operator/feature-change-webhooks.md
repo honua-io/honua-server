@@ -7,7 +7,9 @@ This runbook covers operational setup for feature-change notifications and repla
 Honua emits normalized feature-write events for:
 
 - FeatureServer edits (`applyEdits`, `addFeatures`, `updateFeatures`, `deleteFeatures`)
-- OGC Features writes
+- gRPC `FeatureService.ApplyEdits` (Adds / Updates / Deletes batches)
+- OGC API Features writes (Create, Replace, Patch, Delete, batch)
+- WFS 2.0 `Transaction` (Insert, Replace, Update, Delete)
 - OData writes (including successful `$batch` mutations)
 
 Each event envelope includes:
@@ -90,12 +92,17 @@ Durability guarantees:
   the autocommit fast path.
 - **Per-row request and geometry-intent correlation.** Atomic batches (OData
   `$batch` atomic groups, OGC Features Transactions, GeoServices `applyEdits`,
-  WFS 2.0 transactions) thread per-row `requestId` and `geometryChanged` queues
-  into the outbox scope so each emitted envelope carries the same correlation
-  the inline post-commit publish would have used. `geometryChanged` is sourced
-  from the originating request intent rather than inferred from the post-mutation
-  snapshot, so PATCH-style updates that preserve existing geometry report
-  `geometryChanged=false`.
+  gRPC `ApplyEdits`, WFS 2.0 transactions) thread per-row `requestId` and
+  `geometryChanged` queues into the outbox scope so each emitted envelope
+  carries the same correlation the inline post-commit publish would have used.
+  `geometryChanged` is sourced from the originating request intent rather than
+  inferred from the post-mutation snapshot, so PATCH-style updates that
+  preserve existing geometry report `geometryChanged=false`. Replace-style
+  operations (OData PUT, OGC Features Replace and batch updates, WFS 2.0
+  Replace) report `geometryChanged=true` whenever the operation either supplies
+  a new geometry or overwrites an existing non-null geometry — including the
+  body-less Replace that clears existing geometry. The only no-change case for
+  a Replace is null-to-null, which stays `false`.
 
 Backend capability:
 
