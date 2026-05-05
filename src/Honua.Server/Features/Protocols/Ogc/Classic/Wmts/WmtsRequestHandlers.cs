@@ -19,6 +19,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Protocols.Ogc.Classic;
+using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -285,6 +286,7 @@ internal static class WmtsRequestHandlers
             OgcClassicLog.WmtsRequested(logger, serviceId, "GetCapabilities");
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
+            var capabilitiesFeatureReader = context.RequestServices.GetService<IFeatureReader>();
             var visibleLayers = svcDef.Layers
                 .Where(layer => layer.HasGeometry && AccessPolicyHelpers.IsLayerAccessible(context, layer, svcDef))
                 .ToArray();
@@ -296,6 +298,7 @@ internal static class WmtsRequestHandlers
                 sections,
                 wmtsMaxZoom,
                 coordinateTransformService,
+                capabilitiesFeatureReader,
                 cancellationToken).ConfigureAwait(false);
             return Results.Content(xml, responseMimeType);
         }
@@ -1056,6 +1059,7 @@ internal static class WmtsRequestHandlers
         WmtsCapabilitiesSections sections,
         int wmtsMaxZoom,
         ICoordinateTransformService? coordinateTransformService,
+        IFeatureReader? featureReader,
         CancellationToken cancellationToken)
     {
         var sb = new StringBuilder(4096);
@@ -1191,7 +1195,10 @@ internal static class WmtsRequestHandlers
             {
                 var layerId = layer.Id.ToString(CultureInfo.InvariantCulture);
                 var isQueryable = IsWmtsLayerQueryable(service, layer);
-                var dimensions = GetWmtsDimensionDefinitions(layer);
+                var dimensions = await GetWmtsDimensionDefinitionsAsync(
+                    layer,
+                    featureReader,
+                    cancellationToken).ConfigureAwait(false);
                 var dimensionTemplateSuffix = BuildWmtsDimensionTemplateSuffix(
                     dimensions,
                     parameterSeparator: ";",
@@ -1319,26 +1326,112 @@ internal static class WmtsRequestHandlers
 
     private static WmtsDimensionDefinition[] GetWmtsDimensionDefinitions(LayerDefinition layer)
     {
-        if (!string.Equals(layer.Name, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(layer.Name, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase))
         {
-            return [];
+            return
+            [
+                new WmtsDimensionDefinition(
+                    Identifier: "elevation",
+                    Values: ["100", "200", "300"],
+                    DefaultValue: "100",
+                    SupportsCurrent: true,
+                    CurrentValue: "300"),
+                new WmtsDimensionDefinition(
+                    Identifier: "scenario",
+                    Values: ["winter", "summer"],
+                    DefaultValue: "winter",
+                    SupportsCurrent: false,
+                    CurrentValue: null)
+            ];
         }
 
-        return
-        [
-            new WmtsDimensionDefinition(
-                Identifier: "elevation",
-                Values: ["100", "200", "300"],
-                DefaultValue: "100",
-                SupportsCurrent: true,
-                CurrentValue: "300"),
-            new WmtsDimensionDefinition(
-                Identifier: "scenario",
-                Values: ["winter", "summer"],
-                DefaultValue: "winter",
-                SupportsCurrent: false,
-                CurrentValue: null)
-        ];
+        // Time-aware feature layers advertise a continuous "time" dimension so
+        // tile/GetFeatureInfo validation accepts a TIME parameter. The default
+        // and extent values are computed asynchronously from the layer's
+        // temporal range in GetWmtsDimensionDefinitionsAsync.
+        var timeInfo = layer.Metadata?.TimeInfo;
+        if (timeInfo is not null && !string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+        {
+            return
+            [
+                new WmtsDimensionDefinition(
+                    Identifier: "time",
+                    Values: [],
+                    DefaultValue: null,
+                    SupportsCurrent: true,
+                    CurrentValue: null)
+            ];
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Returns the dynamic dimension list, resolving the continuous time
+    /// dimension default value from the layer's temporal extent for capabilities
+    /// rendering. Non-temporal layers skip the database call entirely.
+    /// </summary>
+    private static async Task<WmtsDimensionDefinition[]> GetWmtsDimensionDefinitionsAsync(
+        LayerDefinition layer,
+        IFeatureReader? featureReader,
+        CancellationToken cancellationToken)
+    {
+        var staticDimensions = GetWmtsDimensionDefinitions(layer);
+        if (staticDimensions.Length == 0 || featureReader is null)
+        {
+            return staticDimensions;
+        }
+
+        var timeInfo = layer.Metadata?.TimeInfo;
+        if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+        {
+            return staticDimensions;
+        }
+
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
+            layer,
+            featureReader,
+            cancellationToken).ConfigureAwait(false);
+        if (range is null || !range.Value.HasExtent || range.Value.Min is null || range.Value.Max is null)
+        {
+            return staticDimensions;
+        }
+
+        var min = range.Value.Min.Value.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        var max = range.Value.Max.Value.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        var populated = new WmtsDimensionDefinition(
+            Identifier: "time",
+            Values: [$"{min}/{max}/PT0S"],
+            DefaultValue: max,
+            SupportsCurrent: true,
+            CurrentValue: max);
+
+        // Replace any stub time dimension already present (from the sync path)
+        // with the populated entry; preserve other dimensions in their order.
+        var resolved = new WmtsDimensionDefinition[staticDimensions.Length];
+        var replaced = false;
+        for (var i = 0; i < staticDimensions.Length; i++)
+        {
+            if (!replaced && string.Equals(staticDimensions[i].Identifier, "time", StringComparison.OrdinalIgnoreCase))
+            {
+                resolved[i] = populated;
+                replaced = true;
+            }
+            else
+            {
+                resolved[i] = staticDimensions[i];
+            }
+        }
+
+        if (!replaced)
+        {
+            var combined = new WmtsDimensionDefinition[resolved.Length + 1];
+            Array.Copy(resolved, combined, resolved.Length);
+            combined[^1] = populated;
+            return combined;
+        }
+
+        return resolved;
     }
 
     private static string BuildWmtsDimensionTemplateSuffix(
@@ -1522,7 +1615,11 @@ internal static class WmtsRequestHandlers
         {
             if (!query.ContainsKey(dimension.Identifier))
             {
-                if (string.IsNullOrWhiteSpace(dimension.DefaultValue))
+                // The continuous time dimension is optional on tile requests;
+                // omitting it returns the layer's full extent as if no temporal
+                // filter were applied. Discrete dimensions still require a value.
+                if (string.IsNullOrWhiteSpace(dimension.DefaultValue) &&
+                    !string.Equals(dimension.Identifier, "time", StringComparison.OrdinalIgnoreCase))
                 {
                     errorResult = CreateWmtsExceptionReport(context,
                         "MissingParameterValue",
@@ -1615,6 +1712,21 @@ internal static class WmtsRequestHandlers
                 dimension.Values.FirstOrDefault() ??
                 string.Empty;
             return resolvedValue.Length > 0;
+        }
+
+        // The continuous time dimension does not enumerate discrete values;
+        // accept any RFC 3339 instant or interval and let downstream rendering
+        // ignore values that do not intersect data (returning an empty tile).
+        if (string.Equals(dimension.Identifier, "time", StringComparison.OrdinalIgnoreCase))
+        {
+            if (OgcTemporalFilterParser.TryParseRange(normalized, out var start, out var end, out _) &&
+                (start is not null || end is not null))
+            {
+                resolvedValue = normalized;
+                return true;
+            }
+
+            return false;
         }
 
         var matching = dimension.Values.FirstOrDefault(value =>

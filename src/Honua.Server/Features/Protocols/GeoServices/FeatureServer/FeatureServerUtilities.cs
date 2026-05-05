@@ -189,7 +189,7 @@ internal static partial class FeatureServerEndpoints
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Tiles =
-            new[] { "where" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "where", "time" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> H3Tiles =
             new[] { "where", "resolution" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);

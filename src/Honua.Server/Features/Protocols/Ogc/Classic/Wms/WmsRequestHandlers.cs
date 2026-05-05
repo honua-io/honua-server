@@ -21,6 +21,7 @@ using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Protocols.Ogc.Classic;
+using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using SkiaSharp;
@@ -333,6 +334,14 @@ internal static class WmsRequestHandlers
         var layerFilters = filterResult.Filters;
         activity?.SetTag("wms.filter_applied", layerFilters is not null);
 
+        var temporalResult = TryParseWmsLayerTemporalFilters(context, query, renderLayers);
+        if (temporalResult.Error != null)
+        {
+            return temporalResult.Error;
+        }
+        var layerTemporalFilters = temporalResult.Filters;
+        activity?.SetTag("wms.time_applied", layerTemporalFilters is not null);
+
         var effectiveTransparent = transparent && string.Equals(imageFormat, "png", StringComparison.OrdinalIgnoreCase);
         await using var renderLease = await context.RequestServices
             .GetRequiredService<RasterRenderCapacityLimiter>()
@@ -432,7 +441,8 @@ internal static class WmsRequestHandlers
                 service.SpatialReference.Srid,
                 requestSrid,
                 maxFeatures,
-                layerFilters?[i]);
+                layerFilters?[i],
+                layerTemporalFilters?[i]);
 
             var renderedPointCount = await TryRenderRasterPointFastPathAsync(
                 canvas,
@@ -787,6 +797,95 @@ internal static class WmsRequestHandlers
 
         layers = [.. resolved];
         return true;
+    }
+
+    /// <summary>
+    /// Parses the optional WMS 1.3 TIME parameter into per-layer
+    /// <see cref="TemporalFilter"/>. Returns (null, null) when TIME is absent so
+    /// non-temporal layers are not regressed. The TIME value is shared across
+    /// all requested layers (WMS does not allow per-layer TIME); each layer that
+    /// is time-aware receives the same parsed bounds, and layers without temporal
+    /// configuration are rejected with InvalidDimensionValue per OGC 06-042.
+    /// CITE Autos has its own synthetic rendering path and is bypassed here so
+    /// the existing CITE conformance behavior is preserved.
+    /// </summary>
+    private static (TemporalFilter?[]? Filters, IResult? Error) TryParseWmsLayerTemporalFilters(
+        HttpContext context,
+        IQueryCollection query,
+        LayerDefinition[] layers)
+    {
+        var timeParam = GetQueryValue(query, "TIME");
+        if (string.IsNullOrWhiteSpace(timeParam))
+        {
+            return (null, null);
+        }
+
+        if (!OgcTemporalFilterParser.TryParseRange(timeParam, out var start, out var end, out var parseError))
+        {
+            return (null, CreateWmsServiceException(
+                context,
+                "InvalidDimensionValue",
+                parseError ?? "Invalid TIME parameter."));
+        }
+
+        if (start is null && end is null)
+        {
+            return (null, null);
+        }
+
+        var temporalFilters = new TemporalFilter?[layers.Length];
+        for (var i = 0; i < layers.Length; i++)
+        {
+            var layer = layers[i];
+
+            // CITE Autos uses synthetic rendering keyed by TIME; bypass to keep
+            // CITE conformance intact. TryHandleCiteWmsGetMap parses TIME directly.
+            if (string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
+            {
+                temporalFilters[i] = null;
+                continue;
+            }
+
+            var timeInfo = layer.Metadata?.TimeInfo;
+            if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+            {
+                return (null, CreateWmsServiceException(
+                    context,
+                    "InvalidDimensionValue",
+                    $"Layer '{layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture)}' does not support a TIME dimension."));
+            }
+
+            FieldDefinition? startField = null;
+            foreach (var field in layer.AttributeFields)
+            {
+                if (field.Name.Equals(timeInfo.StartTimeField, StringComparison.OrdinalIgnoreCase) &&
+                    field.Type is FieldType.DateTime or FieldType.Date)
+                {
+                    startField = field;
+                    break;
+                }
+            }
+
+            if (startField is null)
+            {
+                return (null, CreateWmsServiceException(
+                    context,
+                    "InvalidDimensionValue",
+                    $"Layer '{layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture)}' has an invalid temporal field configuration."));
+            }
+
+            temporalFilters[i] = new TemporalFilter
+            {
+                PropertyName = startField.Name,
+                PropertyType = startField.Type == FieldType.Date
+                    ? TemporalPropertyType.Date
+                    : TemporalPropertyType.DateTime,
+                Start = start,
+                End = end
+            };
+        }
+
+        return (temporalFilters, null);
     }
 
     private static (SqlFragment?[]? Filters, IResult? Error) TryParseWmsLayerFilters(
@@ -2019,6 +2118,71 @@ internal static class WmsRequestHandlers
             .AppendLine("</Dimension>");
     }
 
+    private static async Task AppendWmsTemporalDimensionAsync(
+        HttpContext context,
+        StringBuilder sb,
+        LayerDefinition layer,
+        string indent,
+        bool isWms111)
+    {
+        // CITE Autos has its own hardcoded "time" dimension already emitted by
+        // AppendWmsCiteDimensions; do not duplicate.
+        if (string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (layer.Metadata?.TimeInfo is null ||
+            string.IsNullOrWhiteSpace(layer.Metadata.TimeInfo.StartTimeField))
+        {
+            return;
+        }
+
+        var featureReader = context.RequestServices.GetService<IFeatureReader>();
+        if (featureReader is null)
+        {
+            return;
+        }
+
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
+            layer,
+            featureReader,
+            cancellationToken).ConfigureAwait(false);
+        if (range is null || !range.Value.HasExtent || range.Value.Min is null || range.Value.Max is null)
+        {
+            return;
+        }
+
+        var min = FormatWmsTemporalInstant(range.Value.Min.Value);
+        var max = FormatWmsTemporalInstant(range.Value.Max.Value);
+        var extent = $"{min}/{max}/PT0S";
+
+        if (isWms111)
+        {
+            sb.Append(indent)
+                .Append("<Dimension name=\"time\" units=\"ISO8601\" />")
+                .AppendLine();
+            sb.Append(indent)
+                .Append("<Extent name=\"time\" default=\"")
+                .Append(EscapeXml(max))
+                .Append("\" nearestValue=\"1\">")
+                .Append(EscapeXml(extent))
+                .AppendLine("</Extent>");
+            return;
+        }
+
+        sb.Append(indent)
+            .Append("<Dimension name=\"time\" units=\"ISO8601\" multipleValues=\"false\" nearestValue=\"true\" default=\"")
+            .Append(EscapeXml(max))
+            .Append("\">")
+            .Append(EscapeXml(extent))
+            .AppendLine("</Dimension>");
+    }
+
+    private static string FormatWmsTemporalInstant(DateTimeOffset value)
+        => value.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+
     private static void AppendWmsOnlineResource(StringBuilder sb, string indent, string href, bool isWms111)
     {
         sb.Append(indent).Append("<OnlineResource ");
@@ -2243,6 +2407,7 @@ internal static class WmsRequestHandlers
             }
 
             AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
+            await AppendWmsTemporalDimensionAsync(context, sb, layer, "        ", isWms111).ConfigureAwait(false);
 
             sb.AppendLine("        <MetadataURL type=\"TC211\">");
             sb.AppendLine("          <Format>text/xml</Format>");

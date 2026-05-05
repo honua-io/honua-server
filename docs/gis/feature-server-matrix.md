@@ -67,8 +67,9 @@ MapServer coverage is tracked separately:
 | Validate SQL | `/rest/services/{serviceName}/FeatureServer/{layerId}/validateSQL` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL` | Validates a SQL WHERE clause against the layer schema. Returns `isValidSQL` and `validationError`. |
 | Get Estimates | `/rest/services/{serviceName}/FeatureServer/{layerId}/getEstimates` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/getEstimates` | Returns approximate feature count and spatial extent for a single layer. |
 | Query Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryBins` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBins` | Bins features into value intervals using configurable bin definitions (equal interval, quantile, natural breaks). |
-| Query Date Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryDateBins` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins` | Bins features into time intervals on a date/timestamp field. |
+| Query Date Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryDateBins` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins` | Bins features into time intervals on a date/timestamp field. Pro-tier per the temporal animation contract (#379). |
 | Query Top Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryTopFeatures` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures` | Window-function partitioned top-N query using TopFilter (topCount, groupByFields, orderByFields). |
+| Temporal Extent | _(Honua extension)_ | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent` | Returns deterministic min/max timestamps and selected temporal field metadata for time-aware layers. Community-tier (extent discovery). |
 
 ### Honua spatial analytics extensions (Pro tier)
 

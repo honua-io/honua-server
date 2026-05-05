@@ -614,7 +614,8 @@ internal static class RasterMapRenderingPipeline
         int spatialReferenceSrid,
         int? outputSrid,
         int limit,
-        SqlFragment? sqlFilter = null)
+        SqlFragment? sqlFilter = null,
+        TemporalFilter? temporalFilter = null)
     {
         var referencedFields = stylePlan.ReferencedFields;
 
@@ -625,6 +626,7 @@ internal static class RasterMapRenderingPipeline
             OutputSrid = outputSrid,
             Limit = limit,
             SqlFilter = sqlFilter,
+            TemporalFilter = temporalFilter,
             OutFields = referencedFields.Length > 0 ? ImmutableArray.CreateRange(referencedFields) : null,
             ExcludeAttributes = referencedFields.Length == 0
         };
