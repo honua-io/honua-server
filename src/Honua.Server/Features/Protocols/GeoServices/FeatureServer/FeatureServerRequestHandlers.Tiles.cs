@@ -123,17 +123,32 @@ internal static partial class FeatureServerEndpoints
             temporalFilter);
 
         var tileProvider = context.RequestServices.GetRequiredService<ITileProvider>();
-        return await VectorTileExecution.ExecuteAsync(
-            context,
-            tileProvider,
-            layer,
-            x,
-            y,
-            z,
-            query,
-            tileOptions,
-            tileLimits,
-            cancellationToken);
+        try
+        {
+            return await VectorTileExecution.ExecuteAsync(
+                context,
+                tileProvider,
+                layer,
+                x,
+                y,
+                z,
+                query,
+                tileOptions,
+                tileLimits,
+                cancellationToken);
+        }
+        catch (NotSupportedException) when (temporalFilter is not null)
+        {
+            // The configured feature provider (e.g., MySQL/MariaDB, SQL Server)
+            // does not support TemporalFilter SQL translation. Surface as a
+            // protocol-level 400 instead of letting the global error handler
+            // map it to 500, so MVT clients can distinguish "this layer's
+            // store can't filter by time" from "server failed".
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Temporal filtering is not supported",
+                ["Time-filtered vector tiles are not supported by the configured feature provider for this layer."]);
+        }
     }
 
     private static IResult? RequireProEditionForTimeSeriesTiles(HttpContext context)

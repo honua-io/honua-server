@@ -306,6 +306,21 @@ internal static class WmtsRequestHandlers
         {
             throw;
         }
+        catch (NotSupportedException ex)
+        {
+            // Read-only providers (MySQL/MariaDB, SQL Server) throw
+            // NotSupportedException for unsupported operations such as
+            // applying a TemporalFilter. Surface as a protocol-level error
+            // (HTTP 400) instead of NoApplicableCode 500 so OGC clients can
+            // distinguish "request invalid for this layer" from "server
+            // failed". The detail is logged but not echoed in the SOR.
+            OgcClassicLog.WmtsFailed(logger, serviceId, ex.Message, ex);
+            return CreateWmtsExceptionReport(context,
+                "OperationNotSupported",
+                "request",
+                "WMTS request includes an option the configured feature provider does not support.",
+                StatusCodes.Status400BadRequest);
+        }
         catch (Exception ex)
         {
             OgcClassicLog.WmtsFailed(logger, serviceId, ex.Message, ex);

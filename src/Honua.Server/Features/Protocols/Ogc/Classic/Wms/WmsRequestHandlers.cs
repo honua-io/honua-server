@@ -201,6 +201,21 @@ internal static class WmsRequestHandlers
         {
             throw;
         }
+        catch (NotSupportedException ex)
+        {
+            // Read-only providers (MySQL/MariaDB, SQL Server) throw
+            // NotSupportedException for operations such as applying a
+            // TemporalFilter. Surface as a protocol-level error (HTTP 400)
+            // with code OperationNotSupported instead of NoApplicableCode 500
+            // so WMS clients can distinguish "request not supported on this
+            // layer" from "server failed".
+            OgcClassicLog.WmsFailed(logger, serviceId, ex.Message, ex);
+            return CreateWmsServiceException(
+                context,
+                "OperationNotSupported",
+                "WMS request includes an option the configured feature provider does not support.",
+                StatusCodes.Status400BadRequest);
+        }
         catch (Exception ex)
         {
             OgcClassicLog.WmsFailed(logger, serviceId, ex.Message, ex);

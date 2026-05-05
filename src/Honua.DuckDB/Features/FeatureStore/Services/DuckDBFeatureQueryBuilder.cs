@@ -740,7 +740,102 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             sb.Append(CultureInfo.InvariantCulture,
                 $" AND {mapping.QuotedObjectIdColumn} IN ({string.Join(", ", placeholders)})");
         }
+
+        AppendTemporalFilter(sb, mapping, query, ref paramIndex, parameters);
     }
+
+    private static void AppendTemporalFilter(
+        StringBuilder sb,
+        DuckDBLayerMapping mapping,
+        FeatureQuery query,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        if (!query.TemporalFilter.HasValue)
+        {
+            return;
+        }
+
+        var filter = query.TemporalFilter.Value;
+        if (!IsTemporalColumnAllowed(mapping, filter.PropertyName))
+        {
+            throw new ArgumentException(
+                $"Invalid temporal field name: {filter.PropertyName}", nameof(query));
+        }
+
+        var startColumn = DuckDBExternalSourceSql.QuoteIdentifier(filter.PropertyName);
+
+        // Interval-intersection semantics mirror the Postgres path
+        // (#379 docs/temporal-animation-api.md): the row's interval is
+        // [start, COALESCE(end, start)] and matches when it overlaps the
+        // requested [filter.Start, filter.End] window. EndPropertyName is
+        // populated by WMS/WMTS/MVT/OGC API Features when the layer
+        // metadata declares an EndTimeField that resolves on the layer.
+        string? endColumnExpr = null;
+        if (!string.IsNullOrWhiteSpace(filter.EndPropertyName)
+            && !filter.EndPropertyName.Equals(filter.PropertyName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!IsTemporalColumnAllowed(mapping, filter.EndPropertyName))
+            {
+                throw new ArgumentException(
+                    $"Invalid temporal field name: {filter.EndPropertyName}", nameof(query));
+            }
+
+            var endCol = DuckDBExternalSourceSql.QuoteIdentifier(filter.EndPropertyName);
+            endColumnExpr = $"COALESCE({endCol}, {startColumn})";
+        }
+
+        string? predicate = null;
+        if (filter.Start.HasValue && filter.End.HasValue)
+        {
+            var startIndex = paramIndex++;
+            var endIndex = paramIndex++;
+            parameters.Add(filter.Start.Value.UtcDateTime);
+            parameters.Add(filter.End.Value.UtcDateTime);
+
+            var startCast = TemporalParameterCast(filter.PropertyType);
+            var rowEnd = endColumnExpr ?? startColumn;
+            predicate = $"{rowEnd} >= ${startIndex}{startCast} AND {startColumn} <= ${endIndex}{startCast}";
+        }
+        else if (filter.Start.HasValue)
+        {
+            var startIndex = paramIndex++;
+            parameters.Add(filter.Start.Value.UtcDateTime);
+            var startCast = TemporalParameterCast(filter.PropertyType);
+            var rowEnd = endColumnExpr ?? startColumn;
+            predicate = $"{rowEnd} >= ${startIndex}{startCast}";
+        }
+        else if (filter.End.HasValue)
+        {
+            var endIndex = paramIndex++;
+            parameters.Add(filter.End.Value.UtcDateTime);
+            var endCast = TemporalParameterCast(filter.PropertyType);
+            predicate = $"{startColumn} <= ${endIndex}{endCast}";
+        }
+
+        if (predicate is null)
+        {
+            return;
+        }
+
+        sb.Append(CultureInfo.InvariantCulture, $" AND {predicate}");
+    }
+
+    private static bool IsTemporalColumnAllowed(DuckDBLayerMapping mapping, string columnName)
+    {
+        foreach (var attribute in mapping.AttributeColumns)
+        {
+            if (attribute.Equals(columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string TemporalParameterCast(TemporalPropertyType propertyType)
+        => propertyType == TemporalPropertyType.Date ? "::DATE" : "::TIMESTAMPTZ";
 
     private static void AppendSpatialFilter(
         StringBuilder sb,
