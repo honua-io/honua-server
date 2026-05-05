@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -9,6 +10,9 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Server.Tests.Features.Mobile.FieldCollection;
 
@@ -405,6 +409,170 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
             .Should().Be(firstJson.RootElement.GetProperty("serverGeneration").GetInt64());
         secondJson.RootElement.GetProperty("version").GetInt64()
             .Should().Be(firstJson.RootElement.GetProperty("version").GetInt64());
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/changes")]
+    public async Task Push_DeleteWithNonNullFeature_Returns400()
+    {
+        // The contract requires 'feature' to be null for delete operations.
+        // Forwarding the payload to the store would silently drop it; instead
+        // the endpoint must reject the wire shape with a 400 problem-details.
+        var payload = new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId = $"feat-{Guid.NewGuid():N}",
+            layerId = 150,
+            operation = "delete",
+            baseVersion = 1L,
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: 0.0, latitude: 0.0),
+        };
+
+        var response = await _client.PostAsJsonAsync(ChangesPath, payload);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/fieldcollection/generation")]
+    public async Task Generation_DoesNotReflectUncommittedSequenceAllocations()
+    {
+        // The watermark must be the committed MAX(generation) of FieldCollection
+        // changes, not the shared sync_generation sequence's last_value. A
+        // writer that has called nextval but not yet committed leaves the
+        // sequence ahead of any committed row; reading last_value would let
+        // an empty pull advance past that pending write and never observe it.
+        // We simulate the bug condition by bumping the sequence directly and
+        // confirming /generation and the empty-pull cursor both stay at the
+        // committed FieldCollection max.
+        var beforeResponse = await _client.GetAsync(GenerationPath);
+        beforeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var beforeJson = JsonDocument.Parse(await beforeResponse.Content.ReadAsStringAsync());
+        var committedMax = beforeJson.RootElement.GetProperty("serverGeneration").GetInt64();
+
+        using var scope = _fixture.Services.CreateScope();
+        var dataSource = scope.ServiceProvider.GetRequiredService<NpgsqlDataSource>();
+        await using (var npgsqlConnection = await dataSource.OpenConnectionAsync())
+        {
+            await using var bumpCmd = new NpgsqlCommand(
+                "SELECT setval('honua.sync_generation', last_value + 100, true) FROM honua.sync_generation",
+                npgsqlConnection);
+            _ = await bumpCmd.ExecuteScalarAsync();
+        }
+
+        var afterResponse = await _client.GetAsync(GenerationPath);
+        afterResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var afterJson = JsonDocument.Parse(await afterResponse.Content.ReadAsStringAsync());
+        afterJson.RootElement.GetProperty("serverGeneration").GetInt64().Should().Be(committedMax);
+
+        var emptyPullResponse = await _client.GetAsync($"{ChangesPath}?sinceGeneration={committedMax}&limit=200");
+        emptyPullResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var emptyPullJson = JsonDocument.Parse(await emptyPullResponse.Content.ReadAsStringAsync());
+        emptyPullJson.RootElement.GetProperty("changes").GetArrayLength().Should().Be(0);
+        emptyPullJson.RootElement.GetProperty("nextCursor").GetInt64().Should().Be(committedMax);
+        emptyPullJson.RootElement.GetProperty("serverGeneration").GetInt64().Should().Be(committedMax);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/changes")]
+    public async Task Push_LoserAfterAdvisoryLockReplaysWinnerOutcomeWithoutDuplicateKeyError()
+    {
+        // Regression for the RepeatableRead idempotency-replay race. A holding
+        // transaction acquires the advisory lock and stages an idempotency row
+        // for changeId X without committing. The HTTP loser opens its own
+        // transaction, fast-path read sees nothing, then blocks on the advisory
+        // lock. The holder commits, the loser proceeds, and under the fix
+        // (ReadCommitted) the post-lock idempotency read sees the freshly
+        // committed row and replays it as 200 OK. Under the old RepeatableRead
+        // shape the loser's snapshot was taken before the holder committed and
+        // the post-lock read returned count=0, which would surface as a unique
+        // violation 5xx.
+        const int FieldCollectionPushLockNamespace = 0x0894_FC5C;
+        var changeId = Guid.NewGuid().ToString("N");
+        var featureId = $"feat-{Guid.NewGuid():N}";
+        var layerId = 160;
+
+        // The store persists FieldCollectionPushResult via the source-generated
+        // JSON context with JsonSerializerDefaults.General (PascalCase property
+        // names, numeric enum values). Match that on-disk shape so the loser's
+        // post-lock TryReadIdempotencyResponseAsync deserializes it cleanly.
+        var stagedResponse = $$"""
+            {
+                "ChangeId": "{{changeId}}",
+                "Outcome": 1,
+                "ServerGeneration": 999999,
+                "Version": 1,
+                "ConflictType": 0,
+                "ServerFeaturePayloadJson": null,
+                "ServerVersion": null,
+                "RejectionReason": null
+            }
+            """;
+
+        using var scope = _fixture.Services.CreateScope();
+        var dataSource = scope.ServiceProvider.GetRequiredService<NpgsqlDataSource>();
+
+        // Holder: acquire the advisory lock and stage the idempotency row, but
+        // do not commit yet. The loser HTTP push will block on the same lock.
+        await using var holderConnection = await dataSource.OpenConnectionAsync();
+        await using var holderTransaction = await holderConnection.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+
+        await using (var lockCmd = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(@namespace, hashtext(@change_id))",
+            holderConnection,
+            holderTransaction))
+        {
+            lockCmd.Parameters.AddWithValue("namespace", NpgsqlDbType.Integer, FieldCollectionPushLockNamespace);
+            lockCmd.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, changeId);
+            _ = await lockCmd.ExecuteScalarAsync();
+        }
+
+        await using (var insertCmd = new NpgsqlCommand(
+            """
+            INSERT INTO honua.fieldcollection_pushed_changes (
+                change_id, feature_id, layer_id, operation, outcome, response_payload, pushed_at)
+            VALUES (
+                @change_id, @feature_id, @layer_id, 1, 1, @payload::jsonb, now())
+            """,
+            holderConnection,
+            holderTransaction))
+        {
+            insertCmd.Parameters.AddWithValue("change_id", NpgsqlDbType.Text, changeId);
+            insertCmd.Parameters.AddWithValue("feature_id", NpgsqlDbType.Text, featureId);
+            insertCmd.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, layerId);
+            insertCmd.Parameters.AddWithValue("payload", NpgsqlDbType.Text, stagedResponse);
+            _ = await insertCmd.ExecuteNonQueryAsync();
+        }
+
+        // Kick off the loser push — it must enter its transaction and start
+        // waiting on the advisory lock before the holder commits.
+        var loserPayload = new
+        {
+            changeId,
+            featureId,
+            layerId,
+            operation = "insert",
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: 12.5, latitude: 6.0),
+        };
+        var loserTask = _client.PostAsJsonAsync(ChangesPath, loserPayload);
+
+        // Give the loser a moment to reach the BeginTransaction → advisory lock
+        // wait. 750ms is comfortably more than a request takes to set up.
+        await Task.Delay(750);
+        loserTask.IsCompleted.Should().BeFalse(
+            "the loser must be parked on the advisory lock until the holder commits");
+
+        await holderTransaction.CommitAsync();
+
+        var loserResponse = await loserTask;
+        var loserBody = await loserResponse.Content.ReadAsStringAsync();
+        loserResponse.StatusCode.Should().Be(HttpStatusCode.OK, "loser body: {0}", loserBody);
+        using var loserJson = JsonDocument.Parse(loserBody);
+        loserJson.RootElement.GetProperty("changeId").GetString().Should().Be(changeId);
+        loserJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
+        loserJson.RootElement.GetProperty("serverGeneration").GetInt64().Should().Be(999999);
+        loserJson.RootElement.GetProperty("version").GetInt64().Should().Be(1);
     }
 
     [IntegrationTest]

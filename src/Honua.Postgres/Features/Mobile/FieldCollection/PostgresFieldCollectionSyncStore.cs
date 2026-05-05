@@ -19,8 +19,17 @@ namespace Honua.Postgres.Features.Mobile.FieldCollection;
 /// </summary>
 internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncStore
 {
+    // Committed high-watermark for FieldCollection sync. The shared
+    // honua.sync_generation sequence reports its last allocated value,
+    // which can be ahead of any committed change row whenever a writer
+    // has called nextval but not yet committed. Reading from the changes
+    // table — which is only visible to other sessions after commit —
+    // gives a watermark that the puller can advance to without skipping
+    // an in-flight write. Pulls bound their SELECT by this watermark, so
+    // the watermark and the returned changes share a single committed
+    // view.
     private const string CurrentGenerationSql =
-        "SELECT last_value FROM honua.sync_generation";
+        "SELECT COALESCE(MAX(generation), 0) FROM honua.fieldcollection_changes";
 
     private const string GetCursorSql = """
         INSERT INTO honua.fieldcollection_sync_cursors (client_id, last_sync_generation, updated_at)
@@ -33,7 +42,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
     private const string SelectChangesSql = """
         SELECT generation, feature_id, layer_id, operation, version, payload, changed_at
         FROM honua.fieldcollection_changes
-        WHERE generation > @since_generation
+        WHERE generation > @since_generation AND generation <= @watermark
         ORDER BY generation
         LIMIT @limit
         """;
@@ -148,9 +157,23 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
 
         await using (var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false))
         {
+            // Capture the committed watermark first, then bound the changes SELECT
+            // by it. Reading the watermark after the SELECT would let a row that
+            // commits in between escape the result page while still advancing the
+            // returned cursor past it — the bug the watermark switch is meant to
+            // prevent. With this order, every returned change has generation in
+            // (sinceGeneration, currentGeneration] and the cursor advance never
+            // exceeds currentGeneration.
+            await using (var generationCmd = new NpgsqlCommand(CurrentGenerationSql, connection))
+            {
+                var result = await generationCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                currentGeneration = result is long gen ? gen : 0L;
+            }
+
             await using (var selectCmd = new NpgsqlCommand(SelectChangesSql, connection))
             {
                 selectCmd.Parameters.AddWithValue("since_generation", NpgsqlDbType.Bigint, sinceGeneration);
+                selectCmd.Parameters.AddWithValue("watermark", NpgsqlDbType.Bigint, currentGeneration);
                 selectCmd.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, fetchLimit);
 
                 await using var reader = await selectCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -177,12 +200,6 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
                 }
             }
 
-            await using (var generationCmd = new NpgsqlCommand(CurrentGenerationSql, connection))
-            {
-                var result = await generationCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                currentGeneration = result is long gen ? gen : 0L;
-            }
-
             var hasMore = changes.Count > limit;
             if (hasMore)
             {
@@ -194,9 +211,8 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
                 : Math.Max(sinceGeneration, currentGeneration);
 
             // Advance the per-client cursor on every successful pull, including empty
-            // pages. Without this, a client that has caught up to the current server
-            // generation but observes a non-FieldCollection write that bumped the
-            // shared sequence keeps re-pulling the same window forever. The
+            // pages. The cursor advances only as far as the committed watermark
+            // captured above, never past an in-flight nextval allocation. The
             // ON CONFLICT clause already clamps the stored value with GREATEST so
             // late-arriving smaller cursors cannot regress the watermark.
             await using (var advanceCmd = new NpgsqlCommand(AdvanceCursorSql, connection))
@@ -233,7 +249,16 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
             return existing;
         }
 
-        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken).ConfigureAwait(false);
+        // ReadCommitted is required so that the post-advisory-lock idempotency
+        // re-read sees the winner's freshly committed row. Under RepeatableRead
+        // the loser's snapshot is fixed at the first statement (the lock
+        // acquisition), which precedes the winner's commit — the loser would
+        // see count=0 and fall through to a unique-violation. Per-statement
+        // snapshots under ReadCommitted give us a fresh visibility horizon
+        // immediately after the advisory lock is released. The SELECT … FOR
+        // UPDATE on the feature row still serializes concurrent feature writes
+        // for conflict resolution.
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
 
         FieldCollectionPushResult result;
         try

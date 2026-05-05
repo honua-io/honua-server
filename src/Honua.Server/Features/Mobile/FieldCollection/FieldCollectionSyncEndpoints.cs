@@ -250,6 +250,18 @@ internal static class FieldCollectionSyncEndpoints
                 "Field 'operation' must be one of: insert, update, delete.");
         }
 
+        // The published contract states that 'feature' must be null for delete
+        // operations. Enforcing it here keeps mobile clients honest about the
+        // wire shape and prevents the store from silently dropping a payload
+        // the caller intended to ship.
+        if (operation == FieldCollectionChangeOperation.Delete && body.Feature is not null)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Field 'feature' must be null for delete operations.");
+        }
+
         var clientId = ResolveClientId(context);
         activity?.SetTag("honua.fieldcollection.client_id", clientId);
         activity?.SetTag("honua.fieldcollection.layer_id", body.LayerId.Value);

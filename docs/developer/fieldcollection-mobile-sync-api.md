@@ -205,7 +205,8 @@ correcting the request.
 **Error responses**
 
 - `400 Bad Request` with problem-details when the request body is missing
-  required fields or has an unsupported operation.
+  required fields, has an unsupported operation, or sets `feature` to a
+  non-null value while `operation` is `delete`.
 - `401 Unauthorized` when the `X-API-Key` header is missing or invalid.
 - `5xx` outcomes are retryable. Mobile clients should leave the local
   change in pending state and retry on the next sync cycle.
@@ -227,11 +228,22 @@ unique-violation surfaced as a 5xx for duplicate `changeId`.
 
 ## Generation cursor semantics
 
-The server uses the shared `honua.sync_generation` sequence so the cursor
-is consistent with existing change-tracking infrastructure. Generation
+The server uses the shared `honua.sync_generation` sequence to allocate
+generation values for new FieldCollection changes, so the cursor is
+consistent with existing change-tracking infrastructure. Generation
 values can advance between pulls because of writes from other workflows;
 mobile clients may observe gaps in their pull stream and should treat
 them as no-ops.
+
+`serverGeneration` and `nextCursor` are computed from the committed
+maximum generation in `honua.fieldcollection_changes`, never from the
+sequence's raw `last_value`. This guarantees that an empty pull cannot
+advance a client cursor past a write that has allocated a sequence
+value but not yet committed — the next pull will still observe that
+change once it lands. Pulls bound their result page by the same
+committed watermark, so a row that commits in between the watermark
+read and the result scan is excluded from the page and surfaces on the
+next pull instead of being skipped.
 
 ## Provider support
 
