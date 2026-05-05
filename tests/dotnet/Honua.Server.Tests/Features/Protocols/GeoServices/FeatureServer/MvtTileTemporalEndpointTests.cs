@@ -3,6 +3,8 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -131,6 +133,26 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
             $"/tiles/9999/1/0/0.mvt?time={start},{end}");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
+    public async Task GetTile_NonTimeAwareLayer_WithTime_ReturnsBadRequest()
+    {
+        // The temporal-animation contract says non-time-aware layers reject
+        // non-empty time= filters with HTTP 400; falling back to the first
+        // Date/DateTime attribute would silently filter on a non-temporal
+        // column. Strict opt-in matches the WMS/WMTS rejection behavior.
+        var updater = _fixture.GetService<ILayerMetadataUpdater>();
+        await updater.UpdateLayerMetadataAsync(TestLayerId, new CatalogMetadata());
+
+        var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var end = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/tiles/{TestLayerId}/1/0/0.mvt?time={start},{end}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

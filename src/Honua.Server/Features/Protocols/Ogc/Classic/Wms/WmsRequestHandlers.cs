@@ -874,6 +874,7 @@ internal static class WmsRequestHandlers
                 PropertyType = startField.Type == FieldType.Date
                     ? TemporalPropertyType.Date
                     : TemporalPropertyType.DateTime,
+                EndPropertyName = selection.EndField?.Name,
                 Start = start,
                 End = end
             };

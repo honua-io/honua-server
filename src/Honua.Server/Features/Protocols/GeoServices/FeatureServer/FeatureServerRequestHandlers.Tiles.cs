@@ -172,14 +172,15 @@ internal static partial class FeatureServerEndpoints
             return true;
         }
 
-        TemporalExtentHelpers.TemporalFieldSelection selection;
-        try
+        // Strict opt-in: a non-empty time= filter requires explicit
+        // TimeInfo.StartTimeField (and any configured EndTimeField) to resolve
+        // against real Date/DateTime attributes. Falling back to the first
+        // Date/DateTime attribute would silently filter on a non-temporal
+        // column (calls out in docs/gis/temporal-animation-api.md and matches
+        // GeoServices REST query?time= rejection on non-time-aware layers).
+        if (!TemporalExtentHelpers.TryResolveOptInTemporalFields(layer, out var selection))
         {
-            selection = TemporalExtentHelpers.ResolveTemporalFieldsOrThrow(layer);
-        }
-        catch (ArgumentException ex)
-        {
-            error = ex.Message;
+            error = $"Layer '{layer.Name}' is not configured as time-aware.";
             return false;
         }
 
@@ -189,6 +190,7 @@ internal static partial class FeatureServerEndpoints
             PropertyType = selection.StartField.Type == FieldType.Date
                 ? TemporalPropertyType.Date
                 : TemporalPropertyType.DateTime,
+            EndPropertyName = selection.EndField?.Name,
             Start = start,
             End = end
         };

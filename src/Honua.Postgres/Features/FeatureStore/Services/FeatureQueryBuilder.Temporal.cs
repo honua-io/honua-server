@@ -17,18 +17,33 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         var filter = query.TemporalFilter.Value;
-        var fieldName = filter.PropertyName;
-        if (!IsValidFieldName(fieldName))
+        var startFieldName = filter.PropertyName;
+        if (!IsValidFieldName(startFieldName))
         {
-            throw new ArgumentException($"Invalid temporal field name: {fieldName}", nameof(query));
+            throw new ArgumentException($"Invalid temporal field name: {startFieldName}", nameof(query));
         }
 
-        var attributeValue = BuildAttributeValueExpression(fieldName, ref paramIndex, parameters);
-        var valueExpression = filter.PropertyType switch
+        var startAttributeValue = BuildAttributeValueExpression(startFieldName, ref paramIndex, parameters);
+        var startValueExpression = WrapTemporalValueExpression(startAttributeValue, filter.PropertyType);
+
+        // Interval-intersection mode mirrors GeoServices query?time= semantics:
+        // the row's interval is [start, COALESCE(end, start)] and matches when
+        // it overlaps the requested [filter.Start, filter.End] window. Render
+        // and tile paths set EndPropertyName when the layer's configured end
+        // field resolves so WMS/WMTS/MVT and GeoServices share filter results.
+        string? endValueExpression = null;
+        if (!string.IsNullOrWhiteSpace(filter.EndPropertyName)
+            && !filter.EndPropertyName.Equals(startFieldName, StringComparison.OrdinalIgnoreCase))
         {
-            TemporalPropertyType.Date => $"NULLIF({attributeValue}, '')::date",
-            _ => $"NULLIF({attributeValue}, '')::timestamptz"
-        };
+            if (!IsValidFieldName(filter.EndPropertyName))
+            {
+                throw new ArgumentException($"Invalid temporal field name: {filter.EndPropertyName}", nameof(query));
+            }
+
+            var endAttributeValue = BuildAttributeValueExpression(filter.EndPropertyName, ref paramIndex, parameters);
+            var endRaw = WrapTemporalValueExpression(endAttributeValue, filter.PropertyType);
+            endValueExpression = $"COALESCE({endRaw}, {startValueExpression})";
+        }
 
         string? predicate = null;
 
@@ -41,7 +56,8 @@ internal sealed partial class FeatureQueryBuilder
 
             var startExpr = filter.PropertyType == TemporalPropertyType.Date ? $"${startIndex}::date" : $"${startIndex}";
             var endExpr = filter.PropertyType == TemporalPropertyType.Date ? $"${endIndex}::date" : $"${endIndex}";
-            predicate = $"{valueExpression} >= {startExpr} AND {valueExpression} <= {endExpr}";
+            var rowEnd = endValueExpression ?? startValueExpression;
+            predicate = $"{rowEnd} >= {startExpr} AND {startValueExpression} <= {endExpr}";
         }
         else if (filter.Start.HasValue)
         {
@@ -49,7 +65,8 @@ internal sealed partial class FeatureQueryBuilder
             parameters.Add(filter.Start.Value.UtcDateTime);
 
             var startExpr = filter.PropertyType == TemporalPropertyType.Date ? $"${startIndex}::date" : $"${startIndex}";
-            predicate = $"{valueExpression} >= {startExpr}";
+            var rowEnd = endValueExpression ?? startValueExpression;
+            predicate = $"{rowEnd} >= {startExpr}";
         }
         else if (filter.End.HasValue)
         {
@@ -57,7 +74,7 @@ internal sealed partial class FeatureQueryBuilder
             parameters.Add(filter.End.Value.UtcDateTime);
 
             var endExpr = filter.PropertyType == TemporalPropertyType.Date ? $"${endIndex}::date" : $"${endIndex}";
-            predicate = $"{valueExpression} <= {endExpr}";
+            predicate = $"{startValueExpression} <= {endExpr}";
         }
 
         if (predicate is null)
@@ -67,4 +84,11 @@ internal sealed partial class FeatureQueryBuilder
 
         sql.Append(CultureInfo.InvariantCulture, $" AND {predicate}");
     }
+
+    private static string WrapTemporalValueExpression(string attributeValue, TemporalPropertyType propertyType)
+        => propertyType switch
+        {
+            TemporalPropertyType.Date => $"NULLIF({attributeValue}, '')::date",
+            _ => $"NULLIF({attributeValue}, '')::timestamptz"
+        };
 }

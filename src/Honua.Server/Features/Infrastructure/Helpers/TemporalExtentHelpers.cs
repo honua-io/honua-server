@@ -162,12 +162,25 @@ internal static class TemporalExtentHelpers
                 cancellationToken).ConfigureAwait(false);
         }
 
+        // Min comes from the earliest configured start; max effectively
+        // tracks COALESCE(end, start) so an interval-configured layer whose
+        // end column is null on every row still advertises the latest start
+        // timestamp. Without this fallback temporalExtent / WMS-WMTS
+        // <Default> would lose max for valid instant-style rows on layers
+        // where the operator configured an end field that no row has set.
         var min = startExtent?.Start;
-        var max = endField == null
-            ? startExtent?.End
-            : endExtent?.End ?? endExtent?.Start;
+        DateTimeOffset? max;
+        if (endField == null)
+        {
+            max = startExtent?.End;
+        }
+        else
+        {
+            max = endExtent?.End ?? endExtent?.Start ?? startExtent?.End;
+        }
 
-        return new TemporalRange(startField, endField, min, max, startExtent != null);
+        var hasExtent = startExtent != null || endExtent != null;
+        return new TemporalRange(startField, endField, min, max, hasExtent);
     }
 
     private static bool TryResolveTemporalFields(
