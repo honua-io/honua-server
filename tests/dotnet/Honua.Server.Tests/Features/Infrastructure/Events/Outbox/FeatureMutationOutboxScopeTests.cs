@@ -107,6 +107,44 @@ public sealed class FeatureMutationOutboxScopeTests
     }
 
     [UnitTest]
+    public async Task ResolveOutboxScopeAsync_OutboxEntry_CarriesMutationTimestampForDelayedDispatch()
+    {
+        // Outbox payload-time guard (#692): when the mutation is committed at T1 but the
+        // dispatcher only appends the canonical event at T2 (e.g., Postgres claim lease
+        // expired and recovery re-claimed the row hours later), replay/from filtering
+        // should still see T1 — not T2. We capture the mutation timestamp once in
+        // BuildEntry and serialize it into the outbox payload so InMemoryFeatureChangeEventStore.AppendAsync
+        // honors it instead of falling back to its DateTimeOffset.UtcNow default.
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+        var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
+
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-time" };
+        var beforeCreate = DateTimeOffset.UtcNow;
+        var data = await service.ResolveOutboxScopeAsync(
+            context,
+            layerId: 7,
+            protocol: "OgcFeatures",
+            requestId: "req-time");
+        using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
+        var feature = Feature.Create(42, geometry: null, ImmutableDictionary<string, object?>.Empty);
+        var entry = FeatureMutationOutboxScope.Current!.EntryFactory(42, "update", feature);
+        var afterCreate = DateTimeOffset.UtcNow;
+
+        entry.Should().NotBeNull();
+        // CreatedAt and the serialized payload's Timestamp must agree on the same captured
+        // mutation time. Otherwise dispatcher append time would re-stamp the event.
+        entry!.CreatedAt.Should().BeOnOrAfter(beforeCreate).And.BeOnOrBefore(afterCreate);
+        var payload = System.Text.Json.JsonSerializer.Deserialize(
+            entry.EventPayload,
+            FeatureChangeEventsJsonContext.Default.FeatureChangeEventRequest);
+        payload.Should().NotBeNull();
+        payload!.Timestamp.Should().NotBeNull("delayed dispatch must replay at the original mutation time, not at dispatcher append time");
+        payload.Timestamp!.Value.Should().Be(entry.CreatedAt);
+    }
+
+    [UnitTest]
     public async Task ResolveOutboxScopeAsync_ExplicitGeometryChangedTrue_EncodesTrue()
     {
         // GeometryChanged contract (#692): the outbox payload mirrors the protocol-layer

@@ -308,6 +308,12 @@ internal sealed class FeatureMutationEventService(
         }
 
         var eventId = Guid.NewGuid().ToString("N");
+        // Capture mutation time once so the serialized payload and the outbox row's
+        // CreatedAt agree, and so a delayed/retried dispatcher append does not re-stamp
+        // the event with the dispatch time. Replay from/to filtering uses
+        // FeatureChangeEvent.Timestamp, so the persisted timestamp must reflect when the
+        // mutation happened — not when the dispatcher got around to publishing it.
+        var mutationTimestamp = DateTimeOffset.UtcNow;
         var request = new FeatureChangeEventRequest
         {
             EventId = eventId,
@@ -318,6 +324,7 @@ internal sealed class FeatureMutationEventService(
             Operation = operation,
             Protocol = protocol,
             RequestId = requestId,
+            Timestamp = mutationTimestamp,
             GeometryChanged = geometryChanged,
             GeometryEnvelope = enrichment.GeometryEnvelope,
             PropertiesJson = enrichment.PropertiesJson,
@@ -343,7 +350,7 @@ internal sealed class FeatureMutationEventService(
             EventPayload = payload,
             Status = OutboxStatuses.Pending,
             RetryCount = 0,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = mutationTimestamp,
         };
     }
 
