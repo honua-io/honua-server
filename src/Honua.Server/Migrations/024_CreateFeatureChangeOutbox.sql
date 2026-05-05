@@ -3,7 +3,9 @@
 
 -- Transactional outbox for feature-change CDC and webhook delivery (#692).
 -- Outbox rows are written from the same call chain as feature mutations on
--- providers that support transactional writes (PostgreSQL, SQL Server). The
+-- PostgreSQL, the only provider in this slice that supports transactional
+-- outbox writes. SQL Server and DuckDB report SupportsTransactionalOutbox=false
+-- and fall back to the post-commit publish + retry queue path. The
 -- OutboxDispatcherBackgroundService claims rows with FOR UPDATE SKIP LOCKED,
 -- publishes via IFeatureChangeEventPublisher, and marks them dispatched.
 -- Failed rows are retried; rows that exceed the retry budget transition to

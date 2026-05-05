@@ -360,6 +360,11 @@ internal sealed partial class FeatureDataAccess
                     var feature = operation.Feature
                         ?? throw new InvalidOperationException("Ordered create operation is missing the feature payload.");
 
+                    // Advance per-operation outbox metadata once per attempt so a failed
+                    // mutation consumes its queued row context even if the EntryFactory is
+                    // never reached. Without this, the next successful row of the same kind
+                    // would inherit the failed row's GeometryChanged / requestId.
+                    FeatureMutationOutboxScope.Current?.BeginRowAttempt?.Invoke("create");
                     try
                     {
                         var created = await RunRowMutationAtomicallyAsync(
@@ -390,6 +395,7 @@ internal sealed partial class FeatureDataAccess
                     var feature = operation.Feature
                         ?? throw new InvalidOperationException("Ordered update operation is missing the feature payload.");
 
+                    FeatureMutationOutboxScope.Current?.BeginRowAttempt?.Invoke("update");
                     try
                     {
                         var updated = await RunRowMutationAtomicallyAsync(
@@ -421,6 +427,7 @@ internal sealed partial class FeatureDataAccess
                     var objectId = operation.ObjectId
                         ?? throw new InvalidOperationException("Ordered delete operation is missing the target object ID.");
 
+                    FeatureMutationOutboxScope.Current?.BeginRowAttempt?.Invoke("delete");
                     try
                     {
                         var deleted = await RunRowMutationAtomicallyAsync(
@@ -764,6 +771,10 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var feature in features)
         {
+            // Advance per-operation outbox metadata once per attempt; a failed mutation
+            // must consume its slot so the next successful row of the same kind picks
+            // up its own GeometryChanged / requestId, not the failed row's.
+            FeatureMutationOutboxScope.Current?.BeginRowAttempt?.Invoke("create");
             try
             {
                 var created = await RunRowMutationAtomicallyAsync(
@@ -946,6 +957,10 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var feature in features)
         {
+            // Advance per-operation outbox metadata once per attempt; failed updates must
+            // consume their queued slot so the next successful update gets its own
+            // GeometryChanged / requestId rather than the failed row's.
+            FeatureMutationOutboxScope.Current?.BeginRowAttempt?.Invoke("update");
             try
             {
                 var updated = await RunRowMutationAtomicallyAsync(
@@ -987,6 +1002,10 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var featureId in featureIds)
         {
+            // Advance per-operation outbox metadata once per attempt; rows that throw or
+            // miss the snapshot (no RETURNING) must consume their slot so the next
+            // successful delete gets its own queued requestId.
+            FeatureMutationOutboxScope.Current?.BeginRowAttempt?.Invoke("delete");
             try
             {
                 var deleted = await RunRowMutationAtomicallyAsync(

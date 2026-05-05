@@ -232,6 +232,86 @@ public sealed class FeatureMutationOutboxScopeTests
     }
 
     [UnitTest]
+    public async Task ResolveOutboxScopeAsync_BeginRowAttempt_AdvancesQueueOnFailedRows()
+    {
+        // Partial-success regression guard (#692): non-rollback batches catch row mutation
+        // failures and continue. Without BeginRowAttempt, the failed row never reaches
+        // EntryFactory, so its queued GeometryChanged / requestId stays at the head of the
+        // queue and the next successful row of the same kind dequeues it. Calling
+        // BeginRowAttempt once per attempted row binds the per-row metadata so a failed row
+        // discards its slot and the next row reads its own.
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+        var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
+
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-partial" };
+        var perOpRequestIds = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["update"] = new[] { "trace-partial:u1", "trace-partial:u2", "trace-partial:u3" },
+        };
+        var perOpGeometryChanged = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal)
+        {
+            ["update"] = new[] { true, false, true },
+        };
+
+        var data = await service.ResolveOutboxScopeAsync(
+            context,
+            layerId: 7,
+            protocol: "Wfs20",
+            perOperationRequestIds: perOpRequestIds,
+            perOperationGeometryChanged: perOpGeometryChanged);
+
+        using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
+        var feature = Feature.Create(0, geometry: null, ImmutableDictionary<string, object?>.Empty);
+
+        // Row 0: attempted, succeeded. Should consume slot 0.
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("update");
+        var row0 = FeatureMutationOutboxScope.Current!.EntryFactory(101, "update", feature);
+
+        // Row 1: attempted, FAILED. BeginRowAttempt advances; EntryFactory is NOT called.
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("update");
+        // (no EntryFactory call — the data layer's catch block records the failure result)
+
+        // Row 2: attempted, succeeded. Should consume slot 2 — not slot 1's leftover.
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("update");
+        var row2 = FeatureMutationOutboxScope.Current!.EntryFactory(103, "update", feature);
+
+        row0!.RequestId.Should().Be("trace-partial:u1");
+        row0.EventPayload.Should().Contain("\"GeometryChanged\":true");
+        row2!.RequestId.Should().Be("trace-partial:u3", "the failed row's slot must not shift onto the next successful row");
+        row2.EventPayload.Should().Contain("\"GeometryChanged\":true");
+    }
+
+    [UnitTest]
+    public async Task ResolveOutboxScopeAsync_BeginRowAttempt_NoOpWithoutQueues()
+    {
+        // Single-row scopes (CRUD endpoints) do not seed per-operation queues. BeginRowAttempt
+        // must still be safe to call, leaving the scope-wide defaults bound for EntryFactory.
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+        var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
+
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-no-queues" };
+        var data = await service.ResolveOutboxScopeAsync(
+            context,
+            layerId: 1,
+            protocol: "OData",
+            requestId: "req-no-queues",
+            geometryChanged: true);
+
+        using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
+        var feature = Feature.Create(0, geometry: null, ImmutableDictionary<string, object?>.Empty);
+
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("update");
+        var entry = FeatureMutationOutboxScope.Current!.EntryFactory(42, "update", feature);
+
+        entry!.RequestId.Should().Be("req-no-queues");
+        entry.EventPayload.Should().Contain("\"GeometryChanged\":true");
+    }
+
+    [UnitTest]
     public async Task ResolveOutboxScopeAsync_PerOperationGeometryChanged_DequeuesInOrderAndFallsBack()
     {
         // Atomic batch path (#692): per-row geometryChanged must dequeue from the kind-keyed
@@ -259,12 +339,19 @@ public sealed class FeatureMutationOutboxScopeTests
         using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
         var feature = Feature.Create(0, geometry: new byte[] { 0x01 }, ImmutableDictionary<string, object?>.Empty);
 
+        // Each row attempt advances the queue via BeginRowAttempt; EntryFactory then
+        // reads the currently bound metadata.
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("create");
         var firstCreate = FeatureMutationOutboxScope.Current!.EntryFactory(101, "create", feature);
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("create");
         var secondCreate = FeatureMutationOutboxScope.Current!.EntryFactory(102, "create", feature);
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("update");
         var firstUpdate = FeatureMutationOutboxScope.Current!.EntryFactory(201, "update", feature);
         // Queue exhausted: should fall back to scope-wide default (false).
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("create");
         var thirdCreate = FeatureMutationOutboxScope.Current!.EntryFactory(103, "create", feature);
         // No queue for delete: falls back to default false too.
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("delete");
         var firstDelete = FeatureMutationOutboxScope.Current!.EntryFactory(301, "delete", feature);
 
         firstCreate!.EventPayload.Should().Contain("\"GeometryChanged\":true");
@@ -302,12 +389,19 @@ public sealed class FeatureMutationOutboxScopeTests
         using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
         var feature = Feature.Create(0, geometry: null, ImmutableDictionary<string, object?>.Empty);
 
+        // Each row attempt advances the queue via BeginRowAttempt; EntryFactory then
+        // reads the currently bound metadata.
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("create");
         var firstCreate = FeatureMutationOutboxScope.Current!.EntryFactory(101, "create", feature);
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("create");
         var secondCreate = FeatureMutationOutboxScope.Current!.EntryFactory(102, "create", feature);
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("update");
         var firstUpdate = FeatureMutationOutboxScope.Current!.EntryFactory(201, "update", feature);
         // Queue exhausted: should fall back to the parent trace identifier.
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("create");
         var thirdCreate = FeatureMutationOutboxScope.Current!.EntryFactory(103, "create", feature);
         // No queue for delete: also falls back to the parent trace identifier.
+        FeatureMutationOutboxScope.Current!.BeginRowAttempt!("delete");
         var firstDelete = FeatureMutationOutboxScope.Current!.EntryFactory(301, "delete", feature);
 
         firstCreate!.RequestId.Should().Be("trace-batch:c1");

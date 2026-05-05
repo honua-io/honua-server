@@ -136,42 +136,46 @@ internal sealed class FeatureMutationEventService(
             }
         }
 
+        // Currently bound per-row metadata. Mutated by BeginRowAttempt at the start of
+        // each attempted row mutation so a failed row consumes its queued metadata even
+        // when the mutation never reaches EntryFactory; otherwise non-rollback batches
+        // (RollbackOnFailure=false in WFS / GeoServices applyEdits) would shift the queued
+        // GeometryChanged / request-id onto the next successful row of the same kind.
+        var boundRequestId = resolvedRequestId;
+        var boundGeometryChanged = resolvedGeometryChanged;
+
         return new FeatureMutationOutboxScopeData
         {
-            EntryFactory = (objectId, operation, snapshot) =>
+            BeginRowAttempt = operation =>
             {
-                // Per-row request id when the caller seeded the queue (atomic batch paths);
-                // otherwise the resolved scope-wide id flows through to BuildEntry.
-                var rowRequestId = perOperationRequestIdQueues is not null
+                // Advance per-kind request-id queue (no-op when the caller did not seed one).
+                boundRequestId = perOperationRequestIdQueues is not null
                     && perOperationRequestIdQueues.TryGetValue(operation, out var requestIdQueue)
                     && requestIdQueue.Count > 0
                         ? requestIdQueue.Dequeue()
                         : resolvedRequestId;
 
-                // Per-row geometryChanged for batch paths; otherwise the scope-wide
-                // protocol-supplied bool flows through. This mirrors the inline publish
-                // path's contract — the protocol layer is the source of truth for whether
-                // the originating request intended to mutate geometry. Inferring from the
-                // post-mutation snapshot would over-report PATCH/merge updates that
-                // preserve the prior geometry untouched.
-                var rowGeometryChanged = perOperationGeometryChangedQueues is not null
+                // Advance per-kind geometryChanged queue. The protocol layer is the source
+                // of truth for whether the originating request intended to mutate geometry;
+                // inferring from the post-mutation snapshot would over-report PATCH/merge
+                // updates that preserve the prior geometry untouched.
+                boundGeometryChanged = perOperationGeometryChangedQueues is not null
                     && perOperationGeometryChangedQueues.TryGetValue(operation, out var geometryChangedQueue)
                     && geometryChangedQueue.Count > 0
                         ? geometryChangedQueue.Dequeue()
                         : resolvedGeometryChanged;
-
-                return BuildEntry(
-                    resolvedServiceId,
-                    layerId,
-                    objectId,
-                    operation,
-                    protocol,
-                    resolvedSourceId,
-                    rowRequestId,
-                    snapshot,
-                    layerSrid,
-                    rowGeometryChanged);
-            }
+            },
+            EntryFactory = (objectId, operation, snapshot) => BuildEntry(
+                resolvedServiceId,
+                layerId,
+                objectId,
+                operation,
+                protocol,
+                resolvedSourceId,
+                boundRequestId,
+                snapshot,
+                layerSrid,
+                boundGeometryChanged)
         };
     }
 

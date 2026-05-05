@@ -95,6 +95,21 @@ public sealed record FeatureMutationOutboxScopeData
     /// a successful create whose returning snapshot did not satisfy the geodesy pair contract).
     /// </remarks>
     public required FeatureMutationOutboxEntryFactory EntryFactory { get; init; }
+
+    /// <summary>
+    /// Optional callback invoked by the data-access layer once per attempted row mutation
+    /// in batch paths so per-operation request/geometry metadata advances even when the
+    /// row mutation fails. Without this advance, a failed row's queued metadata would be
+    /// consumed by the next successful row of the same operation kind in non-rollback
+    /// batches (RollbackOnFailure=false), shifting the outbox payload's GeometryChanged
+    /// and request-id fields onto a different row.
+    /// </summary>
+    /// <remarks>
+    /// Always invoke before attempting the row mutation. The callback is a no-op when the
+    /// protocol handler did not seed per-operation queues, so single-row scopes and
+    /// queue-less paths can call it unconditionally.
+    /// </remarks>
+    public Action<string>? BeginRowAttempt { get; init; }
 }
 
 /// <summary>
