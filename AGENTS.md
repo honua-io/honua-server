@@ -227,10 +227,10 @@ using Honua.Server;          // BLOCKING - Core cannot depend on Server
 using Honua.Core.Features.Abstractions;  // OK - Infrastructure can use Core abstractions
 ```
 
-Dependency flow rule: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` <- `Honua.Server`
+Dependency flow rule: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` / `Honua.MySql` <- `Honua.Server`
 - Core defines abstractions and domain models
-- Postgres and DuckDB implement Core interfaces
-- Server uses Core plus the active provider (selected via `DataSource:Provider`)
+- Postgres, DuckDB, and MySql implement Core interfaces
+- Server uses Core plus the active provider (selected via `DataSource:Provider`; `mysql` and `mariadb` both resolve to `Honua.MySql`)
 
 **2. API pattern violations**
 ```csharp
@@ -403,12 +403,14 @@ src/
 ├── Honua.Server/          # Main host (Minimal APIs)
 ├── Honua.Core/            # Domain models, abstractions
 ├── Honua.Postgres/        # PostgreSQL implementation
-└── Honua.DuckDB/          # DuckDB read-only provider
+├── Honua.DuckDB/          # DuckDB read-only provider
+└── Honua.MySql/           # MySQL/MariaDB read/query-only provider
 
 tests/
 ├── Honua.TestKit/         # Shared test infrastructure
 ├── Honua.Core.Tests/      # Unit tests
 ├── Honua.Server.Tests/    # Integration tests
 ├── Honua.DuckDB.Tests/    # DuckDB provider tests
+├── Honua.MySql.Tests/     # MySQL/MariaDB provider tests (Testcontainers gated)
 └── Honua.Architecture.Tests/  # Architecture enforcement
 ```

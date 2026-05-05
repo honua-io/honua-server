@@ -8,7 +8,7 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.5-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), classic OGC WMS/WFS/WCS/WMTS, STAC API, OGC API (Features, Maps, Tiles, Processes), OData v4, vector tiles, and Terrain-RGB elevation tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads.
+**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), classic OGC WMS/WFS/WCS/WMTS, STAC API, OGC API (Features, Maps, Tiles, Processes), OData v4, vector tiles, and Terrain-RGB elevation tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads, a read-only SQL Server provider for `geometry`/`geography` tables, and a read/query-only MySQL/MariaDB provider for serving spatial data already in MySQL 8.0.11+ or MariaDB 10.6+ tables.
 
 ## Why Honua
 
@@ -150,6 +150,20 @@ DuckDB__DatabasePath="/data/layers.duckdb"
 ```
 See the [DuckDB Provider Guide](docs/operator/duckdb-provider.md) for layer and service configuration.
 
+**SQL Server provider** (read-only against existing `geometry`/`geography` tables):
+```bash
+SqlServer__Enabled=true
+SqlServer__ConnectionString="Server=mssql.example.com,1433;Database=geo;User Id=honua;Password=${SQLSERVER_PASSWORD};Encrypt=True;TrustServerCertificate=False"
+```
+See the [SQL Server Provider Guide](docs/operator/sqlserver-provider.md) for supported versions, layer mapping, and limitations.
+
+**MySQL / MariaDB provider** (read/query-only against existing tables):
+```bash
+DataSource__Provider=mysql            # or mariadb (alias)
+MySql__ConnectionString="Server=mysql;Database=honua;User=honua_ro;Password=${MYSQL_PASSWORD};SslMode=Required"
+```
+Requires MySQL 8.0.11+ or MariaDB 10.6+. No edits, native MVT, FlatGeobuf, Geobuf, GML, streaming GeoJSON, statistics, KNN, temporal `datetime` filters, or cross-SRID `ST_Transform`. Extent is supported for Point and Polygon/MultiPolygon layers only. See the [MySQL/MariaDB Provider Guide](docs/operator/mysql-provider.md) for layer mapping, supported operations, and limitations.
+
 **Common options:**
 ```bash
 HONUA_SERVE_STAC_DEMO=true               # Serve the STAC operations demo at /samples/stac-ops/ (default: on in Development/Test; Docker production builds also require --build-arg HONUA_INCLUDE_STAC_OPS_DEMO=true)
@@ -199,6 +213,7 @@ src/
   Honua.Postgres/     PostGIS implementation
   Honua.DuckDB/       DuckDB read-only provider (analytics, GeoParquet, edge)
   Honua.SqlServer/    SQL Server read-only provider (geometry/geography)
+  Honua.MySql/        MySQL/MariaDB read/query-only provider
   Honua.Server/       HTTP host (Minimal APIs, vertical slices)
   Honua.AppHost/      .NET Aspire orchestration
   Honua.ServiceDefaults/  Shared service configuration

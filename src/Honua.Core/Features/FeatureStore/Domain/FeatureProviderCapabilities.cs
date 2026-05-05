@@ -62,6 +62,29 @@ public sealed record FeatureProviderCapabilities
         Edits = FeatureProviderEditCapabilities.ReadOnly,
         Outputs = FeatureProviderOutputCapabilities.FormattedFallback
     };
+
+    /// <summary>
+    /// Capabilities for the read-only MySQL/MariaDB provider thin slice.
+    /// Query, count, and extent are supported. Statistics, native MVT, FlatGeobuf,
+    /// Geobuf, GML, streaming GeoJSON, and KNN/nearest-neighbor are intentionally
+    /// disabled because they are out of scope for this initial slice.
+    /// </summary>
+    public static FeatureProviderCapabilities ReadOnlyMySql { get; } = new()
+    {
+        SupportsQuery = true,
+        SupportsCount = true,
+        SupportsExtent = true,
+        SupportsStatistics = false,
+        Edits = FeatureProviderEditCapabilities.ReadOnly,
+        Outputs = new FeatureProviderOutputCapabilities
+        {
+            SupportsNativeMvt = false,
+            SupportsNativeFlatGeobuf = false,
+            SupportsNativeGeobuf = false,
+            SupportsNativeGml = false,
+            SupportsStreamingGeoJson = false
+        }
+    };
 }
 
 /// <summary>

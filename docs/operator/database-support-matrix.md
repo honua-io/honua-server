@@ -6,6 +6,8 @@ For read-only analytical and reference workloads, Honua also supports an embedde
 
 For organizations with authoritative spatial data already in SQL Server, Honua offers a read-only [SQL Server provider](sqlserver-provider.md) that plugs in alongside the primary backend.
 
+For read/query-only access to MySQL 8.0.11+ and MariaDB 10.6+ tables, see the [MySQL/MariaDB provider](mysql-provider.md). It is a thin slice with no edits, statistics, native output formats, streaming GeoJSON, KNN, temporal (`datetime`) filters, or cross-SRID `ST_Transform`. `GetExtentAsync` is supported for Point and Polygon/MultiPolygon layers only.
+
 ## Tested Configurations
 
 | Provider | Engine Version | PostGIS Version | CI Status |

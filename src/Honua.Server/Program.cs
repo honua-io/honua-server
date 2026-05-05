@@ -497,9 +497,14 @@ builder.Services.AddSingleton<Honua.Server.Features.Protocols.GeoServices.Featur
         sp.GetService<IDistributedCache>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>>()));
 // Replica/change-tracking services are provider-specific: Postgres registers concrete
-// implementations; DuckDB (read-only) registers no-op stubs via AddDuckDBServices.
+// implementations; DuckDB and MySQL (both read-only) register no-op stubs via their own
+// AddXxxServices extensions. Skip the Postgres registration for those providers so the
+// stubs are not overwritten with an implementation that would issue Postgres SQL against
+// a non-Postgres connection.
 var replicaProvider = builder.Configuration.GetValue<string>("DataSource:Provider");
-if (!string.Equals(replicaProvider, "duckdb", StringComparison.OrdinalIgnoreCase))
+if (!string.Equals(replicaProvider, "duckdb", StringComparison.OrdinalIgnoreCase) &&
+    !string.Equals(replicaProvider, DataProviderNames.MySql, StringComparison.OrdinalIgnoreCase) &&
+    !string.Equals(replicaProvider, "mariadb", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
         new Honua.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
@@ -1172,6 +1177,11 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
     else if (provider.Equals("duckdb", StringComparison.OrdinalIgnoreCase))
     {
         Honua.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
+    }
+    else if (provider.Equals(DataProviderNames.MySql, StringComparison.OrdinalIgnoreCase) ||
+             provider.Equals("mariadb", StringComparison.OrdinalIgnoreCase))
+    {
+        Honua.MySql.ServiceCollectionExtensions.AddMySqlServices(services, configuration);
     }
     else
     {

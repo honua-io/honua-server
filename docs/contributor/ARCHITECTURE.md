@@ -4,9 +4,9 @@ This document describes the current Honua Server architecture and the constraint
 
 ## Goals
 
-- **Provider-backed**: PostgreSQL/PostGIS is the primary read/write provider; DuckDB is an embedded read-only provider for analytics and reference workloads; SQL Server is an additional read-only provider for enterprise spatial data ([#850](https://github.com/honua-io/honua-server/issues/850)).
+- **Provider-backed**: PostgreSQL/PostGIS is the primary read/write provider; DuckDB is an embedded read-only provider for analytics and reference workloads; SQL Server and MySQL/MariaDB are read/query-only providers for enterprise/user-managed spatial tables.
 - **Open standards**: serve multiple GIS and data protocols from one dataset.
-- **Clean dependencies**: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` / `Honua.SqlServer` <- `Honua.Server`.
+- **Clean dependencies**: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` / `Honua.SqlServer` / `Honua.MySql` <- `Honua.Server`.
 - **Minimal API surface**: endpoints are defined with Minimal APIs, not MVC controllers.
 - **AOT-friendly**: avoid reflection in hot paths and use source-generated JSON/logging.
 
@@ -18,7 +18,8 @@ src/
 ├── Honua.Core/       # Domain models + abstractions
 ├── Honua.Postgres/   # PostgreSQL/PostGIS implementation (read/write)
 ├── Honua.DuckDB/     # DuckDB implementation (read-only)
-└── Honua.SqlServer/  # SQL Server geometry/geography implementation (read-only)
+├── Honua.SqlServer/  # SQL Server geometry/geography implementation (read-only)
+└── Honua.MySql/      # MySQL/MariaDB implementation (read/query-only)
 ```
 
 Key points:
@@ -26,7 +27,8 @@ Key points:
 - **Honua.Postgres** implements Core interfaces using raw Npgsql and PostGIS.
 - **Honua.DuckDB** implements Core read interfaces (`IFeatureReader`, `IStreamingFeatureStore`, etc.) for embedded DuckDB databases. Write operations are rejected at startup via capability stripping.
 - **Honua.SqlServer** implements `IFeatureReader` against SQL Server `geometry`/`geography` tables. Registered as an additional `IFeatureDataProvider` and selected per-layer when the layer's `DataConnection` resolves to provider `sqlserver`/`mssql`. Edits, native MVT/FlatGeobuf/Geobuf/GML, and statistics aggregates are deliberately disabled in this slice.
-- **Honua.Server** composes endpoints and handlers, selecting the active primary provider via `DataSource:Provider` configuration; additional read-only providers (DuckDB, SQL Server) plug in alongside.
+- **Honua.MySql** implements Core read interfaces against user-managed MySQL 8.0.11+ / MariaDB 10.6+ tables. The provider declares `FeatureProviderCapabilities.ReadOnlyMySql` and throws `NotSupportedException` for unsupported paths (edits, statistics, native MVT/FlatGeobuf/Geobuf/GML, streaming GeoJSON, KNN, cross-SRID filters). The provider name resolves under `mysql` and the `mariadb` alias.
+- **Honua.Server** composes endpoints and handlers, selecting the active primary provider via `DataSource:Provider` configuration; additional read-only providers (DuckDB, SQL Server, MySQL/MariaDB) plug in alongside or are selected through provider binding.
 - The Blazor admin UI lives in the separate `honua-server-admin` repo and talks to this server's Admin API.
 
 ## Feature Slices (Server)
@@ -73,6 +75,18 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 - **Identifier safety**: all configured identifiers (table, schema, primary key, geometry column, attribute fields) are validated against `[A-Za-z_][A-Za-z0-9_]*` and bracket-quoted.
 - See the [SQL Server Provider Guide](../operator/sqlserver-provider.md) for operator configuration.
 
+### MySQL / MariaDB Provider
+
+- **MySqlConnector**: pooled `MySqlDataSource` against MySQL 8.0.11+ / MariaDB 10.6+; no ORM.
+- Same **QueryBuilder + DataAccess** split as Postgres, with MySQL-canonical spatial SQL (`MBRIntersects` + `ST_Intersects`, `ST_Within`, `ST_Distance_Sphere`, etc.). All identifiers are backtick-quoted; parameters use named `@p0..@pN` form.
+- **Read/query-only by design**: edits, statistics, native MVT/FlatGeobuf/Geobuf/GML output, streaming GeoJSON, KNN/nearest-neighbor, and temporal (`datetime`) filters are reported as unsupported in `FeatureProviderCapabilities.ReadOnlyMySql` and throw `NotSupportedException` at the query builder / filter translator boundary. Cross-SRID filters and output transforms are likewise rejected — there is no portable `ST_Transform`; callers must pre-project. The Point/MultiPoint distance guard is enforced both for `FeatureQuery.SpatialFilter` and for CQL2 distance predicates translated through `MySqlSqlFilterTranslator`.
+- **Read-only DI surface**: `MySqlFeatureStore` implements `IFeatureDataProvider`, `IFeatureReader`, `IPagedFeatureReader`, and `IStreamingFeatureStore`. The provider registers no-op stubs (`ReadOnlyMySqlFeatureWriter`, `ReadOnlyMySqlReplicaRepository`, `ReadOnlyMySqlChangeTracker`, `ReadOnlyMySqlTileProvider`, `ReadOnlyMySqlGmlFeatureStore`) so DI activation succeeds for protocol handlers (FeatureServer query executor, gRPC service, OGC handlers, WFS, OData) under `DataSource:Provider=mysql`; calls to write-shaped APIs raise `NotSupportedException`. `Program.cs` skips the Postgres replica registration for `mysql`/`mariadb` so the stubs are not overwritten. Streaming iterates the existing select path in fixed-size pages (default 1000) — there is no native MySQL cursor — and treats any present `Limit` (including `Limit=0`) as a budget rather than falling through to the page size.
+- **Extent**: `GetExtentAsync` is supported only for Point and Polygon/MultiPolygon layers (Point uses `MIN/MAX(ST_X/ST_Y)`; Polygon/MultiPolygon uses `ST_PointN(ST_ExteriorRing(ST_Envelope(geom)), 1|3)`). Other geometry types raise `NotSupportedException` because MariaDB does not support the 2-arg `ST_SRID` retag and `ST_X`/`ST_Y` are point-only on MySQL. Invalid `GeometryType` configuration values are rejected at startup (no silent fallback to `Point`); mappings use `Enum.Parse` to surface any future validator bypass.
+- **User-managed tables**: unlike PostGIS (internal `features` table discriminated by `layer_id`), MySQL targets user tables. `MySql:Layers` is validated at startup and builds the singleton `MySqlLayerMappingRegistry` plus `MySqlLayerCatalog`; the store and query builder read that registry by layer ID to bind the qualified table, primary key column, geometry column, and SRID.
+- **Configuration-driven catalog**: layers and services are defined in `appsettings.json`. Attribute columns must be declared explicitly (no schema introspection in this slice).
+- **Telemetry**: each query opens a `mysql.<operation>` activity span on the `Honua.MySql.FeatureDataAccess` `ActivitySource`, registered with the central `Honua.ServiceDefaults` `AddSource` list so spans flow through the OTLP exporter when tracing is enabled. Failures emit a structured `MySqlLog.QueryFailed` event (EventId 8902).
+- See the [MySQL/MariaDB Provider Guide](../operator/mysql-provider.md) for operator configuration, version floors, and limitations.
+
 ## Configuration and Limits
 
 - Configuration is environment-variable friendly with source-generated validation.
@@ -101,7 +115,7 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 ## Architectural Constraints (Enforced)
 
 - **No controllers**: Minimal APIs only.
-- **Dependency flow**: Core <- Postgres / DuckDB / SqlServer <- Server.
+- **Dependency flow**: Core <- Postgres / DuckDB / SqlServer / MySql <- Server.
 - **Public API docs**: all public types require XML documentation.
 - **AOT compatibility**: reflection avoided in hot paths; source-gen JSON.
 

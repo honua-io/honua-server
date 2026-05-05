@@ -266,6 +266,12 @@ internal sealed class FeatureServerQueryHandler(
                 ? (null, StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter))
                 : (null, StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed"));
         }
+        catch (NotSupportedException ex)
+        {
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
+            return (null, StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter));
+        }
         catch (Exception ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -658,6 +664,14 @@ internal sealed class FeatureServerQueryHandler(
                             ["returnDistinctValues is not supported when f=fgb."]);
                     }
 
+                    if (!await _queryExecutor.SupportsFlatGeobufOutputAsync(service, layer, cancellationToken))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "Unsupported output format",
+                            ["Output format 'fgb' is not supported by the configured feature store."]);
+                    }
+
                     var fgbStopwatch = Stopwatch.StartNew();
                     var flatGeobufPayload = await _queryExecutor.QueryFlatGeobufWithValidationAsync(service, layer, query, cancellationToken);
                     fgbStopwatch.Stop();
@@ -856,6 +870,18 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             return StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed");
+        }
+        catch (NotSupportedException ex)
+        {
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
+
+            if (context.Response.HasStarted)
+            {
+                return _streamingResult;
+            }
+
+            return StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter);
         }
         catch (Exception ex)
         {
@@ -2008,7 +2034,12 @@ internal sealed class FeatureServerQueryHandler(
             || exception.Message.StartsWith("Invalid geometry", StringComparison.OrdinalIgnoreCase)
             || exception.Message.StartsWith("Invalid orderByFields", StringComparison.OrdinalIgnoreCase)
             || exception.Message.StartsWith("Unknown orderByFields", StringComparison.OrdinalIgnoreCase)
-            || exception.Message.Contains("Geometry is required for nearest neighbor queries", StringComparison.OrdinalIgnoreCase);
+            || exception.Message.Contains("Geometry is required for nearest neighbor queries", StringComparison.OrdinalIgnoreCase)
+            // FeatureProviderQueryRouter raises "Feature provider 'X' does not support Y operations." when
+            // the resolved provider's capability bit is false (e.g. MySQL/MariaDB outStatistics, DuckDB
+            // edits). The router throws InvalidOperationException rather than NotSupportedException, so
+            // the message-prefix check is required to keep these capability mismatches out of the 500 path.
+            || exception.Message.Contains("does not support", StringComparison.OrdinalIgnoreCase);
     }
 
     private static QueryResult<Feature> ApplyDistinctValues(QueryResult<Feature> result, string[] outFields)

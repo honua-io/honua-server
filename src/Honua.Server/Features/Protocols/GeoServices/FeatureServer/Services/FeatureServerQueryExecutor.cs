@@ -39,6 +39,7 @@ internal sealed class FeatureServerQueryExecutor
     }
 
     public bool SupportsGeobufOutput => _featureReader is IGeobufFeatureStore;
+    public bool SupportsFlatGeobufOutput => _featureReader is IFlatGeobufFeatureStore;
     public bool SupportsRawGeoServicesPointOutput => _featureReader is IPagedRawGeoServicesFeatureStore;
 
     public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
@@ -758,6 +759,16 @@ internal sealed class FeatureServerQueryExecutor
         var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Query, cancellationToken)
             .ConfigureAwait(false);
         return reader is IGeobufFeatureStore;
+    }
+
+    public async Task<bool> SupportsFlatGeobufOutputAsync(
+        ServiceDefinition service,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        return reader is IFlatGeobufFeatureStore;
     }
 
     public async Task<bool> SupportsRawGeoServicesPointOutputAsync(
