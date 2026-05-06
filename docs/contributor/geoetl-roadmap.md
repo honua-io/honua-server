@@ -61,7 +61,7 @@ The existing codebase provides ~90% of the required infrastructure. GeoETL
 | `GeoservicesImportBackgroundService` pattern | Reference shape for `PipelineExecutionBackgroundService` |
 | `Honua.Server/Features/Geoprocessing/` (`BuiltInProcessCatalog`, `ProcessPlanValidator`, `ExecutionAdmissionEvaluator`) | Reference for connector catalog, stage-chain validation, edition admission |
 | `StreamingFileImportService` insert path | Reused by Honua-layer sink connector |
-| `ArcGisRestClient`, `GeoServerRestClient` | Phase 2 remote source connectors |
+| `ArcGisRestClient`, `GeoServerRestClient` | Phase 1 remote source connectors (Esri REST, OGC WFS / OGC API Features — managed, no native deps) |
 
 GeoETL code lives in new vertical slices that follow the same project
 conventions as `Import/` and `Geoprocessing/`:
@@ -312,7 +312,7 @@ issue creation tracks against this roadmap.
 | D | Phase 1 sink connectors | A | honua-server | Pro |
 | E | Pipeline execution engine + cron / event scheduler | B, C, D | honua-server | Pro |
 | F | `honua-worker-etl` image + GML + capability detection | E | honua-devops + honua-server | Pro |
-| G | Phase 2 database + remote API sources | B | honua-server | Pro |
+| G | Remote API sources + Phase 2 database connectors | B | honua-server | Pro |
 | H | Admin UI for pipeline authoring + execution monitor | E | honua-server-admin | Pro |
 | I | Streaming sources + custom transform plugin sandbox | E | honua-server | Enterprise |
 | J | Pluggable distributed executor backends | E | honua-server (+ honua-devops) | Enterprise |
@@ -404,8 +404,10 @@ honua-devops layers GDAL/PROJ/GEOS on the base image. GML connector.
 Capability detection enforced at job submission. CI image scan asserts
 no GDAL bytes leaked into the default `honua-server` image.
 
-**G — Phase 2 database and remote API sources.** Remote PostGIS, Esri
-REST, OGC WFS / OGC API Features, SQL Server spatial, MySQL spatial.
+**G — Remote API sources + Phase 2 database connectors.** Remote PostGIS,
+Esri REST, OGC WFS / OGC API Features (all Phase 1 managed — no GDAL
+required, run inside `honua-server`); SQL Server spatial, MySQL spatial
+(Phase 2 — require `honua-worker-etl`).
 
 **H — Admin UI.** Pipeline list, execution monitor, error inspector,
 dry-run trigger. Implementation lives in honua-server-admin; this row

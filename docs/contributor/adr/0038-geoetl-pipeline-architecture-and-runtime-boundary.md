@@ -107,11 +107,18 @@ honua-server (default)             honua-worker-etl (heavyweight)
   │ Dry-run preview         │        │   + Phase 2 connectors  │
   │                         │        │ PipelineExecutionBg     │
   │   IJobQueue ────────────┼────────┼── claims                │
-  │   AcceptedKinds = ALL   │        │   AcceptedKinds = {ETL} │
+  │   AcceptedKinds =       │        │   AcceptedKinds = {ETL} │
+  │     {registered, no ETL}│        │                         │
   └─────────────────────────┘        └─────────────────────────┘
               │                                    │
               └──────── PostgreSQL (shared) ───────┘
 ```
+
+`AcceptedKinds` on each image is derived from the `IJobExecutor`
+instances registered in that image. The default `honua-server` does not
+register an ETL executor, so it does not claim ETL jobs even though the
+shared `IJobQueue` carries them. `honua-worker-etl` registers the ETL
+executor exclusively and claims only `ExtractTransformLoad` jobs.
 
 - **Default image (`honua-server`)** stays lean. No GDAL, no PROJ, no
   GEOS native libraries. Phase 1 managed connectors run inside this
