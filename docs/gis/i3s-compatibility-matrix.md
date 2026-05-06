@@ -366,9 +366,10 @@ that are wrong before child issues are opened.
    a vendorable fixture corpus, so no third-party I3S fixtures are
    committed. Acceptable, or should we invest in sourcing a separately
    licensed real-world fixture before the conformance harness ships?
-5. **Open-core discoverability.** Recommendation: I3S routes return `403
-   Feature requires Enterprise edition` (consistent with PrintingTools
-   layout templates and Pro-tier spatial analytics). Acceptable, or should
+5. **Open-core discoverability.** Recommendation: I3S routes return `402
+   Payment Required` with an Enterprise entitlement message (consistent with
+   the shared license gate used by Pro-tier spatial analytics and temporal
+   raster features). Acceptable, or should
    I3S be fully absent from open-core routing?
 
 ## Acceptance-criteria mapping

@@ -1182,7 +1182,7 @@
           "400": {
             "description": "Invalid clustering parameters or filter syntax"
           },
-          "403": {
+          "402": {
             "description": "Pro-tier license required"
           },
           "404": {
@@ -1315,7 +1315,7 @@
           "400": {
             "description": "Invalid join parameters"
           },
-          "403": {
+          "402": {
             "description": "Pro-tier license required"
           },
           "404": {
@@ -1450,7 +1450,7 @@
           "400": {
             "description": "Invalid buffer parameters"
           },
-          "403": {
+          "402": {
             "description": "Pro-tier license required"
           },
           "404": {
@@ -1574,7 +1574,7 @@
           "400": {
             "description": "Invalid density parameters"
           },
-          "403": {
+          "402": {
             "description": "Pro-tier license required"
           },
           "404": {

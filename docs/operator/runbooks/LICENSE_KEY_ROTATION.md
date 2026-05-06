@@ -37,7 +37,7 @@ tickets that have **not yet landed on this branch** per ADR-0033 §
 
 | Command surface | Current status | Lands with |
 |-----------------|-------------------------|------------|
-| `GET /api/v1/admin/license/keys` | Route is **not yet registered** in `EndpointRegistry`. The CONTROL_PLANE_API contract lists it under "land with the License store + bootstrap child ticket". | License store + bootstrap child ticket. |
+| `GET /api/v1/admin/license/keys` | Route is **not yet registered** in `EndpointRegistry`. The CONTROL_PLANE_API contract lists it as a public-key inspection follow-on. | Public-key inspection child ticket. |
 | `POST /api/v1/admin/license/upload` | Operational through the same validator as startup load. Default `Licensing:AllowAdminUpload=false` returns HTTP `400`; enable it only for workflows that allow runtime file replacement. | Landed with ticket #338. |
 | `GET /api/v1/admin/license/signing/status` | Mint-host-only route. Not registered on customer instances. **Not yet registered** on the mint host either. | Mint host endpoints child ticket. |
 | `POST /api/v1/admin/license/refresh` | Mint-host-only route. **Not yet registered.** | Mint host endpoints child ticket. |
@@ -68,11 +68,11 @@ how Honua actually rotates issuance.
 ## Pre-Rotation Checklist
 
 ```bash
-# Confirm current signing kid (mint host only)
+# Future mint-host route; available only after the mint-host child ticket lands.
 curl -H "X-API-Key: <admin-key>" \
   "https://<mint-host>/api/v1/admin/license/signing/status"
 
-# Confirm public-key set on a customer instance
+# Future public-key inspection route; not available in the #338 runtime baseline.
 curl -H "X-API-Key: <admin-key>" \
   "https://<host>/api/v1/admin/license/keys"
 ```
@@ -85,6 +85,9 @@ Verify before starting:
   resolver expects).
 - The new `kid` follows the convention `honua-<YYYY>-<quarter>` (e.g.,
   `honua-2026-q3`). Numeric collision is forbidden.
+- For the #338 runtime baseline, verify trusted keys through the effective
+  deployment configuration because `GET /api/v1/admin/license/keys` is not
+  registered yet.
 - An incident channel is open and a rollback contact is on standby.
 - The smoke test (§ "Smoke Test") has passed on a non-production
   environment within the last 30 days.
@@ -134,14 +137,10 @@ re-mint automatically within `Mint:RefreshLeadTimeDays` (default 14 days).
 
 Trigger a BYOL re-issue sweep through the portal (separate repo) over the
 next portal cadence (typically 30–60 days). **Do not** force an out-of-
-cycle download. Track progress via:
-
-```
-licenses_issued_total{source="byol-portal"}
-```
-
-versus the known BYOL customer count. A trailing tail beyond the cadence
-indicates customer follow-up is needed.
+cycle download. Track progress through portal issuance records, support
+inventory, and customer admin status until the ADR-0033 issuance counters
+land. A trailing tail beyond the cadence indicates customer follow-up is
+needed.
 
 ### Step 4 — Retire the old key
 
@@ -161,8 +160,8 @@ If a private signing key is suspected compromised:
 2. **Stop signing with the compromised key immediately:**
    - Set `License:Signing:Enabled=false` on the mint host. The mint
      endpoints return `404` while signing is disabled.
-   - Confirm via `licenses_issued_total` flat-lining at the mint host's
-     ingress.
+   - Confirm through mint-host access logs or portal issuance records that no
+     new files are issued. `licenses_issued_total` remains a follow-on counter.
 3. **Generate the replacement keypair** on the offline signing host.
 4. **Add the new public key** to every Honua server (Step 1 above).
 5. **Switch signing** to the new key (Step 2 above) and re-enable
@@ -222,24 +221,22 @@ exercises:
 The smoke test must pass before any rotation is rolled out to production.
 A failed smoke run blocks rotation; investigate before proceeding.
 
-### Manual smoke (without the test harness)
+### Manual smoke available on the #338 runtime baseline
 
-When the harness is not available (e.g., during incident response):
+When the key-inspection route and rotation harness are not available, use a
+staging instance with `Licensing:AllowAdminUpload=true` and a writable
+`Licensing:LicensePath`:
 
 ```bash
-# 1. Capture the current state
+# 1. Confirm the current license state.
 curl -H "X-API-Key: <admin-key>" \
-  "https://<staging-host>/api/v1/admin/license/keys" > before.json
+  "https://<staging-host>/api/v1/admin/license/status"
 
-# 2. Add the new kid
-# (apply the configuration change through your normal channel)
+# 2. Add the new kid through normal configuration and restart.
+# Confirm the effective configuration in your deployment system contains both
+# Licensing:TrustedKeys:<old-kid> and Licensing:TrustedKeys:<new-kid>.
 
-# 3. Confirm both kids are listed
-curl -H "X-API-Key: <admin-key>" \
-  "https://<staging-host>/api/v1/admin/license/keys" > after.json
-diff before.json after.json   # expect new kid added
-
-# 4. Validate a freshly-minted file with the new kid
+# 3. Validate a freshly minted file with the new kid.
 curl -X POST -H "X-API-Key: <admin-key>" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @new-kid.honua-license \
@@ -247,9 +244,9 @@ curl -X POST -H "X-API-Key: <admin-key>" \
 
 curl -H "X-API-Key: <admin-key>" \
   "https://<staging-host>/api/v1/admin/license/status"
-# expect IsValid=true, kid in audit log entry matches new kid
+# expect isValid=true and validationState="Valid"; logs emit EventId 10006.
 
-# 5. Validate a file signed by the old kid
+# 4. Validate a file signed by the old kid.
 curl -X POST -H "X-API-Key: <admin-key>" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @old-kid.honua-license \
@@ -257,11 +254,11 @@ curl -X POST -H "X-API-Key: <admin-key>" \
 
 curl -H "X-API-Key: <admin-key>" \
   "https://<staging-host>/api/v1/admin/license/status"
-# expect IsValid=true, both kids verified by the resolver
+# expect isValid=true and validationState="Valid".
 
-# 6. Remove old kid from Licensing:TrustedKeys and restart.
+# 5. Remove old kid from Licensing:TrustedKeys and restart.
 
-# 7. Re-upload the old-kid file; expect IsValid=false with
+# 6. Re-upload the old-kid file; expect isValid=false with
 # validationState="UnknownKey" or "Expired"
 ```
 
@@ -274,11 +271,16 @@ rotation complete.
 
 | Signal | Healthy state | Action threshold |
 |--------|---------------|-----------------|
-| `licenses_issued_total{source="byol-portal"}` | Steady-state increment matches portal cadence. | Flat line during rotation = mint not switched; check `License:Signing:Enabled` and `KeyId`. |
-| `licenses_validated_total{result="unknown_key_id"}` | Zero. | Non-zero after adding a new `kid` = new key not loaded on a server in the fleet; re-check configuration roll. |
-| `licenses_validated_total{result="signature_invalid"}` | Zero. | Non-zero after rotation = mint signed with one private key, fleet trusts a different public key for that `kid`; halt rotation, verify `kid` collision. |
-| `marketplace_reconciler_runs_total{cloud="aws",result="succeeded"}` and `..."azure"...` | Steady. | Drop after rotation = adapters cannot reach the mint host with new credentials. |
-| Validator log emitter `10020` (`license_validation_kid_resolved`). | One emission per `kid` per warm cache window. | Multiple `kid` resolutions for the same `license_id` within a short window = unstable resolver / configuration churn. |
+| Admin status `validationState` from `/api/v1/admin/license/status` | `Valid` on every rotated instance. | `UnknownKey`, `InvalidSignature`, `Malformed`, or `Expired` after rollout = halt rotation and inspect the configured key set, issued file, and expiry. |
+| Runtime log EventId `10003` (`UnknownKey`) | Zero during routine rotation. | Any occurrence after adding a new `kid` = at least one server does not trust the key that signed the file. |
+| Runtime log EventId `10004` (`InvalidSignature`) | Zero. | Any occurrence = the private signing key and configured public key do not match for that `keyId`, or the file was modified after signing. |
+| Runtime log EventId `10006` (`LicenseLoaded`) | One successful load/upload per tested file. | Missing success event after upload/startup = check admin upload settings, file path, and validation state. |
+| Runtime log EventId `10007` / `10008` | Zero outside intentional negative tests. | Upload rejected or save failed; do not proceed until resolved. |
+
+The `licenses_issued_total`, `licenses_validated_total`,
+`licenses_active`, marketplace reconciler counters, and validator key-resolution
+counter shapes remain ADR-0033 follow-ons and are not emitted by the #338
+runtime baseline.
 
 ---
 
@@ -292,8 +294,8 @@ If a rotation triggers any of the action thresholds above:
    License:Signing:KeyId = honua-2026-q2
    License:Signing:PrivateKeyRef = secret://kv/honua/sign/2026-q2
    ```
-3. Confirm `licenses_issued_total{source="byol-portal"}` resumes
-   incrementing.
+3. Confirm portal issuance or mint-host logs show files being issued by the
+   restored `kid`.
 4. Page the licensing on-call. Investigate why the new `kid` failed to
    propagate before retrying.
 

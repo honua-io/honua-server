@@ -18,12 +18,12 @@ Honua exposes native Prometheus metrics and JSON snapshot endpoints:
 | Endpoint | Access | What it shows |
 |----------|--------|---------------|
 | `GET /metrics` | Admin auth | Native Prometheus text exposition |
-| `GET /api/v1/metrics/health` | Admin auth | Health summary |
+| `GET /api/v1/metrics/health` | Admin auth | Basic health summary; does not include license state in the #338 baseline |
 | `GET /api/v1/metrics/performance` | Admin auth | Request latency and throughput |
 | `GET /api/v1/metrics/database` | Admin auth | Connection pool and query stats |
 | `GET /api/v1/metrics/cache` | Admin auth | Output cache hit/miss rates |
 | `GET /api/v1/metrics/memory` | Admin auth | Memory usage and GC stats |
-| `GET /healthz/metrics` | Admin auth | Lightweight health/performance snapshot |
+| `GET /healthz/metrics` | Admin auth | Lightweight health/performance snapshot, including active license state |
 
 Admin-only diagnostics:
 
@@ -37,7 +37,7 @@ Detailed operational diagnostics (also admin-authenticated):
 
 | Endpoint | What it shows |
 |----------|---------------|
-| `GET /monitoring/health/production` | Combined health snapshot built from live request/cache/connection telemetry |
+| `GET /monitoring/health/production` | Combined health snapshot built from live request/cache/connection telemetry, including active license state |
 | `GET /monitoring/health/comprehensive` | Sanitized ASP.NET health check report for critical dependencies |
 | `GET /monitoring/metrics/connection-pool` | Connection pool utilization, failures, and timeouts |
 | `GET /monitoring/metrics/cache` | Cache health summary with hit ratio |
@@ -45,6 +45,39 @@ Detailed operational diagnostics (also admin-authenticated):
 | `GET /monitoring/metrics/upload-queue` | Upload queue depth and utilization |
 | `GET /monitoring/metrics/database-resilience` | Database resilience summary and active alerts |
 | `GET /monitoring/alerts` | Current alert conditions derived from production thresholds |
+
+---
+
+## License Runtime Observability
+
+The ticket #338 license loader publishes an in-memory snapshot at startup and
+after successful admin upload. License state is visible through:
+
+- `GET /api/v1/admin/license` and `GET /api/v1/admin/license/status`
+- `GET /healthz/metrics` under `license`
+- `GET /monitoring/health/production` under `license`
+- runtime logs in the `10000`-`10009` event-id range
+
+Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`,
+`Malformed`, `UnknownKey`, `InvalidSignature`, and `Expired`. A missing
+configured path, malformed file, unknown key, invalid signature, or expired file
+falls back to Community mode without blocking startup.
+
+| EventId | Level | Signal |
+|---------|-------|--------|
+| 10000 | Information | No license path configured; Community mode is active. |
+| 10001 | Warning | Configured license file is missing. |
+| 10002 | Warning | License file is malformed. |
+| 10003 | Warning | License references an unknown signing key. |
+| 10004 | Warning | Ed25519 signature validation failed. |
+| 10005 | Warning | License is expired. |
+| 10006 | Information | License loaded successfully. |
+| 10007 | Warning | Admin upload was rejected. |
+| 10008 | Error | Admin upload validated but could not be saved. |
+| 10009 | Warning | Entitlement gate denied a paid feature request. |
+
+Prometheus license counters are reserved by ADR-0033 but are not emitted by the
+#338 runtime baseline.
 
 ---
 

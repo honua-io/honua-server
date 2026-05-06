@@ -135,8 +135,8 @@ License checks must be:
   encoded; see ADR-0033 for the canonical claim set.
 - **Transparent**: gated endpoints return actionable error messages, not
   silent failures.
-- **Auditable**: license status is visible in the Admin UI health page and
-  the `/health` endpoint.
+- **Auditable**: license status is visible through the admin license status
+  API and runtime health/monitoring payloads.
 
 > The canonical envelope (compact JWS / EdDSA / Ed25519), the BYOL and
 > marketplace issuance flows, and the multi-key rotation contract are

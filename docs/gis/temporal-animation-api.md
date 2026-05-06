@@ -156,7 +156,7 @@ optional; the default returns `count`.
 
 `queryDateBins` requires the **Pro** edition (feature key
 `temporal.histogram`). Community-tier requests are rejected with a
-`403 Forbidden` problem response and a clear remediation message — the gate
+`402 Payment Required` response and a clear remediation message — the gate
 fires for any successful service/layer access on both GET and POST, so the
 edition contract holds regardless of how the bin parameters are provided.
 
@@ -248,7 +248,7 @@ cache entries, and tile requests without `?time=` continue to be served from
 the existing cache entries unchanged.
 
 `?time=` requires the **Pro** edition. Community-tier requests receive a
-`403 Forbidden` problem response with a clear remediation message.
+`402 Payment Required` response with a clear remediation message.
 
 ## Empty-range and non-time-aware behavior
 

@@ -8,7 +8,7 @@ Accepted
 
 ADR-0024 established the open-core edition model and committed to offline-capable license enforcement. The licensing slice in `Honua.Core/Features/Licensing/` (`ILicenseManager`, `ILicenseStatusProvider`, `LicenseInfo`, `Entitlement`, `FeatureCatalog`, `HonuaEdition`) reserved the runtime contract.
 
-> Implementation note, ticket #338: `honua-server` now ships the runtime baseline for offline license loading. The active runtime file is a JSON envelope `{ version, keyId, payload, signature }`, with `payload` and `signature` Base64URL encoded and Ed25519 verification over the exact payload bytes. Compact JWS, mint-host, marketplace, public-key inspection, and Prometheus counter work remains follow-on architecture unless a later ticket updates this ADR.
+> Implementation note, ticket #338: `honua-server` now ships the runtime baseline for offline license loading. The active runtime file is a JSON envelope `{ version, keyId, payload, signature }`, with `payload` and `signature` Base64URL encoded and Ed25519 verification over the exact payload bytes. Runtime public keys come from `Licensing:TrustedKeys:<keyId>`; no baked-in verification key, compact JWS, mint-host, marketplace, public-key inspection, hot reload, or Prometheus counter work ships in the #338 baseline unless a later ticket updates this ADR.
 
 Honua now needs to ship through three issuance tracks at once:
 

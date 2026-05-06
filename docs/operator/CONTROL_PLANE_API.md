@@ -551,11 +551,12 @@ for run lifecycle, scheduler semantics, and tuning details.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/v1/admin/license` | GET | Get license status |
-| `/api/v1/admin/license` | POST | Upload a signed license envelope when `Licensing:AllowAdminUpload=true` and `Licensing:LicensePath` is configured. Disabled by default. |
-| `/api/v1/admin/license/entitlements` | GET | Get entitlements |
-| `/api/v1/admin/license/status` | GET | Platform-admin license status (mirrors `GET /api/v1/admin/license`) |
-| `/api/v1/admin/license/features` | GET | Platform-admin entitlements / feature view |
+| `/api/v1/admin/license` | GET | Get active license status. |
+| `/api/v1/admin/license` | POST | Upload raw signed license bytes when `Licensing:AllowAdminUpload=true` and `Licensing:LicensePath` is configured. Disabled by default. |
+| `/api/v1/admin/license/entitlements` | GET | Get the active/inactive entitlement inventory as a flat list. |
+| `/api/v1/admin/license/status` | GET | Platform-admin license status (same status contract as `GET /api/v1/admin/license`). |
+| `/api/v1/admin/license/features` | GET | Platform-admin feature entitlement view grouped by catalog metadata. |
+| `/api/v1/admin/license/upload` | POST | Platform-admin upload alias. Uses the same validator and upload settings as `POST /api/v1/admin/license`. |
 
 Runtime licensing loads an offline Ed25519-signed JSON envelope from
 `Licensing:LicensePath`. `Licensing:TrustedKeys:<keyId>` supplies trusted
@@ -563,7 +564,76 @@ raw Ed25519 public keys as `base64url:<32-byte-key>` or standard Base64. With
 no configured path the server runs in Community mode; missing, malformed,
 unknown-key, invalid-signature, and expired files leave the server in a safe
 Community state and emit structured licensing diagnostics. The license status
-also appears in `/healthz/metrics` and `/api/v1/metrics/health` payloads.
+also appears in `/healthz/metrics` and `/monitoring/health/production`
+payloads.
+
+The ticket #338 runtime envelope is:
+
+```json
+{
+  "version": 1,
+  "keyId": "honua-2026-q2",
+  "payload": "<base64url-encoded UTF-8 JSON payload bytes>",
+  "signature": "<base64url Ed25519 signature over the payload bytes>"
+}
+```
+
+The decoded payload uses camel-case JSON:
+
+```json
+{
+  "schema": "honua.license/v1",
+  "licenseId": "lic_123",
+  "licensedTo": "Example Operator",
+  "edition": "Pro",
+  "issuedAt": "2026-05-06T00:00:00Z",
+  "expiresAt": "2027-05-06T00:00:00Z",
+  "entitlements": ["analytics.clustering"],
+  "metadata": {
+    "source": "byol"
+  }
+}
+```
+
+`schema`, `licenseId`, `licensedTo`, `edition`, and `issuedAt` are required.
+`edition` accepts `Community`, `Pro`, `Enterprise`, and `Professional`
+(`Professional` maps to `Pro`). `expiresAt` is optional; when present it must be
+in the future. Unknown entitlement keys are ignored for activation, and the
+active entitlement set always includes Community-tier catalog entries.
+
+Status responses use `ApiResponse<LicenseStatusResponse>`:
+
+```json
+{
+  "success": true,
+  "data": {
+    "edition": "Pro",
+    "expiresAt": "2027-05-06T00:00:00Z",
+    "isValid": true,
+    "daysUntilExpiry": 365,
+    "expiryWarning": false,
+    "validationState": "Valid",
+    "licensedTo": "Example Operator",
+    "licenseId": "lic_123",
+    "issuedAt": "2026-05-06T00:00:00Z",
+    "entitlements": [
+      { "key": "analytics.clustering", "name": "Spatial Clustering", "isActive": true }
+    ]
+  },
+  "timestamp": "2026-05-06T00:00:00Z"
+}
+```
+
+Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`,
+`Malformed`, `UnknownKey`, `InvalidSignature`, and `Expired`. No configured path
+reports `Community` with `isValid=true`; every failed configured-file state
+reports `Community` with `isValid=false`.
+
+Paid-feature gates return HTTP `402 Payment Required` through the shared
+protocol error formatter. Admin/OGC/generic routes use problem details with
+title `Payment Required`; GeoServices routes use the standard GeoServices error
+envelope with `error.code=402`; gRPC maps the same missing-entitlement condition
+to `FAILED_PRECONDITION`.
 
 The broader unified license architecture, BYOL and marketplace issuance flows,
 multi-key rotation, and AWS/Azure marketplace adapter contracts are defined in
@@ -574,10 +644,10 @@ Operational procedures live in the licensing runbooks:
 [License Key Rotation](runbooks/LICENSE_KEY_ROTATION.md), and
 [Marketplace Operations](runbooks/MARKETPLACE_OPERATIONS.md).
 
-The licensing slice introduces additional routes that land with their
-child tickets per the ADR-0033 § "Bounded Child Tickets" decomposition.
-They are listed here so the canonical route set in the ADR, the
-architecture doc, and this contract agree:
+The broader licensing architecture also defines routes that land with child
+tickets per the ADR-0033 § "Bounded Child Tickets" decomposition. They are
+listed here so the canonical route set in the ADR, the architecture doc, and
+this contract agree:
 
 | Endpoint | Method | Visibility | Land with |
 |----------|--------|------------|-----------|

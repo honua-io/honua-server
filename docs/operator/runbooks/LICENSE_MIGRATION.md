@@ -5,9 +5,10 @@ license file format to the ticket #338 runtime license envelope: a JSON
 envelope with Ed25519 verification over exact payload bytes. ADR-0033 tracks
 the broader compact-JWS marketplace/mint architecture; customer runtimes on
 this branch load the signed JSON envelope described here.
-The migration is **non-forced**: existing BYOL customers continue to operate
-through a configurable dual-format grace window while the unified format
-becomes canonical.
+
+The #338 runtime accepts only this signed JSON envelope. If any customer is
+still on a private-preview license format, treat compatibility as a separate
+bounded follow-on before declaring that deployment migrated.
 
 ---
 
@@ -18,9 +19,9 @@ This runbook applies to:
 - BYOL customers running an older Honua release that consumed a private-
   preview license file (if any portal-issued files predate ADR-0033).
 - New BYOL customers receiving ticket #338 signed JSON license files from day one.
-- AWS Marketplace and Azure Marketplace customers — adapters mint
-  canonical-format files automatically, so for them this runbook is
-  informational only.
+- AWS Marketplace and Azure Marketplace customers once the marketplace adapter
+  follow-on tickets mint the same runtime envelope. Those adapters are not part
+  of ticket #338.
 
 This runbook does **not** cover:
 
@@ -39,7 +40,7 @@ inspection, and Prometheus licensing counters remain separate child work:
 |-----------------|-------------------------|------------|
 | `POST /api/v1/admin/license/upload` | Operational through the same validator as startup load. Default `Licensing:AllowAdminUpload=false` returns HTTP `400`; enable it only when uploads are part of the operational workflow. | Landed with ticket #338. |
 | `GET /api/v1/admin/license/status` | Operational. Returns edition, validation state, expiry, license id, licensee, and entitlements. | Landed with ticket #338. |
-| `GET /api/v1/admin/observability/errors?eventIdMin=10000&eventIdMax=10299` | The endpoint is operational. Runtime licensing emits structured events `10000` through `10009` for no path, missing file, malformed file, unknown key, invalid signature, expired file, successful load, upload rejection/save failure, and entitlement denial. | Landed with ticket #338 for the listed event ids. |
+| `GET /api/v1/admin/observability/errors` | The endpoint is operational. Runtime licensing emits structured events `10000` through `10009` for no path, missing file, malformed file, unknown key, invalid signature, expired file, successful load, upload rejection/save failure, and entitlement denial. The endpoint returns the recent-error buffer; filter the response client-side for the licensing event-id range. | Landed with ticket #338 for the listed event ids. |
 | `licenses_validated_total{result=...}` and `licenses_active{edition=...}` Prometheus counters | Counter shapes are documented in ADR-0033 but are not emitted by the #338 runtime baseline. | Telemetry counters child ticket. |
 
 Confirm the target release includes ticket #338 before running the upload or
@@ -47,18 +48,56 @@ startup-file migration flow.
 
 ---
 
+## Runtime Envelope
+
+The runtime license file is UTF-8 JSON:
+
+```json
+{
+  "version": 1,
+  "keyId": "honua-2026-q2",
+  "payload": "<base64url-encoded UTF-8 JSON payload bytes>",
+  "signature": "<base64url Ed25519 signature over the payload bytes>"
+}
+```
+
+The decoded payload is also JSON:
+
+```json
+{
+  "schema": "honua.license/v1",
+  "licenseId": "lic_123",
+  "licensedTo": "Example Operator",
+  "edition": "Pro",
+  "issuedAt": "2026-05-06T00:00:00Z",
+  "expiresAt": "2027-05-06T00:00:00Z",
+  "entitlements": ["analytics.clustering"],
+  "metadata": {
+    "source": "byol"
+  }
+}
+```
+
+`schema`, `licenseId`, `licensedTo`, `edition`, and `issuedAt` are required.
+`expiresAt` is optional; when present it must be in the future. The file is
+rejected as `Malformed` when the envelope is missing required fields, exceeds
+the runtime size limit, contains invalid Base64URL, or decodes to invalid
+payload JSON. A `keyId` that is absent from `Licensing:TrustedKeys` is
+`UnknownKey`; a signature mismatch is `InvalidSignature`; an expired file is
+`Expired`.
+
 ## Core Policy
 
-1. **No forced re-issuance.** Existing BYOL customers must not be required to
-   download a new file before the legacy format reaches its deprecation
-   deadline.
-2. **Roll forward.** New issuances always use the canonical format. Legacy
-   files run through the dual-format verifier until the configured deadline.
-3. **Time-bound the dual path.** The legacy parsing branch is removed in a
-   single PR after the deadline. No indefinite legacy support.
-4. **Telemetry-driven cutover.** Customers are tracked through deprecation
-   counters; the deadline only advances when the in-flight legacy population
-   is small enough that a re-issue sweep is feasible.
+1. **Do not force legacy customers without compatibility.** If a
+   private-preview format exists in production, file a compatibility verifier
+   or customer re-issue plan before upgrading those installs to a #338-only
+   runtime.
+2. **Roll forward for new issuances.** New BYOL files use the signed JSON
+   envelope above.
+3. **No indefinite legacy support.** Any temporary legacy branch must have a
+   removal ticket, deadline, and source-backed inventory of affected customers.
+4. **Evidence-driven cutover.** Use admin status, runtime logs, and deployment
+   inventory for #338. Prometheus license counters remain a follow-on signal.
 
 ---
 
@@ -68,7 +107,8 @@ Before deploying a signed license file to production, verify on a non-
 production environment:
 
 ```bash
-# Optional: confirm upload validates end-to-end when uploads are enabled.
+# Optional: confirm upload validates end-to-end after temporarily setting
+# Licensing:AllowAdminUpload=true and configuring Licensing:LicensePath.
 curl -X POST -H "X-API-Key: <admin-key>" \
   -H "Content-Type: application/octet-stream" \
   --data-binary @license.honua-license.json \
@@ -83,7 +123,9 @@ Verify:
 - `validationState=Valid`, `isValid=true`, `edition` matches expected, and
   `expiresAt` is either absent/perpetual or in the future.
 - `licenseId`, `licensedTo`, and active entitlements match the issued file.
-- `/healthz/metrics` includes the same license state under `license`.
+- `/healthz/metrics` and `/monitoring/health/production` include the same
+  license state under `license`. `/api/v1/metrics/health` does not include
+  license state in the #338 baseline.
 
 ---
 
@@ -139,7 +181,7 @@ loads.
 
 1. Track un-migrated installs through deployment inventory and the admin
    license status response. Runtime licensing emits structured validation
-   state logs in the `10000`-`10009` event id range.
+   state logs in the `10000`-`10009` event-id range.
 2. Coordinate with the portal team to re-issue legacy files in canonical
    format on the customer's next renewal touchpoint. **Do not** force an
    out-of-cycle download.
@@ -169,7 +211,7 @@ curl -H "X-API-Key: <admin-key>" \
 
 # Recent license-related logs (admin observability)
 curl -H "X-API-Key: <admin-key>" \
-  "https://<host>/api/v1/admin/observability/errors?eventIdMin=10000&eventIdMax=10299"
+  "https://<host>/api/v1/admin/observability/errors"
 ```
 
 Expected after Phase 1: status shows `validationState=Valid`,
@@ -197,6 +239,10 @@ knobs in that ticket. The #338 baseline has no legacy parser.
 ---
 
 ## Communication Templates
+
+Only use the dual-format templates below if a follow-on compatibility verifier
+has shipped. The #338-only runtime cannot promise that legacy files continue to
+load.
 
 ### Customer notification — dual format enabled
 
@@ -229,8 +275,10 @@ knobs in that ticket. The #338 baseline has no legacy parser.
 The migration is complete when:
 
 - All in-flight customer license files validate as canonical.
-- `licenses_validated_total{result="legacy_format_accepted"}` has been
-  zero for 14 consecutive days.
+- Deployment inventory and admin status show no remaining legacy files. If a
+  follow-on dual-format verifier adds `licenses_validated_total`, require
+  `licenses_validated_total{result="legacy_format_accepted"}` to stay zero for
+  14 consecutive days before removal.
 - The configured deadline has passed.
 - The cutover PR is merged.
 - This runbook is updated with the cutover date and the time-bound section

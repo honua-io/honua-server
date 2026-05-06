@@ -12,6 +12,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
@@ -408,7 +409,9 @@ internal static partial class StaticMapEndpoints
             HonuaTelemetry.SetSuccess(activity, totalFeatureCount);
             HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
 
-            return Results.Bytes(imageBytes, contentType);
+            var etagService = context.RequestServices.GetRequiredService<IETagService>();
+            var response = ResponseCacheUtilities.CreateCachedResponse(imageBytes, contentType, etagService);
+            return ResponseCacheUtilities.CreateResultFromCachedResponse(context, response, etagService);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
