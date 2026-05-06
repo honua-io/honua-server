@@ -388,6 +388,11 @@ public static class EndpointRegistry
         new("GET", "/terrain/{datasetId}/tile.json"),
         new("GET", "/terrain/{datasetId}/{z}/{x}/{y}.png"),
 
+        // Public SDK-compatible scene discovery (#923).
+        new("GET", "/api/scenes"),
+        new("GET", "/api/scenes/{sceneId}"),
+        new("GET", "/api/scenes/{sceneId}/resolve"),
+
         // Hosted 3D Tiles scene serving (#837).
         new("POST", "/scenes/{sceneId}/access-envelope"),
         new("GET", "/scenes/{sceneId}/tileset.json"),

@@ -2,8 +2,8 @@
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 --
 -- Deterministic SDK-backed mobile offline field operations fixture.
--- Safe to re-run: this seed removes only the fixture-owned service, layers, and
--- feature IDs before inserting the baseline state.
+-- Safe to re-run: this seed removes only the fixture-owned service, scene,
+-- layers, and feature IDs before inserting the baseline state.
 
 BEGIN;
 
@@ -45,6 +45,9 @@ WHERE layer_id IN (68910, 68920);
 
 DELETE FROM honua.services
 WHERE service_name = 'mobile_offline_demo';
+
+DELETE FROM honua.scene_datasets
+WHERE id = 'downtown-honolulu';
 
 DELETE FROM features
 WHERE layer_id IN (68910, 68920)
@@ -212,6 +215,59 @@ INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
 VALUES
     ('mobile_offline_demo', 68910, 0),
     ('mobile_offline_demo', 68920, 1);
+
+INSERT INTO honua.scene_datasets (
+    dataset_id,
+    id,
+    name,
+    description,
+    asset_root,
+    tileset_file_name,
+    dataset_type,
+    extent_xmin,
+    extent_ymin,
+    extent_xmax,
+    extent_ymax,
+    crs,
+    cache_max_age_seconds,
+    cache_no_store,
+    edition_gate,
+    requires_auth,
+    is_public,
+    allowed_roles,
+    status,
+    validation_message,
+    revision,
+    created_at,
+    created_by,
+    updated_at
+)
+VALUES (
+    '92300000-0000-4000-8000-000000000923',
+    'downtown-honolulu',
+    'Downtown Honolulu',
+    'Minimal hosted 3D Tiles fixture for mobile live-image scene discovery and asset download tests.',
+    'fixtures/scenes/downtown-honolulu',
+    'tileset.json',
+    'hosted_tiles',
+    -157.8750,
+    21.2900,
+    -157.8350,
+    21.3250,
+    'EPSG:4326',
+    3600,
+    FALSE,
+    NULL,
+    FALSE,
+    TRUE,
+    NULL,
+    'active',
+    NULL,
+    1,
+    '2026-05-01T00:00:00Z',
+    'mobile-offline-demo-seed',
+    NULL
+);
 
 INSERT INTO honua.layer_fields (
     layer_id,

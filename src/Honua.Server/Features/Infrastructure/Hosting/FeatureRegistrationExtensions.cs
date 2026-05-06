@@ -118,6 +118,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapAttachmentEndpoints();
         endpoints.MapTileJsonEndpoints();
         endpoints.MapTerrainEndpoints();
+        endpoints.MapSceneDiscoveryEndpoints();
         endpoints.MapSceneEndpoints();
         endpoints.MapSceneDatasetEndpoints();
         endpoints.MapElevationEndpoints();

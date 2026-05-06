@@ -1,0 +1,40 @@
+{
+  "asset": {
+    "version": "1.1",
+    "tilesetVersion": "mobile-live-fixture-v1"
+  },
+  "geometricError": 250,
+  "root": {
+    "boundingVolume": {
+      "region": [
+        -2.755438057059,
+        0.371580104274,
+        -2.754740204235,
+        0.372190969513,
+        0,
+        80
+      ]
+    },
+    "geometricError": 0,
+    "refine": "ADD",
+    "content": {
+      "uri": "tiles/0.b3dm"
+    }
+  },
+  "extras": {
+    "sceneId": "downtown-honolulu",
+    "name": "Downtown Honolulu",
+    "fixture": "mobile-live-image",
+    "bounds": {
+      "west": -157.875,
+      "south": 21.290,
+      "east": -157.835,
+      "north": 21.325
+    },
+    "cameraHint": {
+      "latitude": 21.3069,
+      "longitude": -157.8583,
+      "height": 1200
+    }
+  }
+}
