@@ -101,8 +101,13 @@ Durability guarantees:
   operations (OData PUT, OGC Features Replace and batch updates, WFS 2.0
   Replace) report `geometryChanged=true` whenever the operation either supplies
   a new geometry or overwrites an existing non-null geometry — including the
-  body-less Replace that clears existing geometry. The only no-change case for
-  a Replace is null-to-null, which stays `false`.
+  body-less Replace that clears existing geometry. For OData `$batch` PUT, OGC
+  Features Replace and batch updates, and WFS 2.0 Replace, the only no-change
+  case is null-to-null, which stays `false`. The single OData CRUD PUT path
+  skips the existing-row pre-fetch and uses `replace OR GeometrySpecified`
+  directly, so a PUT against a row that was already geometry-null over-reports
+  as `geometryChanged=true` — accepted as a benign delta-signal trade-off
+  rather than a stronger guarantee.
 - **Layer-CRS fallback for SRID-less mutation WKB.** Protocol handlers thread
   `layer.SpatialReference.ToSrid()` (which prefers `LatestWkid` over the legacy
   `Wkid`) into the outbox scope as the geometry-CRS fallback, matching the
