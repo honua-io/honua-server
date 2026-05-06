@@ -191,6 +191,11 @@ public static class Protocols
     public const string GPServer = "GPServer";
 
     /// <summary>
+    /// GeoServices NAServer REST API (network analysis).
+    /// </summary>
+    public const string NAServer = "NAServer";
+
+    /// <summary>
     /// Model Context Protocol operator surface (planning, execution, lifecycle).
     /// </summary>
     public const string Mcp = "Mcp";

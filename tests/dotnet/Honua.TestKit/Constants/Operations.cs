@@ -26,6 +26,10 @@ public static class Operations
     public const string SpatialQuery = "SpatialQuery";
     public const string BufferQuery = "BufferQuery";
     public const string NearestQuery = "NearestQuery";
+    public const string Directions = "Directions";
+    public const string OptimizeRoute = "OptimizeRoute";
+    public const string ServiceArea = "ServiceArea";
+    public const string ClosestFacility = "ClosestFacility";
 
     // Geometry Service Operations
     public const string Buffer = "Buffer";

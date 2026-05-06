@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "sceneId": "downtown-honolulu",
+  "name": "Downtown Honolulu",
+  "description": "Minimal hosted 3D Tiles fixture for mobile live-image scene discovery and asset download tests.",
+  "capabilities": [
+    "3d-tiles"
+  ],
+  "bounds": {
+    "west": -157.875,
+    "south": 21.29,
+    "east": -157.835,
+    "north": 21.325
+  },
+  "tilesetPath": "tileset.json",
+  "updatedAt": "2026-05-01T00:00:00Z"
+}
