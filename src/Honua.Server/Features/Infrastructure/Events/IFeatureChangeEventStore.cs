@@ -35,5 +35,20 @@ internal interface IFeatureChangeEventStoreHealth
 /// </summary>
 internal interface IFeatureChangeEventPublisher
 {
+    /// <summary>
+    /// Best-effort publish: callers tolerate the publisher silently swapping a
+    /// failed durable append for a retry-queue enqueue. Used by the inline
+    /// post-commit publish path (legacy non-outbox deployments) and by the
+    /// retry queue itself.
+    /// </summary>
     Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Strict publish: throws when the durable append fails so the caller can
+    /// keep its own durability state intact. Used by the transactional outbox
+    /// dispatcher (#692) so a failed append leaves the outbox row claimed/failed
+    /// for a future retry instead of being silently moved to the best-effort
+    /// retry queue, which can be in-memory when no distributed cache is available.
+    /// </summary>
+    Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default);
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Grpc.Core;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
@@ -288,6 +289,31 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
         }
 
+        var grpcHttpContext = context.GetHttpContext()
+            ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
+
+        // Per-row geometry-change semantics mirror the inline publish path
+        // (PublishFeatureChangeEventsAsync below): a row is considered to have changed
+        // geometry when the request feature carries non-null WKB. Deletes default to
+        // false. Without these queues an attribute-only update would over-report as a
+        // geometry change because the post-mutation snapshot still carries the prior WKB.
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(editBatch);
+
+        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            grpcHttpContext,
+            request.LayerId,
+            HonuaTelemetry.Protocols.Grpc,
+            serviceId: request.ServiceId,
+            serviceProtocol: ServiceProtocols.Grpc,
+            // Use ToSrid() (LatestWkid ?? Wkid) so the outbox enrichment fallback
+            // emits the same SRID as the inline-publish path on layers like
+            // Wkid=102100/LatestWkid=3857. Passing Wkid alone would publish the
+            // deprecated WKID on outbox-active backends only.
+            layerSrid: layer.SpatialReference.ToSrid(),
+            perOperationGeometryChanged: perOperationGeometryChanged,
+            cancellationToken: context.CancellationToken).ConfigureAwait(false);
+        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
+
         var result = await _featureWriter.ApplyEditsAsync(
             request.LayerId,
             editBatch,
@@ -376,6 +402,36 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                     layerSrid: layerSrid).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>
+    /// Build per-operation-kind queues of geometry-change flags in the same order
+    /// ApplyEditsAsync iterates rows for each kind, so the outbox payload's
+    /// <c>GeometryChanged</c> field tracks the originating request's intent rather than
+    /// inferring from the post-mutation snapshot. Deletes default to false (the inline
+    /// publish path also defaults to false for delete events).
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
+    {
+        if (editBatch.Creates.IsDefaultOrEmpty && editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal);
+        if (!editBatch.Creates.IsDefaultOrEmpty)
+        {
+            result["create"] = editBatch.Creates.Select(static f => f.Geometry is { Length: > 0 }).ToImmutableArray();
+        }
+        if (!editBatch.Updates.IsDefaultOrEmpty)
+        {
+            result["update"] = editBatch.Updates.Select(static f => f.Geometry is { Length: > 0 }).ToImmutableArray();
+        }
+        if (!editBatch.Deletes.IsDefaultOrEmpty)
+        {
+            result["delete"] = Enumerable.Repeat(false, editBatch.Deletes.Length).ToImmutableArray();
+        }
+        return result;
     }
 
     private static Proto.FeaturePage CreatePage(

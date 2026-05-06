@@ -455,6 +455,35 @@ class PostGISFixture:
 
                 conn.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS honua.feature_change_outbox (
+                        outbox_id        uuid        NOT NULL DEFAULT gen_random_uuid(),
+                        service_id       text        NOT NULL,
+                        layer_id         integer     NOT NULL,
+                        object_id        bigint      NOT NULL,
+                        operation        text        NOT NULL,
+                        protocol         text        NOT NULL,
+                        source_id        text,
+                        request_id       text        NOT NULL,
+                        event_id         text        NOT NULL,
+                        event_payload    jsonb       NOT NULL,
+                        status           text        NOT NULL DEFAULT 'pending',
+                        retry_count      integer     NOT NULL DEFAULT 0,
+                        last_error       text,
+                        created_at       timestamptz NOT NULL DEFAULT now(),
+                        claimed_at       timestamptz,
+                        claim_node_id    text,
+                        claim_expires_at timestamptz,
+                        dispatched_at    timestamptz,
+                        CONSTRAINT feature_change_outbox_pkey PRIMARY KEY (outbox_id),
+                        CONSTRAINT feature_change_outbox_status_chk CHECK (
+                            status IN ('pending', 'claimed', 'dispatched', 'failed', 'dead_lettered')
+                        )
+                    );
+                    """
+                )
+
+                conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS features (
                         objectid BIGSERIAL PRIMARY KEY,
                         layer_id INT NOT NULL,
@@ -534,6 +563,9 @@ class PostGISFixture:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_data_layer_acquisition ON honua.raster_data(layer_id, acquisition_date DESC, created_at DESC, id DESC);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_statistics_raster_data_id ON honua.raster_statistics(raster_data_id);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_raster_tiles_lookup ON honua.raster_tiles(raster_data_id, zoom_level, tile_x, tile_y);")
+                conn.execute("CREATE INDEX IF NOT EXISTS ix_fco_dispatch ON honua.feature_change_outbox (created_at) WHERE status IN ('pending', 'failed');")
+                conn.execute("CREATE INDEX IF NOT EXISTS ix_fco_claim_recovery ON honua.feature_change_outbox (claim_expires_at) WHERE status = 'claimed';")
+                conn.execute("CREATE INDEX IF NOT EXISTS ix_fco_dead_lettered ON honua.feature_change_outbox (created_at) WHERE status = 'dead_lettered';")
 
                 conn.execute(
                     """

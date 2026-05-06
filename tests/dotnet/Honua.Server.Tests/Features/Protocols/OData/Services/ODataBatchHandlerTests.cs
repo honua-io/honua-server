@@ -210,6 +210,9 @@ public sealed class ODataBatchHandlerTests
     {
         public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+
+        public Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private static LayerDefinition CreateLayer()

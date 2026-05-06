@@ -735,6 +735,12 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         public List<FeatureChangeEventRequest> Requests { get; } = [];
 
         public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => Record(request);
+
+        public Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => Record(request);
+
+        private Task Record(FeatureChangeEventRequest request)
         {
             lock (_lock)
             {

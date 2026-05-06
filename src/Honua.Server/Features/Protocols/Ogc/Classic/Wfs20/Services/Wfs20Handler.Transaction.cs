@@ -90,6 +90,7 @@ internal sealed partial class Wfs20Handler
             Wfs20Log.TransactionRequested(_logger, prepared.InsertCount, prepared.UpdateCount, prepared.DeleteCount);
 
             var editResult = await ApplyPreparedTransactionAsync(
+                context,
                 prepared,
                 rollbackOnFailure,
                 cancellationToken).ConfigureAwait(false);
@@ -329,6 +330,7 @@ internal sealed partial class Wfs20Handler
                 descriptor.Layer,
                 featureElement,
                 cancellationToken).ConfigureAwait(false);
+            // Insert always carries the request's geometry intent in the built feature.
             operations.Add(new PreparedTransactionOperation(
                 operations.Count,
                 descriptor,
@@ -336,7 +338,10 @@ internal sealed partial class Wfs20Handler
                 FeatureEditOperation.Create(feature),
                 handle,
                 feature,
-                null));
+                null)
+            {
+                RequestGeometryChanged = feature.Geometry is { Length: > 0 }
+            });
         }
 
         return null;
@@ -417,6 +422,9 @@ internal sealed partial class Wfs20Handler
                 descriptor.Layer,
                 changes,
                 cancellationToken).ConfigureAwait(false);
+            // Capture the request-intent flag BEFORE the merge result hides it: the
+            // built feature preserves the existing WKB when the request omits geometry,
+            // so reading updatedFeature.Geometry would over-report attribute-only Updates.
             operations.Add(new PreparedTransactionOperation(
                 operations.Count,
                 descriptor,
@@ -424,7 +432,10 @@ internal sealed partial class Wfs20Handler
                 FeatureEditOperation.Update(updatedFeature),
                 handle,
                 updatedFeature,
-                null));
+                null)
+            {
+                RequestGeometryChanged = changes.GeometrySpecified
+            });
         }
 
         return null;
@@ -506,7 +517,10 @@ internal sealed partial class Wfs20Handler
                 FeatureEditOperation.Delete(objectId),
                 handle,
                 null,
-                existing.Value));
+                existing.Value)
+            {
+                RequestGeometryChanged = false
+            });
         }
 
         return null;
@@ -581,6 +595,13 @@ internal sealed partial class Wfs20Handler
             targetIds[0],
             featureElement,
             cancellationToken).ConfigureAwait(false);
+        // Replace constructs a fresh feature from the request payload (or null when
+        // the body omits geometry), and the operation overwrites the existing row.
+        // Mark the change when either side has geometry so a body-less Replace that
+        // clears an existing non-null geometry surfaces the cleared state to
+        // consumers; the only no-change case is null-to-null, which we keep as
+        // false. This avoids the under-report from inferring solely from the
+        // replacement's WKB.
         operations.Add(new PreparedTransactionOperation(
             operations.Count,
             descriptor,
@@ -588,7 +609,11 @@ internal sealed partial class Wfs20Handler
             FeatureEditOperation.Update(replacement),
             handle,
             replacement,
-            null));
+            null)
+        {
+            RequestGeometryChanged = replacement.Geometry is { Length: > 0 }
+                || existing.Value.Geometry is { Length: > 0 }
+        });
 
         return null;
     }
@@ -1491,17 +1516,28 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<FeatureEditResult> ApplyPreparedTransactionAsync(
+        HttpContext context,
         TransactionPreparationResult prepared,
         bool rollbackOnFailure,
         CancellationToken cancellationToken)
     {
         if (prepared.LayerIdCount <= 1)
         {
+            // Pass each operation's request-intent geometry flag alongside the
+            // EditOperation so the outbox payload tracks the request rather than the
+            // post-merge feature WKB (which BuildTransactionUpdatedFeatureAsync preserves
+            // when the request omits geometry).
+            var operations = prepared.Operations
+                .Select(static operation => operation.EditOperation)
+                .ToImmutableArray();
+            var requestGeometryChangedFlags = prepared.Operations
+                .Select(static operation => operation.RequestGeometryChanged)
+                .ToImmutableArray();
             return await ExecutePreparedEditAsync(
+                context,
                 prepared.LayerId,
-                prepared.Operations
-                    .Select(static operation => operation.EditOperation)
-                    .ToImmutableArray(),
+                operations,
+                requestGeometryChangedFlags,
                 rollbackOnFailure,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -1544,10 +1580,16 @@ internal sealed partial class Wfs20Handler
                      .OrderBy(static group => group.Min(operation => operation.Sequence)))
         {
             var operations = layerGroup.OrderBy(static operation => operation.Sequence).ToImmutableArray();
+            // Per-operation request-intent geometry flags, ordered to match the
+            // EditOperation sequence the data layer iterates.
             var layerResult = await ExecutePreparedEditAsync(
+                context,
                 layerGroup.Key,
                 operations
                     .Select(static operation => operation.EditOperation)
+                    .ToImmutableArray(),
+                operations
+                    .Select(static operation => operation.RequestGeometryChanged)
                     .ToImmutableArray(),
                 rollbackOnFailure: false,
                 cancellationToken).ConfigureAwait(false);
@@ -1620,8 +1662,10 @@ internal sealed partial class Wfs20Handler
     }
 
     private async Task<FeatureEditResult> ExecutePreparedEditAsync(
+        HttpContext context,
         int layerId,
         ImmutableArray<FeatureEditOperation> operations,
+        ImmutableArray<bool> requestGeometryChangedFlags,
         bool rollbackOnFailure,
         CancellationToken cancellationToken)
     {
@@ -1649,7 +1693,74 @@ internal sealed partial class Wfs20Handler
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        // Bin per-kind geometry-change flags from the request-intent flags captured by
+        // PrepareInsert/Update/Delete/ReplaceOperationsAsync (BEFORE merging with the
+        // existing row). Reading editBatch.Operations[i].Feature.Geometry would over-
+        // report attribute-only Updates because BuildTransactionUpdatedFeatureAsync
+        // preserves the existing WKB when changes.GeometrySpecified is false.
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(operations, requestGeometryChangedFlags);
+        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
+            layerId,
+            HonuaTelemetry.Protocols.Wfs20,
+            serviceProtocol: ServiceProtocols.Wfs20,
+            // ToSrid() prefers LatestWkid so the outbox enrichment fallback emits the
+            // same SRID the inline-publish path uses (Wkid=102100/LatestWkid=3857
+            // would otherwise publish the deprecated WKID on outbox backends only).
+            layerSrid: layer.SpatialReference.ToSrid(),
+            perOperationGeometryChanged: perOperationGeometryChanged,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Bin per-operation request-intent geometry flags by operation kind. The flags must
+    /// be supplied in the same order the operations appear in <paramref name="operations"/>
+    /// (which is the order ApplyOrderedEditsAsync dequeues from each kind's queue, since
+    /// it iterates ordered operations and dequeues from the matching kind queue per row).
+    /// Deletes always report false.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(
+        ImmutableArray<FeatureEditOperation> operations,
+        ImmutableArray<bool> requestGeometryChangedFlags)
+    {
+        if (operations.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var creates = new List<bool>();
+        var updates = new List<bool>();
+        var deletes = new List<bool>();
+
+        for (var i = 0; i < operations.Length; i++)
+        {
+            var flag = i < requestGeometryChangedFlags.Length && requestGeometryChangedFlags[i];
+            switch (operations[i].Kind)
+            {
+                case FeatureEditOperationKind.Create:
+                    creates.Add(flag);
+                    break;
+                case FeatureEditOperationKind.Update:
+                    updates.Add(flag);
+                    break;
+                case FeatureEditOperationKind.Delete:
+                    deletes.Add(false);
+                    break;
+            }
+        }
+
+        if (creates.Count == 0 && updates.Count == 0 && deletes.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal);
+        if (creates.Count > 0) result["create"] = creates;
+        if (updates.Count > 0) result["update"] = updates;
+        if (deletes.Count > 0) result["delete"] = deletes;
+        return result;
     }
 
 
@@ -1965,7 +2076,17 @@ internal sealed partial class Wfs20Handler
         FeatureEditOperation EditOperation,
         string? Handle,
         Feature? MutationFeature,
-        Feature? DeleteSnapshot);
+        Feature? DeleteSnapshot)
+    {
+        /// <summary>
+        /// True when the originating request body explicitly specified a geometry. For
+        /// Insert/Replace this is always true (the request must carry the feature payload);
+        /// for Update this reflects <c>changes.GeometrySpecified</c> captured BEFORE merging
+        /// with the existing row, since <c>BuildTransactionUpdatedFeatureAsync</c> preserves
+        /// the existing WKB when the request omits geometry. Delete operations report false.
+        /// </summary>
+        public bool RequestGeometryChanged { get; init; }
+    }
 
     private readonly record struct TransactionFieldResolution(
         FieldDefinition Field,

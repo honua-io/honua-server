@@ -25,9 +25,7 @@ internal sealed partial class FeatureStreamPublisher(
 
     public async Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
     {
-        var durableRequest = string.IsNullOrWhiteSpace(request.EventId)
-            ? request with { EventId = Guid.NewGuid().ToString("N") }
-            : request;
+        var durableRequest = EnsureEventId(request);
 
         FeatureChangeEvent persisted;
         try
@@ -47,6 +45,26 @@ internal sealed partial class FeatureStreamPublisher(
             return;
         }
 
+        FanOut(persisted);
+    }
+
+    public async Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+    {
+        // Outbox dispatcher path (#692): a failed durable append must surface as an
+        // exception so the dispatcher keeps the outbox row claimed/failed instead of
+        // silently transferring durability to the best-effort retry queue.
+        var durableRequest = EnsureEventId(request);
+        var persisted = await _store.AppendAsync(durableRequest, cancellationToken).ConfigureAwait(false);
+        FanOut(persisted);
+    }
+
+    private static FeatureChangeEventRequest EnsureEventId(FeatureChangeEventRequest request)
+        => string.IsNullOrWhiteSpace(request.EventId)
+            ? request with { EventId = Guid.NewGuid().ToString("N") }
+            : request;
+
+    private void FanOut(FeatureChangeEvent persisted)
+    {
         // Fan out to live streaming sessions after durable append.
         // Enrichment data (geometry envelope + properties) is carried on the message
         // for subscription filter evaluation during broadcast — no I/O in the hot path.

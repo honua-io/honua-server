@@ -470,6 +470,9 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
     {
         public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("publish failed");
+
+        public Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("publish failed");
     }
 
 }

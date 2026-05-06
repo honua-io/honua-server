@@ -11,6 +11,7 @@ using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Honua.Postgres.Features.SpatialAnalytics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
@@ -73,7 +74,8 @@ internal static class ServiceCollectionExtensions
                 provider.GetService<IOptions<PerformanceMonitoringOptions>>(),
                 provider.GetService<IOptions<LimitsOptions>>(),
                 provider.GetService<IPerformanceMonitor>(),
-                schemaName);
+                schemaName,
+                provider.GetService<Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository>());
 
             return new FeatureDataAccess(dependencies);
         });
@@ -98,6 +100,15 @@ internal static class ServiceCollectionExtensions
         // (slow-query logging, metrics, telemetry) flows through the same code path as
         // statistics, date bins and H3 aggregation.
         services.AddScoped<ISpatialAnalyticsReader, PostgresSpatialAnalyticsReader>();
+
+        // Feature-change transactional outbox (#692). PostgreSQL is the canonical
+        // mutation-capable provider so it owns the outbox repository implementation and
+        // reports SupportsTransactionalOutbox = true. Both registrations are scoped to
+        // match the connection-provider lifetime used by the data access layer.
+        services.AddScoped<Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository,
+            Honua.Postgres.Features.Infrastructure.Events.Outbox.PostgresFeatureChangeOutboxRepository>();
+        services.TryAddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
+            Honua.Postgres.Features.Infrastructure.Events.Outbox.PostgresOutboxCapabilityProvider>();
 
         return services;
     }

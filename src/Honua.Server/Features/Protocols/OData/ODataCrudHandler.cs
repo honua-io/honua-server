@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Events;
@@ -331,7 +332,27 @@ internal sealed class ODataCrudHandler(
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
-        var result = await _crudService.CreateFeatureAsync(resolvedLayerId.Value, payload, baseUrl, effectiveToken);
+        var createOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
+            resolvedLayerId.Value,
+            HonuaTelemetry.Protocols.OData,
+            serviceProtocol: ServiceProtocols.OData,
+            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
+            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
+            // The fallback only applies when the mutation WKB carries no embedded SRID.
+            layerSrid: layerValidation.Layer!.SpatialReference.ToSrid(),
+            // GeometrySpecified tracks whether the request body explicitly carried a
+            // Geometry property; without this hint the outbox would default to false
+            // even when the create request set geometry. The inline publish path on
+            // non-outbox deployments doesn't pass geometryChanged for OData CRUD
+            // either, so this also closes that legacy gap on the dispatcher side.
+            geometryChanged: payload.GeometrySpecified,
+            cancellationToken: effectiveToken).ConfigureAwait(false);
+        ODataCrudResult<Dictionary<string, object?>> result;
+        using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(createOutboxScopeData))
+        {
+            result = await _crudService.CreateFeatureAsync(resolvedLayerId.Value, payload, baseUrl, effectiveToken);
+        }
         if (result.IsSuccess)
         {
             var preferMinimal = ODataUtilityService.ShouldReturnMinimal(context.Request.Headers["Prefer"].ToString());
@@ -530,15 +551,40 @@ internal sealed class ODataCrudHandler(
 
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
-        var result = await _crudService.UpdateFeatureAsync(
+        // PATCH preserves omitted geometry, so GeometrySpecified is the right intent
+        // signal — relying on the post-mutation snapshot would over-report PATCH
+        // attribute-only updates as geometry changes because the merged feature still
+        // carries the prior WKB. PUT (replace) re-sets geometry to whatever the body
+        // carries (or null if absent), so a body-less PUT clears any existing
+        // geometry. Mark replace operations as a geometry change so consumers see
+        // the cleared state without an extra pre-fetch of the existing row; the
+        // benign over-report is PUT-with-no-body-geometry against a feature that
+        // was already null, which is acceptable per the spec hint that
+        // GeometryChanged is a best-effort delta signal.
+        var updateOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
             layerId,
-            objectId,
-            payload,
-            baseUrl,
-            ifMatch,
-            ifNoneMatch,
-            replace,
-            effectiveToken);
+            HonuaTelemetry.Protocols.OData,
+            serviceProtocol: ServiceProtocols.OData,
+            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
+            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
+            // The fallback only applies when the mutation WKB carries no embedded SRID.
+            layerSrid: layerValidation.Layer!.SpatialReference.ToSrid(),
+            geometryChanged: replace || payload.GeometrySpecified,
+            cancellationToken: effectiveToken).ConfigureAwait(false);
+        ODataCrudResult<Dictionary<string, object?>> result;
+        using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(updateOutboxScopeData))
+        {
+            result = await _crudService.UpdateFeatureAsync(
+                layerId,
+                objectId,
+                payload,
+                baseUrl,
+                ifMatch,
+                ifNoneMatch,
+                replace,
+                effectiveToken);
+        }
         if (result.IsSuccess)
         {
             var preferMinimal = ODataUtilityService.ShouldReturnMinimal(context.Request.Headers["Prefer"].ToString());
@@ -568,6 +614,11 @@ internal sealed class ODataCrudHandler(
             if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
             {
                 await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                // Inline publish on non-outbox backends. Mirror the outbox scope's
+                // geometry-change formula so consumers see a consistent contract: PUT
+                // (replace) always reports GeometryChanged=true because the operation
+                // either supplies new geometry or clears existing geometry, while PATCH
+                // honors the request-intent flag from the body.
                 await _mutationEventService.PublishAsync(
                     context,
                     layerId,
@@ -576,7 +627,8 @@ internal sealed class ODataCrudHandler(
                     HonuaTelemetry.Protocols.OData,
                     CancellationToken.None,
                     mutationFeature: result.MutationFeature,
-                    serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+                    serviceProtocol: ServiceProtocols.OData,
+                    geometryChanged: replace || payload.GeometrySpecified).ConfigureAwait(false);
             }
             HonuaTelemetry.SetSuccess(activity);
         }
@@ -623,7 +675,23 @@ internal sealed class ODataCrudHandler(
 
         var ifMatch = context.Request.Headers.IfMatch.ToString();
         var ifNoneMatch = context.Request.Headers.IfNoneMatch.ToString();
-        var result = await _crudService.DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, effectiveToken);
+        var deleteOutboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
+            layerId,
+            HonuaTelemetry.Protocols.OData,
+            serviceProtocol: ServiceProtocols.OData,
+            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
+            // matches the inline-publish path. Delete events have no after-image, so
+            // the geodesy invariant guard in PublishAsync strips the paired
+            // geometry/geometryCrs anyway, but threading layerSrid keeps every OData
+            // outbox scope site uniform with the OGC/WFS/FeatureServer/gRPC handlers.
+            layerSrid: layerValidation.Layer!.SpatialReference.ToSrid(),
+            cancellationToken: effectiveToken).ConfigureAwait(false);
+        ODataCrudResult<object> result;
+        using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(deleteOutboxScopeData))
+        {
+            result = await _crudService.DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, effectiveToken);
+        }
         if (result.IsSuccess)
         {
             if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))

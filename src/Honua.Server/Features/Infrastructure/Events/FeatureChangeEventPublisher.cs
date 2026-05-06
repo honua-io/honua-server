@@ -29,6 +29,15 @@ internal sealed partial class FeatureChangeEventPublisher(
         }
     }
 
+    public Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+    {
+        // The simple publisher only durably appends — there is no fallback to swallow,
+        // so the strict and best-effort paths only differ in how PublishAsync handles
+        // exceptions. Surface store failures here so the outbox dispatcher can keep
+        // the outbox row claimed/failed instead of marking it dispatched.
+        return _store.AppendAsync(request, cancellationToken);
+    }
+
     [LoggerMessage(EventId = 9100, Level = LogLevel.Warning, Message = "Failed to publish feature-change event.")]
     private static partial void LogPublishFailed(ILogger logger, Exception exception);
 }

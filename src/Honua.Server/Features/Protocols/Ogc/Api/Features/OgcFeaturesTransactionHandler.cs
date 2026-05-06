@@ -123,7 +123,25 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
             else
             {
+                // Capture per-subrequest request ids in input order so the outbox payload
+                // preserves the same correlation that the legacy post-commit publish
+                // produced (TraceIdentifier:operationId). The data layer invokes the entry
+                // factory once per row, so per-kind queues align with ApplyEditsAsync's
+                // create-then-update-then-delete dispatch (or ordered ops when the adapter
+                // returns Operations).
+                var batchPerOperationRequestIds = BuildBatchPerOperationRequestIds(
+                    context.TraceIdentifier,
+                    preparedBatch.PreparedOperations,
+                    batchRequest.Operations);
+                // Build per-row geometry-change flags from prepared operations so Replace-mode
+                // batch updates that clear an existing non-null geometry surface the change
+                // even when the request body omits Geometry. The fallback inference inside
+                // ExecuteEditAsync only sees the request feature's WKB and would under-report.
+                var batchPerOperationGeometryChanged = BuildBatchPerOperationGeometryChanged(
+                    preparedBatch.PreparedOperations);
+
                 var editResult = await ExecuteEditAsync(
+                    context,
                     layerId,
                     layer,
                     new OgcFeaturesEditRequest
@@ -145,7 +163,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                             })
                             .ToImmutableArray()
                     },
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    perOperationRequestIds: batchPerOperationRequestIds,
+                    perOperationGeometryChangedOverride: batchPerOperationGeometryChanged).ConfigureAwait(false);
 
                 objectIdsByOperationIndex = MapBatchObjectIdsByOperationIndex(
                     batchRequest.Operations.Count,
@@ -190,6 +210,16 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         continue;
                     }
 
+                    // Inline-publish path (active on non-outbox backends). Mirror the per-row
+                    // geometry-change formula used by the outbox scope so Replace-mode batch
+                    // updates that clear an existing non-null geometry surface the change here
+                    // too — a body-less Replace with an existing non-null row should not be
+                    // silently published as GeometryChanged=false.
+                    var inlineGeometryChanged = preparedOperation is not null
+                        && preparedOperation.OperationKind != BatchOperationKind.Delete
+                        && (preparedOperation.Feature?.Geometry is { Length: > 0 }
+                            || (preparedOperation.OperationKind == BatchOperationKind.Update
+                                && preparedOperation.ExistingHadGeometry));
                     await _mutationEventService.PublishAsync(
                         context,
                         layerId,
@@ -202,7 +232,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         mutationFeature: preparedOperation?.OperationKind == BatchOperationKind.Delete
                             ? null
                             : preparedOperation?.Feature,
-                        geometryChanged: preparedOperation?.Feature?.Geometry is { Length: > 0 }).ConfigureAwait(false);
+                        geometryChanged: inlineGeometryChanged).ConfigureAwait(false);
                 }
             }
 
@@ -343,7 +373,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             try
             {
+                // Replace overwrites the existing row entirely; flag the geometry change
+                // when either the existing row or the replacement carries geometry so a
+                // body-less Replace that clears a non-null geometry surfaces the cleared
+                // state to consumers. Only null-to-null replace stays false.
+                var geometryChangedForReplace = existing.Geometry is { Length: > 0 }
+                    || feature.Geometry is { Length: > 0 };
                 var editResult = await ExecuteEditAsync(
+                    context,
                     layerId,
                     layer,
                     new OgcFeaturesEditRequest
@@ -353,7 +390,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         ObjectId = objectId,
                         IfMatch = ifMatch
                     },
-                    cancellationToken);
+                    cancellationToken,
+                    geometryChangedOverride: geometryChangedForReplace);
                 var updateResult = editResult.UpdateResults.FirstOrDefault();
                 if (!updateResult.IsSuccess)
                 {
@@ -398,6 +436,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var response = ToOgcFeature(responseFeature.Value, layer, inputCrs.AxisOrder, updateLinks);
 
                 await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                // Inline publish on non-outbox backends. Pass the same geometry-change
+                // value the outbox scope used so consumers see a consistent contract:
+                // any Replace that overwrites or clears a non-null existing geometry
+                // reports GeometryChanged=true, while null-to-null replace stays false.
                 await _mutationEventService.PublishAsync(
                     context,
                     layerId,
@@ -406,7 +448,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     HonuaTelemetry.Protocols.OgcFeatures,
                     CancellationToken.None,
                     mutationFeature: updated.Value,
-                    serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
+                    serviceProtocol: ServiceProtocols.OgcFeatures,
+                    geometryChanged: geometryChangedForReplace).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
@@ -626,7 +669,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             try
             {
+                // PATCH preserves existing geometry when the request body omits Geometry, so
+                // the merged Feature's WKB cannot tell us whether geometry actually changed.
+                // Thread patchRequest.HasGeometry through as an explicit override so the
+                // outbox payload tracks the request's intent rather than the preserved WKB.
                 var editResult = await ExecuteEditAsync(
+                    context,
                     layerId,
                     layer,
                     new OgcFeaturesEditRequest
@@ -636,7 +684,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         ObjectId = objectId,
                         IfMatch = ifMatch
                     },
-                    cancellationToken);
+                    cancellationToken,
+                    geometryChangedOverride: patchRequest.HasGeometry);
                 var updateResult = editResult.UpdateResults.FirstOrDefault();
                 if (!updateResult.IsSuccess)
                 {
@@ -735,10 +784,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private async Task<FeatureEditResult> ExecuteEditAsync(
+        HttpContext context,
         int layerId,
         LayerDefinition layer,
         OgcFeaturesEditRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? perOperationRequestIds = null,
+        bool? geometryChangedOverride = null,
+        IReadOnlyDictionary<string, IReadOnlyList<bool>>? perOperationGeometryChangedOverride = null)
     {
         var editAdapterResult = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
         if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
@@ -754,7 +807,111 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        // Per-row geometry-change semantics: a single-op caller (PATCH, single-op
+        // Replace) passes geometryChangedOverride so the attribute-only or replace-of-
+        // null cases are tracked precisely without inferring from the merged feature's
+        // WKB. A batch caller passes perOperationGeometryChangedOverride built from
+        // PreparedBatchOperation.ExistingHadGeometry so Replace-mode batch rows with no
+        // body geometry still flag the change when they clear an existing non-null
+        // value. The fallback BuildPerOperationGeometryChanged path infers from
+        // request-feature WKB only and is kept for callers (other protocols) that don't
+        // surface existing-geometry state at this level.
+        IReadOnlyDictionary<string, IReadOnlyList<bool>>? perOperationGeometryChanged = null;
+        bool? geometryChanged = null;
+        if (geometryChangedOverride.HasValue)
+        {
+            geometryChanged = geometryChangedOverride.Value;
+        }
+        else
+        {
+            perOperationGeometryChanged = perOperationGeometryChangedOverride
+                ?? BuildPerOperationGeometryChanged(editBatch);
+        }
+
+        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
+            layerId,
+            HonuaTelemetry.Protocols.OgcFeatures,
+            serviceProtocol: ServiceProtocols.OgcFeatures,
+            // ToSrid() returns LatestWkid ?? Wkid so the outbox enrichment fallback
+            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
+            layerSrid: layer.SpatialReference.ToSrid(),
+            perOperationRequestIds: perOperationRequestIds,
+            geometryChanged: geometryChanged,
+            perOperationGeometryChanged: perOperationGeometryChanged,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Build per-operation-kind queues of geometry-change flags. Handles both ordered
+    /// Operations (the path OGC Features batch takes via <c>UnifiedEditRequest.WithOperations</c>)
+    /// and split Creates/Updates/Deletes batches: each kind's queue lists the flags in the
+    /// order the data layer dequeues them. Deletes default to false (the inline publish
+    /// path also defaults to false for delete events).
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
+    {
+        if (editBatch.IsEmpty)
+        {
+            return null;
+        }
+
+        var creates = new List<bool>();
+        var updates = new List<bool>();
+        var deletes = new List<bool>();
+
+        if (!editBatch.Operations.IsDefaultOrEmpty)
+        {
+            foreach (var operation in editBatch.Operations)
+            {
+                switch (operation.Kind)
+                {
+                    case FeatureEditOperationKind.Create:
+                        creates.Add(operation.Feature?.Geometry is { Length: > 0 });
+                        break;
+                    case FeatureEditOperationKind.Update:
+                        updates.Add(operation.Feature?.Geometry is { Length: > 0 });
+                        break;
+                    case FeatureEditOperationKind.Delete:
+                        deletes.Add(false);
+                        break;
+                }
+            }
+        }
+        else
+        {
+            if (!editBatch.Creates.IsDefaultOrEmpty)
+            {
+                foreach (var feature in editBatch.Creates)
+                {
+                    creates.Add(feature.Geometry is { Length: > 0 });
+                }
+            }
+            if (!editBatch.Updates.IsDefaultOrEmpty)
+            {
+                foreach (var feature in editBatch.Updates)
+                {
+                    updates.Add(feature.Geometry is { Length: > 0 });
+                }
+            }
+            if (!editBatch.Deletes.IsDefaultOrEmpty)
+            {
+                deletes.AddRange(Enumerable.Repeat(false, editBatch.Deletes.Length));
+            }
+        }
+
+        if (creates.Count == 0 && updates.Count == 0 && deletes.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal);
+        if (creates.Count > 0) result["create"] = creates;
+        if (updates.Count > 0) result["update"] = updates;
+        if (deletes.Count > 0) result["delete"] = deletes;
+        return result;
     }
 
     private static bool IsNotFound(EditOperationResult result)
@@ -926,7 +1083,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             OperationKind: BatchOperationKind.Update,
             Operation: operation,
             Feature: feature,
-            ObjectId: objectId));
+            ObjectId: objectId)
+        {
+            ExistingHadGeometry = resolvedFeature.Value.Feature.Geometry is { Length: > 0 }
+        });
     }
 
     private static bool TryValidateRequestFeaturePublicId(
@@ -1153,6 +1313,126 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
 
         return results.ToList();
+    }
+
+    /// <summary>
+    /// Build per-operation-kind queues of <c>{traceIdentifier}:{operationId}</c> request ids
+    /// in the same order ApplyEditsAsync iterates rows for each kind, so the outbox payload
+    /// preserves subrequest correlation that the now no-op post-commit publish used to emit.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<string>>? BuildBatchPerOperationRequestIds(
+        string traceIdentifier,
+        ImmutableArray<PreparedBatchOperation> preparedOperations,
+        List<BatchOperationModel> requestOperations)
+    {
+        if (preparedOperations.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var creates = new List<string>();
+        var updates = new List<string>();
+        var deletes = new List<string>();
+
+        foreach (var preparedOperation in preparedOperations)
+        {
+            var operationId = preparedOperation.Index >= 0 && preparedOperation.Index < requestOperations.Count
+                ? requestOperations[preparedOperation.Index].Id
+                : null;
+            var rowRequestId = $"{traceIdentifier}:{operationId ?? "batch"}";
+
+            switch (preparedOperation.OperationKind)
+            {
+                case BatchOperationKind.Create:
+                    creates.Add(rowRequestId);
+                    break;
+                case BatchOperationKind.Update:
+                    updates.Add(rowRequestId);
+                    break;
+                case BatchOperationKind.Delete:
+                    deletes.Add(rowRequestId);
+                    break;
+            }
+        }
+
+        if (creates.Count == 0 && updates.Count == 0 && deletes.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        if (creates.Count > 0)
+        {
+            result["create"] = creates;
+        }
+        if (updates.Count > 0)
+        {
+            result["update"] = updates;
+        }
+        if (deletes.Count > 0)
+        {
+            result["delete"] = deletes;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Build per-operation-kind queues of geometry-change flags from prepared batch
+    /// operations. Update operations (which OGC Features batch always submits as
+    /// Replace-mode) flag the change when either the request feature carries a
+    /// non-null WKB or the existing row had geometry that the operation will overwrite
+    /// or clear; the only no-change case is null-to-null. Create flags follow
+    /// request-feature WKB. Deletes default to false (the inline publish path also
+    /// defaults to false for delete events).
+    /// </summary>
+    internal static Dictionary<string, IReadOnlyList<bool>>? BuildBatchPerOperationGeometryChanged(
+        ImmutableArray<PreparedBatchOperation> preparedOperations)
+    {
+        if (preparedOperations.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var creates = new List<bool>();
+        var updates = new List<bool>();
+        var deletes = new List<bool>();
+
+        foreach (var preparedOperation in preparedOperations)
+        {
+            switch (preparedOperation.OperationKind)
+            {
+                case BatchOperationKind.Create:
+                    creates.Add(preparedOperation.Feature?.Geometry is { Length: > 0 });
+                    break;
+                case BatchOperationKind.Update:
+                    updates.Add(preparedOperation.Feature?.Geometry is { Length: > 0 }
+                        || preparedOperation.ExistingHadGeometry);
+                    break;
+                case BatchOperationKind.Delete:
+                    deletes.Add(false);
+                    break;
+            }
+        }
+
+        if (creates.Count == 0 && updates.Count == 0 && deletes.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, IReadOnlyList<bool>>(StringComparer.Ordinal);
+        if (creates.Count > 0)
+        {
+            result["create"] = creates;
+        }
+        if (updates.Count > 0)
+        {
+            result["update"] = updates;
+        }
+        if (deletes.Count > 0)
+        {
+            result["delete"] = deletes;
+        }
+        return result;
     }
 
     private static long?[] MapBatchObjectIdsByOperationIndex(
@@ -1527,20 +1807,28 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
-    private enum BatchOperationKind
+    internal enum BatchOperationKind
     {
         Create,
         Update,
         Delete
     }
 
-    private sealed record PreparedBatchOperation(
+    internal sealed record PreparedBatchOperation(
         BatchOperationKind OperationKind,
         BatchOperationModel Operation,
         Feature? Feature,
         long? ObjectId)
     {
         public int Index { get; init; }
+
+        // True when the existing row resolved during prepare carried a non-null
+        // geometry; used to mark batch Update (Replace-mode) operations as a
+        // geometry change when the request body lacks geometry but the operation
+        // would still clear an existing non-null value. Defaults to false for
+        // Create operations (no existing row) and is irrelevant for Delete (the
+        // outbox payload always defaults to GeometryChanged=false on deletes).
+        public bool ExistingHadGeometry { get; init; }
     }
 
     private sealed record PreparedBatchValidationResult(

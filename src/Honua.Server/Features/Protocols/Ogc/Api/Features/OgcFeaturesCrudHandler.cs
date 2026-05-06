@@ -100,6 +100,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 ?? throw new InvalidOperationException("Feature build result was missing the feature payload.");
 
             var editResult = await ExecuteEditAsync(
+                context,
                 layerId,
                 layer,
                 new OgcFeaturesEditRequest
@@ -212,6 +213,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var objectId = resolvedFeature.Value.ObjectId;
 
             var editResult = await ExecuteEditAsync(
+                context,
                 layerId,
                 layer,
                 new OgcFeaturesEditRequest
@@ -288,6 +290,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
     }
 
     private async Task<FeatureEditResult> ExecuteEditAsync(
+        HttpContext context,
         int layerId,
         LayerDefinition layer,
         OgcFeaturesEditRequest request,
@@ -307,7 +310,30 @@ internal sealed partial class OgcFeaturesCrudHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
-        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+        // Geometry-change semantics mirror the OGC Features Transaction batch handler:
+        // a row is considered to have changed geometry when the request feature carries
+        // non-null WKB. Delete operations default to false. Without this, an attribute-
+        // only PATCH would over-report as a geometry change because the post-mutation
+        // snapshot still carries the prior WKB.
+        var geometryChanged = request.Operation != OgcFeaturesEditOperation.Delete
+            && request.Feature?.Geometry is { Length: > 0 };
+        // Resolve outbox scope data, then activate it synchronously in this method's
+        // ExecutionContext so the AsyncLocal flows into ApplyEditsAsync and each mutated
+        // row writes its outbox entry inside the same DbTransaction. Activation must be
+        // synchronous (caller-side) because AsyncLocal mutations from an async callee do
+        // not propagate back to the caller.
+        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
+            context,
+            layerId,
+            HonuaTelemetry.Protocols.OgcFeatures,
+            serviceProtocol: ServiceProtocols.OgcFeatures,
+            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
+            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
+            layerSrid: layer.SpatialReference.ToSrid(),
+            geometryChanged: geometryChanged,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
+        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsNotFound(EditOperationResult result)
