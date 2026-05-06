@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Events;
@@ -336,6 +337,10 @@ internal sealed class ODataCrudHandler(
             resolvedLayerId.Value,
             HonuaTelemetry.Protocols.OData,
             serviceProtocol: ServiceProtocols.OData,
+            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
+            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
+            // The fallback only applies when the mutation WKB carries no embedded SRID.
+            layerSrid: layerValidation.Layer!.SpatialReference.ToSrid(),
             // GeometrySpecified tracks whether the request body explicitly carried a
             // Geometry property; without this hint the outbox would default to false
             // even when the create request set geometry. The inline publish path on
@@ -561,6 +566,10 @@ internal sealed class ODataCrudHandler(
             layerId,
             HonuaTelemetry.Protocols.OData,
             serviceProtocol: ServiceProtocols.OData,
+            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
+            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
+            // The fallback only applies when the mutation WKB carries no embedded SRID.
+            layerSrid: layerValidation.Layer!.SpatialReference.ToSrid(),
             geometryChanged: replace || payload.GeometrySpecified,
             cancellationToken: effectiveToken).ConfigureAwait(false);
         ODataCrudResult<Dictionary<string, object?>> result;
@@ -671,6 +680,12 @@ internal sealed class ODataCrudHandler(
             layerId,
             HonuaTelemetry.Protocols.OData,
             serviceProtocol: ServiceProtocols.OData,
+            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
+            // matches the inline-publish path. Delete events have no after-image, so
+            // the geodesy invariant guard in PublishAsync strips the paired
+            // geometry/geometryCrs anyway, but threading layerSrid keeps every OData
+            // outbox scope site uniform with the OGC/WFS/FeatureServer/gRPC handlers.
+            layerSrid: layerValidation.Layer!.SpatialReference.ToSrid(),
             cancellationToken: effectiveToken).ConfigureAwait(false);
         ODataCrudResult<object> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(deleteOutboxScopeData))
