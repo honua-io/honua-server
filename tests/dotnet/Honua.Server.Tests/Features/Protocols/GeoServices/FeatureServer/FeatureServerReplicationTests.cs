@@ -85,6 +85,13 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
         root.TryGetProperty("syncModel", out var syncModel).Should().BeTrue();
         syncModel.GetString().Should().Be("perReplica");
 
+        root.TryGetProperty("serverGen", out var serverGen).Should().BeTrue();
+        serverGen.GetInt64().Should().BeGreaterThanOrEqualTo(0);
+
+        root.TryGetProperty("layers", out var layers).Should().BeTrue();
+        var layer = layers.EnumerateArray().Single(item => item.GetProperty("id").GetInt32() == 0);
+        layer.GetProperty("serverGen").GetInt64().Should().Be(serverGen.GetInt64());
+
         root.TryGetProperty("creationDate", out var creationDate).Should().BeTrue();
         creationDate.GetInt64().Should().BeGreaterThan(0);
     }

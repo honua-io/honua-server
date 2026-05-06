@@ -278,6 +278,7 @@ internal static partial class FeatureServerEndpoints
             ReplicaId = replicaId,
             ReplicaName = replicaName,
             SyncModel = syncModel,
+            ServerGen = currentGen,
             Layers = layerIds.Select(id => new ReplicaLayerInfo
             {
                 Id = id,
