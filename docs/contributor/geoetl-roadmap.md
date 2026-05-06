@@ -114,9 +114,10 @@ Run inside `honua-server` directly. Wrapper around an existing reader.
 
 ### Phase 2 — heavyweight worker profile, requires GDAL/OGR
 
-Run only inside `honua-worker-etl`. The API server refuses pipelines that
-reference these connectors when the executor profile cannot satisfy them
-(see [Capability detection](#capability-detection)).
+Run only inside `honua-worker-etl`. CRUD stores pipelines that reference
+these connectors regardless of worker availability; execution submission
+refuses to enqueue when no worker profile can satisfy them (see
+[Capability detection](#capability-detection)).
 
 - GML
 - SQL Server spatial (depending on driver footprint)
@@ -231,9 +232,12 @@ Phase 1 (pre-Child-Ticket-F, single-image baseline)
     → Registers a managed-profile ETL executor;
       AcceptedKinds = { ExtractTransformLoad } — sole claimer
     → Phase 1 connectors (managed, no native) execute here
-    → Pipelines that reference a RequiresNativeGeo connector are
-      refused at CRUD submission time with "no native worker
-      registered"
+    → CRUD stores any pipeline definition (edition-agnostic). Pipelines
+      that reference a RequiresNativeGeo connector are stored with a
+      CRUD-time advisory warning ("no native worker registered") and
+      refused at execution submission time (manual trigger, scheduled
+      enqueue, or dry-run submission) until a native-profile worker
+      registers
 
 Phase 2 (post-Child-Ticket-F, two images + substrate claim filter)
   Default image (honua-server)
@@ -256,26 +260,38 @@ Phase 2 (post-Child-Ticket-F, two images + substrate claim filter)
 
 ### Capability detection
 
-Capability detection runs at two layers. Each layer is necessary; the
-substrate-level claim filter is the load-bearing correctness invariant
-once the worker image exists.
+Capability detection runs at three layers, mirroring the
+geoprocessing edition-gate pattern (CRUD stores, submission gates).
+The execution-submission gate and the substrate-level claim filter
+are the load-bearing correctness invariants; the CRUD-time advisory
+exists for authoring ergonomics only.
 
-1. **CRUD submission**: connector factories declare which profile
-   they need (`Managed` vs `RequiresNativeGeo`). When the API
-   receives a pipeline that references a `RequiresNativeGeo`
+1. **CRUD validation (advisory only)**: connector factories declare
+   which profile they need (`Managed` vs `RequiresNativeGeo`). When
+   the API receives a pipeline that references a `RequiresNativeGeo`
    connector and no native-profile worker is registered as available,
-   submission is refused with a descriptive error. This catches
-   authoring mistakes early.
-2. **Substrate claim filter** (post-Child-Ticket-F): submission
+   the CRUD response includes a `connector_availability` warning so
+   authors see the gap early. **CRUD never refuses to store the
+   definition** — operators may stage Phase 2 pipelines ahead of
+   deploying `honua-worker-etl`, exactly as edition-gated definitions
+   may be authored ahead of an edition upgrade.
+2. **Execution-submission gate**: every path that creates an
+   `ExtractTransformLoad` job (manual trigger, scheduler enqueue,
+   dry-run submission) re-runs capability detection against the
+   currently-registered worker profiles. If no profile can satisfy
+   the connector set, submission is refused with a descriptive error
+   and no job is enqueued. This is the same shape as
+   `ExecutionAdmissionEvaluator`'s edition gate.
+3. **Substrate claim filter** (post-Child-Ticket-F): submission
    stamps `Spec.RuntimeProfile` based on the connector set. The
    substrate's `IJobQueue.TryClaimAsync` honors an
    `acceptedRuntimeProfiles` filter so the managed-profile executor
    never claims a `Spec.RuntimeProfile = "native"` job, even if one
-   were enqueued during a worker outage that races the CRUD-time
-   check. Today the substrate filters claims only by
-   `ExecutionJobKind`; F adds the profile-aware filter as a small,
-   strictly additive substrate change with a null-default backward
-   compatibility path so non-ETL kinds remain unaffected.
+   were enqueued during a worker outage that races the
+   execution-submission check. Today the substrate filters claims
+   only by `ExecutionJobKind`; F adds the profile-aware filter as a
+   small, strictly additive substrate change with a null-default
+   backward compatibility path so non-ETL kinds remain unaffected.
 
 The default deployment requires **only Honua + PostgreSQL**. The
 `honua-worker-etl` image is not necessary for Phase 1 and only deploys
@@ -315,13 +331,20 @@ extension points.
 
 Validation runs at three levels.
 
-1. **Pipeline definition validation** (CRUD time): JSON schema, source
-   schema reachability for managed connectors, transform stage-chain
-   compatibility, sink schema compatibility, edition-aware connector
-   availability advisory (warning, not block — the operator may upgrade).
-2. **Pre-execution admission** (job submission): edition gate via
+1. **Pipeline definition validation** (CRUD time, hard fails plus
+   advisories): JSON schema, source schema reachability for managed
+   connectors, transform stage-chain compatibility, and sink schema
+   compatibility are hard fails. Edition gate and connector / worker
+   availability are **advisory warnings only** — the definition stores
+   regardless so operators may stage Phase 2 pipelines or higher-tier
+   capabilities ahead of an upgrade.
+2. **Pre-execution admission** (every path that creates an
+   `ExtractTransformLoad` job — manual trigger, scheduler enqueue,
+   dry-run submission): edition gate via
    `ExecutionAdmissionEvaluator`, capability detection against the
-   currently-deployed worker profile, secret resolution.
+   currently-registered worker profiles (refuses to enqueue if no
+   profile can satisfy the connector set), secret resolution. See
+   [Capability detection](#capability-detection).
 3. **Execution-time validation** (per-stage): row-level error capture for
    geometry validation, attribute type cast, regex parse, etc. Errors
    route to the quarantine sink rather than aborting unless the connector
@@ -421,8 +444,12 @@ logic**: none.
 
 **B — Source connector abstraction + Phase 1 file connectors.**
 `IPipelineSourceConnector`, `SourceConnectorFactory`, wrappers for
-GeoJSON, Shapefile, GeoPackage, CSV, KML, GPX. Per-connector tests
-against the fixtures already used by the import path.
+GeoJSON, Shapefile, GeoPackage, CSV, KML, GPX, FlatGeobuf, and
+GeoParquet — every Phase 1 file source listed in the
+[Connector phasing](#phase-1--managed-sources-no-native-deps-required)
+table that is *not* a remote API source (those are Child Ticket G).
+Per-connector tests against the fixtures already used by the import
+path.
 
 **C — Core transform library.** `IPipelineTransform`, `TransformFactory`,
 the geometry and attribute transforms in
@@ -456,9 +483,11 @@ connector set. The native-profile executor (in
 `AcceptedRuntimeProfiles = { "native" }`; the managed-profile
 executor (in `honua-server`) registers with
 `AcceptedRuntimeProfiles = { "managed" }` so it can no longer claim
-a Phase 2 job. CRUD-time capability check refuses pipelines whose
-connectors no registered profile can satisfy. CI image scan asserts
-no GDAL bytes leaked into the default `honua-server` image.
+a Phase 2 job. Execution-submission capability check (manual
+trigger, scheduler enqueue, dry-run submission) refuses pipelines
+whose connectors no registered profile can satisfy; CRUD continues
+to store such definitions with the advisory warning. CI image scan
+asserts no GDAL bytes leaked into the default `honua-server` image.
 
 **G — Phase 1 remote API sources.** Remote PostGIS, Esri REST, OGC WFS /
 OGC API Features. All managed — no GDAL required, run inside
@@ -535,7 +564,8 @@ contract exist before these connectors register.
   an optional `IJobExecutor.AcceptedRuntimeProfiles` property
   (null-default for non-ETL kinds). Until F lands, only the
   managed-profile executor is registered and Phase 2 connectors are
-  refused at CRUD submission time, so the race cannot occur.
+  refused at execution submission time (no job is ever enqueued),
+  so the race cannot occur.
 - **Per-stage fatal vs retryable classification.** ADR-0038 originally
   promised a per-stage distinction (auth → fatal, transient →
   retryable). The current substrate

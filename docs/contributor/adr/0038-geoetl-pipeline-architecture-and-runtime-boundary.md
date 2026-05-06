@@ -148,14 +148,18 @@ substrate at every step:
 `ExecutionJobKind.ExtractTransformLoad`. Its
 `AcceptedKinds = { ExtractTransformLoad }` is therefore the sole
 claimer. The managed-profile executor runs only Phase 1 connectors —
-no GDAL/PROJ/GEOS. Pipelines that reference a `RequiresNativeGeo`
-connector are refused at **CRUD submission time** with a clear
-"native-profile worker not registered" error, since no worker profile
-that can satisfy them exists. Operators running `honua-server` +
-PostgreSQL can author and execute every Phase 1 pipeline; Phase 2
-connectors are simply unavailable until F lands and the operator opts
-into the worker image. The "Honua + PostgreSQL only" baseline is
-preserved.
+no GDAL/PROJ/GEOS. CRUD remains edition-agnostic and stores any
+pipeline definition, including those that reference a
+`RequiresNativeGeo` connector, with a CRUD-time advisory warning so
+operators may stage Phase 2 pipelines ahead of a worker rollout.
+Every path that creates an `ExtractTransformLoad` job (manual
+trigger, scheduler enqueue, dry-run submission) refuses Phase 2
+pipelines with a clear "native-profile worker not registered" error,
+since no worker profile that can satisfy them exists. Operators
+running `honua-server` + PostgreSQL can author and execute every
+Phase 1 pipeline; Phase 2 connectors are simply unenqueueable until
+F lands and the operator opts into the worker image. The
+"Honua + PostgreSQL only" baseline is preserved.
 
 **Phase 2 (post-Child-Ticket-F, two images).** F introduces a
 `RuntimeProfile`-aware claim filter on `IJobQueue.TryClaimAsync`. The
@@ -212,23 +216,34 @@ kind's claim semantics.
   executor (`AcceptedKinds = { ExtractTransformLoad }`,
   `AcceptedRuntimeProfiles = { "native" }` once F lands). It is not
   reachable from the public ingress.
-- **Capability detection** runs at two layers:
-  - *CRUD submission* refuses to store a pipeline that references a
-    `RequiresNativeGeo` connector when no native-profile worker is
-    registered as available (the native-worker registration signal
-    comes from F).
+- **Capability detection** runs at three layers, mirroring the
+  edition-gate pattern (CRUD stores; submission gates):
+  - *CRUD validation (advisory only)* surfaces a
+    `connector_availability` warning when a pipeline references a
+    `RequiresNativeGeo` connector and no native-profile worker is
+    registered as available. **CRUD never refuses to store the
+    definition** — operators may stage Phase 2 pipelines ahead of
+    deploying `honua-worker-etl`, exactly as edition-gated
+    definitions may be authored ahead of an edition upgrade. The
+    native-worker registration signal comes from F.
+  - *Execution-submission gate* re-runs capability detection on
+    every path that creates an `ExtractTransformLoad` job (manual
+    trigger, scheduler enqueue, dry-run submission). If no
+    registered profile can satisfy the connector set, submission is
+    refused with a descriptive error and no job is enqueued.
   - *Claim filter* (post-F) is the substrate-level guard that
     prevents the managed-profile executor from ever claiming a
-    `RuntimeProfile = "native"` job, regardless of CRUD-time gating.
+    `RuntimeProfile = "native"` job, regardless of upstream gating.
   Connector factories declare which profile they need (`Managed` vs
   `RequiresNativeGeo`). The pipeline CRUD surface stores the
-  definition; submission stamps `Spec.RuntimeProfile` and the
-  substrate routes by claim filter.
+  definition; execution submission stamps `Spec.RuntimeProfile` and
+  the substrate routes by claim filter.
 - **Dry runs** follow the same routing — a dry run that references a
   `RequiresNativeGeo` connector requires the native-profile worker
   for the same reason a real run does (the source connector still
-  executes; only the sink is replaced with the null preview). Dry-run
-  submission honors the same CRUD-time and claim-filter guards.
+  executes; only the sink is replaced with the null preview).
+  Dry-run submission is itself an `ExtractTransformLoad` job, so it
+  honors the same execution-submission gate and claim-filter guards.
 - **CI image scan** asserts that GDAL bytes do not appear in the
   default `honua-server` image artifact. The scan is wired in the
   child ticket that introduces `honua-worker-etl` (Child Ticket F) and
@@ -350,16 +365,22 @@ the dry run validates is what production would execute.
 - **Two images to operate.** Phase 2 connectors require operators to
   deploy `honua-worker-etl` alongside `honua-server`. The roadmap
   documents this as opt-in: Phase 1 alone runs on a single image.
-- **Two-layer capability gating.** CRUD-time refusal blocks pipelines
-  that reference a connector no registered worker profile can run, so
-  authors get a clear error before scheduling. The substrate-level
-  claim filter (post-F) is the load-bearing guarantee that prevents
-  the managed executor from ever claiming a Phase 2 job. The
-  CRUD-time check is an authoring ergonomics convenience; the claim
-  filter is the correctness invariant. Operator runbooks (Child
-  Ticket F) must explain both layers so an operator who removes the
-  worker image understands why scheduled Phase 2 jobs fail to enqueue
-  the next time submission runs.
+- **Three-layer capability gating.** CRUD validation surfaces a
+  `connector_availability` advisory but never refuses to store, so
+  authors and GitOps operators may stage Phase 2 pipelines ahead of
+  deploying `honua-worker-etl`. The execution-submission gate refuses
+  to enqueue any `ExtractTransformLoad` job (manual trigger,
+  scheduler, or dry run) when no registered worker profile can
+  satisfy the connector set. The substrate-level claim filter (post-F)
+  is the load-bearing guarantee that prevents the managed executor
+  from ever claiming a Phase 2 job once the worker image registers a
+  competing executor. The CRUD-time advisory is an authoring
+  ergonomics convenience; the execution-submission gate keeps
+  scheduled jobs from queueing against an unavailable profile; the
+  claim filter is the correctness invariant. Operator runbooks
+  (Child Ticket F) must explain all three layers so an operator who
+  removes the worker image understands why scheduled Phase 2 jobs
+  fail to enqueue the next time submission runs.
 - **Substrate extension required for two-image rollout.** Child
   Ticket F bundles the `RuntimeProfile` claim filter on `IJobQueue`.
   Until F lands, only the managed-profile executor is registered and
