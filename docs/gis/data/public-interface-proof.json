@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-05-05T00:00:00Z",
+  "updatedUtc": "2026-05-06T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -228,6 +228,39 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "honua-io/honua-server#924",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "public-scene-discovery",
+      "displayName": "Public scene discovery API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Scene",
+      "canonicalIdentifier": "/api/scenes + /api/scenes/{sceneId}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/api/scenes",
+        "/api/scenes/{sceneId}",
+        "/api/scenes/{sceneId}/resolve"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus public scene discovery integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Protocols/Scene/SceneDiscoveryEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/PublicSceneDiscoveryEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#923",
           "versionCaptureRule": null
         }
       ]
