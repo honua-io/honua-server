@@ -31,6 +31,7 @@ fi
 
 export COMPOSE_PROJECT_NAME="${HONUA_STAC_DEMO_PROJECT:-honua-stac-demo}"
 export HONUA_HTTP_PORT="${HONUA_STAC_DEMO_HTTP_PORT:-18080}"
+export HONUA_GRPC_PORT="${HONUA_STAC_DEMO_GRPC_PORT:-18083}"
 export POSTGRES_PORT="${HONUA_STAC_DEMO_POSTGRES_PORT:-55432}"
 export HONUA_CONNECTION_ENCRYPTION_MASTER_KEY="${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-stac-ops-demo-master-key-with-32-chars}"
 export HONUA_CONNECTION_ENCRYPTION_SALT="${HONUA_CONNECTION_ENCRYPTION_SALT:-c3RhYy1vcHMtZGVtby1zYWx0LXN0YWJsZS0wMDE=}"
@@ -113,5 +114,5 @@ Expected signals:
 - stale-cache: baseline signals plus discovery freshness and temporal-drift warnings for cached collection metadata versus live item timestamps.
 
 Cleanup:
-COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME} HONUA_HTTP_PORT=${HONUA_HTTP_PORT} POSTGRES_PORT=${POSTGRES_PORT} docker compose -f "${COMPOSE_FILE}" --project-directory "${ROOT_DIR}" down --remove-orphans --volumes
+COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME} HONUA_HTTP_PORT=${HONUA_HTTP_PORT} HONUA_GRPC_PORT=${HONUA_GRPC_PORT} POSTGRES_PORT=${POSTGRES_PORT} docker compose -f "${COMPOSE_FILE}" --project-directory "${ROOT_DIR}" down --remove-orphans --volumes
 EOF

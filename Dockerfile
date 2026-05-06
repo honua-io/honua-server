@@ -142,7 +142,11 @@ LABEL security.non-root="true" \
       org.opencontainers.image.licenses="Elastic-2.0"
 
 ENV ASPNETCORE_ENVIRONMENT=Production \
-    ASPNETCORE_URLS=http://+:8080 \
+    ASPNETCORE_HTTP_PORTS= \
+    Kestrel__Endpoints__Http__Url=http://+:8080 \
+    Kestrel__Endpoints__Http__Protocols=Http1 \
+    Kestrel__Endpoints__Grpc__Url=http://+:8081 \
+    Kestrel__Endpoints__Grpc__Protocols=Http2 \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
@@ -151,6 +155,6 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD wget -q -T 5 -O /dev/null http://localhost:8080/healthz/live || exit 1
 
-EXPOSE 8080/tcp
+EXPOSE 8080/tcp 8081/tcp
 
 ENTRYPOINT ["dotnet", "Honua.Server.dll"]

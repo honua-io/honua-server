@@ -27,16 +27,20 @@ docker compose up -d
 curl http://localhost:8080/healthz/ready
 ```
 
-PostGIS starts automatically. Migrations run on first boot. The server is at `http://localhost:8080`.
+PostGIS starts automatically. Migrations run on first boot. HTTP/1 REST and gRPC-Web are at
+`http://localhost:8080`; native h2c gRPC for SDK/mobile clients is at `http://localhost:8081`.
 
 **Pre-built image** (bring your own PostGIS):
 
 ```bash
-docker run -p 8080:8080 \
+docker run -p 8080:8080 -p 8081:8081 \
   -e ConnectionStrings__DefaultConnection="Host=host.docker.internal;Database=honua;Username=postgres;Password=postgres" \
   -e HONUA_ADMIN_PASSWORD="change-me" \
   honuaio/honua-server:latest
 ```
+
+For `honua-mobile` live image tests against a pre-started server, set
+`HONUA_MOBILE_LIVE_SERVER_GRPC_URL=http://localhost:8081`.
 
 **Kubernetes**:
 

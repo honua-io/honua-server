@@ -23,7 +23,7 @@ Use these quick signals:
 services:
   honua:
     image: honuaio/honua-server:latest
-    ports: ["8080:8080"]
+    ports: ["8080:8080", "8081:8081"]
     environment:
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=honua;Username=honua;Password=honua_password
     depends_on: [postgres]
@@ -44,6 +44,7 @@ curl http://localhost:8080/healthz/ready
 
 **Notes:**
 - Use local volumes for data.
+- Port `8080` is HTTP/1 REST and gRPC-Web; port `8081` is native h2c gRPC for SDK/mobile clients.
 - No HA or backup automation in this setup.
 
 ---

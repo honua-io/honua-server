@@ -31,11 +31,13 @@ fi
 
 export COMPOSE_PROJECT_NAME="${HONUA_MOBILE_OFFLINE_DEMO_PROJECT:-honua-mobile-offline-demo}"
 export HONUA_HTTP_PORT="${HONUA_MOBILE_OFFLINE_DEMO_HTTP_PORT:-18081}"
+export HONUA_GRPC_PORT="${HONUA_MOBILE_OFFLINE_DEMO_GRPC_PORT:-18082}"
 export POSTGRES_PORT="${HONUA_MOBILE_OFFLINE_DEMO_POSTGRES_PORT:-55433}"
 export HONUA_CONNECTION_ENCRYPTION_MASTER_KEY="${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-mobile-offline-demo-master-key-32c}"
 export HONUA_CONNECTION_ENCRYPTION_SALT="${HONUA_CONNECTION_ENCRYPTION_SALT:-bW9iaWxlLW9mZmxpbmUtZGVtby1zYWx0LTAwMQ==}"
 
 readonly BASE_URL="http://localhost:${HONUA_HTTP_PORT}"
+readonly GRPC_URL="http://localhost:${HONUA_GRPC_PORT}"
 readonly READY_URL="${BASE_URL}/healthz/ready"
 readonly SERVICE_URL="${BASE_URL}/rest/services/mobile_offline_demo/FeatureServer?f=json"
 readonly LAYER_URL="${BASE_URL}/rest/services/mobile_offline_demo/FeatureServer/68910?f=json"
@@ -115,6 +117,7 @@ Scenario: ${SCENARIO}
 Service metadata: ${SERVICE_URL}
 Editable layer metadata: ${LAYER_URL}
 Editable layer query: ${QUERY_URL}
+Native gRPC endpoint: ${GRPC_URL}
 Create replica path: ${BASE_URL}/rest/services/mobile_offline_demo/FeatureServer/createReplica
 
 Expected signals:
@@ -122,5 +125,5 @@ Expected signals:
 - conflict-after-download: objectid 6891002 advances to sync_version = 2 after the client captures the baseline package.
 
 Cleanup:
-COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME} HONUA_HTTP_PORT=${HONUA_HTTP_PORT} POSTGRES_PORT=${POSTGRES_PORT} docker compose -f "${COMPOSE_FILE}" --project-directory "${ROOT_DIR}" down --remove-orphans --volumes
+COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME} HONUA_HTTP_PORT=${HONUA_HTTP_PORT} HONUA_GRPC_PORT=${HONUA_GRPC_PORT} POSTGRES_PORT=${POSTGRES_PORT} docker compose -f "${COMPOSE_FILE}" --project-directory "${ROOT_DIR}" down --remove-orphans --volumes
 EOF
