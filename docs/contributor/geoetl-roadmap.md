@@ -164,11 +164,10 @@ schema is incompatible with the next input schema before execution starts.
 The pipeline contract is what each child ticket binds against. Changing it
 late is expensive, so it is fully scoped in Child Ticket A.
 
-- **Definition format**: JSON, source-generated. YAML accepted at the API
-  surface and normalized to JSON before persistence (server-side YAML
-  parsing avoided to keep the dependency surface lean; SDK and `honua-cli`
-  own YAML authoring). A `schema_version` field lives in the definition
-  root from day one.
+- **Definition format**: JSON only at the HTTP layer, source-generated.
+  SDK and `honua-cli` accept YAML and normalize to JSON before sending
+  (server-side YAML parsing avoided to keep the AOT/trim surface lean).
+  A `schema_version` field lives in the definition root from day one.
 - **Schema shape**: `PipelineDefinition → []PipelineStage`
   (Source → []Transform → Sink), typed via `ConnectorConfig` /
   `TransformConfig` discriminated unions.
@@ -204,9 +203,10 @@ late is expensive, so it is fully scoped in Child Ticket A.
 - **Progress**: structured progress events flow through
   `IDistributedProgressStore`, identical to the import path.
 - **Telemetry**: `pipeline.started`, `pipeline.stage.completed`,
-  `pipeline.completed`, `pipeline.failed` log events with pipeline ID,
-  stage index, and feature counts. Existing structured logging
-  conventions; no new logger libraries.
+  `pipeline.stage.failed`, `pipeline.completed`, `pipeline.failed` log
+  events with pipeline ID, stage index, and feature counts. Existing
+  structured logging conventions; no new logger libraries. See
+  ADR-0038 § Telemetry for the canonical event set.
 
 ## Runtime and worker boundary
 
