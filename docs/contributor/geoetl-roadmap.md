@@ -401,7 +401,7 @@ issue creation tracks against this roadmap.
 | C | Core transform library + stage-chain validator | A | honua-server | Pro |
 | D | Phase 1 sink connectors | A | honua-server | Pro |
 | E | Pipeline execution engine (`PipelineJobExecutor : IJobExecutor`) + cron / event scheduler | B, C, D | honua-server | Pro |
-| F | `honua-worker-etl` image + GML + substrate `RuntimeProfile` claim filter + capability detection | E | honua-devops + honua-server | Pro |
+| F | `honua-worker-etl` image + GDAL-backed GML (large-scale / complex schemas) + substrate `RuntimeProfile` claim filter + capability detection | E | honua-devops + honua-server | Pro |
 | G | Phase 1 remote API sources (Esri REST, OGC WFS / OGC API Features, remote PostGIS, generic REST/JSON) | B | honua-server | Pro |
 | H | Admin UI for pipeline authoring + execution monitor | E | honua-server-admin | Pro |
 | I | Streaming sources (webhook, MQTT) + custom transform plugin sandbox | E | honua-server | Enterprise |
@@ -506,7 +506,10 @@ Execution endpoints from A return real terminal states instead of
 
 **F — `honua-worker-etl` worker image + substrate claim filter.**
 `Dockerfile.worker-etl` in honua-devops layers GDAL/PROJ/GEOS on the
-base image. GML connector. Substrate extension: extends
+base image. GDAL-backed GML connector for large-scale or complex GML
+schemas, GML application schemas, and any GML variant beyond what
+the Phase 1 managed GML 2/3 helpers in Child Ticket G's OGC features
+client cover. Substrate extension: extends
 `IJobQueue.TryClaimAsync` with an optional
 `acceptedRuntimeProfiles` filter, has `RedisJobQueue` honor it
 against `Spec.RuntimeProfile`, and adds an optional
@@ -662,9 +665,23 @@ the constraints child-ticket implementers should treat as decided.
    image registers a competing executor — the substrate extension is
    in F's scope, not a separate ticket. The initial Pro release does
    not require operators to deploy a second image.
-5. **GML scope.** GML is deferred to Child Ticket F. The minimal
-   XmlReader path for simple GML 2/3 was rejected because it would
-   commit honua-server to maintaining GML parsing forever.
+5. **GML scope.** GML splits across two tickets along the
+   schema-complexity boundary. Simple GML 2/3 responses returned by
+   OGC WFS feature endpoints ship managed in Child Ticket G's
+   protocol-neutral OGC features client (a small XmlReader-based
+   helper sized to the GML profile WFS responses actually emit — see
+   [Open questions resolved](#open-questions-resolved) entry 9).
+   Large-scale or complex GML schemas, GML application schemas, and
+   any GML variant beyond what those helpers cover remain Phase 2
+   and ship with Child Ticket F where GDAL/OGR is available. The
+   prior framing — "GML is deferred to Child Ticket F, and any
+   XmlReader path was rejected because it would commit honua-server
+   to maintaining GML parsing forever" — was reversed in fix pass 6
+   once OGC WFS / OGC API Features were re-classified as Phase 1
+   managed sources: WFS clients must read GML, so a minimal managed
+   helper is the only path to a Phase 1 WFS reader. The split keeps
+   the lean serving image free of GDAL while still letting Honua
+   read the WFS responses customers actually receive.
 6. **Edition enforcement.** Pipeline CRUD is edition-agnostic;
    enforcement happens at job submission via
    `ExecutionAdmissionEvaluator`. This matches the geoprocessing

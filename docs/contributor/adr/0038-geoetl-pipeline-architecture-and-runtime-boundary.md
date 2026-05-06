@@ -129,7 +129,10 @@ honua-server (default)             honua-worker-etl (heavyweight, post-F)
   │ Submission endpoints    │        │   + PROJ                 │
   │ Phase 1 connectors      │        │   + GEOS                 │
   │ Dry-run preview         │        │   + Phase 2 connectors   │
-  │ PipelineExecutionBg     │        │ PipelineExecutionBg      │
+  │ JobExecutionService     │        │ JobExecutionService      │
+  │  (substrate polling)    │        │  (substrate polling)     │
+  │ PipelineJobExecutor     │        │ PipelineJobExecutor      │
+  │  : IJobExecutor         │        │  : IJobExecutor          │
   │   (managed profile)     │        │   (native profile)       │
   │   IJobQueue ────────────┼────────┼── claims                 │
   │   AcceptedKinds = {ETL} │        │   AcceptedKinds = {ETL}  │
