@@ -189,9 +189,17 @@ late is expensive, so it is fully scoped in Child Ticket A.
 - **Cancellation**: `CancellationToken` propagated through every connector,
   transform, and sink. Substrate semantics from ADR-0031 govern terminal
   state writes; GeoETL never owns its own cancellation channel.
-- **Retry**: `JobRetryPolicy` from the substrate. Per-stage retryable vs.
-  fatal classification (auth failure on a remote source is fatal; transient
-  network blip is retryable).
+- **Retry**: `JobRetryPolicy.ShouldRetry(attemptCount)` from the
+  substrate (job-level, attempt-count driven). The current
+  `JobExecutionResult` exposes `Status`/`ErrorMessage`/`Warnings` only —
+  no fatal-vs-retryable flag — so every `Failed` result routes through
+  the same retry path. Auth failures and transient network blips both
+  surface via `ErrorMessage`; the substrate retries them uniformly
+  until the attempt budget is exhausted. Per-stage failure
+  classification (auth → fatal, transient → retryable) is a Phase 2
+  enhancement that requires a `JobExecutionResult.FailureKind` (or
+  equivalent) substrate extension — not a launch requirement. See
+  ADR-0038 § Substrate consumption and § Re-evaluation triggers.
 - **Rollback**: soft-delete batch ID pattern. Every Honua-layer write tags
   rows with `pipeline_batch_id`; a failed run issues a targeted delete on
   that batch. The pattern matches the existing import path. Limits and a
@@ -212,34 +220,62 @@ late is expensive, so it is fully scoped in Child Ticket A.
 
 The serving image must stay lean. The worker image carries the heavy
 native dependencies. ADR-0038 captures this decision with full
-consequences; the summary is below.
+consequences and the substrate-extension prerequisite for the
+two-image rollout; the summary is below.
 
 ```
-Default ECS / serverless image (honua-server)
-  → Serves API: pipeline CRUD, execution triggers, history queries, dry-run
-  → No GDAL, no PROJ native libs, no GEOS
-  → Registers a managed-profile ETL executor;
-    AcceptedKinds = { ExtractTransformLoad }
-  → Phase 1 connectors (managed, no native) execute here
+Phase 1 (pre-Child-Ticket-F, single-image baseline)
+  Default image (honua-server)
+    → Serves API: pipeline CRUD, execution triggers, history, dry-run
+    → No GDAL, no PROJ, no GEOS native libs
+    → Registers a managed-profile ETL executor;
+      AcceptedKinds = { ExtractTransformLoad } — sole claimer
+    → Phase 1 connectors (managed, no native) execute here
+    → Pipelines that reference a RequiresNativeGeo connector are
+      refused at CRUD submission time with "no native worker
+      registered"
 
-GeoETL worker image (honua-worker-etl) [separate Dockerfile in honua-devops]
-  → Layers GDAL, PROJ, GEOS on top of the lean base
-  → Runs PipelineExecutionBackgroundService with a native-profile executor
-  → AcceptedKinds = { ExtractTransformLoad }; both images claim from the
-    same queue and the substrate's atomic claim prevents double execution
-  → Phase 2+ heavyweight connectors registered only here; capability
-    detection at job submission ensures Phase 2 jobs only enqueue when
-    the worker is deployed
+Phase 2 (post-Child-Ticket-F, two images + substrate claim filter)
+  Default image (honua-server)
+    → As above, but the executor registers
+      AcceptedRuntimeProfiles = { "managed" } and only claims jobs
+      whose Spec.RuntimeProfile = "managed"
+
+  GeoETL worker image (honua-worker-etl) [Dockerfile in honua-devops]
+    → Layers GDAL, PROJ, GEOS on the lean base
+    → Runs PipelineExecutionBackgroundService with the
+      native-profile executor;
+      AcceptedKinds = { ExtractTransformLoad },
+      AcceptedRuntimeProfiles = { "native" } — only claims
+      Spec.RuntimeProfile = "native" jobs
+    → Phase 2 connectors registered only here
+    → Submission stamps Spec.RuntimeProfile based on connector set:
+      "managed" if every connector is Phase 1, "native" if any is
+      RequiresNativeGeo
 ```
 
 ### Capability detection
 
-Connector factories register what each profile can run. When the API
-receives a pipeline that references a connector unavailable in the
-deployed worker profile, submission is refused at job-enqueue time with a
-descriptive error. The pipeline definition itself is always accepted by
-the API, so a future worker profile rollout does not require schema
-changes.
+Capability detection runs at two layers. Each layer is necessary; the
+substrate-level claim filter is the load-bearing correctness invariant
+once the worker image exists.
+
+1. **CRUD submission**: connector factories declare which profile
+   they need (`Managed` vs `RequiresNativeGeo`). When the API
+   receives a pipeline that references a `RequiresNativeGeo`
+   connector and no native-profile worker is registered as available,
+   submission is refused with a descriptive error. This catches
+   authoring mistakes early.
+2. **Substrate claim filter** (post-Child-Ticket-F): submission
+   stamps `Spec.RuntimeProfile` based on the connector set. The
+   substrate's `IJobQueue.TryClaimAsync` honors an
+   `acceptedRuntimeProfiles` filter so the managed-profile executor
+   never claims a `Spec.RuntimeProfile = "native"` job, even if one
+   were enqueued during a worker outage that races the CRUD-time
+   check. Today the substrate filters claims only by
+   `ExecutionJobKind`; F adds the profile-aware filter as a small,
+   strictly additive substrate change with a null-default backward
+   compatibility path so non-ETL kinds remain unaffected.
 
 The default deployment requires **only Honua + PostgreSQL**. The
 `honua-worker-etl` image is not necessary for Phase 1 and only deploys
@@ -315,7 +351,7 @@ issue creation tracks against this roadmap.
 | C | Core transform library + stage-chain validator | A | honua-server | Pro |
 | D | Phase 1 sink connectors | A | honua-server | Pro |
 | E | Pipeline execution engine + cron / event scheduler | B, C, D | honua-server | Pro |
-| F | `honua-worker-etl` image + GML + capability detection | E | honua-devops + honua-server | Pro |
+| F | `honua-worker-etl` image + GML + substrate `RuntimeProfile` claim filter + capability detection | E | honua-devops + honua-server | Pro |
 | G | Phase 1 remote API sources (Esri REST, OGC WFS / OGC API Features, remote PostGIS) | B | honua-server | Pro |
 | H | Admin UI for pipeline authoring + execution monitor | E | honua-server-admin | Pro |
 | I | Streaming sources + custom transform plugin sandbox | E | honua-server | Enterprise |
@@ -406,9 +442,22 @@ Source → []Transform → Sink). Cron / event scheduler enqueues
 cancellation, retry, soft-delete rollback. Execution endpoints from A
 return real terminal states instead of 501.
 
-**F — `honua-worker-etl` worker image.** `Dockerfile.worker-etl` in
-honua-devops layers GDAL/PROJ/GEOS on the base image. GML connector.
-Capability detection enforced at job submission. CI image scan asserts
+**F — `honua-worker-etl` worker image + substrate claim filter.**
+`Dockerfile.worker-etl` in honua-devops layers GDAL/PROJ/GEOS on the
+base image. GML connector. Substrate extension: extends
+`IJobQueue.TryClaimAsync` with an optional
+`acceptedRuntimeProfiles` filter, has `RedisJobQueue` honor it
+against `Spec.RuntimeProfile`, and adds an optional
+`AcceptedRuntimeProfiles` property on `IJobExecutor` (null-default,
+backward-compatible — non-ETL executors keep claiming regardless of
+profile). Submission stamps `Spec.RuntimeProfile` based on the
+connector set. The native-profile executor (in
+`honua-worker-etl`) registers with
+`AcceptedRuntimeProfiles = { "native" }`; the managed-profile
+executor (in `honua-server`) registers with
+`AcceptedRuntimeProfiles = { "managed" }` so it can no longer claim
+a Phase 2 job. CRUD-time capability check refuses pipelines whose
+connectors no registered profile can satisfy. CI image scan asserts
 no GDAL bytes leaked into the default `honua-server` image.
 
 **G — Phase 1 remote API sources.** Remote PostGIS, Esri REST, OGC WFS /
@@ -475,6 +524,29 @@ contract exist before these connectors register.
   `honua-server`, so `honua-worker-etl` is not required until Child
   Ticket F. Operators can adopt GeoETL on a single image and add the
   worker only when Phase 2 connectors are needed.
+- **Two executors competing for the same `ExecutionJobKind`.** The
+  substrate today filters claims only by `ExecutionJobKind`. If both
+  images registered an `ExtractTransformLoad` executor without a
+  profile-aware claim filter, the managed-profile executor could
+  claim a Phase 2 job, fail it, and re-claim it on retry until the
+  attempt budget was exhausted. **Mitigation**: Child Ticket F
+  bundles a small, strictly additive substrate extension — an
+  `acceptedRuntimeProfiles` filter on `IJobQueue.TryClaimAsync` and
+  an optional `IJobExecutor.AcceptedRuntimeProfiles` property
+  (null-default for non-ETL kinds). Until F lands, only the
+  managed-profile executor is registered and Phase 2 connectors are
+  refused at CRUD submission time, so the race cannot occur.
+- **Per-stage fatal vs retryable classification.** ADR-0038 originally
+  promised a per-stage distinction (auth → fatal, transient →
+  retryable). The current substrate
+  `JobExecutionResult` exposes `Status`/`ErrorMessage`/`Warnings`
+  only and `JobRetryPolicy.ShouldRetry` is purely attempt-count
+  driven. **Mitigation**: launch with job-level retry only.
+  Per-stage failure classification is a documented Phase 2
+  enhancement requiring a `JobExecutionResult.FailureKind` (or
+  equivalent) substrate extension. Auth and transient failures both
+  surface via `ErrorMessage` and route through the same retry path
+  until then.
 - **Admin UI cross-repo coupling.** Child Ticket H spans honua-server
   and honua-server-admin. **Mitigation**: H is blocked on E. The API
   contract from A + E must be stable before honua-server-admin work
@@ -499,9 +571,15 @@ the constraints child-ticket implementers should treat as decided.
 3. **Rollback guarantee tier.** Soft-delete batch ID is the Pro-tier
    guarantee. Staging-table swap is documented as a Phase 2
    enhancement; it is not a launch requirement.
-4. **Worker image deployment timeline.** Phase 1 ships connectors that
-   run inside `honua-server`. `honua-worker-etl` is required only when
-   an operator wants Phase 2 connectors. The initial Pro release does
+4. **Worker image deployment timeline and substrate extension.**
+   Phase 1 ships connectors that run inside `honua-server`.
+   `honua-worker-etl` is required only when an operator wants Phase 2
+   connectors, and Child Ticket F is the only ticket that introduces
+   the worker image. F also bundles the
+   `RuntimeProfile`-aware claim filter on `IJobQueue` so the
+   managed-profile executor cannot claim Phase 2 jobs once the worker
+   image registers a competing executor — the substrate extension is
+   in F's scope, not a separate ticket. The initial Pro release does
    not require operators to deploy a second image.
 5. **GML scope.** GML is deferred to Child Ticket F. The minimal
    XmlReader path for simple GML 2/3 was rejected because it would
@@ -511,6 +589,12 @@ the constraints child-ticket implementers should treat as decided.
    `ExecutionAdmissionEvaluator`. This matches the geoprocessing
    precedent and lets operators stage pipeline definitions ahead of an
    edition upgrade.
+7. **Per-stage failure classification.** Launch uses job-level retry
+   only via `JobRetryPolicy.ShouldRetry(attemptCount)`. Per-stage
+   fatal vs retryable classification (auth → fatal, transient →
+   retryable) is a documented Phase 2 enhancement requiring a
+   `JobExecutionResult.FailureKind` substrate extension before child
+   tickets can honor it. The decomposition does not block on this.
 
 ## References
 
