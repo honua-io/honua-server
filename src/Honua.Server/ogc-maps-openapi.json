@@ -289,7 +289,8 @@
           { "$ref": "#/components/parameters/width" },
           { "$ref": "#/components/parameters/height" },
           { "$ref": "#/components/parameters/f" },
-          { "$ref": "#/components/parameters/quality" }
+          { "$ref": "#/components/parameters/quality" },
+          { "$ref": "#/components/parameters/datetime" }
         ],
         "responses": {
           "200": {
@@ -327,6 +328,16 @@
           },
           "401": {
             "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required when datetime rendering needs the raster.temporal-mosaic entitlement",
             "content": {
               "application/problem+json": {
                 "schema": {

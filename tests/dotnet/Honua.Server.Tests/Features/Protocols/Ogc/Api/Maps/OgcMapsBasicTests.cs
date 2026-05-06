@@ -94,6 +94,13 @@ public class OgcMapsBasicTests : IAsyncLifetime
             .GetProperty("/ogc/maps/collections/{collectionId}/styles/{styleId}/map")
             .GetProperty("get");
         styledCollectionMap.TryGetProperty("security", out _).Should().BeTrue();
+        styledCollectionMap.GetProperty("parameters")
+            .EnumerateArray()
+            .Any(parameter => parameter.TryGetProperty("$ref", out var reference)
+                && reference.GetString() == "#/components/parameters/datetime")
+            .Should()
+            .BeTrue();
+        styledCollectionMap.GetProperty("responses").TryGetProperty("402", out _).Should().BeTrue();
         styledCollectionMap.GetProperty("responses").TryGetProperty("501", out _).Should().BeTrue();
 
         var tilesets = json.RootElement.GetProperty("paths")

@@ -125,9 +125,12 @@ Everything in Pro, plus:
 Runtime license checking at startup:
 
 - Community: no key required. Full functionality within the Community boundary.
-- Pro/Enterprise: environment variable or file-based license key validated at
-  startup. Gated features return a clear error (HTTP 402 or gRPC `FAILED_PRECONDITION`
-  with upgrade guidance) when accessed without a valid key.
+- Pro/Enterprise: an offline signed JSON license file is loaded from
+  `Licensing:LicensePath` at startup, or through the admin upload endpoint when
+  `Licensing:AllowAdminUpload=true`; trusted Ed25519 public keys are configured
+  under `Licensing:TrustedKeys:<keyId>`. Gated features return a clear error
+  (HTTP 402 or gRPC `FAILED_PRECONDITION` with upgrade guidance) when accessed
+  without an active entitlement.
 
 License checks must be:
 - **Offline-capable**: no phone-home requirement. Keys are self-contained

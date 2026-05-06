@@ -88,7 +88,7 @@ The decoded payload uses camel-case JSON:
 | `issuedAt` | RFC 3339 timestamp | yes | Issue timestamp. |
 | `expiresAt` | RFC 3339 timestamp \| null | no | If present, must be in the future. |
 | `entitlements` | string[] | no | Feature keys resolved against `FeatureCatalog`; unknown keys are ignored for activation. |
-| `metadata` | object \| null | no | Optional string metadata for source/support context. |
+| `metadata` | object \| null | no | Optional string-valued metadata map for source/support context. |
 
 Community-tier catalog entries are always active. Paid features are active only
 when their catalog key appears in the signed `entitlements` array. The
@@ -107,9 +107,10 @@ The mint service rejects requests that violate the per-source expiry cap.
 
 ### 1.5 Marketplace metadata shape
 
-Marketplace adapters are follow-on work. When they mint the same runtime
-envelope, marketplace details should be placed in the decoded payload metadata
-or a future typed marketplace object without changing feature-gate semantics.
+Marketplace adapters are follow-on work. The #338 `metadata` field is a flat
+string-valued map for simple source/support fields. Rich marketplace details
+should land as a future typed marketplace object without changing feature-gate
+semantics.
 
 For AWS Marketplace:
 
@@ -191,8 +192,10 @@ The #338 runtime publishes these `LicenseValidationState` values:
 | `InvalidSignature` | Ed25519 verification failed. | Treat as tampering or key mismatch; reissue and investigate. |
 | `Expired` | `expiresAt` is in the past. | Reissue. Adapter refresh is follow-on work. |
 
-The validator returns the result rather than throwing; outer layers surface
-RFC 7807 problem JSON via the shared problem helpers (no raw exception bodies).
+The validator returns the result rather than throwing. Startup and admin status
+surfaces publish safe validation state, admin upload returns a sanitized
+`ApiResponse` rejection, and paid-feature gates use the shared protocol error
+helpers (no raw exception bodies).
 
 ### 2.4 AOT / trimming
 

@@ -58,7 +58,7 @@ Decoded payload fields use camel-case JSON:
 | `issuedAt` | RFC 3339 timestamp | Required issue time. |
 | `expiresAt` | RFC 3339 timestamp \| null | Optional. If present, must be in the future. |
 | `entitlements` | string[] | Feature keys resolved against `FeatureCatalog`; unknown keys are ignored for activation. |
-| `metadata` | object \| null | Optional bounded string metadata for issuance source and support context. |
+| `metadata` | object \| null | Optional string-valued metadata map for issuance source and support context. |
 
 The runtime bounds the total license file to 64 KiB. Community-tier catalog
 entries are always active. Paid features are active only when their catalog key
@@ -133,7 +133,11 @@ runbooks (referenced below) prove old/new `keyId` coexistence and retirement.
   in Redis or `ICacheService`. Follow-on file-watch, adapter re-mint, and
   public-key inspection work must invalidate or republish any cache entry whose
   output varies by license state.
-- **Configuration**: `IOptions<T>` per existing `CacheOptions`/`ResiliencePolicyOptions` precedent. New options validated by `IValidateOptions<T>`.
+- **Configuration**: the #338 runtime binds `LicenseOptions` from the
+  `Licensing` section with `IOptions<T>` per existing
+  `CacheOptions`/`ResiliencePolicyOptions` precedent. Follow-on mint,
+  marketplace, and key-inspection options should add `IValidateOptions<T>` when
+  invalid combinations would otherwise fail late.
 
 ### Project / Namespace Layout
 

@@ -257,9 +257,12 @@ curl -H "X-API-Key: <admin-key>" \
 # expect isValid=true and validationState="Valid".
 
 # 5. Remove old key id from Licensing:TrustedKeys and restart.
+# If the configured LicensePath still points at the old-key-id file, status
+# should show isValid=false with validationState="UnknownKey" or "Expired".
 
-# 6. Re-upload the old-key-id file; expect isValid=false with
-# validationState="UnknownKey" or "Expired"
+# 6. If LicensePath points at a valid new-key-id file, POST the old-key-id file
+# as a negative upload check. Expect HTTP 400 with a validation-failed message;
+# rejected uploads do not replace the current snapshot.
 ```
 
 Capture the manual smoke output in the incident channel before declaring

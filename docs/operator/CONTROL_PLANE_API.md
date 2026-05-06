@@ -598,11 +598,12 @@ The decoded payload uses camel-case JSON:
 `schema`, `licenseId`, `licensedTo`, `edition`, and `issuedAt` are required.
 `edition` accepts `Community`, `Pro`, `Enterprise`, and `Professional`
 (`Professional` maps to `Pro`). `expiresAt` is optional; when present it must be
-in the future. Unknown entitlement keys are ignored for activation, and the
-active entitlement set always includes Community-tier catalog entries. Paid
-features are active only when their catalog key is present in the signed
-`entitlements` array; the `edition` value is the operator-facing bundle label
-and does not by itself activate every Pro or Enterprise feature.
+in the future. `metadata` is an optional string-valued map. Unknown entitlement
+keys are ignored for activation, and the active entitlement set always includes
+Community-tier catalog entries. Paid features are active only when their catalog
+key is present in the signed `entitlements` array; the `edition` value is the
+operator-facing bundle label and does not by itself activate every Pro or
+Enterprise feature.
 
 Status responses from `GET /api/v1/admin/license`,
 `GET /api/v1/admin/license/status`, and successful
@@ -655,6 +656,20 @@ oversized, malformed, unknown-key, invalid-signature, or expired, upload
 returns HTTP `400`. `/api/v1/admin/license/upload` includes the rejection
 message in `data.message`; `/api/v1/admin/license` includes the rejection
 message in the top-level `message`.
+
+`GET /api/v1/admin/license/entitlements` returns
+`ApiResponse<IReadOnlyList<EntitlementResponse>>` as a flat catalog inventory:
+
+```json
+{
+  "success": true,
+  "data": [
+    { "key": "temporal.filtering", "name": "Temporal Query Filtering", "isActive": true },
+    { "key": "analytics.clustering", "name": "Spatial Clustering", "isActive": false }
+  ],
+  "timestamp": "2026-05-06T00:00:00Z"
+}
+```
 
 `GET /api/v1/admin/license/features` returns `ApiResponse<LicenseEntitlementsResponse>`:
 

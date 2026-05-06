@@ -79,12 +79,12 @@ The decoded payload is also JSON:
 ```
 
 `schema`, `licenseId`, `licensedTo`, `edition`, and `issuedAt` are required.
-`expiresAt` is optional; when present it must be in the future. The file is
-rejected as `Malformed` when the envelope is missing required fields, exceeds
-the 64 KiB runtime size limit, contains invalid Base64URL, or decodes to
-invalid payload JSON. A `keyId` that is absent from `Licensing:TrustedKeys` is
-`UnknownKey`; a signature mismatch is `InvalidSignature`; an expired file is
-`Expired`.
+`expiresAt` is optional; when present it must be in the future. `metadata` is an
+optional string-valued map. The file is rejected as `Malformed` when the
+envelope is missing required fields, exceeds the 64 KiB runtime size limit,
+contains invalid Base64URL, or decodes to invalid payload JSON. A `keyId` that
+is absent from `Licensing:TrustedKeys` is `UnknownKey`; a signature mismatch is
+`InvalidSignature`; an expired file is `Expired`.
 
 Community-tier catalog entries are always active. Paid features are active only
 when their catalog key is present in the signed `entitlements` array; the
