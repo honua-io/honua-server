@@ -103,6 +103,15 @@ Durability guarantees:
   a new geometry or overwrites an existing non-null geometry — including the
   body-less Replace that clears existing geometry. The only no-change case for
   a Replace is null-to-null, which stays `false`.
+- **Layer-CRS fallback for SRID-less mutation WKB.** Protocol handlers thread
+  `layer.SpatialReference.ToSrid()` (which prefers `LatestWkid` over the legacy
+  `Wkid`) into the outbox scope as the geometry-CRS fallback, matching the
+  inline post-commit publish path. On layers like `Wkid=102100/LatestWkid=3857`,
+  outbox-dispatched envelopes therefore publish `geometryCrs=3857` (the same
+  SRID the inline path emits on non-outbox backends) rather than the deprecated
+  WKID. The fallback only kicks in when the mutation WKB carries no embedded
+  SRID (gRPC `ApplyEdits` and WFS Transactions both use a default
+  `WKBWriter` with `handleSRID:false`); WKB that already carries an SRID wins.
 
 Backend capability:
 

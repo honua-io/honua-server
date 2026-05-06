@@ -305,7 +305,11 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             HonuaTelemetry.Protocols.Grpc,
             serviceId: request.ServiceId,
             serviceProtocol: ServiceProtocols.Grpc,
-            layerSrid: layer.SpatialReference.Wkid,
+            // Use ToSrid() (LatestWkid ?? Wkid) so the outbox enrichment fallback
+            // emits the same SRID as the inline-publish path on layers like
+            // Wkid=102100/LatestWkid=3857. Passing Wkid alone would publish the
+            // deprecated WKID on outbox-active backends only.
+            layerSrid: layer.SpatialReference.ToSrid(),
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: context.CancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);

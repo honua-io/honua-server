@@ -988,7 +988,10 @@ internal sealed partial class ODataBatchHandler
                     layerId,
                     HonuaTelemetry.Protocols.OData,
                     serviceProtocol: ServiceProtocols.OData,
-                    layerSrid: layer.SpatialReference.Wkid,
+                    // Match the inline path: ToSrid() returns LatestWkid ?? Wkid so
+                    // the outbox enrichment fallback emits the latest SRID for layers
+                    // like Wkid=102100/LatestWkid=3857.
+                    layerSrid: layer.SpatialReference.ToSrid(),
                     perOperationRequestIds: perOperationRequestIds,
                     perOperationGeometryChanged: perOperationGeometryChanged,
                     cancellationToken: cancellationToken).ConfigureAwait(false);

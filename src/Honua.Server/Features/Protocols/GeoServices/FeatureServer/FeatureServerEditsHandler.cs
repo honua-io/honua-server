@@ -438,7 +438,10 @@ internal sealed class FeatureServerEditsHandler(
             HonuaTelemetry.Protocols.FeatureServer,
             serviceId: serviceId,
             serviceProtocol: ServiceProtocols.FeatureServer,
-            layerSrid: layer.SpatialReference.Wkid,
+            // ToSrid() picks LatestWkid when set so the outbox enrichment fallback
+            // matches the inline post-commit path on layers like
+            // Wkid=102100/LatestWkid=3857.
+            layerSrid: layer.SpatialReference.ToSrid(),
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);

@@ -1704,7 +1704,10 @@ internal sealed partial class Wfs20Handler
             layerId,
             HonuaTelemetry.Protocols.Wfs20,
             serviceProtocol: ServiceProtocols.Wfs20,
-            layerSrid: layer.SpatialReference.Wkid,
+            // ToSrid() prefers LatestWkid so the outbox enrichment fallback emits the
+            // same SRID the inline-publish path uses (Wkid=102100/LatestWkid=3857
+            // would otherwise publish the deprecated WKID on outbox backends only).
+            layerSrid: layer.SpatialReference.ToSrid(),
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);

@@ -833,7 +833,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             layerId,
             HonuaTelemetry.Protocols.OgcFeatures,
             serviceProtocol: ServiceProtocols.OgcFeatures,
-            layerSrid: layer.SpatialReference.Wkid,
+            // ToSrid() returns LatestWkid ?? Wkid so the outbox enrichment fallback
+            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
+            layerSrid: layer.SpatialReference.ToSrid(),
             perOperationRequestIds: perOperationRequestIds,
             geometryChanged: geometryChanged,
             perOperationGeometryChanged: perOperationGeometryChanged,

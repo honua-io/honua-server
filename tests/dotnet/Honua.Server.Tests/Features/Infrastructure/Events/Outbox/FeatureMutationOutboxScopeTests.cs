@@ -2,13 +2,17 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events.Outbox;
@@ -409,6 +413,53 @@ public sealed class FeatureMutationOutboxScopeTests
         firstUpdate!.RequestId.Should().Be("trace-batch:u1");
         thirdCreate!.RequestId.Should().Be("trace-batch");
         firstDelete!.RequestId.Should().Be("trace-batch");
+    }
+
+    [UnitTest]
+    public async Task ResolveOutboxScopeAsync_LayerSridFallback_PrefersLatestWkidForSridLessWkb()
+    {
+        // Geodesy regression guard (#692): protocol handlers pass
+        // layer.SpatialReference.ToSrid() (which prefers LatestWkid) through to
+        // ResolveOutboxScopeAsync as the layerSrid fallback. Passing layer.Wkid alone
+        // would publish the deprecated WKID — e.g., 102100 for a Web Mercator layer
+        // with LatestWkid=3857 — on outbox-active backends only, while the inline
+        // post-commit publish path uses 3857. The outbox enrichment must use the
+        // same SRID consumers see from the inline path, so streaming/replay/webhook
+        // subscribers see a consistent geometryCrs across providers.
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+        var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
+
+        var layerSpatialReference = SpatialReference.Create(wkid: 102100, latestWkid: 3857);
+        var layerSrid = layerSpatialReference.ToSrid();
+        layerSrid.Should().Be(3857, "ToSrid() prefers LatestWkid; this is the value the protocol handlers must thread through");
+
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-srid-fallback" };
+        var data = await service.ResolveOutboxScopeAsync(
+            context,
+            layerId: 7,
+            protocol: "Grpc",
+            layerSrid: layerSrid);
+
+        using var _ = FeatureMutationOutboxScope.BeginIfNotNull(data);
+
+        // gRPC ApplyEdits and WFS Transaction publish features whose WKB is written
+        // by a default WKBWriter with handleSRID:false, so the SRID is not embedded
+        // in the bytes. The enrichment must read the layerSrid argument as the fallback.
+        var point = new Point(-157.8583, 21.3069);
+        var sridLessWkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false).Write(point);
+        var feature = Feature.Create(42, sridLessWkb, ImmutableDictionary<string, object?>.Empty);
+
+        var entry = FeatureMutationOutboxScope.Current!.EntryFactory(42, "create", feature);
+        entry.Should().NotBeNull();
+
+        var payload = JsonSerializer.Deserialize(
+            entry!.EventPayload,
+            FeatureChangeEventsJsonContext.Default.FeatureChangeEventRequest);
+        payload.Should().NotBeNull();
+        payload!.GeometrySrid.Should().Be(3857, "outbox enrichment must use the supplied LatestWkid so it matches the inline-publish path");
+        payload.GeometryJson.Should().NotBeNullOrWhiteSpace("paired with GeometrySrid, the GeoJSON must be populated");
     }
 
     [UnitTest]

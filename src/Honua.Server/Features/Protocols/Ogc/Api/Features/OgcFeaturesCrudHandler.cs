@@ -327,7 +327,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
             layerId,
             HonuaTelemetry.Protocols.OgcFeatures,
             serviceProtocol: ServiceProtocols.OgcFeatures,
-            layerSrid: layer.SpatialReference.Wkid,
+            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
+            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
+            layerSrid: layer.SpatialReference.ToSrid(),
             geometryChanged: geometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
