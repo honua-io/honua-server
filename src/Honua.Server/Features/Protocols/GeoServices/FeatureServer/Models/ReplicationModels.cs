@@ -77,6 +77,12 @@ public sealed class CreateReplicaResponse
     public string? SyncModel { get; set; }
 
     /// <summary>
+    /// Current server generation number at creation time.
+    /// </summary>
+    [JsonPropertyName("serverGen")]
+    public long ServerGen { get; set; }
+
+    /// <summary>
     /// Layers included in the replica.
     /// </summary>
     [JsonPropertyName("layers")]
