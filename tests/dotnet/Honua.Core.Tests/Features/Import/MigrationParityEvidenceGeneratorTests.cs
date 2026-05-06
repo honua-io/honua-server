@@ -69,6 +69,34 @@ public sealed class MigrationParityEvidenceGeneratorTests
     }
 
     [Fact]
+    public void Generate_WithIncompatibleResource_ReturnsFailOverallState()
+    {
+        var inventory = CreateInventory(
+            resources:
+            [
+                CreateResource(
+                    "workspace:legacy",
+                    "Legacy",
+                    "incompatible",
+                    "Source resource uses an unsupported renderer pipeline.")
+            ]);
+
+        var evidence = MigrationParityEvidenceGenerator.Generate(inventory);
+
+        evidence.OverallState.Should().Be(MigrationEvidenceStates.Fail);
+        evidence.Sections.Should().ContainSingle(section => section.Id == "capability")
+            .Which.Should().Match<MigrationParityEvidenceSection>(section =>
+                section.State == MigrationEvidenceStates.Fail &&
+                section.Items.Single().State == MigrationEvidenceStates.Fail);
+        evidence.Sections.Should().ContainSingle(section => section.Id == "data")
+            .Which.Should().Match<MigrationParityEvidenceSection>(section =>
+                section.State == MigrationEvidenceStates.Fail &&
+                section.Items.Single().State == MigrationEvidenceStates.Fail);
+        evidence.CutoverReadiness.Items.Should().ContainSingle(item => item.Id == "known-gaps-accepted")
+            .Which.State.Should().Be(MigrationEvidenceStates.Unknown);
+    }
+
+    [Fact]
     public void Generate_WithoutManifest_DoesNotInferDataSuccess()
     {
         var inventory = CreateInventory(

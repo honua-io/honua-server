@@ -1,0 +1,60 @@
+{
+  "artifactKind": "honua.migration.readiness-attestation",
+  "artifactVersion": "1.0",
+  "notes": "Deterministic example of a passing readiness attestation for a GeoServer-to-Honua pilot. Evidence strings are illustrative; replace with concrete artifact links, ticket IDs, and signed approvals before reusing as a real attestation.",
+  "items": [
+    {
+      "id": "inventory-confirmed",
+      "state": "pass",
+      "evidence": [
+        "artifact://migrations/example/inventory.json reviewed 2026-04-22 by source owner",
+        "ticket://MIG-1042 records source-owner signoff on inventory scope"
+      ],
+      "owner": "source-owner@example.test"
+    },
+    {
+      "id": "manifest-reviewed",
+      "state": "pass",
+      "evidence": [
+        "artifact://migrations/example/manifest.json reviewed 2026-04-23 by Honua operator",
+        "ticket://MIG-1043 records target-resource and style-action review"
+      ],
+      "owner": "honua-operator@example.test"
+    },
+    {
+      "id": "parity-report-reviewed",
+      "state": "pass",
+      "evidence": [
+        "artifact://migrations/example/parity-evidence.json reviewed 2026-04-29 after pilot run",
+        "ticket://MIG-1044 records capability, style, and data section review"
+      ],
+      "owner": "honua-operator@example.test"
+    },
+    {
+      "id": "known-gaps-accepted",
+      "state": "not-applicable",
+      "evidence": [
+        "No fail or unknown parity evidence items were generated."
+      ],
+      "owner": "honua-operator@example.test"
+    },
+    {
+      "id": "rollback-plan-documented",
+      "state": "pass",
+      "evidence": [
+        "runbook://migrations/example/rollback-plan.md covers restore point, DNS reversion, cache invalidation, escalation path, rollback timing, and decision owner",
+        "ticket://MIG-1045 records application-owner approval of rollback plan"
+      ],
+      "owner": "application-owner@example.test"
+    },
+    {
+      "id": "traffic-switch-planned",
+      "state": "pass",
+      "evidence": [
+        "change-request://CHG-2210 schedules DNS cutover for 2026-05-06 02:00 UTC",
+        "change-request://CHG-2211 schedules load-balancer pool swap and tile-cache warm"
+      ],
+      "owner": "network-owner@example.test"
+    }
+  ]
+}

@@ -1,4 +1,7 @@
 {
+  "artifactKind": "honua.migration.readiness-attestation",
+  "artifactVersion": "1.0",
+  "notes": "Fill in state, evidence, and owner for each item. Allowed states are pass, fail, unknown, and not-applicable. Do not mark an item pass until the evidence column points to a concrete artifact, ticket, dashboard, runbook, or signed approval. The artifactKind and artifactVersion fields are template metadata; the server consumes only the items array.",
   "items": [
     {
       "id": "inventory-confirmed",
