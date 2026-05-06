@@ -40,7 +40,7 @@ The epic acceptance criteria from `#361` map to sections of this roadmap:
 |---|---|
 | Decomposed into bounded child tickets | [Child ticket decomposition](#child-ticket-decomposition) |
 | First implementation child ticket selected and explicitly scoped | [Child Ticket A](#child-ticket-a--pipeline-domain-models--crud-api-first-implementation-ticket) |
-| Baseline runtime requires only Honua + PostgreSQL, not cloud batch | [Runtime and worker boundary](#runtime-and-worker-boundary) |
+| Baseline runtime requires only Honua's existing substrate stack (PostgreSQL + Redis), not cloud batch | [Runtime and worker boundary](#runtime-and-worker-boundary) |
 | Heavy native deps isolated to dedicated worker profile | [Runtime and worker boundary](#runtime-and-worker-boundary) and ADR-0038 |
 | Curated first connector/driver target set as 80% coverage, not blanket GDAL | [Connector phasing](#connector-phasing-extract) |
 | Pipeline semantics — declarative defs, schedule/event triggers, history/logs/errors, dry run, cancel/retry/progress, rollback | [Pipeline execution model](#pipeline-execution-model) |
@@ -320,10 +320,18 @@ exists for authoring ergonomics only.
    small, strictly additive substrate change with a null-default
    backward compatibility path so non-ETL kinds remain unaffected.
 
-The default deployment requires **only Honua + PostgreSQL**. The
-`honua-worker-etl` image is not necessary for Phase 1 and only deploys
-when an operator opts into Phase 2 connectors. No cloud batch backend
-(AWS Batch, Azure Batch, Kubernetes Jobs) is required for the baseline.
+The default deployment adds **no infrastructure beyond what the `#681`
+substrate already requires**: Honua, PostgreSQL with PostGIS, and
+Redis as the substrate's coordination layer (per ADR-0021 /
+ADR-0025 / ADR-0031 — Redis backs `IJobQueue` via `RedisJobQueue` and
+the `IExecutionLogStore` list-backed implementation). The
+`honua-worker-etl` image is not necessary for Phase 1 and only
+deploys when an operator opts into Phase 2 connectors. No cloud batch
+backend (AWS Batch, Azure Batch, Kubernetes Jobs, Apache Sedona /
+Spark) is required for the baseline — the GeoETL
+"no-cloud-batch-backend" guarantee from `#361`'s acceptance criteria
+holds; GeoETL just inherits the substrate's standard PostgreSQL +
+Redis footprint.
 
 ## Edition gating
 

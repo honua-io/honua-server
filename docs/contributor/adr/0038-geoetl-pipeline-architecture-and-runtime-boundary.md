@@ -30,8 +30,11 @@ Three constraints dominate:
    semantics. GeoETL must consume those semantics, not invent
    parallel ones.
 3. Baseline delivery cannot require AWS Batch, Azure Batch, Kubernetes
-   Jobs, or any other cloud batch backend. Operators must be able to
-   run GeoETL with only Honua + PostgreSQL.
+   Jobs, Apache Sedona / Spark, or any other cloud batch backend.
+   Operators must be able to run GeoETL on Honua's existing substrate
+   stack — PostgreSQL with PostGIS plus Redis as the substrate's
+   coordination layer (per ADR-0021 / ADR-0025 / ADR-0031). GeoETL
+   adds no new infrastructure beyond what `#681` already requires.
 
 A handful of secondary forces shape the design:
 
@@ -141,7 +144,12 @@ honua-server (default)             honua-worker-etl (heavyweight, post-F)
   │       Managed           │        │       Native             │
   └─────────────────────────┘        └──────────────────────────┘
               │                                    │
-              └──────── PostgreSQL (shared) ───────┘
+              └────── Shared substrate stack ──────┘
+                  PostgreSQL (definition / exec
+                    stores, layer data, sinks)
+                  Redis (RedisJobQueue claims +
+                    list-backed IExecutionLogStore;
+                    per ADR-0021 / 0025 / 0031)
 ```
 
 The substrate today filters claims only by `ExecutionJobKind`
@@ -171,10 +179,12 @@ Every path that creates an `ExtractTransformLoad` job (manual
 trigger, scheduler enqueue, dry-run submission) refuses Phase 2
 pipelines with a clear "native-profile worker not registered" error,
 since no worker profile that can satisfy them exists. Operators
-running `honua-server` + PostgreSQL can author and execute every
-Phase 1 pipeline; Phase 2 connectors are simply unenqueueable until
-F lands and the operator opts into the worker image. The
-"Honua + PostgreSQL only" baseline is preserved.
+running Honua's existing substrate stack (`honua-server` +
+PostgreSQL + Redis) can author and execute every Phase 1 pipeline;
+Phase 2 connectors are simply unenqueueable until F lands and the
+operator opts into the worker image. The "no new infrastructure
+beyond the substrate" baseline is preserved — GeoETL adds neither a
+second image nor a cloud batch backend in Phase 1.
 
 **Phase 2 (post-Child-Ticket-F, two images).** F introduces a
 `RuntimeProfile`-aware claim filter on `IJobQueue.TryClaimAsync`. The
@@ -269,10 +279,17 @@ kind's claim semantics.
 
 ### Baseline runtime requirements
 
-The baseline GeoETL deployment requires:
+The baseline GeoETL deployment requires only what the `#681`
+substrate already requires — GeoETL is a job kind on top of the
+substrate, not a parallel orchestration system, so it adds no
+infrastructure of its own:
 
 - Honua server image
-- PostgreSQL with PostGIS
+- PostgreSQL with PostGIS (definition / execution stores, layer
+  data, sink writes)
+- Redis (substrate coordination layer per ADR-0021 / ADR-0025 /
+  ADR-0031 — backs `RedisJobQueue` for claim / lease and the
+  list-backed `IExecutionLogStore` for structured execution logs)
 
 Specifically **not required** for baseline:
 
@@ -280,12 +297,18 @@ Specifically **not required** for baseline:
 - Azure Batch
 - Kubernetes Jobs
 - Apache Sedona / Spark
-- Any cloud queue beyond what `IJobQueue` already supports
+- Any cloud queue beyond `IJobQueue` (the substrate already provides
+  the queue via `RedisJobQueue`; GeoETL does not add another)
 - The `honua-worker-etl` image — only needed when an operator opts into
   Phase 2 connectors
 
-External executors (Kubernetes Jobs, AWS Batch, Sedona) are pluggable
-add-ons under Child Ticket J, never delivery prerequisites.
+The `#361` acceptance criterion "baseline runtime requires only
+Honua and PostgreSQL, not cloud batch infrastructure" is preserved
+in spirit and tightened in fact: Redis is a pre-existing substrate
+dependency, not a GeoETL-specific addition, and the
+"no cloud batch backend" guarantee remains absolute. External
+executors (Kubernetes Jobs, AWS Batch, Sedona) are pluggable add-ons
+under Child Ticket J, never delivery prerequisites.
 
 ### Edition enforcement
 
