@@ -44,6 +44,8 @@ using Honua.Server.Features.Infrastructure.RateLimiting;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Mobile.Auth;
+using Honua.Server.Features.Mobile.Diagnostics;
 using Honua.Server.Features.Mobile.FieldCollection;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Streaming;
@@ -727,6 +729,10 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.A
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.OidcAuthenticationOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.OidcAuthenticationOptions.SectionName));
 
+// Configure mobile runtime auth refresh options
+builder.Services.Configure<Honua.Server.Features.Mobile.Auth.MobileAuthOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Mobile.Auth.MobileAuthOptions.SectionName));
+
 // Configure RBAC options
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.RbacOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.RbacOptions.SectionName));
@@ -789,6 +795,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
         Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
+        Honua.Server.Features.Mobile.Auth.MobileAuthJsonContext.Default,
+        Honua.Server.Features.Mobile.Diagnostics.MobileExceptionIngestionJsonContext.Default,
         Honua.Server.Features.Mobile.FieldCollection.FieldCollectionSyncJsonContext.Default,
         Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
@@ -1071,6 +1079,7 @@ app.MapPrometheusEndpoint();
 
 // Configure admin auth bootstrap endpoint (anonymous - must precede admin group)
 app.MapAdminAuthEndpoints();
+app.MapMobileAuthEndpoints();
 
 // Configure admin endpoints
 app.MapAdminEndpoints();
@@ -1168,6 +1177,7 @@ app.MapExportEndpoints();
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();
 app.MapFeatureChangeEventsEndpoints();
+app.MapMobileExceptionIngestionEndpoints();
 app.MapFieldCollectionSyncEndpoints();
 app.MapTileOperationsEndpoints();
 

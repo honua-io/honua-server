@@ -200,6 +200,39 @@
       ]
     },
     {
+      "surfaceId": "mobile-runtime-auth-diagnostics",
+      "displayName": "Mobile runtime auth and diagnostics API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Mobile",
+      "canonicalIdentifier": "/oauth/token + /api/mobile/exceptions",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/oauth/token",
+        "/api/mobile/exceptions"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus mobile auth/diagnostics integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Mobile/Auth/MobileAuthEndpoints.cs",
+            "src/Honua.Server/Features/Mobile/Diagnostics/MobileExceptionIngestionEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Mobile/MobileAuthAndDiagnosticsEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#924",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "versioned-metrics",
       "displayName": "Versioned metrics endpoints",
       "surfaceKind": "http-route-family",
