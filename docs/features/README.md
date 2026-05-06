@@ -33,3 +33,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 ## Release Risk
 
 The server has the broadest surface and most backlog. Release readiness should be judged by a narrow acceptance path, not by waiting for every protocol, enterprise, and 3D backlog item to close.
+
+## Planned Capabilities
+
+- **GeoETL** (epic `#361`): scheduled, repeatable, multi-source spatial extract-transform-load pipelines as a Pro/Enterprise capability layered on the durable job substrate. See the [GeoETL Roadmap](../contributor/geoetl-roadmap.md) for child-ticket decomposition, runtime boundary (lean `honua-server` API + dedicated `honua-worker-etl` profile), and edition gating, and [ADR-0038](../contributor/adr/0038-geoetl-pipeline-architecture-and-runtime-boundary.md) for the binding architectural decisions. Community continues to ship one-shot file import unchanged.

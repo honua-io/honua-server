@@ -89,6 +89,8 @@
 - [Public Interface Quality Model](contributor/public-interface-quality-model.md)
 - [OGC Certification Path](contributor/ogc-certification-path.md)
 - [Release Checklist](contributor/RELEASE_CHECKLIST.md)
+- [GeoETL Roadmap](contributor/geoetl-roadmap.md)
+- [GeoETL Strategy Spike](contributor/geoetl-spike.md)
 
 ## Security
 
