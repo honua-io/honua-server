@@ -7,14 +7,13 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
@@ -170,27 +169,45 @@ internal static partial class StaticMapEndpoints
                 return protocolError;
             }
 
-            // Enforce edition limits
-            var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
-            var edition = licenseProvider.GetCurrentStatus().Edition;
-
-            var maxDimension = edition >= HonuaEdition.Pro
-                ? StaticMapEditionLimits.ProMaxDimension
-                : StaticMapEditionLimits.CommunityMaxDimension;
-            var maxDpi = edition >= HonuaEdition.Pro
-                ? StaticMapEditionLimits.ProMaxDpi
-                : StaticMapEditionLimits.CommunityMaxDpi;
-
-            if (parameters.Width > maxDimension || parameters.Height > maxDimension)
+            // Enforce static map entitlement limits before any provider work.
+            if (parameters.Width > StaticMapEditionLimits.ProMaxDimension ||
+                parameters.Height > StaticMapEditionLimits.ProMaxDimension)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
-                    $"Image dimensions exceed {edition} edition limit of {maxDimension}x{maxDimension}.");
+                    $"Image dimensions exceed the maximum limit of {StaticMapEditionLimits.ProMaxDimension}x{StaticMapEditionLimits.ProMaxDimension}.");
             }
 
-            if (parameters.Dpi > maxDpi)
+            if (parameters.Width > StaticMapEditionLimits.CommunityMaxDimension ||
+                parameters.Height > StaticMapEditionLimits.CommunityMaxDimension)
+            {
+                var gate = LicenseGate.RequireEntitlement(
+                    context,
+                    "staticmap.large-dimensions",
+                    "Large static map rendering",
+                    logger);
+                if (gate is not null)
+                {
+                    return gate;
+                }
+            }
+
+            if (parameters.Dpi > StaticMapEditionLimits.ProMaxDpi)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
-                    $"DPI {parameters.Dpi} exceeds {edition} edition limit of {maxDpi}.");
+                    $"DPI {parameters.Dpi} exceeds the maximum limit of {StaticMapEditionLimits.ProMaxDpi}.");
+            }
+
+            if (parameters.Dpi > StaticMapEditionLimits.CommunityMaxDpi)
+            {
+                var gate = LicenseGate.RequireEntitlement(
+                    context,
+                    "staticmap.high-dpi",
+                    "High-DPI static map rendering",
+                    logger);
+                if (gate is not null)
+                {
+                    return gate;
+                }
             }
 
             // Validate format
@@ -200,11 +217,41 @@ internal static partial class StaticMapEndpoints
                     $"Unsupported format '{parameters.Format}'. Supported: png, jpeg, webp.");
             }
 
-            // Parse overlays with edition limits
-            var maxMarkers = edition >= HonuaEdition.Pro
+            // Parse overlays with entitlement-aware limits.
+            var markerCount = CountMarkerSegments(parameters.Markers);
+            var pathVertexCount = CountPathVertices(parameters.Path);
+            if (markerCount > StaticMapEditionLimits.ProMaxMarkers)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    $"Too many markers ({markerCount}). Maximum allowed: {StaticMapEditionLimits.ProMaxMarkers}.");
+            }
+
+            if (pathVertexCount > StaticMapEditionLimits.ProMaxPathVertices)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    $"Too many path vertices ({pathVertexCount}). Maximum allowed: {StaticMapEditionLimits.ProMaxPathVertices}.");
+            }
+
+            var requiresRichOverlays =
+                markerCount > StaticMapEditionLimits.CommunityMaxMarkers ||
+                pathVertexCount > StaticMapEditionLimits.CommunityMaxPathVertices;
+            if (requiresRichOverlays)
+            {
+                var gate = LicenseGate.RequireEntitlement(
+                    context,
+                    "staticmap.rich-overlays",
+                    "Rich static map overlays",
+                    logger);
+                if (gate is not null)
+                {
+                    return gate;
+                }
+            }
+
+            var maxMarkers = requiresRichOverlays
                 ? StaticMapEditionLimits.ProMaxMarkers
                 : StaticMapEditionLimits.CommunityMaxMarkers;
-            var maxPathVertices = edition >= HonuaEdition.Pro
+            var maxPathVertices = requiresRichOverlays
                 ? StaticMapEditionLimits.ProMaxPathVertices
                 : StaticMapEditionLimits.CommunityMaxPathVertices;
 
@@ -535,6 +582,9 @@ internal static partial class StaticMapEndpoints
         return true;
     }
 
+    private static int CountMarkerSegments(string? value)
+        => string.IsNullOrWhiteSpace(value) ? 0 : value.Split('|').Length;
+
     private static bool TryParsePath(string? value, int maxVertices, out MapPath? path, out string? error)
     {
         path = null;
@@ -610,6 +660,20 @@ internal static partial class StaticMapEndpoints
             StrokeWidth = strokeWidth
         };
         return true;
+    }
+
+    private static int CountPathVertices(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return 0;
+        }
+
+        var segments = value.Split('|');
+        var startIndex = segments.Length > 0 && segments[0].Contains(':', StringComparison.Ordinal)
+            ? 1
+            : 0;
+        return Math.Max(0, segments.Length - startIndex);
     }
 
     // ----- Coordinate helpers -----

@@ -3,6 +3,9 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Server.Tests.Features.Licensing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -330,11 +333,22 @@ public sealed class StaticMapEndpointTests : IAsyncLifetime
     [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
     public async Task CenterZoom_ProEditionAllowsHighDpi_ReturnsImage()
     {
-        // Pro edition allows 150 DPI
-        var response = await _fixture.Client.GetAsync(
-            $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?dpi=150");
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro));
+        await fixture.InitializeAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        try
+        {
+            // Pro entitlement allows 150 DPI.
+            var response = await fixture.Client.GetAsync(
+                $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?dpi=150");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 }

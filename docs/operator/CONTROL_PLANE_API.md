@@ -552,15 +552,23 @@ for run lifecycle, scheduler semantics, and tuning details.
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/v1/admin/license` | GET | Get license status |
-| `/api/v1/admin/license` | POST | Upload license (placeholder `InMemoryLicenseManager` — does not run the canonical Ed25519 / JWS validator; replaced by the License store + bootstrap child ticket). |
+| `/api/v1/admin/license` | POST | Upload a signed license envelope when `Licensing:AllowAdminUpload=true` and `Licensing:LicensePath` is configured. Disabled by default. |
 | `/api/v1/admin/license/entitlements` | GET | Get entitlements |
 | `/api/v1/admin/license/status` | GET | Platform-admin license status (mirrors `GET /api/v1/admin/license`) |
 | `/api/v1/admin/license/features` | GET | Platform-admin entitlements / feature view |
 
-The unified license envelope (compact JWS / EdDSA / Ed25519), BYOL and
-marketplace issuance flows, multi-key rotation, and the AWS/Azure marketplace
-adapter contracts are defined in [ADR-0033](../contributor/adr/0033-unified-license-format.md)
-and the companion [unified license and entitlement architecture](../contributor/architecture/unified-license-and-entitlement.md).
+Runtime licensing loads an offline Ed25519-signed JSON envelope from
+`Licensing:LicensePath`. `Licensing:TrustedKeys:<keyId>` supplies trusted
+raw Ed25519 public keys as `base64url:<32-byte-key>` or standard Base64. With
+no configured path the server runs in Community mode; missing, malformed,
+unknown-key, invalid-signature, and expired files leave the server in a safe
+Community state and emit structured licensing diagnostics. The license status
+also appears in `/healthz/metrics` and `/api/v1/metrics/health` payloads.
+
+The broader unified license architecture, BYOL and marketplace issuance flows,
+multi-key rotation, and AWS/Azure marketplace adapter contracts are defined in
+[ADR-0033](../contributor/adr/0033-unified-license-format.md) and the companion
+[unified license and entitlement architecture](../contributor/architecture/unified-license-and-entitlement.md).
 Operational procedures live in the licensing runbooks:
 [License Migration](runbooks/LICENSE_MIGRATION.md),
 [License Key Rotation](runbooks/LICENSE_KEY_ROTATION.md), and
@@ -573,8 +581,8 @@ architecture doc, and this contract agree:
 
 | Endpoint | Method | Visibility | Land with |
 |----------|--------|------------|-----------|
-| `/api/v1/admin/license/upload` | POST | Every instance. Currently registered with a placeholder handler that returns HTTP `501 Not Implemented` (`"License upload is not yet supported"`); the canonical Ed25519 / JWS upload path lands with the child ticket below. The `LICENSE_MIGRATION.md` and `LICENSE_KEY_ROTATION.md` runbooks call this route — both runbooks flag the dependency in their § "Status / Prerequisites" callouts. | License store + bootstrap child ticket |
-| `/api/v1/admin/license/keys` | GET | Every instance | License store + bootstrap child ticket |
+| `/api/v1/admin/license/upload` | POST | Every instance. Uses the same validator as startup load. Returns `400` when admin upload is disabled or validation fails. | Landed with ticket #338 |
+| `/api/v1/admin/license/keys` | GET | Every instance | Key rotation / public-key inspection child ticket |
 | `/api/v1/admin/license/mint` | POST | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
 | `/api/v1/admin/license/refresh` | POST | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
 | `/api/v1/admin/license/signing/status` | GET | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
@@ -583,13 +591,6 @@ architecture doc, and this contract agree:
 | `/api/v1/marketplace/azure/webhook` | POST | When `Azure:Marketplace:Enabled=true`. Public — Azure AD JWT bearer | Azure marketplace adapter child ticket |
 | `/api/v1/marketplace/azure/landing` | GET | When `Azure:Marketplace:Enabled=true`. Public — Microsoft redirects the purchaser's browser here with `?token=<marketplace-token>`; handler calls Microsoft's Resolve API server-to-server (`x-ms-marketplace-token` header). | Azure marketplace adapter child ticket |
 | `/api/v1/marketplace/azure/activate` | POST | When `Azure:Marketplace:Enabled=true`. Public — backend POST from the landing page after the purchaser confirms; handler calls Microsoft's Activate API server-to-server. | Azure marketplace adapter child ticket |
-
-The `/api/v1/admin/license/upload` route is registered today but its
-handler returns 501; the canonical Ed25519 / JWS upload pipeline lands
-with the License store + bootstrap child ticket. The mint-host-only and
-marketplace routes are not present in the current `EndpointRegistry`;
-they register through their child-ticket PRs along with the
-corresponding architecture-test rows.
 
 ### **Role Management Endpoints**
 

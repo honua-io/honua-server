@@ -5,8 +5,9 @@ license files. Rotation is **additive**: new keys take over signing while
 the old key remains valid for verification until every file it signed has
 expired plus a margin. No fleet-wide synchronous update is required.
 
-The runbook also exercises the smoke test that proves rotation works
-end-to-end — required by the acceptance criteria of ADR-0033.
+The ticket #338 runtime verifies the license envelope `keyId` against
+`Licensing:TrustedKeys:<key-id>`. Public-key inspection and mint-host signing
+status routes remain follow-on work.
 
 ---
 
@@ -34,14 +35,14 @@ defined in ADR-0033. Several runtime commands below depend on child
 tickets that have **not yet landed on this branch** per ADR-0033 §
 "Bounded Child Tickets":
 
-| Command surface | Status on `feature/804` | Lands with |
+| Command surface | Current status | Lands with |
 |-----------------|-------------------------|------------|
 | `GET /api/v1/admin/license/keys` | Route is **not yet registered** in `EndpointRegistry`. The CONTROL_PLANE_API contract lists it under "land with the License store + bootstrap child ticket". | License store + bootstrap child ticket. |
-| `POST /api/v1/admin/license/upload` | Endpoint registered; placeholder returns HTTP `501 Not Implemented` until the validator + license store child tickets land. | License store + bootstrap child ticket. |
+| `POST /api/v1/admin/license/upload` | Operational through the same validator as startup load. Default `Licensing:AllowAdminUpload=false` returns HTTP `400`; enable it only for workflows that allow runtime file replacement. | Landed with ticket #338. |
 | `GET /api/v1/admin/license/signing/status` | Mint-host-only route. Not registered on customer instances. **Not yet registered** on the mint host either. | Mint host endpoints child ticket. |
 | `POST /api/v1/admin/license/refresh` | Mint-host-only route. **Not yet registered.** | Mint host endpoints child ticket. |
-| `tests/dotnet/Honua.Server.Tests/Features/Licensing/LicenseKeyRotationSmokeTests.cs` | Test fixture **not yet authored** on this branch. | Key-rotation runbook + smoke test child ticket. |
-| `licenses_issued_total{source=...}`, `licenses_validated_total{result=...}`, validator log emitter `10020` | Counter / event-id shapes are reserved by ADR-0033 but emit only after the validator + mint child tickets land. | Validator + JSON context, Mint library, Mint host endpoints child tickets. |
+| `tests/dotnet/Honua.Server.Tests/Features/Licensing/LicenseKeyRotationSmokeTests.cs` | Test fixture **not yet authored** on this branch. The #338 loader tests cover valid, missing, malformed, unknown-key, invalid-signature, and expired files. | Key-rotation smoke test child ticket. |
+| `licenses_issued_total{source=...}` and `licenses_validated_total{result=...}` | Counter shapes are reserved by ADR-0033 but are not emitted by the #338 runtime baseline. | Telemetry counters child ticket. |
 
 The runbook is published ahead of those child tickets so the rotation
 contract is reviewable in isolation. Treat every command marked above
@@ -52,28 +53,11 @@ has landed before running it on a customer or mint-host environment.
 
 ## Concept
 
-Honua's license validator resolves the signing key by `kid` (RFC 7517) from
-a key set that combines:
-
-1. A **baked-in primary** key compiled into `Honua.Core` at release time.
-2. A **configuration-additive** list (`License:Keys`) loaded by
-   `IOptionsMonitor<LicenseKeysOptions>`.
-
-A key is active when `now ∈ [NotBefore, NotAfter ?? +∞)`. Adding a new key
-takes effect on the next configuration reload. Retiring a key has two
-distinct paths depending on where the key is sourced:
-
-- **Configuration-additive keys** (`License:Keys:N`) retire by setting
-  their `NotAfter` to a past instant or removing the entry from
-  configuration. `IOptionsMonitor` propagates the change without a
-  restart and the resolver returns `null` for any `kid` outside its
-  window.
-- **The baked-in primary key** (compiled into `Honua.Core` as an
-  embedded resource) **cannot be retired by configuration alone.**
-  Configuration cannot redefine or delete a baked-in `kid`; retiring it
-  requires a release that updates the embedded resource — either with a
-  new `NotAfter` window or by replacing the resource entry — followed
-  by a fleet rollout. See "Retiring the baked-in primary key" below.
+Honua's ticket #338 validator resolves the signing key by envelope `keyId`
+from `Licensing:TrustedKeys`. There is no baked-in verification key in the
+runtime baseline. Adding or removing keys is a configuration change plus
+application restart for startup-file load; admin upload, when enabled,
+validates against the currently loaded configuration.
 
 The mint host signs with **one** active private key at a time, identified
 in configuration by `License:Signing:KeyId`. Switching the signing key is
@@ -111,32 +95,27 @@ Verify before starting:
 
 ### Step 1 — Add the new public key (verification side)
 
-Add the new key to `License:Keys` configuration on every Honua server in
-the fleet. The change is additive:
+Add the new key to `Licensing:TrustedKeys` configuration on every Honua
+server in the fleet. The change is additive:
 
 ```
-License:Keys:1:Kid          = honua-2026-q3
-License:Keys:1:PublicKey    = base64url:<32-byte raw Ed25519 public key>
-License:Keys:1:NotBefore    = 2026-07-01T00:00:00Z
-License:Keys:1:NotAfter     = 2027-07-01T00:00:00Z
+Licensing:TrustedKeys:honua-2026-q3 = base64url:<32-byte raw Ed25519 public key>
 ```
 
-Apply the change through the standard configuration channel. No restart
-is required — `IOptionsMonitor` publishes a `LicenseKeysChanged` event
-which invalidates the public-key cache (`license:keys:current`) and the
-license snapshot cache.
+Apply the change through the standard configuration channel and restart each
+instance. Keep the old key configured until every license signed by that key
+has expired or been replaced.
 
 Verify:
 
 ```bash
 curl -H "X-API-Key: <admin-key>" \
-  "https://<host>/api/v1/admin/license/keys"
+  "https://<host>/api/v1/admin/config"
 ```
 
-The response must list both the old `kid` and the new `kid` with their
-windows. If the new key does not appear, inspect the configuration
-provider precedence (env var > file > defaults) and the resilience event
-log (`10100-10199` band).
+The effective configuration must include both the old key id and the new key
+id. If the new key does not appear, inspect configuration provider precedence
+(environment variables > file > defaults).
 
 ### Step 2 — Switch the mint host signing key
 
@@ -148,7 +127,7 @@ License:Signing:PrivateKeyRef = secret://kv/honua/sign/2026-q3
 ```
 
 Apply the change. The mint host's next issuance uses the new private key
-and emits the new `kid` in the JWS header. Adapter-issued files (AWS / Azure)
+and emits the new `keyId` in the license envelope. Adapter-issued files (AWS / Azure)
 re-mint automatically within `Mint:RefreshLeadTimeDays` (default 14 days).
 
 ### Step 3 — Re-issue BYOL files
@@ -167,43 +146,10 @@ indicates customer follow-up is needed.
 ### Step 4 — Retire the old key
 
 Once the longest-lived in-flight file signed by the old `kid` has expired
-plus a margin (default: 30 days past the latest known `exp`), follow the
-path that matches the old key's source.
-
-**Configuration-additive key (most common):**
-
-1. Set `NotAfter` on the old key to a past instant (or remove it from
-   configuration entirely). Use any RFC 3339 timestamp earlier than
-   "now" — for example, with this runbook authored on
-   `2026-04-26`, an unambiguously past placeholder is:
-
-   ```
-   License:Keys:0:NotAfter = 2026-04-01T00:00:00Z   # any instant before "now"
-   ```
-
-2. Confirm via `licenses_validated_total{result="unknown_key_id"}` that no
-   files signed by the retired `kid` are still in flight.
-
-3. After 14 consecutive days at zero rate, remove the retired entry from
-   configuration in a follow-up change.
-
-**Baked-in primary key:**
-
-The baked-in primary cannot be retired by `License:Keys` configuration —
-the resolver fails fast at startup if configuration tries to redefine a
-baked-in `kid`. Retiring it requires a release:
-
-1. Open a `Honua.Core` change that updates the embedded key resource —
-   either tightening the baked-in entry's `NotAfter` to a past instant
-   or replacing the resource entry with the new primary's bytes. Land
-   the change behind the normal review process.
-2. Cut a patched release that ships the updated baked-in resource.
-3. Roll the release across the fleet on the standard cadence. Until
-   every host is on the new release, the retired baked-in `kid` keeps
-   verifying on hosts still running the previous build.
-4. After the rollout completes, confirm
-   `licenses_validated_total{result="unknown_key_id"}` is zero across
-   the fleet for 14 consecutive days, then close the rotation.
+plus a margin (default: 30 days past the latest known `expiresAt`), remove
+`Licensing:TrustedKeys:<old-key-id>` from configuration and restart each
+instance. If any old file is still in flight, the instance logs event `10003`
+(`UnknownKey`) and runs Community mode for that file.
 
 ---
 
@@ -227,18 +173,10 @@ If a private signing key is suspected compromised:
      the lead time is too long for the incident, manually trigger
      `POST /api/v1/admin/license/refresh` for each affected customer or
      shorten the lead time temporarily.
-7. **Retire the compromised `kid`.** If the compromised key is
-   configuration-additive (`License:Keys:N`), set its `NotAfter` to a
-   past instant — the change propagates without a restart. If the
-   compromised key is the **baked-in primary**, configuration cannot
-   retire it; cut an emergency hot-fix release that updates the
-   embedded `Honua.Core` resource (tighten `NotAfter` or replace the
-   entry) and roll the release across the fleet as fast as the change
-   process allows. Until the fleet is fully rolled, the compromised
-   `kid` keeps verifying on hosts still running the previous build —
-   prioritize the rollout accordingly. The retired `kid` is **not**
-   trusted again, even if the private key is later believed safe — we
-   treat compromise as irreversible.
+7. **Retire the compromised `kid`.** Remove
+   `Licensing:TrustedKeys:<compromised-key-id>` from every instance and
+   restart. The retired `kid` is **not** trusted again, even if the private
+   key is later believed safe — treat compromise as irreversible.
 8. **File a public security advisory** if any compromised file may have
    reached customers and could not be re-issued before its `exp`.
 
@@ -270,13 +208,13 @@ exercises:
 
 | Step | Assertion |
 |------|-----------|
-| 1. Bootstrap with `kid=A`. | `licenses_active{edition="enterprise"}` == 1. |
-| 2. Issue file signed by `kid=A`, validate. | `licenses_validated_total{result="valid"}` ticks. |
-| 3. Add `kid=B` to configuration; reload. | Resolver lists both keys. |
-| 4. Issue file signed by `kid=B`, validate. | `licenses_validated_total{result="valid"}` ticks. |
+| 1. Bootstrap with `kid=A`. | Admin status shows the expected edition and `validationState=Valid`. |
+| 2. Issue file signed by `kid=A`, validate. | Startup load or upload succeeds. |
+| 3. Add `kid=B` to configuration; restart. | Files signed by either key validate. |
+| 4. Issue file signed by `kid=B`, validate. | Admin status shows `validationState=Valid`. |
 | 5. Validate the original `kid=A` file. | Still `valid`. |
-| 6. Set `kid=A` `NotAfter` to a past instant. | Resolver returns `null` for `kid=A`. |
-| 7. Validate the original `kid=A` file. | `unknown_key_id`. |
+| 6. Remove `kid=A` from `Licensing:TrustedKeys`; restart. | `kid=A` is no longer trusted. |
+| 7. Validate the original `kid=A` file. | `UnknownKey` validation state. |
 | 8. Validate the `kid=B` file. | Still `valid`. |
 | 9. Remove `kid=A` from configuration. | Resolver lists only `kid=B`. |
 | 10. Validate every file signed by `kid=B`. | All `valid`. |
@@ -321,11 +259,10 @@ curl -H "X-API-Key: <admin-key>" \
   "https://<staging-host>/api/v1/admin/license/status"
 # expect IsValid=true, both kids verified by the resolver
 
-# 6. Set NotAfter on old kid to a past instant
-# (apply the configuration change)
+# 6. Remove old kid from Licensing:TrustedKeys and restart.
 
 # 7. Re-upload the old-kid file; expect IsValid=false with
-# ValidationState="UnknownKeyId" or "Expired"
+# validationState="UnknownKey" or "Expired"
 ```
 
 Capture the manual smoke output in the incident channel before declaring
@@ -371,12 +308,10 @@ after root cause is understood.
 A rotation is complete when:
 
 - The mint host signs every new license with the new `kid`.
-- The fleet's public-key resolver lists both `kid`s with correct
-  windows.
+- The fleet configuration contains the expected trusted key ids.
 - BYOL re-issue cadence has reached 100% of known customers.
-- The retired `kid`'s `NotAfter` has passed and
-  `licenses_validated_total{result="unknown_key_id"}` is zero for 14
-  consecutive days.
+- The retired `kid` has been removed from `Licensing:TrustedKeys` after the
+  final old-key file expired or was replaced.
 - The smoke test was run on the non-production environment within the
   last 30 days.
 - The retired `kid` configuration has been removed in a follow-up change.

@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
-using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Events;
 using Microsoft.Extensions.Options;
@@ -23,8 +22,7 @@ internal sealed class FeatureStreamDependencies
         IOptions<FeatureChangeEventOptions> eventOptions,
         IFilterExpressionService filterExpressionService,
         ILayerCatalog layerCatalog,
-        IGeometryOperationService geometryOperationService,
-        ILicenseStatusProvider licenseStatusProvider)
+        IGeometryOperationService geometryOperationService)
     {
         SessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
         EventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
@@ -33,7 +31,6 @@ internal sealed class FeatureStreamDependencies
         FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         LayerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
         GeometryOperationService = geometryOperationService ?? throw new ArgumentNullException(nameof(geometryOperationService));
-        LicenseStatusProvider = licenseStatusProvider ?? throw new ArgumentNullException(nameof(licenseStatusProvider));
     }
 
     public FeatureStreamSessionManager SessionManager { get; }
@@ -43,5 +40,4 @@ internal sealed class FeatureStreamDependencies
     public IFilterExpressionService FilterExpressionService { get; }
     public ILayerCatalog LayerCatalog { get; }
     public IGeometryOperationService GeometryOperationService { get; }
-    public ILicenseStatusProvider LicenseStatusProvider { get; }
 }

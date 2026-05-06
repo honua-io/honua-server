@@ -20,14 +20,14 @@ namespace Honua.Server.Tests.Features.SpatialAnalytics;
 /// going through the full HTTP pipeline (which would require booting Postgres),
 /// the helper is exercised directly with a stub <see cref="ILicenseStatusProvider"/>.
 /// This proves that <see cref="SpatialAnalyticsRequestHandlers.RequireProEdition"/>
-/// blocks Community licenses with HTTP 403 and lets Pro / Enterprise through.
+/// blocks Community licenses with HTTP 402 and lets Pro / Enterprise through.
 /// </summary>
 [Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsEditionGateTests
 {
     [UnitTest]
     [Protocol(TestProtocols.SpatialAnalytics)]
-    public void RequireProEdition_CommunityEdition_ReturnsForbidden()
+    public void RequireProEdition_CommunityEdition_ReturnsPaymentRequired()
     {
         var context = BuildHttpContext(HonuaEdition.Community);
 
@@ -35,7 +35,7 @@ public sealed class SpatialAnalyticsEditionGateTests
             context, "queryClusters", NullLogger.Instance);
 
         result.Should().NotBeNull();
-        AssertForbidden(result!);
+        AssertPaymentRequired(result!);
     }
 
     [UnitTest]
@@ -74,7 +74,7 @@ public sealed class SpatialAnalyticsEditionGateTests
             context, "queryBufferAggregate", logger: null);
 
         result.Should().NotBeNull();
-        AssertForbidden(result!);
+        AssertPaymentRequired(result!);
     }
 
     private static DefaultHttpContext BuildHttpContext(HonuaEdition edition)
@@ -88,14 +88,14 @@ public sealed class SpatialAnalyticsEditionGateTests
         };
     }
 
-    private static void AssertForbidden(IResult result)
+    private static void AssertPaymentRequired(IResult result)
     {
         // StandardErrorHelpers.CreateForbidden routes through the standard error
         // formatter which produces an IStatusCodeHttpResult variant — the typed
         // status code is the contract we care about regardless of the wrapper.
         if (result is IStatusCodeHttpResult statusCodeResult)
         {
-            statusCodeResult.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+            statusCodeResult.StatusCode.Should().Be(StatusCodes.Status402PaymentRequired);
             return;
         }
 
@@ -103,7 +103,7 @@ public sealed class SpatialAnalyticsEditionGateTests
         // observe the status code regardless of the underlying wrapper type.
         var ctx = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
         result.ExecuteAsync(ctx).GetAwaiter().GetResult();
-        ctx.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        ctx.Response.StatusCode.Should().Be(StatusCodes.Status402PaymentRequired);
     }
 
     private sealed class StubLicenseStatusProvider : ILicenseStatusProvider

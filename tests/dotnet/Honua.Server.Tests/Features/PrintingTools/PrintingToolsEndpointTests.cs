@@ -134,8 +134,8 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        // PDF may be blocked by edition gating (Community edition in tests)
-        // Accept either OK with PDF or Forbidden from edition gating
+        // PDF may be blocked by entitlement gating (Community edition in tests).
+        // Accept either OK with PDF or Payment Required from license gating.
         if (response.StatusCode == HttpStatusCode.OK)
         {
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/pdf");
@@ -149,7 +149,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         }
         else
         {
-            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
         }
     }
 
@@ -203,7 +203,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
-        // Community edition: omitted format must not 403 (PDF gate)
+        // Community edition: omitted format must not trip the PDF entitlement gate.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
@@ -553,10 +553,10 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         layoutOpts.GetProperty("titleText").GetProperty("isVisible").GetBoolean().Should().BeFalse();
         layoutOpts.GetProperty("legendOptions").GetProperty("isVisible").GetBoolean().Should().BeFalse();
 
-        // Default test host runs as Pro edition — all layout templates should be visible
+        // Community mode only exposes the ungated MAP_ONLY template.
         var letterPortrait = templates.EnumerateArray()
             .FirstOrDefault(t => t.GetProperty("layoutTemplate").GetString() == "Letter ANSI A Portrait");
-        letterPortrait.ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        letterPortrait.ValueKind.Should().Be(JsonValueKind.Undefined);
 
         // GP contract requires messages array
         root.TryGetProperty("messages", out var messages).Should().BeTrue();

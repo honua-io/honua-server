@@ -184,7 +184,7 @@ emits event-id `10320`.
 | Validator reports `Expired` for an adapter-issued file. | Adapter has been failing to re-mint for at least `RefreshLeadTime`. | Inspect adapter and reconciler logs (event-id band `10300-10499`). The poller cadence may need shortening. |
 | `RegisterUsage` fails on container start. | Container is not a marketplace-purchased SKU, or task role lacks `aws-marketplace:RegisterUsage`. | Verify the deployment was launched from a marketplace AMI / EKS marketplace add-on. Check the task IAM policy. |
 | Metering buffer depth not draining. | AWS API throttling or transient outage; or worker stalled. | Inspect `marketplace_metering_records_total` by `result`. Restart the metering worker if needed; AWS API outages resolve themselves through the retry-with-backoff loop. |
-| `licenses_validated_total{result="signature_invalid"}` after deploy. | Adapter credentials point at the wrong mint host; mint host signed with a key the customer fleet does not trust. | Confirm `Aws:Marketplace:Mint:BaseUrl` and the public-key set (`License:Keys`). |
+| `licenses_validated_total{result="signature_invalid"}` after deploy. | Adapter credentials point at the wrong mint host; mint host signed with a key the customer fleet does not trust. | Confirm `Aws:Marketplace:Mint:BaseUrl` and the runtime public-key set (`Licensing:TrustedKeys`). |
 
 ### Optional: AWS License Manager seller-issued path
 

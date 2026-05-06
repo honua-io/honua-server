@@ -34,6 +34,11 @@ public sealed class LicenseInfo
     public string? LicensedTo { get; init; }
 
     /// <summary>
+    /// Stable identifier of the loaded license file.
+    /// </summary>
+    public string? LicenseId { get; init; }
+
+    /// <summary>
     /// When the license was issued.
     /// </summary>
     public DateTimeOffset? IssuedAt { get; init; }

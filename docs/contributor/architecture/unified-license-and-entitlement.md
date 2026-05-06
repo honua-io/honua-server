@@ -17,6 +17,12 @@ The design covers three issuance tracks behind a single runtime contract:
 All three tracks emit the same JWS envelope and are validated by one
 `Ed25519LicenseValidator` instance on the runtime hot path.
 
+> Implementation note, ticket #338: the runtime baseline currently implemented
+> in `honua-server` uses a JSON envelope `{ version, keyId, payload, signature }`
+> instead of compact JWS. The signature covers exact payload bytes. The JWS,
+> mint-host, marketplace, public-key inspection, and counter details below remain
+> the broader target architecture for follow-on tickets.
+
 ---
 
 ## 1. Canonical License Envelope

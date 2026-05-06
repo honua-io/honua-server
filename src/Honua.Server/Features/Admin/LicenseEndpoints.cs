@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -76,21 +78,7 @@ internal static partial class LicenseEndpoints
         {
             var info = await licenseManager.GetLicenseInfoAsync(context.RequestAborted);
 
-            var response = new LicenseStatusResponse
-            {
-                Edition = info.Edition,
-                ExpiresAt = info.ExpiresAt,
-                IsValid = info.IsValid,
-                ValidationState = info.ValidationState,
-                LicensedTo = info.LicensedTo,
-                IssuedAt = info.IssuedAt,
-                Entitlements = info.Entitlements.Select(e => new EntitlementResponse
-                {
-                    Key = e.Key,
-                    Name = e.Name,
-                    IsActive = e.IsActive,
-                }).ToList(),
-            };
+            var response = ToStatusResponse(info);
 
             LicenseLog.LicenseStatusQueried(logger, info.Edition, info.IsValid);
             return TypedResults.Ok(ApiResponse<LicenseStatusResponse>.CreateSuccess(response));
@@ -125,24 +113,15 @@ internal static partial class LicenseEndpoints
 
             var info = await licenseManager.ApplyLicenseAsync(licenseData, context.RequestAborted);
 
-            var response = new LicenseStatusResponse
-            {
-                Edition = info.Edition,
-                ExpiresAt = info.ExpiresAt,
-                IsValid = info.IsValid,
-                ValidationState = info.ValidationState,
-                LicensedTo = info.LicensedTo,
-                IssuedAt = info.IssuedAt,
-                Entitlements = info.Entitlements.Select(e => new EntitlementResponse
-                {
-                    Key = e.Key,
-                    Name = e.Name,
-                    IsActive = e.IsActive,
-                }).ToList(),
-            };
+            var response = ToStatusResponse(info);
 
             LicenseLog.LicenseUploaded(logger, info.Edition);
             return TypedResults.Ok(ApiResponse<LicenseStatusResponse>.CreateSuccess(response));
+        }
+        catch (LicenseUploadRejectedException ex)
+        {
+            LicenseLog.LicenseUploadFailed(logger, ex.Message);
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
         }
         catch (ArgumentException ex)
         {
@@ -188,5 +167,31 @@ internal static partial class LicenseEndpoints
                 detail: "An internal error occurred while retrieving entitlements.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static LicenseStatusResponse ToStatusResponse(LicenseInfo info)
+    {
+        var daysUntilExpiry = info.ExpiresAt.HasValue
+            ? (int)Math.Ceiling((info.ExpiresAt.Value - DateTimeOffset.UtcNow).TotalDays)
+            : (int?)null;
+
+        return new LicenseStatusResponse
+        {
+            Edition = info.Edition,
+            ExpiresAt = info.ExpiresAt,
+            IsValid = info.IsValid,
+            ValidationState = info.ValidationState,
+            LicensedTo = info.LicensedTo,
+            LicenseId = info.LicenseId,
+            IssuedAt = info.IssuedAt,
+            DaysUntilExpiry = daysUntilExpiry,
+            ExpiryWarning = daysUntilExpiry is <= 30,
+            Entitlements = info.Entitlements.Select(e => new EntitlementResponse
+            {
+                Key = e.Key,
+                Name = e.Name,
+                IsActive = e.IsActive,
+            }).ToList(),
+        };
     }
 }

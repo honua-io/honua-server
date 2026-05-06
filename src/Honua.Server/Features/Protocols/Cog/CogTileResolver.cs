@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
@@ -30,7 +29,7 @@ internal sealed class CogTileResolver : ICogTileResolver
     private readonly IEnumerable<ICloudRangeReader> _rangeReaders;
     private readonly ICogMetadataReader _metadataReader;
     private readonly ICogStore _cogStore;
-    private readonly ILicenseStatusProvider? _licenseStatusProvider;
+    private readonly ILicenseEntitlementService? _licenseEntitlementService;
     private readonly IMemoryCache _cache;
     private readonly ILogger<CogTileResolver> _logger;
 
@@ -40,12 +39,12 @@ internal sealed class CogTileResolver : ICogTileResolver
         ICogStore cogStore,
         IMemoryCache cache,
         ILogger<CogTileResolver> logger,
-        ILicenseStatusProvider? licenseStatusProvider = null)
+        ILicenseEntitlementService? licenseEntitlementService = null)
     {
         _rangeReaders = rangeReaders;
         _metadataReader = metadataReader;
         _cogStore = cogStore;
-        _licenseStatusProvider = licenseStatusProvider;
+        _licenseEntitlementService = licenseEntitlementService;
         _cache = cache;
         _logger = logger;
     }
@@ -152,11 +151,11 @@ internal sealed class CogTileResolver : ICogTileResolver
             return new CogTileLookup(null, false);
         }
 
-        // Edition gate: COG serving requires Pro
-        if (_licenseStatusProvider != null)
+        // Entitlement gate: direct cloud COG serving is a paid runtime capability.
+        if (_licenseEntitlementService != null)
         {
-            var license = _licenseStatusProvider.GetCurrentStatus();
-            if (license.Edition < HonuaEdition.Pro)
+            var decision = _licenseEntitlementService.CheckEntitlement("raster.cloud-cog-serving");
+            if (!decision.IsActive)
             {
                 return new CogTileLookup(null, true);
             }

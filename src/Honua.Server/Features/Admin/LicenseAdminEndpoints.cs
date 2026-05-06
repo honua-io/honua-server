@@ -5,6 +5,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -38,26 +39,44 @@ internal static class LicenseAdminEndpoints
         group.MapPost("/upload", HandleUploadLicense)
             .WithDisplayName("Upload License File")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Produces<ApiResponse<LicenseUploadResponse>>(StatusCodes.Status501NotImplemented);
+            .Produces<ApiResponse<LicenseUploadResponse>>()
+            .Produces<ApiResponse<LicenseUploadResponse>>(StatusCodes.Status400BadRequest);
     }
 
     private static IResult HandleGetLicenseStatus(
-        [FromServices] ILicenseStatusProvider licenseProvider,
+        [FromServices] ILicenseEntitlementService entitlementService,
         [FromServices] ILogger<LicenseAdminEndpointsLog> logger)
     {
         AdminLog.LicenseStatusQueried(logger);
 
-        var status = licenseProvider.GetCurrentStatus();
+        var snapshot = entitlementService.GetSnapshot();
+        var status = new LicenseStatus(
+            snapshot.Edition,
+            snapshot.IsValid,
+            snapshot.ExpiresAt,
+            snapshot.LicensedTo,
+            snapshot.ValidationState,
+            snapshot.LicenseId,
+            snapshot.IssuedAt,
+            snapshot.Entitlements);
 
         var response = new LicenseStatusResponse
         {
             Edition = status.Edition.ToString(),
             IsValid = status.IsValid,
             ExpiresAt = status.ExpiresAt,
+            LicenseId = status.LicenseId,
             LicensedTo = status.LicensedTo,
-            ValidationState = status.IsValid ? "valid" : "invalid",
+            IssuedAt = status.IssuedAt,
+            ValidationState = status.ValidationState.ToString(),
             DaysUntilExpiry = status.DaysUntilExpiry,
-            ExpiryWarning = status.DaysUntilExpiry is <= 30
+            ExpiryWarning = status.DaysUntilExpiry is <= 30,
+            Entitlements = snapshot.Entitlements.Select(e => new EntitlementResponse
+            {
+                Key = e.Key,
+                Name = e.Name,
+                IsActive = e.IsActive,
+            }).ToList(),
         };
 
         return Results.Json(
@@ -66,25 +85,25 @@ internal static class LicenseAdminEndpoints
     }
 
     private static IResult HandleGetEntitlements(
-        [FromServices] ILicenseStatusProvider licenseProvider,
+        [FromServices] ILicenseEntitlementService entitlementService,
         [FromServices] ILogger<LicenseAdminEndpointsLog> logger)
     {
         AdminLog.LicenseEntitlementsQueried(logger);
 
-        var status = licenseProvider.GetCurrentStatus();
+        var snapshot = entitlementService.GetSnapshot();
         var features = FeatureCatalog.All.Select(f => new FeatureEntitlementItem
         {
             Key = f.Key,
             DisplayName = f.DisplayName,
             Category = f.Category,
-            IsEnabled = status.Edition >= f.MinimumEdition,
+            IsEnabled = snapshot.HasEntitlement(f.Key),
             MinimumEdition = f.MinimumEdition.ToString(),
-            UpgradeRequired = status.Edition < f.MinimumEdition
+            UpgradeRequired = !snapshot.HasEntitlement(f.Key)
         }).ToArray();
 
         var response = new LicenseEntitlementsResponse
         {
-            Edition = status.Edition.ToString(),
+            Edition = snapshot.Edition.ToString(),
             Features = features
         };
 
@@ -115,7 +134,7 @@ internal static class LicenseAdminEndpoints
             return Results.Json(
                 new ApiResponse<LicenseUploadResponse> { Success = false, Data = response },
                 LicenseAdminJsonContext.Default.ApiResponseLicenseUploadResponse,
-                statusCode: StatusCodes.Status501NotImplemented);
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         return Results.Json(

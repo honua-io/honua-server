@@ -3,7 +3,9 @@
 
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Licensing;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -79,6 +81,7 @@ internal static class HealthEndpoints
         IReadinessCheckService readinessCheckService,
         ILoggerFactory loggerFactory,
         ICacheRefreshCoordinator? refreshCoordinator,
+        ILicenseEntitlementService licenseEntitlementService,
         CancellationToken cancellationToken)
     {
         try
@@ -95,6 +98,7 @@ internal static class HealthEndpoints
                 Timestamp = DateTimeOffset.UtcNow,
                 Status = readiness.IsReady ? "healthy" : "not_ready",
                 PerformanceScore = CalculateBasicPerformanceScore(totalMemory),
+                License = FileBackedLicenseService.ToHealthSummary(licenseEntitlementService.GetSnapshot()),
                 Metrics = new HealthPerformanceMetrics
                 {
                     QueryPerformance = performanceMetrics,

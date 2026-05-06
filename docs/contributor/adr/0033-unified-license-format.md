@@ -6,7 +6,9 @@ Accepted
 
 ## Context
 
-ADR-0024 established the open-core edition model and committed to offline-capable license enforcement. The licensing slice in `Honua.Core/Features/Licensing/` (`ILicenseManager`, `ILicenseStatusProvider`, `LicenseInfo`, `Entitlement`, `FeatureCatalog`, `HonuaEdition`) reserved the runtime contract but ships no validator, no signer, no signed-file format, and no JSON serialization context. The `Honua.Server/Features/Admin/Services/InMemoryLicenseManager` and `ConfigurationLicenseStatusProvider` are placeholders flagged for replacement when issue #338 lands.
+ADR-0024 established the open-core edition model and committed to offline-capable license enforcement. The licensing slice in `Honua.Core/Features/Licensing/` (`ILicenseManager`, `ILicenseStatusProvider`, `LicenseInfo`, `Entitlement`, `FeatureCatalog`, `HonuaEdition`) reserved the runtime contract.
+
+> Implementation note, ticket #338: `honua-server` now ships the runtime baseline for offline license loading. The active runtime file is a JSON envelope `{ version, keyId, payload, signature }`, with `payload` and `signature` Base64URL encoded and Ed25519 verification over the exact payload bytes. Compact JWS, mint-host, marketplace, public-key inspection, and Prometheus counter work remains follow-on architecture unless a later ticket updates this ADR.
 
 Honua now needs to ship through three issuance tracks at once:
 
@@ -114,7 +116,7 @@ Implementation classes in `Honua.Server` are `internal sealed`; only abstraction
 
 ### Migration
 
-The existing `Honua.Core/Features/Licensing/` slice exposes only abstractions and domain types; `InMemoryLicenseManager` and `ConfigurationLicenseStatusProvider` are placeholders flagged for #338. **No license file format has shipped from this repo yet.** "Migration" here means: design the format such that the BYOL portal's first issued file already conforms.
+The ticket #338 runtime baseline replaces the earlier placeholder manager/provider with a file-backed Ed25519 validator and in-memory entitlement snapshot. "Migration" here means: keep any legacy private-preview file path bounded while the BYOL portal issues files matching the runtime envelope.
 
 If the BYOL portal in a separate repo has shipped a private-preview file format, the dual-format verifier path documented in the migration runbook accepts both formats during a 6-month grace window (configurable). The verifier picks the canonical format if both parse; otherwise emits a deprecation warning and accepts legacy. After the grace window the legacy branch is removed in a single PR.
 
@@ -124,7 +126,7 @@ This contract is a coordination ticket whose code deliverables exceed a single P
 
 1. License format ADR + design doc (this PR).
 2. Validator + JSON context — `Honua.Core/Features/Licensing/{Validation,Serialization,Domain/{LicenseClaims,LicenseEnvelope,LicenseValidationResult},Abstractions/{ILicenseValidator,ILicensePublicKeyResolver}}`. Pure unit tests.
-3. License store + bootstrap + hot reload — `Honua.Server/Features/Licensing/Storage/`. Replaces `InMemoryLicenseManager` against the new validator.
+3. License store + bootstrap + hot reload — ticket #338 lands startup load, upload, status, and entitlement gates. File watch/hot reload remains follow-on work.
 4. Mint library — `Honua.Core/Features/Licensing/Mint/` + `Configuration/LicenseSigningOptions`. AOT-safe. Disabled by default.
 5. Mint host endpoints — `Honua.Server/Features/Licensing/Mint/`. Admin-scoped, M2M-authenticated.
 6. AWS marketplace adapter (entitlements + mint path) — `Honua.Server/Features/Licensing/Marketplace/Aws/`. ALM seller-issued path deferred.

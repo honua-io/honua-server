@@ -44,6 +44,11 @@ public sealed class LicenseStatusResponse
     public string? LicensedTo { get; init; }
 
     /// <summary>
+    /// Stable identifier of the loaded license.
+    /// </summary>
+    public string? LicenseId { get; init; }
+
+    /// <summary>
     /// When the license was issued.
     /// </summary>
     public DateTimeOffset? IssuedAt { get; init; }

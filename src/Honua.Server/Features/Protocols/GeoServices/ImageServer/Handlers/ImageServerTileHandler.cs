@@ -156,7 +156,10 @@ internal sealed class ImageServerTileHandler
                 if (lookup.EditionGateHit)
                 {
                     scope.WithTag("edition.gated", "true");
-                    return Results.StatusCode(StatusCodes.Status402PaymentRequired);
+                    return StandardErrorHelpers.CreatePaymentRequired(
+                        context,
+                        "COG Serving requires an active Pro entitlement. Install a license that includes 'raster.cloud-cog-serving'.",
+                        ["entitlement: raster.cloud-cog-serving"]);
                 }
 
                 if (lookup.Result != null)

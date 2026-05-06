@@ -400,9 +400,19 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
-// Register license status provider (reads edition from AlertOptions until #338)
-builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseStatusProvider,
-    Honua.Server.Features.Admin.ConfigurationLicenseStatusProvider>();
+builder.Services.Configure<Honua.Server.Features.Infrastructure.Licensing.LicenseOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Licensing.LicenseOptions.SectionName));
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Licensing.IEd25519Verifier,
+    Honua.Server.Features.Infrastructure.Licensing.BouncyCastleEd25519Verifier>();
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService>();
+builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseEntitlementService>(sp =>
+    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService>());
+builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseStatusProvider>(sp =>
+    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService>());
+builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseManager>(sp =>
+    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService>());
+builder.Services.AddHostedService(sp =>
+    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService>());
 
 // Register named HTTP client for identity provider connectivity tests with resilience
 builder.Services.AddResilientHttpClient(
@@ -421,9 +431,7 @@ builder.Services.AddResilientHttpClient(
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
 
-// Register control plane IAM services (in-memory implementations until #338, #496, #498, #355 land)
-builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseManager,
-    Honua.Server.Features.Admin.Services.InMemoryLicenseManager>();
+// Register control plane IAM services (in-memory implementations until #496, #498, #355 land)
 builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IOidcProviderStore,
     Honua.Server.Features.Admin.Services.InMemoryOidcProviderStore>();
 builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserStore,
@@ -817,6 +825,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Licensing.LicenseFileJsonContext.Default,
         Honua.Server.Features.Admin.Models.IdentityAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.CacheAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.GeocodingAdminJsonContext.Default,

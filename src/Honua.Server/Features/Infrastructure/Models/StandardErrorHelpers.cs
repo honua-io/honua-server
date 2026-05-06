@@ -52,6 +52,19 @@ internal static class StandardErrorHelpers
     }
 
     /// <summary>
+    /// Creates a Payment Required error response.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Payment Required response.</returns>
+    internal static IResult CreatePaymentRequired(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = StandardErrorResponse.PaymentRequired(detail, additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
     /// Creates a Not Found error response.
     /// </summary>
     /// <param name="context">The HTTP context for protocol detection.</param>

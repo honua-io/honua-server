@@ -9,6 +9,7 @@ internal static class ProtocolRequestClassifier
     {
         StatusCodes.Status400BadRequest => "BadRequest",
         StatusCodes.Status401Unauthorized => "Unauthorized",
+        StatusCodes.Status402PaymentRequired => "PaymentRequired",
         StatusCodes.Status403Forbidden => "Forbidden",
         StatusCodes.Status404NotFound => "ResourceNotFound",
         StatusCodes.Status408RequestTimeout => "RequestTimeout",

@@ -8,12 +8,11 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Services;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.PrintingTools.Layout;
@@ -112,22 +111,17 @@ internal static class PrintingToolsEndpoints
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var templateNames = LayoutTemplateRegistry.GetTemplateNames();
 
-        // Resolve edition to filter advertised choices.
-        // Uses ILicenseStatusProvider (config-driven, matches StaticMap and admin read endpoints).
-        // ILicenseManager is a separate in-memory placeholder for the mutable admin API.
-        // #338 will unify both behind a single persistent license source.
-        var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
-        var edition = licenseProvider.GetCurrentStatus().Edition;
-        var isPro = edition >= HonuaEdition.Pro;
+        var pdfEnabled = LicenseGate.IsEntitlementActive(context.RequestServices, "printing.pdf-output");
+        var layoutTemplatesEnabled = LicenseGate.IsEntitlementActive(context.RequestServices, "printing.layout-templates");
 
-        var formatChoices = isPro
+        var formatChoices = pdfEnabled
             ? new[] { PrintOutputFormat.Pdf, PrintOutputFormat.Png32, PrintOutputFormat.Jpg }
             : new[] { PrintOutputFormat.Png32, PrintOutputFormat.Jpg };
         // defaultFormat must match ResolveFormat's fallback (PNG32) so clients
         // that omit the Format parameter get the same result the metadata promises.
         // PDF is still available in the choiceList for Pro editions.
         var defaultFormat = PrintOutputFormat.Png32;
-        var templateChoices = isPro ? [.. templateNames] : new[] { "MAP_ONLY" };
+        var templateChoices = layoutTemplatesEnabled ? [.. templateNames] : new[] { "MAP_ONLY" };
 
         var response = new PrintServiceInfoResponse
         {
@@ -178,9 +172,7 @@ internal static class PrintingToolsEndpoints
     private static async Task<IResult> HandleGetLayoutTemplatesInfo(HttpContext context, CancellationToken cancellationToken)
     {
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
-        var edition = licenseProvider.GetCurrentStatus().Edition;
-        var isPro = edition >= HonuaEdition.Pro;
+        var isPro = LicenseGate.IsEntitlementActive(context.RequestServices, "printing.layout-templates");
 
         var allTemplates = LayoutTemplateRegistry.GetTemplates();
         var templates = isPro ? allTemplates : allTemplates.Where(t => t.IsMapOnly).ToList();
@@ -276,13 +268,30 @@ internal static class PrintingToolsEndpoints
 
         var dpi = PrintingToolsRequestHandlers.ResolveDpi(webMap);
 
-        var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
-        var edition = licenseProvider.GetCurrentStatus().Edition;
-        var editionError = PrintingToolsRequestHandlers.ValidateEdition(
-            template, resolvedFormat, edition, logger);
-        if (editionError is not null)
+        if (!template.IsMapOnly)
         {
-            return (null, StandardErrorHelpers.CreateForbidden(context, editionError));
+            var entitlementError = LicenseGate.RequireEntitlement(
+                context,
+                "printing.layout-templates",
+                "Print layout templates",
+                logger);
+            if (entitlementError is not null)
+            {
+                return (null, entitlementError);
+            }
+        }
+
+        if (resolvedFormat.Equals(PrintOutputFormat.Pdf, StringComparison.OrdinalIgnoreCase))
+        {
+            var entitlementError = LicenseGate.RequireEntitlement(
+                context,
+                "printing.pdf-output",
+                "PDF print output",
+                logger);
+            if (entitlementError is not null)
+            {
+                return (null, entitlementError);
+            }
         }
 
         return (new ValidatedPrintRequest(webMap, resolvedFormat, resolvedTemplate, dpi, logger), null);

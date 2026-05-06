@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Licensing;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -14,6 +15,8 @@ internal sealed class HealthPerformanceMetricsResponse
     public required double PerformanceScore { get; init; }
 
     public required HealthPerformanceMetrics Metrics { get; init; }
+
+    public required LicenseHealthSummary License { get; init; }
 }
 
 internal sealed class HealthPerformanceMetrics

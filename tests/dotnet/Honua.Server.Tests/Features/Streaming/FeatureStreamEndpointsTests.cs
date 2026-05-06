@@ -15,6 +15,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Tests.Features.Licensing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -33,7 +34,8 @@ namespace Honua.Server.Tests.Features.Streaming;
 [Operation(Operations.Streaming)]
 public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro));
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
@@ -109,16 +111,18 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_OversizedControlFrame_ReturnsErrorAndCloses()
     {
-        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, configBuilder) =>
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureWebHost(builder =>
             {
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
-                    ["FeatureStreaming:MaxControlFrameBytes"] = "256"
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["FeatureStreaming:MaxControlFrameBytes"] = "256"
+                    });
                 });
             });
-        });
 
         await fixture.InitializeAsync();
         try
@@ -157,17 +161,19 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_SubscriptionLimit_RejectsExcessSubscribesWithError()
     {
-        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, configBuilder) =>
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureWebHost(builder =>
             {
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
-                    // Default subscription occupies one slot; two more reaches the cap.
-                    ["FeatureStreaming:MaxSubscriptionsPerSession"] = "3"
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        // Default subscription occupies one slot; two more reaches the cap.
+                        ["FeatureStreaming:MaxSubscriptionsPerSession"] = "3"
+                    });
                 });
             });
-        });
 
         await fixture.InitializeAsync();
         try
@@ -215,16 +221,18 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_OversizedSubscriptionId_ReturnsErrorAndStaysOpen()
     {
-        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, configBuilder) =>
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureWebHost(builder =>
             {
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
-                    ["FeatureStreaming:MaxSubscriptionIdLength"] = "16"
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["FeatureStreaming:MaxSubscriptionIdLength"] = "16"
+                    });
                 });
             });
-        });
 
         await fixture.InitializeAsync();
         try
@@ -668,17 +676,19 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_ControlSubscription_RecoversCrossNodeEventViaDurablePoll()
     {
-        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, configBuilder) =>
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureWebHost(builder =>
             {
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
-                    // Tight poll interval so the test does not have to wait the default.
-                    ["FeatureStreaming:CrossNodeSyncInterval"] = "00:00:00.100"
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        // Tight poll interval so the test does not have to wait the default.
+                        ["FeatureStreaming:CrossNodeSyncInterval"] = "00:00:00.100"
+                    });
                 });
             });
-        });
 
         await fixture.InitializeAsync();
         try
@@ -874,18 +884,20 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_DurablePoll_FiresUnderContinuousOutboundTraffic()
     {
-        var fixture = new WebAppFixture().ConfigureWebHost(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, configBuilder) =>
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureWebHost(builder =>
             {
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
-                    // Tight interval so the test does not pay the default cadence
-                    // and can verify recovery within a bounded budget.
-                    ["FeatureStreaming:CrossNodeSyncInterval"] = "00:00:00.150"
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        // Tight interval so the test does not pay the default cadence
+                        // and can verify recovery within a bounded budget.
+                        ["FeatureStreaming:CrossNodeSyncInterval"] = "00:00:00.150"
+                    });
                 });
             });
-        });
 
         await fixture.InitializeAsync();
         try
@@ -1012,6 +1024,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task Stream_WithoutAuth_ReturnsUnauthorized()
     {
         var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -1037,10 +1050,10 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
-    public async Task Stream_CommunityEdition_ReturnsForbidden()
+    public async Task Stream_CommunityEdition_ReturnsPaymentRequired()
     {
         var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseStatusProvider>(new TestLicenseStatusProvider(HonuaEdition.Community));
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Community));
 
         await fixture.InitializeAsync();
 
@@ -1051,7 +1064,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 
             using var response = await fixture.CreateAdminClient().SendAsync(request);
 
-            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
         }
         finally
         {
@@ -1148,6 +1161,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task Stream_WithoutAuthAndEmptyLayersParam_DoesNotBypassUnfilteredGate()
     {
         var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -1232,6 +1246,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task Stream_WithProjectedBboxLayer_AllowsSseHandshake()
     {
         var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ReplaceService<ILayerCatalog>(new SpatialReferenceTestLayerCatalog());
 
         await fixture.InitializeAsync();
@@ -1277,6 +1292,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task Stream_WithTemporalFilterOnNonTimeAwareLayer_ReturnsBadRequest()
     {
         var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ReplaceService<ILayerCatalog>(new TestLayerCatalog());
 
         await fixture.InitializeAsync();
@@ -1305,6 +1321,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task Stream_WithTemporalFilterOnTimeAwareLayer_AllowsSseHandshake()
     {
         var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ReplaceService<ILayerCatalog>(new TimeAwareStreamLayerCatalog());
 
         await fixture.InitializeAsync();
@@ -1458,7 +1475,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task Capabilities_CommunityEdition_DisablesStreamingMetadata()
     {
         var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseStatusProvider>(new TestLicenseStatusProvider(HonuaEdition.Community));
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Community));
 
         await fixture.InitializeAsync();
 
@@ -1490,6 +1507,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task Capabilities_OmitsLayersWhoseServicePolicyDenies()
     {
         var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ReplaceService<ILayerCatalog>(new ServiceLevelAccessStreamLayerCatalog());
 
         await fixture.InitializeAsync();
@@ -1524,6 +1542,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task Stream_WithServiceIdAndForeignLayer_ReturnsBadRequest()
     {
         var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ReplaceService<ILayerCatalog>(new ServiceLevelAccessStreamLayerCatalog());
 
         await fixture.InitializeAsync();
@@ -1558,6 +1577,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task Capabilities_OmitsLayersTheCallerCannotAccess()
     {
         var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ReplaceService<ILayerCatalog>(new MixedAccessStreamLayerCatalog());
 
         await fixture.InitializeAsync();
@@ -2161,16 +2181,18 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     private sealed record SseEvent(string EventName, JsonElement Data);
 
     private static WebAppFixture CreateLimitedStreamingFixture(int maxConcurrentSessions)
-        => new WebAppFixture().ConfigureWebHost(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, configBuilder) =>
+        => new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureWebHost(builder =>
             {
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
-                    ["FeatureStreaming:MaxConcurrentSessions"] = maxConcurrentSessions.ToString(CultureInfo.InvariantCulture)
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["FeatureStreaming:MaxConcurrentSessions"] = maxConcurrentSessions.ToString(CultureInfo.InvariantCulture)
+                    });
                 });
             });
-        });
 
     private static async Task WaitForSessionAsync(
         FeatureStreamSessionManager manager, string clientLabel, CancellationToken ct)
@@ -2184,17 +2206,6 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 
             await Task.Delay(20, ct);
         }
-    }
-
-    private sealed class TestLicenseStatusProvider(HonuaEdition edition) : ILicenseStatusProvider
-    {
-        public LicenseStatus GetCurrentStatus()
-            => new(edition, IsValid: true, ExpiresAt: null, LicensedTo: null);
-
-        public Task<LicenseUploadResult> UploadLicenseAsync(
-            Stream licenseStream,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(new LicenseUploadResult(false, "Not supported in tests."));
     }
 
     // Two services where service "restricted-svc" has a role-gated access

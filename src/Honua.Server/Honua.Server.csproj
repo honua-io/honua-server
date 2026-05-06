@@ -44,6 +44,7 @@
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="BouncyCastle.Cryptography" />
     <PackageReference Include="Geospatial.Grpc" />
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.AspNetCore" />

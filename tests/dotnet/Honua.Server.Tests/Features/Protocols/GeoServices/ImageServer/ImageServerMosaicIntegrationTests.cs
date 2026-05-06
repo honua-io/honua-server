@@ -9,6 +9,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Server.Tests.Features.Licensing;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -131,7 +132,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
     [Operation(Operations.Identify)]
-    public async Task Identify_WithTimeOnCommunityEdition_ReturnsForbidden()
+    public async Task Identify_WithTimeOnCommunityEdition_ReturnsPaymentRequired()
     {
         var fixture = await CreateFixtureAsync(HonuaEdition.Community).ConfigureAwait(false);
         try
@@ -140,7 +141,7 @@ public sealed class ImageServerMosaicIntegrationTests
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
                 "?geometry=1.5,1&geometryType=esriGeometryPoint&time=2024-02-15T00:00:00Z&f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
         }
         finally
         {
@@ -253,7 +254,7 @@ public sealed class ImageServerMosaicIntegrationTests
         var fixture = new WebAppFixture();
         if (edition.HasValue)
         {
-            fixture.ReplaceService<ILicenseStatusProvider>(new StubLicenseStatusProvider(edition.Value));
+            fixture.ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(edition.Value));
         }
 
         await fixture.InitializeAsync().ConfigureAwait(false);
@@ -261,14 +262,4 @@ public sealed class ImageServerMosaicIntegrationTests
         return fixture;
     }
 
-    private sealed class StubLicenseStatusProvider(HonuaEdition edition) : ILicenseStatusProvider
-    {
-        public LicenseStatus GetCurrentStatus()
-            => new(edition, IsValid: true, ExpiresAt: null, LicensedTo: "test");
-
-        public Task<LicenseUploadResult> UploadLicenseAsync(
-            Stream licenseStream,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(new LicenseUploadResult(false, "Stub does not support upload."));
-    }
 }
