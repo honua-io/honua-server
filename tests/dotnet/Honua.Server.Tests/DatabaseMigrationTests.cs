@@ -148,6 +148,90 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DbUpMigrations_MobileOfflineDemoSeed_AppliesToCanonicalSchema()
+    {
+        // Arrange
+        var connectionStringBuilder = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            SearchPath = $"{_schemaName},public"
+        };
+
+        var upgrader = DeployChanges.To
+            .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
+            .JournalToPostgresqlTable(_schemaName, "schema_versions")
+            .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
+            .WithTransaction()
+            .Build();
+
+        var migrationResult = upgrader.PerformUpgrade();
+        migrationResult.Successful.Should().BeTrue($"migrations should complete successfully. Error: {migrationResult.Error}");
+
+        var baselineSeedPath = ResolveRepositoryPath("tests/seed/mobile-offline-demo-v1.sql");
+        var conflictSeedPath = ResolveRepositoryPath("tests/seed/mobile-offline-demo-conflict-delta.sql");
+
+        await using var connection = await _postgres.GetConnectionAsync(_schemaName);
+
+        // Act
+        await ExecuteSqlFileAsync(connection, baselineSeedPath);
+        await ExecuteSqlFileAsync(connection, conflictSeedPath);
+
+        // Assert
+        await using var countCmd = connection.CreateCommand();
+        countCmd.CommandText = """
+            SELECT COUNT(*)
+            FROM features
+            WHERE layer_id IN (68910, 68920)
+            """;
+        var featureCount = (long)(await countCmd.ExecuteScalarAsync())!;
+        featureCount.Should().Be(5, "mobile offline baseline should seed the deterministic edit and context records");
+
+        await using var conflictCmd = connection.CreateCommand();
+        conflictCmd.CommandText = """
+            SELECT attributes ->> 'sync_version'
+            FROM features
+            WHERE layer_id = 68910
+              AND objectid = 6891002
+            """;
+        var syncVersion = (string?)await conflictCmd.ExecuteScalarAsync();
+        syncVersion.Should().Be("2", "conflict delta should advance the deterministic server-side conflict target");
+
+        await using var serviceCmd = connection.CreateCommand();
+        serviceCmd.CommandText = """
+            SELECT COUNT(*)
+            FROM honua.services s
+            JOIN honua.service_layers sl ON sl.service_name = s.service_name
+            JOIN honua.layers l ON l.layer_id = sl.layer_id
+            WHERE s.service_name = 'mobile_offline_demo'
+              AND l.layer_id IN (68910, 68920)
+            """;
+        var serviceLayerCount = (long)(await serviceCmd.ExecuteScalarAsync())!;
+        serviceLayerCount.Should().Be(2, "fixture service should expose both mobile offline layers");
+
+        await using var accessPolicyCmd = connection.CreateCommand();
+        accessPolicyCmd.CommandText = """
+            SELECT metadata #>> '{accessPolicy,allowAnonymousWrite}'
+            FROM honua.services
+            WHERE service_name = 'mobile_offline_demo'
+            """;
+        var allowAnonymousWrite = (string?)await accessPolicyCmd.ExecuteScalarAsync();
+        allowAnonymousWrite.Should().Be("true", "fixture writes and replica sync should not require cloud-only credentials");
+
+        await using var storageCmd = connection.CreateCommand();
+        storageCmd.CommandText = """
+            SELECT COUNT(*)
+            FROM honua.layers
+            WHERE layer_id IN (68910, 68920)
+              AND table_schema = 'public'
+              AND table_name = 'features'
+              AND primary_key_column = 'objectid'
+              AND geometry_column = 'geometry'
+              AND storage_srid = 4326
+            """;
+        var storageBindingCount = (long)(await storageCmd.ExecuteScalarAsync())!;
+        storageBindingCount.Should().Be(2, "fixture layers should declare provider-ready storage bindings");
+    }
+
+    [Fact]
     public async Task DbUpMigrations_WithInvalidConnectionString_FailsGracefully()
     {
         // Arrange
@@ -164,5 +248,28 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         // Assert
         result.Successful.Should().BeFalse("migration should fail with invalid connection");
         result.Error.Should().NotBeNull("error details should be provided");
+    }
+
+    private static string ResolveRepositoryPath(string relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+            {
+                return Path.Combine(directory.FullName, relativePath);
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException($"Unable to locate repository root for {relativePath}.");
+    }
+
+    private static async Task ExecuteSqlFileAsync(Npgsql.NpgsqlConnection connection, string path)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = await File.ReadAllTextAsync(path);
+        await command.ExecuteNonQueryAsync();
     }
 }

@@ -14,7 +14,7 @@ This fixture gives mobile and SDK agents a deterministic Honua server dataset fo
 - Package id: `mobile-offline-field-ops-v1`
 - Extent: `[-158.1250, 21.2600, -157.7000, 21.5200]`
 
-The service metadata stores a provisional offline manifest under `metadata.demoFixture.offlinePackageManifest`. The layer metadata stores form/schema hints under `metadata.form` and per-layer offline hints under `metadata.offline`.
+The service metadata stores a provisional offline manifest under `metadata.demoFixture.offlinePackageManifest`. The layer metadata stores form/schema hints under `metadata.form` and per-layer offline hints under `metadata.offline`. The fixture is intentionally public and sets `accessPolicy.allowAnonymousWrite=true` so disconnected edit, replica, and conflict harnesses can run against local and staging demo stacks without cloud-only credentials.
 
 ## Local Run
 
@@ -50,7 +50,7 @@ Apply the conflict delta only after the mobile harness has downloaded the baseli
 psql "$HONUA_DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/seed/mobile-offline-demo-conflict-delta.sql
 ```
 
-Rerunning the baseline seed resets the fixture. The seed deletes only `mobile_offline_demo`, layers `68910`/`68920`, and the fixture-owned feature IDs before reinserting the baseline state.
+Rerunning the baseline seed resets the fixture. The seed deletes only `mobile_offline_demo`, layers `68910`/`68920`, and the fixture-owned feature IDs before reinserting the baseline state. It also applies idempotent catalog-column compatibility DDL for older demo images before inserting rows, aligning them with the canonical provider-binding columns used by current migrations.
 
 ## API Smoke Paths
 

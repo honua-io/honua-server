@@ -7,6 +7,33 @@
 
 BEGIN;
 
+ALTER TABLE IF EXISTS honua.services
+    ADD COLUMN IF NOT EXISTS metadata JSONB;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS table_schema TEXT NOT NULL DEFAULT current_schema();
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS primary_key_column TEXT NOT NULL DEFAULT 'objectid';
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS geometry_column TEXT DEFAULT 'geometry';
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS storage_srid INT;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS temporal_column TEXT;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS storage_options JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS metadata JSONB;
+
+ALTER TABLE IF EXISTS honua.layers
+    ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
 DELETE FROM honua.service_layers
 WHERE service_name = 'mobile_offline_demo';
 
@@ -27,7 +54,6 @@ INSERT INTO honua.services (
     service_name,
     description,
     srid,
-    max_record_count,
     supported_formats,
     capabilities,
     service_extent,
@@ -37,12 +63,11 @@ VALUES (
     'mobile_offline_demo',
     'Deterministic SDK-backed mobile offline field operations fixture',
     4326,
-    100,
     ARRAY['JSON', 'GeoJSON'],
     ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete', 'Sync'],
     ST_MakeEnvelope(-158.1250, 21.2600, -157.7000, 21.5200, 4326),
     jsonb_build_object(
-        'accessPolicy', jsonb_build_object('allowAnonymous', true),
+        'accessPolicy', jsonb_build_object('allowAnonymous', true, 'allowAnonymousWrite', true),
         'demoFixture', jsonb_build_object(
             'id', 'mobile-offline-field-ops-v1',
             'issue', 'honua-server#895',
@@ -99,6 +124,7 @@ INSERT INTO honua.layers (
     table_name,
     primary_key_column,
     geometry_column,
+    storage_srid,
     temporal_column,
     geometry_type,
     srid,
@@ -116,6 +142,7 @@ VALUES
         'features',
         'objectid',
         'geometry',
+        4326,
         'inspection_date',
         'Point',
         4326,
@@ -156,6 +183,7 @@ VALUES
         'features',
         'objectid',
         'geometry',
+        4326,
         NULL,
         'Polygon',
         4326,
