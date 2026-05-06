@@ -81,10 +81,22 @@ child ticket.
 - GeoETL is a job kind on top of `IJobQueue`. It uses the existing
   `ExecutionJobKind.ExtractTransformLoad` value already reserved by
   ADR-0031.
-- GeoETL **does not** introduce a queue, a heartbeat protocol, a
-  cancellation channel, a retry policy, or a progress store. All of
-  those flow through `IJobQueue`, `IExecutionJobStore`,
-  `IExecutionLogStore`, and `IDistributedProgressStore`.
+- GeoETL ships a `PipelineJobExecutor : IJobExecutor` that the
+  substrate's `JobExecutionService` discovers via DI. The substrate
+  owns the worker-side polling loop, atomic claim, lease, heartbeat
+  pump, cancellation propagation, retry policy, and finalization.
+  GeoETL does **not** introduce a parallel `BackgroundService`, a
+  separate queue, a heartbeat protocol, a cancellation channel, a
+  retry policy, or a progress store. Progress, structured logs, and
+  artifact references flow through the per-job `IJobExecutionContext`
+  (`ReportProgressAsync`, `AppendLogAsync`, `PublishArtifactAsync`);
+  those calls are backed by `IExecutionJobStore.TrySetAsync` (which
+  persists `PercentComplete` / `CurrentPhase` on the
+  `ExecutionJobRecord` itself with optimistic concurrency) and by
+  `IExecutionLogStore`. The import path's
+  `ImportBackgroundServiceCoordinator`, `IDistributedJobQueueService`,
+  `IDistributedLeaderElection`, and `IDistributedProgressStore`
+  predate the `#681` substrate and are not consumed by GeoETL.
 - Cancellation propagation follows ADR-0031 exactly: API-side
   cancellation goes through the local notifier, the durable
   `CancellationRequestedAt` signal, and the reconciler's terminal state
@@ -206,16 +218,19 @@ backward compatibility path. It does not mutate any non-ETL job
 kind's claim semantics.
 
 - **Default image (`honua-server`)** stays lean. No GDAL, no PROJ, no
-  GEOS native libraries. It registers a **managed-profile** ETL
-  executor that runs Phase 1 connectors — pure-managed wrappers over
-  the existing `Honua.Core/Features/Import/Services/` readers.
+  GEOS native libraries. It hosts the substrate's `JobExecutionService`
+  (the worker-side polling loop) and registers a **managed-profile**
+  `PipelineJobExecutor : IJobExecutor` that runs Phase 1 connectors —
+  pure-managed wrappers over the existing
+  `Honua.Core/Features/Import/Services/` readers.
 - **GeoETL worker image (`honua-worker-etl`)** is built from a
   separate `Dockerfile` in the `honua-devops` repository. It layers
-  GDAL, PROJ, and GEOS on top of the lean base image and runs the
-  `PipelineExecutionBackgroundService` with the native-profile
-  executor (`AcceptedKinds = { ExtractTransformLoad }`,
-  `AcceptedRuntimeProfiles = { "native" }` once F lands). It is not
-  reachable from the public ingress.
+  GDAL, PROJ, and GEOS on top of the lean base image and hosts the
+  same substrate `JobExecutionService` polling loop. The worker image
+  registers a native-profile `PipelineJobExecutor : IJobExecutor`
+  (`Kind = ExtractTransformLoad`, `AcceptedRuntimeProfiles = { "native" }`
+  once F lands). It is not reachable from the public ingress and ships
+  no parallel `BackgroundService`.
 - **Capability detection** runs at three layers, mirroring the
   edition-gate pattern (CRUD stores; submission gates):
   - *CRUD validation (advisory only)* surfaces a

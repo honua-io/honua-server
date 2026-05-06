@@ -54,14 +54,15 @@ The existing codebase provides ~90% of the required infrastructure. GeoETL
 
 | Existing asset | GeoETL role |
 |---|---|
-| `Honua.Core/Features/Import/` format readers (GeoJSON, Shapefile, GeoPackage, GPX, KML, CSV, FlatGeobuf, FileGdb, GeoParquet, WKT) | Phase 1 source connector implementations — wrapped, never duplicated |
-| `IJobQueue` + `ExecutionJobKind.ExtractTransformLoad` (from `#681`) | Job submission, claim, lease, heartbeat, cancellation |
-| `IDistributedProgressStore` and `ImportBackgroundServiceCoordinator` | Progress tracking and leader election — reused as-is |
-| `IExecutionJobStore` and `IExecutionLogStore` | Execution history and structured log sink |
-| `GeoservicesImportBackgroundService` pattern | Reference shape for `PipelineExecutionBackgroundService` |
+| `Honua.Core/Features/Import/Services/` format readers (GeoJSON, Shapefile, GeoPackage, GPX, KML, CSV, FlatGeobuf, FileGdb, GeoParquet, WKT) | Phase 1 file source connector implementations — wrapped, never duplicated |
+| `IJobQueue` + `ExecutionJobKind.ExtractTransformLoad` (from `#681`) | Job submission, claim, lease |
+| `IJobExecutor` + `JobExecutionService` (from `#681`) | Worker-side execution loop. Child Ticket E ships a `PipelineJobExecutor : IJobExecutor` that the substrate's `JobExecutionService` discovers via DI — no GeoETL-owned `BackgroundService` |
+| `IJobExecutionContext.ReportProgressAsync` / `AppendLogAsync` / `PublishArtifactAsync` (from `#681`) | Substrate-managed progress, structured log, and artifact channel — backed by `IExecutionJobStore.TrySetAsync` and `IExecutionLogStore`. GeoETL does not use the import-path `IDistributedProgressStore` or `ImportBackgroundServiceCoordinator` |
+| `IExecutionJobStore` and `IExecutionLogStore` | Execution record (with persisted `PercentComplete` / `CurrentPhase`) and structured log sink |
 | `Honua.Server/Features/Geoprocessing/` (`BuiltInProcessCatalog`, `ProcessPlanValidator`, `ExecutionAdmissionEvaluator`) | Reference for connector catalog, stage-chain validation, edition admission |
 | `StreamingFileImportService` insert path | Reused by Honua-layer sink connector |
-| `ArcGisRestClient`, `GeoServerRestClient` | Phase 1 remote source connectors (Esri REST, OGC WFS / OGC API Features — managed, no native deps) |
+| `ArcGisRestClient` | Phase 1 remote source connector (Esri REST feature services — managed, no native deps) |
+| New protocol-neutral OGC features client (Child Ticket G) | Phase 1 remote source connector for OGC WFS and OGC API Features. Built on `HttpClient` and the existing `StreamingGeoJsonReader` / GML 2/3 parsing helpers; `GeoServerRestClient` is **not** the source reader — it is GeoServer-specific admin / migration discovery and is reused only for that role |
 
 GeoETL code lives in new vertical slices that follow the same project
 conventions as `Import/` and `Geoprocessing/`:
@@ -83,8 +84,10 @@ src/Honua.Postgres/Features/GeoETL/
 
 src/Honua.Server/Features/GeoETL/
   PipelineEndpoints.cs
-  PipelineExecutionBackgroundService.cs
-  PipelineJobExecutor.cs
+  PipelineJobExecutor.cs    // : IJobExecutor — registered via DI;
+                            //   the substrate's JobExecutionService
+                            //   owns the polling loop, claim, lease,
+                            //   heartbeat, cancellation, retry, finalize
   Models/         API DTOs — source-generated JSON context
 ```
 
@@ -96,9 +99,10 @@ release calendar.
 
 ### Phase 1 — managed sources, no native deps required
 
-Run inside `honua-server` directly. Wrapper around an existing reader.
+Run inside `honua-server` directly. Wrapper around an existing reader,
+or a new HTTP-based reader that uses only managed dependencies.
 
-| Source | Wraps |
+| Source | Wraps / built on |
 |---|---|
 | GeoJSON | `StreamingGeoJsonReader` |
 | Shapefile (.zip) | `NetTopologySuite.IO.Esri` path |
@@ -108,9 +112,12 @@ Run inside `honua-server` directly. Wrapper around an existing reader.
 | GPX | `GpxFormatReader` |
 | FlatGeobuf | `FlatGeobufFormatReader` |
 | GeoParquet | `GeoParquetReader` |
+| FileGdb (.gdb.zip) | `FileGdbReader` |
+| WKT | `WktFormatReader` |
 | PostGIS (remote) | Existing `Npgsql` + spatial-provider client pattern |
 | Esri REST feature services | `ArcGisRestClient` |
-| OGC WFS / OGC API Features | `GeoServerRestClient` |
+| OGC WFS / OGC API Features | New protocol-neutral OGC features client (`HttpClient` + `StreamingGeoJsonReader` for OGC API Features GeoJSON; managed GML 2/3 parsing helpers for WFS XML responses). **Not** `GeoServerRestClient` — that is GeoServer admin discovery, not an OGC features reader |
+| Generic REST/JSON with mapping DSL | `HttpClient` + `JsonDocument` + a managed JSONPath/field-mapping helper. No GDAL needed |
 
 ### Phase 2 — heavyweight worker profile, requires GDAL/OGR
 
@@ -119,16 +126,22 @@ these connectors regardless of worker availability; execution submission
 refuses to enqueue when no worker profile can satisfy them (see
 [Capability detection](#capability-detection)).
 
-- GML
+- GML (large-scale or non-2/3 schema variants requiring GDAL/OGR's robust schema handling — simple GML 2/3 schemas may ship in the Phase 1 OGC features client; the GDAL-only path lands with Child Ticket F)
 - SQL Server spatial (depending on driver footprint)
 - MySQL spatial (depending on driver footprint)
-- Generic REST/JSON with mapping DSL for arbitrary spatial fields
 
-### Phase 3 — Pro/Enterprise cloud and streaming sources
+### Phase 3 — event-triggered and streaming sources
 
-- S3 / Azure Blob / GCS file watchers (event-triggered, see `#316`)
-- Webhook receivers
-- MQTT topics
+These are not source connectors per se — they are *triggers* that
+enqueue an `ExtractTransformLoad` job pointing at a Phase 1 source
+connector (e.g. an S3 GeoJSON drop fires a job whose source is the
+GeoJSON Phase 1 connector). Edition tier and child ticket vary:
+
+| Trigger | Child ticket | Edition |
+|---|---|---|
+| S3 / Azure Blob / GCS file watchers (event-triggered, coordinated with `#316`) | L | Pro |
+| Webhook receivers | I | Enterprise |
+| MQTT topics | I | Enterprise |
 
 ## Transform library
 
@@ -181,9 +194,18 @@ late is expensive, so it is fully scoped in Child Ticket A.
   `WorkflowSchedulerBackgroundService`).
 - **Event triggers**: file-upload events and CDC events from `#316` enqueue
   the same job kind through the same queue.
-- **Execution worker**: `PipelineExecutionBackgroundService` extends
-  `BackgroundService`; uses `ImportBackgroundServiceCoordinator` for leader
-  election and heartbeat — reused unchanged.
+- **Execution worker**: Child Ticket E ships
+  `PipelineJobExecutor : IJobExecutor` for
+  `ExecutionJobKind.ExtractTransformLoad`, registered via DI so the
+  substrate's `JobExecutionService` discovers it. Claim, lease,
+  heartbeat, cancellation propagation, retry, and finalization are
+  owned by `JobExecutionService` (the substrate's worker-side polling
+  loop). GeoETL does **not** ship a parallel `BackgroundService` and
+  does not use `ImportBackgroundServiceCoordinator` /
+  `IDistributedJobQueueService` / `IDistributedLeaderElection` — those
+  are the older import-path coordination primitives that predate the
+  `#681` substrate. The executor receives an `IJobExecutionContext`
+  per job for progress, structured logs, and artifact references.
 - **Dry run**: every stage executes, but the sink is the null preview sink.
   Row counts, schema diff, and rejected-row samples return to the caller
   without writing to durable targets.
@@ -209,8 +231,12 @@ late is expensive, so it is fully scoped in Child Ticket A.
 - **Row-level errors**: rejected rows + reason write to a quarantine sink
   (companion GeoJSON or CSV artifact); the execution summary includes the
   error count and a sample.
-- **Progress**: structured progress events flow through
-  `IDistributedProgressStore`, identical to the import path.
+- **Progress**: each stage reports via
+  `IJobExecutionContext.ReportProgressAsync(percentComplete, phase, …)`.
+  The substrate persists progress on the `ExecutionJobRecord` itself
+  (via `IExecutionJobStore.TrySetAsync` with optimistic concurrency) —
+  there is no parallel progress store. `IDistributedProgressStore`
+  remains the import-path's mechanism and is not consumed by GeoETL.
 - **Telemetry**: `pipeline.started`, `pipeline.stage.completed`,
   `pipeline.stage.failed`, `pipeline.completed`, `pipeline.failed` log
   events with pipeline ID, stage index, and feature counts. Existing
@@ -247,8 +273,9 @@ Phase 2 (post-Child-Ticket-F, two images + substrate claim filter)
 
   GeoETL worker image (honua-worker-etl) [Dockerfile in honua-devops]
     → Layers GDAL, PROJ, GEOS on the lean base
-    → Runs PipelineExecutionBackgroundService with the
-      native-profile executor;
+    → Hosts the substrate's JobExecutionService (the substrate's
+      worker-side polling loop, the same one the default image runs)
+    → Registers a native-profile PipelineJobExecutor : IJobExecutor;
       AcceptedKinds = { ExtractTransformLoad },
       AcceptedRuntimeProfiles = { "native" } — only claims
       Spec.RuntimeProfile = "native" jobs
@@ -370,19 +397,20 @@ issue creation tracks against this roadmap.
 | ID | Title | Depends on | Repo | Edition |
 |---|---|---|---|---|
 | **A** | Pipeline domain models + CRUD API (first impl) | — | honua-server | Pro |
-| B | Source connector abstraction + Phase 1 file connectors | A | honua-server | Pro |
+| B | Source connector abstraction + Phase 1 file connectors (incl. FileGdb, WKT) | A | honua-server | Pro |
 | C | Core transform library + stage-chain validator | A | honua-server | Pro |
 | D | Phase 1 sink connectors | A | honua-server | Pro |
-| E | Pipeline execution engine + cron / event scheduler | B, C, D | honua-server | Pro |
+| E | Pipeline execution engine (`PipelineJobExecutor : IJobExecutor`) + cron / event scheduler | B, C, D | honua-server | Pro |
 | F | `honua-worker-etl` image + GML + substrate `RuntimeProfile` claim filter + capability detection | E | honua-devops + honua-server | Pro |
-| G | Phase 1 remote API sources (Esri REST, OGC WFS / OGC API Features, remote PostGIS) | B | honua-server | Pro |
+| G | Phase 1 remote API sources (Esri REST, OGC WFS / OGC API Features, remote PostGIS, generic REST/JSON) | B | honua-server | Pro |
 | H | Admin UI for pipeline authoring + execution monitor | E | honua-server-admin | Pro |
-| I | Streaming sources + custom transform plugin sandbox | E | honua-server | Enterprise |
+| I | Streaming sources (webhook, MQTT) + custom transform plugin sandbox | E | honua-server | Enterprise |
 | J | Pluggable distributed executor backends | E | honua-server (+ honua-devops) | Enterprise |
 | K | Phase 2 database connectors (SQL Server spatial, MySQL spatial) | F | honua-server | Pro |
+| L | Object-store file watchers (S3 / Azure Blob / GCS) | E | honua-server | Pro |
 
 The order is the merge order. B, C, and D can be implemented in parallel
-after A; E unblocks F, H, I, and J; F unblocks K. G can land after B
+after A; E unblocks F, H, I, J, and L; F unblocks K. G can land after B
 without waiting on the worker image because its connectors are managed
 Phase 1 (no GDAL).
 
@@ -444,8 +472,8 @@ logic**: none.
 
 **B — Source connector abstraction + Phase 1 file connectors.**
 `IPipelineSourceConnector`, `SourceConnectorFactory`, wrappers for
-GeoJSON, Shapefile, GeoPackage, CSV, KML, GPX, FlatGeobuf, and
-GeoParquet — every Phase 1 file source listed in the
+GeoJSON, Shapefile, GeoPackage, CSV, KML, GPX, FlatGeobuf,
+GeoParquet, FileGdb, and WKT — every Phase 1 file source listed in the
 [Connector phasing](#phase-1--managed-sources-no-native-deps-required)
 table that is *not* a remote API source (those are Child Ticket G).
 Per-connector tests against the fixtures already used by the import
@@ -463,11 +491,18 @@ PostGIS / dry-run null sinks. Honua-layer sink reuses
 `StreamingFileImportService` insert path.
 
 **E — Pipeline execution engine + scheduling.**
-`PipelineExecutionBackgroundService`, `PipelineJobExecutor` (linear
-Source → []Transform → Sink). Cron / event scheduler enqueues
-`ExtractTransformLoad` jobs. Row-level quarantine, progress reporting,
-cancellation, retry, soft-delete rollback. Execution endpoints from A
-return real terminal states instead of 501.
+`PipelineJobExecutor : IJobExecutor` for
+`ExecutionJobKind.ExtractTransformLoad`. Linear
+Source → []Transform → Sink stage runner. Registered via DI so the
+substrate's `JobExecutionService` claims, leases, heartbeats,
+cancels, retries, and finalizes the job — GeoETL does not ship a
+parallel `BackgroundService`. Cron / event scheduler enqueues
+`ExtractTransformLoad` jobs through the substrate's `IJobQueue`. The
+executor uses `IJobExecutionContext` for progress, structured logs,
+and artifact references. Row-level quarantine and soft-delete
+rollback are pipeline-stage concerns inside `PipelineJobExecutor`.
+Execution endpoints from A return real terminal states instead of
+501.
 
 **F — `honua-worker-etl` worker image + substrate claim filter.**
 `Dockerfile.worker-etl` in honua-devops layers GDAL/PROJ/GEOS on the
@@ -489,8 +524,13 @@ whose connectors no registered profile can satisfy; CRUD continues
 to store such definitions with the advisory warning. CI image scan
 asserts no GDAL bytes leaked into the default `honua-server` image.
 
-**G — Phase 1 remote API sources.** Remote PostGIS, Esri REST, OGC WFS /
-OGC API Features. All managed — no GDAL required, run inside
+**G — Phase 1 remote API sources.** Remote PostGIS, Esri REST
+(via `ArcGisRestClient`), OGC WFS / OGC API Features (via a new
+protocol-neutral OGC features client built on `HttpClient` plus the
+existing `StreamingGeoJsonReader` and managed GML 2/3 helpers — not
+`GeoServerRestClient`, which is reused only for GeoServer-specific
+admin / migration discovery), and generic REST/JSON with the
+mapping DSL. All managed — no GDAL required, run inside
 `honua-server` via the managed-profile executor. Depends only on B
 because the worker image is not on the critical path for these
 connectors.
@@ -499,9 +539,10 @@ connectors.
 dry-run trigger. Implementation lives in honua-server-admin; this row
 exists in this roadmap so the cross-repo dependency is explicit.
 
-**I — Streaming sources + custom plugin sandbox.** S3 / Azure Blob / GCS
-file watchers, webhook receiver, MQTT, sandboxed custom transform
-plugin. Enterprise-only.
+**I — Streaming sources + custom plugin sandbox.** Webhook receiver,
+MQTT, sandboxed custom transform plugin. Enterprise-only. Object-store
+file watchers ship separately in Child Ticket L (Pro tier) so the
+edition split between Pro and Enterprise is preserved.
 
 **J — Pluggable distributed executor backends.** External executors
 (Kubernetes Jobs, AWS Batch, Azure Container Apps Jobs, Apache Sedona)
@@ -512,6 +553,16 @@ remain identical across executors. Enterprise-only.
 Phase 2 — require `honua-worker-etl` for the underlying spatial
 drivers. Depends on F so the worker image and capability-detection
 contract exist before these connectors register.
+
+**L — Object-store file watchers.** S3 / Azure Blob / GCS file
+watchers that fire `ExtractTransformLoad` jobs through the substrate's
+`IJobQueue` when a configured prefix receives a matching file. The
+source connector itself remains a Phase 1 file connector (e.g.
+GeoJSON, GeoPackage); this ticket only adds the trigger surface and
+the per-bucket watcher configuration. Pro tier so the file-watcher
+capability does not require Enterprise. Depends on E so the executor
+is ready when triggered jobs run. Coordinates with `#316`'s event
+bus.
 
 ## Linked follow-ons
 
@@ -625,6 +676,29 @@ the constraints child-ticket implementers should treat as decided.
    retryable) is a documented Phase 2 enhancement requiring a
    `JobExecutionResult.FailureKind` substrate extension before child
    tickets can honor it. The decomposition does not block on this.
+8. **Substrate consumption pattern.** GeoETL is registered as a
+   `PipelineJobExecutor : IJobExecutor` for
+   `ExecutionJobKind.ExtractTransformLoad`. The substrate's
+   `JobExecutionService` (`#681`) owns the worker-side polling loop,
+   atomic claim, lease, heartbeat, cancellation propagation, retry,
+   and finalization. Progress, structured logs, and artifact
+   references flow through the per-job `IJobExecutionContext`
+   (backed by `IExecutionJobStore.TrySetAsync` /
+   `IExecutionLogStore`). GeoETL does **not** ship a parallel
+   `BackgroundService` and does **not** consume the import path's
+   `ImportBackgroundServiceCoordinator`,
+   `IDistributedJobQueueService`, `IDistributedLeaderElection`, or
+   `IDistributedProgressStore` — those primitives predate the `#681`
+   substrate and are not the GeoETL contract.
+9. **OGC WFS / OGC API Features source connector.** Child Ticket G
+   ships a new protocol-neutral OGC features client built on
+   `HttpClient` plus the existing `StreamingGeoJsonReader` (for OGC
+   API Features GeoJSON responses) and managed GML 2/3 helpers (for
+   simple WFS XML responses). `GeoServerRestClient` is **not** the
+   source reader — it is GeoServer-specific admin / migration
+   discovery (workspaces, datastores, layers, styles) and is reused
+   only for that role. Large-scale or complex GML schemas remain in
+   Phase 2 / Child Ticket F where GDAL/OGR is available.
 
 ## References
 
