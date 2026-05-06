@@ -49,10 +49,13 @@ republishes them through the same canonical event publisher consumed by replay,
 streaming, and webhook delivery.
 
 When the outbox is active the protocol-layer post-commit publish becomes a no-op:
-the dispatcher owns delivery, so envelopes are never published twice. On
-non-capable backends the existing post-commit publish + Redis retry queue
-remain in place unchanged (best-effort durability with a small loss window if
-the process crashes between commit and append).
+the dispatcher owns delivery, so the request path never publishes a duplicate
+alongside the dispatcher. Delivery is still at-least-once — a recovered claim,
+a retry after `MarkDispatchedAsync` returned stale, or a retry after a
+publish-then-mark race may re-emit the same `eventId`, and consumers must
+continue to dedupe on it. On non-capable backends the existing post-commit
+publish + Redis retry queue remain in place unchanged (best-effort durability
+with a small loss window if the process crashes between commit and append).
 
 Row state machine: `pending` → `claimed` → `dispatched` | `failed` → `claimed`
 (retry) | `dead_lettered`. `outbox_id` (the row's primary key) is internal;

@@ -59,7 +59,7 @@ internal static class OutboxMetrics
             "honua.outbox.oldest_pending_age_seconds",
             () => Volatile.Read(ref _oldestPendingAgeSeconds),
             unit: "seconds",
-            description: "Age in seconds of the oldest claimable outbox row.");
+            description: "Age in seconds of the oldest backlog row (pending, failed, or claimed).");
     }
 
     public static void RecordBacklog(long pending, long deadLettered, double oldestPendingAgeSeconds)
