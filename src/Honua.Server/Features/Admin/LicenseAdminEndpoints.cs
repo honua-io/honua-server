@@ -8,6 +8,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
@@ -45,6 +46,7 @@ internal static class LicenseAdminEndpoints
 
     private static IResult HandleGetLicenseStatus(
         [FromServices] ILicenseEntitlementService entitlementService,
+        [FromServices] IOptions<LicenseOptions> licenseOptions,
         [FromServices] ILogger<LicenseAdminEndpointsLog> logger)
     {
         AdminLog.LicenseStatusQueried(logger);
@@ -60,24 +62,7 @@ internal static class LicenseAdminEndpoints
             snapshot.IssuedAt,
             snapshot.Entitlements);
 
-        var response = new LicenseStatusResponse
-        {
-            Edition = status.Edition.ToString(),
-            IsValid = status.IsValid,
-            ExpiresAt = status.ExpiresAt,
-            LicenseId = status.LicenseId,
-            LicensedTo = status.LicensedTo,
-            IssuedAt = status.IssuedAt,
-            ValidationState = status.ValidationState.ToString(),
-            DaysUntilExpiry = status.DaysUntilExpiry,
-            ExpiryWarning = status.DaysUntilExpiry is <= 30,
-            Entitlements = snapshot.Entitlements.Select(e => new EntitlementResponse
-            {
-                Key = e.Key,
-                Name = e.Name,
-                IsActive = e.IsActive,
-            }).ToList(),
-        };
+        var response = LicenseStatusResponseMapper.FromStatus(status, licenseOptions.Value.ExpiryWarningDays);
 
         return Results.Json(
             ApiResponse<LicenseStatusResponse>.CreateSuccess(response),

@@ -9,6 +9,7 @@ using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
@@ -71,6 +72,7 @@ internal static partial class LicenseEndpoints
     private static async Task<Results<Ok<ApiResponse<LicenseStatusResponse>>, ProblemHttpResult>>
         HandleGetLicenseStatus(
             [FromServices] ILicenseManager licenseManager,
+            [FromServices] IOptions<LicenseOptions> licenseOptions,
             [FromServices] ILogger<LicenseEndpointsLog> logger,
             HttpContext context)
     {
@@ -78,7 +80,7 @@ internal static partial class LicenseEndpoints
         {
             var info = await licenseManager.GetLicenseInfoAsync(context.RequestAborted);
 
-            var response = ToStatusResponse(info);
+            var response = LicenseStatusResponseMapper.FromInfo(info, licenseOptions.Value.ExpiryWarningDays);
 
             LicenseLog.LicenseStatusQueried(logger, info.Edition, info.IsValid);
             return TypedResults.Ok(ApiResponse<LicenseStatusResponse>.CreateSuccess(response));
@@ -95,27 +97,24 @@ internal static partial class LicenseEndpoints
 
     private static async Task<Results<Ok<ApiResponse<LicenseStatusResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleUploadLicense(
-            [FromServices] ILicenseManager licenseManager,
+            [FromServices] ILicenseStatusProvider licenseProvider,
+            [FromServices] IOptions<LicenseOptions> licenseOptions,
             [FromServices] ILogger<LicenseEndpointsLog> logger,
             HttpContext context)
     {
         try
         {
-            using var ms = new MemoryStream();
-            await context.Request.Body.CopyToAsync(ms, context.RequestAborted);
-            var licenseData = ms.ToArray();
-
-            if (licenseData.Length == 0)
+            var result = await licenseProvider.UploadLicenseAsync(context.Request.Body, context.RequestAborted);
+            if (!result.Success)
             {
-                LicenseLog.LicenseUploadFailed(logger, "Empty license data");
-                return TypedResults.BadRequest(ApiResponse<object>.Failure("License data cannot be empty"));
+                LicenseLog.LicenseUploadFailed(logger, result.Message);
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(result.Message));
             }
 
-            var info = await licenseManager.ApplyLicenseAsync(licenseData, context.RequestAborted);
+            var status = licenseProvider.GetCurrentStatus();
+            var response = LicenseStatusResponseMapper.FromStatus(status, licenseOptions.Value.ExpiryWarningDays);
 
-            var response = ToStatusResponse(info);
-
-            LicenseLog.LicenseUploaded(logger, info.Edition);
+            LicenseLog.LicenseUploaded(logger, response.Edition);
             return TypedResults.Ok(ApiResponse<LicenseStatusResponse>.CreateSuccess(response));
         }
         catch (LicenseUploadRejectedException ex)
@@ -167,31 +166,5 @@ internal static partial class LicenseEndpoints
                 detail: "An internal error occurred while retrieving entitlements.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
-    }
-
-    private static LicenseStatusResponse ToStatusResponse(LicenseInfo info)
-    {
-        var daysUntilExpiry = info.ExpiresAt.HasValue
-            ? (int)Math.Ceiling((info.ExpiresAt.Value - DateTimeOffset.UtcNow).TotalDays)
-            : (int?)null;
-
-        return new LicenseStatusResponse
-        {
-            Edition = info.Edition,
-            ExpiresAt = info.ExpiresAt,
-            IsValid = info.IsValid,
-            ValidationState = info.ValidationState,
-            LicensedTo = info.LicensedTo,
-            LicenseId = info.LicenseId,
-            IssuedAt = info.IssuedAt,
-            DaysUntilExpiry = daysUntilExpiry,
-            ExpiryWarning = daysUntilExpiry is <= 30,
-            Entitlements = info.Entitlements.Select(e => new EntitlementResponse
-            {
-                Key = e.Key,
-                Name = e.Name,
-                IsActive = e.IsActive,
-            }).ToList(),
-        };
     }
 }

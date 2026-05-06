@@ -152,17 +152,19 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.License)]
     [Endpoint("POST /api/v1/admin/license/upload")]
-    public async Task UploadLicense_Returns501NotImplemented()
+    public async Task UploadLicense_WhenAdminUploadDisabled_Returns400()
     {
         var content = new StringContent("fake-license-data");
         var response = await _client.PostAsync("/api/v1/admin/license/upload", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+
         var data = document.RootElement.GetProperty("data");
         data.GetProperty("success").GetBoolean().Should().BeFalse();
-        data.GetProperty("message").GetString().Should().Contain("not yet supported");
+        data.GetProperty("message").GetString().Should().Contain("License upload is disabled");
     }
 
     // --- Identity Providers ---

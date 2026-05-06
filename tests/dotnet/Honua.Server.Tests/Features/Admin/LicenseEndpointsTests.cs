@@ -130,6 +130,64 @@ public class LicenseEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/license")]
+    [Endpoint("GET /api/v1/admin/license/status")]
+    public async Task GetLicenseStatus_WithCustomExpiryWarningDays_UsesConfiguredThreshold()
+    {
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
+        var license = LicenseTestSupport.CreateSignedLicense(
+            HonuaEdition.Pro,
+            expiresAt: DateTimeOffset.UtcNow.AddDays(45),
+            entitlements: ["analytics.clustering"]);
+        await File.WriteAllBytesAsync(licensePath, license.LicenseData);
+
+        var fixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Licensing:LicensePath"] = licensePath,
+                        ["Licensing:ExpiryWarningDays"] = "60",
+                        [$"Licensing:TrustedKeys:{LicenseTestSupport.KeyId}"] = license.PublicKeySetting
+                    });
+                });
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            foreach (var path in new[] { "/api/v1/admin/license", "/api/v1/admin/license/status" })
+            {
+                var response = await client.GetAsync(path);
+
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var json = await response.Content.ReadAsStringAsync();
+                var result = JsonSerializer.Deserialize<ApiResponse<LicenseStatusResponse>>(json, _jsonOptions);
+
+                Assert.NotNull(result);
+                Assert.True(result.Success);
+                Assert.NotNull(result.Data);
+                Assert.True(result.Data.ExpiryWarning);
+                Assert.InRange(result.Data.DaysUntilExpiry.GetValueOrDefault(), 44, 45);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/license")]
     public async Task GetLicenseStatus_WithoutAuth_ReturnsUnauthorized()
     {
         using var unauthClient = _fixture.CreateClient();

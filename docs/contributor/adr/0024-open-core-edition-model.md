@@ -126,7 +126,7 @@ Runtime license checking at startup:
 
 - Community: no key required. Full functionality within the Community boundary.
 - Pro/Enterprise: environment variable or file-based license key validated at
-  startup. Gated features return a clear error (HTTP 402 or gRPC `PERMISSION_DENIED`
+  startup. Gated features return a clear error (HTTP 402 or gRPC `FAILED_PRECONDITION`
   with upgrade guidance) when accessed without a valid key.
 
 License checks must be:
