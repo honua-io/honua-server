@@ -34,6 +34,7 @@ services:
         HONUA_INCLUDE_STAC_OPS_DEMO: "true"
     ports:
       - "${HONUA_HTTP_PORT:-8080}:8080"
+      - "${HONUA_GRPC_PORT:-8081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
@@ -47,7 +48,10 @@ services:
       FileStorage__AwsS3__SecretAccessKey: "${HONUA_S3_SECRET_ACCESS_KEY:-}"
       Security__ConnectionEncryption__MasterKey: "${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-}"
       Security__ConnectionEncryption__Salt: "${HONUA_CONNECTION_ENCRYPTION_SALT:-}"
-      ASPNETCORE_URLS: "http://+:8080"
+      Kestrel__Endpoints__Http__Url: "http://+:8080"
+      Kestrel__Endpoints__Http__Protocols: "Http1"
+      Kestrel__Endpoints__Grpc__Url: "http://+:8081"
+      Kestrel__Endpoints__Grpc__Protocols: "Http2"
     depends_on:
       postgres:
         condition: service_healthy

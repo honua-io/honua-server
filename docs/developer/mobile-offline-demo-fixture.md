@@ -30,10 +30,15 @@ scripts/demos/run-mobile-offline-demo.sh conflict-after-download
 
 The conflict scenario pauses after the baseline seed is applied. Download the offline package or create the replica from the mobile harness, then press Enter. The script applies `mobile-offline-demo-conflict-delta.sql`, which advances feature `6891002` from `sync_version = 1` to `sync_version = 2`.
 
+The local demo maps REST/gRPC-Web to `http://localhost:18081` and native h2c gRPC to
+`http://localhost:18082`. When running `honua-mobile` live tests against this demo, set
+`HONUA_MOBILE_LIVE_SERVER_BASE_URL=http://localhost:18081` and
+`HONUA_MOBILE_LIVE_SERVER_GRPC_URL=http://localhost:18082`.
+
 Cleanup uses the same isolated docker-compose pattern as the STAC ops demo:
 
 ```bash
-COMPOSE_PROJECT_NAME=honua-mobile-offline-demo HONUA_HTTP_PORT=18081 POSTGRES_PORT=55433 docker compose -f docker-compose.yml --project-directory . down --remove-orphans --volumes
+COMPOSE_PROJECT_NAME=honua-mobile-offline-demo HONUA_HTTP_PORT=18081 HONUA_GRPC_PORT=18082 POSTGRES_PORT=55433 docker compose -f docker-compose.yml --project-directory . down --remove-orphans --volumes
 ```
 
 ## Cloud Or Staging Provisioning

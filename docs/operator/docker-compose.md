@@ -22,6 +22,11 @@ Container layout is intentional:
 docker compose up -d
 ```
 
+The compose stack publishes two Honua ports:
+
+- `HONUA_HTTP_PORT` maps to container `8080` for HTTP/1 REST, browser traffic, health checks, and gRPC-Web.
+- `HONUA_GRPC_PORT` maps to container `8081` for native cleartext HTTP/2 gRPC (h2c). Use this URL for SDK/mobile clients that do not use gRPC-Web.
+
 The default local database credentials are:
 
 - database: `honua_dev`
@@ -52,6 +57,12 @@ docker compose --profile minio up -d
 
 ```bash
 curl http://localhost:8080/healthz/live
+```
+
+For `honua-mobile` live tests against this stack, set:
+
+```bash
+HONUA_MOBILE_LIVE_SERVER_GRPC_URL=http://localhost:${HONUA_GRPC_PORT:-8081}
 ```
 
 ## Shutdown

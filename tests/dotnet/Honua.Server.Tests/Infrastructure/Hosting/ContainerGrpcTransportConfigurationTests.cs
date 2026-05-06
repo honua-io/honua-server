@@ -1,0 +1,53 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+namespace Honua.Server.Tests.Infrastructure.Hosting;
+
+public sealed class ContainerGrpcTransportConfigurationTests
+{
+    [Theory]
+    [InlineData("Dockerfile")]
+    [InlineData("docker/Dockerfile.aot")]
+    public void Dockerfile_DefinesDedicatedNativeGrpcH2cEndpoint(string relativePath)
+    {
+        var dockerfile = ReadRepoFile(relativePath);
+
+        Assert.Contains("Kestrel__Endpoints__Http__Url=http://+:8080", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Http__Protocols=Http1", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Grpc__Url=http://+:8081", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Grpc__Protocols=Http2", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("EXPOSE 8080/tcp 8081/tcp", dockerfile, StringComparison.Ordinal);
+        Assert.DoesNotContain("ASPNETCORE_URLS=http://+:8080", dockerfile, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ComposeFile_MapsNativeGrpcPortToHttp2Endpoint()
+    {
+        var compose = ReadRepoFile("docker-compose.yml");
+
+        Assert.Contains("\"${HONUA_HTTP_PORT:-8080}:8080\"", compose, StringComparison.Ordinal);
+        Assert.Contains("\"${HONUA_GRPC_PORT:-8081}:8081\"", compose, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Http__Protocols: \"Http1\"", compose, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Grpc__Protocols: \"Http2\"", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("ASPNETCORE_URLS", compose, StringComparison.Ordinal);
+    }
+
+    private static string ReadRepoFile(string relativePath)
+        => File.ReadAllText(Path.Combine(FindRepositoryRoot(), relativePath));
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate repository root from test output directory.");
+    }
+}
