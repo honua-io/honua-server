@@ -97,7 +97,11 @@ as the starting point and keep items `unknown` until evidence exists.
 Use the Markdown checklist in
 [Migration Pilot And Cutover Checklist](migration-pilot-cutover-checklist.md)
 for human review, and keep the JSON readiness attestation with the migration
-artifacts so automated checks can consume it later.
+artifacts so automated checks can consume it later. Use
+[migration-cutover-readiness-template.json](examples/migration-cutover-readiness-template.json)
+as the empty starting point and
+[migration-cutover-readiness-example.json](examples/migration-cutover-readiness-example.json)
+as a deterministic reference for a completed attestation.
 
 The generated readiness checklist contains these stable item IDs:
 
@@ -109,6 +113,36 @@ The generated readiness checklist contains these stable item IDs:
 | `known-gaps-accepted` | Fail or unknown items have explicit approval or waiver. |
 | `rollback-plan-documented` | Rollback or traffic restoration plan is documented. |
 | `traffic-switch-planned` | DNS, load-balancer, or client endpoint change is scheduled. |
+
+## Rollback Notes
+
+The `rollback-plan-documented` readiness item asserts that a rollback plan
+exists for the source system and the customer traffic path. This section
+describes what that plan must record. Honua does not execute the rollback;
+execution lives in customer- and team-owned runbooks outside this server slice.
+
+A complete migration rollback plan must record:
+
+- **Restore point**: Database snapshot or backup identifier and the timestamp
+  the snapshot was taken. Confirm the snapshot is retained through the cutover
+  validation window.
+- **Source traffic reversion**: DNS, load-balancer, or API gateway steps that
+  return traffic to the source system, including the expected propagation
+  window for each change.
+- **Cache invalidation**: CDN, tile cache, or client cache purge required after
+  reversion so clients do not retain Honua-served responses for source-served
+  routes.
+- **Escalation path**: Named owner and after-hours contact for each dependent
+  team (source owner, application owner, network or DNS owner, on-call lead).
+- **Rollback timing**: Latest acceptable point-of-no-return before cutover
+  proceeds, and the maximum validation window after cutover during which
+  rollback remains the documented response to a regression.
+- **Decision owner**: The single named individual who authorises rollback
+  execution, with a documented backup if that individual is unavailable.
+
+Record the link to the rollback plan document in the `evidence` field of the
+`rollback-plan-documented` readiness item. Do not mark the item `pass` until
+the linked document covers all six points above.
 
 ## Admin And SDK Follow-Up
 
