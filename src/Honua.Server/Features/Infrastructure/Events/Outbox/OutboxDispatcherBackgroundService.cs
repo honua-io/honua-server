@@ -142,13 +142,24 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
     internal async Task<int> ExecuteOnceAsync(CancellationToken cancellationToken)
     {
         await using var scope = _services.CreateAsyncScope();
-        var repository = scope.ServiceProvider.GetService<IFeatureChangeOutboxRepository>();
-        var publisher = scope.ServiceProvider.GetRequiredService<IFeatureChangeEventPublisher>();
+        IFeatureChangeOutboxRepository? repository;
+        try
+        {
+            repository = scope.ServiceProvider.GetService<IFeatureChangeOutboxRepository>();
+        }
+        catch (Exception ex)
+        {
+            Log.RepositoryResolutionFailed(_logger, ex);
+            _lastClaimPollFailureAt = DateTimeOffset.UtcNow;
+            return 0;
+        }
 
         if (repository is null)
         {
             return 0;
         }
+
+        var publisher = scope.ServiceProvider.GetRequiredService<IFeatureChangeEventPublisher>();
 
         await MaybeRecoverExpiredClaimsAsync(repository, cancellationToken).ConfigureAwait(false);
 
@@ -421,5 +432,8 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
 
         [LoggerMessage(EventId = 9311, Level = LogLevel.Information, Message = "Outbox row {OutboxId} no longer owned by node {OwnerNodeId} when recording failure; new owner will record terminal state.")]
         public static partial void StaleClaimAfterFailure(ILogger logger, Guid outboxId, string ownerNodeId);
+
+        [LoggerMessage(EventId = 9312, Level = LogLevel.Warning, Message = "Outbox repository could not be resolved; dispatcher pass skipped.")]
+        public static partial void RepositoryResolutionFailed(ILogger logger, Exception exception);
     }
 }

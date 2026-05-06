@@ -136,6 +136,31 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     }
 
     [UnitTest]
+    public async Task ExecuteOnceAsync_RepositoryResolutionFailure_RecordsStorageFailureForReadinessProbe()
+    {
+        // Test-host override guard (#692): some minimal WebApplicationFactory slices remove
+        // provider services after the Postgres outbox descriptor has been registered. Resolving
+        // the repository then throws before any storage call is made; the dispatcher should
+        // surface the problem through IOutboxHealth instead of faulting the hosted service.
+        var capability = Substitute.For<IOutboxCapabilityProvider>();
+        capability.SupportsTransactionalOutbox.Returns(true);
+
+        var publisher = Substitute.For<IFeatureChangeEventPublisher>();
+        var services = new ServiceCollection();
+        services.AddSingleton<IFeatureChangeOutboxRepository>(_ =>
+            throw new InvalidOperationException("IDatabaseConnectionProvider is not registered."));
+        services.AddSingleton(publisher);
+
+        var dispatcher = BuildDispatcher(services.BuildServiceProvider(), capability);
+
+        var dispatched = await dispatcher.ExecuteOnceAsync(CancellationToken.None);
+
+        dispatched.Should().Be(0);
+        AssertStorageFailureRecorded(dispatcher, expectFirstSuccessfulPoll: false);
+        await publisher.DidNotReceiveWithAnyArgs().PublishStrictAsync(default!, default);
+    }
+
+    [UnitTest]
     public async Task ExecuteOnceAsync_ClaimFailure_RecordsStorageFailureForReadinessProbe()
     {
         // Storage-poll guard (#692): a missing outbox table or permission issue causes
@@ -483,6 +508,13 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         services.AddSingleton(publisher);
         var provider = services.BuildServiceProvider();
 
+        return BuildDispatcher(provider, capability);
+    }
+
+    private static OutboxDispatcherBackgroundService BuildDispatcher(
+        IServiceProvider services,
+        IOutboxCapabilityProvider capability)
+    {
         var options = Options.Create(new OutboxDispatcherOptions
         {
             BatchSize = 32,
@@ -492,7 +524,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             MaxRetries = 3,
         });
         return new OutboxDispatcherBackgroundService(
-            provider,
+            services,
             capability,
             options,
             NullLogger<OutboxDispatcherBackgroundService>.Instance);

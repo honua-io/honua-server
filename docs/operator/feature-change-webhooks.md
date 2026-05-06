@@ -93,6 +93,16 @@ Durability guarantees:
   crash between commit and append cannot leave a committed feature row without
   its CDC envelope. Batch-transactional and outbox-inactive paths still use
   the autocommit fast path.
+- **Wiring guard against silent CDC loss.** When a protocol handler opens an
+  outbox scope but the data-access layer has no `IFeatureChangeOutboxRepository`
+  registered (a misconfiguration of the Postgres feature-store DI), the
+  mutation throws `InvalidOperationException` rather than falling through to
+  the autocommit fast path. Falling through would silently commit the feature
+  row without recording its CDC envelope — exactly the durability gap the
+  outbox is meant to close. The capability provider and the outbox repository
+  must be registered together; an operator who sees this exception should
+  re-check that both `PostgresOutboxCapabilityProvider` and
+  `PostgresFeatureChangeOutboxRepository` are in the service collection.
 - **Per-row request and geometry-intent correlation.** Atomic batches (OData
   `$batch` atomic groups, OGC Features Transactions, GeoServices `applyEdits`,
   gRPC `ApplyEdits`, WFS 2.0 transactions) thread per-row `requestId` and

@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
@@ -92,10 +93,30 @@ internal sealed partial class FeatureDataAccess
         return simpleDelete.Deleted;
     }
 
-    private bool TryUseTransactionalOutbox(out FeatureMutationOutboxScopeData? scope)
+    private bool TryUseTransactionalOutbox([NotNullWhen(true)] out FeatureMutationOutboxScopeData? scope)
     {
         scope = FeatureMutationOutboxScope.Current;
-        return scope is not null && _outboxRepository is not null;
+        if (scope is null)
+        {
+            return false;
+        }
+
+        // A scope without a registered outbox repository is a wiring error: the protocol
+        // layer opened a scope expecting durable CDC intent, so falling through to the
+        // autocommit fast path would silently drop the envelope the scope was set up to
+        // record — the exact gap the transactional outbox is meant to close. Fail loud
+        // instead so the misconfiguration surfaces as a mutation failure rather than as
+        // silent CDC loss. Capability provider and repository must be registered together.
+        if (_outboxRepository is null)
+        {
+            throw new InvalidOperationException(
+                "Feature mutation outbox scope is active but no IFeatureChangeOutboxRepository " +
+                "is registered. The Postgres feature-store DI must register both the outbox " +
+                "repository and the capability provider together so an opened scope can durably " +
+                "commit its CDC envelope.");
+        }
+
+        return true;
     }
 
     private async Task<Feature> ExecuteSingleRowMutationWithOutboxAsync(
@@ -637,7 +658,10 @@ internal sealed partial class FeatureDataAccess
         // emit a delete event whose payload reflects the row that actually existed.
         // This avoids a second round-trip and removes the TOCTOU window where a
         // concurrent vacuum or a follow-up delete could erase the snapshot.
-        var captureSnapshot = FeatureMutationOutboxScope.Current is not null && _outboxRepository is not null;
+        // TryUseTransactionalOutbox throws when scope is active but the repository is
+        // missing so the wiring error surfaces here instead of silently downgrading to
+        // a no-snapshot DELETE that would still skip the outbox row.
+        var captureSnapshot = TryUseTransactionalOutbox(out _);
 
         if (captureSnapshot)
         {
@@ -735,7 +759,10 @@ internal sealed partial class FeatureDataAccess
         // bulk INSERT path returns ids only and would force a second projection just to
         // satisfy the outbox payload — single-row inserts give us the snapshot directly
         // and remain inside the same connection/transaction so atomicity is preserved.
-        var outboxActive = FeatureMutationOutboxScope.Current is not null && _outboxRepository is not null;
+        // TryUseTransactionalOutbox throws when scope is active but the repository is
+        // missing so the wiring error surfaces here instead of silently picking the bulk
+        // path that would skip the outbox writes.
+        var outboxActive = TryUseTransactionalOutbox(out _);
 
         if (transaction == null && features.Length > 1 && !outboxActive)
         {
@@ -1053,13 +1080,12 @@ internal sealed partial class FeatureDataAccess
         Feature? snapshot,
         CancellationToken cancellationToken)
     {
-        if (_outboxRepository is null)
-        {
-            return;
-        }
-
-        var scope = FeatureMutationOutboxScope.Current;
-        if (scope is null)
+        // Use TryUseTransactionalOutbox so a scope-set/repository-missing combination
+        // throws here too: the batch/ordered-edit paths can reach this helper through
+        // RunRowMutationAtomicallyAsync without going through TryUseTransactionalOutbox
+        // first (when the caller already holds a batch transaction), so the same guard
+        // is needed to prevent the wiring error from silently dropping the outbox row.
+        if (!TryUseTransactionalOutbox(out var scope))
         {
             return;
         }
@@ -1082,7 +1108,10 @@ internal sealed partial class FeatureDataAccess
                 "Outbox writes require an active transaction when a feature mutation scope is open.");
         }
 
-        await _outboxRepository.WriteOutboxRowAsync(connection, transaction, entry, cancellationToken).ConfigureAwait(false);
+        // TryUseTransactionalOutbox above already guaranteed _outboxRepository is non-null
+        // (it throws on the scope-set/repository-missing combination). The bang!-suppress
+        // is just a compiler hint; nullable analysis cannot see across the helper.
+        await _outboxRepository!.WriteOutboxRowAsync(connection, transaction, entry, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
