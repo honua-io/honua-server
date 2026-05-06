@@ -124,4 +124,19 @@ public sealed class PublicSceneDiscoveryEndpointTests : IAsyncLifetime
         bytes.Length.Should().BeGreaterThan(4);
         System.Text.Encoding.ASCII.GetString(bytes, 0, 4).Should().Be("b3dm");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
+    public async Task GetSceneAsset_ForDowntownHonoluluFixture_ReturnsSceneMetadataJson()
+    {
+        var response = await _fixture.Client.GetAsync($"/scenes/{SceneId}/metadata/scene.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("sceneId").GetString().Should().Be(SceneId);
+        document.RootElement.GetProperty("tilesetPath").GetString().Should().Be("tileset.json");
+    }
 }

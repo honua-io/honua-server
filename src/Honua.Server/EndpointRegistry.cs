@@ -589,6 +589,11 @@ public static class EndpointRegistry
         new("GET", "/rest/services/Utilities/Geometry/GeometryServer/lengths"),
         new("POST", "/rest/services/Utilities/Geometry/GeometryServer/lengths"),
 
+        // NAServer minimal mobile routing compatibility (#366)
+        new("POST", "/rest/services/{serviceId}/NAServer/Route/solve"),
+        new("POST", "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"),
+        new("POST", "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility"),
+
         new("GET", "/ogc/maps"),
         new("GET", "/ogc/maps/conformance"),
         new("GET", "/ogc/maps/openapi.json"),

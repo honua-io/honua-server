@@ -107,6 +107,11 @@ internal static class RequestTelemetryClassifier
             return HonuaTelemetry.Protocols.GeometryService;
         }
 
+        if (value.Contains("/NAServer", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.NAServer;
+        }
+
         if (value.Contains("/GPServer", StringComparison.OrdinalIgnoreCase))
         {
             return HonuaTelemetry.Protocols.GPServer;
@@ -197,6 +202,11 @@ internal static class RequestTelemetryClassifier
         if (path.StartsWith("/rest/services/Utilities/PrintingTools/GPServer", StringComparison.OrdinalIgnoreCase))
         {
             return ResolvePrintingToolsOperation(path);
+        }
+
+        if (path.Contains("/NAServer", StringComparison.OrdinalIgnoreCase))
+        {
+            return ResolveNAServerOperation(path);
         }
 
         if (path.Contains("/GPServer", StringComparison.OrdinalIgnoreCase))
@@ -705,6 +715,36 @@ internal static class RequestTelemetryClassifier
         }
 
         return null;
+    }
+
+    private static string ResolveNAServerOperation(string path)
+    {
+        if (path.Contains("/solveClosestFacility", StringComparison.OrdinalIgnoreCase))
+        {
+            return "solveClosestFacility";
+        }
+
+        if (path.Contains("/solveServiceArea", StringComparison.OrdinalIgnoreCase))
+        {
+            return "solveServiceArea";
+        }
+
+        if (path.Contains("/solve", StringComparison.OrdinalIgnoreCase))
+        {
+            return "solveRoute";
+        }
+
+        var naServerIndex = path.IndexOf("/NAServer", StringComparison.OrdinalIgnoreCase);
+        if (naServerIndex >= 0)
+        {
+            var suffix = path[(naServerIndex + "/NAServer".Length)..];
+            if (!string.IsNullOrWhiteSpace(suffix) && suffix != "/")
+            {
+                return "layerInfo";
+            }
+        }
+
+        return "serviceInfo";
     }
 
     private static string ResolveGpServerOperation(string path)

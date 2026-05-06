@@ -309,6 +309,9 @@ public static class HonuaTelemetry
         /// <summary>GeoServices GPServer REST API.</summary>
         public const string GPServer = "GPServer";
 
+        /// <summary>GeoServices NAServer REST API.</summary>
+        public const string NAServer = "NAServer";
+
         /// <summary>SpatioTemporal Asset Catalog API.</summary>
         public const string Stac = "STAC";
 

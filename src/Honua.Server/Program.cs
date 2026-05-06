@@ -829,6 +829,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
         Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
         Honua.Server.Features.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
+        Honua.Server.Features.Protocols.GeoServices.NAServer.Models.NAServerJsonContext.Default,
         Honua.Server.Features.Export.ExportJsonContext.Default,
         Honua.Server.Features.Protocols.Stac.StacJsonContext.Default,
         Honua.Server.Features.Protocols.Cog.CogJsonContext.Default,

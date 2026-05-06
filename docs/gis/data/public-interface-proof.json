@@ -1411,6 +1411,48 @@
       ]
     },
     {
+      "surfaceId": "naserver-routing",
+      "displayName": "GeoServices REST NAServer Routing",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST NAServer",
+      "canonicalIdentifier": "/rest/services/{serviceId}/NAServer/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/rest/services/{serviceId}/NAServer"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#366",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Minimal NAServer compatibility tests cover the exact first-party mobile live-routing paths for directions, optimized route, service area, and closest facility.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/NAServer/NAServerEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#366",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "gpserver-adapter",
       "displayName": "GeoServices REST GPServer Adapter",
       "surfaceKind": "http-route-family",
