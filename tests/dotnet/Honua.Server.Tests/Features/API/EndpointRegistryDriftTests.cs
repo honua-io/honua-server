@@ -352,6 +352,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         return path.Equals("/csp-violation-report", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/openapi.json", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/metrics", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("/oauth/token", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/wfs", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/docs", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/mcp", StringComparison.OrdinalIgnoreCase) ||

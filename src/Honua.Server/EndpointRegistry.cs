@@ -59,6 +59,7 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/auth/providers/{providerKey}/authorize-url"),
         new("POST", "/api/v1/admin/auth/providers/{providerKey}/token"),
         new("GET", "/api/v1/admin/auth/providers/{providerKey}/logout-url"),
+        new("POST", "/oauth/token"),
         new("GET", "/api/v1/admin/openapi.json"),
         new("POST", "/api/v1/admin/openapi.json"),
         new("PUT", "/api/v1/admin/openapi.json"),
@@ -282,6 +283,9 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/operations/active"),
         new("GET", "/api/v1/admin/operations/type/{operationType}"),
         new("GET", "/api/v1/admin/feature-events/replay"),
+
+        // Mobile runtime auth and diagnostics endpoints (#924)
+        new("POST", "/api/mobile/exceptions"),
 
         // FieldCollection mobile sync endpoints (#894)
         new("GET", "/api/v1/fieldcollection/generation"),
