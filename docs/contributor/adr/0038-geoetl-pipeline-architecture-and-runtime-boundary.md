@@ -105,25 +105,42 @@ honua-server (default)             honua-worker-etl (heavyweight)
   │ Submission endpoints    │        │   + PROJ                │
   │ Phase 1 connectors      │        │   + GEOS                │
   │ Dry-run preview         │        │   + Phase 2 connectors  │
-  │                         │        │ PipelineExecutionBg     │
+  │ PipelineExecutionBg     │        │ PipelineExecutionBg     │
+  │   (managed profile)     │        │   (native profile)      │
   │   IJobQueue ────────────┼────────┼── claims                │
-  │   AcceptedKinds =       │        │   AcceptedKinds = {ETL} │
-  │     {registered, no ETL}│        │                         │
+  │   AcceptedKinds = {ETL} │        │   AcceptedKinds = {ETL} │
   └─────────────────────────┘        └─────────────────────────┘
               │                                    │
               └──────── PostgreSQL (shared) ───────┘
 ```
 
-`AcceptedKinds` on each image is derived from the `IJobExecutor`
-instances registered in that image. The default `honua-server` does not
-register an ETL executor, so it does not claim ETL jobs even though the
-shared `IJobQueue` carries them. `honua-worker-etl` registers the ETL
-executor exclusively and claims only `ExtractTransformLoad` jobs.
+Both images register an `IJobExecutor` for
+`ExecutionJobKind.ExtractTransformLoad` and so both advertise
+`AcceptedKinds = { ExtractTransformLoad }`. The default `honua-server`
+registers a **managed-profile** executor that runs Phase 1 connectors
+without GDAL/PROJ/GEOS bindings, preserving the single-image baseline
+where an operator runs only `honua-server` + PostgreSQL. When deployed,
+`honua-worker-etl` registers a **native-profile** executor that runs
+Phase 1 connectors plus the GDAL/PROJ/GEOS-bearing Phase 2 connectors.
+Both compete for ETL claims on the shared queue; the substrate's atomic
+claim guarantees exactly one worker executes each job (ADR-0031).
+
+Routing of Phase 2 work to the worker happens at **job submission via
+capability detection**: when a pipeline references a `RequiresNativeGeo`
+connector, the API server refuses to enqueue unless a native-capable
+worker profile is registered as available (Child Ticket F wires the
+detection signal). As defense-in-depth against a Phase 2 job that
+slipped through (e.g., during a worker outage that races the capability
+signal), the managed-profile executor performs an enqueue-time
+capability check on the pipeline's connector set; if it claims a job it
+cannot satisfy, it short-circuits to `Failed` with a clear "requires
+honua-worker-etl" error so the substrate's retry policy re-routes to
+the worker rather than silently dropping the job.
 
 - **Default image (`honua-server`)** stays lean. No GDAL, no PROJ, no
-  GEOS native libraries. Phase 1 managed connectors run inside this
-  image — they are pure-managed wrappers over the existing
-  `Honua.Core/Features/Import/Services/` readers.
+  GEOS native libraries. It registers a **managed-profile** ETL
+  executor that runs Phase 1 connectors — pure-managed wrappers over
+  the existing `Honua.Core/Features/Import/Services/` readers.
 - **GeoETL worker image (`honua-worker-etl`)** is built from a
   separate `Dockerfile` in the `honua-devops` repository. It layers
   GDAL, PROJ, and GEOS on top of the lean base image and runs the

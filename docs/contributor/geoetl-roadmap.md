@@ -218,14 +218,18 @@ consequences; the summary is below.
 Default ECS / serverless image (honua-server)
   → Serves API: pipeline CRUD, execution triggers, history queries, dry-run
   → No GDAL, no PROJ native libs, no GEOS
+  → Registers a managed-profile ETL executor;
+    AcceptedKinds = { ExtractTransformLoad }
   → Phase 1 connectors (managed, no native) execute here
 
 GeoETL worker image (honua-worker-etl) [separate Dockerfile in honua-devops]
   → Layers GDAL, PROJ, GEOS on top of the lean base
-  → Runs PipelineExecutionBackgroundService
-  → Claims ExtractTransformLoad jobs from IJobQueue with
-    AcceptedKinds = { ExtractTransformLoad }
-  → Phase 2+ heavyweight connectors registered only here
+  → Runs PipelineExecutionBackgroundService with a native-profile executor
+  → AcceptedKinds = { ExtractTransformLoad }; both images claim from the
+    same queue and the substrate's atomic claim prevents double execution
+  → Phase 2+ heavyweight connectors registered only here; capability
+    detection at job submission ensures Phase 2 jobs only enqueue when
+    the worker is deployed
 ```
 
 ### Capability detection
@@ -312,13 +316,16 @@ issue creation tracks against this roadmap.
 | D | Phase 1 sink connectors | A | honua-server | Pro |
 | E | Pipeline execution engine + cron / event scheduler | B, C, D | honua-server | Pro |
 | F | `honua-worker-etl` image + GML + capability detection | E | honua-devops + honua-server | Pro |
-| G | Remote API sources + Phase 2 database connectors | B | honua-server | Pro |
+| G | Phase 1 remote API sources (Esri REST, OGC WFS / OGC API Features, remote PostGIS) | B | honua-server | Pro |
 | H | Admin UI for pipeline authoring + execution monitor | E | honua-server-admin | Pro |
 | I | Streaming sources + custom transform plugin sandbox | E | honua-server | Enterprise |
 | J | Pluggable distributed executor backends | E | honua-server (+ honua-devops) | Enterprise |
+| K | Phase 2 database connectors (SQL Server spatial, MySQL spatial) | F | honua-server | Pro |
 
 The order is the merge order. B, C, and D can be implemented in parallel
-after A; E unblocks F, H, I, and J.
+after A; E unblocks F, H, I, and J; F unblocks K. G can land after B
+without waiting on the worker image because its connectors are managed
+Phase 1 (no GDAL).
 
 ### Child Ticket A — pipeline domain models + CRUD API (first implementation ticket)
 
@@ -404,10 +411,11 @@ honua-devops layers GDAL/PROJ/GEOS on the base image. GML connector.
 Capability detection enforced at job submission. CI image scan asserts
 no GDAL bytes leaked into the default `honua-server` image.
 
-**G — Remote API sources + Phase 2 database connectors.** Remote PostGIS,
-Esri REST, OGC WFS / OGC API Features (all Phase 1 managed — no GDAL
-required, run inside `honua-server`); SQL Server spatial, MySQL spatial
-(Phase 2 — require `honua-worker-etl`).
+**G — Phase 1 remote API sources.** Remote PostGIS, Esri REST, OGC WFS /
+OGC API Features. All managed — no GDAL required, run inside
+`honua-server` via the managed-profile executor. Depends only on B
+because the worker image is not on the critical path for these
+connectors.
 
 **H — Admin UI.** Pipeline list, execution monitor, error inspector,
 dry-run trigger. Implementation lives in honua-server-admin; this row
@@ -421,6 +429,11 @@ plugin. Enterprise-only.
 (Kubernetes Jobs, AWS Batch, Azure Container Apps Jobs, Apache Sedona)
 that can subscribe to `ExtractTransformLoad` jobs. Pipeline definitions
 remain identical across executors. Enterprise-only.
+
+**K — Phase 2 database connectors.** SQL Server spatial, MySQL spatial.
+Phase 2 — require `honua-worker-etl` for the underlying spatial
+drivers. Depends on F so the worker image and capability-detection
+contract exist before these connectors register.
 
 ## Linked follow-ons
 
