@@ -177,6 +177,8 @@ with ipc.open_stream(io.BytesIO(resp.content)) as reader:
 
 **Orchestrators**: Use Airflow, Dagster, Prefect, or your existing ETL platform. The goal is consistent extraction, idempotent loads, and observability.
 
+> **Roadmap note:** An in-product, pipeline-as-code GeoETL surface (scheduled / event-triggered, declarative JSON definitions, versioning, dry-run, row-level error capture, soft-delete-batch rollback) is the planned in-server alternative to external orchestrators. It is a Pro/Enterprise capability layered on the durable job substrate and is decomposed into reviewable child tickets. See [GeoETL Roadmap](../contributor/geoetl-roadmap.md) and [ADR-0038](../contributor/adr/0038-geoetl-pipeline-architecture-and-runtime-boundary.md). Until those child tickets land, external orchestrators remain the supported pattern.
+
 ---
 
 ## **Pattern 4: Event-Driven Integration**

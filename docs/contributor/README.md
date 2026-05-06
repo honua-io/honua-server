@@ -47,6 +47,11 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Release Checklist](RELEASE_CHECKLIST.md) — required compatibility/client/caveat updates per release
 - [LLM Architecture Review](development/llm-review-setup.md) — automated PR review
 
+## Roadmaps
+
+- [GeoETL Roadmap](geoetl-roadmap.md) — pipeline architecture, child-ticket decomposition, and runtime boundary for `#361`
+- [GeoETL Strategy Spike](geoetl-spike.md) — competitor evaluation and positioning from `#682`
+
 ## Project Operations
 
 - [Weekly Backlog Review](BACKLOG_REVIEW_CADENCE.md) — triage, scope gate, and done/close hygiene cadence
