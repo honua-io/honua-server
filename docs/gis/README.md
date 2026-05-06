@@ -49,7 +49,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 ## Time-aware Layers
 
-- [Temporal Animation API](temporal-animation-api.md) — Server-first contract for time-aware feature layers, including `timeInfo`/`timeExtent` discovery, OGC `TIME` dimension support, MVT `?time=` filtering, edition gates, and accepted date/time formats.
+- [Temporal Animation API](temporal-animation-api.md) — Server-first contract for time-aware feature layers, including `timeInfo`/`timeExtent` discovery, OGC `TIME` dimension support, MVT `?time=` filtering, entitlement gates, and accepted date/time formats.
 
 ## Compatibility
 

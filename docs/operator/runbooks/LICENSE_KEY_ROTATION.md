@@ -79,11 +79,11 @@ curl -H "X-API-Key: <admin-key>" \
 
 Verify before starting:
 
-- The new keypair has been generated on the offline signing host (no
-  online generation; libsodium / NSec keypair, 32-byte private key).
-- The new public key is exported as Base64URL (the wire format the
-  resolver expects).
-- The new `kid` follows the convention `honua-<YYYY>-<quarter>` (e.g.,
+- The new Ed25519 keypair has been generated on the offline signing host; do
+  not generate signing keys on customer runtime instances.
+- The new public key is exported as raw Base64URL with the `base64url:`
+  prefix (or as `base64:` standard Base64).
+- The new `keyId` follows the convention `honua-<YYYY>-<quarter>` (e.g.,
   `honua-2026-q3`). Numeric collision is forbidden.
 - For the #338 runtime baseline, verify trusted keys through the effective
   deployment configuration because `GET /api/v1/admin/license/keys` is not
@@ -144,7 +144,7 @@ needed.
 
 ### Step 4 — Retire the old key
 
-Once the longest-lived in-flight file signed by the old `kid` has expired
+Once the longest-lived in-flight file signed by the old `keyId` has expired
 plus a margin (default: 30 days past the latest known `expiresAt`), remove
 `Licensing:TrustedKeys:<old-key-id>` from configuration and restart each
 instance. If any old file is still in flight, the instance logs event `10003`
@@ -166,22 +166,22 @@ If a private signing key is suspected compromised:
 4. **Add the new public key** to every Honua server (Step 1 above).
 5. **Switch signing** to the new key (Step 2 above) and re-enable
    `License:Signing:Enabled=true`.
-6. **Re-issue every in-flight file** signed by the compromised `kid`:
+6. **Re-issue every in-flight file** signed by the compromised `keyId`:
    - BYOL: portal sweep within hours, not weeks.
    - AWS / Azure: the adapters auto-re-mint within `RefreshLeadTime`; if
      the lead time is too long for the incident, manually trigger
      `POST /api/v1/admin/license/refresh` for each affected customer or
      shorten the lead time temporarily.
-7. **Retire the compromised `kid`.** Remove
+7. **Retire the compromised `keyId`.** Remove
    `Licensing:TrustedKeys:<compromised-key-id>` from every instance and
-   restart. The retired `kid` is **not** trusted again, even if the private
+   restart. The retired `keyId` is **not** trusted again, even if the private
    key is later believed safe — treat compromise as irreversible.
 8. **File a public security advisory** if any compromised file may have
-   reached customers and could not be re-issued before its `exp`.
+   reached customers and could not be re-issued before its `expiresAt`.
 
 Optional revocation channel is **out of scope** for v1. A compromised
 signing key without a revocation channel means files already in flight
-cannot be invalidated before their `exp`. This is a known accepted risk
+cannot be invalidated before their `expiresAt`. This is a known accepted risk
 captured in ADR-0033 § Negative Consequences and § Risks 3.
 
 ---
@@ -207,16 +207,16 @@ exercises:
 
 | Step | Assertion |
 |------|-----------|
-| 1. Bootstrap with `kid=A`. | Admin status shows the expected edition and `validationState=Valid`. |
-| 2. Issue file signed by `kid=A`, validate. | Startup load or upload succeeds. |
-| 3. Add `kid=B` to configuration; restart. | Files signed by either key validate. |
-| 4. Issue file signed by `kid=B`, validate. | Admin status shows `validationState=Valid`. |
-| 5. Validate the original `kid=A` file. | Still `valid`. |
-| 6. Remove `kid=A` from `Licensing:TrustedKeys`; restart. | `kid=A` is no longer trusted. |
-| 7. Validate the original `kid=A` file. | `UnknownKey` validation state. |
-| 8. Validate the `kid=B` file. | Still `valid`. |
-| 9. Remove `kid=A` from configuration. | Resolver lists only `kid=B`. |
-| 10. Validate every file signed by `kid=B`. | All `valid`. |
+| 1. Bootstrap with `keyId=A`. | Admin status shows the expected edition and `validationState=Valid`. |
+| 2. Issue file signed by `keyId=A`, validate. | Startup load or upload succeeds. |
+| 3. Add `keyId=B` to configuration; restart. | Files signed by either key validate. |
+| 4. Issue file signed by `keyId=B`, validate. | Admin status shows `validationState=Valid`. |
+| 5. Validate the original `keyId=A` file. | Still `Valid`. |
+| 6. Remove `keyId=A` from `Licensing:TrustedKeys`; restart. | `keyId=A` is no longer trusted. |
+| 7. Validate the original `keyId=A` file. | `UnknownKey` validation state. |
+| 8. Validate the `keyId=B` file. | Still `Valid`. |
+| 9. Remove `keyId=A` from configuration. | Resolver lists only `keyId=B`. |
+| 10. Validate every file signed by `keyId=B`. | All `Valid`. |
 
 The smoke test must pass before any rotation is rolled out to production.
 A failed smoke run blocks rotation; investigate before proceeding.
@@ -232,33 +232,33 @@ staging instance with `Licensing:AllowAdminUpload=true` and a writable
 curl -H "X-API-Key: <admin-key>" \
   "https://<staging-host>/api/v1/admin/license/status"
 
-# 2. Add the new kid through normal configuration and restart.
+# 2. Add the new key id through normal configuration and restart.
 # Confirm the effective configuration in your deployment system contains both
-# Licensing:TrustedKeys:<old-kid> and Licensing:TrustedKeys:<new-kid>.
+# Licensing:TrustedKeys:<old-key-id> and Licensing:TrustedKeys:<new-key-id>.
 
-# 3. Validate a freshly minted file with the new kid.
+# 3. Validate a freshly minted file with the new key id.
 curl -X POST -H "X-API-Key: <admin-key>" \
   -H "Content-Type: application/octet-stream" \
-  --data-binary @new-kid.honua-license \
+  --data-binary @new-key-id.honua-license.json \
   "https://<staging-host>/api/v1/admin/license/upload"
 
 curl -H "X-API-Key: <admin-key>" \
   "https://<staging-host>/api/v1/admin/license/status"
 # expect isValid=true and validationState="Valid"; logs emit EventId 10006.
 
-# 4. Validate a file signed by the old kid.
+# 4. Validate a file signed by the old key id.
 curl -X POST -H "X-API-Key: <admin-key>" \
   -H "Content-Type: application/octet-stream" \
-  --data-binary @old-kid.honua-license \
+  --data-binary @old-key-id.honua-license.json \
   "https://<staging-host>/api/v1/admin/license/upload"
 
 curl -H "X-API-Key: <admin-key>" \
   "https://<staging-host>/api/v1/admin/license/status"
 # expect isValid=true and validationState="Valid".
 
-# 5. Remove old kid from Licensing:TrustedKeys and restart.
+# 5. Remove old key id from Licensing:TrustedKeys and restart.
 
-# 6. Re-upload the old-kid file; expect isValid=false with
+# 6. Re-upload the old-key-id file; expect isValid=false with
 # validationState="UnknownKey" or "Expired"
 ```
 
@@ -272,7 +272,7 @@ rotation complete.
 | Signal | Healthy state | Action threshold |
 |--------|---------------|-----------------|
 | Admin status `validationState` from `/api/v1/admin/license/status` | `Valid` on every rotated instance. | `UnknownKey`, `InvalidSignature`, `Malformed`, or `Expired` after rollout = halt rotation and inspect the configured key set, issued file, and expiry. |
-| Runtime log EventId `10003` (`UnknownKey`) | Zero during routine rotation. | Any occurrence after adding a new `kid` = at least one server does not trust the key that signed the file. |
+| Runtime log EventId `10003` (`UnknownKey`) | Zero during routine rotation. | Any occurrence after adding a new `keyId` = at least one server does not trust the key that signed the file. |
 | Runtime log EventId `10004` (`InvalidSignature`) | Zero. | Any occurrence = the private signing key and configured public key do not match for that `keyId`, or the file was modified after signing. |
 | Runtime log EventId `10006` (`LicenseLoaded`) | One successful load/upload per tested file. | Missing success event after upload/startup = check admin upload settings, file path, and validation state. |
 | Runtime log EventId `10007` / `10008` | Zero outside intentional negative tests. | Upload rejected or save failed; do not proceed until resolved. |
@@ -288,19 +288,19 @@ runtime baseline.
 
 If a rotation triggers any of the action thresholds above:
 
-1. **Do not** retire the old `kid`.
-2. **Switch signing back** to the old `kid` on the mint host:
+1. **Do not** retire the old `keyId`.
+2. **Switch signing back** to the old `keyId` on the mint host:
    ```
    License:Signing:KeyId = honua-2026-q2
    License:Signing:PrivateKeyRef = secret://kv/honua/sign/2026-q2
    ```
 3. Confirm portal issuance or mint-host logs show files being issued by the
-   restored `kid`.
-4. Page the licensing on-call. Investigate why the new `kid` failed to
+   restored `keyId`.
+4. Page the licensing on-call. Investigate why the new `keyId` failed to
    propagate before retrying.
 
-The new `kid` configuration **stays in place** during rollback — it does
-no harm because no files are signed by it. Remove the new `kid` only
+The new `keyId` configuration **stays in place** during rollback — it does
+no harm because no files are signed by it. Remove the new `keyId` only
 after root cause is understood.
 
 ---
@@ -309,14 +309,14 @@ after root cause is understood.
 
 A rotation is complete when:
 
-- The mint host signs every new license with the new `kid`.
+- The mint host signs every new license with the new `keyId`.
 - The fleet configuration contains the expected trusted key ids.
 - BYOL re-issue cadence has reached 100% of known customers.
-- The retired `kid` has been removed from `Licensing:TrustedKeys` after the
+- The retired `keyId` has been removed from `Licensing:TrustedKeys` after the
   final old-key file expired or was replaced.
 - The smoke test was run on the non-production environment within the
   last 30 days.
-- The retired `kid` configuration has been removed in a follow-up change.
-- The rotation is recorded in the security log with the new `kid`,
-  `NotBefore`, retirement date for the old `kid`, and the operator
+- The retired `keyId` configuration has been removed in a follow-up change.
+- The rotation is recorded in the security log with the new `keyId`,
+  activation date, retirement date for the old `keyId`, and the operator
   responsible.

@@ -131,7 +131,7 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 
 **Admin** — REST API for managing connections, services, layers, relationships, styles (with auto-cartographic suggestions), and import jobs. The Blazor admin UI lives in the separate `honua-server-admin` repo and is deployed as a standalone static app.
 
-**Runtime licensing** — Offline Ed25519-signed JSON license files can be loaded from `Licensing:LicensePath` or uploaded through the admin API when enabled. Missing or invalid configured files fall back to Community mode; paid feature gates return HTTP `402 Payment Required` or gRPC `FAILED_PRECONDITION`.
+**Runtime licensing** — Offline Ed25519-signed JSON license files can be loaded from `Licensing:LicensePath` or uploaded through the admin API when enabled. Missing or invalid configured files fall back to Community mode; paid features are activated only by active entitlement keys and return HTTP `402 Payment Required` or gRPC `FAILED_PRECONDITION` when missing.
 
 **Caching** — Multi-layer: output cache, Redis, in-memory fallback.
 

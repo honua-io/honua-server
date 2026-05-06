@@ -19,7 +19,7 @@ Sources:
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Service metadata | `/rest/services/{serviceName}/ImageServer` | GET | Implemented | `GET /rest/services/{id}/ImageServer` | Returns metadata for the addressed layer mosaic, including aggregate extent/time metadata when multiple rasters are present. Metadata responses are cached with the `ImageServerMetadata` output-cache policy. |
-| Image tile | `/rest/services/{serviceName}/ImageServer/tile/{level}/{row}/{col}` | GET | Implemented | `GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}` | Returns raster map tiles. Supports `png` (default), `jpeg`, and `tiff` output; zoom levels are limited to `0-28`. When multiple PostGIS rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy. If no PostGIS tile is produced, Pro edition can fall back to a registered cloud-hosted COG for the layer. |
+| Image tile | `/rest/services/{serviceName}/ImageServer/tile/{level}/{row}/{col}` | GET | Implemented | `GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}` | Returns raster map tiles. Supports `png` (default), `jpeg`, and `tiff` output; zoom levels are limited to `0-28`. When multiple PostGIS rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy. If no PostGIS tile is produced, instances with the active `raster.cloud-cog-serving` entitlement can fall back to a registered cloud-hosted COG for the layer. |
 
 ### Partial
 
@@ -105,7 +105,7 @@ Sources:
 | `size` | Implemented | Honua accepts Esri-style `width,height` dimensions from `1,1` through `4096,4096`; omitted values default to `400,400`. |
 | `pixelType` | Partial | Input is validated, but the export handler does not apply pixel-type conversion. |
 | `mosaicRule` | Partial | Accepts simple tokens (`newest`, `oldest`, `average`, `max`, `min`) or an Esri-style JSON object with `mergeStrategy`/`operation`. Applied only when the request intersects multiple rasters. |
-| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp, then applies the export bbox/window. |
+| `time` | Partial | Accepts a single ISO 8601 instant. With the active `raster.temporal-mosaic` entitlement, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp, then applies the export bbox/window. |
 | `compression` | Partial | Applied to TIFF output only. Supports `None`, `JPEG`, and `LZ77` (`LZ77` maps to GDAL `DEFLATE`); ignored for non-TIFF outputs. |
 
 #### Ignored or not implemented
@@ -134,7 +134,7 @@ Sources:
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
 | `mosaicRule` | Partial | Accepts the same merge-strategy tokens as `exportImage` and is applied when the identify point intersects multiple rasters. |
-| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp, then applies the identify point. |
+| `time` | Partial | Accepts a single ISO 8601 instant. With the active `raster.temporal-mosaic` entitlement, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp, then applies the identify point. |
 
 #### Ignored or not implemented
 
@@ -152,7 +152,7 @@ Sources:
 | `format` | Implemented | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`; defaults to `png`. |
 | `{level}` / `{row}` / `{col}` | Implemented | Validated as Web Mercator tile coordinates with zoom levels `0-28`. |
 | `mosaicRule` | Partial | Accepts the same merge-strategy tokens as `exportImage` and is applied when multiple rasters overlap the requested tile. |
-| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp, then applies the tile envelope. |
+| `time` | Partial | Accepts a single ISO 8601 instant. With the active `raster.temporal-mosaic` entitlement, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp, then applies the tile envelope. |
 
 ### Query (`GET|POST .../ImageServer/query`)
 
@@ -175,7 +175,7 @@ Sources:
 
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
-| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua filters the catalog to rasters in the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp. |
+| `time` | Partial | Accepts a single ISO 8601 instant. With the active `raster.temporal-mosaic` entitlement, Honua filters the catalog to rasters in the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp. |
 
 #### Ignored or not implemented
 
@@ -202,7 +202,7 @@ Sources:
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
 | `mosaicRule` | Partial | Applied when `rasterIds` is omitted and multiple rasters participate in the selected mosaic. |
-| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp before computing statistics/histograms. |
+| `time` | Partial | Accepts a single ISO 8601 instant. With the active `raster.temporal-mosaic` entitlement, Honua selects the newest layer-wide effective acquisition batch (`AcquisitionDate`, falling back to `CreatedAt`) at or before the timestamp before computing statistics/histograms. |
 
 #### Ignored or not implemented
 

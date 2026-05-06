@@ -3,8 +3,8 @@
 Use this runbook to move existing Honua deployments from any pre-existing
 license file format to the ticket #338 runtime license envelope: a JSON
 envelope with Ed25519 verification over exact payload bytes. ADR-0033 tracks
-the broader compact-JWS marketplace/mint architecture; customer runtimes on
-this branch load the signed JSON envelope described here.
+the broader marketplace/mint architecture; customer runtimes on this branch
+load the signed JSON envelope described here.
 
 The #338 runtime accepts only this signed JSON envelope. If any customer is
 still on a private-preview license format, treat compatibility as a separate
@@ -81,10 +81,15 @@ The decoded payload is also JSON:
 `schema`, `licenseId`, `licensedTo`, `edition`, and `issuedAt` are required.
 `expiresAt` is optional; when present it must be in the future. The file is
 rejected as `Malformed` when the envelope is missing required fields, exceeds
-the runtime size limit, contains invalid Base64URL, or decodes to invalid
-payload JSON. A `keyId` that is absent from `Licensing:TrustedKeys` is
+the 64 KiB runtime size limit, contains invalid Base64URL, or decodes to
+invalid payload JSON. A `keyId` that is absent from `Licensing:TrustedKeys` is
 `UnknownKey`; a signature mismatch is `InvalidSignature`; an expired file is
 `Expired`.
+
+Community-tier catalog entries are always active. Paid features are active only
+when their catalog key is present in the signed `entitlements` array; the
+operator-facing `edition` value does not automatically activate every paid
+feature in that edition.
 
 ## Core Policy
 
@@ -143,7 +148,7 @@ Licensing:ExpiryWarningDays            = 30
 | Setting | Type | Notes |
 |---------|------|-------|
 | `Licensing:LicensePath` | string | Optional path to the signed license file. Empty/unset runs Community mode. |
-| `Licensing:TrustedKeys:<key-id>` | string | Trusted raw Ed25519 public key as `base64url:<key>` or standard Base64. The license envelope `keyId` must match this entry. |
+| `Licensing:TrustedKeys:<key-id>` | string | Trusted raw Ed25519 public key as `base64url:<key>`, unprefixed Base64URL, or `base64:<key>`. The license envelope `keyId` must match this entry. |
 | `Licensing:AllowAdminUpload` | bool | Enables admin upload to `LicensePath`. Default `false`. |
 | `Licensing:ExpiryWarningDays` | int | Warning threshold surfaced in admin status. Default `30`. |
 
@@ -156,11 +161,11 @@ and atomically replaces the configured file path at runtime.
 
 ## Migration Phases
 
-### Phase 1 — Land canonical format
+### Phase 1 — Land signed JSON envelope
 
 1. Deploy the release that includes ticket #338.
 2. Configure `Licensing:TrustedKeys:<key-id>` on every instance.
-3. Re-issue all existing in-house and staging files in canonical format.
+3. Re-issue all existing in-house and staging files as signed JSON envelopes.
 4. Configure `Licensing:LicensePath` and restart, or enable
    `Licensing:AllowAdminUpload=true` for the migration window and upload the
    file through `/api/v1/admin/license/upload`.
@@ -265,7 +270,7 @@ load.
 > Removes the dual-format verifier branch per ADR-0033 § Migration. The
 > `licenses_validated_total{result="legacy_format_accepted"}` counter has
 > been zero for `<N>` days; the deadline `<DEADLINE>` has passed. After
-> this PR, files in the legacy format return `MalformedEnvelope`. The
+> this PR, files in the legacy format return `Malformed`. The
 > migration runbook has been updated to record the cutover.
 
 ---

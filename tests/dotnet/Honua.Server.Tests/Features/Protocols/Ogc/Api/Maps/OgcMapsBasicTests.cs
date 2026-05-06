@@ -82,7 +82,13 @@ public class OgcMapsBasicTests : IAsyncLifetime
         collectionMap.TryGetProperty("security", out var security).Should().BeTrue();
         security.ValueKind.Should().Be(JsonValueKind.Array);
         collectionMap.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
+        collectionMap.GetProperty("responses").TryGetProperty("402", out _).Should().BeTrue();
         collectionMap.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
+
+        var datasetMap = json.RootElement.GetProperty("paths")
+            .GetProperty("/ogc/maps/map")
+            .GetProperty("get");
+        datasetMap.GetProperty("responses").TryGetProperty("402", out _).Should().BeTrue();
 
         var styledCollectionMap = json.RootElement.GetProperty("paths")
             .GetProperty("/ogc/maps/collections/{collectionId}/styles/{styleId}/map")
@@ -95,6 +101,14 @@ public class OgcMapsBasicTests : IAsyncLifetime
             .GetProperty("get");
         tilesets.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
         tilesets.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
+
+        components.GetProperty("parameters")
+            .GetProperty("datetime")
+            .GetProperty("description")
+            .GetString()
+            .Should()
+            .Contain("402 Payment Required")
+            .And.Contain("raster.temporal-mosaic");
     }
 
     [IntegrationTest]

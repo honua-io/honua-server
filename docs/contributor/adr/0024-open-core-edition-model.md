@@ -131,14 +131,14 @@ Runtime license checking at startup:
 
 License checks must be:
 - **Offline-capable**: no phone-home requirement. Keys are self-contained
-  (signed envelope) with edition, expiry, and any per-edition entitlements
-  encoded; see ADR-0033 for the canonical claim set.
+  signed envelopes with edition, expiry, and active entitlement keys encoded;
+  see ADR-0033 for the canonical payload fields.
 - **Transparent**: gated endpoints return actionable error messages, not
   silent failures.
 - **Auditable**: license status is visible through the admin license status
   API and runtime health/monitoring payloads.
 
-> The canonical envelope (compact JWS / EdDSA / Ed25519), the BYOL and
+> The canonical runtime envelope (JSON envelope / Ed25519), the BYOL and
 > marketplace issuance flows, and the multi-key rotation contract are
 > defined in [ADR-0033](0033-unified-license-format.md). The companion design
 > doc lives at
@@ -148,8 +148,8 @@ License checks must be:
 >
 > Per-node enforcement (a node-count claim plus runtime gating) is **not**
 > in the v1 claim set defined by ADR-0033 — Pro and Enterprise are gated
-> by `edition` and `entitlements` only. Per-node accounting is deferred
-> to a follow-up ticket and would be additive to the JWS payload (a
+> by `edition` and active entitlement keys only. Per-node accounting is deferred
+> to a follow-up ticket and would be additive to the signed payload (a
 > `node_count` claim, an `IPerNodeLicenseEnforcer`, and either a heartbeat
 > aggregator or a reconciler that meters distinct hosts). It is **not**
 > required to ship Pro / Enterprise in v1.

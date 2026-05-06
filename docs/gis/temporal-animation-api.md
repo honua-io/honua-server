@@ -81,7 +81,7 @@ treated as "no temporal filter" and do not regress non-temporal queries.
   actual layer maximum.
 - Epoch values are Unix milliseconds (consistent with ArcGIS REST).
 
-## Edition gating
+## Entitlement gating
 
 | Capability | Edition | Feature key |
 | --- | --- | --- |
@@ -93,7 +93,7 @@ treated as "no temporal filter" and do not regress non-temporal queries.
 | MVT `?time=` filtering on `/tiles/...mvt` | Pro | `temporal.time-series-tiles` |
 | Animation API contract for SDK TimeSlider integration | Pro | `temporal.animation-api` |
 
-Edition gates are enforced server-side; SDK and admin clients should read the
+Entitlement gates are enforced server-side; SDK and admin clients should read the
 authoritative feature catalog at `GET /api/v1/admin/features` (or its public
 capability surface) rather than inferring availability from layer field names.
 
@@ -154,11 +154,11 @@ GET /rest/services/test/FeatureServer/0/queryDateBins?binField=event_start
 `days`, or `weeks`, optional `origin` as Unix ms). `outStatistics` is
 optional; the default returns `count`.
 
-`queryDateBins` requires the **Pro** edition (feature key
-`temporal.histogram`). Community-tier requests are rejected with a
+`queryDateBins` requires an active `temporal.histogram` entitlement (Pro
+catalog tier). Requests without that entitlement are rejected with a
 `402 Payment Required` response and a clear remediation message — the gate
 fires for any successful service/layer access on both GET and POST, so the
-edition contract holds regardless of how the bin parameters are provided.
+entitlement contract holds regardless of how the bin parameters are provided.
 
 ### Query with time range
 
@@ -247,8 +247,9 @@ The HTTP cache automatically distinguishes time-filtered tiles because the
 cache entries, and tile requests without `?time=` continue to be served from
 the existing cache entries unchanged.
 
-`?time=` requires the **Pro** edition. Community-tier requests receive a
-`402 Payment Required` response with a clear remediation message.
+`?time=` requires an active `temporal.time-series-tiles` entitlement. Requests
+without that entitlement receive a `402 Payment Required` response with a clear
+remediation message.
 
 ## Empty-range and non-time-aware behavior
 

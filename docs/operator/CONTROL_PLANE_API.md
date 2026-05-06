@@ -555,17 +555,17 @@ for run lifecycle, scheduler semantics, and tuning details.
 | `/api/v1/admin/license` | POST | Upload raw signed license bytes when `Licensing:AllowAdminUpload=true` and `Licensing:LicensePath` is configured. Disabled by default. |
 | `/api/v1/admin/license/entitlements` | GET | Get the active/inactive entitlement inventory as a flat list. |
 | `/api/v1/admin/license/status` | GET | Platform-admin license status (same status contract as `GET /api/v1/admin/license`). |
-| `/api/v1/admin/license/features` | GET | Platform-admin feature entitlement view grouped by catalog metadata. |
-| `/api/v1/admin/license/upload` | POST | Platform-admin upload alias. Uses the same validator and upload settings as `POST /api/v1/admin/license`. |
+| `/api/v1/admin/license/features` | GET | Platform-admin feature entitlement view with catalog category and minimum-edition metadata. |
+| `/api/v1/admin/license/upload` | POST | Platform-admin upload alias. Uses the same validator and upload settings as `POST /api/v1/admin/license`, but returns a compact upload-result response. |
 
 Runtime licensing loads an offline Ed25519-signed JSON envelope from
 `Licensing:LicensePath`. `Licensing:TrustedKeys:<keyId>` supplies trusted
-raw Ed25519 public keys as `base64url:<32-byte-key>` or standard Base64. With
-no configured path the server runs in Community mode; missing, malformed,
-unknown-key, invalid-signature, and expired files leave the server in a safe
-Community state and emit structured licensing diagnostics. The license status
-also appears in `/healthz/metrics` and `/monitoring/health/production`
-payloads.
+raw Ed25519 public keys as `base64url:<32-byte-key>`, unprefixed Base64URL, or
+`base64:<32-byte-key>`. With no configured path the server runs in Community
+mode; missing, malformed, unknown-key, invalid-signature, and expired files
+leave the server in a safe Community state and emit structured licensing
+diagnostics. License files are bounded to 64 KiB. The license status also
+appears in `/healthz/metrics` and `/monitoring/health/production` payloads.
 
 The ticket #338 runtime envelope is:
 
@@ -599,9 +599,16 @@ The decoded payload uses camel-case JSON:
 `edition` accepts `Community`, `Pro`, `Enterprise`, and `Professional`
 (`Professional` maps to `Pro`). `expiresAt` is optional; when present it must be
 in the future. Unknown entitlement keys are ignored for activation, and the
-active entitlement set always includes Community-tier catalog entries.
+active entitlement set always includes Community-tier catalog entries. Paid
+features are active only when their catalog key is present in the signed
+`entitlements` array; the `edition` value is the operator-facing bundle label
+and does not by itself activate every Pro or Enterprise feature.
 
-Status responses use `ApiResponse<LicenseStatusResponse>`:
+Status responses from `GET /api/v1/admin/license`,
+`GET /api/v1/admin/license/status`, and successful
+`POST /api/v1/admin/license` calls use `ApiResponse<LicenseStatusResponse>`.
+The `entitlements` array is the known catalog inventory with active/inactive
+state, not only the keys present in the signed payload:
 
 ```json
 {
@@ -628,6 +635,48 @@ Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`,
 `Malformed`, `UnknownKey`, `InvalidSignature`, and `Expired`. No configured path
 reports `Community` with `isValid=true`; every failed configured-file state
 reports `Community` with `isValid=false`.
+
+`POST /api/v1/admin/license/upload` returns `ApiResponse<LicenseUploadResponse>`
+instead of the full status response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "success": true,
+    "message": "License applied."
+  },
+  "timestamp": "2026-05-06T00:00:00Z"
+}
+```
+
+When upload is disabled, `Licensing:LicensePath` is unset, the file is empty,
+oversized, malformed, unknown-key, invalid-signature, or expired, upload
+returns HTTP `400`. `/api/v1/admin/license/upload` includes the rejection
+message in `data.message`; `/api/v1/admin/license` includes the rejection
+message in the top-level `message`.
+
+`GET /api/v1/admin/license/features` returns `ApiResponse<LicenseEntitlementsResponse>`:
+
+```json
+{
+  "success": true,
+  "data": {
+    "edition": "Community",
+    "features": [
+      {
+        "key": "analytics.clustering",
+        "displayName": "Spatial Clustering",
+        "category": "Analytics",
+        "isEnabled": false,
+        "minimumEdition": "Pro",
+        "upgradeRequired": true
+      }
+    ]
+  },
+  "timestamp": "2026-05-06T00:00:00Z"
+}
+```
 
 Paid-feature gates return HTTP `402 Payment Required` through the shared
 protocol error formatter. Admin/OGC/generic routes use problem details with

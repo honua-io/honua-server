@@ -63,6 +63,14 @@ Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`,
 configured path, malformed file, unknown key, invalid signature, or expired file
 falls back to Community mode without blocking startup.
 
+The health summary intentionally exposes only operator-safe fields: edition,
+validation state, validity, expiry, days until expiry, license id/licensee when
+present, and active entitlement keys. `/healthz/metrics` serializes these as
+snake_case (`validation_state`, `active_entitlements`); `/monitoring/health/production`
+uses the monitoring API's camelCase policy (`validationState`,
+`activeEntitlements`). Neither surface returns the license path, trusted keys,
+signature, or raw payload.
+
 | EventId | Level | Signal |
 |---------|-------|--------|
 | 10000 | Information | No license path configured; Community mode is active. |
