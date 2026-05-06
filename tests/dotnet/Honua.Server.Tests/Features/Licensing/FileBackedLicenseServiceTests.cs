@@ -15,6 +15,8 @@ namespace Honua.Server.Tests.Features.Licensing;
 [Operation(Operations.LicenseManagement)]
 public sealed class FileBackedLicenseServiceTests
 {
+    private const int MaxLicenseFileBytes = 64 * 1024;
+
     [UnitTest]
     public async Task StartAsync_NoLicensePath_PublishesCommunitySnapshot()
     {
@@ -108,6 +110,27 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
+    public async Task StartAsync_OversizedLicenseFile_PublishesMalformedCommunitySnapshot()
+    {
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
+        await File.WriteAllBytesAsync(licensePath, new byte[MaxLicenseFileBytes + 1]);
+        var logger = new RecordingLogger<FileBackedLicenseService>();
+        var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
+
+        await service.StartAsync(CancellationToken.None);
+
+        var snapshot = service.GetSnapshot();
+        snapshot.Edition.Should().Be(HonuaEdition.Community);
+        snapshot.IsValid.Should().BeFalse();
+        snapshot.ValidationState.Should().Be(LicenseValidationState.Malformed);
+        logger.Entries.Should().Contain(entry =>
+            entry.EventId == 10002 &&
+            entry.Level == LogLevel.Warning &&
+            entry.Message.Contains("invalid-size", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTest]
     public async Task StartAsync_UnknownSigningKey_PublishesSafeCommunitySnapshot()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
@@ -187,6 +210,33 @@ public sealed class FileBackedLicenseServiceTests
         logger.Entries.Should().Contain(entry => entry.EventId == 10005 && entry.Level == LogLevel.Warning);
     }
 
+    [UnitTest]
+    public async Task UploadLicenseAsync_OversizedStream_StopsReadingAfterSizeLimit()
+    {
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
+        var logger = new RecordingLogger<FileBackedLicenseService>();
+        var service = CreateService(
+            new LicenseOptions
+            {
+                AllowAdminUpload = true,
+                LicensePath = licensePath
+            },
+            logger);
+        using var stream = new OversizedLicenseStream(MaxLicenseFileBytes * 4L);
+
+        var result = await service.UploadLicenseAsync(stream, CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Be("License validation failed: Malformed.");
+        stream.BytesRead.Should().Be(MaxLicenseFileBytes + 1);
+        File.Exists(licensePath).Should().BeFalse();
+        logger.Entries.Should().Contain(entry =>
+            entry.EventId == 10007 &&
+            entry.Level == LogLevel.Warning &&
+            entry.Message.Contains("Malformed", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static FileBackedLicenseService CreateService(
         LicenseOptions options,
         RecordingLogger<FileBackedLicenseService> logger)
@@ -220,6 +270,68 @@ public sealed class FileBackedLicenseServiceTests
 
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class OversizedLicenseStream : Stream
+    {
+        private readonly long _length;
+
+        public OversizedLicenseStream(long length)
+        {
+            _length = length;
+        }
+
+        public long BytesRead { get; private set; }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => _length;
+
+        public override long Position
+        {
+            get => BytesRead;
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var destination = buffer.AsMemory(offset, count);
+            return ReadNext(destination);
+        }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(ReadNext(buffer));
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        private int ReadNext(Memory<byte> buffer)
+        {
+            const int MaxPermittedReadBytes = MaxLicenseFileBytes + 1;
+            if (BytesRead >= MaxPermittedReadBytes)
+            {
+                throw new InvalidOperationException("The license stream was read past the size guard.");
+            }
+
+            var remaining = Math.Min(_length - BytesRead, MaxPermittedReadBytes - BytesRead);
+            var bytesRead = (int)Math.Min(buffer.Length, remaining);
+            buffer.Span[..bytesRead].Fill((byte)'x');
+            BytesRead += bytesRead;
+            return bytesRead;
         }
     }
 

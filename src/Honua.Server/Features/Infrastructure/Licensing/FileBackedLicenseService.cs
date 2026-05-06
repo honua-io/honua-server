@@ -95,9 +95,7 @@ internal sealed class FileBackedLicenseService :
     {
         ArgumentNullException.ThrowIfNull(licenseStream);
 
-        using var buffer = new MemoryStream();
-        await licenseStream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-        var licenseData = buffer.ToArray();
+        var licenseData = await ReadBoundedLicenseDataAsync(licenseStream, cancellationToken).ConfigureAwait(false);
         return await ApplyUploadedLicenseDataAsync(licenseData, cancellationToken).ConfigureAwait(false);
     }
 
@@ -172,7 +170,14 @@ internal sealed class FileBackedLicenseService :
 
         try
         {
-            var licenseData = await File.ReadAllBytesAsync(options.LicensePath, cancellationToken).ConfigureAwait(false);
+            await using var licenseStream = new FileStream(
+                options.LicensePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            var licenseData = await ReadBoundedLicenseDataAsync(licenseStream, cancellationToken).ConfigureAwait(false);
             var result = ValidateLicenseData(licenseData, options);
             PublishSnapshot(result.Snapshot);
             LogValidationResult(result);
@@ -547,6 +552,31 @@ internal sealed class FileBackedLicenseService :
         var requiredEdition = definition?.MinimumEdition.ToString() ?? "a paid edition";
         return $"{featureName} requires an active {requiredEdition} entitlement. " +
             $"Current edition is {snapshot.Edition}; install a license that includes '{entitlementKey}'.";
+    }
+
+    private static async Task<byte[]> ReadBoundedLicenseDataAsync(
+        Stream licenseStream,
+        CancellationToken cancellationToken)
+    {
+        using var buffer = new MemoryStream(MaxLicenseFileBytes + 1);
+        var scratch = new byte[4096];
+
+        while (buffer.Length <= MaxLicenseFileBytes)
+        {
+            var bytesRemaining = MaxLicenseFileBytes + 1 - buffer.Length;
+            var bytesToRead = (int)Math.Min(scratch.Length, bytesRemaining);
+            var bytesRead = await licenseStream
+                .ReadAsync(scratch.AsMemory(0, bytesToRead), cancellationToken)
+                .ConfigureAwait(false);
+            if (bytesRead == 0)
+            {
+                break;
+            }
+
+            buffer.Write(scratch, 0, bytesRead);
+        }
+
+        return buffer.ToArray();
     }
 
     private static bool TryDecodeKey(string value, out byte[] bytes)
