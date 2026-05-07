@@ -100,6 +100,20 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task FeatureServer_WithSqlLikeBearerCredential_DoesNotReturnBadRequest()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/rest/services/test/FeatureServer");
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer opaque--token");
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithSqlKeywordInsideOpaqueCredentialHeader_IsNotRejectedByInputValidation()
     {

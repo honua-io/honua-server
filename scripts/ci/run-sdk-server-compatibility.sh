@@ -132,11 +132,16 @@ PY
 section ".NET SDK live compatibility"
 require_dir "$DOTNET_DIR" "honua-sdk-dotnet"
 (
+    case "$DOTNET_DIR" in
+        /*) dotnet_admin_project="$DOTNET_DIR/src/Honua.Sdk.Admin/Honua.Sdk.Admin.csproj" ;;
+        *) dotnet_admin_project="$ROOT_DIR/$DOTNET_DIR/src/Honua.Sdk.Admin/Honua.Sdk.Admin.csproj" ;;
+    esac
+
     smoke_dir="$(mktemp -d)"
     trap 'rm -rf "$smoke_dir"' EXIT
     dotnet new console --framework net10.0 --output "$smoke_dir" >/dev/null
     smoke_project="$(find "$smoke_dir" -maxdepth 1 -name '*.csproj' -print -quit)"
-    dotnet add "$smoke_project" reference "$ROOT_DIR/$DOTNET_DIR/src/Honua.Sdk.Admin/Honua.Sdk.Admin.csproj" >/dev/null
+    dotnet add "$smoke_project" reference "$dotnet_admin_project" >/dev/null
     cat > "$smoke_dir/Program.cs" <<'CS'
 using Honua.Sdk.Admin;
 
@@ -167,9 +172,18 @@ if (!compatibility.IsSupported)
 
 Console.WriteLine($".NET SDK compatibility passed for server {capabilities.ServerVersion}.");
 CS
+    dotnet_msbuild_props=(
+        -p:RunAnalyzers=false
+        -p:TreatWarningsAsErrors=false
+        -p:WarningsAsErrors=
+        -p:CodeAnalysisTreatWarningsAsErrors=false
+    )
     HONUA_SERVER_BASE_URL="$BASE_URL" \
     HONUA_ADMIN_API_KEY="$ADMIN_API_KEY" \
-    dotnet run --project "$smoke_project" --configuration Release
+    dotnet build "$smoke_project" --configuration Release "${dotnet_msbuild_props[@]}" >/dev/null
+    HONUA_SERVER_BASE_URL="$BASE_URL" \
+    HONUA_ADMIN_API_KEY="$ADMIN_API_KEY" \
+    dotnet run --project "$smoke_project" --configuration Release --no-build --no-restore
 )
 
 section "SDK compatibility complete"

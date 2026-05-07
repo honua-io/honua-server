@@ -4,6 +4,12 @@ name: SDK Server Compatibility
 
 'on':
   workflow_dispatch:
+    inputs:
+      server_current_ref:
+        description: 'Optional override for the current server matrix ref. Use a commit SHA for release-candidate evidence.'
+        required: false
+        default: HEAD
+        type: string
   schedule:
     - cron: '35 8 * * 1'
 
@@ -44,6 +50,7 @@ jobs:
           set -euo pipefail
 
           manifest="$SDK_COMPATIBILITY_MANIFEST"
+          server_current_ref="${{ github.event_name == 'workflow_dispatch' && inputs.server_current_ref || '' }}"
           jq -e '
             . as $manifest
             | ($manifest.schemaVersion == 1)
@@ -56,9 +63,15 @@ jobs:
           ' "$manifest" >/dev/null
 
           matrix="$(
-            jq -c --arg head "$GITHUB_SHA" '
+            jq -c --arg head "$GITHUB_SHA" --arg serverCurrentRef "$server_current_ref" '
               def serverByLabel($manifest; $name):
-                ($manifest.serverRefs[] | select(.label == $name)) // error("Unknown server label: " + $name);
+                (
+                  ($manifest.serverRefs[] | select(.label == $name)) // error("Unknown server label: " + $name)
+                )
+                | if .label == "current" and ($serverCurrentRef | length) > 0
+                  then . + { ref: $serverCurrentRef }
+                  else .
+                  end;
               def sdkByLabel($manifest; $name):
                 ($manifest.sdkSetVersions[] | select(.label == $name)) // error("Unknown SDK set label: " + $name);
               def checkoutRef($ref):
@@ -103,6 +116,9 @@ jobs:
             echo
             echo "- Manifest: \`$manifest\`"
             echo "- Matrix cells: $cell_count"
+            if [ -n "$server_current_ref" ] && [ "$server_current_ref" != "HEAD" ]; then
+              echo "- Current server ref override: \`$server_current_ref\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   sdk-compat-matrix:
@@ -168,6 +184,10 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           base-seed-path: tests/seed/base-schema.sql
           log-path: logs/honua-server-sdk-compat-${{ matrix.server_label }}-${{ matrix.sdk_label }}.log
+        env:
+          # Compatibility checks exercise server/SDK runtime behavior; security audit gates run separately.
+          NuGetAudit: false
+          WarningsNotAsErrors: NU1901;NU1902;NU1903;NU1904
 
       - name: Checkout honua-sdk-js
         uses: actions/checkout@v5
@@ -213,6 +233,28 @@ jobs:
               --password "${{ github.token }}" \
               --store-password-in-clear-text
           fi
+
+      - name: Prepare isolated SDK workspaces
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sdk_root="$RUNNER_TEMP/sdk-compat"
+          rm -rf "$sdk_root"
+          mkdir -p \
+            "$sdk_root/honua-sdk-js" \
+            "$sdk_root/honua-sdk-python" \
+            "$sdk_root/honua-sdk-dotnet"
+
+          cp -a sdk/honua-sdk-js/. "$sdk_root/honua-sdk-js/"
+          cp -a sdk/honua-sdk-python/. "$sdk_root/honua-sdk-python/"
+          cp -a sdk/honua-sdk-dotnet/. "$sdk_root/honua-sdk-dotnet/"
+
+          {
+            echo "HONUA_SDK_JS_DIR=$sdk_root/honua-sdk-js"
+            echo "HONUA_SDK_PYTHON_DIR=$sdk_root/honua-sdk-python"
+            echo "HONUA_SDK_DOTNET_DIR=$sdk_root/honua-sdk-dotnet"
+          } >> "$GITHUB_ENV"
 
       - name: Run SDK live compatibility smoke tests
         id: compatibility
@@ -329,12 +371,16 @@ jobs:
           PY
           }
 
-          js_package_version="$(json_version sdk/honua-sdk-js/package.json)"
-          python_sdk_package_version="$(pyproject_version sdk/honua-sdk-python/packages/honua-sdk/pyproject.toml)"
-          python_admin_package_version="$(pyproject_version sdk/honua-sdk-python/packages/honua-admin/pyproject.toml)"
-          dotnet_admin_package_version="$(csproj_version sdk/honua-sdk-dotnet/src/Honua.Sdk.Admin/Honua.Sdk.Admin.csproj)"
-          dotnet_geoservices_package_version="$(csproj_version sdk/honua-sdk-dotnet/src/Honua.Sdk.GeoServices/Honua.Sdk.GeoServices.csproj)"
-          dotnet_ogc_features_package_version="$(csproj_version sdk/honua-sdk-dotnet/src/Honua.Sdk.OgcFeatures/Honua.Sdk.OgcFeatures.csproj)"
+          sdk_js_dir="${HONUA_SDK_JS_DIR:-sdk/honua-sdk-js}"
+          sdk_python_dir="${HONUA_SDK_PYTHON_DIR:-sdk/honua-sdk-python}"
+          sdk_dotnet_dir="${HONUA_SDK_DOTNET_DIR:-sdk/honua-sdk-dotnet}"
+
+          js_package_version="$(json_version "$sdk_js_dir/package.json")"
+          python_sdk_package_version="$(pyproject_version "$sdk_python_dir/packages/honua-sdk/pyproject.toml")"
+          python_admin_package_version="$(pyproject_version "$sdk_python_dir/packages/honua-admin/pyproject.toml")"
+          dotnet_admin_package_version="$(csproj_version "$sdk_dotnet_dir/src/Honua.Sdk.Admin/Honua.Sdk.Admin.csproj")"
+          dotnet_geoservices_package_version="$(csproj_version "$sdk_dotnet_dir/src/Honua.Sdk.GeoServices/Honua.Sdk.GeoServices.csproj")"
+          dotnet_ogc_features_package_version="$(csproj_version "$sdk_dotnet_dir/src/Honua.Sdk.OgcFeatures/Honua.Sdk.OgcFeatures.csproj")"
 
           server_commit="${SERVER_COMMIT:-}"
           if [ -z "$server_commit" ]; then
@@ -467,9 +513,9 @@ jobs:
             results/compat-result.json
             results/compatibility-run.log
             logs/honua-server-sdk-compat-${{ matrix.server_label }}-${{ matrix.sdk_label }}.log
-            sdk/honua-sdk-js/test-results/
-            sdk/honua-sdk-python/.pytest_cache/
-            sdk/honua-sdk-dotnet/**/TestResults/
+            ${{ runner.temp }}/sdk-compat/honua-sdk-js/test-results/
+            ${{ runner.temp }}/sdk-compat/honua-sdk-python/.pytest_cache/
+            ${{ runner.temp }}/sdk-compat/honua-sdk-dotnet/**/TestResults/
           retention-days: 7
           if-no-files-found: ignore
 

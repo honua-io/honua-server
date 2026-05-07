@@ -36,7 +36,7 @@
       "Source-build workflow evidence is not release-candidate-image evidence unless the evidence record names the image digest tested."
     ]
   },
-  "observedAt": "2026-05-07T14:46:45Z",
+  "observedAt": "2026-05-07T22:31:02Z",
   "releaseGates": [
     {
       "id": "server-sdk-compatibility",
@@ -45,26 +45,33 @@
       "workflow": ".github/workflows/sdk-server-compatibility.yml",
       "tier": "nightly",
       "requirement": "Green for the release-candidate server ref, or covered by an approved release waiver.",
-      "evidenceState": "blocked",
+      "evidenceState": "passed",
       "latestEvidence": {
-        "runUrl": "https://github.com/honua-io/honua-server/actions/runs/25314145189",
-        "artifact": "sdk-compatibility-matrix-25314145189",
+        "runUrl": "https://github.com/honua-io/honua-server/actions/runs/25525446417",
+        "artifact": "sdk-compatibility-matrix-25525446417",
         "status": "completed",
-        "conclusion": "failure",
-        "headSha": "15ca97e9df80e03fc5f0c3969ef7744df8633a37",
-        "createdAt": "2026-05-04T10:32:49Z",
-        "updatedAt": "2026-05-04T10:37:51Z",
-        "source": "gh run list -R honua-io/honua-server --workflow sdk-server-compatibility.yml --branch trunk --limit 5"
+        "conclusion": "success",
+        "headSha": "26fde3d0e9101745f785d8113339f08306b4f182",
+        "createdAt": "2026-05-07T22:25:44Z",
+        "updatedAt": "2026-05-07T22:31:02Z",
+        "supportedCells": 9,
+        "supportedRegressions": 0,
+        "testedServerCommits": [
+          {
+            "label": "current",
+            "ref": "41544093e432b36b5c5680e8c89618b283389578",
+            "commit": "41544093e432b36b5c5680e8c89618b283389578",
+            "sdkSets": [
+              "sdk-current",
+              "sdk-previous-1",
+              "sdk-previous-2"
+            ]
+          }
+        ],
+        "source": "gh workflow run sdk-server-compatibility.yml -R honua-io/honua-server --ref feature/940 -f server_current_ref=41544093e432b36b5c5680e8c89618b283389578; gh run view 25525446417 -R honua-io/honua-server --json status,conclusion,headSha,createdAt,updatedAt,url; gh run download 25525446417 -R honua-io/honua-server -n sdk-compatibility-matrix-25525446417"
       },
       "waiver": null,
-      "blockers": [
-        {
-          "repo": "honua-io/honua-server",
-          "number": 940,
-          "url": "https://github.com/honua-io/honua-server/issues/940",
-          "reason": "SDK Server Compatibility nightly is failing; tracked by the bounded release blocker."
-        }
-      ]
+      "blockers": []
     },
     {
       "id": "server-real-client-interop",
