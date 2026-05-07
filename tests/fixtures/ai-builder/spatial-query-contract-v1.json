@@ -1,0 +1,439 @@
+{
+  "contractVersion": "honua.ai_builder.spatial_query.v1",
+  "fixtureProfile": "deterministic-no-model",
+  "description": "Fixture-only platform contract for NL spatial query to draft, plan, apply, package, and MCP inspection flows.",
+  "capabilityDiscovery": {
+    "sources": [
+      {
+        "sourceId": "catalog:layer:critical_facilities",
+        "label": "Critical Facilities",
+        "geometryColumn": "geom",
+        "geometryType": "Point",
+        "crs": "EPSG:4326",
+        "fields": [
+          {
+            "name": "facility_type",
+            "label": "Facility type",
+            "type": "string",
+            "domain": [
+              "hospital",
+              "shelter",
+              "school"
+            ]
+          },
+          {
+            "name": "status",
+            "label": "Operational status",
+            "type": "string",
+            "domain": [
+              "open",
+              "limited",
+              "closed"
+            ]
+          },
+          {
+            "name": "capacity",
+            "label": "Capacity",
+            "type": "integer"
+          }
+        ]
+      },
+      {
+        "sourceId": "catalog:layer:flood_zones",
+        "label": "Flood Zones",
+        "geometryColumn": "geom",
+        "geometryType": "Polygon",
+        "crs": "EPSG:4326",
+        "fields": [
+          {
+            "name": "zone",
+            "label": "Flood zone",
+            "type": "string",
+            "domain": [
+              "A",
+              "AE",
+              "VE"
+            ]
+          }
+        ]
+      }
+    ],
+    "spatialQueryCapabilities": [
+      {
+        "name": "bbox",
+        "state": "supported"
+      },
+      {
+        "name": "intersects",
+        "state": "supported"
+      },
+      {
+        "name": "contains",
+        "state": "supported"
+      },
+      {
+        "name": "within",
+        "state": "supported"
+      },
+      {
+        "name": "withinDistance",
+        "state": "supported"
+      },
+      {
+        "name": "attributeFilter",
+        "state": "supported"
+      },
+      {
+        "name": "groupingAggregation",
+        "state": "supported"
+      },
+      {
+        "name": "spatialJoin",
+        "state": "degraded",
+        "reason": "Available only for point-in-polygon joins on fixture layers."
+      }
+    ],
+    "starterOutputTemplates": [
+      {
+        "templateId": "map-only",
+        "outputs": [
+          "mapPackage"
+        ]
+      },
+      {
+        "templateId": "map-plus-table",
+        "outputs": [
+          "mapPackage",
+          "table"
+        ]
+      },
+      {
+        "templateId": "map-plus-chart",
+        "outputs": [
+          "mapPackage",
+          "chart"
+        ]
+      },
+      {
+        "templateId": "filtered-map",
+        "outputs": [
+          "mapPackage",
+          "filterPanel"
+        ]
+      },
+      {
+        "templateId": "linked-dashboard",
+        "outputs": [
+          "appPackage",
+          "mapPackage",
+          "table",
+          "chart",
+          "details"
+        ]
+      }
+    ],
+    "mcpInspection": {
+      "tools": [
+        "honua_ground_candidates",
+        "honua_clarify_intent",
+        "honua_validate_plan",
+        "honua_dry_run_plan",
+        "honua_execute_plan"
+      ],
+      "resources": [
+        "honua://catalog/processes",
+        "honua://jobs/{jobId}",
+        "honua://jobs/{jobId}/results",
+        "honua://map-packages/{packageId}",
+        "honua://app-packages/{packageId}",
+        "honua://published-services/{serviceId}",
+        "honua://deployments/{deploymentId}"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "success-linked-dashboard",
+      "case": "success",
+      "prompt": "Show open hospitals within 1 km of flood zones as a linked map, table, and chart.",
+      "draft": {
+        "status": "ready",
+        "filterPlan": {
+          "combinator": "and",
+          "clauses": [
+            {
+              "type": "comparison",
+              "comparison": {
+                "property": "facility_type",
+                "operator": "eq",
+                "value": "hospital"
+              }
+            },
+            {
+              "type": "comparison",
+              "comparison": {
+                "property": "status",
+                "operator": "eq",
+                "value": "open"
+              }
+            },
+            {
+              "type": "spatial",
+              "spatial": {
+                "operator": "dwithin",
+                "targetSource": "catalog:layer:flood_zones",
+                "distance": 1000,
+                "distanceUnit": "meters"
+              }
+            }
+          ]
+        },
+        "specDraft": {
+          "grammarVersion": "v1.0",
+          "sourceIds": [
+            "facilities",
+            "flood_zones"
+          ],
+          "computeIds": [
+            "near_flood_zones"
+          ],
+          "outputIds": [
+            "dashboard"
+          ]
+        },
+        "appDraft": {
+          "templateId": "linked-dashboard",
+          "targetSdk": "honua-sdk-js",
+          "views": [
+            "map",
+            "table",
+            "chart",
+            "details"
+          ]
+        }
+      },
+      "plan": {
+        "status": "planned",
+        "planId": "plan-success-linked-dashboard",
+        "dag": [
+          {
+            "nodeId": "query-open-hospitals",
+            "kind": "queryFeatures"
+          },
+          {
+            "nodeId": "distance-filter",
+            "kind": "geoprocess",
+            "processId": "geometry.withinDistance",
+            "dependsOn": [
+              "query-open-hospitals"
+            ]
+          },
+          {
+            "nodeId": "compose-packages",
+            "kind": "export",
+            "dependsOn": [
+              "distance-filter"
+            ]
+          }
+        ],
+        "warnings": [
+          {
+            "code": "mutable_source_cache_warning",
+            "message": "Source catalog:layer:critical_facilities can change; artifacts are reproducible only against the recorded snapshot token."
+          }
+        ],
+        "cache": {
+          "key": "sha256:fixture-success-linked-dashboard",
+          "hit": false,
+          "reproducibility": "snapshot-token-required"
+        }
+      },
+      "apply": {
+        "status": "succeeded",
+        "job": {
+          "jobId": "job-success-linked-dashboard",
+          "status": "succeeded",
+          "resourceUri": "honua://jobs/job-success-linked-dashboard"
+        },
+        "artifacts": [
+          {
+            "artifactId": "map-pkg-success",
+            "kind": "MapPackage",
+            "format": "honua_map_package.v1",
+            "resourceUri": "honua://map-packages/map-pkg-success",
+            "packageable": true
+          },
+          {
+            "artifactId": "app-pkg-success",
+            "kind": "AppPackage",
+            "format": "honua_app_package.v1",
+            "resourceUri": "honua://app-packages/app-pkg-success",
+            "packageable": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "ambiguity-source-and-unit",
+      "case": "ambiguity",
+      "prompt": "Find shelters near flood zones.",
+      "draft": {
+        "status": "clarification_required"
+      },
+      "clarification": {
+        "candidates": [
+          {
+            "kind": "source",
+            "field": "dataset.selection",
+            "reason": "ambiguous_source",
+            "options": [
+              "catalog:layer:critical_facilities",
+              "catalog:layer:emergency_shelters"
+            ]
+          },
+          {
+            "kind": "unit",
+            "field": "distance",
+            "reason": "missing_distance",
+            "options": [
+              "500 meters",
+              "1 kilometer",
+              "5 kilometers"
+            ]
+          },
+          {
+            "kind": "operation",
+            "field": "spatialPredicate",
+            "reason": "ambiguous_operation",
+            "options": [
+              "withinDistance",
+              "intersects"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "unsupported-spatial-join",
+      "case": "unsupported",
+      "prompt": "Join every road segment to every flood polygon it crosses and summarize by route.",
+      "draft": {
+        "status": "unsupported"
+      },
+      "capabilityState": {
+        "name": "spatialJoin",
+        "state": "unsupported",
+        "reason": "Line-on-polygon spatial joins are outside this fixture profile."
+      },
+      "warnings": [
+        {
+          "code": "unsupported_capability",
+          "capability": "spatialJoin"
+        }
+      ]
+    },
+    {
+      "id": "auth-denied-private-source",
+      "case": "auth-denied",
+      "prompt": "Show restricted emergency command centers near flood zones.",
+      "error": {
+        "code": "auth_denied",
+        "requiresReauthentication": false,
+        "policyRef": "rbac:source:restricted_command_centers"
+      }
+    },
+    {
+      "id": "oversized-estimate",
+      "case": "oversized",
+      "prompt": "Buffer every parcel in the county by 20 km and build a dashboard.",
+      "plan": {
+        "status": "rejected",
+        "estimate": {
+          "featureCount": 12000000,
+          "limit": 1000000,
+          "unit": "features"
+        },
+        "warnings": [
+          {
+            "code": "estimate_limit_exceeded",
+            "message": "Estimated feature count exceeds the fixture apply limit."
+          }
+        ]
+      }
+    },
+    {
+      "id": "cache-hit-reused-packages",
+      "case": "cache-hit",
+      "prompt": "Show open hospitals within 1 km of flood zones as a linked map, table, and chart.",
+      "plan": {
+        "status": "planned",
+        "cache": {
+          "key": "sha256:fixture-success-linked-dashboard",
+          "hit": true,
+          "reproducibility": "snapshot-token-required"
+        },
+        "warnings": [
+          {
+            "code": "cache_hit",
+            "message": "Plan reused artifacts from the recorded fixture cache key."
+          }
+        ]
+      },
+      "apply": {
+        "status": "succeeded",
+        "artifacts": [
+          {
+            "artifactId": "map-pkg-success",
+            "kind": "MapPackage",
+            "format": "honua_map_package.v1",
+            "resourceUri": "honua://map-packages/map-pkg-success",
+            "packageable": true
+          },
+          {
+            "artifactId": "app-pkg-success",
+            "kind": "AppPackage",
+            "format": "honua_app_package.v1",
+            "resourceUri": "honua://app-packages/app-pkg-success",
+            "packageable": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "apply-failure-package-step",
+      "case": "apply-failure",
+      "prompt": "Create a linked dashboard for open hospitals near flood zones.",
+      "plan": {
+        "status": "planned",
+        "planId": "plan-apply-failure-package-step",
+        "dag": [
+          {
+            "nodeId": "query-open-hospitals",
+            "kind": "queryFeatures"
+          },
+          {
+            "nodeId": "compose-packages",
+            "kind": "export",
+            "dependsOn": [
+              "query-open-hospitals"
+            ]
+          }
+        ]
+      },
+      "apply": {
+        "status": "failed",
+        "job": {
+          "jobId": "job-apply-failure-package-step",
+          "status": "failed",
+          "resourceUri": "honua://jobs/job-apply-failure-package-step"
+        },
+        "warnings": [
+          {
+            "code": "artifact_write_failed",
+            "retryable": true
+          }
+        ]
+      }
+    }
+  ]
+}
