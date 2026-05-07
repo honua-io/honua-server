@@ -36,7 +36,7 @@
       "Source-build workflow evidence is not release-candidate-image evidence unless the evidence record names the image digest tested."
     ]
   },
-  "observedAt": "2026-05-06T20:30:08Z",
+  "observedAt": "2026-05-07T14:46:45Z",
   "releaseGates": [
     {
       "id": "server-sdk-compatibility",
@@ -103,13 +103,13 @@
       "requirement": "Green for the release-candidate server ref, or covered by an approved release waiver.",
       "evidenceState": "blocked",
       "latestEvidence": {
-        "runUrl": "https://github.com/honua-io/honua-server/actions/runs/25417987211",
-        "artifact": "security-nightly-evidence",
+        "runUrl": "https://github.com/honua-io/honua-server/actions/runs/25477621520",
+        "artifact": "container-security-results-134",
         "status": "completed",
         "conclusion": "failure",
-        "headSha": "6b270a19029012f8a186251960dee6db8b082a79",
-        "createdAt": "2026-05-06T05:21:55Z",
-        "updatedAt": "2026-05-06T05:23:55Z",
+        "headSha": "eed801496422bd7c570ba0640ab3e1d61d83546e",
+        "createdAt": "2026-05-07T05:24:27Z",
+        "updatedAt": "2026-05-07T05:27:03Z",
         "source": "gh run list -R honua-io/honua-server --workflow security-nightly.yml --branch trunk --limit 5"
       },
       "waiver": null,
