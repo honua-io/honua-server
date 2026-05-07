@@ -97,6 +97,7 @@ internal static class OpenUsdSceneManifestReader
         }
 
         var extent = ResolveExtent(record?.Extent, tileset);
+        var crs = ResolveManifestCrs(record?.Crs);
         var observations = await ResolveObservationsAsync(scene, tileset, tilesetUrl, cancellationToken)
             .ConfigureAwait(false);
 
@@ -109,7 +110,7 @@ internal static class OpenUsdSceneManifestReader
             SceneName: scene.Name,
             SceneDescription: scene.Description,
             IsProtected: scene.Metadata?.AccessPolicy is not null,
-            Crs: string.IsNullOrWhiteSpace(record?.Crs) ? DefaultCrs : record!.Crs,
+            Crs: crs,
             Extent: extent,
             Tileset: tileset,
             Observations: observations,
@@ -222,6 +223,24 @@ internal static class OpenUsdSceneManifestReader
         return observations;
     }
 
+    private static string ResolveManifestCrs(string? crs)
+    {
+        if (string.IsNullOrWhiteSpace(crs))
+        {
+            return DefaultCrs;
+        }
+
+        var normalized = crs.Trim();
+        if (IsSupportedWgsCrs(normalized))
+        {
+            return normalized;
+        }
+
+        throw new OpenUsdManifestValidationException(
+            "scene_crs_unsupported",
+            "OpenUSD scene manifests require WGS-84 CRS metadata (EPSG:4326, EPSG:4979, or OGC CRS84).");
+    }
+
     private static void ValidateTileset(OpenUsdTilesetManifestInput tileset)
     {
         if (!string.Equals(tileset.Asset?.Version, "1.1", StringComparison.Ordinal))
@@ -288,7 +307,11 @@ internal static class OpenUsdSceneManifestReader
     {
         var slash = tilesetUrl.LastIndexOf('/');
         var prefix = slash < 0 ? tilesetUrl : tilesetUrl[..(slash + 1)];
-        return prefix + relativeUri;
+        return prefix + string.Join(
+            "/",
+            relativeUri
+                .Split('/', StringSplitOptions.None)
+                .Select(Uri.EscapeDataString));
     }
 
     private static bool IsSafeSourceUri(string uri)
@@ -308,6 +331,19 @@ internal static class OpenUsdSceneManifestReader
         return !uri.Split('/', StringSplitOptions.None)
             .Any(segment => segment.Length == 0 || segment == "." || segment == "..");
     }
+
+    private static bool IsSupportedWgsCrs(string crs)
+        => crs.Equals(DefaultCrs, StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals("4979", StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals("EPSG:4326", StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals("4326", StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals("http://www.opengis.net/def/crs/EPSG/0/4979", StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals("urn:ogc:def:crs:EPSG::4979", StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals("http://www.opengis.net/def/crs/EPSG/0/4326", StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals("urn:ogc:def:crs:EPSG::4326", StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals("http://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsLongitude(double value) => value is >= -180d and <= 180d;
 
