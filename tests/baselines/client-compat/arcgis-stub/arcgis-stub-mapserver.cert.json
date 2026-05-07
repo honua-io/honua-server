@@ -1,0 +1,237 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260507T140519Z",
+  "run_date": "2026-05-07T14:05:19.321037+00:00",
+  "server_version": "local",
+  "client_lane": "arcgis-stub",
+  "client_version": "stub-1.0",
+  "protocol": "mapserver",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 3,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "TLS termination occurs in front of the test docker network; not exercised by stub.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "HTTP 200",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Credential exchange covered by other lanes; stub does not authenticate.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "HTTP 200",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "HTTP 200",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Server may accept the where clause and return zero results; both outcomes acceptable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 9,
+    "not_applicable": 1
+  },
+  "cite_results": null,
+  "extensions": []
+}

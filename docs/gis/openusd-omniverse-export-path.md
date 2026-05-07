@@ -1,17 +1,21 @@
 # OpenUSD and Omniverse Export Path for Honua Scenes
 
-This page is a research-spike output for `honua-server-901`. It maps Honua's
-hosted scene model to OpenUSD and Omniverse concepts, chooses the first safe
-artifact, and defines the server contracts required before implementation.
+This page started as a research-spike output for `honua-server-901`. It maps
+Honua's hosted scene model to OpenUSD and Omniverse concepts, records the first
+safe artifact, and defines the contracts that keep later native USD work
+bounded.
 
-**No production OpenUSD exporter, USD conversion pipeline, Omniverse connector,
-or Unreal runtime integration is added by this spike.** Honua's current 3D
-demo path remains hosted OGC 3D Tiles consumed by CesiumJS.
+Honua now exposes the first artifact as a Pro-gated preview route:
+`GET /scenes/{sceneId}/exports/openusd/stage.usda`. It emits a deterministic
+USDA text-format stage manifest for a hosted scene. This is **not** native USD
+geometry conversion, an Omniverse connector, Nucleus publishing, or Unreal
+runtime integration. Honua's current 3D demo runtime remains hosted OGC 3D
+Tiles consumed by CesiumJS.
 
 ## Recommendation
 
-The first artifact should be a **USDA text-format stage manifest** generated
-from a registered Honua scene.
+The first artifact is a **USDA text-format stage manifest** generated from a
+registered Honua scene.
 
 USDA is the right first slice because it is human-readable, inspectable in
 OpenUSD tools, small enough to review in demos, and can describe scene
@@ -34,13 +38,13 @@ Recommended initial output shape:
   source scene already declares stable time or phase metadata. No synthetic
   time simulation is invented by the exporter.
 - A `usdchecker` validation step in the future implementation issue, using
-  OpenUSD tooling outside the server hot path. The server implementation
-  should not add the OpenUSD runtime as a request-path dependency unless a
-  later exporter actually needs authored USD composition behavior.
+  OpenUSD tooling outside the server hot path. The preview server
+  implementation intentionally does not add the OpenUSD runtime as a
+  request-path dependency.
 
-This path is credible enough for a bounded implementation slice because it
-exposes the NVIDIA ecosystem handoff without promising live Omniverse sync or
-lossless 3D Tiles to USD conversion.
+This path is credible as a bounded implementation slice because it exposes the
+NVIDIA ecosystem handoff without promising live Omniverse sync or lossless 3D
+Tiles to USD conversion.
 
 ## Responsibility boundaries
 
@@ -67,12 +71,12 @@ lossless 3D Tiles to USD conversion.
 
 ## Required server and export contracts
 
-Any future implementation must define these contracts before writing exporter
-code:
+The preview implementation follows these contracts; later native USD work must
+keep them intact unless the export contract is versioned:
 
 | Contract | Requirement |
 | --- | --- |
-| Export entrypoint | A bounded route or admin action that resolves a scene by URL slug, for example `GET /scenes/{sceneId}/exports/openusd/stage.usda`. This route is future work and must have endpoint-level integration tests if implemented. |
+| Export entrypoint | Implemented route: `GET /scenes/{sceneId}/exports/openusd/stage.usda`. It resolves a scene by URL slug and has endpoint-level integration tests. |
 | Output format | Text USDA only for v1. Do not emit USDC, USDZ, converted meshes, package bundles, or Omniverse URLs in the first server slice. |
 | Schema version | Include a Honua export schema version in `customLayerData`, independent of OpenUSD's own file version, so downstream tools can reject incompatible manifests. |
 | Source URL policy | Emit stable Honua scene URLs, not filesystem paths. Include absolute URLs only after host/scheme resolution has passed through the same link-building rules used by scene resolution and admin APIs. |
@@ -82,13 +86,14 @@ code:
 | Coordinate contract | Preserve WGS-84 longitude/latitude and meter height assumptions from the hosted scene docs. 3D Tiles `boundingVolume.region` uses radians; `extras.bounds`, `cameraHint`, and `observations.json` use decimal degrees plus meters. The USDA manifest must state `metersPerUnit = 1` and document unknown vertical datum as unknown, not transformed. |
 | Validation | Validate scene existence, exporter enablement, supported `tileset.json` shape, safe source URIs, expected fixture sidecar schema, coordinate ranges, and metadata allowlist before emitting USDA. Use shared problem/error helpers for failures. |
 | Serialization | Use source-generated JSON for reading scene `tileset.json` extras and sidecars. USDA text generation can be a small deterministic writer; do not add reflection-heavy OpenUSD bindings for the manifest-only slice. |
-| Telemetry | Add an observable operation such as `scene.openusd.manifest` with `sceneId`, `protocol = "openusd"`, result size, protected/public classification, validation failure reason, and exception status. |
-| Tests | Add fast unit tests for deterministic USDA emission and integration tests for the export route, including public/protected scenes, missing sidecars, invalid coordinate metadata, and pitch-safe absence from existing runtime capabilities until implemented. |
+| Telemetry | The observable operation is `scene.openusd.manifest` with `sceneId`, `protocol = "openusd"`, result size, protected/public classification, validation failure reason, and exception status. |
+| Tests | Fast unit tests cover deterministic USDA emission. Endpoint tests cover the export route, public/protected scenes, missing sidecars, invalid coordinate metadata, and pitch-safe absence from existing runtime capability advertising. |
 
 ## Non-goals
 
-- Production OpenUSD exporter implementation in this spike.
-- Any current claim that Honua supports OpenUSD export or Omniverse
+- Native USD geometry conversion, converted USD bundle generation, or render
+  parity with CesiumJS in this preview.
+- Any claim that Honua has a production OpenUSD exporter or Omniverse
   integration.
 - Omniverse live connector, Nucleus publishing, live USD layers, or
   collaborative editing.
@@ -103,8 +108,8 @@ code:
 ## Risks and tradeoffs
 
 - **Overclaim risk.** A USDA manifest can be opened and inspected, but it is
-  not a render-complete converted USD scene. Pitch language must say "documented
-  path" or "proposed first artifact", not "OpenUSD supported".
+  not a render-complete converted USD scene. Pitch language must say "Pro
+  preview USDA manifest export", not "production OpenUSD exporter".
 - **Geospatial precision.** USD tools are not inherently geospatial servers.
   Any future native geometry conversion must define origin, ECEF/local-frame,
   CRS, vertical datum, and unit handling before authoring meshes.
@@ -126,14 +131,13 @@ code:
 Use this wording:
 
 > Honua serves the NVIDIA construction demo today as hosted OGC 3D Tiles for
-> CesiumJS. The OpenUSD/Omniverse path is documented as a conservative next
-> slice: a USDA text-format stage manifest that preserves scene metadata and
-> source references for external inspection before any native USD conversion or
-> Omniverse connector work is claimed.
+> CesiumJS. Honua also offers a Pro preview USDA stage manifest export that
+> preserves scene metadata and source references for external inspection before
+> any native USD conversion or Omniverse connector work is claimed.
 
 Avoid this wording:
 
-> Honua supports OpenUSD export.
+> Honua has a production OpenUSD exporter.
 >
 > Honua integrates with Omniverse.
 >
@@ -143,12 +147,12 @@ Avoid this wording:
 
 ## Proposed implementation sequence and child issues
 
-The path is credible enough to create a bounded Honua Server implementation
-issue for the first artifact only. Larger ecosystem work remains separate.
+The first artifact is bounded in Honua Server. Larger ecosystem work remains
+separate.
 
 | # | Title | Repo | Scope | Depends on | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `feat(scene/openusd): emit USDA stage manifest for hosted scenes` | `honua-server` | Export route/admin action, deterministic USDA writer, source-generated JSON readers for allowed scene extras/sidecars, endpoint tests, protected-scene behavior, telemetry, and docs update from "roadmap" to "preview" only if implemented. | `honua-server-901`; uses the `honua-server-898` fixture as the first input. | Filed as `honua-server-904`. |
+| 1 | `feat(scene/openusd): emit USDA stage manifest for hosted scenes` | `honua-server` | Export route, deterministic USDA writer, source-generated JSON readers for allowed scene extras/sidecars, endpoint tests, protected-scene behavior, telemetry, and docs update from "roadmap" to "preview". | `honua-server-901`; uses the `honua-server-898` fixture as the first input. | Implemented as preview in `honua-server-904`. |
 | 2 | `feat(scene/openusd): converted USD geometry bundle spike` | `honua-server` or content-pipeline repo TBD | Decide whether conversion belongs in server, offline tooling, or a separate pipeline. Evaluate GLB/B3DM to `UsdGeomMesh`, materials, CRS frame, and `usdchecker`/visual validation. | Child #1 plus `honua-server-899` / `honua-server-842`. | Not filed by default; needs grooming after child #1. |
 | 3 | Unreal consumer follow-up | `honua-sdk-dotnet` | Consume a USDA manifest or later USD bundle in Unreal workflows. | Child #1. | Tracked outside this repo by `honua-sdk-dotnet-129`; no server edits here. |
 | 4 | Omniverse connector follow-up | TBD | Nucleus publishing, live layers, connector SDK use, and Omniverse URL behavior. | Child #1 and a real customer workflow. | Not filed from this server spike; needs a bounded owning repo before work starts. |
@@ -157,11 +161,11 @@ issue for the first artifact only. Larger ecosystem work remains separate.
 
 | Acceptance criterion (from `honua-server-901`) | Where addressed |
 | --- | --- |
-| A short technical recommendation exists with a chosen first artifact | "Recommendation" chooses a USDA text-format stage manifest. |
+| A short technical recommendation exists with a chosen first artifact | "Recommendation" records the implemented USDA text-format stage manifest preview. |
 | Required server/export contracts are listed | "Required server and export contracts" lists entrypoint, format, auth, cache, metadata, geodesy, validation, serialization, telemetry, and tests. |
 | The recommendation distinguishes OpenUSD, Omniverse, CesiumJS, and Unreal responsibilities | "Responsibility boundaries" separates the four surfaces. |
-| Follow-up implementation issues are created only if the path is credible | "Proposed implementation sequence and child issues" records the bounded first-artifact issue filed as `honua-server-904`; broader work remains unfiled until groomed. |
-| Pitch language does not imply current OpenUSD or Omniverse support unless implemented | Opening warning, "Non-goals", and "Pitch-safe language" explicitly avoid current-support claims. |
+| Follow-up implementation issues are created only if the path is credible | "Proposed implementation sequence and child issues" records the bounded first-artifact issue implemented by `honua-server-904`; broader work remains unfiled until groomed. |
+| Pitch language does not imply current OpenUSD or Omniverse support unless implemented | Opening scope, "Non-goals", and "Pitch-safe language" distinguish the preview manifest from production OpenUSD/Omniverse support. |
 
 ## References
 
@@ -172,4 +176,4 @@ issue for the first artifact only. Larger ecosystem work remains separate.
 - [NVIDIA Omniverse connector development overview](https://docs.omniverse.nvidia.com/connect/latest/developing-connectors.html)
 - [Cesium 3D Tiles overview](https://cesium.com/3d-tiles/)
 - Honua scene references: [Hosted 3D Tiles Scenes](scenes-3dtiles.md), [NVIDIA Construction Demo Fixture](../demo/nvidia-construction.md), [Scene Dataset Registry](../admin-api/scene-dataset-registry.md), and [Point Cloud, Drone, and Reality-Capture Ingest](point-cloud-reality-capture-ingest.md) (`honua-server-900`, sibling spike covering the inbound side of this 3D pipeline).
-- Follow-up issue: `honua-server-904`.
+- First-artifact issue: `honua-server-904`.

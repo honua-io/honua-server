@@ -38,8 +38,10 @@ public sealed class GeocodingEndpointTests
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&f=json");
+        using var defaultResponse = await client.GetAsync("/rest/services/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&f=json");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
 
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -65,8 +67,10 @@ public sealed class GeocodingEndpointTests
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+        using var defaultResponse = await client.GetAsync("/rest/services/GeocodeServer?f=json");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
 
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var capabilities = payload.RootElement.GetProperty("capabilities").GetString();
@@ -122,8 +126,10 @@ public sealed class GeocodingEndpointTests
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&f=json");
+        using var defaultResponse = await client.GetAsync("/rest/services/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&f=json");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
 
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -142,6 +148,33 @@ public sealed class GeocodingEndpointTests
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=hon&f=json");
+        using var defaultResponse = await client.GetAsync("/rest/services/GeocodeServer/suggest?text=hon&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        Assert.True(root.TryGetProperty("suggestions", out var suggestions));
+        Assert.Equal(JsonValueKind.Array, suggestions.ValueKind);
+        Assert.True(suggestions.GetArrayLength() > 0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/suggest")]
+    public async Task Suggest_Post_WhenProviderSupports_ReturnsSuggestions()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["text"] = "hon",
+            ["f"] = "json"
+        });
+
+        using var response = await client.PostAsync("/rest/services/World/GeocodeServer/suggest", content);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -168,8 +201,10 @@ public sealed class GeocodingEndpointTests
         var records = """[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"SingleLine":"350 Fifth Avenue, New York"}}]""";
 
         using var response = await client.GetAsync($"/rest/services/World/GeocodeServer/geocodeAddresses?records={Uri.EscapeDataString(records)}&f=json");
+        using var defaultResponse = await client.GetAsync($"/rest/services/GeocodeServer/geocodeAddresses?records={Uri.EscapeDataString(records)}&f=json");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
 
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

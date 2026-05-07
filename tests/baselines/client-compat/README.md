@@ -56,6 +56,12 @@ from the gate or pass it by emitting unreviewed evidence. Bump the
 manifest in lockstep with `docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md`
 when a lane × protocol is added or retired.
 
+The current full-matrix contract is 16 pairs: 4 `js-cesium`, 6 `js`, 2
+`desktop-qgis`, 2 `cli`, and 2 `arcgis-stub` envelopes. A
+`workflow_dispatch` subset run passes `--client-lanes` so strict mode evaluates
+only the requested `client_lane` values; the scheduled nightly run evaluates the
+entire manifest.
+
 ## Strict-mode failure conditions
 
 `scripts/client-compat/diff-baselines.py --strict` fails the workflow when
@@ -77,6 +83,11 @@ any of these hold:
 7. An `expected-pairs.json` entry has no committed baseline, even when the
    current run produced evidence — bootstrap real baselines via
    `scripts/client-compat/refresh-baselines.sh` before the gate releases.
+
+When a CI lane exits non-zero, its artifact should still contain
+`lane-exit-code.txt` and `compose.log`. Those files are diagnostic only; the
+strict-mode decision is still made from the current `.cert.json` envelopes and
+the committed baseline contract above.
 
 ## Updating
 

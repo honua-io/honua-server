@@ -1,0 +1,165 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260507T140717Z",
+  "run_date": "2026-05-07T14:07:17.989246+00:00",
+  "server_version": "unknown",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.10-Solothurn",
+  "protocol": "wfs",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 96,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "WFS provider connected and layer loaded successfully.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Compatibility seed runs on HTTP-only localhost; TLS not exercised.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "client-compat-v1.sql seed allows anonymous access; auth rejection not exercised.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "client-compat-v1.sql seed allows anonymous access; credential grant not exercised.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 1,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "WFS typename honua:test_layer discovered with 10 features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Extent: -122.5000000000000000,37.7000000000000028 : -122.3499999999999943,37.8400000000000034",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "All 12 expected fields present.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Geometry type: Point",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "Attribute filter active=true returned 5 features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "Bbox filter returned 4 features (total 10).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Server first page correct (3 features), but QGIS returned only 3 \u2014 auto-pagination not supported.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Server pages 1 and 2 (COUNT=3) returned disjoint feature sets. QGIS delivered 3 unique features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": 0.0,
+      "notes": "Alpha at (-122.49, 37.71), delta=0.0.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "CRS: EPSG:4326",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Invalid typename rejected: ",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 0,
+      "measured_delta": null,
+      "notes": "Malformed filter correctly returned zero features.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 16,
+    "passed": 12,
+    "failed": 0,
+    "skipped": 4,
+    "not_applicable": 0
+  },
+  "cite_results": null,
+  "extensions": []
+}

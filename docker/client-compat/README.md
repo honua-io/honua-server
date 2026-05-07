@@ -15,14 +15,29 @@ prove that real clients can consume the server.
 |------|-------|--------------------|
 | `gdal` | `ghcr.io/osgeo/gdal:ubuntu-small-latest` | OGC API Features, WFS 2.0 |
 | `pyqgis` | `qgis/qgis:ltr` | OGC API Features, WFS 2.0 |
-| `openlayers` | `mcr.microsoft.com/playwright:v1.52.0-noble` | OGC API Features, OGC API Maps, OGC API Tiles, WFS, WMS, WMTS |
-| `cesium` | `mcr.microsoft.com/playwright:v1.52.0-noble` | WMS, WMTS, OGC API Tiles, OGC API Maps |
+| `openlayers` | `mcr.microsoft.com/playwright:v1.59.1-noble` | OGC API Features, OGC API Maps, OGC API Tiles, WFS, WMS, WMTS |
+| `cesium` | `mcr.microsoft.com/playwright:v1.59.1-noble` | WMS, WMTS, OGC API Tiles, OGC API Maps |
 | `arcgis-stub` | `python:3.12-slim` | GeoServices REST FeatureServer / MapServer (REST stub) |
 
 ArcGIS Pro itself runs only on Windows + a paid license. The stub lane exercises
 the same REST endpoints the Pro client consumes and emits a comparable cert
-envelope; full Pro coverage requires a licensed runner (tracked in
-`docs/gis/gap-report.md`).
+envelope. Full Pro visual coverage still requires a licensed runner; until then
+the stub records those cases as `skip` with a documented pending-runner note.
+
+## Runtime contract
+
+The compose stack starts `postgres`, `redis`, the one-shot `seed` service,
+`honua`, and exactly one requested lane. The Honua container binds HTTP/1 on
+port `5000` for browser and CLI base URLs and h2c gRPC on port `5001` so the
+container uses the same split-transport shape as production images. Redis is
+part of the stack because server workflows that require a cache or durable
+coordination backend must fail in the interop lane the same way they would fail
+in a real deployment.
+
+PostGIS enables GDAL raster drivers and the `client-compat-v1.sql` seed creates
+the raster metadata tables used by raster-aware startup paths. The browser
+lanes target `browser_compat` layer `2000`; the GDAL and PyQGIS lanes target
+`test_service` collection `0`.
 
 ## Run a single lane
 
@@ -82,6 +97,12 @@ GDAL/OGR pytest suite emits its own per-protocol/category JSON report; the
 lane runner converts it into per-protocol `.cert.json` envelopes via
 `scripts/client-compat/convert-gdal-results.py` so the diff sees a uniform
 shape across lanes.
+
+If a lane exits non-zero in CI, the lane artifact also contains
+`lane-exit-code.txt` and a tail of `compose.log`. The matrix job still exits
+successfully so the baseline-diff job can download every lane artifact, update
+`docs/gis/gap-report.md`, and fail the workflow from one deterministic gate
+instead of losing diagnostics in the first failed lane.
 
 ## Seed data
 

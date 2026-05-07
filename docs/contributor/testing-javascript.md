@@ -30,6 +30,12 @@ Common environment variables (defaults differ per suite):
 | `HONUA_TEST_PORT` | `5555` | `5556` | Port for bootstrapped server |
 | `HONUA_TEST_TIMEOUT` | `30000` | N/A | Request timeout (ms); Playwright uses its own config-level timeouts |
 
+The `client-interop-nightly.yml` OpenLayers Docker lane overrides
+`HONUA_SERVICE_ID=browser_compat` and `HONUA_LAYER_ID=2000`. OpenLayers
+collection discovery prefers that configured layer id when it is present in
+`/ogc/features/collections`, then falls back to the first advertised
+collection for local ad-hoc runs.
+
 The Playwright suite serves its own static test page and proxies `/rest/` and `/temp/` requests to `HONUA_BASE_URL`. It does not inject browser auth headers, so the configured service/layer must be anonymously accessible or exposed through the local test bootstrap.
 
 ## Vitest Protocol Suite (`tests/js/`)

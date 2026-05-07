@@ -56,6 +56,11 @@ scripts/*
 
 # Local artifacts not needed for app image builds
 tests/
+!tests/
+tests/**
+!tests/python/
+tests/python/**
+!tests/python/requirements.txt
 **/.terraform/
 
 # Temporary files

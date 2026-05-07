@@ -22,7 +22,6 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpEndpointIntegrationTests : IAsyncLifetime
 {
-    private const string McpRoute = "/mcp";
     private const string JsonMediaType = "application/json";
 
     private readonly WebAppFixture _fixture = new();
@@ -761,7 +760,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     {
         using var content = new StringContent(body, Encoding.UTF8);
         content.Headers.ContentType = new MediaTypeHeaderValue(JsonMediaType);
-        return await _client.PostAsync(McpRoute, content);
+        return await _client.PostAsync("/mcp", content);
     }
 
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
