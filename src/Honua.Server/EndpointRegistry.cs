@@ -263,6 +263,8 @@ public static class EndpointRegistry
 
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),
+        new("GET", "/api/v1/admin/operations/cache/statistics"),
+        new("GET", "/api/v1/admin/operations/cache/redis"),
         new("POST", "/api/v1/admin/operations/cache/invalidate"),
         new("GET", "/api/v1/admin/operations/streaming/subscribers"),
         new("GET", "/api/v1/admin/operations/streaming/alerts"),
