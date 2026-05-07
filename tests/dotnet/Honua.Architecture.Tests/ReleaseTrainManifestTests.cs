@@ -88,6 +88,7 @@ public sealed class ReleaseTrainManifestTests
             var evidenceState = item.GetProperty("evidenceState").GetString();
             if (string.Equals(evidenceState, "passed", StringComparison.Ordinal))
             {
+                AssertPassedLaneEvidence(item, itemId);
                 continue;
             }
 
@@ -192,6 +193,35 @@ public sealed class ReleaseTrainManifestTests
         return item.TryGetProperty("waiver", out var waiver)
             && waiver.ValueKind == JsonValueKind.Object
             && IsApprovedWaiver(waiver);
+    }
+
+    private static void AssertPassedLaneEvidence(JsonElement item, string? itemId)
+    {
+        item.TryGetProperty("latestEvidence", out var latestEvidence).Should().BeTrue(
+            $"{itemId} is passed and must name the successful evidence record");
+        latestEvidence.ValueKind.Should().Be(
+            JsonValueKind.Object,
+            $"{itemId} is passed and must name the successful evidence record");
+
+        GetNullableString(latestEvidence, "runUrl").Should().NotBeNullOrWhiteSpace(
+            $"{itemId} passed evidence must link to the source run");
+        GetNullableString(latestEvidence, "headSha").Should().NotBeNullOrWhiteSpace(
+            $"{itemId} passed evidence must name the source SHA");
+
+        if (GetNullableString(latestEvidence, "conclusion") is { } conclusion)
+        {
+            conclusion.Should().Be("success", $"{itemId} cannot pass on non-success evidence");
+        }
+
+        if (item.TryGetProperty("blockers", out var blockers) && blockers.ValueKind == JsonValueKind.Array)
+        {
+            blockers.GetArrayLength().Should().Be(0, $"{itemId} cannot be passed while blockers remain attached");
+        }
+
+        if (item.TryGetProperty("waiver", out var waiver))
+        {
+            waiver.ValueKind.Should().Be(JsonValueKind.Null, $"{itemId} cannot be passed because of a waiver");
+        }
     }
 
     private static void AssertApprovedWaiver(JsonElement waiver)
