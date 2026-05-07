@@ -10,6 +10,9 @@ internal static class RequestTelemetryClassifier
     internal const string OperationItemKey = "__honua.telemetry.operation";
 
     private const string PMTilesProxyPathPrefix = "/api/v1/tiles/pmtiles";
+    private const string HostedScenePathPrefix = "/scenes";
+    private const string HostedSceneProtocol = "Scene-3DTiles";
+    private const string OpenUsdProtocol = "openusd";
 
     internal static string? ResolveProtocol(PathString path)
     {
@@ -31,6 +34,13 @@ internal static class RequestTelemetryClassifier
         if (StartsWithPathSegment(value, "/terrain"))
         {
             return HonuaTelemetry.Protocols.Terrain;
+        }
+
+        if (StartsWithPathSegment(value, HostedScenePathPrefix))
+        {
+            return value.Contains("/exports/openusd/", StringComparison.OrdinalIgnoreCase)
+                ? OpenUsdProtocol
+                : HostedSceneProtocol;
         }
 
         if (StartsWithPathSegment(value, "/ogc/tiles"))
@@ -197,6 +207,26 @@ internal static class RequestTelemetryClassifier
             return path.EndsWith("/tile.json", StringComparison.OrdinalIgnoreCase)
                 ? "terrain.metadata"
                 : "terrain.tile";
+        }
+
+        if (StartsWithPathSegment(path, HostedScenePathPrefix))
+        {
+            if (path.EndsWith("/exports/openusd/stage.usda", StringComparison.OrdinalIgnoreCase))
+            {
+                return "scene.openusd.manifest";
+            }
+
+            if (path.EndsWith("/tileset.json", StringComparison.OrdinalIgnoreCase))
+            {
+                return "scene.tileset";
+            }
+
+            if (path.EndsWith("/access-envelope", StringComparison.OrdinalIgnoreCase))
+            {
+                return "scene.access-envelope";
+            }
+
+            return "scene.asset";
         }
 
         if (path.StartsWith("/rest/services/Utilities/PrintingTools/GPServer", StringComparison.OrdinalIgnoreCase))

@@ -11,11 +11,10 @@ the [3D Tiles generation pipeline](scene-generation.md) (#842) covers
 producing tilesets from PostGIS feature layers; ingesting drone, point-cloud,
 and reality-capture data into hosted tilesets is documented in the spike at
 [Point Cloud, Drone, and Reality-Capture Ingest](point-cloud-reality-capture-ingest.md)
-(`honua-server-900`); and exporting hosted scenes to OpenUSD/Omniverse is
-documented in the roadmap spike at
+(`honua-server-900`); and the Pro-gated OpenUSD preview surface emits a
+metadata-only USDA stage manifest as documented in
 [OpenUSD and Omniverse Export Path](openusd-omniverse-export-path.md)
-(`honua-server-901`; first-artifact implementation tracked in
-`honua-server-904`).
+(`honua-server-901`, first artifact `honua-server-904`).
 
 ## Public routes
 
@@ -24,6 +23,7 @@ documented in the roadmap spike at
 | `/scenes/{sceneId}/tileset.json` | GET, HEAD | Root 3D Tiles document (`application/json`). |
 | `/scenes/{sceneId}/{*assetPath}` | GET, HEAD | Tile, glTF, texture, JSON, or binary payload under the scene's asset prefix. |
 | `/scenes/{sceneId}/access-envelope` | POST | Mint a short-lived signed access envelope for browser-safe rendering of a protected scene. Authorized callers only; public scenes return `400`. See [Browser-safe access via signed envelope](#browser-safe-access-via-signed-envelope). |
+| `/scenes/{sceneId}/exports/openusd/stage.usda` | GET | Pro-gated preview USDA stage manifest (`model/vnd.usda`) containing scene metadata and stable source URLs. This is not native USD geometry conversion or an Omniverse connector. |
 
 `sceneId` is operator-defined and stable; clients hard-code it the same way
 they do for layer ids on other Honua endpoints. CesiumJS resolves nested
@@ -166,6 +166,14 @@ subsequent requests until the configured TTL expires. The
 configuration-driven `Scenes` fallback does not carry a per-dataset cache
 policy, so those datasets always serve at the configured `OutputCache`
 defaults.
+
+The OpenUSD preview manifest is generated dynamically from the registered
+scene, root `tileset.json`, and allowlisted observation/project metadata.
+Public manifests use public cache headers. Protected manifests reuse the scene
+access policy and emit private or no-store-compatible cache headers with
+`Vary: Authorization, X-API-Key` when credentials authorize the response. The
+manifest never embeds bearer tokens, API keys, access-envelope tokens, signed
+cookies, or filesystem paths.
 
 ETags are deterministic per file — formatted as quoted
 `"<lastWriteUtcTicks-hex>-<lengthBytes-hex>"` — so cached responses survive

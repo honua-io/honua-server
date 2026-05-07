@@ -26,6 +26,11 @@ internal static class SceneContentTypes
     public const string JsonContentType = "application/json";
 
     /// <summary>
+    /// USDA text-format OpenUSD stage manifest content type.
+    /// </summary>
+    public const string OpenUsdStageContentType = "model/vnd.usda";
+
+    /// <summary>
     /// Resolves the MIME type for a 3D Tiles asset by its filename or path.
     /// </summary>
     /// <param name="path">Asset path or filename.</param>
