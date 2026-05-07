@@ -315,6 +315,9 @@ internal static class OpenUsdSceneManifestReader
 
     private static double RadiansToDegrees(double radians) => radians * 180d / Math.PI;
 
+    /// <summary>
+    /// Minimal scene database metadata needed to enrich the generated OpenUSD manifest.
+    /// </summary>
     public sealed record SceneDatasetRecordView(
         SceneExtent? Extent,
         string? Crs);

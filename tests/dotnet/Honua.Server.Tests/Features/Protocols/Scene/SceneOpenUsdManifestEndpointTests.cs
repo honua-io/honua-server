@@ -134,6 +134,64 @@ public sealed class SceneOpenUsdManifestEndpointTests
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /scenes/{sceneId}/exports/openusd/stage.usda")]
+    public async Task GetOpenUsdManifest_MissingScene_ReturnsNotFound()
+    {
+        var fixtureRoot = NvidiaConstructionFixturePaths.ResolveFixtureRoot();
+        var fixture = await CreateFixtureAsync(
+            fixtureRoot,
+            NvidiaConstructionFixturePaths.MainSceneId,
+            NvidiaConstructionFixturePaths.MainTilesetFileName).ConfigureAwait(false);
+
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                "/scenes/missing-scene/exports/openusd/stage.usda").ConfigureAwait(false);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/exports/openusd/stage.usda")]
+    public async Task GetOpenUsdManifest_WithMatchingIfNoneMatch_ReturnsNotModified()
+    {
+        var fixtureRoot = NvidiaConstructionFixturePaths.ResolveFixtureRoot();
+        var fixture = await CreateFixtureAsync(
+            fixtureRoot,
+            NvidiaConstructionFixturePaths.MainSceneId,
+            NvidiaConstructionFixturePaths.MainTilesetFileName).ConfigureAwait(false);
+
+        try
+        {
+            var first = await fixture.Client.GetAsync(
+                $"/scenes/{NvidiaConstructionFixturePaths.MainSceneId}/exports/openusd/stage.usda").ConfigureAwait(false);
+            first.StatusCode.Should().Be(HttpStatusCode.OK);
+            first.Headers.ETag.Should().NotBeNull();
+
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/scenes/{NvidiaConstructionFixturePaths.MainSceneId}/exports/openusd/stage.usda");
+            request.Headers.IfNoneMatch.Add(first.Headers.ETag!);
+
+            var response = await fixture.Client.SendAsync(request).ConfigureAwait(false);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotModified);
+            response.Headers.ETag!.Tag.Should().Be(first.Headers.ETag!.Tag);
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/exports/openusd/stage.usda")]
     public async Task GetOpenUsdManifest_MissingDeclaredObservationSidecar_ReturnsBadRequest()
     {
         var tempRoot = CreateTempSceneRoot("""
