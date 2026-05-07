@@ -170,6 +170,11 @@ internal sealed class StacMappingService
                 type: MediaTypes.Json,
                 title: layer.Name),
             Link.Create(
+                href: $"{stacBase}/collections/{collectionId}",
+                rel: StacConstants.StacRelations.Parent,
+                type: MediaTypes.Json,
+                title: layer.Name),
+            Link.Create(
                 href: stacBase,
                 rel: StacConstants.StacRelations.Root,
                 type: MediaTypes.Json,

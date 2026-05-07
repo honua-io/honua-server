@@ -69,6 +69,10 @@ public sealed class StacItemsTests : IAsyncLifetime
             item.GetProperty("stac_version").GetString().Should().Be("1.0.0");
             item.GetProperty("properties").ValueKind.Should().Be(JsonValueKind.Object);
             item.GetProperty("links").EnumerateArray().Should().NotBeEmpty();
+            item.GetProperty("links")
+                .EnumerateArray()
+                .Should()
+                .Contain(link => link.GetProperty("rel").GetString() == "parent");
 
             // STAC requires "datetime" in properties (may be null)
             item.GetProperty("properties").TryGetProperty("datetime", out _).Should().BeTrue();
@@ -108,6 +112,28 @@ public sealed class StacItemsTests : IAsyncLifetime
             .Select(static element => element.GetString())
             .Should()
             .BeEquivalentTo(ExpectedItemExtensions);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task GetItems_SelfLinkMatchesRequestedUrl()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var requestPath = $"/stac/collections/{collectionId}/items?limit=2";
+        var response = await _fixture.Client.GetAsync(requestPath);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var selfLink = json.RootElement.GetProperty("links")
+            .EnumerateArray()
+            .First(link => link.GetProperty("rel").GetString() == "self");
+
+        selfLink.GetProperty("href").GetString()
+            .Should()
+            .Be(response.RequestMessage!.RequestUri!.ToString());
     }
 
     [IntegrationTest]
@@ -301,6 +327,12 @@ public sealed class StacItemsTests : IAsyncLifetime
         json.RootElement.GetProperty("id").GetString().Should().Be(featureId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         json.RootElement.GetProperty("collection").GetString().Should().Be(collectionId);
         json.RootElement.GetProperty("links").EnumerateArray().Should().NotBeEmpty();
+        json.RootElement.GetProperty("links")
+            .EnumerateArray()
+            .Should()
+            .Contain(link =>
+                link.GetProperty("rel").GetString() == "parent" &&
+                link.GetProperty("href").GetString()!.EndsWith($"/stac/collections/{collectionId}", StringComparison.Ordinal));
 
         // Should have cross-protocol asset links
         json.RootElement.GetProperty("assets").GetProperty("geojson")

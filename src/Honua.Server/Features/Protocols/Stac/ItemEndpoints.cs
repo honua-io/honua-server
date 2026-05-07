@@ -135,9 +135,10 @@ internal static class ItemEndpoints
 
             var stacBase = $"{baseUrl}/stac";
             var itemsPath = $"{stacBase}/collections/{collectionId}/items";
+            var requestedItemsUrl = $"{baseUrl}{context.Request.Path}{context.Request.QueryString}";
             var linksBuilder = ImmutableArray.CreateBuilder<Link>();
             linksBuilder.Add(Link.Create(
-                href: $"{itemsPath}?{BuildItemsFilterQuery(effectiveLimit, effectiveOffset, bbox, datetime)}",
+                href: requestedItemsUrl,
                 rel: RelationTypes.Self,
                 type: MediaTypes.GeoJson,
                 title: "Items"));
