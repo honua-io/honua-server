@@ -224,15 +224,18 @@ internal static partial class MigrationInventoryHelpers
             GeoServerCompatibilityLevel.FullyCompatible => Compatible(
                 compatibility.Reason,
                 compatibility.Warnings,
-                compatibility.RequiredManualSteps),
+                compatibility.RequiredManualSteps,
+                compatibility.Code),
             GeoServerCompatibilityLevel.PartiallyCompatible => Partial(
                 compatibility.Reason,
                 compatibility.Warnings,
-                compatibility.RequiredManualSteps),
+                compatibility.RequiredManualSteps,
+                compatibility.Code),
             _ => Incompatible(
                 compatibility.Reason,
                 compatibility.Warnings,
-                compatibility.RequiredManualSteps)
+                compatibility.RequiredManualSteps,
+                compatibility.Code)
         };
     }
 

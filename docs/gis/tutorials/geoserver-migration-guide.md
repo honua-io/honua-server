@@ -61,7 +61,7 @@ curl -X POST http://localhost:8080/api/v1/admin/import/scan \
 
 Contract notes:
 - `sourceKind: "geoserver"` is normalized to `sourceKind: "geoserver-rest"` in the response artifact.
-- `includeStyleContent: true` fetches SLD documents for deeper compatibility analysis and external graphic detection, but the artifact does not echo raw SLD bodies.
+- `includeStyleContent: true` fetches SLD documents for deeper compatibility analysis and external graphic detection, but the artifact does not echo raw SLD bodies. SLD styles always carry `styleReference` and `styleContentReference` URLs plus `styleContentDisposition: "linked"` for downstream review.
 - GeoServer basic auth is only used when both `username` and `password` are supplied. Providing only one field falls back to anonymous discovery and records a note in `authPosture.notes`.
 - `timeoutSeconds` is optional for GeoServer scans and defaults to `120`.
 - The response body is the artifact itself, not a `success/data` admin envelope.
@@ -74,11 +74,12 @@ The response includes:
 - Workspace and layer inventory
 - Synthetic `workspace:global` container entries when GeoServer exposes global styles or layer groups
 - Datastore and coverage-store types with sanitized connection metadata and secret-safe addresses
-- Style formats, deterministic `styles[*].metadata`, and compatibility assessment
+- WMS/WFS service endpoints as `service-endpoint` external dependencies with advertised capabilities and enabled state
+- Style formats, deterministic `styles[*].metadata`, linked style URLs, and compatibility assessment
 - CRS, datum, and unit details for migration planning
 - External dependencies with sanitized addresses, stable cross-links (`styleIds`, `resourceIds`, `resourceId`), and manual follow-up steps
 
-Review the inventory artifact before proceeding. Start with `summary`, `scanCompleteness`, and `overallCompatibility`, then drill into per-item blockers using the stable IDs shared across `resources`, `styles`, and `externalDependencies`. Arrays are deterministically ordered for repeatable diffs, sensitive datastore values are redacted before serialization, and nullable scalar fields are omitted when the scanner has no value to emit. Layers backed by PostGIS data stores have the highest migration fidelity.
+Review the inventory artifact before proceeding. Start with `summary`, `scanCompleteness`, and `overallCompatibility`, then drill into per-item blockers using the stable IDs shared across `resources`, `styles`, and `externalDependencies`. Compatibility assessments include stable GeoServer codes such as `GEOSERVER_SUPPORTED`, `GEOSERVER_MANUAL_REVIEW`, `GEOSERVER_UNSUPPORTED_STORE`, `GEOSERVER_UNSUPPORTED_COVERAGE_STORE`, `GEOSERVER_DISABLED_LAYER`, `GEOSERVER_EMPTY_LAYER_GROUP`, `GEOSERVER_STYLE_CONVERSION_REQUIRED`, `GEOSERVER_UNSUPPORTED_STYLE_FORMAT`, `GEOSERVER_EXTERNAL_GRAPHIC`, and `GEOSERVER_SERVICE_ENDPOINT`. Arrays are deterministically ordered for repeatable diffs, sensitive datastore values are redacted before serialization, and nullable scalar fields are omitted when the scanner has no value to emit. Layers backed by PostGIS data stores have the highest migration fidelity.
 
 ### Step 2: Start a Dry-Run Import
 

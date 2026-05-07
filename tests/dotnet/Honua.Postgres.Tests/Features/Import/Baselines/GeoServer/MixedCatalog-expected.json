@@ -1,0 +1,410 @@
+{
+  "artifactKind": "honua.migration.source-inventory",
+  "artifactVersion": "1.0",
+  "sourceKind": "geoserver-rest",
+  "source": {
+    "displayName": "Demo GeoServer",
+    "baseUrl": "https://example.com/geoserver/rest",
+    "product": "GeoServer",
+    "version": "2.28.0",
+    "build": "abc123",
+    "serviceType": "REST"
+  },
+  "authPosture": {
+    "mode": "anonymous",
+    "credentialsSupplied": false,
+    "accessConfirmed": true,
+    "notes": []
+  },
+  "scanCompleteness": {
+    "status": "complete",
+    "warnings": [],
+    "missingArtifacts": []
+  },
+  "summary": {
+    "containerCount": 2,
+    "resourceCount": 3,
+    "styleCount": 2,
+    "externalDependencyCount": 6,
+    "compatibleCount": 5,
+    "partiallyCompatibleCount": 4,
+    "incompatibleCount": 4
+  },
+  "overallCompatibility": {
+    "level": "incompatible",
+    "reason": "Compatible: 5; partial: 4; incompatible: 4.",
+    "warnings": [
+      "Layer group contains no layers",
+      "Layer is currently disabled in GeoServer",
+      "Raster support in Honua may have different capabilities than GeoServer",
+      "The style references an external URL."
+    ],
+    "manualSteps": [
+      "Convert css style to supported format",
+      "Implement SLD to MapLibre style conversion",
+      "Manual migration required for VPF datastore",
+      "Manual style recreation may be required",
+      "Mirror or replace external graphics in the target deployment."
+    ]
+  },
+  "containers": [
+    {
+      "id": "workspace:archive",
+      "kind": "workspace",
+      "name": "archive",
+      "title": "archive",
+      "isDefault": false,
+      "compatibility": {
+        "level": "compatible",
+        "code": "EMPTY",
+        "reason": "No resources were discovered in this container.",
+        "warnings": [],
+        "manualSteps": []
+      }
+    },
+    {
+      "id": "workspace:demo",
+      "kind": "workspace",
+      "name": "demo",
+      "title": "demo",
+      "isDefault": true,
+      "compatibility": {
+        "level": "incompatible",
+        "reason": "Compatible: 2; partial: 4; incompatible: 3.",
+        "warnings": [
+          "Layer group contains no layers",
+          "Layer is currently disabled in GeoServer",
+          "Raster support in Honua may have different capabilities than GeoServer",
+          "The style references an external URL."
+        ],
+        "manualSteps": [
+          "Convert css style to supported format",
+          "Implement SLD to MapLibre style conversion",
+          "Manual migration required for VPF datastore",
+          "Manual style recreation may be required",
+          "Mirror or replace external graphics in the target deployment."
+        ]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "id": "layer:demo:closed",
+      "containerId": "workspace:demo",
+      "kind": "layer",
+      "name": "closed",
+      "title": "Closed Facilities",
+      "capabilities": [
+        "wfs",
+        "wms"
+      ],
+      "spatialReferences": [],
+      "fields": [],
+      "styleIds": [
+        "style:demo:deprecated"
+      ],
+      "externalDependencyIds": [
+        "datastore:demo:legacy"
+      ],
+      "compatibility": {
+        "level": "partial",
+        "code": "GEOSERVER_DISABLED_LAYER",
+        "reason": "Disabled layers can be migrated but will need to be manually enabled",
+        "warnings": [
+          "Layer is currently disabled in GeoServer"
+        ],
+        "manualSteps": []
+      }
+    },
+    {
+      "id": "layer:demo:roads",
+      "containerId": "workspace:demo",
+      "kind": "layer",
+      "name": "roads",
+      "title": "Roads",
+      "description": "Road centerlines",
+      "capabilities": [
+        "enabled",
+        "query",
+        "wfs",
+        "wms"
+      ],
+      "spatialReferences": [
+        {
+          "role": "declared",
+          "sourceValue": "EPSG:4326",
+          "srid": 4326,
+          "crsUri": "http://www.opengis.net/def/crs/EPSG/0/4326",
+          "unit": "degree",
+          "axisOrder": "east-north",
+          "isGeographic": true
+        },
+        {
+          "role": "latlon-bounds",
+          "sourceValue": "EPSG:4326",
+          "srid": 4326,
+          "crsUri": "http://www.opengis.net/def/crs/EPSG/0/4326",
+          "unit": "degree",
+          "axisOrder": "east-north",
+          "isGeographic": true
+        },
+        {
+          "role": "native",
+          "sourceValue": "EPSG:3857",
+          "srid": 3857,
+          "crsUri": "http://www.opengis.net/def/crs/EPSG/0/3857",
+          "axisOrder": "east-north",
+          "isGeographic": false
+        },
+        {
+          "role": "native-bounds",
+          "sourceValue": "EPSG:3857",
+          "srid": 3857,
+          "crsUri": "http://www.opengis.net/def/crs/EPSG/0/3857",
+          "axisOrder": "east-north",
+          "isGeographic": false
+        }
+      ],
+      "fields": [],
+      "styleIds": [
+        "style:demo:line"
+      ],
+      "externalDependencyIds": [
+        "datastore:demo:pg"
+      ],
+      "compatibility": {
+        "level": "compatible",
+        "code": "GEOSERVER_SUPPORTED",
+        "reason": "Standard layer configuration is fully supported",
+        "warnings": [],
+        "manualSteps": []
+      }
+    },
+    {
+      "id": "layer-group:demo:empty-group",
+      "containerId": "workspace:demo",
+      "kind": "layer-group",
+      "name": "empty-group",
+      "title": "Empty Group",
+      "capabilities": [
+        "wms"
+      ],
+      "spatialReferences": [
+        {
+          "role": "bounds",
+          "sourceValue": "EPSG:4326",
+          "srid": 4326,
+          "crsUri": "http://www.opengis.net/def/crs/EPSG/0/4326",
+          "unit": "degree",
+          "axisOrder": "east-north",
+          "isGeographic": true
+        }
+      ],
+      "fields": [],
+      "styleIds": [],
+      "externalDependencyIds": [],
+      "compatibility": {
+        "level": "partial",
+        "code": "GEOSERVER_EMPTY_LAYER_GROUP",
+        "reason": "Empty layer groups can be migrated but provide no functionality",
+        "warnings": [
+          "Layer group contains no layers"
+        ],
+        "manualSteps": []
+      }
+    }
+  ],
+  "styles": [
+    {
+      "id": "style:demo:deprecated",
+      "containerId": "workspace:demo",
+      "kind": "style",
+      "name": "deprecated",
+      "format": "css",
+      "resourceIds": [
+        "layer:demo:closed"
+      ],
+      "externalDependencyIds": [],
+      "metadata": {
+        "filename": "deprecated.css",
+        "format": "css",
+        "styleReference": "https://example.com/geoserver/rest/workspaces/demo/styles/deprecated.json"
+      },
+      "compatibility": {
+        "level": "incompatible",
+        "code": "GEOSERVER_UNSUPPORTED_STYLE_FORMAT",
+        "reason": "Style format \u0027css\u0027 is not supported",
+        "warnings": [],
+        "manualSteps": [
+          "Convert css style to supported format"
+        ]
+      }
+    },
+    {
+      "id": "style:demo:line",
+      "containerId": "workspace:demo",
+      "kind": "style",
+      "name": "line",
+      "format": "sld",
+      "resourceIds": [
+        "layer:demo:roads"
+      ],
+      "externalDependencyIds": [
+        "style:demo:line:external:9e504ef024797904"
+      ],
+      "metadata": {
+        "filename": "line.sld",
+        "format": "sld",
+        "languageVersion": "1.0.0",
+        "styleContentDisposition": "linked",
+        "styleContentReference": "https://example.com/geoserver/rest/workspaces/demo/styles/line.sld",
+        "styleReference": "https://example.com/geoserver/rest/workspaces/demo/styles/line.json"
+      },
+      "compatibility": {
+        "level": "incompatible",
+        "code": "GEOSERVER_STYLE_CONVERSION_REQUIRED",
+        "reason": "SLD styles require conversion to MapLibre format (issue #375)",
+        "warnings": [],
+        "manualSteps": [
+          "Implement SLD to MapLibre style conversion",
+          "Manual style recreation may be required"
+        ]
+      }
+    }
+  ],
+  "externalDependencies": [
+    {
+      "id": "coverage-store:demo:imagery",
+      "containerId": "workspace:demo",
+      "kind": "coverage-store",
+      "name": "imagery",
+      "dependencyType": "GeoTIFF",
+      "address": "s3://example-bucket/imagery/demo.tif",
+      "metadata": {
+        "url": "s3://example-bucket/imagery/demo.tif"
+      },
+      "spatialReferences": [],
+      "compatibility": {
+        "level": "partial",
+        "code": "GEOSERVER_MANUAL_REVIEW",
+        "reason": "CoverageStore type \u0027GeoTIFF\u0027 may require additional configuration in Honua",
+        "warnings": [
+          "Raster support in Honua may have different capabilities than GeoServer"
+        ],
+        "manualSteps": []
+      }
+    },
+    {
+      "id": "datastore:demo:legacy",
+      "containerId": "workspace:demo",
+      "kind": "datastore",
+      "name": "legacy",
+      "dependencyType": "VPF",
+      "address": "file:/srv/geoserver/legacy.vpf",
+      "metadata": {
+        "url": "file:/srv/geoserver/legacy.vpf"
+      },
+      "spatialReferences": [],
+      "compatibility": {
+        "level": "incompatible",
+        "code": "GEOSERVER_UNSUPPORTED_STORE",
+        "reason": "DataStore type \u0027VPF\u0027 is not currently supported by Honua",
+        "warnings": [],
+        "manualSteps": [
+          "Manual migration required for VPF datastore"
+        ]
+      }
+    },
+    {
+      "id": "datastore:demo:pg",
+      "containerId": "workspace:demo",
+      "kind": "datastore",
+      "name": "pg",
+      "dependencyType": "PostGIS",
+      "address": "db.example.com/gis",
+      "metadata": {
+        "database": "gis",
+        "dbtype": "postgis",
+        "host": "db.example.com"
+      },
+      "spatialReferences": [],
+      "compatibility": {
+        "level": "compatible",
+        "code": "GEOSERVER_SUPPORTED",
+        "reason": "DataStore type \u0027PostGIS\u0027 is fully supported by Honua",
+        "warnings": [],
+        "manualSteps": []
+      }
+    },
+    {
+      "id": "service-endpoint:wfs",
+      "containerId": "workspace:global",
+      "kind": "service-endpoint",
+      "name": "WFS",
+      "dependencyType": "ogc-service",
+      "address": "https://example.com/geoserver/wfs",
+      "metadata": {
+        "capabilities": "describe-feature-type,get-capabilities,get-feature,transaction",
+        "enabled": "true",
+        "protocol": "WFS",
+        "serviceLevel": "COMPLETE",
+        "title": "Demo WFS"
+      },
+      "spatialReferences": [],
+      "compatibility": {
+        "level": "compatible",
+        "code": "GEOSERVER_SERVICE_ENDPOINT",
+        "reason": "WFS service endpoint was captured for migration planning.",
+        "warnings": [],
+        "manualSteps": []
+      }
+    },
+    {
+      "id": "service-endpoint:wms",
+      "containerId": "workspace:global",
+      "kind": "service-endpoint",
+      "name": "WMS",
+      "dependencyType": "ogc-service",
+      "address": "https://example.com/geoserver/wms",
+      "metadata": {
+        "capabilities": "get-capabilities,get-feature-info,get-map",
+        "enabled": "true",
+        "maxRenderingTime": "60",
+        "protocol": "WMS",
+        "title": "Demo WMS"
+      },
+      "spatialReferences": [],
+      "compatibility": {
+        "level": "compatible",
+        "code": "GEOSERVER_SERVICE_ENDPOINT",
+        "reason": "WMS service endpoint was captured for migration planning.",
+        "warnings": [],
+        "manualSteps": []
+      }
+    },
+    {
+      "id": "style:demo:line:external:9e504ef024797904",
+      "containerId": "workspace:demo",
+      "resourceId": "style:demo:line",
+      "kind": "external-graphic",
+      "name": "line",
+      "dependencyType": "url",
+      "address": "https://cdn.example.com/styles/road-marker.svg",
+      "metadata": {
+        "source": "sld"
+      },
+      "spatialReferences": [],
+      "compatibility": {
+        "level": "partial",
+        "code": "GEOSERVER_EXTERNAL_GRAPHIC",
+        "reason": "External graphic references require manual migration review.",
+        "warnings": [
+          "The style references an external URL."
+        ],
+        "manualSteps": [
+          "Mirror or replace external graphics in the target deployment."
+        ]
+      }
+    }
+  ]
+}

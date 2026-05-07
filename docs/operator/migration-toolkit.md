@@ -40,6 +40,14 @@ Run the source scanner first. GeoServer REST and ArcGIS GeoServices REST
 scans produce the same top-level source inventory contract, so downstream
 review tooling can work against one artifact shape.
 
+GeoServer source inventories emit advertised WMS/WFS service endpoints as
+external dependencies, preserve GeoServer layer capabilities on resources, and
+link styles by REST metadata URL plus SLD content URL instead of embedding raw
+SLD bodies. Setting `includeStyleContent` lets the scanner inspect SLD/SE
+documents for compatibility warnings and external graphic dependencies; the
+inventory remains a deterministic planning artifact, not a style translation
+payload.
+
 Translate the reviewed inventory into a manifest before planning a pilot.
 The manifest does not claim that unsupported source items are migrated:
 incompatible resources are excluded from `targetResources` and emitted under
