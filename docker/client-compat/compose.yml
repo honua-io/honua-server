@@ -23,6 +23,7 @@ services:
       POSTGRES_DB: honua_compat
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: compat_password
+      POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
     networks:
       - compat
     healthcheck:
@@ -152,6 +153,8 @@ services:
       dockerfile: docker/client-compat/openlayers/Dockerfile
     environment:
       HONUA_BASE_URL: http://honua:5000
+      HONUA_SERVICE_ID: browser_compat
+      HONUA_LAYER_ID: "2000"
     depends_on:
       honua:
         condition: service_healthy

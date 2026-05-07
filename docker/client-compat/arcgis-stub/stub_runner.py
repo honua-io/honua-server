@@ -235,6 +235,7 @@ def _exercise_mapserver(client: httpx.Client) -> dict[str, dict]:
     r = client.get(
         f"/rest/services/{SERVICE_NAME}/MapServer/{LAYER_ID}/query",
         params={
+            "where": "1=1",
             "geometry": "-180,-90,180,90",
             "geometryType": "esriGeometryEnvelope",
             "spatialRel": "esriSpatialRelIntersects",
@@ -245,6 +246,7 @@ def _exercise_mapserver(client: httpx.Client) -> dict[str, dict]:
     )
     results["CERT-QFLT-02"] = _new_result(
         "CERT-QFLT-02", "pass" if r.status_code == 200 else "fail",
+        notes=f"HTTP {r.status_code}",
     )
 
     # CERT-PAGE-01 / 02 — pagination on layer query.
@@ -400,6 +402,7 @@ def run() -> int:
         r = client.get(
             f"/rest/services/{SERVICE_NAME}/FeatureServer/{LAYER_ID}/query",
             params={
+                "where": "1=1",
                 "geometry": "-180,-90,180,90",
                 "geometryType": "esriGeometryEnvelope",
                 "spatialRel": "esriSpatialRelIntersects",
@@ -410,6 +413,7 @@ def run() -> int:
         )
         results["CERT-QFLT-02"] = _new_result(
             "CERT-QFLT-02", "pass" if r.status_code == 200 else "fail",
+            notes=f"HTTP {r.status_code}",
         )
 
         # CERT-PAGE-01 / 02 — pagination.

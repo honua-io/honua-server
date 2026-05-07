@@ -68,7 +68,9 @@ EXPECTED_CRS_EPSG = 4326
 GEO_TOLERANCE = 1e-6
 
 EXPECTED_FIELD_NAMES = {
-    "objectid", "name", "description", "status", "count", "ratio",
+    # QGIS exposes the OGC API Features top-level feature id separately from
+    # the attribute schema, so `objectid` must not be required as a layer field.
+    "name", "description", "status", "count", "ratio",
     "active", "created_at", "event_date", "event_time", "uid", "tags", "numbers",
 }
 
@@ -567,7 +569,7 @@ def render_layer_headless(layer, width: int = 256, height: int = 256) -> bytes:
     job.waitForFinished()
 
     image: QImage = job.renderedImage()
-    project.removeMapLayer(layer.id())
+    project.takeMapLayer(layer)
 
     buf = QBuffer()
     buf.open(QIODevice.WriteOnly)

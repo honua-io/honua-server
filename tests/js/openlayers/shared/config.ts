@@ -42,6 +42,8 @@ export async function discoverCollectionId(): Promise<string> {
   if (!resp.ok) throw new Error(`Collections endpoint returned ${resp.status}`);
   const data = await resp.json() as { collections: Array<{ id: string }> };
   if (!data.collections?.length) throw new Error('No collections available');
-  _cachedCollectionId = data.collections[0].id;
+  _cachedCollectionId =
+    data.collections.find(collection => collection.id === config.layerId)?.id ??
+    data.collections[0].id;
   return _cachedCollectionId;
 }
