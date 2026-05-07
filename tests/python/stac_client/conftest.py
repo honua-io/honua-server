@@ -27,6 +27,7 @@ from shared.server import HonuaServer
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 TESTS_ROOT = Path(__file__).resolve().parents[2]
 PYTHON_TESTS_ROOT = Path(__file__).resolve().parents[1]
+TEST_RESULTS_ROOT = TESTS_ROOT / "TestResults"
 DEFAULT_SEED_PATH = TESTS_ROOT / "seed" / "client-compat-v1.sql"
 DEFAULT_SERVICE_ID = "test_service"
 DEFAULT_COLLECTION_ID = "0"
@@ -76,6 +77,7 @@ class CompatibilityEvidenceCollector:
         self._client_versions = {
             "pystac": _safe_package_version("pystac"),
             "pystac_client": _safe_package_version("pystac-client"),
+            "stac_api_validator": _safe_package_version("stac-api-validator"),
         }
 
     def record(
@@ -157,6 +159,7 @@ class CompatibilityEvidenceCollector:
             f"- Server commit: {report['server_commit']}",
             f"- PySTAC version: {self._client_versions['pystac']}",
             f"- PySTAC-Client version: {self._client_versions['pystac_client']}",
+            f"- stac-api-validator version: {self._client_versions['stac_api_validator']}",
             "",
             "## Summary",
             "",
@@ -204,6 +207,43 @@ def _markdown_cell(value: object) -> str:
 
 def _utc_now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def write_stac_api_validator_artifact(
+    *,
+    command: list[str],
+    root_url: str,
+    collection_id: str,
+    geometry: dict[str, object],
+    conformance_classes: list[str],
+    status: str,
+    returncode: int,
+    stdout: str,
+    stderr: str,
+) -> Path:
+    """Persist the external validator process transcript as CI evidence."""
+    TEST_RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+    suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
+    artifact_path = TEST_RESULTS_ROOT / f"stac-api-validator-results{suffix}.json"
+    artifact = {
+        "schema_version": "1.0",
+        "lane": "stac-client-compat",
+        "tool": "stac-api-validator",
+        "tool_version": _safe_package_version("stac-api-validator"),
+        "generated_at": _utc_now_iso(),
+        "status": status,
+        "root_url": root_url,
+        "collection_id": collection_id,
+        "geometry": geometry,
+        "conformance_classes": conformance_classes,
+        "command": command,
+        "exit_code": returncode,
+        "stdout": stdout,
+        "stderr": stderr,
+    }
+    artifact_path.write_text(json.dumps(artifact, indent=2))
+    return artifact_path
 
 
 def _read_server_version(base_url: str) -> str:
@@ -378,7 +418,7 @@ def _write_evidence_report(
 
     worker_id = os.environ.get("PYTEST_XDIST_WORKER")
     suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
-    results_dir = TESTS_ROOT / "TestResults"
+    results_dir = TEST_RESULTS_ROOT
     results_dir.mkdir(parents=True, exist_ok=True)
     json_path = results_dir / f"stac-client-compat-results{suffix}.json"
     markdown_path = results_dir / f"stac-client-compat-results{suffix}.md"
