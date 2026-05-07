@@ -1,0 +1,515 @@
+{
+  "schemaVersion": "1.0.0",
+  "title": "Honua metadata and catalog endpoint inventory",
+  "canonicalIssue": "honua-io/honua-server#955",
+  "parentEpic": "honua-io/honua-server#954",
+  "relatedIssues": [
+    "honua-io/honua-server#952",
+    "honua-io/honua-sdk-dotnet#146",
+    "honua-io/honua-sdk-js#139",
+    "honua-io/honua-sdk-python#54"
+  ],
+  "categories": [
+    "public-catalog-read",
+    "admin-control-plane-metadata-read",
+    "external-source-inventory-read",
+    "protocol-native-metadata-read"
+  ],
+  "entries": [
+    {
+      "id": "ogc-records-catalog",
+      "title": "OGC API Records public catalog",
+      "status": "planned",
+      "category": "public-catalog-read",
+      "endpointPatterns": [
+        "GET /ogc/records",
+        "GET /ogc/records/conformance",
+        "GET /ogc/records/api",
+        "GET /ogc/records/collections",
+        "GET /ogc/records/collections/{collectionId}",
+        "GET /ogc/records/collections/{collectionId}/items",
+        "GET /ogc/records/collections/{collectionId}/items/{recordId}"
+      ],
+      "audience": "Public catalog clients, OGC clients, and first-party SDK catalog discovery.",
+      "authPosture": "Public route with service/layer/record access policy; exact anonymous or token posture is finalized by honua-io/honua-server#952.",
+      "sdkTargets": {
+        "dotnet": "IHonuaOgcRecordsClient in honua-io/honua-sdk-dotnet#146",
+        "javascript": "client.ogcRecords() or equivalent in honua-io/honua-sdk-js#139",
+        "python": "client.ogc_records() or equivalent in honua-io/honua-sdk-python#54"
+      },
+      "responseKind": "OGC API Records JSON; raw JSON access required in every SDK.",
+      "paginationFiltering": "Planned OGC Records paging and filters. Server #952 must pin limit, offset/cursor, bbox, datetime, text, CQL/filter, sort, and collection semantics before SDK implementation.",
+      "testExpectation": "Server #952 adds route and contract tests; SDK issues add discovery, search, record detail, paging/filter, auth, error, and raw-payload tests."
+    },
+    {
+      "id": "geoservices-service-directory",
+      "title": "GeoServices REST service directory",
+      "status": "implemented",
+      "category": "public-catalog-read",
+      "endpointPatterns": [
+        "GET /rest/info",
+        "GET /rest/services"
+      ],
+      "audience": "ArcGIS-compatible clients and SDK service discovery.",
+      "authPosture": "Public route filtered by layer/service access policy; deployments may require API key or bearer auth for protected services.",
+      "sdkTargets": {
+        "dotnet": "IHonuaCatalogClient service discovery plus GeoServices client factories",
+        "javascript": "HonuaClient service/catalog discovery",
+        "python": "HonuaClient service summary/catalog discovery"
+      },
+      "responseKind": "GeoServices-compatible JSON service directory.",
+      "paginationFiltering": "No paging. Supports f=json or f=pjson.",
+      "testExpectation": "GeoServices catalog endpoint tests and SDK service-list tests verify visible service filtering and FeatureServer/MapServer/ImageServer entries."
+    },
+    {
+      "id": "admin-service-catalog",
+      "title": "Admin service catalog and settings",
+      "status": "implemented",
+      "category": "admin-control-plane-metadata-read",
+      "endpointPatterns": [
+        "GET /api/v1/admin/services",
+        "GET /api/v1/admin/services/{serviceName}/settings"
+      ],
+      "audience": "Operators, admin SDKs, and catalog clients that need control-plane service metadata.",
+      "authPosture": "Admin authorization required.",
+      "sdkTargets": {
+        "dotnet": "IHonuaCatalogClient.ListServicesAsync and HonuaAdminClient service settings",
+        "javascript": "Admin/service catalog client methods",
+        "python": "Admin client service catalog methods"
+      },
+      "responseKind": "Admin ApiResponse envelope with service summaries or settings.",
+      "paginationFiltering": "No paging. Service settings are addressed by service name.",
+      "testExpectation": "Admin service settings tests and SDK admin catalog tests cover list/detail and protocol metadata."
+    },
+    {
+      "id": "admin-connection-layer-inventory",
+      "title": "Admin connection table and published layer inventory",
+      "status": "implemented",
+      "category": "admin-control-plane-metadata-read",
+      "endpointPatterns": [
+        "GET /api/v1/admin/connections/{id}/tables",
+        "GET /api/v1/admin/connections/{id}/layers"
+      ],
+      "audience": "Operators and SDK publishing workflows that need table and layer inventory.",
+      "authPosture": "Admin authorization required.",
+      "sdkTargets": {
+        "dotnet": "HonuaAdminClient table discovery and layer publishing inventory",
+        "javascript": "Admin connection/table/layer discovery client methods",
+        "python": "Admin connection/table/layer discovery client methods"
+      },
+      "responseKind": "Admin ApiResponse envelope with table or published layer summaries.",
+      "paginationFiltering": "No SDK-visible paging in the current contract. Layer list accepts serviceName where supported by the server endpoint.",
+      "testExpectation": "Layer publishing and table discovery tests cover response contracts; SDKs keep this separate from public catalog reads."
+    },
+    {
+      "id": "admin-metadata-resources",
+      "title": "Admin metadata resources, groups, and source descriptors",
+      "status": "implemented",
+      "category": "admin-control-plane-metadata-read",
+      "endpointPatterns": [
+        "GET /api/v1/admin/metadata/resources",
+        "GET /api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"
+      ],
+      "audience": "Operators and SDKs reading Honua metadata resources such as Group and SourceDescriptor.",
+      "authPosture": "Admin authorization required.",
+      "sdkTargets": {
+        "dotnet": "HonuaAdminClient metadata resources and IHonuaCatalogClient groups/source descriptors",
+        "javascript": "Admin metadata resource client methods",
+        "python": "Admin metadata resource client methods"
+      },
+      "responseKind": "Admin ApiResponse envelope with honua.io metadata resource documents and ETags on detail reads.",
+      "paginationFiltering": "List filters by kind and namespace. No paging in the current contract.",
+      "testExpectation": "Metadata resource tests cover filters, URL encoding, ETags, 404, 412, and 428 behavior; SDK parity tests cover Group and SourceDescriptor reads."
+    },
+    {
+      "id": "admin-metadata-manifests",
+      "title": "Admin metadata manifest export and apply",
+      "status": "implemented",
+      "category": "admin-control-plane-metadata-read",
+      "endpointPatterns": [
+        "GET /api/v1/admin/manifest",
+        "POST /api/v1/admin/manifest/apply"
+      ],
+      "audience": "Operators, GitOps automation, and SDKs that export or validate metadata manifests.",
+      "authPosture": "Admin authorization required.",
+      "sdkTargets": {
+        "dotnet": "HonuaAdminClient manifest export/apply",
+        "javascript": "Admin manifest client methods",
+        "python": "Admin manifest client methods"
+      },
+      "responseKind": "Admin ApiResponse envelope with metadata manifest or manifest apply result.",
+      "paginationFiltering": "No paging. Apply supports dry-run, prune, and approval semantics where enabled by capabilities.",
+      "testExpectation": "Manifest tests cover export, apply, dry-run, prune, and SDK compatibility feature flags."
+    },
+    {
+      "id": "admin-style-metadata",
+      "title": "Admin layer style metadata",
+      "status": "implemented",
+      "category": "admin-control-plane-metadata-read",
+      "endpointPatterns": [
+        "GET /api/v1/admin/metadata/layers/{layerId}/style",
+        "GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld",
+        "POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld",
+        "POST /api/v1/admin/metadata/layers/{layerId}/suggest-style"
+      ],
+      "audience": "Operators and SDKs that inspect or move style metadata as data.",
+      "authPosture": "Admin authorization required.",
+      "sdkTargets": {
+        "dotnet": "HonuaAdminClient layer style methods",
+        "javascript": "Admin layer style client methods",
+        "python": "Admin layer style client methods"
+      },
+      "responseKind": "Admin style JSON, SLD XML export, or style suggestion response.",
+      "paginationFiltering": "No paging. Addressed by layer id; SLD import/export are format-specific.",
+      "testExpectation": "Style endpoint tests cover MapLibre JSON, SLD import/export diagnostics, and stable unsupported-style codes."
+    },
+    {
+      "id": "scene-sdk-metadata",
+      "title": "SDK scene metadata and endpoint resolution",
+      "status": "implemented",
+      "category": "public-catalog-read",
+      "endpointPatterns": [
+        "GET /api/scenes",
+        "GET /api/scenes/{sceneId}",
+        "GET /api/scenes/{sceneId}/resolve"
+      ],
+      "audience": "SDK clients that need hosted scene metadata without admin registration rights.",
+      "authPosture": "Public route filtered by scene access policy; protected scenes can require signed access envelopes.",
+      "sdkTargets": {
+        "dotnet": "IHonuaSceneClient list/get/resolve",
+        "javascript": "Scene metadata client methods where present",
+        "python": "Scene metadata client methods where present or deferred in the SDK matrix"
+      },
+      "responseKind": "SDK-compatible scene metadata JSON and render-ready endpoint resolution.",
+      "paginationFiltering": "No paging in the current contract. List returns visible scenes.",
+      "testExpectation": "Scene discovery tests and SDK protocol integration tests cover list, detail, resolve, and protected-scene access behavior."
+    },
+    {
+      "id": "admin-scene-dataset-registry",
+      "title": "Admin scene dataset registry",
+      "status": "implemented",
+      "category": "admin-control-plane-metadata-read",
+      "endpointPatterns": [
+        "GET /api/v1/admin/scenes",
+        "GET /api/v1/admin/scenes/{id}",
+        "GET /api/v1/admin/scenes/{id}/resolve"
+      ],
+      "audience": "Operators managing registered scene datasets.",
+      "authPosture": "Admin authorization required.",
+      "sdkTargets": {
+        "dotnet": "HonuaAdminClient scene dataset registry methods where exposed",
+        "javascript": "Admin scene dataset client methods where exposed",
+        "python": "Admin scene dataset client methods where exposed"
+      },
+      "responseKind": "Admin scene dataset summary/detail/resolve JSON.",
+      "paginationFiltering": "List supports includeInactive. No paging in the current contract.",
+      "testExpectation": "Scene dataset registry tests cover list/detail/resolve and SDKs document unsupported rows if a language does not expose admin scene registry methods."
+    },
+    {
+      "id": "geoservices-featureserver-metadata",
+      "title": "GeoServices FeatureServer metadata",
+      "status": "implemented",
+      "category": "protocol-native-metadata-read",
+      "endpointPatterns": [
+        "GET /rest/services/{serviceId}/FeatureServer",
+        "GET /rest/services/{serviceId}/FeatureServer/{layerId}",
+        "GET /rest/services/{serviceId}/FeatureServer/queryDomains",
+        "GET /rest/services/{serviceId}/FeatureServer/relationships",
+        "GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent",
+        "GET /rest/services/{serviceId}/FeatureServer/{layerId}/getEstimates"
+      ],
+      "audience": "ArcGIS-compatible clients and SDK feature query/edit adapters.",
+      "authPosture": "Public route filtered by service/layer access policy; protected layers may require API key or bearer auth.",
+      "sdkTargets": {
+        "dotnet": "IHonuaFeatureServerClient service/layer metadata and descriptor discovery",
+        "javascript": "FeatureServer protocol client metadata methods",
+        "python": "client.feature_server(...).metadata() and layer_metadata(...)"
+      },
+      "responseKind": "GeoServices JSON service, layer, domain, relationship, temporal extent, and estimate payloads.",
+      "paginationFiltering": "Metadata reads are addressed by service/layer. Query endpoints use resultOffset/resultRecordCount and native GeoServices filters; those are tested in feature query parity, not this catalog row.",
+      "testExpectation": "FeatureServer tests cover service/layer metadata, domains, relationships, temporal extent, estimates, auth filtering, and SDK descriptor mapping."
+    },
+    {
+      "id": "geoservices-mapserver-metadata",
+      "title": "GeoServices MapServer metadata",
+      "status": "implemented",
+      "category": "protocol-native-metadata-read",
+      "endpointPatterns": [
+        "GET /rest/services/{serviceId}/MapServer",
+        "GET /rest/services/{serviceId}/MapServer/{layerId}",
+        "GET /rest/services/{serviceId}/MapServer/legend"
+      ],
+      "audience": "ArcGIS-compatible map clients and SDK render/query adapters.",
+      "authPosture": "Public route filtered by service/layer access policy; protected services may require API key or bearer auth.",
+      "sdkTargets": {
+        "dotnet": "MapServer metadata client parity target under honua-io/honua-sdk-dotnet#146",
+        "javascript": "MapServer protocol client metadata methods",
+        "python": "client.map_server(...).metadata() and layer_metadata(...)"
+      },
+      "responseKind": "GeoServices JSON service, layer, and legend metadata.",
+      "paginationFiltering": "Metadata reads are addressed by service/layer. Find/query/export have separate native query semantics.",
+      "testExpectation": "MapServer tests cover service/layer metadata, legend, WMS/WMTS links, access policy filtering, and SDK metadata read parity."
+    },
+    {
+      "id": "geoservices-imageserver-metadata",
+      "title": "GeoServices ImageServer metadata and raster catalog",
+      "status": "implemented",
+      "category": "protocol-native-metadata-read",
+      "endpointPatterns": [
+        "GET /rest/services/{id}/ImageServer",
+        "GET /rest/services/{serviceId}/ImageServer",
+        "GET /rest/services/{id}/ImageServer/query",
+        "POST /rest/services/{id}/ImageServer/query",
+        "GET /rest/services/{id}/ImageServer/legend",
+        "GET /rest/services/{id}/ImageServer/computeStatisticsHistograms"
+      ],
+      "audience": "ArcGIS-compatible imagery clients and SDK raster metadata readers.",
+      "authPosture": "Public route filtered by raster/service access policy; protected rasters may require API key or bearer auth.",
+      "sdkTargets": {
+        "dotnet": "ImageServer metadata client parity target under honua-io/honua-sdk-dotnet#146",
+        "javascript": "ImageServer protocol client metadata and raster catalog methods",
+        "python": "client.image_server(...).metadata(), query(), legend(), and statistics helpers"
+      },
+      "responseKind": "GeoServices ImageServer JSON service metadata, raster catalog query results, legend, and statistics/histogram payloads.",
+      "paginationFiltering": "Raster catalog query supports native GeoServices where/objectIds style filters and result limits where available.",
+      "testExpectation": "ImageServer tests cover metadata, catalog query filters, legend, statistics/histograms, named and numeric routes, and SDK response parsing."
+    },
+    {
+      "id": "ogc-api-features-metadata",
+      "title": "OGC API Features metadata",
+      "status": "implemented",
+      "category": "protocol-native-metadata-read",
+      "endpointPatterns": [
+        "GET /ogc/features",
+        "GET /ogc/features/conformance",
+        "GET /ogc/features/api",
+        "GET /openapi.json",
+        "GET /ogc/features/collections",
+        "GET /ogc/features/collections/{collectionId}",
+        "GET /ogc/features/collections/{collectionId}/queryables"
+      ],
+      "audience": "OGC clients and SDK feature adapters.",
+      "authPosture": "Public route filtered by layer/service access policy.",
+      "sdkTargets": {
+        "dotnet": "IHonuaOgcFeaturesClient landing/conformance/collections/queryables",
+        "javascript": "OGC Features protocol client metadata methods",
+        "python": "OGC Features metadata and collection methods"
+      },
+      "responseKind": "OGC JSON or HTML metadata, OpenAPI JSON, and JSON Schema queryables.",
+      "paginationFiltering": "Metadata endpoints are not paged. Feature item endpoints use limit, bbox, datetime, filter, sort, and CRS query semantics outside this metadata row.",
+      "testExpectation": "OGC Features tests cover landing, conformance, collections, collection detail, queryables, format negotiation, links, and SDK descriptor mapping."
+    },
+    {
+      "id": "ogc-api-maps-metadata",
+      "title": "OGC API Maps metadata",
+      "status": "implemented",
+      "category": "protocol-native-metadata-read",
+      "endpointPatterns": [
+        "GET /ogc/maps",
+        "GET /ogc/maps/conformance",
+        "GET /ogc/maps/openapi.json",
+        "GET /ogc/maps/collections/{collectionId}/map/tiles",
+        "GET /ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}"
+      ],
+      "audience": "OGC map clients and SDK render metadata readers.",
+      "authPosture": "Public route filtered by layer/service access policy.",
+      "sdkTargets": {
+        "dotnet": "OGC Maps client parity target under honua-io/honua-sdk-dotnet#146",
+        "javascript": "OGC Maps protocol client metadata methods",
+        "python": "client.ogc_maps() metadata methods"
+      },
+      "responseKind": "OGC API Maps JSON metadata and tileset metadata; rendered maps are binary outputs outside this metadata row.",
+      "paginationFiltering": "No metadata paging. Render endpoints use bbox, crs, datetime, collections, style, width/height, and format parameters.",
+      "testExpectation": "OGC Maps tests cover landing, conformance, OpenAPI, collection map tileset metadata, links, and SDK metadata parsing."
+    },
+    {
+      "id": "ogc-api-tiles-metadata",
+      "title": "OGC API Tiles metadata",
+      "status": "implemented",
+      "category": "protocol-native-metadata-read",
+      "endpointPatterns": [
+        "GET /ogc/tiles",
+        "GET /ogc/tiles/conformance",
+        "GET /ogc/tiles/openapi.json",
+        "GET /ogc/tiles/collections",
+        "GET /ogc/tiles/collections/{collectionId}",
+        "GET /ogc/tiles/tiles",
+        "GET /ogc/tiles/tiles/{tileMatrixSetId}",
+        "GET /ogc/tiles/collections/{collectionId}/tiles",
+        "GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}",
+        "GET /ogc/tiles/tileMatrixSets",
+        "GET /ogc/tiles/tileMatrixSets/{tileMatrixSetId}"
+      ],
+      "audience": "OGC tile clients and SDK tile metadata readers.",
+      "authPosture": "Public route filtered by layer/service access policy.",
+      "sdkTargets": {
+        "dotnet": "OGC Tiles client parity target under honua-io/honua-sdk-dotnet#146",
+        "javascript": "OGC Tiles protocol client metadata methods",
+        "python": "client.ogc_tiles() metadata methods"
+      },
+      "responseKind": "OGC API Tiles JSON metadata and tile matrix set JSON.",
+      "paginationFiltering": "Metadata lists are not paged. Tile retrieval is addressed by tileMatrixSetId, tileMatrix, tileRow, and tileCol.",
+      "testExpectation": "OGC Tiles tests cover landing, conformance, collections, dataset/collection tilesets, tile matrix sets, links, and SDK metadata parsing."
+    },
+    {
+      "id": "ogc-api-coverages-metadata",
+      "title": "OGC API Coverages metadata",
+      "status": "implemented",
+      "category": "protocol-native-metadata-read",
+      "endpointPatterns": [
+        "GET /ogc/coverages",
+        "GET /ogc/coverages/conformance",
+        "GET /ogc/coverages/api",
+        "GET /ogc/coverages/openapi.json",
+        "GET /ogc/coverages/collections",
+        "GET /ogc/coverages/collections/{collectionId}",
+        "GET /ogc/coverages/collections/{collectionId}/schema"
+      ],
+      "audience": "OGC coverage clients and SDK raster/coverage metadata readers.",
+      "authPosture": "Public route filtered by coverage/raster access policy.",
+      "sdkTargets": {
+        "dotnet": "OGC Coverages client parity target under honua-io/honua-sdk-dotnet#146",
+        "javascript": "OGC Coverages protocol client metadata methods",
+        "python": "client.ogc_coverages() metadata methods"
+      },
+      "responseKind": "OGC API Coverages JSON metadata, OpenAPI JSON, and coverage schema JSON.",
+      "paginationFiltering": "Metadata lists are not paged. Coverage retrieval uses bbox, datetime, crs, subset, scale, and format parameters outside this metadata row.",
+      "testExpectation": "OGC Coverages tests cover landing, conformance, collections, collection metadata, schema, OpenAPI aliases, links, and SDK parsing."
+    },
+    {
+      "id": "stac-catalog",
+      "title": "STAC catalog, collections, items, and search",
+      "status": "implemented",
+      "category": "public-catalog-read",
+      "endpointPatterns": [
+        "GET /stac",
+        "GET /stac/collections",
+        "GET /stac/collections/{collectionId}",
+        "GET /stac/collections/{collectionId}/items",
+        "GET /stac/collections/{collectionId}/items/{itemId}",
+        "GET /stac/search",
+        "POST /stac/search"
+      ],
+      "audience": "STAC clients and SDK asset catalog/search workflows.",
+      "authPosture": "Public route filtered by layer/service access policy.",
+      "sdkTargets": {
+        "dotnet": "Concrete STAC client parity target under honua-io/honua-sdk-dotnet#146",
+        "javascript": "STAC client and search helpers",
+        "python": "client.stac().catalog(), collections(), items(), item(), search(), and iterators"
+      },
+      "responseKind": "STAC Catalog, Collection, Item, and ItemCollection JSON.",
+      "paginationFiltering": "Search supports limit, offset, bbox, datetime, collections, ids, intersects, fields, sortby, filter, filter-lang, and filter-crs. Collection items support collection-scoped item paging/filtering where exposed by the server.",
+      "testExpectation": "STAC tests cover catalog/collections/items/search, filters, sorting, paging, ETags, access filtering, and SDK iteration semantics."
+    },
+    {
+      "id": "wfs-capabilities-and-schema",
+      "title": "WFS capabilities and feature type schema",
+      "status": "implemented",
+      "category": "protocol-native-metadata-read",
+      "endpointPatterns": [
+        "GET /wfs?service=WFS&request=GetCapabilities",
+        "GET /wfs?service=WFS&request=DescribeFeatureType",
+        "GET /wfs?service=WFS&request=ListStoredQueries",
+        "GET /wfs?service=WFS&request=DescribeStoredQueries",
+        "POST /wfs"
+      ],
+      "audience": "WFS clients and SDK XML metadata readers.",
+      "authPosture": "Public route filtered by layer/service access policy.",
+      "sdkTargets": {
+        "dotnet": "IHonuaWfsClient capabilities and DescribeFeatureType",
+        "javascript": "WFS protocol client capabilities/schema methods",
+        "python": "WFS client capabilities/schema methods"
+      },
+      "responseKind": "WFS 2.0/1.1.0/1.0.0 XML capabilities, schema, stored query, feature, or exception reports.",
+      "paginationFiltering": "Metadata operations are request-parameter based and not paged. GetFeature uses WFS count/startIndex and filter semantics outside this metadata row.",
+      "testExpectation": "WFS dispatcher tests cover capabilities, DescribeFeatureType, legacy version behavior, XML exceptions, and SDK XML parsing."
+    },
+    {
+      "id": "wms-wmts-wcs-capabilities",
+      "title": "Classic OGC WMS, WMTS, and WCS capabilities",
+      "status": "implemented",
+      "category": "protocol-native-metadata-read",
+      "endpointPatterns": [
+        "GET /rest/services/{serviceId}/MapServer/WMS",
+        "GET /ogc/services/{serviceId}/wms",
+        "GET /rest/services/{serviceId}/MapServer/WMTS",
+        "GET /rest/services/{serviceId}/MapServer/WMTS/{restPath}",
+        "GET /ogc/services/{serviceId}/wmts",
+        "GET /rest/services/{id}/ImageServer/WCS",
+        "GET /ogc/services/{serviceId}/wcs"
+      ],
+      "audience": "Classic OGC clients and SDK XML metadata readers.",
+      "authPosture": "Public route filtered by layer/service/raster access policy.",
+      "sdkTargets": {
+        "dotnet": "WMS/WMTS/WCS client parity target under honua-io/honua-sdk-dotnet#146",
+        "javascript": "WMS and WMTS client capabilities methods",
+        "python": "client.wms(...), client.wmts(...), and WCS/coverage capabilities methods"
+      },
+      "responseKind": "WMS, WMTS, or WCS XML capabilities/metadata and binary render/tile/coverage payloads for non-metadata operations.",
+      "paginationFiltering": "Capabilities are not paged. GetMap/GetFeatureInfo/GetTile/GetCoverage use protocol-specific bbox, layer, style, tile matrix, subset, CRS, time, and format parameters.",
+      "testExpectation": "Classic OGC tests cover GetCapabilities, DescribeCoverage, WMS 1.3/1.1.1 axis behavior, WMTS RESTful routes, WCS aliases, and SDK XML/binary response metadata."
+    },
+    {
+      "id": "odata-service-metadata",
+      "title": "OData service document and EDM metadata",
+      "status": "implemented",
+      "category": "protocol-native-metadata-read",
+      "endpointPatterns": [
+        "GET /odata",
+        "GET /odata/$metadata",
+        "GET /odata/Layers",
+        "GET /odata/Layers({layerId})"
+      ],
+      "audience": "OData clients, BI tools, and SDK OData metadata/query adapters.",
+      "authPosture": "Public route filtered by layer/service access policy.",
+      "sdkTargets": {
+        "dotnet": "OData client parity target under honua-io/honua-sdk-dotnet#146",
+        "javascript": "OData client service document and metadata parser",
+        "python": "client.odata().service_document(), metadata(), layers(), and layer()"
+      },
+      "responseKind": "OData JSON service document/layer resources and XML CSDL metadata.",
+      "paginationFiltering": "OData query endpoints use $filter, $select, $orderby, $top, $skip, $count, $search, and $apply. Metadata endpoints are not paged.",
+      "testExpectation": "OData tests cover service document, $metadata, layer entity metadata, query options, $batch, and SDK metadata parsing."
+    },
+    {
+      "id": "migration-source-inventory",
+      "title": "Unified external source inventory scanner",
+      "status": "implemented",
+      "category": "external-source-inventory-read",
+      "endpointPatterns": [
+        "POST /api/v1/admin/import/scan",
+        "POST /api/v1/admin/import/scan?export=json"
+      ],
+      "audience": "Operators and SDK migration tooling that inventory external ArcGIS GeoServices REST or GeoServer REST sources.",
+      "authPosture": "Admin authorization required. Source auth posture is recorded in the artifact rather than treated as Honua endpoint auth.",
+      "sdkTargets": {
+        "dotnet": "HonuaAdminClient.ScanMigrationSourceAsync and migration inventory models",
+        "javascript": "Admin migration toolkit client methods",
+        "python": "Admin migration toolkit client methods"
+      },
+      "responseKind": "honua.migration.source-inventory v1.0 artifact, optionally as indented JSON attachment.",
+      "paginationFiltering": "Request body uses sourceKind, sourceUrl, timeoutSeconds, credentials where supported, and scanner-specific validation. No response paging.",
+      "testExpectation": "Migration scanner tests cover sourceKind normalization, ArcGIS/GeoServer inventory artifacts, compatibility codes, failed-artifact behavior, export=json, and SDK model round trips."
+    },
+    {
+      "id": "legacy-external-discovery",
+      "title": "Legacy external source discovery endpoints",
+      "status": "implemented",
+      "category": "external-source-inventory-read",
+      "endpointPatterns": [
+        "POST /api/v1/admin/import/geoservices/discover",
+        "POST /api/v1/admin/import/geoserver/discover"
+      ],
+      "audience": "Existing admin workflows that predate the unified migration inventory artifact.",
+      "authPosture": "Admin authorization required.",
+      "sdkTargets": {
+        "dotnet": "Prefer unified ScanMigrationSourceAsync; expose legacy discovery only where needed for compatibility",
+        "javascript": "Prefer unified migration scanner; legacy discovery remains optional",
+        "python": "Prefer unified migration scanner; legacy discovery remains optional"
+      },
+      "responseKind": "Legacy discovery JSON specific to ArcGIS GeoServices or GeoServer import flows.",
+      "paginationFiltering": "Request body supplies source URL and timeout/import options. No response paging.",
+      "testExpectation": "Legacy import endpoint tests remain in place, but new SDK parity should prefer migration-source-inventory unless a compatibility reason is documented."
+    }
+  ]
+}
