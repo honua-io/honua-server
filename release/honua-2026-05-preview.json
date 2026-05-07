@@ -60,9 +60,9 @@
       "blockers": [
         {
           "repo": "honua-io/honua-server",
-          "number": 876,
-          "url": "https://github.com/honua-io/honua-server/issues/876",
-          "reason": "Latest trunk SDK Server Compatibility run is failing and no approved waiver is recorded."
+          "number": 940,
+          "url": "https://github.com/honua-io/honua-server/issues/940",
+          "reason": "SDK Server Compatibility nightly is failing; tracked by the bounded release blocker."
         }
       ]
     },
@@ -88,9 +88,9 @@
       "blockers": [
         {
           "repo": "honua-io/honua-server",
-          "number": 876,
-          "url": "https://github.com/honua-io/honua-server/issues/876",
-          "reason": "Latest trunk Real-Client Interop Matrix run is failing and no approved waiver is recorded."
+          "number": 938,
+          "url": "https://github.com/honua-io/honua-server/issues/938",
+          "reason": "Real-Client Interop Matrix nightly is failing; tracked by the bounded release blocker."
         }
       ]
     },
@@ -116,9 +116,9 @@
       "blockers": [
         {
           "repo": "honua-io/honua-server",
-          "number": 876,
-          "url": "https://github.com/honua-io/honua-server/issues/876",
-          "reason": "Latest trunk Security Nightly run is failing and no approved waiver is recorded."
+          "number": 939,
+          "url": "https://github.com/honua-io/honua-server/issues/939",
+          "reason": "Security Nightly is failing; tracked by the bounded release blocker."
         }
       ]
     },
@@ -162,9 +162,9 @@
       "blockers": [
         {
           "repo": "honua-io/honua-sdk-js",
-          "number": null,
-          "url": null,
-          "reason": "Latest trunk SDK CI run is failing; file or link a bounded SDK-side follow-up if it remains failing."
+          "number": 132,
+          "url": "https://github.com/honua-io/honua-sdk-js/issues/132",
+          "reason": "Trunk SDK CI is failing; tracked by the bounded SDK JS release blocker."
         }
       ]
     },
@@ -205,9 +205,9 @@
       "blockers": [
         {
           "repo": "honua-io/honua-sdk-python",
-          "number": null,
-          "url": null,
-          "reason": "Latest staging integration run is failing; file or link a bounded Python SDK follow-up if it remains failing."
+          "number": 50,
+          "url": "https://github.com/honua-io/honua-sdk-python/issues/50",
+          "reason": "Python SDK staging integration is failing; tracked by the bounded SDK Python release blocker."
         }
       ]
     },
@@ -221,9 +221,9 @@
       "blockers": [
         {
           "repo": "honua-io/honua-mobile",
-          "number": null,
-          "url": null,
-          "reason": "No 2026-05 Preview mobile contract/integration evidence was found; file or link a bounded mobile-owned release evidence issue."
+          "number": 133,
+          "url": "https://github.com/honua-io/honua-mobile/issues/133",
+          "reason": "Mobile .NET SDK train contract/integration evidence is missing; tracked by the bounded mobile release evidence blocker."
         }
       ]
     },
@@ -355,20 +355,49 @@
       "url": "https://github.com/honua-io/honua-sdk-python/issues/21",
       "scope": "Python SDK protocol-surface integration tests.",
       "state": "closed"
-    }
-  ],
-  "missingBoundedChildTickets": [
+    },
+    {
+      "repo": "honua-io/honua-server",
+      "number": 938,
+      "url": "https://github.com/honua-io/honua-server/issues/938",
+      "scope": "Restore or waive Real-Client Interop Matrix nightly evidence.",
+      "state": "open"
+    },
+    {
+      "repo": "honua-io/honua-server",
+      "number": 939,
+      "url": "https://github.com/honua-io/honua-server/issues/939",
+      "scope": "Restore or waive Security Nightly evidence.",
+      "state": "open"
+    },
+    {
+      "repo": "honua-io/honua-server",
+      "number": 940,
+      "url": "https://github.com/honua-io/honua-server/issues/940",
+      "scope": "Restore or waive SDK Server Compatibility nightly evidence.",
+      "state": "open"
+    },
     {
       "repo": "honua-io/honua-sdk-js",
-      "neededScope": "Resolve or waive the latest trunk SDK CI failure for the 2026-05 Preview compatibility train."
+      "number": 132,
+      "url": "https://github.com/honua-io/honua-sdk-js/issues/132",
+      "scope": "Restore or waive trunk SDK CI for the 2026-05 Preview train.",
+      "state": "open"
     },
     {
       "repo": "honua-io/honua-sdk-python",
-      "neededScope": "Resolve or waive the latest staging integration failure for the 2026-05 Preview compatibility train."
+      "number": 50,
+      "url": "https://github.com/honua-io/honua-sdk-python/issues/50",
+      "scope": "Restore or waive staging integration for the 2026-05 Preview train.",
+      "state": "open"
     },
     {
       "repo": "honua-io/honua-mobile",
-      "neededScope": "Attach current .NET SDK train consumption and contract/integration evidence for the 2026-05 Preview candidate."
+      "number": 133,
+      "url": "https://github.com/honua-io/honua-mobile/issues/133",
+      "scope": "Attach current .NET SDK train contract/integration evidence for the 2026-05 Preview candidate.",
+      "state": "open"
     }
-  ]
+  ],
+  "missingBoundedChildTickets": []
 }
