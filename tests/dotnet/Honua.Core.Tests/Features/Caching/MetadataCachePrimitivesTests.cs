@@ -32,7 +32,7 @@ public sealed class MetadataCachePrimitivesTests
             TenantId = "tenant-a",
             ProjectId = "project-7",
             AuthScope = "ROLE:reader   SCOPE:layer.metadata",
-            SourceUrl = "https://example.com/arcgis/rest/services/foo/featureserver?f=json&token=rotated",
+            SourceUrl = "https://example.com/ArcGIS/rest/services/Foo/FeatureServer?f=json&token=rotated",
             Adapter = "geoservices",
             Protocol = "featureserver",
             ResourceKind = "layer",
@@ -49,17 +49,47 @@ public sealed class MetadataCachePrimitivesTests
         second.AuthScopeFingerprint.Should().Be(first.AuthScopeFingerprint);
 
         first.Value.Should().StartWith("honua:metadata:v1:");
-        first.Value.Should().Contain(":tenant:tenant-a:");
-        first.Value.Should().Contain(":project:project-7:");
+        first.Value.Should().Contain(":tenant:id-tenant-a:");
+        first.Value.Should().Contain(":project:id-project-7:");
         first.Value.Should().Contain(":adapter:geoservices:");
         first.Value.Should().Contain(":protocol:featureserver:");
         first.Value.Should().Contain(":kind:layer:");
-        first.Value.Should().Contain(":resource:roads-primary:");
+        first.Value.Should().Contain(":resource:id-roads-primary:");
         first.Value.Should().Contain(":crs:epsg-4326:");
         first.Value.Should().Contain(":format:application-geo-json:");
         first.Value.Should().Contain(":adapter-version:11.2:");
         first.Value.Should().Contain(":projection-version:proj-9.4");
         Regex.IsMatch(first.Value, "^[a-z0-9:._-]+$", RegexOptions.CultureInvariant).Should().BeTrue();
+    }
+
+    [Fact]
+    public void BuildKey_DistinguishesMissingScopesFromLiteralScopeIds()
+    {
+        var missingScopes = MetadataCacheKeyBuilder.Build(new MetadataCacheKeyRequest
+        {
+            SourceUrl = "https://example.com/geoserver/rest?f=json",
+            Adapter = "geoserver",
+            Protocol = "wms",
+            ResourceKind = "service"
+        });
+        var literalScopes = MetadataCacheKeyBuilder.Build(new MetadataCacheKeyRequest
+        {
+            TenantId = "global",
+            ProjectId = "global",
+            SourceUrl = "https://example.com/geoserver/rest?f=json",
+            Adapter = "geoserver",
+            Protocol = "wms",
+            ResourceKind = "service",
+            ResourceId = "root"
+        });
+
+        literalScopes.Value.Should().NotBe(missingScopes.Value);
+        missingScopes.Value.Should().Contain(":tenant:none:");
+        missingScopes.Value.Should().Contain(":project:none:");
+        missingScopes.Value.Should().Contain(":resource:none:");
+        literalScopes.Value.Should().Contain(":tenant:id-global:");
+        literalScopes.Value.Should().Contain(":project:id-global:");
+        literalScopes.Value.Should().Contain(":resource:id-root:");
     }
 
     [Fact]
@@ -99,6 +129,23 @@ public sealed class MetadataCachePrimitivesTests
 
         second.Should().Be(first);
         changedFormat.Should().NotBe(first);
+    }
+
+    [Fact]
+    public void FingerprintSource_PreservesCaseSensitivePathAndQueryValues()
+    {
+        var canonical = MetadataCacheKeyBuilder.FingerprintSource(
+            "https://example.com/Data/Layer?where=Name%3D%27Roads%27&f=json");
+        var hostCaseChanged = MetadataCacheKeyBuilder.FingerprintSource(
+            "HTTPS://EXAMPLE.COM/Data/Layer?f=json&where=Name%3D%27Roads%27");
+        var pathCaseChanged = MetadataCacheKeyBuilder.FingerprintSource(
+            "https://example.com/data/layer?where=Name%3D%27Roads%27&f=json");
+        var queryValueCaseChanged = MetadataCacheKeyBuilder.FingerprintSource(
+            "https://example.com/Data/Layer?where=Name%3D%27roads%27&f=json");
+
+        hostCaseChanged.Should().Be(canonical);
+        pathCaseChanged.Should().NotBe(canonical);
+        queryValueCaseChanged.Should().NotBe(canonical);
     }
 
     [Fact]
@@ -263,5 +310,35 @@ public sealed class MetadataCachePrimitivesTests
             Reason = MetadataCacheInvalidationReason.PermissionChanged
         };
         tenantWide.Matches(request).Should().BeTrue();
+    }
+
+    [Fact]
+    public void InvalidationEvent_DoesNotTreatLiteralScopeIdsAsMissingScopeWildcards()
+    {
+        var missingScopeRequest = new MetadataCacheKeyRequest
+        {
+            SourceUrl = "https://example.com/geoserver/rest?f=json",
+            Adapter = "geoserver",
+            Protocol = "wms",
+            ResourceKind = "service"
+        };
+
+        new MetadataCacheInvalidationEvent
+        {
+            TenantId = "global",
+            Reason = MetadataCacheInvalidationReason.TenantChanged
+        }.Matches(missingScopeRequest).Should().BeFalse();
+
+        new MetadataCacheInvalidationEvent
+        {
+            ProjectId = "global",
+            Reason = MetadataCacheInvalidationReason.ProjectChanged
+        }.Matches(missingScopeRequest).Should().BeFalse();
+
+        new MetadataCacheInvalidationEvent
+        {
+            ResourceId = "root",
+            Reason = MetadataCacheInvalidationReason.SchemaChanged
+        }.Matches(missingScopeRequest).Should().BeFalse();
     }
 }

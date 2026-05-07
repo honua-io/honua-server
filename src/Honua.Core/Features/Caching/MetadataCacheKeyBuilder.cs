@@ -103,6 +103,8 @@ public static class MetadataCacheKeyBuilder
     private const string KeyVersion = "v1";
     private const int FingerprintLength = 32;
     private const int MaxComponentLength = 96;
+    private const string MissingScopedComponent = "none";
+    private const string PresentScopedComponentPrefix = "id-";
 
     private static readonly string[] CredentialQueryNames =
     [
@@ -146,9 +148,9 @@ public static class MetadataCacheKeyBuilder
             NormalizePrefix(request.KeyPrefix),
             KeyVersion,
             "tenant",
-            NormalizeKeyComponent(request.TenantId, "global"),
+            NormalizeScopedKeyComponent(request.TenantId),
             "project",
-            NormalizeKeyComponent(request.ProjectId, "global"),
+            NormalizeScopedKeyComponent(request.ProjectId),
             "auth",
             authScopeFingerprint,
             "source",
@@ -160,7 +162,7 @@ public static class MetadataCacheKeyBuilder
             "kind",
             NormalizeKeyComponent(request.ResourceKind, "metadata"),
             "resource",
-            NormalizeKeyComponent(request.ResourceId, "root"),
+            NormalizeScopedKeyComponent(request.ResourceId),
             "crs",
             NormalizeKeyComponent(request.Crs, "default"),
             "format",
@@ -203,6 +205,8 @@ public static class MetadataCacheKeyBuilder
     }
 
     internal static string NormalizeForMatch(string? value, string fallback) => NormalizeKeyComponent(value, fallback);
+
+    internal static string NormalizeScopedForMatch(string? value) => NormalizeScopedKeyComponent(value);
 
     private static string NormalizePrefix(string? prefix)
     {
@@ -261,14 +265,35 @@ public static class MetadataCacheKeyBuilder
         return string.Concat(component.AsSpan(0, 63), "-", Fingerprint(component).AsSpan(0, 16));
     }
 
+    private static string NormalizeScopedKeyComponent(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return MissingScopedComponent;
+        }
+
+        return PresentScopedComponentPrefix + NormalizeKeyComponent(value, "unnamed");
+    }
+
     private static string NormalizeText(string? value, string fallback)
+        => NormalizeTextCore(value, fallback, preserveCase: false);
+
+    private static string NormalizeSourceText(string? value, string fallback)
+        => NormalizeTextCore(value, fallback, preserveCase: true);
+
+    private static string NormalizeTextCore(string? value, string fallback, bool preserveCase)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             return fallback;
         }
 
-        var normalized = value.Normalize(NormalizationForm.FormKC).Trim().ToLowerInvariant();
+        var normalized = value.Normalize(NormalizationForm.FormKC).Trim();
+        if (!preserveCase)
+        {
+            normalized = normalized.ToLowerInvariant();
+        }
+
         var builder = new StringBuilder(normalized.Length);
         var previousWasWhitespace = false;
 
@@ -300,7 +325,7 @@ public static class MetadataCacheKeyBuilder
             return "none";
         }
 
-        var trimmed = NormalizeText(sourceUrl, "none");
+        var trimmed = NormalizeSourceText(sourceUrl, "none");
         if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
         {
             return trimmed;
@@ -317,7 +342,7 @@ public static class MetadataCacheKeyBuilder
     private static string NormalizeSourcePath(string path)
     {
         var decodedPath = Uri.UnescapeDataString(path);
-        var normalizedPath = NormalizeText(decodedPath, "/").Replace(' ', '-').TrimEnd('/');
+        var normalizedPath = NormalizeSourceText(decodedPath, "/").TrimEnd('/');
         return string.IsNullOrEmpty(normalizedPath) ? "/" : normalizedPath;
     }
 
@@ -335,14 +360,15 @@ public static class MetadataCacheKeyBuilder
             var equalsIndex = segment.IndexOf('=', StringComparison.Ordinal);
             var rawName = equalsIndex >= 0 ? segment[..equalsIndex] : segment;
             var rawValue = equalsIndex >= 0 ? segment[(equalsIndex + 1)..] : string.Empty;
-            var name = NormalizeText(Uri.UnescapeDataString(rawName), string.Empty);
+            var name = NormalizeSourceText(Uri.UnescapeDataString(rawName), string.Empty);
+            var credentialName = NormalizeText(Uri.UnescapeDataString(rawName), string.Empty);
 
-            if (string.IsNullOrEmpty(name) || IsCredentialQueryName(name))
+            if (string.IsNullOrEmpty(name) || IsCredentialQueryName(credentialName))
             {
                 continue;
             }
 
-            var value = NormalizeText(Uri.UnescapeDataString(rawValue), string.Empty);
+            var value = NormalizeSourceText(Uri.UnescapeDataString(rawValue), string.Empty);
             pairs.Add($"{name}={value}");
         }
 

@@ -68,11 +68,11 @@ public sealed record MetadataCacheInvalidationEvent
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        return MatchesComponent(TenantId, request.TenantId, "global")
-            && MatchesComponent(ProjectId, request.ProjectId, "global")
+        return MatchesScopedComponent(TenantId, request.TenantId)
+            && MatchesScopedComponent(ProjectId, request.ProjectId)
             && MatchesSource(request.SourceUrl)
             && MatchesComponent(Adapter, request.Adapter, "unknown")
-            && MatchesComponent(ResourceId, request.ResourceId, "root");
+            && MatchesScopedComponent(ResourceId, request.ResourceId);
     }
 
     private bool MatchesSource(string? sourceUrl)
@@ -98,6 +98,19 @@ public sealed record MetadataCacheInvalidationEvent
         return string.Equals(
             MetadataCacheKeyBuilder.NormalizeForMatch(target, fallback),
             MetadataCacheKeyBuilder.NormalizeForMatch(candidate, fallback),
+            StringComparison.Ordinal);
+    }
+
+    private static bool MatchesScopedComponent(string? target, string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return true;
+        }
+
+        return string.Equals(
+            MetadataCacheKeyBuilder.NormalizeScopedForMatch(target),
+            MetadataCacheKeyBuilder.NormalizeScopedForMatch(candidate),
             StringComparison.Ordinal);
     }
 }
