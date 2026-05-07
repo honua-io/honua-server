@@ -14,8 +14,13 @@ namespace Honua.Server.Features.Admin.Models;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(ApiResponse<CacheHealthResponse>))]
+[JsonSerializable(typeof(ApiResponse<CacheStatisticsResponse>))]
+[JsonSerializable(typeof(ApiResponse<RedisConnectionMetricsResponse>))]
 [JsonSerializable(typeof(ApiResponse<CacheOperationsInvalidationResponse>))]
 [JsonSerializable(typeof(CacheHealthResponse))]
+[JsonSerializable(typeof(CacheStatisticsResponse))]
+[JsonSerializable(typeof(CacheTypeStatisticsResponse))]
+[JsonSerializable(typeof(RedisConnectionMetricsResponse))]
 [JsonSerializable(typeof(RedisServerInfoResponse))]
 [JsonSerializable(typeof(CacheOperationsInvalidationRequest))]
 [JsonSerializable(typeof(CacheOperationsInvalidationResponse))]

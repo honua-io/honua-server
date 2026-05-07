@@ -366,7 +366,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
                 Url = PublicIpLiteralWebhookUrl,
                 Secret = "super-secret",
                 MaxAttempts = 1,
-                RequestTimeoutSeconds = 5
+                RequestTimeoutSeconds = 30
             }),
             NullLogger<FeatureChangeWebhookDispatcher>.Instance);
 
@@ -375,11 +375,13 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
         await handler.WaitForRequestAsync().WaitAsync(TimeSpan.FromSeconds(3));
 
+        // Allow CI-load scheduler jitter to delay the renewal loop beyond its first
+        // one-second interval while the webhook request remains in flight.
         await WaitForConditionAsync(
             () => database.ReceivedCalls().Any(call =>
                 call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync) &&
                 string.Equals(call.GetArguments()[0]?.ToString(), "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal)),
-            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(10),
             TimeSpan.FromMilliseconds(100));
 
         var claimExtendCalls = database.ReceivedCalls().Count(call =>

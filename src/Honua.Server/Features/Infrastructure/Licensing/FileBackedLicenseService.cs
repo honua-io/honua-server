@@ -53,6 +53,25 @@ internal sealed class FileBackedLicenseService :
 
     public LicenseSnapshot GetSnapshot() => Volatile.Read(ref _snapshot);
 
+    internal static async Task<LicenseSnapshot> LoadBootstrapSnapshotAsync(
+        IConfiguration configuration,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        var options = new LicenseOptions();
+        configuration.GetSection(LicenseOptions.SectionName).Bind(options);
+
+        var service = new FileBackedLicenseService(
+            Options.Create(options),
+            new BouncyCastleEd25519Verifier(),
+            loggerFactory.CreateLogger<FileBackedLicenseService>());
+        await service.StartAsync(cancellationToken).ConfigureAwait(false);
+        return service.GetSnapshot();
+    }
+
     public LicenseEntitlementDecision CheckEntitlement(string entitlementKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(entitlementKey);
