@@ -9,8 +9,8 @@
     "url": "https://github.com/honua-io/honua-server/issues/876"
   },
   "candidate": {
-    "ref": "498b440013575a257d9bf898f49c2c536487517e",
-    "refSource": "origin/trunk",
+    "ref": "41544093e432b36b5c5680e8c89618b283389578",
+    "refSource": "feature/938",
     "image": {
       "repository": "ghcr.io/honua-io/honua-server",
       "tag": null,
@@ -36,7 +36,7 @@
       "Source-build workflow evidence is not release-candidate-image evidence unless the evidence record names the image digest tested."
     ]
   },
-  "observedAt": "2026-05-07T09:41:25Z",
+  "observedAt": "2026-05-07T14:14:26Z",
   "releaseGates": [
     {
       "id": "server-sdk-compatibility",
@@ -73,26 +73,19 @@
       "workflow": ".github/workflows/client-interop-nightly.yml",
       "tier": "nightly",
       "requirement": "Green with zero baseline regressions for the release-candidate server ref, or covered by an approved release waiver.",
-      "evidenceState": "blocked",
+      "evidenceState": "passed",
       "latestEvidence": {
-        "runUrl": "https://github.com/honua-io/honua-server/actions/runs/25427096434",
-        "artifact": "client-interop-evidence",
+        "runUrl": "https://github.com/honua-io/honua-server/actions/runs/25501089894",
+        "artifact": "honua-server-real-client-interop-matrix-(nightly)-25501089894-evidence-gap-report",
         "status": "completed",
-        "conclusion": "failure",
-        "headSha": "45f70a3011cbb4d5a6058473b89d0fb8f1d3ab1a",
-        "createdAt": "2026-05-06T09:24:36Z",
-        "updatedAt": "2026-05-06T09:28:00Z",
-        "source": "gh run list -R honua-io/honua-server --workflow client-interop-nightly.yml --branch trunk --limit 5"
+        "conclusion": "success",
+        "headSha": "41544093e432b36b5c5680e8c89618b283389578",
+        "createdAt": "2026-05-07T14:10:07Z",
+        "updatedAt": "2026-05-07T14:14:26Z",
+        "source": "gh run view 25501089894 --json status,conclusion,headSha,url,jobs; gh api repos/honua-io/honua-server/actions/runs/25501089894/artifacts"
       },
       "waiver": null,
-      "blockers": [
-        {
-          "repo": "honua-io/honua-server",
-          "number": 938,
-          "url": "https://github.com/honua-io/honua-server/issues/938",
-          "reason": "Real-Client Interop Matrix nightly is failing; tracked by the bounded release blocker."
-        }
-      ]
+      "blockers": []
     },
     {
       "id": "server-security-nightly",

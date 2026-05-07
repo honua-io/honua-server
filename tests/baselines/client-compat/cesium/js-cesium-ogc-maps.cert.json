@@ -1,0 +1,237 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260507T140553Z",
+  "run_date": "2026-05-07T14:05:53.364Z",
+  "server_version": "local",
+  "client_lane": "js-cesium",
+  "client_version": "1.140.0",
+  "protocol": "ogc-maps",
+  "environment": "ci",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 518,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not exercised by Cesium imagery lane for this protocol.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not exercised by Cesium imagery lane for this protocol.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not exercised by Cesium imagery lane for this protocol.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not exercised by Cesium imagery lane for this protocol.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not exercised by Cesium imagery lane for this protocol.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not exercised by Cesium imagery lane for this protocol.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "pass",
+      "duration_ms": 4717,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 6,
+    "not_applicable": 16
+  },
+  "cite_results": null,
+  "extensions": []
+}

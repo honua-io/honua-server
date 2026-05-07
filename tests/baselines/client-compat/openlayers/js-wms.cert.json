@@ -1,0 +1,237 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260507T140536Z",
+  "run_date": "2026-05-07T14:05:39.001Z",
+  "server_version": "unknown",
+  "client_lane": "js",
+  "client_version": "10.8.0",
+  "protocol": "wms",
+  "environment": "ci",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 65,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "WMS GetCapabilities returned XML",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 23,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "ol/format/WMSCapabilities parsed WMS 1.3.0 metadata",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "3 named WMS layer(s) discovered",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "pass",
+      "duration_ms": 33,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "WMS GetMap rendered image/png for layer 'Browser Points'",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 4,
+    "not_applicable": 16
+  },
+  "cite_results": null,
+  "extensions": []
+}
