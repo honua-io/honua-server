@@ -4,12 +4,15 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Tests.Features.Licensing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -64,8 +67,123 @@ public class LicenseEndpointsTests : IAsyncLifetime
         Assert.NotNull(result);
         Assert.True(result.Success);
         Assert.NotNull(result.Data);
-        Assert.False(string.IsNullOrEmpty(result.Data.Edition));
-        Assert.False(string.IsNullOrEmpty(result.Data.ValidationState));
+        Assert.Equal("Community", result.Data.Edition);
+        Assert.Equal("NoLicenseConfigured", result.Data.ValidationState);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/license")]
+    public async Task GetLicenseStatus_WithSignedStartupLicense_ReturnsLicenseIdentityAndEntitlements()
+    {
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
+        var license = LicenseTestSupport.CreateSignedLicense(
+            HonuaEdition.Pro,
+            expiresAt: DateTimeOffset.UtcNow.AddDays(30),
+            entitlements: ["analytics.clustering", "staticmap.high-dpi"]);
+        await File.WriteAllBytesAsync(licensePath, license.LicenseData);
+
+        var fixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Licensing:LicensePath"] = licensePath,
+                        [$"Licensing:TrustedKeys:{LicenseTestSupport.KeyId}"] = license.PublicKeySetting
+                    });
+                });
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var response = await client.GetAsync("/api/v1/admin/license");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var json = await response.Content.ReadAsStringAsync();
+            var result = JsonSerializer.Deserialize<ApiResponse<LicenseStatusResponse>>(json, _jsonOptions);
+
+            Assert.NotNull(result);
+            Assert.True(result.Success);
+            Assert.NotNull(result.Data);
+            Assert.Equal("Pro", result.Data.Edition);
+            Assert.Equal("Valid", result.Data.ValidationState);
+            Assert.Equal("lic-test-338", result.Data.LicenseId);
+            Assert.Equal("Honua Test Operator", result.Data.LicensedTo);
+            Assert.Contains(result.Data.Entitlements, entitlement =>
+                entitlement.Key == "analytics.clustering" && entitlement.IsActive);
+            Assert.Contains(result.Data.Entitlements, entitlement =>
+                entitlement.Key == "analytics.spatial-join" && !entitlement.IsActive);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/license")]
+    [Endpoint("GET /api/v1/admin/license/status")]
+    public async Task GetLicenseStatus_WithCustomExpiryWarningDays_UsesConfiguredThreshold()
+    {
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
+        var license = LicenseTestSupport.CreateSignedLicense(
+            HonuaEdition.Pro,
+            expiresAt: DateTimeOffset.UtcNow.AddDays(45),
+            entitlements: ["analytics.clustering"]);
+        await File.WriteAllBytesAsync(licensePath, license.LicenseData);
+
+        var fixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Licensing:LicensePath"] = licensePath,
+                        ["Licensing:ExpiryWarningDays"] = "60",
+                        [$"Licensing:TrustedKeys:{LicenseTestSupport.KeyId}"] = license.PublicKeySetting
+                    });
+                });
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            foreach (var path in new[] { "/api/v1/admin/license", "/api/v1/admin/license/status" })
+            {
+                var response = await client.GetAsync(path);
+
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var json = await response.Content.ReadAsStringAsync();
+                var result = JsonSerializer.Deserialize<ApiResponse<LicenseStatusResponse>>(json, _jsonOptions);
+
+                Assert.NotNull(result);
+                Assert.True(result.Success);
+                Assert.NotNull(result.Data);
+                Assert.True(result.Data.ExpiryWarning);
+                Assert.InRange(result.Data.DaysUntilExpiry.GetValueOrDefault(), 44, 45);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            tempDirectory.Delete(recursive: true);
+        }
     }
 
     [IntegrationTest]
@@ -79,19 +197,17 @@ public class LicenseEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/license")]
-    public async Task UploadLicense_ValidData_ReturnsUpdatedStatus()
+    public async Task UploadLicense_WhenAdminUploadDisabled_ReturnsBadRequest()
     {
         var licenseData = new StringContent("test-license-data", Encoding.UTF8, "application/octet-stream");
         var response = await _client.PostAsync("/api/v1/admin/license", licenseData);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<LicenseStatusResponse>>(json, _jsonOptions);
 
         Assert.NotNull(result);
-        Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.True(result.Data.IsValid);
+        Assert.False(result.Success);
     }
 
     [IntegrationTest]

@@ -8,6 +8,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Server.Tests.Features.Licensing;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -22,7 +23,7 @@ public sealed class OgcMapsTemporalMosaicTests
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     [Operation(Operations.Render)]
-    public async Task GetCollectionMap_WithDatetimeOnCommunityEdition_ReturnsForbidden()
+    public async Task GetCollectionMap_WithDatetimeOnCommunityEdition_ReturnsPaymentRequired()
     {
         var fixture = await CreateFixtureAsync(HonuaEdition.Community).ConfigureAwait(false);
         try
@@ -31,7 +32,7 @@ public sealed class OgcMapsTemporalMosaicTests
                 $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
                 "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=2024-02-15T00:00:00Z");
 
-            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
         }
         finally
         {
@@ -170,7 +171,7 @@ public sealed class OgcMapsTemporalMosaicTests
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     [Operation(Operations.Render)]
-    public async Task GetCollectionMap_WithDatetimeIntervalOnCommunityEdition_ReturnsForbidden()
+    public async Task GetCollectionMap_WithDatetimeIntervalOnCommunityEdition_ReturnsPaymentRequired()
     {
         var fixture = await CreateFixtureAsync(HonuaEdition.Community).ConfigureAwait(false);
         try
@@ -179,7 +180,7 @@ public sealed class OgcMapsTemporalMosaicTests
                 $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
                 "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=2024-01-01T00:00:00Z/..");
 
-            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
         }
         finally
         {
@@ -232,7 +233,7 @@ public sealed class OgcMapsTemporalMosaicTests
         IRasterMapRenderer? renderer = null)
     {
         var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseStatusProvider>(new StubLicenseStatusProvider(edition));
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(edition));
         if (renderer != null)
         {
             fixture.ReplaceService(renderer);
@@ -241,17 +242,6 @@ public sealed class OgcMapsTemporalMosaicTests
         await fixture.InitializeAsync().ConfigureAwait(false);
         await RasterIntegrationTestData.SeedIssue522MosaicAsync(fixture).ConfigureAwait(false);
         return fixture;
-    }
-
-    private sealed class StubLicenseStatusProvider(HonuaEdition edition) : ILicenseStatusProvider
-    {
-        public LicenseStatus GetCurrentStatus()
-            => new(edition, IsValid: true, ExpiresAt: null, LicensedTo: "test");
-
-        public Task<LicenseUploadResult> UploadLicenseAsync(
-            Stream licenseStream,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(new LicenseUploadResult(false, "Stub does not support upload."));
     }
 
     private sealed class StubRasterMapRenderer : IRasterMapRenderer

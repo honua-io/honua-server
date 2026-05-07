@@ -125,20 +125,23 @@ Everything in Pro, plus:
 Runtime license checking at startup:
 
 - Community: no key required. Full functionality within the Community boundary.
-- Pro/Enterprise: environment variable or file-based license key validated at
-  startup. Gated features return a clear error (HTTP 402 or gRPC `PERMISSION_DENIED`
-  with upgrade guidance) when accessed without a valid key.
+- Pro/Enterprise: an offline signed JSON license file is loaded from
+  `Licensing:LicensePath` at startup, or through the admin upload endpoint when
+  `Licensing:AllowAdminUpload=true`; trusted Ed25519 public keys are configured
+  under `Licensing:TrustedKeys:<keyId>`. Gated features return a clear error
+  (HTTP 402 or gRPC `FAILED_PRECONDITION` with upgrade guidance) when accessed
+  without an active entitlement.
 
 License checks must be:
 - **Offline-capable**: no phone-home requirement. Keys are self-contained
-  (signed envelope) with edition, expiry, and any per-edition entitlements
-  encoded; see ADR-0033 for the canonical claim set.
+  signed envelopes with edition, expiry, and active entitlement keys encoded;
+  see ADR-0033 for the canonical payload fields.
 - **Transparent**: gated endpoints return actionable error messages, not
   silent failures.
-- **Auditable**: license status is visible in the Admin UI health page and
-  the `/health` endpoint.
+- **Auditable**: license status is visible through the admin license status
+  API and runtime health/monitoring payloads.
 
-> The canonical envelope (compact JWS / EdDSA / Ed25519), the BYOL and
+> The canonical runtime envelope (JSON envelope / Ed25519), the BYOL and
 > marketplace issuance flows, and the multi-key rotation contract are
 > defined in [ADR-0033](0033-unified-license-format.md). The companion design
 > doc lives at
@@ -148,8 +151,8 @@ License checks must be:
 >
 > Per-node enforcement (a node-count claim plus runtime gating) is **not**
 > in the v1 claim set defined by ADR-0033 — Pro and Enterprise are gated
-> by `edition` and `entitlements` only. Per-node accounting is deferred
-> to a follow-up ticket and would be additive to the JWS payload (a
+> by `edition` and active entitlement keys only. Per-node accounting is deferred
+> to a follow-up ticket and would be additive to the signed payload (a
 > `node_count` claim, an `IPerNodeLicenseEnforcer`, and either a heartbeat
 > aggregator or a reconciler that meters distinct hosts). It is **not**
 > required to ship Pro / Enterprise in v1.

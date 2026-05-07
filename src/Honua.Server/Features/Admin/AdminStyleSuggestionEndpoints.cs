@@ -43,7 +43,7 @@ internal static class AdminStyleSuggestionEndpoints
         HttpContext context,
         [FromServices] Core.Features.Validation.Abstractions.IResourceValidator resourceValidator,
         [FromServices] IStyleSuggestionService styleSuggestionService,
-        [FromServices] ILicenseStatusProvider licenseProvider,
+        [FromServices] ILicenseEntitlementService entitlementService,
         [FromServices] ILogger<AdminStyleSuggestionEndpointsLog> logger,
         CancellationToken cancellationToken)
     {
@@ -61,8 +61,8 @@ internal static class AdminStyleSuggestionEndpoints
         }
 
         var layer = layerResult.Resource;
-        var licenseStatus = licenseProvider.GetCurrentStatus();
-        var isPro = licenseStatus.Edition >= HonuaEdition.Pro;
+        var licenseSnapshot = entitlementService.GetSnapshot();
+        var isPro = licenseSnapshot.HasEntitlement("styling.auto-suggest");
 
         try
         {
@@ -99,7 +99,7 @@ internal static class AdminStyleSuggestionEndpoints
             }
 
             // Pro: full profiling, classification, palette selection
-            var options = MapRequestToOptions(request, licenseStatus.Edition);
+            var options = MapRequestToOptions(request, licenseSnapshot.Edition);
             var suggestion = await styleSuggestionService.SuggestAsync(layer, options, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -124,7 +124,7 @@ internal static class AdminStyleSuggestionEndpoints
                 suggestion.Classification,
                 suggestion.PaletteName,
                 suggestion.Observations,
-                licenseStatus.Edition.ToString());
+                licenseSnapshot.Edition.ToString());
 
             var payload = ApiResponse<StyleSuggestionResponse>.CreateSuccess(response);
             return Results.Json(payload, StyleSuggestionJsonContext.Default.ApiResponseStyleSuggestionResponse);

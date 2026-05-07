@@ -3,9 +3,8 @@
 
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Raster;
 using Microsoft.AspNetCore.Http;
@@ -51,21 +50,10 @@ internal static class ImageServerMosaicHelpers
             return null;
         }
 
-        var licenseProvider = context.RequestServices.GetService<ILicenseStatusProvider>();
-        if (licenseProvider == null)
-        {
-            return null;
-        }
-
-        var edition = licenseProvider.GetCurrentStatus().Edition;
-        if (edition >= HonuaEdition.Pro)
-        {
-            return null;
-        }
-
-        return StandardErrorHelpers.CreateForbidden(
+        return LicenseGate.RequireEntitlement(
             context,
-            $"Temporal raster mosaic requires the Pro edition or higher. Current edition: {edition}.");
+            "raster.temporal-mosaic",
+            "Temporal raster mosaic");
     }
 
     internal static byte[] CreateEnvelopeGeometry(double minX, double minY, double maxX, double maxY)

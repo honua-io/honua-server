@@ -22,6 +22,12 @@ internal static class GeoServicesErrorCodes
     public const int Unauthorized = 401;
 
     /// <summary>
+    /// Payment Required - active license entitlement required.
+    /// Used for: Pro or Enterprise feature gates when the entitlement is inactive.
+    /// </summary>
+    public const int PaymentRequired = 402;
+
+    /// <summary>
     /// Forbidden - Access denied to resource
     /// Used for: Valid authentication but insufficient permissions
     /// </summary>
@@ -102,6 +108,7 @@ internal static class GeoServicesErrorCodes
     {
         400 => BadRequest,
         401 => Unauthorized,
+        402 => PaymentRequired,
         403 => Forbidden,
         404 => NotFound,
         405 => MethodNotAllowed,

@@ -125,6 +125,7 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
         {
             StatusCodes.Status400BadRequest => StatusCode.InvalidArgument,
             StatusCodes.Status401Unauthorized => StatusCode.Unauthenticated,
+            StatusCodes.Status402PaymentRequired => StatusCode.FailedPrecondition,
             StatusCodes.Status403Forbidden => StatusCode.PermissionDenied,
             StatusCodes.Status404NotFound => StatusCode.NotFound,
             StatusCodes.Status405MethodNotAllowed => StatusCode.Unimplemented,

@@ -6,12 +6,11 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
@@ -156,24 +155,18 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Pro-edition gate for the queryDateBins temporal histogram. Mirrors
     /// <c>RequireProEditionForTimeSeriesTiles</c> in FeatureServerRequestHandlers.Tiles.cs:
-    /// resolves the active license, returns an HTTP 403 with a remediation
-    /// message on Community, and lets Pro / Enterprise through. Exposed as
+    /// resolves the active license, returns an HTTP 402 with a remediation
+    /// message when the entitlement is inactive. Exposed as
     /// <c>internal</c> so the gate decision can be unit-tested directly without
     /// booting the full HTTP pipeline (mirrors the
     /// <c>SpatialAnalyticsRequestHandlers.RequireProEdition</c> shape).
     /// </summary>
     internal static IResult? RequireProEditionForDateBins(HttpContext context)
     {
-        var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
-        var edition = licenseProvider.GetCurrentStatus().Edition;
-        if (edition >= HonuaEdition.Pro)
-        {
-            return null;
-        }
-
-        return StandardErrorHelpers.CreateForbidden(
+        return LicenseGate.RequireEntitlement(
             context,
-            $"Temporal histogram (queryDateBins) requires the Pro edition or higher. Current edition: {edition}.");
+            "temporal.histogram",
+            "Temporal histogram");
     }
 
     private static bool TryParseDateBin(string json, string binField, out DateBinDefinition dateBin, out string? error)

@@ -6,8 +6,10 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Import;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -82,9 +84,11 @@ internal static class ProductionMonitoringEndpoints
     /// Gets comprehensive production health metrics.
     /// </summary>
     /// <param name="metricsCollector">Production metrics collector.</param>
+    /// <param name="licenseEntitlementService">Runtime license entitlement snapshot provider.</param>
     /// <returns>Production health metrics.</returns>
     private static IResult GetProductionHealth(
-        [FromServices] ProductionMetricsCollector metricsCollector)
+        [FromServices] ProductionMetricsCollector metricsCollector,
+        [FromServices] ILicenseEntitlementService licenseEntitlementService)
     {
         var metrics = metricsCollector.GetHealthMetrics();
         var alertConditions = metrics.GetAlertConditions();
@@ -95,6 +99,7 @@ internal static class ProductionMonitoringEndpoints
             OverallStatus = metrics.IsHealthy() ? "Healthy" : "Degraded",
             Metrics = metrics,
             AlertConditions = alertConditions,
+            License = FileBackedLicenseService.ToHealthSummary(licenseEntitlementService.GetSnapshot()),
             LastUpdated = DateTimeOffset.UtcNow
         };
 
@@ -532,6 +537,12 @@ internal sealed class ProductionHealthResponse
     /// </summary>
     [JsonPropertyName("alertConditions")]
     public required List<string> AlertConditions { get; set; }
+
+    /// <summary>
+    /// Gets or sets the active license summary.
+    /// </summary>
+    [JsonPropertyName("license")]
+    public required LicenseHealthSummary License { get; set; }
 
     /// <summary>
     /// Gets or sets the last updated timestamp.

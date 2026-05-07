@@ -63,6 +63,9 @@ public static class FeatureCatalog
 
         /// <summary>Temporal animation, time-aware filtering, and time-series tile features.</summary>
         public const string Temporal = "Temporal";
+
+        /// <summary>Printing and layout export features.</summary>
+        public const string Printing = "Printing";
     }
 
     /// <summary>
@@ -185,5 +188,11 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Filter vector tile requests to a bounded time range via the time parameter."),
         new("temporal.animation-api", "Animation API Contract", Categories.Temporal,
             HonuaEdition.Pro, "Capability flag for SDK/admin TimeSlider and playback integration."),
+
+        // Printing — Pro
+        new("printing.pdf-output", "PDF Print Output", Categories.Printing,
+            HonuaEdition.Pro, "Export print jobs as PDF files."),
+        new("printing.layout-templates", "Print Layout Templates", Categories.Printing,
+            HonuaEdition.Pro, "Use full print layout templates beyond MAP_ONLY."),
     ];
 }

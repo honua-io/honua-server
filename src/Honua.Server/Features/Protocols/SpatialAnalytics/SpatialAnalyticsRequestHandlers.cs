@@ -9,8 +9,6 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
@@ -20,6 +18,7 @@ using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Infrastructure.Analytics;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.SpatialAnalytics.Models;
@@ -45,29 +44,28 @@ internal static partial class SpatialAnalyticsRequestHandlers
         Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Verifies that the active edition is at least Pro, emitting an HTTP 403
+    /// Verifies that the operation entitlement is active, emitting an HTTP 402
     /// with a clear error message otherwise. Pro-tier gating for the analytics
     /// slice mirrors the PrintingTools layout template flow. Exposed as
     /// <c>internal</c> so the gate decision can be unit-tested directly.
     /// </summary>
     internal static IResult? RequireProEdition(HttpContext context, string operation, ILogger? logger)
     {
-        var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
-        var edition = licenseProvider.GetCurrentStatus().Edition;
-        if (edition >= HonuaEdition.Pro)
-        {
-            return null;
-        }
-
-        if (logger != null)
-        {
-            SpatialAnalyticsLog.EditionGateBlocked(logger, operation, edition.ToString());
-        }
-
-        return StandardErrorHelpers.CreateForbidden(
+        return LicenseGate.RequireEntitlement(
             context,
-            $"Spatial analytics ({operation}) requires the Pro edition or higher. Current edition: {edition}.");
+            ResolveEntitlementKey(operation),
+            $"Spatial analytics ({operation})",
+            logger);
     }
+
+    private static string ResolveEntitlementKey(string operation) => operation switch
+    {
+        "cluster" => "analytics.clustering",
+        "spatial-join" => "analytics.spatial-join",
+        "buffer-aggregate" => "analytics.buffer-aggregate",
+        "density" => "analytics.density",
+        _ => "analytics.clustering"
+    };
 
     /// <summary>
     /// Resolves the <see cref="ISpatialAnalyticsReader"/> from DI. Returns an HTTP 501

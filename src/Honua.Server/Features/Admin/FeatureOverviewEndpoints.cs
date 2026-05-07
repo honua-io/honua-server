@@ -32,16 +32,16 @@ internal static class FeatureOverviewEndpoints
     }
 
     private static IResult HandleGetFeatureOverview(
-        [FromServices] ILicenseStatusProvider licenseProvider,
+        [FromServices] ILicenseEntitlementService entitlementService,
         [FromServices] ILogger<FeatureOverviewEndpointsLog> logger)
     {
         AdminLog.FeatureOverviewQueried(logger);
 
-        var status = licenseProvider.GetCurrentStatus();
+        var snapshot = entitlementService.GetSnapshot();
 
         var features = FeatureCatalog.All.Select(f =>
         {
-            var isEnabled = status.Edition >= f.MinimumEdition;
+            var isEnabled = snapshot.HasEntitlement(f.Key);
             return new FeatureOverviewItem
             {
                 Key = f.Key,
@@ -56,7 +56,7 @@ internal static class FeatureOverviewEndpoints
 
         var response = new FeatureOverviewResponse
         {
-            CurrentEdition = status.Edition.ToString(),
+            CurrentEdition = snapshot.Edition.ToString(),
             Features = features
         };
 

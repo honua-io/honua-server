@@ -99,6 +99,7 @@ internal static class ProblemDetailsHelpers
     {
         StatusCodes.Status400BadRequest => "Bad Request",
         StatusCodes.Status401Unauthorized => "Unauthorized",
+        StatusCodes.Status402PaymentRequired => "Payment Required",
         StatusCodes.Status403Forbidden => "Forbidden",
         StatusCodes.Status404NotFound => "Not Found",
         StatusCodes.Status405MethodNotAllowed => "Method Not Allowed",

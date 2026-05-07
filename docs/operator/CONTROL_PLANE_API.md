@@ -551,30 +551,172 @@ for run lifecycle, scheduler semantics, and tuning details.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/v1/admin/license` | GET | Get license status |
-| `/api/v1/admin/license` | POST | Upload license (placeholder `InMemoryLicenseManager` — does not run the canonical Ed25519 / JWS validator; replaced by the License store + bootstrap child ticket). |
-| `/api/v1/admin/license/entitlements` | GET | Get entitlements |
-| `/api/v1/admin/license/status` | GET | Platform-admin license status (mirrors `GET /api/v1/admin/license`) |
-| `/api/v1/admin/license/features` | GET | Platform-admin entitlements / feature view |
+| `/api/v1/admin/license` | GET | Get active license status. |
+| `/api/v1/admin/license` | POST | Upload raw signed license bytes when `Licensing:AllowAdminUpload=true` and `Licensing:LicensePath` is configured. Disabled by default. |
+| `/api/v1/admin/license/entitlements` | GET | Get the active/inactive entitlement inventory as a flat list. |
+| `/api/v1/admin/license/status` | GET | Platform-admin license status (same status contract as `GET /api/v1/admin/license`). |
+| `/api/v1/admin/license/features` | GET | Platform-admin feature entitlement view with catalog category and minimum-edition metadata. |
+| `/api/v1/admin/license/upload` | POST | Platform-admin upload alias. Uses the same validator and upload settings as `POST /api/v1/admin/license`, but returns a compact upload-result response. |
 
-The unified license envelope (compact JWS / EdDSA / Ed25519), BYOL and
-marketplace issuance flows, multi-key rotation, and the AWS/Azure marketplace
-adapter contracts are defined in [ADR-0033](../contributor/adr/0033-unified-license-format.md)
-and the companion [unified license and entitlement architecture](../contributor/architecture/unified-license-and-entitlement.md).
+Runtime licensing loads an offline Ed25519-signed JSON envelope from
+`Licensing:LicensePath`. `Licensing:TrustedKeys:<keyId>` supplies trusted
+raw Ed25519 public keys as `base64url:<32-byte-key>`, unprefixed Base64URL, or
+`base64:<32-byte-key>`. With no configured path the server runs in Community
+mode; missing, malformed, unknown-key, invalid-signature, and expired files
+leave the server in a safe Community state and emit structured licensing
+diagnostics. License files are bounded to 64 KiB. The license status also
+appears in `/healthz/metrics` and `/monitoring/health/production` payloads.
+
+The ticket #338 runtime envelope is:
+
+```json
+{
+  "version": 1,
+  "keyId": "honua-2026-q2",
+  "payload": "<base64url-encoded UTF-8 JSON payload bytes>",
+  "signature": "<base64url Ed25519 signature over the payload bytes>"
+}
+```
+
+The decoded payload uses camel-case JSON:
+
+```json
+{
+  "schema": "honua.license/v1",
+  "licenseId": "lic_123",
+  "licensedTo": "Example Operator",
+  "edition": "Pro",
+  "issuedAt": "2026-05-06T00:00:00Z",
+  "expiresAt": "2027-05-06T00:00:00Z",
+  "entitlements": ["analytics.clustering"],
+  "metadata": {
+    "source": "byol"
+  }
+}
+```
+
+`schema`, `licenseId`, `licensedTo`, `edition`, and `issuedAt` are required.
+`edition` accepts `Community`, `Pro`, `Enterprise`, and `Professional`
+(`Professional` maps to `Pro`). `expiresAt` is optional; when present it must be
+in the future. `metadata` is an optional string-valued map. Unknown entitlement
+keys are ignored for activation, and the active entitlement set always includes
+Community-tier catalog entries. Paid features are active only when their catalog
+key is present in the signed `entitlements` array; the `edition` value is the
+operator-facing bundle label and does not by itself activate every Pro or
+Enterprise feature.
+
+Status responses from `GET /api/v1/admin/license`,
+`GET /api/v1/admin/license/status`, and successful
+`POST /api/v1/admin/license` calls use `ApiResponse<LicenseStatusResponse>`.
+The `entitlements` array is the known catalog inventory with active/inactive
+state, not only the keys present in the signed payload:
+
+```json
+{
+  "success": true,
+  "data": {
+    "edition": "Pro",
+    "expiresAt": "2027-05-06T00:00:00Z",
+    "isValid": true,
+    "daysUntilExpiry": 365,
+    "expiryWarning": false,
+    "validationState": "Valid",
+    "licensedTo": "Example Operator",
+    "licenseId": "lic_123",
+    "issuedAt": "2026-05-06T00:00:00Z",
+    "entitlements": [
+      { "key": "analytics.clustering", "name": "Spatial Clustering", "isActive": true }
+    ]
+  },
+  "timestamp": "2026-05-06T00:00:00Z"
+}
+```
+
+Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`,
+`Malformed`, `UnknownKey`, `InvalidSignature`, and `Expired`. No configured path
+reports `Community` with `isValid=true`; every failed configured-file state
+reports `Community` with `isValid=false`.
+
+`POST /api/v1/admin/license/upload` returns `ApiResponse<LicenseUploadResponse>`
+instead of the full status response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "success": true,
+    "message": "License applied."
+  },
+  "timestamp": "2026-05-06T00:00:00Z"
+}
+```
+
+When upload is disabled, `Licensing:LicensePath` is unset, the file is empty,
+oversized, malformed, unknown-key, invalid-signature, or expired, upload
+returns HTTP `400`. `/api/v1/admin/license/upload` includes the rejection
+message in `data.message`; `/api/v1/admin/license` includes the rejection
+message in the top-level `message`.
+
+`GET /api/v1/admin/license/entitlements` returns
+`ApiResponse<IReadOnlyList<EntitlementResponse>>` as a flat catalog inventory:
+
+```json
+{
+  "success": true,
+  "data": [
+    { "key": "temporal.filtering", "name": "Temporal Query Filtering", "isActive": true },
+    { "key": "analytics.clustering", "name": "Spatial Clustering", "isActive": false }
+  ],
+  "timestamp": "2026-05-06T00:00:00Z"
+}
+```
+
+`GET /api/v1/admin/license/features` returns `ApiResponse<LicenseEntitlementsResponse>`:
+
+```json
+{
+  "success": true,
+  "data": {
+    "edition": "Community",
+    "features": [
+      {
+        "key": "analytics.clustering",
+        "displayName": "Spatial Clustering",
+        "category": "Analytics",
+        "isEnabled": false,
+        "minimumEdition": "Pro",
+        "upgradeRequired": true
+      }
+    ]
+  },
+  "timestamp": "2026-05-06T00:00:00Z"
+}
+```
+
+Paid-feature gates return HTTP `402 Payment Required` through the shared
+protocol error formatter. Admin/OGC/generic routes use problem details with
+title `Payment Required`; GeoServices routes use the standard GeoServices error
+envelope with `error.code=402`; gRPC maps the same missing-entitlement condition
+to `FAILED_PRECONDITION`.
+
+The broader unified license architecture, BYOL and marketplace issuance flows,
+multi-key rotation, and AWS/Azure marketplace adapter contracts are defined in
+[ADR-0033](../contributor/adr/0033-unified-license-format.md) and the companion
+[unified license and entitlement architecture](../contributor/architecture/unified-license-and-entitlement.md).
 Operational procedures live in the licensing runbooks:
 [License Migration](runbooks/LICENSE_MIGRATION.md),
 [License Key Rotation](runbooks/LICENSE_KEY_ROTATION.md), and
 [Marketplace Operations](runbooks/MARKETPLACE_OPERATIONS.md).
 
-The licensing slice introduces additional routes that land with their
-child tickets per the ADR-0033 § "Bounded Child Tickets" decomposition.
-They are listed here so the canonical route set in the ADR, the
-architecture doc, and this contract agree:
+The broader licensing architecture also defines routes that land with child
+tickets per the ADR-0033 § "Bounded Child Tickets" decomposition. They are
+listed here so the canonical route set in the ADR, the architecture doc, and
+this contract agree:
 
 | Endpoint | Method | Visibility | Land with |
 |----------|--------|------------|-----------|
-| `/api/v1/admin/license/upload` | POST | Every instance. Currently registered with a placeholder handler that returns HTTP `501 Not Implemented` (`"License upload is not yet supported"`); the canonical Ed25519 / JWS upload path lands with the child ticket below. The `LICENSE_MIGRATION.md` and `LICENSE_KEY_ROTATION.md` runbooks call this route — both runbooks flag the dependency in their § "Status / Prerequisites" callouts. | License store + bootstrap child ticket |
-| `/api/v1/admin/license/keys` | GET | Every instance | License store + bootstrap child ticket |
+| `/api/v1/admin/license/upload` | POST | Every instance. Uses the same validator as startup load. Returns `400` when admin upload is disabled or validation fails. | Landed with ticket #338 |
+| `/api/v1/admin/license/keys` | GET | Every instance | Key rotation / public-key inspection child ticket |
 | `/api/v1/admin/license/mint` | POST | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
 | `/api/v1/admin/license/refresh` | POST | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
 | `/api/v1/admin/license/signing/status` | GET | Mint host only — `404` on customer instances | Mint host endpoints child ticket |
@@ -583,13 +725,6 @@ architecture doc, and this contract agree:
 | `/api/v1/marketplace/azure/webhook` | POST | When `Azure:Marketplace:Enabled=true`. Public — Azure AD JWT bearer | Azure marketplace adapter child ticket |
 | `/api/v1/marketplace/azure/landing` | GET | When `Azure:Marketplace:Enabled=true`. Public — Microsoft redirects the purchaser's browser here with `?token=<marketplace-token>`; handler calls Microsoft's Resolve API server-to-server (`x-ms-marketplace-token` header). | Azure marketplace adapter child ticket |
 | `/api/v1/marketplace/azure/activate` | POST | When `Azure:Marketplace:Enabled=true`. Public — backend POST from the landing page after the purchaser confirms; handler calls Microsoft's Activate API server-to-server. | Azure marketplace adapter child ticket |
-
-The `/api/v1/admin/license/upload` route is registered today but its
-handler returns 501; the canonical Ed25519 / JWS upload pipeline lands
-with the License store + bootstrap child ticket. The mint-host-only and
-marketplace routes are not present in the current `EndpointRegistry`;
-they register through their child-ticket PRs along with the
-corresponding architecture-test rows.
 
 ### **Role Management Endpoints**
 

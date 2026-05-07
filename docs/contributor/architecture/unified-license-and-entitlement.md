@@ -14,8 +14,15 @@ The design covers three issuance tracks behind a single runtime contract:
 - **Azure Marketplace** — adapter that mints internal license files from Azure
   SaaS Fulfillment v2 Resolve / Activate state and lifecycle webhooks.
 
-All three tracks emit the same JWS envelope and are validated by one
-`Ed25519LicenseValidator` instance on the runtime hot path.
+All three tracks normalize onto the same Honua-signed runtime file shape before
+customer instances validate or gate features. Ticket #338 implements the first
+runtime shape as a JSON envelope `{ version, keyId, payload, signature }`; the
+signature covers exact decoded payload bytes, and the runtime trusts only keys
+configured under `Licensing:TrustedKeys:<keyId>`.
+
+Mint-host, marketplace, public-key inspection, file-watch hot reload, baked-in
+key, and Prometheus counter details below are follow-on architecture unless a
+section explicitly says it is part of the #338 runtime baseline.
 
 ---
 
@@ -23,103 +30,89 @@ All three tracks emit the same JWS envelope and are validated by one
 
 ### 1.1 Wire format
 
-The license file is a compact JWS (RFC 7515): three Base64URL segments separated
-by `.` characters.
+The ticket #338 license file is UTF-8 JSON:
 
-```
-<protected_header>.<payload>.<signature>
-```
-
-The file is UTF-8 text (no surrounding whitespace), persisted verbatim to disk
-or to the configured secret store. File extension `.honua-license` is the
-convention; consumers must not depend on the extension.
-
-### 1.2 Protected header
-
-```
+```json
 {
-  "alg": "EdDSA",
-  "typ": "JWT",
-  "kid": "honua-2026-q2"
+  "version": 1,
+  "keyId": "honua-2026-q2",
+  "payload": "<base64url-encoded UTF-8 JSON payload bytes>",
+  "signature": "<base64url Ed25519 signature over the payload bytes>"
 }
 ```
+
+The file is persisted verbatim to disk or to the configured secret store. The
+`.honua-license.json` extension is conventional; consumers must not depend on
+the extension. The runtime reads at most 64 KiB.
+
+### 1.2 Envelope fields
 
 | Field | Value |
 |-------|-------|
-| `alg` | `EdDSA` (RFC 8037). The validator rejects any other value. |
-| `typ` | `JWT`. Required. |
-| `kid` | Key identifier resolved against the public-key set (see § 4.2). |
-| `cty` | Optional. Reserved for future variants. Ignored when absent. |
+| `version` | Required integer. Current value is `1`. |
+| `keyId` | Required key identifier resolved from `Licensing:TrustedKeys:<keyId>`. |
+| `payload` | Required Base64URL-encoded UTF-8 JSON payload bytes. |
+| `signature` | Required Base64URL Ed25519 signature over the decoded payload bytes. |
 
-The `alg=none` JWS attack class is closed by hard-coding the accepted
-algorithm in the validator and rejecting unknown values before any decoding.
+Trusted public keys are raw 32-byte Ed25519 public keys configured as
+`base64url:<key>`, unprefixed Base64URL, or `base64:<key>`.
 
-### 1.3 Payload claims
+### 1.3 Payload fields
 
-Payload claims use snake_case names so the source-generated JSON context can
-emit canonical wire format with `JsonKnownNamingPolicy.SnakeCaseLower`.
+The decoded payload uses camel-case JSON:
 
-```
+```json
 {
-  "iss": "honua.io",
-  "sub": "license:01964e84-2c3a-7c5e-9b22-2f7d8e1c4a52",
-  "iat": 1748563200,
-  "nbf": 1748563200,
-  "exp": 1780099200,
-  "license_id": "01964e84-2c3a-7c5e-9b22-2f7d8e1c4a52",
-  "edition": "enterprise",
+  "schema": "honua.license/v1",
+  "licenseId": "lic_123",
+  "licensedTo": "Example Operator",
+  "edition": "Pro",
+  "issuedAt": "2026-05-06T00:00:00Z",
+  "expiresAt": "2027-05-06T00:00:00Z",
   "entitlements": [
-    "alerts.advanced",
-    "channels.slack",
-    "raster.cog",
-    "analytics.spatial"
+    "analytics.clustering",
+    "staticmap.high-dpi"
   ],
-  "issued_to": {
-    "name": "Acme Public Works",
-    "email": "ops@acme.example",
-    "org": "Acme Corp"
-  },
-  "issuance_source": "aws-marketplace",
-  "marketplace": {
-    "subscription_id": "arn:aws:license-manager::123456789012:license-configuration:lic-...",
-    "account_id": "123456789012",
-    "product_code": "ABCDEFGHIJKL01234567",
-    "plan_id": "honua-enterprise-monthly"
-  },
-  "tenant_id": null
+  "metadata": {
+    "source": "byol"
+  }
 }
 ```
 
-| Claim | Type | Required | Notes |
+| Field | Type | Required | Notes |
 |-------|------|---------|-------|
-| `iss` | string | yes | Always `"honua.io"`. |
-| `sub` | string | yes | `license:<license-id>`. |
-| `iat`, `nbf`, `exp` | int (Unix seconds, UTC) | yes | `nbf <= iat <= exp`. |
-| `license_id` | string (UUID v7) | yes | Stable per issuance. |
-| `edition` | string | yes | `community` \| `pro` \| `enterprise`. |
-| `entitlements` | string[] | yes | Resolved against `FeatureCatalog`. Unknown keys log a warning at INFO and are dropped. |
-| `issued_to` | object | yes | `{ name, email, org }`. `email` and `org` are optional inside the object. |
-| `issuance_source` | string | yes | `byol-portal` \| `aws-marketplace` \| `azure-marketplace`. |
-| `marketplace` | object \| null | conditional | Required when `issuance_source != byol-portal`. Fields are issuance-source dependent (see § 1.5). |
-| `tenant_id` | string (UUID) \| null | no | Reserved for future multi-tenancy. |
+| `schema` | string | yes | Current value is `"honua.license/v1"`. |
+| `licenseId` | string | yes | Stable per issuance. |
+| `licensedTo` | string | yes | Operator/licensee display name. |
+| `edition` | string | yes | `Community`, `Pro`, `Enterprise`, or `Professional` (`Professional` maps to `Pro`). |
+| `issuedAt` | RFC 3339 timestamp | yes | Issue timestamp. |
+| `expiresAt` | RFC 3339 timestamp \| null | no | If present, must be in the future. |
+| `entitlements` | string[] | no | Feature keys resolved against `FeatureCatalog`; unknown keys are ignored for activation. |
+| `metadata` | object \| null | no | Optional string-valued metadata map for source/support context. |
 
-The validator rejects payloads missing required claims, payloads exceeding 8 KiB
-after Base64URL decode, and payloads where `nbf > now + ClockSkew` or
-`exp <= now - ClockSkew`. Default `ClockSkew = 60s`.
+Community-tier catalog entries are always active. Paid features are active only
+when their catalog key appears in the signed `entitlements` array. The
+operator-facing `edition` label does not activate every paid feature in that
+edition by itself.
 
 ### 1.4 Expiry policy by source
 
-| `issuance_source` | Maximum `exp - iat` | Refresh trigger |
+| Source | Maximum validity | Refresh trigger |
 |-------------------|---------------------|-----------------|
 | `byol-portal` | 366 days | Customer downloads a new file from the portal. |
-| `aws-marketplace` | 90 days | `AwsEntitlementPollerService` re-mints when `GetEntitlements` state diverges or within `RefreshLeadTime` (default 14 days) of `exp`. |
+| `aws-marketplace` | 90 days | `AwsEntitlementPollerService` re-mints when `GetEntitlements` state diverges or within `RefreshLeadTime` (default 14 days) of `expiresAt`. |
 | `azure-marketplace` | 90 days | Webhook event or `AzureSubscriptionReconcilerService` triggers re-mint; same lead time. |
 
 The mint service rejects requests that violate the per-source expiry cap.
 
-### 1.5 Marketplace claim shape
+### 1.5 Marketplace metadata shape
 
-For `aws-marketplace`:
+Marketplace adapters are follow-on work. The #338 `metadata` field is a flat
+string-valued map for simple source/support fields. Rich marketplace details
+should land as a future typed marketplace object without changing feature-gate
+semantics.
+
+For AWS Marketplace:
 
 ```
 "marketplace": {
@@ -130,7 +123,7 @@ For `aws-marketplace`:
 }
 ```
 
-For `azure-marketplace`:
+For Azure Marketplace:
 
 ```
 "marketplace": {
@@ -141,22 +134,18 @@ For `azure-marketplace`:
 }
 ```
 
-Validators do not interpret `marketplace` for gating decisions; the field
+Validators do not interpret marketplace metadata for gating decisions; the data
 exists for reconciliation, telemetry, and admin visibility.
 
 ### 1.6 Size and serialization rules
 
-- Decoded payload size is bounded at 8 KiB. The validator computes this before
-  parsing JSON, returning `LicenseValidationResult.PayloadTooLarge` for
-  oversize files. The bound prevents deserialization-amplified attacks and
-  caps webhook body sizes when the file is delivered through reconciliation.
-- Source-generated JSON via `LicenseDomainJsonContext`
-  (`System.Text.Json.Serialization.JsonSerializerContext`) with
-  `JsonKnownNamingPolicy.SnakeCaseLower` and
-  `JsonIgnoreCondition.WhenWritingNull` for optional fields.
-- The signing input is the exact bytes of `<header>.<payload>` (Base64URL
-  segments). The validator never re-serializes the header or payload before
-  verification.
+- Total license file size is bounded at 64 KiB. Oversized files publish a
+  `Malformed` validation state and do not replace the active snapshot.
+- Source-generated JSON via `LicenseFileJsonContext`
+  (`System.Text.Json.Serialization.JsonSerializerContext`) uses camel-case
+  names and omits nulls.
+- The signing input is the exact decoded payload bytes. The validator never
+  re-serializes the payload before verification.
 
 ---
 
@@ -166,57 +155,54 @@ exists for reconciliation, telemetry, and admin visibility.
 
 ```
 ILicenseManager.GetLicenseInfoAsync()
-  └── ILicenseStore.GetCurrentSnapshotAsync()
-        └── (cached, keyed by license_id + iat + kid)
-              └── Ed25519LicenseValidator.Validate(licenseBytes)
-                    ├── JwsParser (split + base64url decode)
-                    ├── ILicensePublicKeyResolver.Resolve(kid)
-                    ├── NSec.Cryptography.SignatureAlgorithm.Ed25519
-                    └── ClockSkewPolicy.IsAcceptable(iat, nbf, exp)
+ILicenseStatusProvider.GetCurrentStatus()
+ILicenseEntitlementService.GetSnapshot()
+  └── FileBackedLicenseService in-memory LicenseSnapshot
+        └── startup load or admin upload
+              └── validate JSON envelope
+                    ├── Base64URL decode payload and signature
+                    ├── resolve keyId from Licensing:TrustedKeys
+                    ├── BouncyCastle Ed25519 verify(payloadBytes, signature)
+                    └── parse signed payload into LicenseSnapshot
 ```
 
-`ILicenseManager` is the one runtime gating contract. `Ed25519LicenseValidator`
-is `sealed` and stateless. `Honua.Architecture.Tests` enforces both.
+`ILicenseEntitlementService` is the fast runtime gating contract.
+`ILicenseManager` and `ILicenseStatusProvider` expose the same snapshot to the
+admin/status compatibility surfaces.
 
 ### 2.2 Per-request gates
 
-Per-request feature gates check the in-memory `LicenseInfo` snapshot through
-`ILicenseManager.GetLicenseInfoAsync`. They never re-run signature verification.
-Validation runs once on bootstrap and on hot reload (file change, admin upload,
-adapter re-mint event). Hot-reload wiring uses the existing
-`Honua.Server/Features/Infrastructure/Events/` substrate so cache invalidation
-piggybacks on a tested durable channel.
+Per-request feature gates check the immutable in-memory `LicenseSnapshot`
+through `ILicenseEntitlementService`. They never re-run signature verification.
+Validation runs once on bootstrap and after successful admin upload. File-watch
+hot reload and adapter re-mint events are follow-on triggers that should reuse
+the same validation and snapshot-publication path.
 
 ### 2.3 Validation result codes
 
-`LicenseValidationResult` is a discriminated record with:
+The #338 runtime publishes these `LicenseValidationState` values:
 
 | Result | Meaning | Operator action |
 |--------|---------|-----------------|
-| `Valid(LicenseInfo)` | Signature, claims, and expiry are all OK. | None. |
-| `MalformedEnvelope` | Not a 3-segment JWS or the segments fail Base64URL decode. | Inspect the file; reissue. |
-| `UnsupportedAlgorithm` | `alg` is not `EdDSA` or `typ` is not `JWT`. | Reissue with the canonical header. |
-| `UnknownKeyId(kid)` | `kid` does not resolve in the configured key set. | Add the rotated key via configuration; restart not required. |
-| `PayloadTooLarge` | Decoded payload exceeds 8 KiB. | Review portal/mint output; file an incident. |
-| `MalformedClaims(detail)` | JSON does not deserialize against `LicenseClaims`. | Reissue. |
-| `ClaimViolation(detail)` | Required claim missing or invariant broken (e.g., `nbf > exp`). | Reissue. |
-| `Expired(at)` | `exp` is in the past beyond clock skew. | Reissue. Adapter triggers re-mint automatically. |
-| `NotYetValid(at)` | `nbf` is in the future beyond clock skew. | Wait or reissue; investigate clock drift. |
-| `SignatureInvalid` | Ed25519 verification failed. | Treat as tampering; alert. |
-| `InternalError(detail)` | Crypto provider failure. | Capture diagnostics; check NSec / BouncyCastle smoke. |
+| `NoLicenseConfigured` | `Licensing:LicensePath` is empty/unset. Community mode is active and `isValid=true`. | None. |
+| `Valid` | Signature, payload, expiry, and trusted key are all OK. | None. |
+| `MissingFile` | A configured path does not exist. | Mount/provision the file or clear `LicensePath`. |
+| `Malformed` | Envelope JSON, payload JSON, Base64URL, configured public key, required payload fields, or file size failed validation. | Inspect the file and key config; reissue if needed. |
+| `UnknownKey` | Envelope `keyId` is not present in `Licensing:TrustedKeys`. | Add the trusted public key and restart, or reissue with a trusted key. |
+| `InvalidSignature` | Ed25519 verification failed. | Treat as tampering or key mismatch; reissue and investigate. |
+| `Expired` | `expiresAt` is in the past. | Reissue. Adapter refresh is follow-on work. |
 
-The validator returns the result rather than throwing; outer layers surface
-RFC 7807 problem JSON via the shared problem helpers (no raw exception bodies).
+The validator returns the result rather than throwing. Startup and admin status
+surfaces publish safe validation state, admin upload returns a sanitized
+`ApiResponse` rejection, and paid-feature gates use the shared protocol error
+helpers (no raw exception bodies).
 
 ### 2.4 AOT / trimming
 
-- **Crypto**: `NSec.Cryptography` (libsodium native binding, AOT-validated on
-  `linux-x64`, `linux-arm64`, `win-x64`, `osx-arm64`). If NSec fails AOT smoke
-  on any RID, the build references the BouncyCastle managed Ed25519 fallback
-  for that RID. Both implementations share the validator's golden-vector
-  test set.
-- **JSON**: `LicenseDomainJsonContext` source-generated. The validator does
-  not call `JsonSerializer.Deserialize<T>()` against runtime metadata.
+- **Crypto**: BouncyCastle managed Ed25519 verification behind internal
+  `IEd25519Verifier`; the runtime does not hand-roll Ed25519.
+- **JSON**: `LicenseFileJsonContext` source-generated. The validator does not
+  call `JsonSerializer.Deserialize<T>()` against runtime metadata.
 - **Logging**: `[LoggerMessage]`-generated emitters; no `string.Format` in
   hot paths.
 - **No reflection**: `JsonSerializerIsReflectionEnabledByDefault=false` and
@@ -224,10 +210,11 @@ RFC 7807 problem JSON via the shared problem helpers (no raw exception bodies).
 
 ### 2.5 Performance budget
 
-- Validator self-time per call: ≤ 100 µs on commodity x64. Validation runs
-  only on bootstrap / hot reload, so per-request overhead is dominated by
-  the `LicenseInfo` field read.
-- File parse + deserialize: ≤ 1 ms even at the 8 KiB ceiling.
+- Validator self-time is not on the request path. Validation runs only on
+  bootstrap and successful admin upload, so per-request overhead is dominated
+  by a snapshot read and O(1) entitlement set lookup.
+- File read is bounded to 64 KiB; malformed or oversized files do not replace
+  the active snapshot.
 - Webhook ack budget: < 1 s p99 on test environments (well inside the Azure
   SaaS Fulfillment v2 10 s SLA).
 
@@ -237,59 +224,38 @@ RFC 7807 problem JSON via the shared problem helpers (no raw exception bodies).
 
 ### 3.1 Resolver contract
 
-```csharp
-public interface ILicensePublicKeyResolver
-{
-    LicensePublicKey? Resolve(string kid);
-    IReadOnlyList<LicensePublicKey> CurrentKeys { get; }
-}
-
-public sealed record LicensePublicKey(
-    string Kid,
-    ReadOnlyMemory<byte> PublicKeyBytes,
-    DateTimeOffset NotBefore,
-    DateTimeOffset? NotAfter,
-    LicenseKeySource Source);
-
-public enum LicenseKeySource
-{
-    BakedIn,
-    Configuration,
-}
-```
+Ticket #338 resolves keys directly from `Licensing:TrustedKeys:<keyId>` on
+`LicenseOptions`. Each configured value must decode to a 32-byte raw Ed25519
+public key. There is no baked-in verification key, key validity window,
+`IOptionsMonitor` hot reload, or public-key inspection route in the baseline.
 
 ### 3.2 Key composition rules
 
-- The **baked-in primary** is compiled into `Honua.Core` as an embedded
-  resource at release time. Configuration cannot delete it; deletion requires
-  a release.
-- **Configuration-additive** keys load from `License:Keys` (env-var-first
-  `IOptions<T>`). The list is monitored by `IOptionsMonitor<T>`; a change
-  publishes a `LicenseKeysChanged` event that invalidates the public-key
-  cache (§ 5).
-- A key is "active" when `now ∈ [NotBefore, NotAfter ?? +∞)`. Expired keys
-  remain in the resolver only long enough for the next reload to drop them;
-  the resolver `Resolve(kid)` returns `null` for keys outside their window
-  even if they are still listed.
-- `kid` collisions are forbidden. The resolver fails fast at startup if
-  configuration redefines a baked-in `kid`.
+- Adding a key is additive: configure another `Licensing:TrustedKeys:<keyId>`
+  entry on every instance and restart.
+- Removing a key retires every license whose envelope references that `keyId`;
+  those files publish `UnknownKey` after restart or upload.
+- Key id collisions are configuration errors operationally even though the
+  dictionary can only hold one value per id. Rotation runbooks require unique
+  ids such as `honua-2026-q3`.
+- Baked-in keys, validity windows, public-key inspection, and live key reload
+  are follow-on work.
 
 ### 3.3 Rotation flow (runbook reference)
 
 The `LICENSE_KEY_ROTATION` runbook walks rotations end-to-end:
 
 1. Generate a new keypair on the offline signing host.
-2. Add the public key to `License:Keys` configuration; it begins serving
-   verification immediately.
+2. Add the public key to `Licensing:TrustedKeys` configuration on every
+   instance and restart.
 3. Switch the mint host to sign with the new private key.
 4. Re-issue BYOL files on the next portal cadence; adapter-issued files
    re-mint automatically within `RefreshLeadTime`.
-5. Set `NotAfter` on the retired key once the longest-lived in-flight file
-   has expired plus a margin.
-6. Remove the retired key from configuration in a follow-up change.
+5. Remove the retired key from `Licensing:TrustedKeys` once the longest-lived
+   in-flight file has expired or been replaced.
 
 The runbook smoke test exercises a key rotation cycle and verifies that
-licenses signed by the old `kid` remain valid through retirement.
+licenses signed by the old `keyId` remain valid through retirement.
 
 ---
 
@@ -307,7 +273,7 @@ endpoints already in `EndpointRegistry.cs`:
 | `POST /api/v1/admin/license/mint` | M2M (admin scope) | No — mint host only. | Issue a new license from supplied claims. |
 | `POST /api/v1/admin/license/refresh` | M2M (admin scope) | No — mint host only. | Re-sign an existing license whose claims have not changed (refresh-only path). |
 | `GET /api/v1/admin/license/signing/status` | M2M (admin scope) | No — mint host only. | Reports current `License:Signing:KeyId` and signer health. |
-| `GET /api/v1/admin/license/keys` | Admin | Yes. | Inspects the resolved public-key set (`baked-in` primary + `License:Keys` additions). |
+| `GET /api/v1/admin/license/keys` | Admin | Yes. | Follow-on public-key inspection for the resolved `Licensing:TrustedKeys` set. |
 | `POST /api/v1/admin/marketplace/{cloud}/reconcile` | Admin | Yes (when adapter enabled). | Manual reconciliation trigger; bypasses the timer. `cloud` ∈ `aws`, `azure`. |
 | `POST /api/v1/marketplace/azure/webhook` | Public — Azure AD JWT bearer (publisher audience). | Yes (when Azure adapter enabled). | Azure SaaS Fulfillment v2 lifecycle webhook. Not admin-scoped. |
 | `GET /api/v1/marketplace/azure/landing` | Public — browser GET. Microsoft redirects the purchaser to the configured landing page URL with `?token=<marketplace-token>`. The handler exchanges that token for subscription metadata via Microsoft's Resolve API (server-to-server, `x-ms-marketplace-token` header) and renders the activation page. | Yes (when Azure adapter enabled). | Browser-facing landing page. Not admin-scoped. |
@@ -316,7 +282,8 @@ endpoints already in `EndpointRegistry.cs`:
 Signing material loads only when `License:Signing:Enabled=true`. Customer-
 side deployments leave it `false` and the mint-host-only endpoints return
 `404` to keep the signing surface invisible. The `GET /api/v1/admin/license/keys`
-inspector remains available on every instance for resolver auditing.
+inspector is a follow-on route; #338 operators verify trusted keys through
+effective deployment configuration.
 
 Marketplace endpoints register only when the corresponding
 `{Aws,Azure}:Marketplace:Enabled=true`, so air-gapped customers see no
@@ -327,9 +294,9 @@ offer must point at `GET /api/v1/marketplace/azure/landing` on a
 public-facing customer host. Microsoft drives the purchaser's browser
 to that URL with the marketplace token in the `?token=` query
 parameter; the handler then calls Microsoft's Resolve API
-server-to-server. Activate is a backend `POST
-/api/v1/marketplace/azure/activate` invoked from the landing page once
-the purchaser confirms.
+server-to-server. Activate is a backend
+`POST /api/v1/marketplace/azure/activate` invoked from the landing page
+once the purchaser confirms.
 
 Future extraction to a `Honua.LicenseMint.*` deployable changes only host
 wiring; the public abstractions in `Honua.Core/Features/Licensing/Abstractions/`
@@ -354,8 +321,8 @@ remain on `Honua.Server`.
 [Signed file] ─────► [Customer downloads from portal]
 ```
 
-BYOL files default to `exp - iat = 365 days`. Customer-side servers load the
-file from `License:File:Path` (or upload via the admin endpoint) and validate
+BYOL files default to roughly 365 days between `issuedAt` and `expiresAt`.
+Customer-side servers load the file from `Licensing:LicensePath` (or upload via the admin endpoint) and validate
 against the local public-key set. No network call.
 
 ### 4.3 AWS Marketplace adapter
@@ -379,12 +346,12 @@ against the local public-key set. No network call.
 [Honua hosted mint]
         │ re-queries GetEntitlements with publisher AWS credentials
         │ (authoritative — adapter-supplied state is treated as a hint, not evidence)
-        │ Ed25519 sign  (exp ≤ 90d)
+        │ Ed25519 sign  (expiresAt ≤ 90d)
         ▼
 [Signed file]
         │
         ▼
-[FileLicenseStore]  → invalidates cached snapshot → re-runs validator
+[FileBackedLicenseService]  → publishes new in-memory snapshot after validation
 ```
 
 The AWS Marketplace Entitlement Service does not return a portable signed
@@ -458,7 +425,7 @@ plan is automatically patched as Success." Honua's reconciler-deferred
 PATCH therefore does **not** function as a "reject inside 10 s"
 hook for those actions — by the time the reconciler runs, Microsoft
 has typically already auto-completed the change. The reconciler
-PATCHes after `FileLicenseStore` accepts the new file so the
+PATCHes after the runtime license store accepts the new file so the
 publisher's audit trail and Microsoft's operation record agree on
 `Success` (or `Failure` if mint or apply fails); a deferred `Failure`
 does **not** undo Microsoft's auto-Success on its side, it only
@@ -510,8 +477,8 @@ POST /api/v1/marketplace/azure/webhook
         │        proceed with mint + apply + PATCH path.
         │ 7. Get Subscription (publisher credentials) — only when
         │    the latest entitlement state is needed
-        │ 8. POST /api/v1/admin/license/mint  → Ed25519 sign (exp ≤ 90d)
-        │ 9. apply via FileLicenseStore → validator cache invalidated
+        │ 8. POST /api/v1/admin/license/mint  → Ed25519 sign (expiresAt ≤ 90d)
+        │ 9. apply via runtime license store → snapshot republished
         │ 10. For ack-required actions only (`ChangePlan`,
         │     `ChangeQuantity`, `Reinstate`): PATCH operation status
         │     (`Success` after step 9, `Failure` on mint/apply fault).
@@ -524,7 +491,7 @@ POST /api/v1/marketplace/azure/webhook
         │     entirely; Microsoft does not expose a pending operation
         │     requiring publisher acknowledgement for those.
         ▼
-[FileLicenseStore]  → invalidates cached snapshot → re-runs validator
+[Runtime license store]  → validates file → republishes snapshot
 ```
 
 `PATCH operation status` is scoped to the actions Microsoft's
@@ -532,7 +499,7 @@ POST /api/v1/marketplace/azure/webhook
 surfaces as a pending operation requiring publisher
 acknowledgement. Per Microsoft, those are `ChangePlan`,
 `ChangeQuantity`, and `Reinstate`. For those, the reconciler PATCHes
-`Success` after `FileLicenseStore` confirms the new file is valid,
+`Success` after the runtime license store confirms the new file is valid,
 or `Failure` after a mint / apply fault we cannot recover from.
 
 The two operations-API conflict outcomes are distinct and must not
@@ -583,7 +550,7 @@ Resolve / Activate landing-page flow:
         │ AzureLandingPageEndpoints.ActivateAsync
         │   4. POST <fulfillment-api>/saas/subscriptions/{id}/activate
         │      (server-to-server; publisher access token)
-        │   5. POST /api/v1/admin/license/mint  → Ed25519 sign  (exp ≤ 90d)
+        │   5. POST /api/v1/admin/license/mint  → Ed25519 sign  (expiresAt ≤ 90d)
         ▼
    Customer download / auto-deploy / "subscription is now active" view
 ```
@@ -618,16 +585,20 @@ edge configuration alongside the mint host's public ingress.
 
 ## 5. Caching and Invalidation Matrix
 
-`ICacheService.RemoveByPatternAsync` drives invalidation. Cache keys:
+#338 does not write the license snapshot to `ICacheService` or Redis. The active
+snapshot is in process and replaced on startup load or successful admin upload.
+
+Follow-on file-watch, marketplace, and key-inspection work should use
+`ICacheService.RemoveByPatternAsync` for any distributed cache entries it adds:
 
 | Cache | Key | TTL | Invalidation triggers |
 |-------|-----|-----|-----------------------|
-| Validated license snapshot | `license:snapshot:{license_id}:{iat}:{kid}` | 1 hour | File-watcher change, admin upload, adapter re-mint event, `License:Keys` change. |
+| Validated license snapshot | `license:snapshot:{licenseId}:{issuedAt}:{keyId}` | 1 hour | File-watcher change, admin upload, adapter re-mint event, trusted-key change. |
 | Marketplace subscription state | `marketplace:{cloud}:subscription:{subscription_id}` | 1 hour | Webhook event, manual reconciler trigger. |
 | Public-key set | `license:keys:current` | 5 minutes | `IOptionsMonitor<LicenseKeysOptions>` change. |
 | AWS entitlements last seen | `marketplace:aws:entitlements:{customer_id}` | 24 hours | Poll cadence, manual refresh. |
 
-The validator does not cache invalid results; only `Valid(LicenseInfo)` is
+The validator must not cache invalid results; only a valid snapshot can be
 cached, and only after signature verification succeeds.
 
 ---
@@ -638,7 +609,7 @@ cached, and only after signature verification succeeds.
 
 | ActivitySource | Spans |
 |----------------|-------|
-| `Honua.Licensing.Validator` | `validate_license`, `parse_jws`, `verify_signature`, `resolve_kid` |
+| `Honua.Licensing.Validator` | `validate_license`, `parse_envelope`, `verify_signature`, `resolve_key_id` |
 | `Honua.Licensing.Mint` | `mint_license`, `refresh_license`, `verify_marketplace_evidence` |
 | `Honua.Licensing.Aws` | `poll_entitlements`, `register_usage`, `meter_usage`, `submit_mint_request` |
 | `Honua.Licensing.Azure` | `webhook_receive`, `webhook_ack`, `resolve_subscription`, `activate_subscription`, `reconcile_subscription`, `get_operation`, `patch_operation_status`, `meter_usage`, `submit_mint_request` |
@@ -649,7 +620,7 @@ cached, and only after signature verification succeeds.
 |---------|--------|-------|
 | `licenses_issued_total` | `source` | Increments on every successful mint. |
 | `licenses_validated_total` | `result` | One of the `LicenseValidationResult` values. |
-| `licenses_active` | `edition` | Gauge; updated on hot reload. |
+| `licenses_active` | `edition` | Gauge; updated when the active snapshot changes. |
 | `marketplace_metering_records_total` | `cloud`, `result` | `cloud` ∈ `aws`, `azure`; `result` ∈ `enqueued`, `succeeded`, `failed`, `dead_lettered`. |
 | `marketplace_webhook_events_total` | `cloud`, `kind`, `result` | Records inbound webhook deliveries only. `kind` covers the SaaS Fulfillment v2 webhook lifecycle actions: `ChangePlan`, `ChangeQuantity`, `Reinstate`, `Suspend`, `Unsubscribe`, `Renew` (the action names Microsoft sends in the webhook payload). `result` ∈ `ack`, `rejected` — used by the runbook for webhook ACK/SLA health (see `MARKETPLACE_OPERATIONS.md` § Webhook health). The browser-driven `Resolve` and `Activate` landing-page calls are **not** recorded here — they are not webhook deliveries and are observed via the `Honua.Licensing.Azure` `resolve_subscription` / `activate_subscription` route spans instead, so mixing them into this counter would corrupt webhook SLA signals. |
 | `marketplace_reconciler_runs_total` | `cloud`, `result` | Background worker outcomes; `result` ∈ `succeeded`, `failed`, `unsubscribed`, `operation_rejected` (Microsoft `Get Operation` returned 404 — replay or aged-out), `noop_conflict` (Microsoft `Get Operation` returned `status=Conflict` — requested plan / quantity matched the existing value, so no mint and no PATCH are issued). |
@@ -678,20 +649,26 @@ hex). Raw IDs require explicit DEBUG and the redaction policy.
 
 ## 7. Configuration
 
-### 7.1 New options
+### 7.1 Runtime options in ticket #338
 
 ```
-License:File:Path                      = /var/lib/honua/license.honua-license
-License:File:HotReload                 = true
+Licensing:LicensePath                  = /etc/honua/license.honua-license.json
+Licensing:TrustedKeys:honua-2026-q2    = base64url:<32-byte raw Ed25519 public key>
+Licensing:AllowAdminUpload             = false
+Licensing:ExpiryWarningDays            = 30
+```
+
+`Licensing:LicensePath` is optional; empty/unset means Community mode.
+`Licensing:AllowAdminUpload=false` is the default. Runtime configuration changes
+require restart except that admin upload can validate and replace the configured
+file path when upload is enabled.
+
+### 7.2 Follow-on marketplace/mint options
+
+```
 License:Signing:Enabled                = false             # publisher-only
 License:Signing:KeyId                  = honua-2026-q2
 License:Signing:PrivateKeyRef          = secret://...
-License:Keys:0:Kid                     = honua-2026-q2
-License:Keys:0:PublicKey               = base64url:...
-License:Keys:0:NotBefore               = 2026-04-01T00:00:00Z
-License:Keys:0:NotAfter                = 2027-04-01T00:00:00Z
-License:Validation:ClockSkewSeconds    = 60
-
 License:Migration:DualFormatEnabled    = false
 License:Migration:DualFormatDeadline   = 2026-10-26T00:00:00Z
 
@@ -721,16 +698,16 @@ Azure:Marketplace:Mint:CredentialRef   = secret://...
 Mint:RefreshLeadTimeDays               = 14
 ```
 
-All options are validated by `IValidateOptions<T>`. Boolean toggles default
-to `false` so a stock customer build does not load any marketplace dependency
-or signing surface.
+Follow-on options should be validated by `IValidateOptions<T>`. Boolean toggles
+default to `false` so a stock customer build does not load any marketplace
+dependency or signing surface.
 
-### 7.2 Air-gapped deployments
+### 7.3 Air-gapped deployments
 
 An air-gapped install ships with:
 
-- A baked-in primary public key in `Honua.Core` for offline verification.
-- `License:File:Path` pointing at the customer-supplied BYOL file.
+- `Licensing:TrustedKeys:<keyId>` containing the trusted public key.
+- `Licensing:LicensePath` pointing at the customer-supplied BYOL file.
 - All `Aws:Marketplace:*` and `Azure:Marketplace:*` settings unset (or
   `Enabled=false`) so no marketplace SDK code path runs.
 
@@ -743,10 +720,11 @@ URL. This is asserted by an architecture test.
 
 | Layer | Tests | Substrate |
 |-------|-------|-----------|
-| Unit (`Honua.Core.Tests/Features/Licensing/`) | Golden-vector validator suite (≥ 30 vectors covering each `LicenseValidationResult`); JWS parser fuzz cases (truncated, malformed Base64URL, oversize); claim deserialization; clock-skew edges; multi-`kid` resolver including expired keys; signer round-trip. | Pure compute, no fixtures. |
-| Integration (`Honua.Server.Tests/Features/Licensing/`) | Admin mint endpoints (M2M auth, options-disabled `404`); file watcher hot reload; AWS poller against stub `IAmazonMarketplaceEntitlementService`; Azure webhook with stub fulfillment client (10 s SLA assertion); durable buffer fault-injection — metering queue falls back to in-memory while the webhook queue refuses to ACK and returns 5xx (`AzureWebhook_Returns5xxWhenDurableQueueUnavailable`). | Testcontainers + Postgres + Redis + admin scope. |
-| Architecture (`Honua.Architecture.Tests`) | No `Honua.Server` symbols leak into `Honua.Core/Features/Licensing/`; validator class is `sealed`; public types in `Honua.Core/Features/Licensing/Abstractions/` and `Honua.Core/Features/Licensing/Domain/` carry XML docs; mint endpoints registered when (and only when) `License:Signing:Enabled=true`; no `System.IdentityModel.Tokens.Jwt` reference graph reaches `Honua.Core` or `Honua.Server`. | Roslyn analyzers + assembly scan. |
-| Smoke | AOT publish on `linux-x64`, `linux-arm64`, `win-x64`, `osx-arm64`; key-rotation runbook smoke (old + new `kid` coexistence, retirement). | CI matrix. |
+| Unit (`Honua.Core.Tests/Features/Licensing/`) | Feature catalog/domain coverage for edition-gated feature metadata. | Pure compute, no fixtures. |
+| Unit / integration (`Honua.Server.Tests/Features/Licensing/`) | #338 runtime loader tests for no path, missing file, valid signed file, malformed JSON/Base64URL, oversized file, unknown key, invalid signature, expired file, upload size guard, HTTP 402 gate, and gRPC `FailedPrecondition`. | Deterministic Ed25519 test keys plus server fixtures where needed. |
+| Integration (`Honua.Server.Tests/Features/Admin`, `HealthEndpointsTests`) | Admin status/upload/entitlement endpoints and health/monitoring license summaries. | Testcontainers + Postgres + admin auth. |
+| Follow-on integration | Admin mint endpoints, file watcher hot reload, AWS poller, Azure webhook/reconciler, durable buffer fault-injection, public-key inspection, and key-rotation smoke. | Lands with the bounded child tickets that implement those surfaces. |
+| Architecture (`Honua.Architecture.Tests`) | No `Honua.Server` symbols leak into `Honua.Core/Features/Licensing/`; public types in `Honua.Core/Features/Licensing/Abstractions/` and `Honua.Core/Features/Licensing/Domain/` carry XML docs; no controllers. | Roslyn analyzers + assembly scan. |
 
 Per ADR-0011 every endpoint has at least one integration test and the
 `EndpointRegistry` and `OperationRegistry` architecture tests fail closed if
@@ -769,7 +747,7 @@ default 6 months from ADR landing). Behavior:
   `licenses_validated_total{result="legacy_format_accepted"}`.
 - Only legacy parses → accepted with a deprecation warning at INFO
   (`10010` event-id, in the licensing band reserved in § 6.3).
-- Neither parses → `MalformedEnvelope`.
+- Neither parses → `Malformed`.
 
 Operators can monitor un-migrated installs via the deprecation counter and
 re-issue at the next BYOL portal cadence. After the deadline the legacy

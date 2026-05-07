@@ -20,21 +20,21 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 /// exercised directly with a stub <see cref="ILicenseStatusProvider"/> so we
 /// can verify the gate decision in isolation. Confirms the contract documented
 /// at docs/gis/temporal-animation-api.md (`temporal.histogram` is Pro and
-/// Community requests are answered with HTTP 403).
+/// Community requests are answered with HTTP 402).
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerQueryDateBinsEditionGateTests
 {
     [UnitTest]
     [Operation(Operations.QueryDateBins)]
-    public void RequireProEditionForDateBins_CommunityEdition_ReturnsForbidden()
+    public void RequireProEditionForDateBins_CommunityEdition_ReturnsPaymentRequired()
     {
         var context = BuildHttpContext(HonuaEdition.Community);
 
         var result = FeatureServerEndpoints.RequireProEditionForDateBins(context);
 
         result.Should().NotBeNull();
-        AssertForbidden(result!);
+        AssertPaymentRequired(result!);
     }
 
     [UnitTest]
@@ -70,17 +70,17 @@ public sealed class FeatureServerQueryDateBinsEditionGateTests
         };
     }
 
-    private static void AssertForbidden(IResult result)
+    private static void AssertPaymentRequired(IResult result)
     {
         if (result is IStatusCodeHttpResult statusCodeResult)
         {
-            statusCodeResult.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+            statusCodeResult.StatusCode.Should().Be(StatusCodes.Status402PaymentRequired);
             return;
         }
 
         var ctx = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
         result.ExecuteAsync(ctx).GetAwaiter().GetResult();
-        ctx.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        ctx.Response.StatusCode.Should().Be(StatusCodes.Status402PaymentRequired);
     }
 
     private sealed class StubLicenseStatusProvider : ILicenseStatusProvider

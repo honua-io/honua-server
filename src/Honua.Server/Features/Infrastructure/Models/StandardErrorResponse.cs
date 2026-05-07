@@ -84,6 +84,22 @@ internal sealed record StandardErrorResponse(
     }
 
     /// <summary>
+    /// Creates a PaymentRequired StandardErrorResponse.
+    /// </summary>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A PaymentRequired StandardErrorResponse.</returns>
+    public static StandardErrorResponse PaymentRequired(string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        return new StandardErrorResponse(
+            StatusCode: StatusCodes.Status402PaymentRequired,
+            Title: "Payment Required",
+            Detail: detail,
+            AdditionalDetails: additionalDetails
+        );
+    }
+
+    /// <summary>
     /// Creates a NotFound StandardErrorResponse.
     /// </summary>
     /// <param name="detail">The error detail message.</param>

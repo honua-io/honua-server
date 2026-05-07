@@ -252,6 +252,10 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         document.RootElement.GetProperty("status").GetString().Should().Be("healthy");
+        var license = document.RootElement.GetProperty("license");
+        license.GetProperty("edition").GetString().Should().Be("Community");
+        license.GetProperty("validation_state").GetString().Should().Be("NoLicenseConfigured");
+        license.GetProperty("active_entitlements").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]

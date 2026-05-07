@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Licensing;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -18,6 +19,7 @@ namespace Honua.Server.Features.HealthCheck;
 [JsonSerializable(typeof(HealthGcMetrics))]
 [JsonSerializable(typeof(HealthPerformanceErrorResponse))]
 [JsonSerializable(typeof(HealthCacheRefreshMetrics))]
+[JsonSerializable(typeof(LicenseHealthSummary))]
 [JsonSerializable(typeof(DatabasePerformanceMetricsSnapshot))]
 [JsonSerializable(typeof(DatabaseOperationMetricsSnapshot))]
 [JsonSerializable(typeof(Dictionary<string, DatabaseOperationMetricsSnapshot>))]

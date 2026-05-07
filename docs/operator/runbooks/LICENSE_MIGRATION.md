@@ -1,10 +1,14 @@
 # License Migration Runbook
 
 Use this runbook to move existing Honua deployments from any pre-existing
-license file format to the unified Ed25519 / JWS format defined in ADR-0033.
-The migration is **non-forced**: existing BYOL customers continue to operate
-through a configurable dual-format grace window while the unified format
-becomes canonical.
+license file format to the ticket #338 runtime license envelope: a JSON
+envelope with Ed25519 verification over exact payload bytes. ADR-0033 tracks
+the broader marketplace/mint architecture; customer runtimes on this branch
+load the signed JSON envelope described here.
+
+The #338 runtime accepts only this signed JSON envelope. If any customer is
+still on a private-preview license format, treat compatibility as a separate
+bounded follow-on before declaring that deployment migrated.
 
 ---
 
@@ -14,10 +18,10 @@ This runbook applies to:
 
 - BYOL customers running an older Honua release that consumed a private-
   preview license file (if any portal-issued files predate ADR-0033).
-- New BYOL customers receiving canonical-format files from day one.
-- AWS Marketplace and Azure Marketplace customers — adapters mint
-  canonical-format files automatically, so for them this runbook is
-  informational only.
+- New BYOL customers receiving ticket #338 signed JSON license files from day one.
+- AWS Marketplace and Azure Marketplace customers once the marketplace adapter
+  follow-on tickets mint the same runtime envelope. Those adapters are not part
+  of ticket #338.
 
 This runbook does **not** cover:
 
@@ -28,102 +32,144 @@ This runbook does **not** cover:
 
 ## Status / Prerequisites
 
-This runbook documents the canonical Ed25519 / JWS migration contract
-defined in ADR-0033. Several runtime commands below depend on child
-tickets that have **not yet landed on this branch** per ADR-0033 §
-"Bounded Child Tickets":
+This branch includes the runtime load, validation, upload, status, and
+entitlement-check path from ticket #338. Mint-host, marketplace, public-key
+inspection, and Prometheus licensing counters remain separate child work:
 
-| Command surface | Status on `feature/804` | Lands with |
+| Command surface | Current status | Lands with |
 |-----------------|-------------------------|------------|
-| `POST /api/v1/admin/license/upload` | Endpoint registered; the placeholder `ConfigurationLicenseStatusProvider.UploadLicenseAsync` returns HTTP `501 Not Implemented` with `"License upload is not yet supported"`. The canonical Ed25519 / JWS upload path is **not yet operational** — running the migration command on a current build will return 501. | License store + bootstrap child ticket (ADR-0033 § "Bounded Child Tickets" item 3). |
-| `GET /api/v1/admin/license/status` | Operational. Returns the current edition, validity, expiry, and licensed-to fields. | Already in `LicenseAdminEndpoints`. |
-| `GET /api/v1/admin/observability/errors?eventIdMin=10000&eventIdMax=10299` | The endpoint is operational; the licensing event-id band is reserved by ADR-0033 but emitters in the `10000-10299` range only start populating once the validator + license store child tickets land. | Validator + JSON context and License store + bootstrap child tickets. |
-| `licenses_validated_total{result=...}` and `licenses_active{edition=...}` Prometheus counters | Counter shapes are documented in the ADR-0033 § Cross-Cutting Reuse telemetry bullet, but emit only after the validator child ticket lands. | Validator + JSON context child ticket. |
+| `POST /api/v1/admin/license/upload` | Operational through the same validator as startup load. Default `Licensing:AllowAdminUpload=false` returns HTTP `400`; enable it only when uploads are part of the operational workflow. | Landed with ticket #338. |
+| `GET /api/v1/admin/license/status` | Operational. Returns edition, validation state, expiry, license id, licensee, and entitlements. | Landed with ticket #338. |
+| `GET /api/v1/admin/observability/errors` | The endpoint is operational. Runtime licensing emits structured events `10000` through `10009` for no path, missing file, malformed file, unknown key, invalid signature, expired file, successful load, upload rejection/save failure, and entitlement denial. The endpoint returns the recent-error buffer; filter the response client-side for the licensing event-id range. | Landed with ticket #338 for the listed event ids. |
+| `licenses_validated_total{result=...}` and `licenses_active{edition=...}` Prometheus counters | Counter shapes are documented in ADR-0033 but are not emitted by the #338 runtime baseline. | Telemetry counters child ticket. |
 
-The runbook is published ahead of those child tickets so the migration
-contract is reviewable in isolation. Treat every command marked above
-as **prerequisite-bound** and confirm the corresponding child ticket has
-landed before running it on a customer environment.
+Confirm the target release includes ticket #338 before running the upload or
+startup-file migration flow.
 
 ---
 
+## Runtime Envelope
+
+The runtime license file is UTF-8 JSON:
+
+```json
+{
+  "version": 1,
+  "keyId": "honua-2026-q2",
+  "payload": "<base64url-encoded UTF-8 JSON payload bytes>",
+  "signature": "<base64url Ed25519 signature over the payload bytes>"
+}
+```
+
+The decoded payload is also JSON:
+
+```json
+{
+  "schema": "honua.license/v1",
+  "licenseId": "lic_123",
+  "licensedTo": "Example Operator",
+  "edition": "Pro",
+  "issuedAt": "2026-05-06T00:00:00Z",
+  "expiresAt": "2027-05-06T00:00:00Z",
+  "entitlements": ["analytics.clustering"],
+  "metadata": {
+    "source": "byol"
+  }
+}
+```
+
+`schema`, `licenseId`, `licensedTo`, `edition`, and `issuedAt` are required.
+`expiresAt` is optional; when present it must be in the future. `metadata` is an
+optional string-valued map. The file is rejected as `Malformed` when the
+envelope is missing required fields, exceeds the 64 KiB runtime size limit,
+contains invalid Base64URL, or decodes to invalid payload JSON. A `keyId` that
+is absent from `Licensing:TrustedKeys` is `UnknownKey`; a signature mismatch is
+`InvalidSignature`; an expired file is `Expired`.
+
+Community-tier catalog entries are always active. Paid features are active only
+when their catalog key is present in the signed `entitlements` array; the
+operator-facing `edition` value does not automatically activate every paid
+feature in that edition.
+
 ## Core Policy
 
-1. **No forced re-issuance.** Existing BYOL customers must not be required to
-   download a new file before the legacy format reaches its deprecation
-   deadline.
-2. **Roll forward.** New issuances always use the canonical format. Legacy
-   files run through the dual-format verifier until the configured deadline.
-3. **Time-bound the dual path.** The legacy parsing branch is removed in a
-   single PR after the deadline. No indefinite legacy support.
-4. **Telemetry-driven cutover.** Customers are tracked through deprecation
-   counters; the deadline only advances when the in-flight legacy population
-   is small enough that a re-issue sweep is feasible.
+1. **Do not force legacy customers without compatibility.** If a
+   private-preview format exists in production, file a compatibility verifier
+   or customer re-issue plan before upgrading those installs to a #338-only
+   runtime.
+2. **Roll forward for new issuances.** New BYOL files use the signed JSON
+   envelope above.
+3. **No indefinite legacy support.** Any temporary legacy branch must have a
+   removal ticket, deadline, and source-backed inventory of affected customers.
+4. **Evidence-driven cutover.** Use admin status, runtime logs, and deployment
+   inventory for #338. Prometheus license counters remain a follow-on signal.
 
 ---
 
 ## Pre-Migration Checklist
 
-Before enabling the dual-format verifier in production, verify on a non-
-production environment (requires the License store + bootstrap child
-ticket — see § "Status / Prerequisites" above):
+Before deploying a signed license file to production, verify on a non-
+production environment:
 
 ```bash
-# Confirm canonical format validates end-to-end
-# (returns HTTP 501 until the License store + bootstrap child ticket lands)
+# Optional: confirm upload validates end-to-end after temporarily setting
+# Licensing:AllowAdminUpload=true and configuring Licensing:LicensePath.
 curl -X POST -H "X-API-Key: <admin-key>" \
   -H "Content-Type: application/octet-stream" \
-  --data-binary @canonical.honua-license \
+  --data-binary @license.honua-license.json \
   "https://<host>/api/v1/admin/license/upload"
 
-# Confirm health surfaces edition + expiry
+# Confirm status surfaces edition, validation state, and entitlements.
 curl -H "X-API-Key: <admin-key>" \
   "https://<host>/api/v1/admin/license/status"
 ```
 
 Verify:
-- The status response shows `issuance_source` matching the file's payload
-  claim.
-- `IsValid=true`, `Edition` matches expected, and `ExpiresAt` is in the
-  future.
-- The validator counter `licenses_validated_total{result="valid"}` ticks
-  upward.
+- `validationState=Valid`, `isValid=true`, `edition` matches expected, and
+  `expiresAt` is either absent/perpetual or in the future.
+- `licenseId`, `licensedTo`, and active entitlements match the issued file.
+- `/healthz/metrics` and `/monitoring/health/production` include the same
+  license state under `license`. `/api/v1/metrics/health` does not include
+  license state in the #338 baseline.
 
 ---
 
 ## Configuration
 
-The dual-format verifier is gated by configuration so the legacy parsing
-branch only runs when explicitly enabled:
+Runtime license loading is controlled by:
 
 ```
-License:Migration:DualFormatEnabled    = true
-License:Migration:DualFormatDeadline   = 2026-10-26T00:00:00Z
+Licensing:LicensePath                  = /etc/honua/license.honua-license.json
+Licensing:TrustedKeys:<key-id>         = base64url:<32-byte raw Ed25519 public key>
+Licensing:AllowAdminUpload             = false
+Licensing:ExpiryWarningDays            = 30
 ```
 
 | Setting | Type | Notes |
 |---------|------|-------|
-| `License:Migration:DualFormatEnabled` | bool | When `false`, only the canonical format parses. Default `false`. |
-| `License:Migration:DualFormatDeadline` | RFC 3339 timestamp | After this instant the legacy branch is bypassed. The deadline is informational once the code path is removed; until then it controls runtime behavior. |
+| `Licensing:LicensePath` | string | Optional path to the signed license file. Empty/unset runs Community mode. |
+| `Licensing:TrustedKeys:<key-id>` | string | Trusted raw Ed25519 public key as `base64url:<key>`, unprefixed Base64URL, or `base64:<key>`. The license envelope `keyId` must match this entry. |
+| `Licensing:AllowAdminUpload` | bool | Enables admin upload to `LicensePath`. Default `false`. |
+| `Licensing:ExpiryWarningDays` | int | Warning threshold surfaced in admin status. Default `30`. |
 
 Apply the change through the standard configuration channel (env var,
 `appsettings.Production.json`, Helm values, or the configured secret store).
-A restart is **not** required — the validator picks up the change through
-`IOptionsMonitor<LicenseMigrationOptions>`.
+A restart is required for startup load. Admin upload, when enabled, validates
+and atomically replaces the configured file path at runtime.
 
 ---
 
 ## Migration Phases
 
-### Phase 1 — Land canonical format
+### Phase 1 — Land signed JSON envelope
 
-1. Deploy the release that includes ADR-0033 and the validator (child
-   ticket: validator + JSON context).
-2. Leave `License:Migration:DualFormatEnabled=false`.
-3. Re-issue all existing in-house and staging files in canonical format.
-4. Verify the validator counter shows
-   `licenses_validated_total{result="valid"}` matching expected install
-   count.
+1. Deploy the release that includes ticket #338.
+2. Configure `Licensing:TrustedKeys:<key-id>` on every instance.
+3. Re-issue all existing in-house and staging files as signed JSON envelopes.
+4. Configure `Licensing:LicensePath` and restart, or enable
+   `Licensing:AllowAdminUpload=true` for the migration window and upload the
+   file through `/api/v1/admin/license/upload`.
+5. Verify `/api/v1/admin/license/status` shows `validationState=Valid`.
 
 ### Phase 2 — Enable dual-format verifier (only if a legacy format exists)
 
@@ -131,27 +177,16 @@ This phase only runs if the BYOL portal in a separate repo shipped a
 private-preview format before ADR-0033 landed. If no legacy format exists,
 skip directly to Phase 4.
 
-1. Set `License:Migration:DualFormatEnabled=true` and a future
-   `License:Migration:DualFormatDeadline` (default 6 months from ADR-0033
-   landing).
-2. Confirm via test that:
-   - Canonical files validate (`result="valid"`).
-   - Legacy files validate with a deprecation warning
-     (`result="legacy_format_accepted"`).
-   - Garbage payloads fail with `result="malformed_envelope"`.
-3. Roll out to production.
+No dual-format verifier ships in ticket #338. If a legacy private-preview
+format exists, open a bounded follow-on ticket for the compatibility verifier
+before attempting this phase. Until that lands, only the signed JSON envelope
+loads.
 
 ### Phase 3 — Re-issue cadence and tracking
 
-1. Track un-migrated installs via the deprecation counter:
-
-   ```
-   licenses_validated_total{result="legacy_format_accepted"}
-   ```
-
-   Any non-zero rate indicates legacy files still in play. Per-deployment
-   visibility comes from the structured log emitter (event-id `10010`) which
-   records the `license_id` (full only at DEBUG, hashed at INFO).
+1. Track un-migrated installs through deployment inventory and the admin
+   license status response. Runtime licensing emits structured validation
+   state logs in the `10000`-`10009` event-id range.
 2. Coordinate with the portal team to re-issue legacy files in canonical
    format on the customer's next renewal touchpoint. **Do not** force an
    out-of-cycle download.
@@ -161,20 +196,12 @@ skip directly to Phase 4.
 
 ### Phase 4 — Cutover
 
-When the legacy counter has been zero for 14 consecutive days **and** the
-deadline has passed:
+When every deployment has loaded a valid signed JSON license:
 
-1. Open the cutover PR. The PR removes:
-   - The legacy parsing branch in the validator.
-   - `LicenseMigrationOptions.DualFormatEnabled` and `DualFormatDeadline`
-     options binding.
-   - The `licenses_validated_total{result="legacy_format_accepted"}`
-     metric label literal (the label is now unreachable).
-   - The deprecation log emitter (`10010`).
-2. Land the cutover PR. After release, attempts to parse a legacy file
-   return `MalformedEnvelope` (the same code path as a corrupt canonical
-   file).
-3. Update this runbook to record the cutover date and remove this section.
+1. Disable `Licensing:AllowAdminUpload` unless ongoing uploads are part of
+   the operating model.
+2. Remove legacy files from configuration management and secret stores.
+3. Update this runbook to record the cutover date.
 
 ---
 
@@ -187,23 +214,17 @@ Per phase, verify with:
 curl -H "X-API-Key: <admin-key>" \
   "https://<host>/api/v1/admin/license/status"
 
-# Validator + entitlement metrics (Prometheus scrape)
-curl https://<host>/metrics | grep licenses_validated_total
-curl https://<host>/metrics | grep licenses_active
-
 # Recent license-related logs (admin observability)
 curl -H "X-API-Key: <admin-key>" \
-  "https://<host>/api/v1/admin/observability/errors?eventIdMin=10000&eventIdMax=10299"
+  "https://<host>/api/v1/admin/observability/errors"
 ```
 
-Expected after Phase 1: `licenses_validated_total{result="valid"}`
-increments; `licenses_active{edition="..."}` reflects the running
-deployment.
+Expected after Phase 1: status shows `validationState=Valid`,
+`isValid=true`, expected `edition`, and the signed entitlement set.
 
-Expected during Phase 2/3: zero rate of `result="signature_invalid"`,
-`result="expired"`, or `result="malformed_envelope"` for in-flight customer
-files. A `legacy_format_accepted` rate that does not trend downward
-indicates customer outreach is needed.
+Expected during Phase 2/3: no `Malformed`, `UnknownKey`,
+`InvalidSignature`, or `Expired` validation states for in-flight customer
+files.
 
 ---
 
@@ -213,26 +234,20 @@ If the validator regresses on canonical files after a release:
 
 1. Roll back the application to the previous release that loaded canonical
    files successfully (see `UPGRADE_AND_ROLLBACK.md`).
-2. Set `License:Migration:DualFormatEnabled=true` if it is not already.
+2. Confirm the previous release still trusts the signing key used for the
+   currently deployed license files.
 3. Page the licensing on-call.
 
-If the validator regresses on legacy files during the dual-format window:
-
-1. Confirm `License:Migration:DualFormatEnabled=true` is loaded — check
-   `/api/v1/admin/config` (admin-scoped) for the effective value.
-2. If the option is disabled in higher-precedence configuration (env var
-   override), set it via the highest-precedence channel and verify reload
-   through the configuration counter.
-3. If the dual-format flag is correct and legacy parses still fail, capture
-   the offending file's `license_id` (DEBUG log channel) and escalate.
-
-The legacy parser is intentionally a thin compatibility shim — it does not
-become the canonical path. **Never** disable the canonical format to "let
-legacy keep working"; that defeats the migration.
+If a follow-on dual-format verifier is later introduced, document its rollback
+knobs in that ticket. The #338 baseline has no legacy parser.
 
 ---
 
 ## Communication Templates
+
+Only use the dual-format templates below if a follow-on compatibility verifier
+has shipped. The #338-only runtime cannot promise that legacy files continue to
+load.
 
 ### Customer notification — dual format enabled
 
@@ -255,7 +270,7 @@ legacy keep working"; that defeats the migration.
 > Removes the dual-format verifier branch per ADR-0033 § Migration. The
 > `licenses_validated_total{result="legacy_format_accepted"}` counter has
 > been zero for `<N>` days; the deadline `<DEADLINE>` has passed. After
-> this PR, files in the legacy format return `MalformedEnvelope`. The
+> this PR, files in the legacy format return `Malformed`. The
 > migration runbook has been updated to record the cutover.
 
 ---
@@ -265,8 +280,10 @@ legacy keep working"; that defeats the migration.
 The migration is complete when:
 
 - All in-flight customer license files validate as canonical.
-- `licenses_validated_total{result="legacy_format_accepted"}` has been
-  zero for 14 consecutive days.
+- Deployment inventory and admin status show no remaining legacy files. If a
+  follow-on dual-format verifier adds `licenses_validated_total`, require
+  `licenses_validated_total{result="legacy_format_accepted"}` to stay zero for
+  14 consecutive days before removal.
 - The configured deadline has passed.
 - The cutover PR is merged.
 - This runbook is updated with the cutover date and the time-bound section

@@ -5,6 +5,8 @@ using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Server.Tests.Features.Licensing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -23,7 +25,8 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Operation(Operations.GetTile)]
 public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = WebAppFixture.TestLayerId;
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();

@@ -16,6 +16,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -49,7 +50,7 @@ internal static class FeatureStreamEndpoints
                              "Query params: cursor (resume from cursor), clientLabel, serviceId, " +
                              "layerIds/layers (comma-separated layer filter), bbox (WGS84; requires exactly one layer), filter, filter-lang.")
             .ProducesProblem(StatusCodes.Status400BadRequest)
-            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .AllowAnonymous();
 
         streamGroup.MapGet("/features/capabilities", HandleCapabilities)
@@ -137,8 +138,11 @@ internal static class FeatureStreamEndpoints
         HttpContext context)
     {
         var options = deps.Options.Value;
-        var edition = deps.LicenseStatusProvider.GetCurrentStatus().Edition;
-        var enabled = edition >= HonuaEdition.Pro;
+        var streamDecision = LicenseGate.CheckEntitlement(
+            context.RequestServices,
+            "streaming.feature-subscriptions");
+        var edition = streamDecision.Edition;
+        var enabled = streamDecision.IsActive;
         var layers = await deps.LayerCatalog.ListLayersAsync(context.RequestAborted).ConfigureAwait(false);
         var services = await deps.LayerCatalog.ListServicesAsync(context.RequestAborted).ConfigureAwait(false);
         // Resolve the primary service per layer so the access check evaluates
@@ -486,16 +490,11 @@ internal static class FeatureStreamEndpoints
         HttpContext context,
         ILogger logger)
     {
-        var edition = deps.LicenseStatusProvider.GetCurrentStatus().Edition;
-        if (edition >= HonuaEdition.Pro)
-        {
-            return null;
-        }
-
-        FeatureStreamLog.EditionGateBlocked(logger, edition.ToString());
-        return StandardErrorHelpers.CreateForbidden(
+        return LicenseGate.RequireEntitlement(
             context,
-            $"Feature streaming requires the Pro edition or higher. Current edition: {edition}.");
+            "streaming.feature-subscriptions",
+            "Feature streaming",
+            logger);
     }
 
     private static IResult? RequireAdminForUnfilteredStream(HttpContext context)

@@ -18,10 +18,11 @@ This runbook does **not** cover:
 This runbook documents the canonical AWS Marketplace and Azure
 Marketplace adapter contract defined in ADR-0033. **None of the
 marketplace adapter routes, services, or telemetry counters described
-below are present on `feature/804`.** They land with the AWS and Azure
-adapter child tickets per ADR-0033 § "Bounded Child Tickets":
+below are present in the ticket #338 runtime baseline.** They land with
+the AWS and Azure adapter child tickets per ADR-0033 § "Bounded Child
+Tickets":
 
-| Surface | Status on `feature/804` | Lands with |
+| Surface | Status on ticket #338 | Lands with |
 |---------|-------------------------|------------|
 | `POST /api/v1/admin/marketplace/aws/reconcile` | Route is **not yet registered** in `EndpointRegistry`. The CONTROL_PLANE_API contract lists it under "land with the AWS marketplace adapter child ticket". A current build returns HTTP 404. | AWS marketplace adapter child ticket. |
 | `POST /api/v1/admin/marketplace/azure/reconcile` | Route is **not yet registered**. A current build returns HTTP 404. | Azure marketplace adapter child ticket. |
@@ -184,7 +185,7 @@ emits event-id `10320`.
 | Validator reports `Expired` for an adapter-issued file. | Adapter has been failing to re-mint for at least `RefreshLeadTime`. | Inspect adapter and reconciler logs (event-id band `10300-10499`). The poller cadence may need shortening. |
 | `RegisterUsage` fails on container start. | Container is not a marketplace-purchased SKU, or task role lacks `aws-marketplace:RegisterUsage`. | Verify the deployment was launched from a marketplace AMI / EKS marketplace add-on. Check the task IAM policy. |
 | Metering buffer depth not draining. | AWS API throttling or transient outage; or worker stalled. | Inspect `marketplace_metering_records_total` by `result`. Restart the metering worker if needed; AWS API outages resolve themselves through the retry-with-backoff loop. |
-| `licenses_validated_total{result="signature_invalid"}` after deploy. | Adapter credentials point at the wrong mint host; mint host signed with a key the customer fleet does not trust. | Confirm `Aws:Marketplace:Mint:BaseUrl` and the public-key set (`License:Keys`). |
+| `licenses_validated_total{result="signature_invalid"}` after deploy. | Adapter credentials point at the wrong mint host; mint host signed with a key the customer fleet does not trust. | Confirm `Aws:Marketplace:Mint:BaseUrl` and the runtime public-key set (`Licensing:TrustedKeys`). |
 
 ### Optional: AWS License Manager seller-issued path
 

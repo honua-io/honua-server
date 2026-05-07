@@ -228,16 +228,17 @@ repository as a schema and worked-example reference (linked, attributed,
 not vendored), and keep the Philadelphia Buildings layer as the manual
 ArcGIS Scene Viewer smoke target only.
 
-## Enterprise gating, licensing, and support boundary
+## Enterprise entitlement gating, licensing, and support boundary
 
-I3S support is **Enterprise edition only** end-to-end. Open-core builds MUST
-NOT advertise I3S as a supported protocol. Specifically:
+I3S support is **Enterprise catalog tier** end-to-end. Open-core builds MUST
+NOT advertise I3S as a supported protocol unless an active I3S entitlement is
+present. Specifically:
 
-- **Capabilities / discovery**: I3S routes return `403 Feature requires
-  Enterprise edition` rather than `404` when the feature is not licensed.
-  This mirrors the existing edition gate used by PrintingTools layout
-  templates and the spatial analytics extensions, and lets clients detect
-  the protocol boundary distinctly from "no such service".
+- **Capabilities / discovery**: planned I3S routes return `402 Payment
+  Required` with an Enterprise entitlement message rather than `404` when the
+  entitlement is inactive. This mirrors the shared entitlement gate used by
+  PrintingTools layout templates and the spatial analytics extensions, and lets
+  clients detect the protocol boundary distinctly from "no such service".
 - **Service catalog**: open-core service catalog responses MUST NOT include
   `SceneServer` entries even when a layer otherwise qualifies. Enterprise
   catalog responses include them when the layer's `EnabledProtocols` list
@@ -366,9 +367,10 @@ that are wrong before child issues are opened.
    a vendorable fixture corpus, so no third-party I3S fixtures are
    committed. Acceptable, or should we invest in sourcing a separately
    licensed real-world fixture before the conformance harness ships?
-5. **Open-core discoverability.** Recommendation: I3S routes return `403
-   Feature requires Enterprise edition` (consistent with PrintingTools
-   layout templates and Pro-tier spatial analytics). Acceptable, or should
+5. **Open-core discoverability.** Recommendation: I3S routes return `402
+   Payment Required` with an Enterprise entitlement message (consistent with
+   the shared license gate used by spatial analytics and temporal
+   raster features). Acceptable, or should
    I3S be fully absent from open-core routing?
 
 ## Acceptance-criteria mapping
