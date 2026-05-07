@@ -124,7 +124,7 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          set -e
+          set +e
           mkdir -p docker/client-compat/output/${{ matrix.lane }}
 
           DOCKER_BUILDKIT=1 docker build \
@@ -132,19 +132,27 @@ jobs:
             --secret id=github_token,env=GITHUB_TOKEN \
             -t honua-server:client-compat \
             .
+          build_exit=$?
 
-          docker compose -f docker/client-compat/compose.yml \
-            --profile ${{ matrix.lane }} \
-            build seed ${{ matrix.lane }}
+          if [[ "$build_exit" -eq 0 ]]; then
+            docker compose -f docker/client-compat/compose.yml \
+              --profile ${{ matrix.lane }} \
+              build seed ${{ matrix.lane }}
+            build_exit=$?
+          fi
 
-          set +e
-          docker compose -f docker/client-compat/compose.yml \
-            --profile ${{ matrix.lane }} \
-            up --no-build --abort-on-container-exit \
-            --exit-code-from ${{ matrix.lane }} \
-            ${{ matrix.lane }}
-          exit_code=$?
-          docker compose -f docker/client-compat/compose.yml down --remove-orphans
+          if [[ "$build_exit" -ne 0 ]]; then
+            exit_code="$build_exit"
+          else
+            docker compose -f docker/client-compat/compose.yml \
+              --profile ${{ matrix.lane }} \
+              up --no-build --abort-on-container-exit \
+              --exit-code-from ${{ matrix.lane }} \
+              ${{ matrix.lane }}
+            exit_code=$?
+          fi
+
+          docker compose -f docker/client-compat/compose.yml down --remove-orphans || true
           echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
           # Don't fail this job — baseline-diff is the regression gate.
           exit 0
@@ -166,6 +174,7 @@ jobs:
   baseline-diff:
     name: Baseline diff and gap report
     needs: [prepare, matrix]
+    if: ${{ always() && needs.prepare.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -182,6 +191,7 @@ jobs:
 
       - name: Download all lane artifacts
         uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
           path: artifacts
           pattern: '*-client-compat-*'

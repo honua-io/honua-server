@@ -4,6 +4,7 @@
 -- changes do not silently alter certification evidence for the same seed name.
 
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_raster;
 
 CREATE SCHEMA IF NOT EXISTS honua;
 
@@ -113,6 +114,48 @@ CREATE TABLE IF NOT EXISTS honua.layer_fields (
     PRIMARY KEY (layer_id, field_name)
 );
 
+CREATE TABLE IF NOT EXISTS honua.raster_data (
+    id BIGSERIAL PRIMARY KEY,
+    layer_id INTEGER NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    raster raster NOT NULL,
+    acquisition_date TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ,
+    width INTEGER GENERATED ALWAYS AS (ST_Width(raster)) STORED,
+    height INTEGER GENERATED ALWAYS AS (ST_Height(raster)) STORED,
+    band_count INTEGER GENERATED ALWAYS AS (ST_NumBands(raster)) STORED,
+    pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
+    srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
+);
+
+CREATE TABLE IF NOT EXISTS honua.raster_statistics (
+    id BIGSERIAL PRIMARY KEY,
+    raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+    band_number INTEGER NOT NULL,
+    min_value DOUBLE PRECISION,
+    max_value DOUBLE PRECISION,
+    mean_value DOUBLE PRECISION,
+    std_dev DOUBLE PRECISION,
+    valid_pixel_count BIGINT,
+    nodata_pixel_count BIGINT,
+    computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT raster_statistics_unique_band UNIQUE (raster_data_id, band_number)
+);
+
+CREATE TABLE IF NOT EXISTS honua.raster_tiles (
+    id BIGSERIAL PRIMARY KEY,
+    raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+    zoom_level INTEGER NOT NULL,
+    tile_x INTEGER NOT NULL,
+    tile_y INTEGER NOT NULL,
+    tile_data BYTEA NOT NULL,
+    content_type VARCHAR(50) NOT NULL DEFAULT 'image/png',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT raster_tiles_unique_tile UNIQUE (raster_data_id, zoom_level, tile_x, tile_y)
+);
+
 CREATE TABLE IF NOT EXISTS honua.attachments (
     id BIGSERIAL PRIMARY KEY,
     feature_id BIGINT NOT NULL,
@@ -192,6 +235,12 @@ CREATE INDEX IF NOT EXISTS idx_relationships_related_layer_id ON honua.relations
 CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
 CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
 CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
+CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id ON honua.raster_data(layer_id);
+CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id_id ON honua.raster_data(layer_id, id);
+CREATE INDEX IF NOT EXISTS idx_raster_data_acquisition_date ON honua.raster_data(acquisition_date);
+CREATE INDEX IF NOT EXISTS idx_raster_data_layer_acquisition ON honua.raster_data(layer_id, acquisition_date DESC, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_raster_statistics_raster_data_id ON honua.raster_statistics(raster_data_id);
+CREATE INDEX IF NOT EXISTS idx_raster_tiles_lookup ON honua.raster_tiles(raster_data_id, zoom_level, tile_x, tile_y);
 CREATE INDEX IF NOT EXISTS ix_fco_dispatch ON honua.feature_change_outbox (created_at) WHERE status IN ('pending', 'failed');
 CREATE INDEX IF NOT EXISTS ix_fco_claim_recovery ON honua.feature_change_outbox (claim_expires_at) WHERE status = 'claimed';
 CREATE INDEX IF NOT EXISTS ix_fco_dead_lettered ON honua.feature_change_outbox (created_at) WHERE status = 'dead_lettered';
