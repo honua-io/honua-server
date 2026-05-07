@@ -1,7 +1,7 @@
 # Cesium client interop lane. Uses the official Playwright image so headless
 # Chromium with WebGL works without further configuration.
 
-FROM mcr.microsoft.com/playwright:v1.52.0-noble
+FROM mcr.microsoft.com/playwright:v1.59.1-noble
 
 ENV DEBIAN_FRONTEND=noninteractive \
     NODE_OPTIONS="--max-old-space-size=4096" \

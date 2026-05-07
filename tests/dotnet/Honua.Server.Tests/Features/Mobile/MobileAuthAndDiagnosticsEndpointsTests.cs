@@ -19,9 +19,6 @@ namespace Honua.Server.Tests.Features.Mobile;
 [Operation(Operations.Security)]
 public sealed class MobileAuthAndDiagnosticsEndpointsTests : IAsyncLifetime
 {
-    private const string OAuthTokenPath = "/oauth/token";
-    private const string ExceptionUploadPath = "/api/mobile/exceptions";
-
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .ConfigureWebHost(builder =>
         {
@@ -51,7 +48,7 @@ public sealed class MobileAuthAndDiagnosticsEndpointsTests : IAsyncLifetime
     public async Task TokenRefresh_WithDevelopmentRefreshToken_ReturnsBearerRefreshPayload()
     {
         using var response = await _anonymousClient.PostAsync(
-            OAuthTokenPath,
+            "/oauth/token",
             Json("""{"refreshToken":"refresh-token"}"""));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -69,7 +66,7 @@ public sealed class MobileAuthAndDiagnosticsEndpointsTests : IAsyncLifetime
     public async Task TokenRefresh_WithInvalidRefreshToken_ReturnsUnauthorized()
     {
         using var response = await _anonymousClient.PostAsync(
-            OAuthTokenPath,
+            "/oauth/token",
             Json("""{"refreshToken":"wrong-refresh-token"}"""));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -80,7 +77,7 @@ public sealed class MobileAuthAndDiagnosticsEndpointsTests : IAsyncLifetime
     public async Task ExceptionUpload_WithApiKey_ReturnsAccepted()
     {
         using var response = await _adminClient.PostAsync(
-            ExceptionUploadPath,
+            "/api/mobile/exceptions",
             Json("""
                 {
                   "id": "mobile-exception-test",
@@ -103,7 +100,7 @@ public sealed class MobileAuthAndDiagnosticsEndpointsTests : IAsyncLifetime
     public async Task ExceptionUpload_WithoutApiKey_ReturnsUnauthorized()
     {
         using var response = await _anonymousClient.PostAsync(
-            ExceptionUploadPath,
+            "/api/mobile/exceptions",
             Json("""{"id":"mobile-exception-test","source":"live-image-test"}"""));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

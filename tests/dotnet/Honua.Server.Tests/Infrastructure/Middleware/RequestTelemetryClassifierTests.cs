@@ -33,6 +33,9 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/stac/search", HonuaTelemetry.Protocols.Stac)]
     [InlineData("/terrain/0/tile.json", HonuaTelemetry.Protocols.Terrain)]
     [InlineData("/terrain/0/0/0/0.png", HonuaTelemetry.Protocols.Terrain)]
+    [InlineData("/scenes/nvidia-construction/tileset.json", "Scene-3DTiles")]
+    [InlineData("/scenes/nvidia-construction/tiles/structure.b3dm", "Scene-3DTiles")]
+    [InlineData("/scenes/nvidia-construction/exports/openusd/stage.usda", "openusd")]
     [InlineData("/api/v1/tiles/pmtiles/world/42/WebMercatorQuad.pmtiles", HonuaTelemetry.Protocols.PMTiles)]
     [InlineData("/api/v1/tiles/pmtiles/abcdef", HonuaTelemetry.Protocols.PMTiles)]
     public void ResolveProtocol_KnownSurface_ReturnsExpectedProtocol(string path, string expectedProtocol)
@@ -121,6 +124,10 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/stac/search", "search.get")]
     [InlineData("/terrain/0/tile.json", "terrain.metadata")]
     [InlineData("/terrain/0/0/0/0.png", "terrain.tile")]
+    [InlineData("/scenes/nvidia-construction/tileset.json", "scene.tileset")]
+    [InlineData("/scenes/nvidia-construction/access-envelope", "scene.access-envelope")]
+    [InlineData("/scenes/nvidia-construction/tiles/structure.b3dm", "scene.asset")]
+    [InlineData("/scenes/nvidia-construction/exports/openusd/stage.usda", "scene.openusd.manifest")]
     public void ResolveOperation_KnownSurface_ReturnsExpectedOperation(string path, string expectedOperation)
     {
         var context = new DefaultHttpContext();

@@ -208,14 +208,14 @@ No terrain tileset is committed. The demo client should use Cesium's
 
 ## OpenUSD / Omniverse handoff
 
-This fixture is served as hosted OGC 3D Tiles to CesiumJS. An OpenUSD or
-Omniverse export is **not** part of the demo. The conservative export-path
-recommendation — a USDA text-format stage manifest that preserves scene
-metadata and source references for inspection in NVIDIA tooling — is
-documented in
+This fixture is served as hosted OGC 3D Tiles to CesiumJS. It can also be
+exported through the Pro preview USDA stage manifest route at
+`/scenes/nvidia-construction/exports/openusd/stage.usda`, which preserves scene
+metadata and source references for inspection in NVIDIA tooling. This remains
+metadata-only; native USD geometry conversion, Omniverse/Nucleus publishing,
+and Unreal runtime integration are still separate follow-ups documented in
 [OpenUSD and Omniverse Export Path](../gis/openusd-omniverse-export-path.md)
-(`honua-server-901`); the bounded first-artifact implementation is tracked in
-`honua-server-904`.
+(`honua-server-901`, first artifact `honua-server-904`).
 
 ## Drone / point-cloud / reality-capture handoff
 

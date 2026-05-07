@@ -395,6 +395,7 @@ public static class EndpointRegistry
 
         // Hosted 3D Tiles scene serving (#837).
         new("POST", "/scenes/{sceneId}/access-envelope"),
+        new("GET", "/scenes/{sceneId}/exports/openusd/stage.usda"),
         new("GET", "/scenes/{sceneId}/tileset.json"),
         new("HEAD", "/scenes/{sceneId}/tileset.json"),
         new("GET", "/scenes/{sceneId}/{*assetPath}"),

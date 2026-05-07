@@ -1,0 +1,283 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260507T140536Z",
+  "run_date": "2026-05-07T14:05:39.990Z",
+  "server_version": "unknown",
+  "client_lane": "js",
+  "client_version": "10.8.0",
+  "protocol": "ogc-features",
+  "environment": "ci",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 6,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OGC Features landing page returns links array",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 7,
+      "measured_count": 26,
+      "measured_delta": null,
+      "notes": "26 conformance classes returned",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": 16,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Collection '2000' metadata retrieved",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": 15,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Queryables JSON Schema returned",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "pass",
+      "duration_ms": 9,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "limit=2 honoured",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "pass",
+      "duration_ms": 12,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "offset=2 returned different feature set",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Not covered by this test suite",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending-fixture: visual / style slice ID not yet substantiated by this lane; tracked in visual-style-certification-slice.md",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending-fixture: visual / style slice ID not yet substantiated by this lane; tracked in visual-style-certification-slice.md",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending-fixture: visual / style slice ID not yet substantiated by this lane; tracked in visual-style-certification-slice.md",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "pending-fixture: visual / style slice ID not yet substantiated by this lane; tracked in visual-style-certification-slice.md",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 16,
+    "not_applicable": 2
+  },
+  "cite_results": null,
+  "extensions": [
+    {
+      "test_case_id": "JS-EXT-OL-ITEMS-01",
+      "status": "pass",
+      "duration_ms": 69,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "3 features returned (unfiltered listing)",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "JS-EXT-OL-GEOJSON-01",
+      "status": "pass",
+      "duration_ms": 1,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "ol/format/GeoJSON parsed 3 features, 3 with geometry",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "JS-EXT-OL-GEOJSON-02",
+      "status": "pass",
+      "duration_ms": 73,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Single item '11' fetched and parsed by ol/format/GeoJSON",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "JS-EXT-OL-COLL-01",
+      "status": "pass",
+      "duration_ms": 3,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "4 collections discovered",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "JS-EXT-OL-ITEMTYPE-01",
+      "status": "pass",
+      "duration_ms": 3,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "itemType: feature (not a geometry type signal per OGC spec)",
+      "evidence_ref": ""
+    }
+  ]
+}

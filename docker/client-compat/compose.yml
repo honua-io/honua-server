@@ -23,10 +23,22 @@ services:
       POSTGRES_DB: honua_compat
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: compat_password
+      POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
     networks:
       - compat
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly no
+    networks:
+      - compat
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -64,16 +76,23 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:5000
+      Kestrel__Endpoints__Http__Url: http://+:5000
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Kestrel__Endpoints__Grpc__Url: http://+:5001
+      Kestrel__Endpoints__Grpc__Protocols: Http2
       PUBLIC_BASE_URL: http://honua:5000
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
       ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
+      ConnectionStrings__Redis: redis:6379
       Security__ConnectionEncryption__MasterKey: test-master-key-that-is-at-least-32-characters-long-for-security
       Security__ConnectionEncryption__Salt: dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       seed:
         condition: service_completed_successfully
@@ -134,6 +153,8 @@ services:
       dockerfile: docker/client-compat/openlayers/Dockerfile
     environment:
       HONUA_BASE_URL: http://honua:5000
+      HONUA_SERVICE_ID: browser_compat
+      HONUA_LAYER_ID: "2000"
     depends_on:
       honua:
         condition: service_healthy

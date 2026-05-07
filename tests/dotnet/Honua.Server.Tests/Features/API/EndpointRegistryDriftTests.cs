@@ -174,24 +174,20 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "Architecture")]
-    public void EndpointCoverageSuite_EndpointAttributesAreBackedByHttpRequests()
+    public void AllEndpointRegistryEntries_AreBackedByHttpRequests()
     {
-        var sourceRoot = FindServerTestSourceRoot();
-        var sourcePath = Path.Combine(sourceRoot, "Features", "API", "EndpointCoverageTests.cs");
-        var source = File.ReadAllText(sourcePath);
-        var declaredEndpoints = _endpointAttributeRegex
-            .Matches(source)
-            .Select(match => NormalizeEndpointKey(match.Groups[1].Value))
+        var declaredEndpoints = EndpointRegistry.All
+            .Select(endpoint => NormalizeEndpointKey($"{endpoint.Method} {endpoint.Path}"))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var endpointLevelTests = CollectEndpointLevelIntegrationTestEndpoints(declaredEndpoints, sourcePath);
+        var endpointLevelTests = CollectEndpointLevelIntegrationTestEndpoints(declaredEndpoints);
         var metadataOnly = declaredEndpoints
             .Where(endpoint => !endpointLevelTests.Contains(endpoint))
             .OrderBy(endpoint => endpoint)
             .ToArray();
 
         metadataOnly.Should().BeEmpty(
-            "EndpointCoverageTests is the broad API-surface smoke suite, so each [Endpoint] there must be backed by a same-method HTTP request");
+            "every EndpointRegistry entry must be backed by a same-method HTTP request somewhere in the integration suite");
     }
 
     [Fact]
@@ -468,11 +464,32 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
             "PUT" => @"(?:\.Put(?:AsJson)?|Put\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Put\s*,",
             "PATCH" => @"(?:\.Patch(?:AsJson)?|Patch\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Patch\s*,",
             "DELETE" => @"(?:\.Delete|Delete\w*)Async\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Delete\s*,",
+            "HEAD" => @"new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Head\s*,",
             _ => null
         };
 
-        return pattern is not null &&
-            Regex.IsMatch(methodBody, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (pattern is not null &&
+            Regex.IsMatch(methodBody, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            return true;
+        }
+
+        var literalHttpMethodPattern =
+            $@"new\s+HttpRequestMessage\s*\(\s*new\s+HttpMethod\s*\(\s*""{Regex.Escape(method.ToUpperInvariant())}""\s*\)\s*,";
+        if (Regex.IsMatch(
+                methodBody,
+                literalHttpMethodPattern,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            return true;
+        }
+
+        var dynamicHttpMethodPattern =
+            $@"new\s+HttpMethod\s*\(\s*\w+\s*\).*""{Regex.Escape(method.ToUpperInvariant())}""|""{Regex.Escape(method.ToUpperInvariant())}"".*new\s+HttpMethod\s*\(\s*\w+\s*\)";
+        return Regex.IsMatch(
+            methodBody,
+            dynamicHttpMethodPattern,
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline);
     }
 
     private static string BuildSourcePathRegex(string routePath)
@@ -492,7 +509,9 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                 }
             }
 
-            builder.Append(Regex.Escape(routePath[index].ToString()));
+            builder.Append(routePath[index] == ' '
+                ? @"(?:\s|%20|\+)"
+                : Regex.Escape(routePath[index].ToString()));
         }
 
         builder.Append(@"(?:\?[^""'\s)]*)?");

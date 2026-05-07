@@ -79,9 +79,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     {
         // Act
         var response = await _fixture.Client.GetAsync("/api/v1/admin/connections//tables");
+        var missingIdResponse = await _fixture.Client.GetAsync("/api/v1/admin/connections/tables");
 
         // Assert
         response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+        missingIdResponse.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -347,6 +349,9 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
             response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
         }
+
+        var deleteResponse = await _fixture.Client.DeleteAsync("/api/v1/admin/config");
+        deleteResponse.HaveStatusCode(HttpStatusCode.MethodNotAllowed);
     }
 
     [IntegrationTest]

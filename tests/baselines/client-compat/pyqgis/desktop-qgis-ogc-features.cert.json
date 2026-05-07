@@ -1,0 +1,210 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260507T140717Z",
+  "run_date": "2026-05-07T14:07:17.988831+00:00",
+  "server_version": "unknown",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.10-Solothurn",
+  "protocol": "ogc-features",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 691,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OAPIF provider connected and layer loaded successfully.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Compatibility seed runs on HTTP-only localhost; TLS not exercised.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "client-compat-v1.sql seed allows anonymous access; auth rejection not exercised.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "skip",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "client-compat-v1.sql seed allows anonymous access; credential grant not exercised.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 30,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "Collection 0 discovered with 10 features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Extent: -122.5000000000000000,37.7000000000000028 : -122.3499999999999943,37.8400000000000034",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "All 12 expected fields present.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Geometry type: Point",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "Attribute filter active=true returned 5 features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "Bbox filter returned 4 features (total 10).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Server returned 3 features for limit=3 (first page). QGIS auto-pagination yielded 10 total.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Server pages 1 and 2 (limit=3) returned disjoint feature sets. QGIS delivered 10 unique features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": 0.0,
+      "notes": "Alpha at (-122.49, 37.71), delta=0.0.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "CRS: EPSG:4326",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Invalid collection rejected: ",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 0,
+      "measured_delta": null,
+      "notes": "Malformed filter correctly returned zero features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "pass",
+      "duration_ms": 94,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Headless render produced 1464 byte PNG.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "pass",
+      "duration_ms": 57,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Post-reload render: 1489 byte PNG (pre-reload: 1489 bytes).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "pass",
+      "duration_ms": 44,
+      "measured_count": 2160,
+      "measured_delta": null,
+      "notes": "QgsMarkerSymbol render produced 2160 pixels matching the declared symbol color (30, 100, 200) (tolerance 35).",
+      "evidence_ref": "tests/python/pyqgis/test_render_path.py"
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "pass",
+      "duration_ms": 45,
+      "measured_count": 7182,
+      "measured_delta": null,
+      "notes": "Marker outline produced 7182 pixels matching the declared stroke color (26, 26, 46) (tolerance 35). Substantiated via marker outline until the line-geometry fixture follow-on lands.",
+      "evidence_ref": "tests/python/pyqgis/test_render_path.py"
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "pass",
+      "duration_ms": 48,
+      "measured_count": 7858,
+      "measured_delta": null,
+      "notes": "Marker fill produced 7858 pixels matching the declared fill color (30, 100, 200) (tolerance 35). Substantiated via marker fill until the polygon-geometry fixture follow-on lands.",
+      "evidence_ref": "tests/python/pyqgis/test_render_path.py"
+    }
+  ],
+  "summary": {
+    "total": 21,
+    "passed": 18,
+    "failed": 0,
+    "skipped": 3,
+    "not_applicable": 0
+  },
+  "cite_results": null,
+  "extensions": []
+}
