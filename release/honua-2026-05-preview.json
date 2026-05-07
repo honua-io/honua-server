@@ -36,7 +36,7 @@
       "Source-build workflow evidence is not release-candidate-image evidence unless the evidence record names the image digest tested."
     ]
   },
-  "observedAt": "2026-05-07T14:46:45Z",
+  "observedAt": "2026-05-07T21:52:41Z",
   "releaseGates": [
     {
       "id": "server-sdk-compatibility",
@@ -176,26 +176,29 @@
       "id": "sdk-python-staging-integration",
       "owningRepo": "honua-io/honua-sdk-python",
       "requirement": "Staging integration is configured and green.",
-      "evidenceState": "blocked",
+      "evidenceState": "waived",
       "latestEvidence": {
-        "runUrl": "https://github.com/honua-io/honua-sdk-python/actions/runs/25431751226",
+        "runUrl": "https://github.com/honua-io/honua-sdk-python/actions/runs/25516398403",
         "workflow": "Python SDK Staging Integration",
         "status": "completed",
         "conclusion": "failure",
-        "headSha": "367574a8b70da9e972b4026bf0cba98441448469",
-        "createdAt": "2026-05-06T11:10:31Z",
-        "updatedAt": "2026-05-06T11:10:55Z",
-        "source": "gh run list -R honua-io/honua-sdk-python --branch trunk --limit 10"
+        "headSha": "8c6c12dca4a6704c4010d8bb059e8486a01c5bde",
+        "createdAt": "2026-05-07T19:07:10Z",
+        "updatedAt": "2026-05-07T19:07:31Z",
+        "source": "gh run view 25516398403 -R honua-io/honua-sdk-python --log; gh variable list -R honua-io/honua-sdk-python --env staging"
       },
-      "waiver": null,
-      "blockers": [
-        {
+      "waiver": {
+        "approver": "mikemcdougall",
+        "approvedAt": "2026-05-07T21:52:41Z",
+        "expiresOn": "2026-05-31",
+        "reason": "2026-05 Preview-only waiver: the Python SDK staging workflow is wired, but the honua-sdk-python staging environment has no HONUA_BASE_URL/HONUA_API_KEY target configured. The latest trunk run fails fast before live smoke execution, and pull-request successes skip the smoke suite when the target is absent. Do not count this as live staging coverage for Beta/GA.",
+        "followUpIssue": {
           "repo": "honua-io/honua-sdk-python",
-          "number": 50,
-          "url": "https://github.com/honua-io/honua-sdk-python/issues/50",
-          "reason": "Python SDK staging integration is failing; tracked by the bounded SDK Python release blocker."
+          "number": 53,
+          "url": "https://github.com/honua-io/honua-sdk-python/issues/53"
         }
-      ]
+      },
+      "blockers": []
     },
     {
       "id": "mobile-dotnet-sdk-train",
@@ -375,6 +378,13 @@
       "number": 50,
       "url": "https://github.com/honua-io/honua-sdk-python/issues/50",
       "scope": "Restore or waive staging integration for the 2026-05 Preview train.",
+      "state": "closed"
+    },
+    {
+      "repo": "honua-io/honua-sdk-python",
+      "number": 53,
+      "url": "https://github.com/honua-io/honua-sdk-python/issues/53",
+      "scope": "Configure the live staging target variables and secret for Python SDK staging smoke.",
       "state": "open"
     },
     {
