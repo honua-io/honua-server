@@ -36,6 +36,16 @@ VALIDATOR_CONFORMANCE_CLASSES = [
     "collections",
     "filter",
 ]
+VALIDATOR_TIMEOUT_SECONDS = 90
+VALIDATOR_TIMEOUT_EXIT_CODE = 124
+
+
+def _process_output_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
 
 
 def _validator_reported_failure(result: subprocess.CompletedProcess[str]) -> bool:
@@ -73,14 +83,29 @@ def test_stac_api_validator_conformance(
     for conformance_class in VALIDATOR_CONFORMANCE_CLASSES:
         command.extend(["--conformance", conformance_class])
 
-    result = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    status = "fail" if _validator_reported_failure(result) else "pass"
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=VALIDATOR_TIMEOUT_SECONDS,
+        )
+        status = "fail" if _validator_reported_failure(result) else "pass"
+        returncode = result.returncode
+        stdout = result.stdout
+        stderr = result.stderr
+    except subprocess.TimeoutExpired as exc:
+        status = "fail"
+        returncode = VALIDATOR_TIMEOUT_EXIT_CODE
+        stdout = _process_output_text(exc.stdout or exc.output)
+        timeout_message = (
+            f"stac-api-validator timed out after {VALIDATOR_TIMEOUT_SECONDS} seconds"
+        )
+        stderr = "\n".join(
+            part for part in [_process_output_text(exc.stderr), timeout_message] if part
+        )
+
     artifact_path = write_stac_api_validator_artifact(
         command=command,
         root_url=stac_api_url,
@@ -88,23 +113,25 @@ def test_stac_api_validator_conformance(
         geometry=VALIDATOR_GEOMETRY,
         conformance_classes=VALIDATOR_CONFORMANCE_CLASSES,
         status=status,
-        returncode=result.returncode,
-        stdout=result.stdout,
-        stderr=result.stderr,
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
     )
+
+    if status != "pass":
+        pytest.fail(
+            "stac-api-validator failed; see "
+            f"{artifact_path} for stdout/stderr and exact command",
+            pytrace=False,
+        )
 
     evidence_collector.record(
         "test_stac_api_validator_conformance",
         "stac-api-validator validated Honua STAC collections and filter classes",
-        status,
+        "pass",
         detail=(
-            f"exit_code={result.returncode} artifact={artifact_path.name} "
+            f"exit_code={returncode} artifact={artifact_path.name} "
             f"classes={','.join(VALIDATOR_CONFORMANCE_CLASSES)} "
             "advertised_class_follow_ups=#956,#957"
         ),
-    )
-
-    assert status == "pass", (
-        "stac-api-validator failed; see "
-        f"{artifact_path} for stdout/stderr and exact command"
     )
