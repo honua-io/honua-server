@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, and deploy control. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, runtime licensing, and deploy control. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -74,6 +74,14 @@
     {
       "name": "GitOps Watch",
       "description": "Git repository watching and change management (enterprise edition)"
+    },
+    {
+      "name": "License",
+      "description": "Runtime license status, uploads, and entitlement inventory"
+    },
+    {
+      "name": "Features",
+      "description": "Edition-gated feature catalog and active entitlement state"
     }
   ],
   "paths": {
@@ -1657,6 +1665,200 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseAdminVersionResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/license": {
+      "get": {
+        "tags": ["License"],
+        "summary": "Get License Status",
+        "description": "Returns the active runtime license snapshot. Empty LicensePath reports Community mode with isValid=true; invalid configured files report Community mode with isValid=false and a validationState.",
+        "operationId": "getLicenseStatus",
+        "responses": {
+          "200": {
+            "description": "Active license status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLicenseStatusResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["License"],
+        "summary": "Upload License",
+        "description": "Uploads raw signed license-envelope bytes when Licensing:AllowAdminUpload=true and Licensing:LicensePath is configured. Rejected uploads return 400 and do not replace the active snapshot.",
+        "operationId": "uploadLicense",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "License applied and active status returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLicenseStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Upload disabled, missing LicensePath, empty/oversized file, or validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObject"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/license/entitlements": {
+      "get": {
+        "tags": ["License"],
+        "summary": "Get License Entitlements",
+        "description": "Returns the known FeatureCatalog entitlement inventory with each entry marked active or inactive under the current license snapshot.",
+        "operationId": "getLicenseEntitlements",
+        "responses": {
+          "200": {
+            "description": "License entitlement inventory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseEntitlementResponseArray"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/license/status": {
+      "get": {
+        "tags": ["License"],
+        "summary": "Get Platform License Status",
+        "description": "Returns the same active license status contract as GET /api/v1/admin/license.",
+        "operationId": "getPlatformLicenseStatus",
+        "responses": {
+          "200": {
+            "description": "Active license status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLicenseStatusResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/license/features": {
+      "get": {
+        "tags": ["License"],
+        "summary": "Get License Feature Entitlements",
+        "description": "Returns the FeatureCatalog inventory with category and minimum-edition metadata plus current active/inactive state.",
+        "operationId": "getLicenseFeatures",
+        "responses": {
+          "200": {
+            "description": "Feature entitlement inventory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLicenseEntitlementsResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/license/upload": {
+      "post": {
+        "tags": ["License"],
+        "summary": "Upload License File",
+        "description": "Platform-admin upload alias for the same runtime validator used by startup load and POST /api/v1/admin/license. Returns a compact upload-result response.",
+        "operationId": "uploadLicenseFile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "License upload result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLicenseUploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Upload disabled, missing LicensePath, empty/oversized file, or validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLicenseUploadResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/features": {
+      "get": {
+        "tags": ["Features"],
+        "summary": "Get Feature Overview",
+        "description": "Returns all edition-gated platform features with category, description, minimum edition, and active state from the current license snapshot.",
+        "operationId": "getFeatureOverview",
+        "responses": {
+          "200": {
+            "description": "Feature overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFeatureOverviewResponse"
                 }
               }
             }
@@ -5370,6 +5572,216 @@
           "success": { "type": "boolean" },
           "message": { "type": "string" },
           "data": { "$ref": "#/components/schemas/GitOpsChangeDiffResponse" }
+        }
+      },
+      "LicenseStatusResponse": {
+        "type": "object",
+        "required": ["edition", "isValid", "validationState"],
+        "properties": {
+          "edition": {
+            "type": "string",
+            "description": "Active platform edition label."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "License expiry timestamp, or null for Community/perpetual licenses."
+          },
+          "isValid": {
+            "type": "boolean",
+            "description": "Whether the active configured license validated successfully."
+          },
+          "daysUntilExpiry": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Ceiling day count until expiresAt, or null when no expiry is present."
+          },
+          "expiryWarning": {
+            "type": "boolean",
+            "description": "True when daysUntilExpiry is within Licensing:ExpiryWarningDays."
+          },
+          "validationState": {
+            "type": "string",
+            "enum": [
+              "NoLicenseConfigured",
+              "Valid",
+              "MissingFile",
+              "Malformed",
+              "UnknownKey",
+              "InvalidSignature",
+              "Expired"
+            ],
+            "description": "Runtime validation state for the active license snapshot."
+          },
+          "licensedTo": {
+            "type": "string",
+            "nullable": true
+          },
+          "licenseId": {
+            "type": "string",
+            "nullable": true
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "entitlements": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/EntitlementResponse" },
+            "description": "Known FeatureCatalog entitlement inventory with active/inactive state."
+          }
+        }
+      },
+      "EntitlementResponse": {
+        "type": "object",
+        "required": ["key", "name"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Feature entitlement key."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable entitlement name."
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether this entitlement is active in the current snapshot."
+          }
+        }
+      },
+      "FeatureEntitlementItem": {
+        "type": "object",
+        "required": ["key", "displayName", "category", "isEnabled", "minimumEdition", "upgradeRequired"],
+        "properties": {
+          "key": { "type": "string" },
+          "displayName": { "type": "string" },
+          "category": { "type": "string" },
+          "isEnabled": {
+            "type": "boolean",
+            "description": "Whether the feature is enabled by the active license snapshot."
+          },
+          "minimumEdition": {
+            "type": "string",
+            "description": "Minimum catalog edition for this feature."
+          },
+          "upgradeRequired": {
+            "type": "boolean",
+            "description": "True when the current snapshot does not activate this feature."
+          }
+        }
+      },
+      "LicenseEntitlementsResponse": {
+        "type": "object",
+        "required": ["edition", "features"],
+        "properties": {
+          "edition": {
+            "type": "string",
+            "description": "Active platform edition label."
+          },
+          "features": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/FeatureEntitlementItem" }
+          }
+        }
+      },
+      "LicenseUploadResponse": {
+        "type": "object",
+        "required": ["success", "message"],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the upload was accepted and applied."
+          },
+          "message": {
+            "type": "string",
+            "description": "Sanitized upload result or rejection message."
+          }
+        }
+      },
+      "FeatureOverviewItem": {
+        "type": "object",
+        "required": ["key", "displayName", "category", "description", "isEnabled", "minimumEdition"],
+        "properties": {
+          "key": { "type": "string" },
+          "displayName": { "type": "string" },
+          "category": { "type": "string" },
+          "description": { "type": "string" },
+          "isEnabled": {
+            "type": "boolean",
+            "description": "Whether the feature is enabled by the active license snapshot."
+          },
+          "minimumEdition": { "type": "string" },
+          "upgradeMessage": {
+            "type": "string",
+            "nullable": true,
+            "description": "Upgrade hint when the feature is inactive."
+          }
+        }
+      },
+      "FeatureOverviewResponse": {
+        "type": "object",
+        "required": ["currentEdition", "features"],
+        "properties": {
+          "currentEdition": {
+            "type": "string",
+            "description": "Active platform edition label."
+          },
+          "features": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/FeatureOverviewItem" }
+          }
+        }
+      },
+      "ApiResponseLicenseStatusResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/LicenseStatusResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseEntitlementResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/EntitlementResponse" }
+          },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseLicenseEntitlementsResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/LicenseEntitlementsResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseLicenseUploadResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/LicenseUploadResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseFeatureOverviewResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/FeatureOverviewResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
         }
       },
       "StyleSuggestionRequest": {
