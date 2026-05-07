@@ -86,9 +86,17 @@ public sealed class StacFilterHelpersTests
     }
 
     [UnitTest]
-    public void ParseBbox_WithThreeDimensionalBBox_ReturnsNull()
+    public void ParseBbox_WithThreeDimensionalBBox_ReturnsSpatialFilter()
     {
-        var filter = StacFilterHelpers.ParseBbox("170,-10,-170,10,5,6");
+        var filter = StacFilterHelpers.ParseBbox("100,0,0,105,1,1");
+
+        filter.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void ParseBbox_WithInvalidThreeDimensionalBBox_ReturnsNull()
+    {
+        var filter = StacFilterHelpers.ParseBbox("100,0,2,105,1,1");
 
         filter.Should().BeNull();
     }
@@ -99,6 +107,39 @@ public sealed class StacFilterHelpersTests
         var filter = StacFilterHelpers.ParseBbox("200,95,210,100");
 
         filter.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithFallbackStringTimestamp_ReturnsNull()
+    {
+        var layer = CreateLayer(
+            1,
+            fields:
+            [
+                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                new FieldDefinition("timestamp", FieldType.String, Length: 128)
+            ]);
+
+        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z", layer);
+
+        filter.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithFallbackTemporalTimestamp_ReturnsTemporalFilter()
+    {
+        var layer = CreateLayer(
+            1,
+            fields:
+            [
+                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                new FieldDefinition("timestamp", FieldType.DateTime)
+            ]);
+
+        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z", layer);
+
+        filter.Should().NotBeNull();
+        filter!.Value.PropertyName.Should().Be("timestamp");
     }
 
     private static async Task<LayerDefinition[]> ResolveVisibleLayersAsync(
@@ -123,7 +164,11 @@ public sealed class StacFilterHelpersTests
         return await StacFilterHelpers.ResolveStacVisibleLayersAsync(context, layerCatalog, CancellationToken.None);
     }
 
-    private static LayerDefinition CreateLayer(int id, bool allowAnonymous = false, bool stacEnabled = false)
+    private static LayerDefinition CreateLayer(
+        int id,
+        bool allowAnonymous = false,
+        bool stacEnabled = false,
+        FieldDefinition[]? fields = null)
     {
         var metadata = stacEnabled || allowAnonymous
             ? new CatalogMetadata
@@ -141,6 +186,7 @@ public sealed class StacFilterHelpersTests
             "Test layer",
             CatalogGeometryType.Point,
             SpatialReference.WGS84,
+            fields ??
             [
                 new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
                 new FieldDefinition("name", FieldType.String, Length: 128)

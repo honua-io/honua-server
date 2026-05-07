@@ -132,19 +132,19 @@ public sealed record StacItem
     /// STAC specification version.
     /// </summary>
     [JsonPropertyName("stac_version")]
-    public string StacVersion { get; init; } = StacConstants.StacVersion;
+    public string? StacVersion { get; init; } = StacConstants.StacVersion;
 
     /// <summary>
     /// Type identifier — always "Feature".
     /// </summary>
     [JsonPropertyName("type")]
-    public string Type { get; init; } = "Feature";
+    public string? Type { get; init; } = "Feature";
 
     /// <summary>
     /// Item identifier.
     /// </summary>
     [JsonPropertyName("id")]
-    public required string Id { get; init; }
+    public required string? Id { get; init; }
 
     /// <summary>
     /// GeoJSON geometry.
@@ -163,13 +163,13 @@ public sealed record StacItem
     /// STAC properties including required datetime.
     /// </summary>
     [JsonPropertyName("properties")]
-    public required Dictionary<string, object?> Properties { get; init; }
+    public required Dictionary<string, object?>? Properties { get; init; }
 
     /// <summary>
     /// Links to related resources.
     /// </summary>
     [JsonPropertyName("links")]
-    public required ImmutableArray<Link> Links { get; init; }
+    public required ImmutableArray<Link>? Links { get; init; }
 
     /// <summary>
     /// Asset dictionary keyed by role. STAC 1.0.0 requires every Item to carry an
@@ -177,7 +177,7 @@ public sealed record StacItem
     /// assets are known.
     /// </summary>
     [JsonPropertyName("assets")]
-    public required Dictionary<string, StacAsset> Assets { get; init; }
+    public required Dictionary<string, StacAsset>? Assets { get; init; }
 
     /// <summary>
     /// Parent collection identifier.

@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
@@ -158,6 +159,13 @@ internal static class SearchEndpoints
             StacTelemetry.Operations.SearchExecute,
             "/stac/search",
             context.Request.Method);
+
+        if (request.Limit is < 1)
+        {
+            StacTelemetry.SetFailed(activity, "invalid_limit");
+            return StandardErrorHelpers.CreateBadRequest(context, "limit must be greater than or equal to 1.");
+        }
+
         var effectiveLimit = Math.Clamp(
             request.Limit ?? StacConstants.DefaultSearchLimit,
             1,
@@ -276,8 +284,6 @@ internal static class SearchEndpoints
             long totalMatched = 0;
             var remainingSkip = offset;
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
-            var layerSelections = new Dictionary<int, IReadOnlySet<string>?>();
-
             foreach (var layer in layerList)
             {
                 if (hasEmptyIdFilter)
@@ -300,8 +306,7 @@ internal static class SearchEndpoints
                 }
 
                 var query = layerQueryResult.Query;
-                var selectedProperties = layerQueryResult.SelectedProperties;
-                layerSelections[layer.Id] = selectedProperties;
+                var projection = layerQueryResult.Projection;
 
                 if (remainingSkip > 0)
                 {
@@ -320,12 +325,14 @@ internal static class SearchEndpoints
 
                     var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
                     allItems.AddRange(result.Features
-                        .Select(f => StacMappingService.MapFeatureToItem(
-                            f,
-                            layer,
-                            baseUrl,
-                            selectedProperties,
-                            geometrySrid: Wgs84Srid)));
+                        .Select(f => ApplyFieldProjection(
+                            StacMappingService.MapFeatureToItem(
+                                f,
+                                layer,
+                                baseUrl,
+                                projection?.SelectedProperties,
+                                geometrySrid: Wgs84Srid),
+                            projection)));
                 }
                 else if (allItems.Count < effectiveLimit)
                 {
@@ -336,12 +343,14 @@ internal static class SearchEndpoints
                     totalMatched += result.TotalCount;
 
                     allItems.AddRange(result.Features
-                        .Select(f => StacMappingService.MapFeatureToItem(
-                            f,
-                            layer,
-                            baseUrl,
-                            selectedProperties,
-                            geometrySrid: Wgs84Srid)));
+                        .Select(f => ApplyFieldProjection(
+                            StacMappingService.MapFeatureToItem(
+                                f,
+                                layer,
+                                baseUrl,
+                                projection?.SelectedProperties,
+                                geometrySrid: Wgs84Srid),
+                            projection)));
                 }
                 else
                 {
@@ -402,7 +411,7 @@ internal static class SearchEndpoints
         }
     }
 
-    private static async Task<(bool IsSuccess, FeatureQuery Query, IReadOnlySet<string>? SelectedProperties, string? Error)> TryBuildLayerQuery(
+    private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, string? Error)> TryBuildLayerQuery(
         StacSearchRequest request,
         Core.Features.Catalog.Domain.LayerDefinition layer,
         ImmutableArray<string>? requestedItemIds,
@@ -416,34 +425,32 @@ internal static class SearchEndpoints
             SpatialReferenceSrid = layer.SpatialReference.Wkid,
             OutputSrid = Wgs84Srid
         };
-        IReadOnlySet<string>? selectedProperties = null;
+        StacFieldProjection? projection = null;
         string? error = null;
 
         if (request.Bbox is { IsDefault: false } bboxArr)
         {
-            if (bboxArr.Length != 4)
-            {
-                error = "3D bbox values are not supported.";
-                return (false, query, selectedProperties, error);
-            }
-
-            if (!StacFilterHelpers.TryValidateBboxCoordinates(
-                    bboxArr[0], bboxArr[1], bboxArr[2], bboxArr[3],
+            if (!StacFilterHelpers.TryExtractBbox2D(
+                    bboxArr,
+                    out var west,
+                    out var south,
+                    out var east,
+                    out var north,
                     out error))
             {
-                return (false, query, selectedProperties, error);
+                return (false, query, projection, error);
             }
 
             if (request.Intersects.HasValue)
             {
                 error = "bbox and intersects cannot be combined.";
-                return (false, query, selectedProperties, error);
+                return (false, query, projection, error);
             }
 
             query = query with
             {
                 SpatialFilter = StacFilterHelpers.CreateBboxSpatialFilter(
-                    west: bboxArr[0], south: bboxArr[1], east: bboxArr[2], north: bboxArr[3])
+                    west: west, south: south, east: east, north: north)
             };
         }
 
@@ -456,7 +463,7 @@ internal static class SearchEndpoints
                     out var intersectsError))
             {
                 error = intersectsError;
-                return (false, query, selectedProperties, error);
+                return (false, query, projection, error);
             }
 
             if (intersectsSpatialFilter.HasValue)
@@ -471,7 +478,7 @@ internal static class SearchEndpoints
             if (temporalFilter is null)
             {
                 error = "Invalid datetime parameter.";
-                return (false, query, selectedProperties, error);
+                return (false, query, projection, error);
             }
 
             query = query with { TemporalFilter = temporalFilter };
@@ -486,7 +493,7 @@ internal static class SearchEndpoints
         if (!filterQueryResult.IsSuccess)
         {
             error = filterQueryResult.Error;
-            return (false, query, selectedProperties, error);
+            return (false, query, projection, error);
         }
 
         if (filterQueryResult.SqlFilter is not null)
@@ -504,7 +511,7 @@ internal static class SearchEndpoints
             if (!TryBuildSortOrder(layer, sortby, out var orderBy, out var sortError))
             {
                 error = sortError;
-                return (false, query, selectedProperties, error);
+                return (false, query, projection, error);
             }
 
             query = query with { OrderBy = orderBy };
@@ -512,16 +519,16 @@ internal static class SearchEndpoints
 
         if (request.Fields is not null)
         {
-            if (!TryBuildFieldSelection(layer, request.Fields, out var outFields, out selectedProperties, out var fieldError))
+            if (!TryBuildFieldSelection(layer, request.Fields, out var outFields, out projection, out var fieldError))
             {
                 error = fieldError;
-                return (false, query, selectedProperties, error);
+                return (false, query, projection, error);
             }
 
             query = query with { OutFields = outFields };
         }
 
-        return (true, query, selectedProperties, null);
+        return (true, query, projection, null);
     }
 
     private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, string? Error)> TryResolveFilterQuery(
@@ -602,7 +609,7 @@ internal static class SearchEndpoints
         Core.Features.Catalog.Domain.LayerDefinition layer,
         StacFieldsExtension fields,
         out ImmutableArray<string> outFields,
-        out IReadOnlySet<string>? selectedProperties,
+        out StacFieldProjection? projection,
         out string? error)
     {
         var availableFields = layer.AttributeFields
@@ -612,22 +619,33 @@ internal static class SearchEndpoints
         var includeAll = false;
         var requestedIncludes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var requestedExcludes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var includedTopLevelFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var excludedTopLevelFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var isIncludeMode = fields.Includes is { IsDefault: false, Length: > 0 };
 
         if (fields.Includes is { IsDefault: false } includes && includes.Length > 0)
         {
             foreach (var include in includes)
             {
+                var isPropertyPath = IsPrefixedPropertyName(include);
                 if (!TryNormalizePropertyName(include, out var normalized))
                 {
                     error = $"Invalid fields include value '{include}'.";
                     outFields = default;
-                    selectedProperties = null;
+                    projection = null;
                     return false;
                 }
 
-                if (IsPropertiesSentinel(normalized))
+                if (!isPropertyPath && IsTopLevelItemField(normalized))
+                {
+                    includedTopLevelFields.Add(normalized);
+                    continue;
+                }
+
+                if (IsPropertiesWildcard(include))
                 {
                     includeAll = true;
+                    includedTopLevelFields.Add("properties");
                     continue;
                 }
 
@@ -635,7 +653,7 @@ internal static class SearchEndpoints
                 {
                     error = $"Unknown fields include '{include}'.";
                     outFields = default;
-                    selectedProperties = null;
+                    projection = null;
                     return false;
                 }
 
@@ -651,16 +669,24 @@ internal static class SearchEndpoints
         {
             foreach (var exclude in excludes)
             {
+                var isPropertyPath = IsPrefixedPropertyName(exclude);
                 if (!TryNormalizePropertyName(exclude, out var normalized))
                 {
                     error = $"Invalid fields exclude value '{exclude}'.";
                     outFields = default;
-                    selectedProperties = null;
+                    projection = null;
                     return false;
                 }
 
-                if (IsPropertiesSentinel(normalized))
+                if (!isPropertyPath && IsTopLevelItemField(normalized))
                 {
+                    excludedTopLevelFields.Add(normalized);
+                    continue;
+                }
+
+                if (IsPropertiesWildcard(exclude))
+                {
+                    excludedTopLevelFields.Add("properties");
                     continue;
                 }
 
@@ -668,7 +694,7 @@ internal static class SearchEndpoints
                 {
                     error = $"Unknown fields exclude '{exclude}'.";
                     outFields = default;
-                    selectedProperties = null;
+                    projection = null;
                     return false;
                 }
 
@@ -688,25 +714,36 @@ internal static class SearchEndpoints
         {
             error = null;
             outFields = ImmutableArray<string>.Empty;
-            selectedProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            projection = new StacFieldProjection(
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                isIncludeMode,
+                includedTopLevelFields,
+                excludedTopLevelFields);
             return true;
         }
 
         var timeField = layer.Metadata?.TimeInfo?.StartTimeField;
-        var queryFields = selected.Length == 0
-            ? ImmutableArray<string>.Empty
-            : layer.AttributeFields
-                .Where(field => selected.Contains(field.Name))
-                .Select(field => field.Name)
-                .ToImmutableArray();
+        var requiresUnprojectedAttributes = selected.Any(IsReservedAttributeProjectionName);
+        var queryFields = requiresUnprojectedAttributes
+            ? default
+            : selected.Length == 0
+                ? ImmutableArray<string>.Empty
+                : layer.AttributeFields
+                    .Where(field => selected.Contains(field.Name))
+                    .Select(field => field.Name)
+                    .ToImmutableArray();
 
-        if (!string.IsNullOrWhiteSpace(timeField) && !queryFields.Contains(timeField, StringComparer.OrdinalIgnoreCase))
+        if (!requiresUnprojectedAttributes &&
+            !string.IsNullOrWhiteSpace(timeField) &&
+            !queryFields.Contains(timeField, StringComparer.OrdinalIgnoreCase))
         {
             queryFields = queryFields.Add(timeField!);
         }
 
         var endTimeField = layer.Metadata?.TimeInfo?.EndTimeField;
-        if (!string.IsNullOrWhiteSpace(endTimeField) && !queryFields.Contains(endTimeField, StringComparer.OrdinalIgnoreCase))
+        if (!requiresUnprojectedAttributes &&
+            !string.IsNullOrWhiteSpace(endTimeField) &&
+            !queryFields.Contains(endTimeField, StringComparer.OrdinalIgnoreCase))
         {
             queryFields = queryFields.Add(endTimeField!);
         }
@@ -714,7 +751,7 @@ internal static class SearchEndpoints
         // When no explicit time fields are configured, the mapper falls back to well-known
         // temporal attribute names (created_at, updated_at, etc.). Ensure those candidates
         // are projected so datetime population still works under fields selection.
-        if (string.IsNullOrWhiteSpace(timeField))
+        if (!requiresUnprojectedAttributes && string.IsNullOrWhiteSpace(timeField))
         {
             ReadOnlySpan<string> fallbackCandidates =
             [
@@ -722,6 +759,20 @@ internal static class SearchEndpoints
                 "end_datetime", "timestamp", "event_date", "date"
             ];
             foreach (var candidate in fallbackCandidates)
+            {
+                if (availableFields.TryGetValue(candidate, out var field) &&
+                    field.Type is FieldType.Date or FieldType.DateTime &&
+                    !queryFields.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                {
+                    queryFields = queryFields.Add(candidate);
+                }
+            }
+        }
+
+        ReadOnlySpan<string> itemIdCandidates = ["stac_id", "item_id", "id"];
+        if (!requiresUnprojectedAttributes)
+        {
+            foreach (var candidate in itemIdCandidates)
             {
                 if (availableFields.ContainsKey(candidate) &&
                     !queryFields.Contains(candidate, StringComparer.OrdinalIgnoreCase))
@@ -731,22 +782,59 @@ internal static class SearchEndpoints
             }
         }
 
-        ReadOnlySpan<string> itemIdCandidates = ["stac_id", "item_id", "id"];
-        foreach (var candidate in itemIdCandidates)
-        {
-            if (availableFields.ContainsKey(candidate) &&
-                !queryFields.Contains(candidate, StringComparer.OrdinalIgnoreCase))
-            {
-                queryFields = queryFields.Add(candidate);
-            }
-        }
-
         outFields = queryFields;
-        selectedProperties = selected.Length == 0
+        var selectedProperties = selected.Length == 0
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(selected, StringComparer.OrdinalIgnoreCase);
+        if (selectedProperties.Count > 0)
+        {
+            includedTopLevelFields.Add("properties");
+        }
+
+        projection = new StacFieldProjection(
+            selectedProperties,
+            isIncludeMode,
+            includedTopLevelFields,
+            excludedTopLevelFields);
         error = null;
         return true;
+    }
+
+    private static StacItem ApplyFieldProjection(StacItem item, StacFieldProjection? projection)
+    {
+        if (projection is null || !projection.HasTopLevelRules)
+        {
+            return item;
+        }
+
+        return item with
+        {
+            StacVersion = ShouldIncludeTopLevelField(projection, "stac_version") ? item.StacVersion : null,
+            Type = ShouldIncludeTopLevelField(projection, "type") ? item.Type : null,
+            Id = ShouldIncludeTopLevelField(projection, "id") ? item.Id : null,
+            Geometry = ShouldIncludeTopLevelField(projection, "geometry") ? item.Geometry : null,
+            Bbox = ShouldIncludeTopLevelField(projection, "bbox") ? item.Bbox : null,
+            Properties = ShouldIncludeTopLevelField(projection, "properties") ? item.Properties : null,
+            Links = ShouldIncludeTopLevelField(projection, "links") ? item.Links : null,
+            Assets = ShouldIncludeTopLevelField(projection, "assets") ? item.Assets : null,
+            Collection = ShouldIncludeTopLevelField(projection, "collection") ? item.Collection : null,
+            StacExtensions = ShouldIncludeTopLevelField(projection, "stac_extensions") ? item.StacExtensions : null
+        };
+    }
+
+    private static bool ShouldIncludeTopLevelField(StacFieldProjection projection, string field)
+        => projection.IsIncludeMode
+            ? projection.IncludedTopLevelFields.Contains(field)
+            : !projection.ExcludedTopLevelFields.Contains(field);
+
+    private sealed record StacFieldProjection(
+        IReadOnlySet<string>? SelectedProperties,
+        bool IsIncludeMode,
+        IReadOnlySet<string> IncludedTopLevelFields,
+        IReadOnlySet<string> ExcludedTopLevelFields)
+    {
+        public bool HasTopLevelRules
+            => IsIncludeMode || ExcludedTopLevelFields.Count > 0;
     }
 
     private static bool TryBuildSearchRequestFromGet(
@@ -885,13 +973,6 @@ internal static class SearchEndpoints
             return false;
         }
 
-        if (parts.Length == 6)
-        {
-            values = default;
-            error = "3D bbox values are not supported.";
-            return false;
-        }
-
         var parsed = new double[parts.Length];
         for (var i = 0; i < parts.Length; i++)
         {
@@ -903,7 +984,7 @@ internal static class SearchEndpoints
             }
         }
 
-        if (!StacFilterHelpers.TryValidateBboxCoordinates(parsed[0], parsed[1], parsed[2], parsed[3], out error))
+        if (!StacFilterHelpers.TryExtractBbox2D(parsed, out _, out _, out _, out _, out error))
         {
             values = default;
             return false;
@@ -1007,27 +1088,32 @@ internal static class SearchEndpoints
             }
 
             var isExclude = trimmed[0] == '-';
-            var normalized = isExclude ? trimmed[1..] : trimmed;
-            if (!TryNormalizePropertyName(normalized, out normalized))
+            var isInclude = trimmed[0] == '+';
+            var fieldExpression = (isExclude || isInclude ? trimmed[1..] : trimmed).Trim();
+            if (!TryNormalizePropertyName(fieldExpression, out var normalized))
             {
                 result = null;
                 error = $"Invalid fields value '{trimmed}'.";
                 return false;
             }
 
-            if (IsPropertiesSentinel(normalized))
+            if (IsPropertiesWildcard(fieldExpression))
             {
                 includeAll = true;
                 continue;
             }
 
+            var fieldName = IsPrefixedPropertyName(fieldExpression)
+                ? fieldExpression
+                : normalized;
+
             if (isExclude)
             {
-                excludes.Add(normalized);
+                excludes.Add(fieldName);
             }
             else
             {
-                includes.Add(normalized);
+                includes.Add(fieldName);
             }
         }
 
@@ -1244,9 +1330,37 @@ internal static class SearchEndpoints
         return normalized.Length > 0;
     }
 
-    private static bool IsPropertiesSentinel(string name)
-        => name.Equals("properties", StringComparison.OrdinalIgnoreCase) ||
-           name.Equals("*", StringComparison.Ordinal);
+    private static bool IsPrefixedPropertyName(string name)
+        => name.Trim().StartsWith("properties.", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPropertiesWildcard(string name)
+    {
+        var trimmed = name.Trim();
+        return trimmed.Equals("properties", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("*", StringComparison.Ordinal) ||
+            trimmed.Equals("properties.*", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsReservedAttributeProjectionName(string name)
+        => name.Equals("id", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("object_id", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("layer_id", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("geometry", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("attributes", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("created_at", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("updated_at", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsTopLevelItemField(string name)
+        => name.Equals("geometry", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("bbox", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("id", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("type", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("links", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("assets", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("collection", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("stac_version", StringComparison.OrdinalIgnoreCase) ||
+           name.Equals("stac_extensions", StringComparison.OrdinalIgnoreCase);
 
     private static string BuildSearchQuery(int limit, int offset, StacSearchRequest request, bool defaultFilterLangIsText)
     {

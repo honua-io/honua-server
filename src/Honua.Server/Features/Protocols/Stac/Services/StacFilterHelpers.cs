@@ -53,25 +53,28 @@ internal static class StacFilterHelpers
     }
 
     /// <summary>
-    /// Parses a STAC bbox parameter (comma-separated: west,south,east,north) into a <see cref="SpatialFilter"/>.
+    /// Parses a STAC bbox parameter into a <see cref="SpatialFilter"/>.
+    /// Supports 2D (west,south,east,north) and 3D (west,south,minZ,east,north,maxZ)
+    /// shapes; elevation is validated but not applied to the 2D feature filter.
     /// </summary>
     public static SpatialFilter? ParseBbox(string bbox)
     {
-        var parts = bbox.Split(',');
-        if (parts.Length != 4)
+        var parts = bbox.Split(',', StringSplitOptions.None | StringSplitOptions.TrimEntries);
+        if (parts.Length is not 4 and not 6)
         {
             return null;
         }
 
-        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var west) ||
-            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var south) ||
-            !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var east) ||
-            !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var north))
+        var values = new double[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
         {
-            return null;
+            if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]))
+            {
+                return null;
+            }
         }
 
-        if (!TryValidateBboxCoordinates(west, south, east, north, out _))
+        if (!TryExtractBbox2D(values, out var west, out var south, out var east, out var north, out _))
         {
             return null;
         }
@@ -108,6 +111,53 @@ internal static class StacFilterHelpers
         {
             error = "bbox longitude values are out of range.";
             return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    internal static bool TryExtractBbox2D(
+        IReadOnlyList<double> values,
+        out double west,
+        out double south,
+        out double east,
+        out double north,
+        out string? error)
+    {
+        west = south = east = north = 0;
+
+        if (values.Count is not 4 and not 6)
+        {
+            error = "bbox must contain four or six numeric values.";
+            return false;
+        }
+
+        west = values[0];
+        south = values[1];
+        east = values.Count == 6 ? values[3] : values[2];
+        north = values.Count == 6 ? values[4] : values[3];
+
+        if (!TryValidateBboxCoordinates(west, south, east, north, out error))
+        {
+            return false;
+        }
+
+        if (values.Count == 6)
+        {
+            var minZ = values[2];
+            var maxZ = values[5];
+            if (!double.IsFinite(minZ) || !double.IsFinite(maxZ))
+            {
+                error = "bbox contains a non-finite numeric value.";
+                return false;
+            }
+
+            if (minZ > maxZ)
+            {
+                error = "bbox elevation values are out of range.";
+                return false;
+            }
         }
 
         error = null;
@@ -189,7 +239,7 @@ internal static class StacFilterHelpers
     /// </summary>
     public static TemporalFilter? ParseDatetime(string datetime, LayerDefinition layer)
     {
-        var timeField = layer.Metadata?.TimeInfo?.StartTimeField;
+        var timeField = ResolveTemporalField(layer);
         if (string.IsNullOrWhiteSpace(timeField))
         {
             return null;
@@ -202,7 +252,7 @@ internal static class StacFilterHelpers
         if (parts.Length == 1)
         {
             // Single instant
-            if (DateTimeOffset.TryParse(parts[0], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var instant))
+            if (TryParseRfc3339DateTime(parts[0], out var instant))
             {
                 start = instant;
                 end = instant;
@@ -215,15 +265,23 @@ internal static class StacFilterHelpers
         else if (parts.Length == 2)
         {
             // Interval: start/end, ../end, start/..
-            if (!string.Equals(parts[0], "..", StringComparison.Ordinal) &&
-                DateTimeOffset.TryParse(parts[0], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var s))
+            if (!IsOpenIntervalBound(parts[0]))
             {
+                if (!TryParseRfc3339DateTime(parts[0], out var s))
+                {
+                    return null;
+                }
+
                 start = s;
             }
 
-            if (!string.Equals(parts[1], "..", StringComparison.Ordinal) &&
-                DateTimeOffset.TryParse(parts[1], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var e))
+            if (!IsOpenIntervalBound(parts[1]))
             {
+                if (!TryParseRfc3339DateTime(parts[1], out var e))
+                {
+                    return null;
+                }
+
                 end = e;
             }
         }
@@ -237,6 +295,11 @@ internal static class StacFilterHelpers
             return null;
         }
 
+        if (start > end)
+        {
+            return null;
+        }
+
         return new TemporalFilter
         {
             PropertyName = timeField,
@@ -244,5 +307,107 @@ internal static class StacFilterHelpers
             Start = start,
             End = end
         };
+    }
+
+    private static string? ResolveTemporalField(LayerDefinition layer)
+    {
+        var configured = layer.Metadata?.TimeInfo?.StartTimeField;
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        ReadOnlySpan<string> fallbackCandidates =
+        [
+            "datetime", "created_at", "updated_at", "start_datetime",
+            "end_datetime", "timestamp", "event_date", "date"
+        ];
+
+        foreach (var candidate in fallbackCandidates)
+        {
+            if (layer.AttributeFields.Any(field =>
+                    field.Type is FieldType.Date or FieldType.DateTime &&
+                    string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase)))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsOpenIntervalBound(string value)
+        => value.Length == 0 || string.Equals(value, "..", StringComparison.Ordinal);
+
+    private static bool TryParseRfc3339DateTime(string value, out DateTimeOffset timestamp)
+    {
+        var normalized = value.Trim();
+        if (normalized.Length == 0)
+        {
+            timestamp = default;
+            return false;
+        }
+
+        if (normalized.Contains(',', StringComparison.Ordinal))
+        {
+            timestamp = default;
+            return false;
+        }
+
+        if (normalized.Length > 10 && normalized[10] == 't')
+        {
+            normalized = normalized[..10] + "T" + normalized[11..];
+        }
+
+        if (normalized.EndsWith('z'))
+        {
+            normalized = normalized[..^1] + "Z";
+        }
+
+        var fractionalSeparator = normalized.IndexOf('.', StringComparison.Ordinal);
+        if (fractionalSeparator >= 0)
+        {
+            var offsetStart = normalized.IndexOfAny(['Z', '+', '-'], fractionalSeparator + 1);
+            if (offsetStart > fractionalSeparator)
+            {
+                var fractionalLength = offsetStart - fractionalSeparator - 1;
+                if (fractionalLength > 7)
+                {
+                    normalized = normalized[..(fractionalSeparator + 8)] + normalized[offsetStart..];
+                }
+            }
+        }
+
+        if (!HasExplicitRfc3339TimeZone(normalized))
+        {
+            timestamp = default;
+            return false;
+        }
+
+        return DateTimeOffset.TryParse(
+            normalized,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind,
+            out timestamp);
+    }
+
+    private static bool HasExplicitRfc3339TimeZone(string value)
+    {
+        if (value.Length <= 11 || value[10] != 'T')
+        {
+            return false;
+        }
+
+        if (value.EndsWith('Z'))
+        {
+            return true;
+        }
+
+        var plusOffset = value.LastIndexOf('+');
+        var minusOffset = value.LastIndexOf('-');
+        var offsetStart = Math.Max(plusOffset, minusOffset);
+        return offsetStart > 10 &&
+               value.Length - offsetStart == 6 &&
+               value[offsetStart + 3] == ':';
     }
 }

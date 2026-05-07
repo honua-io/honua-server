@@ -252,14 +252,14 @@ internal sealed class InputValidationMiddleware
            IsProtocolFilterQueryOption(request, paramType, name);
 
     private static bool ShouldSkipPathTraversalInspection(HttpRequest request, string paramType, string name, string value)
-        => IsOgcDatetimeQueryOption(request, paramType, name) &&
-           IsOgcOpenStartDatetimeInterval(value);
+        => IsProtocolDatetimeQueryOption(request, paramType, name) &&
+           IsOpenStartDatetimeInterval(value);
 
-    private static bool IsOgcOpenStartDatetimeInterval(string value)
+    private static bool IsOpenStartDatetimeInterval(string value)
     {
-        // OGC API datetime uses "../end" for an open-start interval. Keep this
-        // exception narrower than the full datetime grammar so generic path values
-        // such as "../etc/passwd" are still rejected before endpoint dispatch.
+        // OGC API and STAC datetime use "../end" for an open-start interval.
+        // Keep this exception narrower than the full datetime grammar so generic
+        // path values such as "../etc/passwd" are still rejected before endpoint dispatch.
         var parts = value.Split('/', StringSplitOptions.TrimEntries);
         return parts is ["..", var end] &&
                DateTimeOffset.TryParse(
@@ -269,7 +269,7 @@ internal sealed class InputValidationMiddleware
                    out _);
     }
 
-    private static bool IsOgcDatetimeQueryOption(HttpRequest request, string paramType, string name)
+    private static bool IsProtocolDatetimeQueryOption(HttpRequest request, string paramType, string name)
     {
         if (!paramType.Equals("query", StringComparison.Ordinal) ||
             !name.Equals("datetime", StringComparison.OrdinalIgnoreCase))
@@ -277,7 +277,9 @@ internal sealed class InputValidationMiddleware
             return false;
         }
 
-        return request.Path.Value?.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) == true;
+        var path = request.Path.Value;
+        return path?.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) == true ||
+               path?.StartsWith("/stac", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static bool IsODataSystemQueryOption(HttpRequest request, string paramType, string name)
