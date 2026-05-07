@@ -168,6 +168,10 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           base-seed-path: tests/seed/base-schema.sql
           log-path: logs/honua-server-sdk-compat-${{ matrix.server_label }}-${{ matrix.sdk_label }}.log
+        env:
+          # Compatibility checks exercise server/SDK runtime behavior; security audit gates run separately.
+          NuGetAudit: false
+          WarningsNotAsErrors: NU1901;NU1902;NU1903;NU1904
 
       - name: Checkout honua-sdk-js
         uses: actions/checkout@v5
