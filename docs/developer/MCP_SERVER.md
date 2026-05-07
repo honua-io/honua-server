@@ -780,6 +780,7 @@ method as the `target` and `authenticated = false`.
 ### Source
 
 - Vertical slice: `src/Honua.Server/Features/Protocols/Mcp/`
+- AI builder fixture contract: `docs/developer/ai-builder-contract-fixtures.md`
 - Tools: `src/Honua.Server/Features/Protocols/Mcp/Tools/`
 - Resources: `src/Honua.Server/Features/Protocols/Mcp/Resources/`
 - Reporting feature (builder, renderers, narrative provider, templates):
