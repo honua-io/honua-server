@@ -125,9 +125,9 @@ public static class FeatureCatalog
         new("caching.output-cache", "Output Caching", Categories.Caching,
             HonuaEdition.Pro, "HTTP response caching with tag-based invalidation."),
 
-        // Caching — Enterprise
+        // Caching — Pro
         new("caching.redis", "Redis Distributed Cache", Categories.Caching,
-            HonuaEdition.Enterprise, "Redis-backed distributed cache for multi-node deployments."),
+            HonuaEdition.Pro, "Redis-backed distributed cache for multi-node deployments."),
 
         // Import — Pro
         new("import.file", "File Import", Categories.Import,

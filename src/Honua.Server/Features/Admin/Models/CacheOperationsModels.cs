@@ -60,6 +60,44 @@ internal sealed class CacheHealthResponse
     public DateTimeOffset GeneratedAt { get; init; }
 }
 
+internal sealed class CacheStatisticsResponse
+{
+    public required DateTimeOffset GeneratedAt { get; init; }
+    public required long Hits { get; init; }
+    public required long Misses { get; init; }
+    public required long Evictions { get; init; }
+    public required double HitRatio { get; init; }
+    public required double MissRatio { get; init; }
+    public required string Backend { get; init; }
+    public required bool IsUsingFallback { get; init; }
+    public required int LocalKeyCount { get; init; }
+    public long? DistributedKeyCount { get; init; }
+    public long? RedisDatabaseSize { get; init; }
+    public long? RedisUsedMemoryBytes { get; init; }
+    public string? RedisUsedMemoryHuman { get; init; }
+    public required IReadOnlyDictionary<string, CacheTypeStatisticsResponse> Types { get; init; }
+}
+
+internal sealed class CacheTypeStatisticsResponse
+{
+    public required long Hits { get; init; }
+    public required long Misses { get; init; }
+    public required long Evictions { get; init; }
+    public required double HitRatio { get; init; }
+    public required double MissRatio { get; init; }
+}
+
+internal sealed class RedisConnectionMetricsResponse
+{
+    public required DateTimeOffset GeneratedAt { get; init; }
+    public required bool IsConfigured { get; init; }
+    public required bool IsConnected { get; init; }
+    public string? ClientName { get; init; }
+    public long? TotalOutstanding { get; init; }
+    public int? EndpointCount { get; init; }
+    public RedisServerInfoResponse? ServerInfo { get; init; }
+}
+
 /// <summary>
 /// Redis server connection and statistics information.
 /// </summary>

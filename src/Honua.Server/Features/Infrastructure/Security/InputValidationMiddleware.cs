@@ -157,7 +157,9 @@ internal sealed class InputValidationMiddleware
             // Validate specific security-sensitive headers
             if (IsSecuritySensitiveHeader(header.Key))
             {
-                var result = ValidateParameter(request, "header", header.Key, header.Value);
+                var result = ShouldValidateHeaderSyntaxOnly(header.Key)
+                    ? ValidateHeaderValue(header.Key, header.Value)
+                    : ValidateParameter(request, "header", header.Key, header.Value);
                 if (!result.IsValid)
                     return result;
             }
@@ -349,6 +351,10 @@ internal sealed class InputValidationMiddleware
 
         return sensitiveHeaders.Contains(headerName);
     }
+
+    private static bool ShouldValidateHeaderSyntaxOnly(string headerName)
+        => headerName.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
+           headerName.Equals("X-API-Key", StringComparison.OrdinalIgnoreCase);
 
     private static bool ContainsControlCharacters(string value)
     {

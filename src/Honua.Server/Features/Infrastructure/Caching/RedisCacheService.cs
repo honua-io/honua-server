@@ -28,7 +28,7 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 /// blocking operations in disposal. Always use 'await using' syntax to ensure
 /// proper async cleanup and prevent thread pool starvation.
 /// </remarks>
-internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChecker, IDisposable
+internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChecker, ICacheStorageMetricsProvider, IDisposable
 {
     private const string CacheType = "layer-catalog";
     private const string HealthCheckKey = "__health_check__";
@@ -92,6 +92,67 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
     /// <inheritdoc />
     public bool IsUsingFallback => _isUsingFallback;
+
+    public async Task<CacheStorageMetrics> GetStorageMetricsAsync(CancellationToken cancellationToken = default)
+    {
+        var backend = _distributedCache == null || _isUsingFallback ? "memory" : "redis";
+        long? distributedKeyCount = null;
+        long? redisDatabaseSize = null;
+        long? redisUsedMemoryBytes = null;
+        string? redisUsedMemoryHuman = null;
+
+        if (!_isUsingFallback && _redis != null)
+        {
+            try
+            {
+                var db = _redis.GetDatabase();
+                var indexedKeys = await db.SetLengthAsync(GetRedisStorageKey(GetPrefixedKey(CacheKeyIndexKey))).ConfigureAwait(false);
+                distributedKeyCount = indexedKeys;
+                redisDatabaseSize = (long?)await db.ExecuteAsync("DBSIZE").ConfigureAwait(false);
+
+                var endpoints = _redis.GetEndPoints();
+                if (endpoints.Length > 0)
+                {
+                    var server = _redis.GetServer(endpoints[0]);
+                    var info = await server.InfoAsync("memory").ConfigureAwait(false);
+                    foreach (var section in info)
+                    {
+                        foreach (var kvp in section)
+                        {
+                            if (string.Equals(kvp.Key, "used_memory", StringComparison.OrdinalIgnoreCase) &&
+                                long.TryParse(kvp.Value, out var bytes))
+                            {
+                                redisUsedMemoryBytes = bytes;
+                            }
+                            else if (string.Equals(kvp.Key, "used_memory_human", StringComparison.OrdinalIgnoreCase))
+                            {
+                                redisUsedMemoryHuman = kvp.Value;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                HandleRedisFailure(ex);
+            }
+        }
+        else if (!_isUsingFallback && _distributedCache != null)
+        {
+            distributedKeyCount = (await LoadDistributedIndexedKeysAsync(cancellationToken).ConfigureAwait(false)).Count;
+        }
+
+        return new CacheStorageMetrics
+        {
+            Backend = backend,
+            IsUsingFallback = _isUsingFallback,
+            LocalKeyCount = _fallbackCache.Count,
+            DistributedKeyCount = distributedKeyCount,
+            RedisDatabaseSize = redisDatabaseSize,
+            RedisUsedMemoryBytes = redisUsedMemoryBytes,
+            RedisUsedMemoryHuman = redisUsedMemoryHuman
+        };
+    }
 
     /// <inheritdoc />
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class

@@ -106,6 +106,8 @@ builder.Services.AddDataProtection();
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
 var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
+var redisCacheEntitled = await IsRedisCacheEntitledAsync(builder.Configuration);
+var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 ConnectionMultiplexer? connectedRedis = null;
 
 if (useAspire)
@@ -117,7 +119,7 @@ if (useAspire)
     builder.AddNpgsqlDataSource("DefaultConnection");
 
     // Add Redis if configured, otherwise fallback to in-memory cache
-    if (!string.IsNullOrWhiteSpace(redisConnectionString))
+    if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
     {
         builder.AddRedisDistributedCache("redis");
     }
@@ -136,12 +138,12 @@ else
     }
 
     // Add Redis if configured, otherwise fallback to in-memory cache
-    if (!string.IsNullOrWhiteSpace(redisConnectionString))
+    if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
     {
         var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
         builder.Services.AddStackExchangeRedisCache(options =>
         {
-            options.Configuration = redisConnectionString;
+            options.Configuration = redisCacheConnectionString;
             options.InstanceName = cacheKeyPrefix;
         });
     }
@@ -151,12 +153,12 @@ else
     }
 }
 
-if (!string.IsNullOrWhiteSpace(redisConnectionString))
+if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
 {
     var requireRedisAtStartup = requiresDurableDistributedEvents;
     try
     {
-        var redisOptions = ConfigurationOptions.Parse(redisConnectionString, ignoreUnknown: true);
+        var redisOptions = ConfigurationOptions.Parse(redisCacheConnectionString, ignoreUnknown: true);
         redisOptions.AbortOnConnectFail = false;
         redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
         redisOptions.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
@@ -684,6 +686,9 @@ builder.Services.AddSingleton<Honua.Server.Features.Admin.TileOperations.ITileOp
         sp.GetRequiredService<IOptions<LimitsOptions>>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.TileOperations.TileOperationJobService>>(),
         sp.GetService<IConnectionMultiplexer>()));
+builder.Services.Configure<Honua.Server.Features.Admin.TileOperations.TileCacheWarmingOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Admin.TileOperations.TileCacheWarmingOptions.SectionName));
+builder.Services.AddHostedService<Honua.Server.Features.Admin.TileOperations.TileCacheWarmingHostedService>();
 builder.Services.AddHostedService<Honua.Server.Features.Admin.TileOperations.TileOperationBackgroundService>();
 
 // Register OData services and handlers
@@ -1565,6 +1570,22 @@ static void ResolveEnvironmentSecretReference(ConfigurationManager configuration
     }
 }
 
+static async Task<bool> IsRedisCacheEntitledAsync(IConfiguration configuration)
+{
+    var redisConnectionString = configuration.GetConnectionString("redis")
+        ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
+    if (string.IsNullOrWhiteSpace(redisConnectionString))
+    {
+        return false;
+    }
+
+    using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
+    var snapshot = await Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService
+        .LoadBootstrapSnapshotAsync(configuration, loggerFactory)
+        .ConfigureAwait(false);
+    return snapshot.HasEntitlement("caching.redis");
+}
+
 // Configure caching services with Redis and in-memory fallback
 static void ConfigureCaching(IServiceCollection services, IConfiguration configuration)
 {
@@ -1597,6 +1618,7 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
     // Register interfaces pointing to the singleton
     services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
     services.AddSingleton<ICacheHealthChecker>(sp => sp.GetRequiredService<RedisCacheService>());
+    services.AddSingleton<ICacheStorageMetricsProvider>(sp => sp.GetRequiredService<RedisCacheService>());
 
     services.AddSingleton<IResponseCache>(sp =>
     {
