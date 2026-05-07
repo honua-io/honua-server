@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
 
@@ -106,11 +107,23 @@ internal static class LicenseTestSupport
             .TrimEnd('=')
             .Replace('+', '-')
             .Replace('/', '_');
+
+    public static WebAppFixture WithTestLicense(
+        this WebAppFixture fixture,
+        HonuaEdition edition,
+        LicenseValidationState validationState = LicenseValidationState.Valid,
+        string[]? entitlements = null)
+    {
+        var license = new TestLicenseEntitlementService(edition, validationState, entitlements);
+        return fixture
+            .ReplaceService<ILicenseEntitlementService>(license)
+            .ReplaceService<ILicenseStatusProvider>(license);
+    }
 }
 
 internal sealed record SignedLicenseTestFile(byte[] LicenseData, string PublicKeySetting);
 
-internal sealed class TestLicenseEntitlementService : ILicenseEntitlementService
+internal sealed class TestLicenseEntitlementService : ILicenseEntitlementService, ILicenseStatusProvider
 {
     private readonly LicenseSnapshot _snapshot;
 
@@ -123,6 +136,22 @@ internal sealed class TestLicenseEntitlementService : ILicenseEntitlementService
     }
 
     public LicenseSnapshot GetSnapshot() => _snapshot;
+
+    public LicenseStatus GetCurrentStatus()
+        => new(
+            _snapshot.Edition,
+            _snapshot.IsValid,
+            _snapshot.ExpiresAt,
+            _snapshot.LicensedTo,
+            _snapshot.ValidationState,
+            _snapshot.LicenseId,
+            _snapshot.IssuedAt,
+            _snapshot.Entitlements);
+
+    public Task<LicenseUploadResult> UploadLicenseAsync(
+        Stream licenseStream,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new LicenseUploadResult(false, "Test license service does not support uploads."));
 
     public LicenseEntitlementDecision CheckEntitlement(string entitlementKey)
     {

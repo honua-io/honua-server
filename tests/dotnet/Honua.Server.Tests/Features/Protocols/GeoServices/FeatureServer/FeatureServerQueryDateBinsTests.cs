@@ -5,7 +5,6 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Tests.Features.Licensing;
 using Honua.TestKit;
@@ -19,7 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 public sealed class FeatureServerQueryDateBinsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro));
+        .WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 
