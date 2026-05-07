@@ -66,6 +66,11 @@ public sealed record GeoServerServiceInfo
     public GeoServerStyleInfo[] Styles { get; init; } = [];
 
     /// <summary>
+    /// Advertised GeoServer service endpoints discovered from REST service settings.
+    /// </summary>
+    public GeoServerServiceEndpointInfo[] ServiceEndpoints { get; init; } = [];
+
+    /// <summary>
     /// Migration compatibility assessment.
     /// </summary>
     public GeoServerMigrationCompatibility? CompatibilityAssessment { get; init; }
@@ -434,6 +439,37 @@ public sealed record GeoServerStyleInfo
 }
 
 /// <summary>
+/// Advertised GeoServer service endpoint, such as WMS or WFS.
+/// </summary>
+public sealed record GeoServerServiceEndpointInfo
+{
+    /// <summary>
+    /// Protocol label, for example <c>WMS</c> or <c>WFS</c>.
+    /// </summary>
+    public required string Protocol { get; init; }
+
+    /// <summary>
+    /// Advertised service endpoint URL.
+    /// </summary>
+    public required string Url { get; init; }
+
+    /// <summary>
+    /// Whether the GeoServer service settings report this endpoint as enabled.
+    /// </summary>
+    public bool? Enabled { get; init; }
+
+    /// <summary>
+    /// Stable operation capability labels derived from the advertised service.
+    /// </summary>
+    public string[] Capabilities { get; init; } = [];
+
+    /// <summary>
+    /// Deterministic service metadata useful for migration planning.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
+}
+
+/// <summary>
 /// Bounding box coordinates.
 /// </summary>
 public sealed record GeoServerBoundingBox
@@ -658,6 +694,11 @@ public sealed record GeoServerResourceCompatibility
     /// Warnings for this resource.
     /// </summary>
     public string[] Warnings { get; init; } = [];
+
+    /// <summary>
+    /// Stable machine-readable compatibility code.
+    /// </summary>
+    public string? Code { get; init; }
 
     /// <summary>
     /// Whether automatic migration is possible.

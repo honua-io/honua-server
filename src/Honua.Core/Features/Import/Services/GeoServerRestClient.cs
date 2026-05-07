@@ -114,6 +114,9 @@ internal sealed partial class GeoServerRestClient
             // Get all styles across workspaces
             var styles = await GetStylesAsync(baseUrl, workspaces, includeStyleContent, cancellationToken);
 
+            // Get advertised OGC service endpoints when GeoServer REST exposes service settings
+            var serviceEndpoints = await GetServiceEndpointsAsync(baseUrl, cancellationToken);
+
             // Perform compatibility analysis
             var compatibility = includeCompatibilityAnalysis
                 ? PerformCompatibilityAnalysis(dataStores, coverageStores, layers, styles)
@@ -132,6 +135,7 @@ internal sealed partial class GeoServerRestClient
                 Layers = layers,
                 LayerGroups = layerGroups,
                 Styles = styles,
+                ServiceEndpoints = serviceEndpoints,
                 CompatibilityAssessment = compatibility,
                 DiscoveredAt = DateTimeOffset.UtcNow
             };
@@ -806,6 +810,141 @@ internal sealed partial class GeoServerRestClient
         return styles.ToArray();
     }
 
+    private async Task<GeoServerServiceEndpointInfo[]> GetServiceEndpointsAsync(
+        string baseUrl,
+        CancellationToken cancellationToken)
+    {
+        var endpoints = new List<GeoServerServiceEndpointInfo>(2);
+
+        var wms = await TryGetServiceEndpointAsync(
+            baseUrl,
+            protocol: "WMS",
+            servicePath: "wms",
+            settingsPropertyName: "wms",
+            defaultCapabilities: ["get-capabilities", "get-map", "get-feature-info"],
+            cancellationToken).ConfigureAwait(false);
+        if (wms != null)
+        {
+            endpoints.Add(wms);
+        }
+
+        var wfs = await TryGetServiceEndpointAsync(
+            baseUrl,
+            protocol: "WFS",
+            servicePath: "wfs",
+            settingsPropertyName: "wfs",
+            defaultCapabilities: ["describe-feature-type", "get-capabilities", "get-feature"],
+            cancellationToken).ConfigureAwait(false);
+        if (wfs != null)
+        {
+            endpoints.Add(wfs);
+        }
+
+        return endpoints
+            .OrderBy(static endpoint => endpoint.Protocol, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private async Task<GeoServerServiceEndpointInfo?> TryGetServiceEndpointAsync(
+        string baseUrl,
+        string protocol,
+        string servicePath,
+        string settingsPropertyName,
+        string[] defaultCapabilities,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var json = await GetRequiredJsonDocumentAsync(
+                BuildJsonUrl(baseUrl, $"services/{servicePath}/settings"),
+                cancellationToken).ConfigureAwait(false);
+
+            var settingsElement = json.RootElement.TryGetProperty(settingsPropertyName, out var nested) &&
+                nested.ValueKind == JsonValueKind.Object
+                ? nested
+                : json.RootElement;
+
+            var enabled = GetOptionalBoolProperty(settingsElement, "enabled");
+            var metadata = BuildServiceSettingsMetadata(settingsElement);
+            var capabilities = BuildServiceCapabilities(protocol, enabled, metadata, defaultCapabilities);
+
+            return new GeoServerServiceEndpointInfo
+            {
+                Protocol = protocol,
+                Url = BuildServiceEndpointUrl(baseUrl, servicePath),
+                Enabled = enabled,
+                Capabilities = capabilities,
+                Metadata = metadata
+            };
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
+        {
+            Log.ServiceSettingsUnavailable(_logger, protocol, ex);
+            return null;
+        }
+    }
+
+    private static Dictionary<string, string> BuildServiceSettingsMetadata(JsonElement settingsElement)
+    {
+        var metadata = new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var property in settingsElement.EnumerateObject())
+        {
+            var value = property.Value;
+            switch (value.ValueKind)
+            {
+                case JsonValueKind.String:
+                    metadata[property.Name] = value.GetString() ?? string.Empty;
+                    break;
+                case JsonValueKind.Number:
+                case JsonValueKind.True:
+                case JsonValueKind.False:
+                    metadata[property.Name] = value.GetRawText();
+                    break;
+                case JsonValueKind.Array:
+                    var values = value.EnumerateArray()
+                        .Where(static item => item.ValueKind is JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False)
+                        .Select(static item => item.ValueKind == JsonValueKind.String
+                            ? item.GetString() ?? string.Empty
+                            : item.GetRawText())
+                        .Where(static item => !string.IsNullOrWhiteSpace(item))
+                        .OrderBy(static item => item, StringComparer.Ordinal)
+                        .ToArray();
+                    if (values.Length > 0)
+                    {
+                        metadata[property.Name] = string.Join(",", values);
+                    }
+
+                    break;
+            }
+        }
+
+        return metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
+    }
+
+    private static string[] BuildServiceCapabilities(
+        string protocol,
+        bool? enabled,
+        Dictionary<string, string> metadata,
+        string[] defaultCapabilities)
+    {
+        if (enabled == false)
+        {
+            return [];
+        }
+
+        var capabilities = new SortedSet<string>(defaultCapabilities, StringComparer.Ordinal);
+
+        if (string.Equals(protocol, "WFS", StringComparison.Ordinal) &&
+            metadata.TryGetValue("serviceLevel", out var serviceLevel) &&
+            string.Equals(serviceLevel, "COMPLETE", StringComparison.OrdinalIgnoreCase))
+        {
+            capabilities.Add("transaction");
+        }
+
+        return capabilities.ToArray();
+    }
+
     private async Task<GeoServerStyleInfo> GetStyleDetailsAsync(
         string baseUrl, string? workspaceName, string styleName, bool includeStyleContent, CancellationToken cancellationToken)
     {
@@ -876,6 +1015,35 @@ internal sealed partial class GeoServerRestClient
 
     private static string BuildSldUrl(string baseUrl, string relativePath)
         => $"{baseUrl}/{relativePath}.sld";
+
+    private static string BuildServiceEndpointUrl(string baseUrl, string servicePath)
+    {
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        {
+            var trimmed = baseUrl.TrimEnd('/');
+            if (trimmed.EndsWith("/rest", StringComparison.OrdinalIgnoreCase))
+            {
+                trimmed = trimmed[..^5];
+            }
+
+            return $"{trimmed}/{servicePath}";
+        }
+
+        var path = uri.AbsolutePath.TrimEnd('/');
+        if (path.EndsWith("/rest", StringComparison.OrdinalIgnoreCase))
+        {
+            path = path[..^5];
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            Path = $"{path}/{servicePath}".Replace("//", "/", StringComparison.Ordinal),
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+
+        return builder.Uri.AbsoluteUri;
+    }
 
     private async Task<string> GetStringAsync(string url, CancellationToken cancellationToken)
     {
@@ -1188,7 +1356,8 @@ internal sealed partial class GeoServerRestClient
             return new GeoServerResourceCompatibility
             {
                 CompatibilityLevel = GeoServerCompatibilityLevel.FullyCompatible,
-                Reason = $"DataStore type '{type}' is fully supported by Honua"
+                Reason = $"DataStore type '{type}' is fully supported by Honua",
+                Code = ImportCompatibilityCodes.GeoServerSupported
             };
         }
 
@@ -1196,7 +1365,8 @@ internal sealed partial class GeoServerRestClient
         {
             CompatibilityLevel = GeoServerCompatibilityLevel.Incompatible,
             Reason = $"DataStore type '{type}' is not currently supported by Honua",
-            RequiredManualSteps = [$"Manual migration required for {type} datastore"]
+            RequiredManualSteps = [$"Manual migration required for {type} datastore"],
+            Code = ImportCompatibilityCodes.GeoServerUnsupportedStore
         };
     }
 
@@ -1213,7 +1383,8 @@ internal sealed partial class GeoServerRestClient
             {
                 CompatibilityLevel = GeoServerCompatibilityLevel.PartiallyCompatible,
                 Reason = $"CoverageStore type '{type}' may require additional configuration in Honua",
-                Warnings = ["Raster support in Honua may have different capabilities than GeoServer"]
+                Warnings = ["Raster support in Honua may have different capabilities than GeoServer"],
+                Code = ImportCompatibilityCodes.GeoServerManualReview
             };
         }
 
@@ -1221,7 +1392,8 @@ internal sealed partial class GeoServerRestClient
         {
             CompatibilityLevel = GeoServerCompatibilityLevel.Incompatible,
             Reason = $"CoverageStore type '{type}' is not currently supported by Honua",
-            RequiredManualSteps = [$"Manual migration required for {type} coverage store"]
+            RequiredManualSteps = [$"Manual migration required for {type} coverage store"],
+            Code = ImportCompatibilityCodes.GeoServerUnsupportedCoverageStore
         };
     }
 
@@ -1236,14 +1408,16 @@ internal sealed partial class GeoServerRestClient
             {
                 CompatibilityLevel = GeoServerCompatibilityLevel.PartiallyCompatible,
                 Reason = "Disabled layers can be migrated but will need to be manually enabled",
-                Warnings = ["Layer is currently disabled in GeoServer"]
+                Warnings = ["Layer is currently disabled in GeoServer"],
+                Code = ImportCompatibilityCodes.GeoServerDisabledLayer
             };
         }
 
         return new GeoServerResourceCompatibility
         {
             CompatibilityLevel = GeoServerCompatibilityLevel.FullyCompatible,
-            Reason = "Standard layer configuration is fully supported"
+            Reason = "Standard layer configuration is fully supported",
+            Code = ImportCompatibilityCodes.GeoServerSupported
         };
     }
 
@@ -1255,14 +1429,16 @@ internal sealed partial class GeoServerRestClient
             {
                 CompatibilityLevel = GeoServerCompatibilityLevel.PartiallyCompatible,
                 Reason = "Empty layer groups can be migrated but provide no functionality",
-                Warnings = ["Layer group contains no layers"]
+                Warnings = ["Layer group contains no layers"],
+                Code = ImportCompatibilityCodes.GeoServerEmptyLayerGroup
             };
         }
 
         return new GeoServerResourceCompatibility
         {
             CompatibilityLevel = GeoServerCompatibilityLevel.FullyCompatible,
-            Reason = "Layer groups are fully supported"
+            Reason = "Layer groups are fully supported",
+            Code = ImportCompatibilityCodes.GeoServerSupported
         };
     }
 
@@ -1274,7 +1450,8 @@ internal sealed partial class GeoServerRestClient
             {
                 CompatibilityLevel = GeoServerCompatibilityLevel.Incompatible,
                 Reason = "SLD styles require conversion to MapLibre format (issue #375)",
-                RequiredManualSteps = ["Implement SLD to MapLibre style conversion", "Manual style recreation may be required"]
+                RequiredManualSteps = ["Implement SLD to MapLibre style conversion", "Manual style recreation may be required"],
+                Code = ImportCompatibilityCodes.GeoServerStyleConversionRequired
             };
         }
 
@@ -1282,7 +1459,8 @@ internal sealed partial class GeoServerRestClient
         {
             CompatibilityLevel = GeoServerCompatibilityLevel.Incompatible,
             Reason = $"Style format '{format}' is not supported",
-            RequiredManualSteps = [$"Convert {format} style to supported format"]
+            RequiredManualSteps = [$"Convert {format} style to supported format"],
+            Code = ImportCompatibilityCodes.GeoServerUnsupportedStyleFormat
         };
     }
 
@@ -1453,6 +1631,9 @@ internal sealed partial class GeoServerRestClient
 
         [LoggerMessage(7987, LogLevel.Warning, "Failed to fetch SLD content for style {StyleName}")]
         public static partial void StyleContentFetchFailed(ILogger logger, string styleName, Exception exception);
+
+        [LoggerMessage(7988, LogLevel.Debug, "GeoServer {Protocol} service settings were unavailable during inventory scan")]
+        public static partial void ServiceSettingsUnavailable(ILogger logger, string protocol, Exception exception);
     }
 }
 

@@ -1,0 +1,233 @@
+{
+  "serviceUrl": "https://example.com/geoserver/rest",
+  "responses": {
+    "/geoserver/rest/about/version.xml": "<about><resource name=\"GeoServer\"><Version>2.28.0</Version><Build-Timestamp>2026-01-15T10:30:00Z</Build-Timestamp><Git-Revision>abc123</Git-Revision></resource></about>",
+    "/geoserver/rest/settings.json": {
+      "global": {
+        "title": "Demo GeoServer",
+        "abstract": "Fixture-backed GeoServer catalog",
+        "onlineResource": "https://example.com/geoserver"
+      }
+    },
+    "/geoserver/rest/services/wms/settings.json": {
+      "wms": {
+        "enabled": true,
+        "title": "Demo WMS",
+        "maxRenderingTime": 60
+      }
+    },
+    "/geoserver/rest/services/wfs/settings.json": {
+      "wfs": {
+        "enabled": true,
+        "title": "Demo WFS",
+        "serviceLevel": "COMPLETE"
+      }
+    },
+    "/geoserver/rest/workspaces.json": {
+      "workspaces": {
+        "workspace": [
+          { "name": "archive" },
+          { "name": "demo" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/archive.json": {
+      "workspace": {
+        "name": "archive",
+        "isolated": true
+      }
+    },
+    "/geoserver/rest/workspaces/demo.json": {
+      "workspace": {
+        "name": "demo",
+        "default": true
+      }
+    },
+    "/geoserver/rest/workspaces/archive/datastores.json": {
+      "dataStores": {
+        "dataStore": ""
+      }
+    },
+    "/geoserver/rest/workspaces/demo/datastores.json": {
+      "dataStores": {
+        "dataStore": [
+          { "name": "legacy" },
+          { "name": "pg" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/demo/datastores/legacy.json": {
+      "dataStore": {
+        "name": "legacy",
+        "type": "VPF",
+        "connectionParameters": {
+          "entry": [
+            { "@key": "url", "$": "file:/srv/geoserver/legacy.vpf" }
+          ]
+        }
+      }
+    },
+    "/geoserver/rest/workspaces/demo/datastores/pg.json": {
+      "dataStore": {
+        "name": "pg",
+        "type": "PostGIS",
+        "connectionParameters": {
+          "entry": [
+            { "@key": "host", "$": "db.example.com" },
+            { "@key": "database", "$": "gis" },
+            { "@key": "dbtype", "$": "postgis" }
+          ]
+        }
+      }
+    },
+    "/geoserver/rest/workspaces/archive/coveragestores.json": {
+      "coverageStores": {
+        "coverageStore": ""
+      }
+    },
+    "/geoserver/rest/workspaces/demo/coveragestores.json": {
+      "coverageStores": {
+        "coverageStore": [
+          { "name": "imagery" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/demo/coveragestores/imagery.json": {
+      "coverageStore": {
+        "name": "imagery",
+        "type": "GeoTIFF",
+        "url": "s3://example-bucket/imagery/demo.tif"
+      }
+    },
+    "/geoserver/rest/workspaces/archive/layers.json": {
+      "layers": {
+        "layer": ""
+      }
+    },
+    "/geoserver/rest/workspaces/demo/layers.json": {
+      "layers": {
+        "layer": [
+          { "name": "closed" },
+          { "name": "roads" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/demo/layers/closed.json": {
+      "layer": {
+        "name": "closed",
+        "title": "Closed Facilities",
+        "enabled": false,
+        "queryable": false,
+        "resource": {
+          "href": "https://example.com/geoserver/rest/workspaces/demo/datastores/legacy/featuretypes/closed.json"
+        },
+        "defaultStyle": {
+          "name": "deprecated",
+          "workspace": "demo"
+        }
+      }
+    },
+    "/geoserver/rest/workspaces/demo/layers/roads.json": {
+      "layer": {
+        "name": "roads",
+        "title": "Roads",
+        "abstract": "Road centerlines",
+        "srs": "EPSG:4326",
+        "nativeCRS": "EPSG:3857",
+        "latLonBoundingBox": {
+          "minx": -158.2,
+          "miny": 21.1,
+          "maxx": -157.6,
+          "maxy": 21.8,
+          "crs": "EPSG:4326"
+        },
+        "nativeBoundingBox": {
+          "minx": 0,
+          "miny": 0,
+          "maxx": 100,
+          "maxy": 100,
+          "crs": "EPSG:3857"
+        },
+        "resource": {
+          "href": "https://example.com/geoserver/rest/workspaces/demo/datastores/pg/featuretypes/roads.json"
+        },
+        "defaultStyle": {
+          "name": "line",
+          "workspace": "demo"
+        }
+      }
+    },
+    "/geoserver/rest/layergroups.json": {
+      "layerGroups": {
+        "layerGroup": ""
+      }
+    },
+    "/geoserver/rest/workspaces/archive/layergroups.json": {
+      "layerGroups": {
+        "layerGroup": ""
+      }
+    },
+    "/geoserver/rest/workspaces/demo/layergroups.json": {
+      "layerGroups": {
+        "layerGroup": [
+          { "name": "empty-group" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/demo/layergroups/empty-group.json": {
+      "layerGroup": {
+        "name": "empty-group",
+        "title": "Empty Group",
+        "mode": "SINGLE",
+        "publishables": {
+          "published": ""
+        },
+        "styles": {
+          "style": ""
+        },
+        "bounds": {
+          "minx": -158.2,
+          "miny": 21.1,
+          "maxx": -157.6,
+          "maxy": 21.8,
+          "crs": "EPSG:4326"
+        }
+      }
+    },
+    "/geoserver/rest/styles.json": {
+      "styles": {
+        "style": ""
+      }
+    },
+    "/geoserver/rest/workspaces/archive/styles.json": {
+      "styles": {
+        "style": ""
+      }
+    },
+    "/geoserver/rest/workspaces/demo/styles.json": {
+      "styles": {
+        "style": [
+          { "name": "deprecated" },
+          { "name": "line" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/demo/styles/deprecated.json": {
+      "style": {
+        "name": "deprecated",
+        "format": "css",
+        "filename": "deprecated.css"
+      }
+    },
+    "/geoserver/rest/workspaces/demo/styles/deprecated.sld": "",
+    "/geoserver/rest/workspaces/demo/styles/line.json": {
+      "style": {
+        "name": "line",
+        "format": "sld",
+        "languageVersion": "1.0.0",
+        "filename": "line.sld"
+      }
+    },
+    "/geoserver/rest/workspaces/demo/styles/line.sld": "<StyledLayerDescriptor xmlns=\"http://www.opengis.net/sld\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><NamedLayer><UserStyle><FeatureTypeStyle><Rule><LineSymbolizer /><PointSymbolizer><Graphic><ExternalGraphic><OnlineResource xlink:href=\"https://cdn.example.com/styles/road-marker.svg?token=fixture#frag\" /></ExternalGraphic></Graphic></PointSymbolizer></Rule></FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>"
+  }
+}

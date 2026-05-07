@@ -51,4 +51,37 @@ public static class ImportCompatibilityCodes
 
     /// <summary>ArcGIS coded-value domain exceeded the deterministic capture cap.</summary>
     public const string ArcGisDomainTruncated = "ARCGIS_DOMAIN_TRUNCATED";
+
+    /// <summary>GeoServer resource or endpoint is supported by the scanner's migration path.</summary>
+    public const string GeoServerSupported = "GEOSERVER_SUPPORTED";
+
+    /// <summary>GeoServer resource needs manual review but can remain in the inventory plan.</summary>
+    public const string GeoServerManualReview = "GEOSERVER_MANUAL_REVIEW";
+
+    /// <summary>GeoServer datastore type is not supported by the automated migration path.</summary>
+    public const string GeoServerUnsupportedStore = "GEOSERVER_UNSUPPORTED_STORE";
+
+    /// <summary>GeoServer coverage store type is not supported by the automated migration path.</summary>
+    public const string GeoServerUnsupportedCoverageStore = "GEOSERVER_UNSUPPORTED_COVERAGE_STORE";
+
+    /// <summary>GeoServer layer is disabled and requires operator confirmation before enabling in the target.</summary>
+    public const string GeoServerDisabledLayer = "GEOSERVER_DISABLED_LAYER";
+
+    /// <summary>GeoServer layer group is empty and needs manual review.</summary>
+    public const string GeoServerEmptyLayerGroup = "GEOSERVER_EMPTY_LAYER_GROUP";
+
+    /// <summary>GeoServer SLD style requires style conversion work before automated migration.</summary>
+    public const string GeoServerStyleConversionRequired = "GEOSERVER_STYLE_CONVERSION_REQUIRED";
+
+    /// <summary>GeoServer style format is not supported by the automated migration path.</summary>
+    public const string GeoServerUnsupportedStyleFormat = "GEOSERVER_UNSUPPORTED_STYLE_FORMAT";
+
+    /// <summary>GeoServer style references an external graphic or URL dependency.</summary>
+    public const string GeoServerExternalGraphic = "GEOSERVER_EXTERNAL_GRAPHIC";
+
+    /// <summary>GeoServer advertised service endpoint was captured for downstream migration planning.</summary>
+    public const string GeoServerServiceEndpoint = "GEOSERVER_SERVICE_ENDPOINT";
+
+    /// <summary>GeoServer inventory scan could not complete.</summary>
+    public const string GeoServerScanFailed = "GEOSERVER_SCAN_FAILED";
 }

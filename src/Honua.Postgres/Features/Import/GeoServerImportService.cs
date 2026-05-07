@@ -162,7 +162,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 OverallCompatibility = MigrationInventoryHelpers.Partial(
                     "The scan did not complete successfully.",
                     [ex.Message],
-                    ["Verify GeoServer reachability and credentials, then rerun the scan."]),
+                    ["Verify GeoServer reachability and credentials, then rerun the scan."],
+                    ImportCompatibilityCodes.GeoServerScanFailed),
                 Containers = [],
                 Resources = [],
                 Styles = [],
@@ -223,7 +224,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 GeometryType = null,
                 FeatureCount = null,
                 HasAttachments = null,
-                Capabilities = BuildLayerCapabilities(layer),
+                Capabilities = BuildLayerCapabilities(layer, serviceInfo.ServiceEndpoints),
                 SpatialReferences = spatialReferences,
                 StyleIds = styleIds,
                 ExternalDependencyIds = dependencyIds,
@@ -258,7 +259,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 GeometryType = null,
                 FeatureCount = null,
                 HasAttachments = null,
-                Capabilities = [],
+                Capabilities = BuildLayerGroupCapabilities(layerGroup, serviceInfo.ServiceEndpoints),
                 SpatialReferences = spatialReferences,
                 StyleIds = GetStyleIdsForResource(serviceInfo.Styles, styleResourceIds, layerGroupId),
                 ExternalDependencyIds = [],
@@ -279,7 +280,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     {
         var containers = new List<MigrationInventoryContainer>(serviceInfo.Workspaces.Length + 1);
         var globalContainerNeeded = serviceInfo.Styles.Any(style => string.IsNullOrWhiteSpace(style.WorkspaceName)) ||
-            serviceInfo.LayerGroups.Any(group => string.IsNullOrWhiteSpace(group.WorkspaceName));
+            serviceInfo.LayerGroups.Any(group => string.IsNullOrWhiteSpace(group.WorkspaceName)) ||
+            serviceInfo.ServiceEndpoints.Length > 0;
 
         if (globalContainerNeeded)
         {
@@ -370,6 +372,14 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     metadata["filename"] = style.Filename;
                 }
 
+                metadata["styleReference"] = BuildStyleReferenceUrl(serviceInfo.GeoServerRestUrl, style);
+
+                if (style.Format.Equals("sld", StringComparison.OrdinalIgnoreCase))
+                {
+                    metadata["styleContentReference"] = BuildStyleContentReferenceUrl(serviceInfo.GeoServerRestUrl, style);
+                    metadata["styleContentDisposition"] = "linked";
+                }
+
                 return new MigrationInventoryStyle
                 {
                     Id = styleId,
@@ -436,6 +446,51 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             });
         }
 
+        foreach (var endpoint in serviceInfo.ServiceEndpoints.OrderBy(static endpoint => endpoint.Protocol, StringComparer.Ordinal))
+        {
+            var metadata = new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["protocol"] = endpoint.Protocol
+            };
+
+            foreach (var (key, value) in endpoint.Metadata)
+            {
+                metadata[key] = value;
+            }
+
+            if (endpoint.Enabled.HasValue)
+            {
+                metadata["enabled"] = endpoint.Enabled.Value.ToString(System.Globalization.CultureInfo.InvariantCulture).ToLowerInvariant();
+            }
+
+            if (endpoint.Capabilities.Length > 0)
+            {
+                metadata["capabilities"] = string.Join(",", endpoint.Capabilities);
+            }
+
+            dependencies.Add(new MigrationExternalDependency
+            {
+                Id = GetServiceEndpointId(endpoint.Protocol),
+                ContainerId = GetGlobalContainerId(),
+                ResourceId = null,
+                Kind = "service-endpoint",
+                Name = endpoint.Protocol,
+                DependencyType = "ogc-service",
+                Address = endpoint.Url,
+                Metadata = metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+                SpatialReferences = [],
+                Compatibility = endpoint.Enabled == false
+                    ? MigrationInventoryHelpers.Partial(
+                        $"{endpoint.Protocol} service endpoint is disabled in GeoServer.",
+                        [$"{endpoint.Protocol} is advertised but disabled."],
+                        ["Confirm whether this service should be enabled in the target deployment."],
+                        ImportCompatibilityCodes.GeoServerManualReview)
+                    : MigrationInventoryHelpers.Compatible(
+                        $"{endpoint.Protocol} service endpoint was captured for migration planning.",
+                        code: ImportCompatibilityCodes.GeoServerServiceEndpoint)
+            });
+        }
+
         if (includeStyleContent)
         {
             foreach (var style in serviceInfo.Styles)
@@ -464,7 +519,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                         Compatibility = MigrationInventoryHelpers.Partial(
                             "External graphic references require manual migration review.",
                             ["The style references an external URL."],
-                            ["Mirror or replace external graphics in the target deployment."])
+                            ["Mirror or replace external graphics in the target deployment."],
+                            ImportCompatibilityCodes.GeoServerExternalGraphic)
                     });
                 }
             }
@@ -546,7 +602,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             ? style.Name
             : $"{style.WorkspaceName}:{style.Name}";
 
-    private static string[] BuildLayerCapabilities(GeoServerLayerInfo layer)
+    private static string[] BuildLayerCapabilities(
+        GeoServerLayerInfo layer,
+        IReadOnlyList<GeoServerServiceEndpointInfo> serviceEndpoints)
     {
         var capabilities = new List<string>();
 
@@ -563,6 +621,27 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         if (layer.Opaque)
         {
             capabilities.Add("opaque");
+        }
+
+        foreach (var endpoint in serviceEndpoints.Where(static endpoint => endpoint.Enabled != false))
+        {
+            capabilities.Add(endpoint.Protocol.ToLowerInvariant());
+        }
+
+        return capabilities.OrderBy(static value => value, StringComparer.Ordinal).ToArray();
+    }
+
+    private static string[] BuildLayerGroupCapabilities(
+        GeoServerLayerGroupInfo layerGroup,
+        IReadOnlyList<GeoServerServiceEndpointInfo> serviceEndpoints)
+    {
+        var capabilities = new List<string>();
+
+        foreach (var endpoint in serviceEndpoints.Where(static endpoint =>
+                     endpoint.Enabled != false &&
+                     string.Equals(endpoint.Protocol, "WMS", StringComparison.Ordinal)))
+        {
+            capabilities.Add(endpoint.Protocol.ToLowerInvariant());
         }
 
         return capabilities.OrderBy(static value => value, StringComparer.Ordinal).ToArray();
@@ -594,6 +673,27 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
     private static string GetCoverageStoreId(string workspaceName, string coverageStoreName)
         => $"coverage-store:{workspaceName}:{coverageStoreName}";
+
+    private static string GetServiceEndpointId(string protocol)
+        => $"service-endpoint:{protocol.ToLowerInvariant()}";
+
+    private static string BuildStyleReferenceUrl(string baseUrl, GeoServerStyleInfo style)
+    {
+        var relativePath = string.IsNullOrWhiteSpace(style.WorkspaceName)
+            ? $"styles/{Uri.EscapeDataString(style.Name)}"
+            : $"workspaces/{Uri.EscapeDataString(style.WorkspaceName)}/styles/{Uri.EscapeDataString(style.Name)}";
+
+        return $"{baseUrl.TrimEnd('/')}/{relativePath}.json";
+    }
+
+    private static string BuildStyleContentReferenceUrl(string baseUrl, GeoServerStyleInfo style)
+    {
+        var relativePath = string.IsNullOrWhiteSpace(style.WorkspaceName)
+            ? $"styles/{Uri.EscapeDataString(style.Name)}"
+            : $"workspaces/{Uri.EscapeDataString(style.WorkspaceName)}/styles/{Uri.EscapeDataString(style.Name)}";
+
+        return $"{baseUrl.TrimEnd('/')}/{relativePath}.sld";
+    }
 
     private static string? ResolveDependencyAddress(Dictionary<string, string> metadata)
     {
