@@ -208,17 +208,34 @@
       "id": "mobile-dotnet-sdk-train",
       "owningRepo": "honua-io/honua-mobile",
       "requirement": "Mobile consumes the current .NET SDK train and passes contract/integration tests.",
-      "evidenceState": "blocked",
-      "latestEvidence": null,
+      "evidenceState": "passed",
+      "latestEvidence": {
+        "runUrl": "https://github.com/honua-io/honua-mobile/actions/runs/25507338387",
+        "workflow": "CI",
+        "status": "completed",
+        "conclusion": "success",
+        "headSha": "c05fd191f8f818ba0d3f2177eb7944f75f3fa462",
+        "createdAt": "2026-05-07T16:03:14Z",
+        "updatedAt": "2026-05-07T16:30:22Z",
+        "prUrl": "https://github.com/honua-io/honua-mobile/pull/141",
+        "evidenceFile": "quality/release-evidence/honua-2026-05-preview-mobile-dotnet-sdk-train.json",
+        "sdkTrain": {
+          "packageVersion": "0.1.15-alpha.1",
+          "releaseTag": "dotnet-sdk-v0.1.15-alpha.1",
+          "releaseUrl": "https://github.com/honua-io/honua-sdk-dotnet/releases/tag/dotnet-sdk-v0.1.15-alpha.1",
+          "releaseCommit": "9d264e358099dc20a30b9247013b61d1fba0b0a9",
+          "publishedAt": "2026-04-30T23:32:50Z"
+        },
+        "observedUnconsumedRelease": {
+          "releaseTag": "dotnet-sdk-v0.1.16-alpha.1",
+          "releaseUrl": "https://github.com/honua-io/honua-sdk-dotnet/releases/tag/dotnet-sdk-v0.1.16-alpha.1",
+          "releaseCommit": "f31cfeb6c21af896b96194688a393638461f3d8a",
+          "reason": "GitHub Packages did not expose Honua.Sdk.* 0.1.16-alpha.1 during PR restore; mobile consumes the current published package train."
+        },
+        "source": "gh run view 25507338387 -R honua-io/honua-mobile --json status,conclusion,createdAt,updatedAt,headSha,url,jobs"
+      },
       "waiver": null,
-      "blockers": [
-        {
-          "repo": "honua-io/honua-mobile",
-          "number": 133,
-          "url": "https://github.com/honua-io/honua-mobile/issues/133",
-          "reason": "Mobile .NET SDK train contract/integration evidence is missing; tracked by the bounded mobile release evidence blocker."
-        }
-      ]
+      "blockers": []
     },
     {
       "id": "helm-release-candidate-metadata",
