@@ -2,6 +2,14 @@
 
 Validates that desktop GIS and BI clients can connect to and work with Honua Server. The test environment runs in WSL/Docker while the actual desktop apps run on Windows.
 
+> Note: this README covers the legacy manual WSL/Windows helper flow. It is not
+> the release evidence path restored by ticket #938. Current Real-Client
+> Interop Matrix evidence comes from `.github/workflows/client-interop-nightly.yml`
+> and the Docker harness documented in `docker/client-compat/README.md`.
+> The helper script below still references the older
+> `docker/client-compat-compose.yml` and `docker/client-compat-seed.sql` names;
+> update that script before using it for release evidence.
+
 ## Prerequisites
 
 - Docker (accessible from WSL)
