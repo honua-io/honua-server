@@ -443,7 +443,7 @@ graph TB
             Layers[Layers.razor<br/><i>Layer list & publish</i>]
             Import[Import.razor<br/><i>File import wizard</i>]
             Preview[Preview.razor<br/><i>Map preview</i>]
-            Styles[Styles.razor<br/><i>Maputnik editor</i>]
+            Styles[LayerStylePage.razor<br/><i>JSON style editor; Maputnik backlog</i>]
         end
 
         subgraph "Components"

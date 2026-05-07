@@ -54,7 +54,7 @@ A complete, production-capable feature server for a single-process deployment.
 | **Edits** | Full CRUD across GeoServices, OGC, and OData; attachments; related records |
 | **SDKs** | JS SDK, Python SDK, .NET SDK — full query + edit capabilities |
 | **MCP Server** | AI-assisted discovery, query, statistics (REST transport) |
-| **Admin UI** | Connections, layer publishing, style editor (Maputnik), map preview, import wizard, spatial SQL playground (query editor with autocomplete, inline map preview, EXPLAIN visualization) |
+| **Admin UI** | Connections, layer publishing, JSON-based style editing with Maputnik visual editing tracked as backlog, map preview, import wizard, spatial SQL playground (query editor with autocomplete, inline map preview, EXPLAIN visualization) |
 | **Rendering** | MVT + TileJSON + auto MapLibre styles, MapServer export/identify, WMS GetMap |
 | **Caching** | In-memory cache (single process) |
 | **Deployment** | Docker, Docker Compose, Helm, Terraform (all cloud modules), serverless (Lambda, Azure Functions), .NET Aspire |

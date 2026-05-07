@@ -1,7 +1,7 @@
 # ADR-0007: Embedded Maputnik Style Editor
 
 ## Status
-Accepted
+Accepted; implementation incomplete as of the May 2026 GTM audit.
 
 ## Context
 MVP needs a visual style editor for MapLibre styles. Options:
@@ -11,6 +11,8 @@ MVP needs a visual style editor for MapLibre styles. Options:
 
 ## Decision
 Embed Maputnik in the admin UI via iframe with postMessage API for style exchange.
+
+Current source still exposes JSON text editing in `honua-server-admin`; the active implementation work is tracked in `honua-server-admin#80`. Portal saved-map style overrides are tracked separately in `honua-portal#39`.
 
 **Integration:**
 ```html

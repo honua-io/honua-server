@@ -24,7 +24,7 @@ ALTER TABLE honua.layers ADD COLUMN geoservices_drawing_info JSONB; -- Cache
 - MapLibre is open standard, well-documented, widely adopted
 - GeoServices renderer format is more complex
 - MapLibre → GeoServices conversion is straightforward for Simple/UniqueValue/ClassBreaks
-- Admin UI uses MapLibre (Maputnik editor), so native format avoids conversion
+- Admin UI stores and edits MapLibre JSON, so native format avoids conversion; visual Maputnik editing is tracked as UI backlog rather than current source behavior.
 
 ## Consequences
 
@@ -32,7 +32,7 @@ ALTER TABLE honua.layers ADD COLUMN geoservices_drawing_info JSONB; -- Cache
 - Single source of truth for styles
 - No style drift between protocols
 - MapLibre ecosystem tools work natively
-- Embedded Maputnik editor works without conversion
+- A future embedded Maputnik editor can work without conversion
 
 ### Negative
 - Advanced GeoServices renderer features may not round-trip perfectly
