@@ -5,6 +5,10 @@ Use this checklist for every MVP release.
 ## Core Release Gates
 
 - [ ] CI green on `trunk`
+- [ ] Update the [2026-05 Preview release-train manifest](../../release/honua-2026-05-preview.json)
+  with the release-candidate server ref, immutable image tag/digest, latest
+  workflow evidence, approved waivers, and bounded follow-up issues for every
+  remaining cross-repo release gap
 - [ ] Full production audit run completed: `./scripts/conformance/run-production-audit.sh --mode full`
 - [ ] Audit artifacts reviewed and attached from `.audit/runs/<timestamp>/summary.md`
 - [ ] Conformance workflows pass (OGC Features, OGC Tiles, OGC Maps, WMS, WMTS)
@@ -25,6 +29,10 @@ Use this checklist for every MVP release.
   `matrixDepth` entries, refresh `matrix.supported` / `matrix.evaluation`,
   and confirm a manual `sdk-server-compatibility.yml` dispatch produced a
   green `sdk-compatibility-matrix-<run-id>` artifact for the release commit
+- [ ] Attach the green SDK compatibility artifact, Real-Client Interop Matrix
+  output, Security Nightly output, and any approved waivers to the
+  release-train manifest; source-build workflow evidence is not
+  release-candidate-image evidence unless the tested image digest is recorded
 - [ ] Confirm supported/partial/unsupported protocol notes are current
 - [ ] Confirm newly added or removed public query/output formats are reflected in API examples and coverage matrices
 - [ ] Confirm replication limitations section reflects runtime behavior

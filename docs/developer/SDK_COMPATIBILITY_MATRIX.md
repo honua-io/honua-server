@@ -13,6 +13,7 @@ Use this page first when you need to:
 
 Use it together with:
 - [Machine-readable SDK compatibility version manifest](sdk-compatibility-versions.json)
+- [2026-05 Preview release-train manifest](../../release/honua-2026-05-preview.json)
 - [Control Plane API](../operator/CONTROL_PLANE_API.md)
 - [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
 - [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
@@ -122,6 +123,20 @@ still emit `exit_code: 124` and failure diagnostics.
 The generated `sdk-compatibility-summary.json` embeds these cell records so
 release owners can review both the matrix decision and the raw evidence fields
 from one artifact.
+
+## Release-Train Evidence
+
+The 2026-05 Preview release lane is tracked by
+[`release/honua-2026-05-preview.json`](../../release/honua-2026-05-preview.json).
+That manifest is the release evidence index, not a second compatibility matrix.
+It points back to `sdk-compatibility-versions.json` for SDK/server baselines and
+records workflow evidence, image-validation state, waivers, and bounded
+follow-up tickets for release-gating gaps.
+
+Release notes and cross-repo scoreboards should link the release-train manifest
+plus the generated `sdk-compatibility-matrix-<run-id>` artifact. Do not promote
+source-build SDK compatibility evidence as release-candidate-image evidence
+unless the evidence record names the exact image tag and digest tested.
 
 ## SDK Families
 
