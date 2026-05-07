@@ -183,7 +183,7 @@ CS
     dotnet build "$smoke_project" --configuration Release "${dotnet_msbuild_props[@]}" >/dev/null
     HONUA_SERVER_BASE_URL="$BASE_URL" \
     HONUA_ADMIN_API_KEY="$ADMIN_API_KEY" \
-    dotnet run --project "$smoke_project" --configuration Release --no-build
+    dotnet run --project "$smoke_project" --configuration Release --no-build --no-restore
 )
 
 section "SDK compatibility complete"
