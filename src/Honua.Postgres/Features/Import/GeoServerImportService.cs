@@ -280,7 +280,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     {
         var containers = new List<MigrationInventoryContainer>(serviceInfo.Workspaces.Length + 1);
         var globalContainerNeeded = serviceInfo.Styles.Any(style => string.IsNullOrWhiteSpace(style.WorkspaceName)) ||
-            serviceInfo.LayerGroups.Any(group => string.IsNullOrWhiteSpace(group.WorkspaceName));
+            serviceInfo.LayerGroups.Any(group => string.IsNullOrWhiteSpace(group.WorkspaceName)) ||
+            serviceInfo.ServiceEndpoints.Length > 0;
 
         if (globalContainerNeeded)
         {

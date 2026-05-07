@@ -86,6 +86,14 @@ public sealed class GeoServerInventoryBaselineTests
         artifact.ExternalDependencies.Should().ContainSingle(dependency => dependency.Id == "service-endpoint:wfs")
             .Which.Compatibility.Code.Should().Be(ImportCompatibilityCodes.GeoServerServiceEndpoint);
 
+        var containerIds = artifact.Containers.Select(container => container.Id).ToHashSet(StringComparer.Ordinal);
+        artifact.ExternalDependencies
+            .Where(dependency => dependency.Kind == "service-endpoint")
+            .Should().OnlyContain(dependency => containerIds.Contains(dependency.ContainerId));
+
+        artifact.Containers.Should().ContainSingle(container => container.Id == "workspace:global")
+            .Which.Compatibility.Reason.Should().Be("Compatible: 2; partial: 0; incompatible: 0.");
+
         artifact.ExternalDependencies.Should().ContainSingle(dependency => dependency.Id == "datastore:demo:legacy")
             .Which.Compatibility.Code.Should().Be(ImportCompatibilityCodes.GeoServerUnsupportedStore);
         artifact.ExternalDependencies.Should().ContainSingle(dependency => dependency.Id == "coverage-store:demo:imagery")

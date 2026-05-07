@@ -22,17 +22,17 @@
     "missingArtifacts": []
   },
   "summary": {
-    "containerCount": 2,
+    "containerCount": 3,
     "resourceCount": 3,
     "styleCount": 2,
     "externalDependencyCount": 6,
-    "compatibleCount": 5,
+    "compatibleCount": 6,
     "partiallyCompatibleCount": 4,
     "incompatibleCount": 4
   },
   "overallCompatibility": {
     "level": "incompatible",
-    "reason": "Compatible: 5; partial: 4; incompatible: 4.",
+    "reason": "Compatible: 6; partial: 4; incompatible: 4.",
     "warnings": [
       "Layer group contains no layers",
       "Layer is currently disabled in GeoServer",
@@ -84,6 +84,19 @@
           "Manual style recreation may be required",
           "Mirror or replace external graphics in the target deployment."
         ]
+      }
+    },
+    {
+      "id": "workspace:global",
+      "kind": "workspace",
+      "name": "global",
+      "title": "Global",
+      "isDefault": false,
+      "compatibility": {
+        "level": "compatible",
+        "reason": "Compatible: 2; partial: 0; incompatible: 0.",
+        "warnings": [],
+        "manualSteps": []
       }
     }
   ],
