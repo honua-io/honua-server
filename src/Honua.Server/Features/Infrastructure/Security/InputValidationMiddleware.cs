@@ -63,6 +63,21 @@ internal sealed class InputValidationMiddleware
         "X-Cluster-Client-IP"
     };
 
+    private static readonly HashSet<string> _securitySensitiveHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "X-API-Key",
+        "Authorization",
+        "X-Correlation-ID",
+        "X-Forwarded-Proto",
+        "X-Forwarded-Host"
+    };
+
+    private static readonly HashSet<string> _opaqueCredentialHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Authorization",
+        "X-API-Key"
+    };
+
     public InputValidationMiddleware(
         RequestDelegate next,
         ILogger<InputValidationMiddleware> logger,
@@ -157,9 +172,44 @@ internal sealed class InputValidationMiddleware
             // Validate specific security-sensitive headers
             if (IsSecuritySensitiveHeader(header.Key))
             {
-                var result = ValidateParameter(request, "header", header.Key, header.Value);
+                var result = IsOpaqueCredentialHeader(header.Key)
+                    ? ValidateOpaqueCredentialHeaderValue(header.Key, header.Value)
+                    : ValidateParameter(request, "header", header.Key, header.Value);
                 if (!result.IsValid)
                     return result;
+            }
+        }
+
+        return InputValidationResult.Valid();
+    }
+
+    private InputValidationResult ValidateOpaqueCredentialHeaderValue(
+        string headerName,
+        Microsoft.Extensions.Primitives.StringValues values)
+    {
+        foreach (var value in values)
+        {
+            if (string.IsNullOrEmpty(value))
+                continue;
+
+            if (value.Length > _options.MaxParameterLength)
+            {
+                return InputValidationResult.Invalid($"Header '{headerName}' exceeds maximum length of {_options.MaxParameterLength}");
+            }
+
+            if (value.Contains('\r') || value.Contains('\n'))
+            {
+                return InputValidationResult.Invalid($"Header injection attempt detected in '{headerName}'");
+            }
+
+            if (_options.DetectNullBytes && value.Contains('\0'))
+            {
+                return InputValidationResult.Invalid($"Null byte detected in header parameter '{headerName}'");
+            }
+
+            if (_options.DetectControlCharacters && ContainsControlCharacters(value))
+            {
+                return InputValidationResult.Invalid($"Control characters detected in header parameter '{headerName}'");
             }
         }
 
@@ -338,16 +388,12 @@ internal sealed class InputValidationMiddleware
 
     private static bool IsSecuritySensitiveHeader(string headerName)
     {
-        var sensitiveHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "X-API-Key",
-            "Authorization",
-            "X-Correlation-ID",
-            "X-Forwarded-Proto",
-            "X-Forwarded-Host"
-        };
+        return _securitySensitiveHeaders.Contains(headerName);
+    }
 
-        return sensitiveHeaders.Contains(headerName);
+    private static bool IsOpaqueCredentialHeader(string headerName)
+    {
+        return _opaqueCredentialHeaders.Contains(headerName);
     }
 
     private static bool ContainsControlCharacters(string value)

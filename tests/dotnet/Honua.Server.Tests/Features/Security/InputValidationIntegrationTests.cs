@@ -98,6 +98,20 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Path traversal attempt detected");
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task FeatureServer_WithSqlLikeBearerCredential_DoesNotReturnBadRequest()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/rest/services/test/FeatureServer");
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer opaque--token");
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest);
+    }
 }
 
 [Collection("Database")]
