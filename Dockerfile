@@ -20,6 +20,7 @@ COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .edit
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
+COPY src/Honua.MySql/*.csproj src/Honua.MySql/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.SqlServer/*.csproj src/Honua.SqlServer/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
