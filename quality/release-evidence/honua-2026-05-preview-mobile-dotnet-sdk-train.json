@@ -1,0 +1,60 @@
+{
+  "$schema": "https://honua.io/schemas/mobile-dotnet-sdk-train-release-evidence.v1.json",
+  "schemaVersion": 1,
+  "releaseId": "honua-2026-05-preview",
+  "repositoryLaneId": "mobile-dotnet-sdk-train",
+  "owningRepo": "honua-io/honua-mobile",
+  "issue": {
+    "repo": "honua-io/honua-mobile",
+    "number": 133,
+    "url": "https://github.com/honua-io/honua-mobile/issues/133"
+  },
+  "parentReleaseGate": {
+    "repo": "honua-io/honua-server",
+    "number": 876,
+    "url": "https://github.com/honua-io/honua-server/issues/876"
+  },
+  "serverReleaseManifest": {
+    "repo": "honua-io/honua-server",
+    "path": "release/honua-2026-05-preview.json",
+    "laneId": "mobile-dotnet-sdk-train"
+  },
+  "sdkTrain": {
+    "repository": "honua-io/honua-sdk-dotnet",
+    "packageVersion": "0.1.15-alpha.1",
+    "releaseTag": "dotnet-sdk-v0.1.15-alpha.1",
+    "releaseUrl": "https://github.com/honua-io/honua-sdk-dotnet/releases/tag/dotnet-sdk-v0.1.15-alpha.1",
+    "releaseCommit": "9d264e358099dc20a30b9247013b61d1fba0b0a9",
+    "releasePublishedAt": "2026-04-30T23:32:50Z"
+  },
+  "observedUnconsumedRelease": {
+    "releaseTag": "dotnet-sdk-v0.1.16-alpha.1",
+    "releaseUrl": "https://github.com/honua-io/honua-sdk-dotnet/releases/tag/dotnet-sdk-v0.1.16-alpha.1",
+    "releaseCommit": "f31cfeb6c21af896b96194688a393638461f3d8a",
+    "releasePublishedAt": "2026-05-07T08:52:04Z",
+    "reason": "GitHub Packages did not expose Honua.Sdk.* 0.1.16-alpha.1 during PR CI restore; the feed reported 0.1.15-alpha.1 as the nearest published package train."
+  },
+  "mobileValidation": {
+    "packageReferenceProperty": "HonuaSdkDotNetTrainVersion",
+    "packageReferenceVersionExpression": "$(HonuaSdkDotNetTrainVersion)",
+    "sourceBoundary": "Published Honua.Sdk.* NuGet packages only; no copied SDK source or long-lived honua-sdk-dotnet ProjectReference links.",
+    "requiredChecks": [
+      "dotnet restore tests/Honua.Mobile.Sdk.Tests/Honua.Mobile.Sdk.Tests.csproj",
+      "dotnet test tests/Honua.Mobile.Sdk.Tests/Honua.Mobile.Sdk.Tests.csproj --configuration Release",
+      "dotnet test tests/Honua.Mobile.ServerIntegration.Tests/Honua.Mobile.ServerIntegration.Tests.csproj --configuration Release"
+    ],
+    "liveServerChecks": {
+      "mode": "optional-release-candidate-image",
+      "enableVariable": "HONUA_MOBILE_LIVE_SERVER_TESTS",
+      "imageVariable": "HONUA_MOBILE_LIVE_SERVER_IMAGE",
+      "baseUrlVariable": "HONUA_MOBILE_LIVE_SERVER_BASE_URL"
+    }
+  },
+  "manifestEvidenceRequirements": [
+    "resolved mobile commit SHA",
+    "CI or local run URL/log for the required checks",
+    "SDK train package version, release tag, and release commit",
+    "waiver record if the validation cannot pass before the Preview release"
+  ],
+  "waiver": null
+}
