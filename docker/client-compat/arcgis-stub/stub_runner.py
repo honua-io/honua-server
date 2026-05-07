@@ -29,6 +29,7 @@ SERVICE_NAME = os.environ["ARCGIS_STUB_SERVICE_NAME"]
 LAYER_ID = os.environ["ARCGIS_STUB_LAYER_ID"]
 OUTPUT_DIR = Path(os.environ["ARCGIS_STUB_OUTPUT_DIR"])
 TIMEOUT = float(os.environ.get("ARCGIS_STUB_TIMEOUT", "30"))
+SPATIAL_QUERY_ENVELOPE = "-122.50,37.70,-122.35,37.81"
 
 CORE_IDS = [
     "CERT-CONN-01", "CERT-CONN-02",
@@ -236,7 +237,7 @@ def _exercise_mapserver(client: httpx.Client) -> dict[str, dict]:
         f"/rest/services/{SERVICE_NAME}/MapServer/{LAYER_ID}/query",
         params={
             "where": "1=1",
-            "geometry": "-180,-90,180,90",
+            "geometry": SPATIAL_QUERY_ENVELOPE,
             "geometryType": "esriGeometryEnvelope",
             "spatialRel": "esriSpatialRelIntersects",
             "outFields": "*",
@@ -403,7 +404,7 @@ def run() -> int:
             f"/rest/services/{SERVICE_NAME}/FeatureServer/{LAYER_ID}/query",
             params={
                 "where": "1=1",
-                "geometry": "-180,-90,180,90",
+                "geometry": SPATIAL_QUERY_ENVELOPE,
                 "geometryType": "esriGeometryEnvelope",
                 "spatialRel": "esriSpatialRelIntersects",
                 "outFields": "*",
