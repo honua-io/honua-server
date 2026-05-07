@@ -40,10 +40,16 @@ public sealed class AiBuilderContractFixtureTests
         using var document = await LoadFixtureAsync();
         var discovery = document.RootElement.GetProperty("capabilityDiscovery");
 
-        var source = discovery.GetProperty("sources").EnumerateArray().First();
-        source.GetProperty("fields").GetArrayLength().Should().BeGreaterThan(0);
-        source.GetProperty("geometryColumn").GetString().Should().NotBeNullOrWhiteSpace();
-        source.GetProperty("crs").GetString().Should().StartWith("EPSG:");
+        var sourceIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var source in discovery.GetProperty("sources").EnumerateArray())
+        {
+            var sourceId = source.GetProperty("sourceId").GetString();
+            sourceId.Should().NotBeNullOrWhiteSpace();
+            sourceIds.Add(sourceId!).Should().BeTrue();
+            source.GetProperty("fields").GetArrayLength().Should().BeGreaterThan(0);
+            source.GetProperty("geometryColumn").GetString().Should().NotBeNullOrWhiteSpace();
+            source.GetProperty("crs").GetString().Should().StartWith("EPSG:");
+        }
 
         var predicates = discovery.GetProperty("spatialQueryCapabilities")
             .EnumerateArray()
@@ -113,13 +119,30 @@ public sealed class AiBuilderContractFixtureTests
     {
         using var document = await LoadFixtureAsync();
 
+        var discoveredSources = document.RootElement.GetProperty("capabilityDiscovery")
+            .GetProperty("sources")
+            .EnumerateArray()
+            .Select(source => source.GetProperty("sourceId").GetString())
+            .OfType<string>()
+            .Where(sourceId => !string.IsNullOrWhiteSpace(sourceId))
+            .ToHashSet(StringComparer.Ordinal);
+
         var ambiguity = FindScenario(document.RootElement, "ambiguity-source-and-unit");
         ambiguity.GetProperty("draft").GetProperty("status").GetString().Should().Be("clarification_required");
-        var candidateKinds = ambiguity.GetProperty("clarification").GetProperty("candidates")
+        var candidates = ambiguity.GetProperty("clarification").GetProperty("candidates")
             .EnumerateArray()
+            .ToArray();
+        var candidateKinds = candidates
             .Select(candidate => candidate.GetProperty("kind").GetString())
             .ToHashSet(StringComparer.Ordinal);
         candidateKinds.Should().Contain(["source", "unit", "operation"]);
+        var sourceOptions = candidates
+            .Single(candidate => candidate.GetProperty("kind").GetString() == "source")
+            .GetProperty("options")
+            .EnumerateArray()
+            .Select(option => option.GetString()!)
+            .ToArray();
+        sourceOptions.Should().OnlyContain(sourceId => discoveredSources.Contains(sourceId));
 
         var unsupported = FindScenario(document.RootElement, "unsupported-spatial-join");
         unsupported.GetProperty("capabilityState").GetProperty("state").GetString().Should().Be("unsupported");

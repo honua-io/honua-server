@@ -39,6 +39,35 @@
         ]
       },
       {
+        "sourceId": "catalog:layer:emergency_shelters",
+        "label": "Emergency Shelters",
+        "geometryColumn": "geom",
+        "geometryType": "Point",
+        "crs": "EPSG:4326",
+        "fields": [
+          {
+            "name": "shelter_name",
+            "label": "Shelter name",
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "label": "Operational status",
+            "type": "string",
+            "domain": [
+              "open",
+              "limited",
+              "closed"
+            ]
+          },
+          {
+            "name": "capacity",
+            "label": "Capacity",
+            "type": "integer"
+          }
+        ]
+      },
+      {
         "sourceId": "catalog:layer:flood_zones",
         "label": "Flood Zones",
         "geometryColumn": "geom",
