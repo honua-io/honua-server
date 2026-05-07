@@ -64,6 +64,10 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:5000
+      Kestrel__Endpoints__Http__Url: http://+:5000
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Kestrel__Endpoints__Grpc__Url: http://+:5001
+      Kestrel__Endpoints__Grpc__Protocols: Http2
       PUBLIC_BASE_URL: http://honua:5000
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost

@@ -152,6 +152,19 @@ jobs:
             exit_code=$?
           fi
 
+          if [[ "$exit_code" -ne 0 ]]; then
+            {
+              echo "lane=${{ matrix.lane }}"
+              echo "exit_code=${exit_code}"
+              echo "run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            } > docker/client-compat/output/${{ matrix.lane }}/lane-exit-code.txt
+            docker compose -f docker/client-compat/compose.yml \
+              --profile ${{ matrix.lane }} \
+              logs --no-color --tail=200 \
+              postgres seed honua ${{ matrix.lane }} \
+              > docker/client-compat/output/${{ matrix.lane }}/compose.log 2>&1 || true
+          fi
+
           docker compose -f docker/client-compat/compose.yml down --remove-orphans || true
           echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
           # Don't fail this job — baseline-diff is the regression gate.

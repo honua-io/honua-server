@@ -32,6 +32,20 @@ public sealed class ContainerGrpcTransportConfigurationTests
         Assert.DoesNotContain("ASPNETCORE_URLS", compose, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ClientCompatComposeFile_OverridesContainerHttpPortForLaneBaseUrls()
+    {
+        var compose = ReadRepoFile("docker/client-compat/compose.yml");
+
+        Assert.Contains("ASPNETCORE_URLS: http://+:5000", compose, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Http__Url: http://+:5000", compose, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Http__Protocols: Http1", compose, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Grpc__Url: http://+:5001", compose, StringComparison.Ordinal);
+        Assert.Contains("Kestrel__Endpoints__Grpc__Protocols: Http2", compose, StringComparison.Ordinal);
+        Assert.Contains("PUBLIC_BASE_URL: http://honua:5000", compose, StringComparison.Ordinal);
+        Assert.Contains("http://localhost:5000/healthz/ready", compose, StringComparison.Ordinal);
+    }
+
     private static string ReadRepoFile(string relativePath)
         => File.ReadAllText(Path.Combine(FindRepositoryRoot(), relativePath));
 
