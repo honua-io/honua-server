@@ -210,13 +210,13 @@
       "requirement": "Mobile consumes the current .NET SDK train and passes contract/integration tests.",
       "evidenceState": "passed",
       "latestEvidence": {
-        "runUrl": "https://github.com/honua-io/honua-mobile/actions/runs/25507338387",
+        "runUrl": "https://github.com/honua-io/honua-mobile/actions/runs/25511816629",
         "workflow": "CI",
         "status": "completed",
         "conclusion": "success",
-        "headSha": "c05fd191f8f818ba0d3f2177eb7944f75f3fa462",
-        "createdAt": "2026-05-07T16:03:14Z",
-        "updatedAt": "2026-05-07T16:30:22Z",
+        "headSha": "65825115ba07b4715a85f5738eea04a4cc74fa11",
+        "createdAt": "2026-05-07T17:32:33Z",
+        "updatedAt": "2026-05-07T17:51:31Z",
         "prUrl": "https://github.com/honua-io/honua-mobile/pull/141",
         "evidenceFile": "quality/release-evidence/honua-2026-05-preview-mobile-dotnet-sdk-train.json",
         "sdkTrain": {
@@ -232,7 +232,7 @@
           "releaseCommit": "f31cfeb6c21af896b96194688a393638461f3d8a",
           "reason": "GitHub Packages did not expose Honua.Sdk.* 0.1.16-alpha.1 during PR restore; mobile consumes the current published package train."
         },
-        "source": "gh run view 25507338387 -R honua-io/honua-mobile --json status,conclusion,createdAt,updatedAt,headSha,url,jobs"
+        "source": "gh run view 25511816629 -R honua-io/honua-mobile --json status,conclusion,createdAt,updatedAt,headSha,url,jobs"
       },
       "waiver": null,
       "blockers": []
