@@ -4,6 +4,7 @@
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
@@ -33,6 +34,16 @@ internal static class CacheOperationsEndpoints
             .WithDisplayName("Get Cache Health")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ApiResponse<CacheHealthResponse>>();
+
+        group.MapGet("/statistics", HandleGetCacheStatistics)
+            .WithDisplayName("Get Cache Statistics")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<ApiResponse<CacheStatisticsResponse>>();
+
+        group.MapGet("/redis", HandleGetRedisMetrics)
+            .WithDisplayName("Get Redis Cache Metrics")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<ApiResponse<RedisConnectionMetricsResponse>>();
 
         group.MapPost("/invalidate", HandleInvalidateCache)
             .WithDisplayName("Invalidate Cache")
@@ -71,6 +82,7 @@ internal static class CacheOperationsEndpoints
                 DefaultTtlSeconds = options.DefaultTtlSeconds,
                 RetryIntervalSeconds = options.RetryIntervalSeconds,
                 RedisServerInfo = redisInfo,
+                MetricsEndpoint = "/api/v1/admin/operations/cache/statistics",
                 GeneratedAt = DateTimeOffset.UtcNow
             };
 
@@ -87,6 +99,101 @@ internal static class CacheOperationsEndpoints
                 StatusCodes.Status500InternalServerError,
                 CacheHealthCheckFailedMessage);
         }
+    }
+
+    private static async Task<IResult> HandleGetCacheStatistics(
+        [FromServices] ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider,
+        [FromServices] ICacheStorageMetricsProvider storageMetricsProvider,
+        HttpContext context,
+        ILogger<CacheOperationsEndpointsLog> logger)
+    {
+        try
+        {
+            var snapshot = cacheMetricsSnapshotProvider.GetCacheMetricsSnapshot();
+            var storage = await storageMetricsProvider.GetStorageMetricsAsync(context.RequestAborted).ConfigureAwait(false);
+            var totalLookups = snapshot.TotalHits + snapshot.TotalMisses;
+
+            var response = new CacheStatisticsResponse
+            {
+                GeneratedAt = DateTimeOffset.UtcNow,
+                Hits = snapshot.TotalHits,
+                Misses = snapshot.TotalMisses,
+                Evictions = snapshot.TotalEvictions,
+                HitRatio = Ratio(snapshot.TotalHits, totalLookups),
+                MissRatio = Ratio(snapshot.TotalMisses, totalLookups),
+                Backend = storage.Backend,
+                IsUsingFallback = storage.IsUsingFallback,
+                LocalKeyCount = storage.LocalKeyCount,
+                DistributedKeyCount = storage.DistributedKeyCount,
+                RedisDatabaseSize = storage.RedisDatabaseSize,
+                RedisUsedMemoryBytes = storage.RedisUsedMemoryBytes,
+                RedisUsedMemoryHuman = storage.RedisUsedMemoryHuman,
+                Types = snapshot.Types.ToDictionary(
+                    static kvp => kvp.Key,
+                    static kvp =>
+                    {
+                        var lookups = kvp.Value.Hits + kvp.Value.Misses;
+                        return new CacheTypeStatisticsResponse
+                        {
+                            Hits = kvp.Value.Hits,
+                            Misses = kvp.Value.Misses,
+                            Evictions = kvp.Value.Evictions,
+                            HitRatio = Ratio(kvp.Value.Hits, lookups),
+                            MissRatio = Ratio(kvp.Value.Misses, lookups)
+                        };
+                    },
+                    StringComparer.OrdinalIgnoreCase)
+            };
+
+            return Results.Json(
+                ApiResponse<CacheStatisticsResponse>.CreateSuccess(response),
+                CacheOperationsJsonContext.Default.ApiResponseCacheStatisticsResponse);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            AdminLog.CacheHealthCheckFailed(logger, ex);
+
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Cache statistics retrieval failed.");
+        }
+    }
+
+    private static async Task<IResult> HandleGetRedisMetrics(
+        HttpContext context,
+        ILogger<CacheOperationsEndpointsLog> logger)
+    {
+        var redis = context.RequestServices.GetService<IConnectionMultiplexer>();
+        if (redis is null)
+        {
+            var unconfigured = new RedisConnectionMetricsResponse
+            {
+                GeneratedAt = DateTimeOffset.UtcNow,
+                IsConfigured = false,
+                IsConnected = false
+            };
+
+            return Results.Json(
+                ApiResponse<RedisConnectionMetricsResponse>.CreateSuccess(unconfigured),
+                CacheOperationsJsonContext.Default.ApiResponseRedisConnectionMetricsResponse);
+        }
+
+        var counters = redis.GetCounters();
+        var response = new RedisConnectionMetricsResponse
+        {
+            GeneratedAt = DateTimeOffset.UtcNow,
+            IsConfigured = true,
+            IsConnected = redis.IsConnected,
+            ClientName = redis.ClientName,
+            TotalOutstanding = counters.TotalOutstanding,
+            EndpointCount = redis.GetEndPoints().Length,
+            ServerInfo = await BuildRedisInfoAsync(redis, logger).ConfigureAwait(false)
+        };
+
+        return Results.Json(
+            ApiResponse<RedisConnectionMetricsResponse>.CreateSuccess(response),
+            CacheOperationsJsonContext.Default.ApiResponseRedisConnectionMetricsResponse);
     }
 
     private static async Task<IResult> HandleInvalidateCache(
@@ -265,6 +372,9 @@ internal static class CacheOperationsEndpoints
             return new RedisServerInfoResponse { IsConnected = redis.IsConnected };
         }
     }
+
+    private static double Ratio(long numerator, long denominator)
+        => denominator > 0 ? (double)numerator / denominator : 0.0;
 }
 
 /// <summary>

@@ -84,6 +84,16 @@ public sealed class FeatureCatalogTests
     }
 
     [Fact]
+    public void All_RedisDistributedCacheIsProTier()
+    {
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == "caching.redis");
+
+        feature.Should().NotBeNull("Redis L2 activation is gated by the Pro license entitlement for ticket #358");
+        feature!.Category.Should().Be(FeatureCatalog.Categories.Caching);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+    }
+
+    [Fact]
     public void All_CommunityFeaturesAreExpected()
     {
         // Community features are explicitly tracked — adding one requires updating this test

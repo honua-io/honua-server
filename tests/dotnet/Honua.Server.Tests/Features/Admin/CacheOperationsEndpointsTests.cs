@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -52,6 +53,44 @@ public sealed class CacheOperationsEndpointsTests : IAsyncLifetime
         data.TryGetProperty("defaultTtlSeconds", out _).Should().BeTrue();
         data.TryGetProperty("retryIntervalSeconds", out _).Should().BeTrue();
         data.TryGetProperty("generatedAt", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
+    public async Task GetCacheStatistics_ReturnsHitMissRatiosAndKeyCounts()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var performanceMonitor = scope.ServiceProvider.GetRequiredService<IPerformanceMonitor>();
+        performanceMonitor.RecordCacheMetrics("layer-catalog", "hit");
+        performanceMonitor.RecordCacheMetrics("layer-catalog", "miss");
+        performanceMonitor.RecordCacheMetrics("layer-catalog", "miss");
+
+        var response = await _client.GetAsync("/api/v1/admin/operations/cache/statistics");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        data.GetProperty("hits").GetInt64().Should().BeGreaterThanOrEqualTo(1);
+        data.GetProperty("misses").GetInt64().Should().BeGreaterThanOrEqualTo(2);
+        data.GetProperty("hitRatio").GetDouble().Should().BeGreaterThan(0);
+        data.GetProperty("missRatio").GetDouble().Should().BeGreaterThan(0);
+        data.TryGetProperty("localKeyCount", out _).Should().BeTrue();
+        data.TryGetProperty("backend", out _).Should().BeTrue();
+        data.GetProperty("types").TryGetProperty("layer-catalog", out var layerCatalog).Should().BeTrue();
+        layerCatalog.TryGetProperty("hitRatio", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
+    public async Task GetRedisMetrics_WhenRedisNotConfigured_ReturnsCommunitySafeStatus()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/operations/cache/redis");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        data.GetProperty("isConfigured").GetBoolean().Should().BeFalse();
+        data.GetProperty("isConnected").GetBoolean().Should().BeFalse();
     }
 
     [IntegrationTest]
