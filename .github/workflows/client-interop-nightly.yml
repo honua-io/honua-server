@@ -107,7 +107,7 @@ jobs:
       - name: Configure docker BuildKit
         run: |
           mkdir -p ~/.docker
-          echo '{ "features": { "buildkit": true } }' > ~/.docker/config.json
+          echo '{ "features": { "buildkit": "true" } }' > ~/.docker/config.json
 
       - name: Cache docker buildx layers
         uses: actions/cache@v5

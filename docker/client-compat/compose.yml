@@ -31,6 +31,17 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly no
+    networks:
+      - compat
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   seed:
     # One-shot job: applies tests/seed/client-compat-v1.sql (schema +
     # test_service/layer 0 used by both the pyqgis and gdal lanes — the gdal
@@ -74,10 +85,13 @@ services:
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
       ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
+      ConnectionStrings__Redis: redis:6379
       Security__ConnectionEncryption__MasterKey: test-master-key-that-is-at-least-32-characters-long-for-security
       Security__ConnectionEncryption__Salt: dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       seed:
         condition: service_completed_successfully

@@ -43,7 +43,9 @@ public sealed class ContainerGrpcTransportConfigurationTests
         Assert.Contains("Kestrel__Endpoints__Grpc__Url: http://+:5001", compose, StringComparison.Ordinal);
         Assert.Contains("Kestrel__Endpoints__Grpc__Protocols: Http2", compose, StringComparison.Ordinal);
         Assert.Contains("PUBLIC_BASE_URL: http://honua:5000", compose, StringComparison.Ordinal);
+        Assert.Contains("ConnectionStrings__Redis: redis:6379", compose, StringComparison.Ordinal);
         Assert.Contains("http://localhost:5000/healthz/ready", compose, StringComparison.Ordinal);
+        Assert.Contains("image: redis:7.4-alpine", compose, StringComparison.Ordinal);
     }
 
     private static string ReadRepoFile(string relativePath)
