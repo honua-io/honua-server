@@ -65,6 +65,10 @@ schedule. It publishes per-cell JSON evidence plus a
 `sdk-compatibility-matrix-<run-id>` artifact containing a Markdown table and
 machine-readable summary.
 
+Manual dispatches may set `server_current_ref` to a pinned commit SHA when a
+release gate needs evidence for a specific release-candidate server ref. The
+default is `HEAD`, which preserves the scheduled and normal manual behavior.
+
 Each matrix cell checks out the pinned SDK refs under `sdk/` for normal Actions
 setup and cache resolution, then copies those repositories into
 `$RUNNER_TEMP/sdk-compat/` before running the live smoke command. The workflow

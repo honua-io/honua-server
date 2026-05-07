@@ -4,6 +4,12 @@ name: SDK Server Compatibility
 
 'on':
   workflow_dispatch:
+    inputs:
+      server_current_ref:
+        description: 'Optional override for the current server matrix ref. Use a commit SHA for release-candidate evidence.'
+        required: false
+        default: HEAD
+        type: string
   schedule:
     - cron: '35 8 * * 1'
 
@@ -44,6 +50,7 @@ jobs:
           set -euo pipefail
 
           manifest="$SDK_COMPATIBILITY_MANIFEST"
+          server_current_ref="${{ github.event_name == 'workflow_dispatch' && inputs.server_current_ref || '' }}"
           jq -e '
             . as $manifest
             | ($manifest.schemaVersion == 1)
@@ -56,9 +63,15 @@ jobs:
           ' "$manifest" >/dev/null
 
           matrix="$(
-            jq -c --arg head "$GITHUB_SHA" '
+            jq -c --arg head "$GITHUB_SHA" --arg serverCurrentRef "$server_current_ref" '
               def serverByLabel($manifest; $name):
-                ($manifest.serverRefs[] | select(.label == $name)) // error("Unknown server label: " + $name);
+                (
+                  ($manifest.serverRefs[] | select(.label == $name)) // error("Unknown server label: " + $name)
+                )
+                | if .label == "current" and ($serverCurrentRef | length) > 0
+                  then . + { ref: $serverCurrentRef }
+                  else .
+                  end;
               def sdkByLabel($manifest; $name):
                 ($manifest.sdkSetVersions[] | select(.label == $name)) // error("Unknown SDK set label: " + $name);
               def checkoutRef($ref):
@@ -103,6 +116,9 @@ jobs:
             echo
             echo "- Manifest: \`$manifest\`"
             echo "- Matrix cells: $cell_count"
+            if [ -n "$server_current_ref" ] && [ "$server_current_ref" != "HEAD" ]; then
+              echo "- Current server ref override: \`$server_current_ref\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   sdk-compat-matrix:
