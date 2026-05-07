@@ -147,26 +147,19 @@
       "id": "sdk-js-trunk-ci",
       "owningRepo": "honua-io/honua-sdk-js",
       "requirement": "Trunk SDK CI is green.",
-      "evidenceState": "blocked",
+      "evidenceState": "passed",
       "latestEvidence": {
-        "runUrl": "https://github.com/honua-io/honua-sdk-js/actions/runs/25459278308",
+        "runUrl": "https://github.com/honua-io/honua-sdk-js/actions/runs/25487920652",
         "workflow": "SDK CI",
         "status": "completed",
-        "conclusion": "failure",
-        "headSha": "9e7d8ba14702186769f668d9d0e9cb54e9b82b7f",
-        "createdAt": "2026-05-06T20:27:57Z",
-        "updatedAt": "2026-05-06T20:29:11Z",
+        "conclusion": "success",
+        "headSha": "e8a46dd06b432088be3840a453716703d92a6a1d",
+        "createdAt": "2026-05-07T09:35:10Z",
+        "updatedAt": "2026-05-07T09:41:25Z",
         "source": "gh run list -R honua-io/honua-sdk-js --branch trunk --limit 10"
       },
       "waiver": null,
-      "blockers": [
-        {
-          "repo": "honua-io/honua-sdk-js",
-          "number": 132,
-          "url": "https://github.com/honua-io/honua-sdk-js/issues/132",
-          "reason": "Trunk SDK CI is failing; tracked by the bounded SDK JS release blocker."
-        }
-      ]
+      "blockers": []
     },
     {
       "id": "sdk-js-quickstart-staging",
@@ -174,13 +167,13 @@
       "requirement": "Quickstart staging is green.",
       "evidenceState": "passed",
       "latestEvidence": {
-        "runUrl": "https://github.com/honua-io/honua-sdk-js/actions/runs/25459278260",
+        "runUrl": "https://github.com/honua-io/honua-sdk-js/actions/runs/25487920662",
         "workflow": "Quickstart Staging",
         "status": "completed",
         "conclusion": "success",
-        "headSha": "9e7d8ba14702186769f668d9d0e9cb54e9b82b7f",
-        "createdAt": "2026-05-06T20:27:57Z",
-        "updatedAt": "2026-05-06T20:28:15Z",
+        "headSha": "e8a46dd06b432088be3840a453716703d92a6a1d",
+        "createdAt": "2026-05-07T09:35:10Z",
+        "updatedAt": "2026-05-07T09:35:22Z",
         "source": "gh run list -R honua-io/honua-sdk-js --branch trunk --limit 10"
       },
       "waiver": null,
