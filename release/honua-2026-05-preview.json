@@ -1,0 +1,374 @@
+{
+  "$schema": "https://honua.io/schemas/release-train-manifest.v1.json",
+  "schemaVersion": 1,
+  "releaseId": "honua-2026-05-preview",
+  "channel": "preview",
+  "releaseIssue": {
+    "repo": "honua-io/honua-server",
+    "number": 876,
+    "url": "https://github.com/honua-io/honua-server/issues/876"
+  },
+  "candidate": {
+    "ref": "498b440013575a257d9bf898f49c2c536487517e",
+    "refSource": "origin/trunk",
+    "image": {
+      "repository": "ghcr.io/honua-io/honua-server",
+      "tag": null,
+      "digest": null,
+      "evidenceState": "blocked",
+      "blockers": [
+        {
+          "repo": "honua-io/honua-devops",
+          "number": 41,
+          "url": "https://github.com/honua-io/honua-devops/issues/41",
+          "reason": "Release-candidate image validation surface must publish the immutable image tag and digest before image-backed compatibility evidence can be accepted."
+        }
+      ]
+    }
+  },
+  "sdkCompatibilityManifest": "docs/developer/sdk-compatibility-versions.json",
+  "compatibilityBaseline": {
+    "sourceOfTruth": "docs/developer/sdk-compatibility-versions.json",
+    "adminApiMajor": "v1",
+    "matrixDepth": 3,
+    "notes": [
+      "Do not copy SDK/server refs into this release manifest. The SDK Server Compatibility workflow consumes the shared manifest directly.",
+      "Source-build workflow evidence is not release-candidate-image evidence unless the evidence record names the image digest tested."
+    ]
+  },
+  "observedAt": "2026-05-06T20:30:08Z",
+  "releaseGates": [
+    {
+      "id": "server-sdk-compatibility",
+      "name": "SDK Server Compatibility",
+      "owningRepo": "honua-io/honua-server",
+      "workflow": ".github/workflows/sdk-server-compatibility.yml",
+      "tier": "nightly",
+      "requirement": "Green for the release-candidate server ref, or covered by an approved release waiver.",
+      "evidenceState": "blocked",
+      "latestEvidence": {
+        "runUrl": "https://github.com/honua-io/honua-server/actions/runs/25314145189",
+        "artifact": "sdk-compatibility-matrix-25314145189",
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "15ca97e9df80e03fc5f0c3969ef7744df8633a37",
+        "createdAt": "2026-05-04T10:32:49Z",
+        "updatedAt": "2026-05-04T10:37:51Z",
+        "source": "gh run list -R honua-io/honua-server --workflow sdk-server-compatibility.yml --branch trunk --limit 5"
+      },
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-server",
+          "number": 876,
+          "url": "https://github.com/honua-io/honua-server/issues/876",
+          "reason": "Latest trunk SDK Server Compatibility run is failing and no approved waiver is recorded."
+        }
+      ]
+    },
+    {
+      "id": "server-real-client-interop",
+      "name": "Real-Client Interop Matrix",
+      "owningRepo": "honua-io/honua-server",
+      "workflow": ".github/workflows/client-interop-nightly.yml",
+      "tier": "nightly",
+      "requirement": "Green with zero baseline regressions for the release-candidate server ref, or covered by an approved release waiver.",
+      "evidenceState": "blocked",
+      "latestEvidence": {
+        "runUrl": "https://github.com/honua-io/honua-server/actions/runs/25427096434",
+        "artifact": "client-interop-evidence",
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "45f70a3011cbb4d5a6058473b89d0fb8f1d3ab1a",
+        "createdAt": "2026-05-06T09:24:36Z",
+        "updatedAt": "2026-05-06T09:28:00Z",
+        "source": "gh run list -R honua-io/honua-server --workflow client-interop-nightly.yml --branch trunk --limit 5"
+      },
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-server",
+          "number": 876,
+          "url": "https://github.com/honua-io/honua-server/issues/876",
+          "reason": "Latest trunk Real-Client Interop Matrix run is failing and no approved waiver is recorded."
+        }
+      ]
+    },
+    {
+      "id": "server-security-nightly",
+      "name": "Security Nightly",
+      "owningRepo": "honua-io/honua-server",
+      "workflow": ".github/workflows/security-nightly.yml",
+      "tier": "nightly",
+      "requirement": "Green for the release-candidate server ref, or covered by an approved release waiver.",
+      "evidenceState": "blocked",
+      "latestEvidence": {
+        "runUrl": "https://github.com/honua-io/honua-server/actions/runs/25417987211",
+        "artifact": "security-nightly-evidence",
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "6b270a19029012f8a186251960dee6db8b082a79",
+        "createdAt": "2026-05-06T05:21:55Z",
+        "updatedAt": "2026-05-06T05:23:55Z",
+        "source": "gh run list -R honua-io/honua-server --workflow security-nightly.yml --branch trunk --limit 5"
+      },
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-server",
+          "number": 876,
+          "url": "https://github.com/honua-io/honua-server/issues/876",
+          "reason": "Latest trunk Security Nightly run is failing and no approved waiver is recorded."
+        }
+      ]
+    },
+    {
+      "id": "server-license-activation",
+      "name": "Ed25519 license activation",
+      "owningRepo": "honua-io/honua-server",
+      "workflow": null,
+      "tier": "release",
+      "requirement": "Entitlements activate end-to-end through the marketplace path, or an approved Preview waiver is recorded.",
+      "evidenceState": "blocked",
+      "latestEvidence": null,
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-server",
+          "number": 338,
+          "url": "https://github.com/honua-io/honua-server/issues/338",
+          "reason": "License key infrastructure is still open; release readiness cannot be claimed from docs alone."
+        }
+      ]
+    }
+  ],
+  "repositoryLanes": [
+    {
+      "id": "sdk-js-trunk-ci",
+      "owningRepo": "honua-io/honua-sdk-js",
+      "requirement": "Trunk SDK CI is green.",
+      "evidenceState": "blocked",
+      "latestEvidence": {
+        "runUrl": "https://github.com/honua-io/honua-sdk-js/actions/runs/25459278308",
+        "workflow": "SDK CI",
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "9e7d8ba14702186769f668d9d0e9cb54e9b82b7f",
+        "createdAt": "2026-05-06T20:27:57Z",
+        "updatedAt": "2026-05-06T20:29:11Z",
+        "source": "gh run list -R honua-io/honua-sdk-js --branch trunk --limit 10"
+      },
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-sdk-js",
+          "number": null,
+          "url": null,
+          "reason": "Latest trunk SDK CI run is failing; file or link a bounded SDK-side follow-up if it remains failing."
+        }
+      ]
+    },
+    {
+      "id": "sdk-js-quickstart-staging",
+      "owningRepo": "honua-io/honua-sdk-js",
+      "requirement": "Quickstart staging is green.",
+      "evidenceState": "passed",
+      "latestEvidence": {
+        "runUrl": "https://github.com/honua-io/honua-sdk-js/actions/runs/25459278260",
+        "workflow": "Quickstart Staging",
+        "status": "completed",
+        "conclusion": "success",
+        "headSha": "9e7d8ba14702186769f668d9d0e9cb54e9b82b7f",
+        "createdAt": "2026-05-06T20:27:57Z",
+        "updatedAt": "2026-05-06T20:28:15Z",
+        "source": "gh run list -R honua-io/honua-sdk-js --branch trunk --limit 10"
+      },
+      "waiver": null,
+      "blockers": []
+    },
+    {
+      "id": "sdk-python-staging-integration",
+      "owningRepo": "honua-io/honua-sdk-python",
+      "requirement": "Staging integration is configured and green.",
+      "evidenceState": "blocked",
+      "latestEvidence": {
+        "runUrl": "https://github.com/honua-io/honua-sdk-python/actions/runs/25431751226",
+        "workflow": "Python SDK Staging Integration",
+        "status": "completed",
+        "conclusion": "failure",
+        "headSha": "367574a8b70da9e972b4026bf0cba98441448469",
+        "createdAt": "2026-05-06T11:10:31Z",
+        "updatedAt": "2026-05-06T11:10:55Z",
+        "source": "gh run list -R honua-io/honua-sdk-python --branch trunk --limit 10"
+      },
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-sdk-python",
+          "number": null,
+          "url": null,
+          "reason": "Latest staging integration run is failing; file or link a bounded Python SDK follow-up if it remains failing."
+        }
+      ]
+    },
+    {
+      "id": "mobile-dotnet-sdk-train",
+      "owningRepo": "honua-io/honua-mobile",
+      "requirement": "Mobile consumes the current .NET SDK train and passes contract/integration tests.",
+      "evidenceState": "blocked",
+      "latestEvidence": null,
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-mobile",
+          "number": null,
+          "url": null,
+          "reason": "No 2026-05 Preview mobile contract/integration evidence was found; file or link a bounded mobile-owned release evidence issue."
+        }
+      ]
+    },
+    {
+      "id": "helm-release-candidate-metadata",
+      "owningRepo": "honua-io/honua-helm",
+      "requirement": "Chart appVersion and image metadata point at the release candidate rather than placeholder/latest metadata.",
+      "evidenceState": "blocked",
+      "latestEvidence": null,
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-helm",
+          "number": 1,
+          "url": "https://github.com/honua-io/honua-helm/issues/1",
+          "reason": "Helm chart extraction/versioned release pipeline remains open; release-candidate chart metadata evidence is not attached."
+        }
+      ]
+    },
+    {
+      "id": "admin-docs-supported-surfaces",
+      "owningRepo": "honua-io/honua-server-admin",
+      "requirement": "Admin docs distinguish production-supported surfaces from stubs and future work.",
+      "evidenceState": "blocked",
+      "latestEvidence": null,
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-server-admin",
+          "number": 78,
+          "url": "https://github.com/honua-io/honua-server-admin/issues/78",
+          "reason": "Preview release admin coverage remains open; admin documentation evidence is not attached."
+        }
+      ]
+    },
+    {
+      "id": "release-train-scoreboard",
+      "owningRepo": "honua-io/honua-devops",
+      "requirement": "A release-train matrix is published and referenced by server, admin, SDK, devops, and docs release notes.",
+      "evidenceState": "blocked",
+      "latestEvidence": null,
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-devops",
+          "number": 41,
+          "url": "https://github.com/honua-io/honua-devops/issues/41",
+          "reason": "Devops-owned release-candidate validation scoreboard remains open."
+        }
+      ]
+    }
+  ],
+  "releaseLaneCriteria": [
+    {
+      "id": "release-candidate-image-compatibility",
+      "requirement": "Cross-repo compatibility train passes against the release-candidate image.",
+      "evidenceState": "blocked",
+      "evidence": null,
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-devops",
+          "number": 41,
+          "url": "https://github.com/honua-io/honua-devops/issues/41",
+          "reason": "Release-candidate image tag/digest and image-backed smoke evidence are not yet published."
+        }
+      ]
+    },
+    {
+      "id": "release-evidence-pack",
+      "requirement": "Release manifest, smoke results, and source-backed feature map are attached to release evidence.",
+      "evidenceState": "blocked",
+      "evidence": {
+        "manifest": "release/honua-2026-05-preview.json",
+        "sdkCompatibilityManifest": "docs/developer/sdk-compatibility-versions.json"
+      },
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-devops",
+          "number": 41,
+          "url": "https://github.com/honua-io/honua-devops/issues/41",
+          "reason": "Smoke results and release evidence pack are not yet attached."
+        }
+      ]
+    },
+    {
+      "id": "license-marketplace-entitlements",
+      "requirement": "Ed25519 license key infrastructure activates entitlements end-to-end with the marketplace path.",
+      "evidenceState": "blocked",
+      "evidence": null,
+      "waiver": null,
+      "blockers": [
+        {
+          "repo": "honua-io/honua-server",
+          "number": 338,
+          "url": "https://github.com/honua-io/honua-server/issues/338",
+          "reason": "Marketplace entitlement activation cannot be claimed until license-key infrastructure lands or an approved waiver is recorded."
+        }
+      ]
+    }
+  ],
+  "waivers": [],
+  "childTickets": [
+    {
+      "repo": "honua-io/honua-server",
+      "number": 338,
+      "url": "https://github.com/honua-io/honua-server/issues/338",
+      "scope": "Ed25519 license key infrastructure and marketplace entitlement activation.",
+      "state": "open"
+    },
+    {
+      "repo": "honua-io/honua-devops",
+      "number": 41,
+      "url": "https://github.com/honua-io/honua-devops/issues/41",
+      "scope": "Repeatable release-candidate validation execution surface and scoreboard.",
+      "state": "open"
+    },
+    {
+      "repo": "honua-io/honua-sdk-js",
+      "number": 39,
+      "url": "https://github.com/honua-io/honua-sdk-js/issues/39",
+      "scope": "SDK protocol-surface integration tests.",
+      "state": "closed"
+    },
+    {
+      "repo": "honua-io/honua-sdk-python",
+      "number": 21,
+      "url": "https://github.com/honua-io/honua-sdk-python/issues/21",
+      "scope": "Python SDK protocol-surface integration tests.",
+      "state": "closed"
+    }
+  ],
+  "missingBoundedChildTickets": [
+    {
+      "repo": "honua-io/honua-sdk-js",
+      "neededScope": "Resolve or waive the latest trunk SDK CI failure for the 2026-05 Preview compatibility train."
+    },
+    {
+      "repo": "honua-io/honua-sdk-python",
+      "neededScope": "Resolve or waive the latest staging integration failure for the 2026-05 Preview compatibility train."
+    },
+    {
+      "repo": "honua-io/honua-mobile",
+      "neededScope": "Attach current .NET SDK train consumption and contract/integration evidence for the 2026-05 Preview candidate."
+    }
+  ]
+}
