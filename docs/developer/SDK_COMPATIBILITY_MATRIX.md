@@ -65,6 +65,14 @@ schedule. It publishes per-cell JSON evidence plus a
 `sdk-compatibility-matrix-<run-id>` artifact containing a Markdown table and
 machine-readable summary.
 
+Each matrix cell checks out the pinned SDK refs under `sdk/` for normal Actions
+setup and cache resolution, then copies those repositories into
+`$RUNNER_TEMP/sdk-compat/` before running the live smoke command. The workflow
+sets `HONUA_SDK_JS_DIR`, `HONUA_SDK_PYTHON_DIR`, and `HONUA_SDK_DOTNET_DIR` to
+the isolated copies so server-repo MSBuild files such as
+`Directory.Packages.props` and `Directory.Build.props` cannot affect SDK source
+builds. The runner still defaults to the `sdk/` paths for local reproduction.
+
 The per-SDK integration lanes use this manifest as the server-side compatibility
 contract and can call `.github/workflows/reusable-sdk-pr-gate.yml` from each SDK
 repository for PR-local checks. The cross-version gate remains owned here so SDK
@@ -94,6 +102,9 @@ PostGIS and seeded with `tests/seed/base-schema.sql`.
 | `HONUA_SDK_SERVICE_ID` | `test_service` | Seeded service used by FeatureServer/catalog checks |
 | `HONUA_SDK_LAYER_ID` | `0` | Seeded layer used by read/query checks |
 | `HONUA_SDK_SEED_PROFILE` | `tests/seed/base-schema.sql:test_service:layer0` | Human-readable seed profile recorded into evidence |
+| `HONUA_SDK_JS_DIR` | `sdk/honua-sdk-js` | JavaScript SDK checkout path used by the smoke runner; CI points this at the isolated `$RUNNER_TEMP/sdk-compat` copy |
+| `HONUA_SDK_PYTHON_DIR` | `sdk/honua-sdk-python` | Python SDK checkout path used by the smoke runner; CI points this at the isolated `$RUNNER_TEMP/sdk-compat` copy |
+| `HONUA_SDK_DOTNET_DIR` | `sdk/honua-sdk-dotnet` | .NET SDK checkout path used by the smoke runner; CI points this at the isolated `$RUNNER_TEMP/sdk-compat` copy and supports absolute paths |
 
 SDK repos may either connect to an externally supplied server using these
 variables or start an equivalent seeded server. Mock-handler-only results do not
@@ -119,6 +130,14 @@ The smoke command uses a 40-minute command timeout inside a 75-minute job
 timeout. The remaining job budget covers checkout/setup, kill grace, evidence
 writing, artifact upload, and supported-cell failure handling so timed-out cells
 still emit `exit_code: 124` and failure diagnostics.
+
+The compatibility lane validates server/SDK runtime interoperability, not SDK
+source quality policy. SDK analyzer and warning-as-error enforcement remains in
+the owning SDK repositories, and NuGet/security audit findings remain in the
+dedicated security gates. The .NET smoke project therefore builds with
+analyzers and warning-as-error promotion disabled for that smoke invocation
+only; compiler errors, restore failures, runtime failures, and SDK compatibility
+rejections still fail supported cells.
 
 The generated `sdk-compatibility-summary.json` embeds these cell records so
 release owners can review both the matrix decision and the raw evidence fields

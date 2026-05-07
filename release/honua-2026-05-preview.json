@@ -45,7 +45,7 @@
       "workflow": ".github/workflows/sdk-server-compatibility.yml",
       "tier": "nightly",
       "requirement": "Green for the release-candidate server ref, or covered by an approved release waiver.",
-      "evidenceState": "passed",
+      "evidenceState": "blocked",
       "latestEvidence": {
         "runUrl": "https://github.com/honua-io/honua-server/actions/runs/25496918988",
         "artifact": "sdk-compatibility-matrix-25496918988",
@@ -57,7 +57,14 @@
         "source": "gh run view 25496918988 -R honua-io/honua-server --json status,conclusion,headSha,createdAt,updatedAt,url"
       },
       "waiver": null,
-      "blockers": []
+      "blockers": [
+        {
+          "repo": "honua-io/honua-server",
+          "number": 940,
+          "url": "https://github.com/honua-io/honua-server/issues/940",
+          "reason": "SDK Server Compatibility run 25496918988 restored the server-owned runner but tested feature/940 commits, not the recorded release-candidate ref 498b440013575a257d9bf898f49c2c536487517e; release evidence remains blocked until a candidate-matching run or approved waiver is attached."
+        }
+      ]
     },
     {
       "id": "server-real-client-interop",

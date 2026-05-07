@@ -81,6 +81,7 @@ public sealed class ReleaseTrainManifestTests
             .Select(item => item.GetProperty("repo").GetString())
             .Where(repo => !string.IsNullOrWhiteSpace(repo))
             .ToHashSet(StringComparer.Ordinal);
+        var candidateRef = releaseRoot.GetProperty("candidate").GetProperty("ref").GetString();
 
         foreach (var item in EnumerateReleaseItems(releaseRoot))
         {
@@ -88,7 +89,7 @@ public sealed class ReleaseTrainManifestTests
             var evidenceState = item.GetProperty("evidenceState").GetString();
             if (string.Equals(evidenceState, "passed", StringComparison.Ordinal))
             {
-                AssertPassedLaneEvidence(item, itemId);
+                AssertPassedLaneEvidence(item, itemId, candidateRef);
                 continue;
             }
 
@@ -195,7 +196,7 @@ public sealed class ReleaseTrainManifestTests
             && IsApprovedWaiver(waiver);
     }
 
-    private static void AssertPassedLaneEvidence(JsonElement item, string? itemId)
+    private static void AssertPassedLaneEvidence(JsonElement item, string? itemId, string? candidateRef)
     {
         item.TryGetProperty("latestEvidence", out var latestEvidence).Should().BeTrue(
             $"{itemId} is passed and must name the successful evidence record");
@@ -213,6 +214,8 @@ public sealed class ReleaseTrainManifestTests
             conclusion.Should().Be("success", $"{itemId} cannot pass on non-success evidence");
         }
 
+        AssertReleaseCandidateEvidenceIfRequired(item, latestEvidence, itemId, candidateRef);
+
         if (item.TryGetProperty("blockers", out var blockers) && blockers.ValueKind == JsonValueKind.Array)
         {
             blockers.GetArrayLength().Should().Be(0, $"{itemId} cannot be passed while blockers remain attached");
@@ -222,6 +225,70 @@ public sealed class ReleaseTrainManifestTests
         {
             waiver.ValueKind.Should().Be(JsonValueKind.Null, $"{itemId} cannot be passed because of a waiver");
         }
+    }
+
+    private static void AssertReleaseCandidateEvidenceIfRequired(
+        JsonElement item,
+        JsonElement latestEvidence,
+        string? itemId,
+        string? candidateRef)
+    {
+        var requirement = GetNullableString(item, "requirement");
+        if (requirement is null || !RequiresReleaseCandidateServerRef(requirement))
+        {
+            return;
+        }
+
+        candidateRef.Should().NotBeNullOrWhiteSpace(
+            $"{itemId} requires release-candidate server evidence, so the manifest candidate ref must be pinned");
+        EvidenceReferencesServerCommit(latestEvidence, candidateRef!).Should().BeTrue(
+            $"{itemId} requires release-candidate server evidence; passed evidence must name candidate.ref as headSha or in testedServerCommits");
+    }
+
+    private static bool RequiresReleaseCandidateServerRef(string requirement)
+    {
+        return requirement.Contains("release-candidate server ref", StringComparison.OrdinalIgnoreCase)
+            || requirement.Contains("release candidate server ref", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool EvidenceReferencesServerCommit(JsonElement latestEvidence, string candidateRef)
+    {
+        if (string.Equals(GetNullableString(latestEvidence, "headSha"), candidateRef, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        foreach (var propertyName in new[] { "testedServerCommits", "serverCommits" })
+        {
+            if (!latestEvidence.TryGetProperty(propertyName, out var commits) || commits.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var commit in commits.EnumerateArray())
+            {
+                if (commit.ValueKind == JsonValueKind.String
+                    && string.Equals(commit.GetString(), candidateRef, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                if (commit.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (string.Equals(GetNullableString(commit, "ref"), candidateRef, StringComparison.Ordinal)
+                    || string.Equals(GetNullableString(commit, "commit"), candidateRef, StringComparison.Ordinal)
+                    || string.Equals(GetNullableString(commit, "sha"), candidateRef, StringComparison.Ordinal)
+                    || string.Equals(GetNullableString(commit, "headSha"), candidateRef, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static void AssertApprovedWaiver(JsonElement waiver)
