@@ -1,0 +1,891 @@
+{
+  "contractVersion": "honua.ai_builder.operations_dashboard.v1",
+  "fixtureProfile": "deterministic-no-model",
+  "description": "Fixture-only GTM proof contract for building an operations dashboard from a saved map without live model calls.",
+  "proofPrompt": "Build an operations dashboard for this saved map showing a map, incident list, incident count, incidents by type chart, and district filter.",
+  "modelInvocation": {
+    "mode": "disabled",
+    "allowed": false,
+    "replacement": "operations-dashboard-contract-fixture"
+  },
+  "capabilityDiscovery": {
+    "savedMaps": [
+      {
+        "savedMapId": "saved-map:city-ops",
+        "label": "City Operations Incidents",
+        "serviceId": "published-service:city-ops-incidents",
+        "mapPackageId": "map-pkg-ops-dashboard",
+        "crs": "EPSG:4326",
+        "extent": [
+          -157.95,
+          21.25,
+          -157.65,
+          21.42
+        ],
+        "layers": [
+          {
+            "sourceId": "catalog:layer:incident_events",
+            "role": "incidents"
+          },
+          {
+            "sourceId": "catalog:layer:response_districts",
+            "role": "district-filter"
+          }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "sourceId": "catalog:layer:incident_events",
+        "schemaId": "schema:incident_events",
+        "label": "Incident Events",
+        "geometryColumn": "geom",
+        "geometryType": "Point",
+        "crs": "EPSG:4326",
+        "snapshotToken": "snapshot:incident-events:2026-05-01T00:00:00Z",
+        "mutable": true,
+        "fields": [
+          {
+            "name": "incident_id",
+            "label": "Incident ID",
+            "type": "string"
+          },
+          {
+            "name": "incident_type",
+            "label": "Incident type",
+            "type": "string",
+            "domain": [
+              "medical",
+              "fire",
+              "traffic",
+              "utility"
+            ],
+            "supportsAggregation": true
+          },
+          {
+            "name": "district",
+            "label": "District",
+            "type": "string",
+            "domain": [
+              "central",
+              "east",
+              "west"
+            ],
+            "supportsFilter": true
+          },
+          {
+            "name": "status",
+            "label": "Status",
+            "type": "string",
+            "domain": [
+              "open",
+              "assigned",
+              "closed"
+            ],
+            "supportsFilter": true
+          },
+          {
+            "name": "reported_at",
+            "label": "Reported at",
+            "type": "datetime",
+            "supportsFilter": true
+          }
+        ]
+      },
+      {
+        "sourceId": "catalog:layer:response_districts",
+        "schemaId": "schema:response_districts",
+        "label": "Response Districts",
+        "geometryColumn": "geom",
+        "geometryType": "Polygon",
+        "crs": "EPSG:4326",
+        "snapshotToken": "snapshot:response-districts:2026-05-01T00:00:00Z",
+        "mutable": false,
+        "fields": [
+          {
+            "name": "district",
+            "label": "District",
+            "type": "string",
+            "domain": [
+              "central",
+              "east",
+              "west"
+            ],
+            "supportsFilter": true
+          },
+          {
+            "name": "district_name",
+            "label": "District name",
+            "type": "string"
+          }
+        ]
+      }
+    ],
+    "schemaPreviews": [
+      {
+        "schemaId": "schema:incident_events",
+        "sourceId": "catalog:layer:incident_events",
+        "primaryKey": "incident_id",
+        "geometryColumn": "geom",
+        "requiredFields": [
+          "incident_id",
+          "incident_type",
+          "district",
+          "status",
+          "geom"
+        ]
+      },
+      {
+        "schemaId": "schema:response_districts",
+        "sourceId": "catalog:layer:response_districts",
+        "primaryKey": "district",
+        "geometryColumn": "geom",
+        "requiredFields": [
+          "district",
+          "district_name",
+          "geom"
+        ]
+      }
+    ],
+    "capabilities": [
+      {
+        "name": "savedMapBinding",
+        "state": "supported"
+      },
+      {
+        "name": "incidentList",
+        "state": "supported"
+      },
+      {
+        "name": "incidentCountAggregation",
+        "state": "supported"
+      },
+      {
+        "name": "incidentsByTypeAggregation",
+        "state": "supported"
+      },
+      {
+        "name": "districtFilter",
+        "state": "supported"
+      },
+      {
+        "name": "geometryPredicate:intersects",
+        "state": "supported"
+      },
+      {
+        "name": "liveSourceSnapshot",
+        "state": "degraded",
+        "reason": "The incident layer is mutable; deterministic apply requires the recorded snapshot token."
+      },
+      {
+        "name": "kernelDensityAggregation",
+        "state": "unsupported",
+        "reason": "The proof dashboard fixture only supports count and group-by aggregations."
+      }
+    ],
+    "mcpInspection": {
+      "tools": [
+        "honua_ground_candidates",
+        "honua_clarify_intent",
+        "honua_validate_plan",
+        "honua_dry_run_plan",
+        "honua_execute_plan"
+      ],
+      "resources": [
+        {
+          "category": "services",
+          "uri": "honua://published-services"
+        },
+        {
+          "category": "services",
+          "uri": "honua://published-services/city-ops-incidents"
+        },
+        {
+          "category": "schemas",
+          "uri": "honua://published-services/city-ops-incidents",
+          "schemaRef": "schema:incident_events"
+        },
+        {
+          "category": "schemas",
+          "uri": "honua://published-services/city-ops-incidents",
+          "schemaRef": "schema:response_districts"
+        },
+        {
+          "category": "processes",
+          "uri": "honua://catalog/processes"
+        },
+        {
+          "category": "packages",
+          "uri": "honua://map-packages/map-pkg-ops-dashboard"
+        },
+        {
+          "category": "packages",
+          "uri": "honua://app-packages/app-pkg-ops-dashboard"
+        },
+        {
+          "category": "artifacts",
+          "uri": "honua://jobs/job-ops-dashboard-success/results#artifact-app-manifest-ops"
+        },
+        {
+          "category": "jobs",
+          "uri": "honua://jobs/job-ops-dashboard-success"
+        },
+        {
+          "category": "jobs",
+          "uri": "honua://jobs/job-ops-dashboard-success/results"
+        },
+        {
+          "category": "deployments",
+          "uri": "honua://deployments/deploy-ops-dashboard"
+        }
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "success-operations-dashboard",
+      "case": "success",
+      "prompt": "Build an operations dashboard for this saved map showing a map, incident list, incident count, incidents by type chart, and district filter.",
+      "draft": {
+        "status": "ready",
+        "structuredDraft": {
+          "kind": "operations-dashboard",
+          "savedMapId": "saved-map:city-ops",
+          "sourceIds": [
+            "catalog:layer:incident_events",
+            "catalog:layer:response_districts"
+          ],
+          "widgets": [
+            {
+              "id": "map",
+              "kind": "map",
+              "sourceId": "catalog:layer:incident_events",
+              "mapPackageId": "map-pkg-ops-dashboard"
+            },
+            {
+              "id": "incident-list",
+              "kind": "list",
+              "sourceId": "catalog:layer:incident_events",
+              "fields": [
+                "incident_id",
+                "incident_type",
+                "district",
+                "status",
+                "reported_at"
+              ]
+            },
+            {
+              "id": "incident-count",
+              "kind": "metric",
+              "sourceId": "catalog:layer:incident_events",
+              "aggregation": "count"
+            },
+            {
+              "id": "incidents-by-type",
+              "kind": "chart",
+              "chartType": "bar",
+              "sourceId": "catalog:layer:incident_events",
+              "groupBy": "incident_type",
+              "aggregation": "count"
+            },
+            {
+              "id": "district-filter",
+              "kind": "filter",
+              "sourceId": "catalog:layer:response_districts",
+              "field": "district",
+              "targetWidgetIds": [
+                "map",
+                "incident-list",
+                "incident-count",
+                "incidents-by-type"
+              ]
+            }
+          ]
+        },
+        "specDraft": {
+          "reviewStatus": "reviewable",
+          "specKind": "CanonicalSpecDocument",
+          "canonicalSpecDocument": {
+            "grammarVersion": "v1.0",
+            "processFamilyVersion": "ai-builder.operations-dashboard.v1",
+            "specId": "spec-ops-dashboard",
+            "nodes": [
+              {
+                "id": "incident-events-source",
+                "kind": "Service",
+                "parameters": {
+                  "sourceId": "catalog:layer:incident_events",
+                  "schemaRef": "schema:incident_events",
+                  "snapshotToken": "snapshot:incident-events:2026-05-01T00:00:00Z"
+                }
+              },
+              {
+                "id": "response-districts-source",
+                "kind": "Service",
+                "parameters": {
+                  "sourceId": "catalog:layer:response_districts",
+                  "schemaRef": "schema:response_districts",
+                  "snapshotToken": "snapshot:response-districts:2026-05-01T00:00:00Z"
+                }
+              },
+              {
+                "id": "incident-list",
+                "kind": "Report",
+                "op": "dashboard.list",
+                "inputs": {
+                  "features": "@incident-events-source"
+                },
+                "parameters": {
+                  "limit": "100",
+                  "sort": "reported_at desc"
+                }
+              },
+              {
+                "id": "incident-count",
+                "kind": "Report",
+                "op": "aggregate.count",
+                "inputs": {
+                  "features": "@incident-events-source"
+                }
+              },
+              {
+                "id": "incidents-by-type",
+                "kind": "Report",
+                "op": "aggregate.groupBy",
+                "inputs": {
+                  "features": "@incident-events-source"
+                },
+                "parameters": {
+                  "groupBy": "incident_type"
+                }
+              },
+              {
+                "id": "district-filter",
+                "kind": "Compute",
+                "op": "dashboard.filter",
+                "inputs": {
+                  "features": "@incident-events-source",
+                  "districts": "@response-districts-source"
+                },
+                "parameters": {
+                  "field": "district",
+                  "predicate": "intersects"
+                }
+              },
+              {
+                "id": "operations-dashboard-app",
+                "kind": "App",
+                "op": "app.dashboard",
+                "inputs": {
+                  "map": "@incident-events-source",
+                  "list": "@incident-list",
+                  "count": "@incident-count",
+                  "chart": "@incidents-by-type",
+                  "filter": "@district-filter"
+                },
+                "parameters": {
+                  "templateId": "operations-dashboard",
+                  "targetSdk": "honua-sdk-js",
+                  "manifestFormat": "honua_app_manifest.v1"
+                }
+              }
+            ]
+          }
+        },
+        "appDraft": {
+          "templateId": "operations-dashboard",
+          "targetSdk": "honua-sdk-js",
+          "views": [
+            "map",
+            "incident-list",
+            "incident-count",
+            "incidents-by-type",
+            "district-filter"
+          ],
+          "runtimeConfigSchema": {
+            "type": "object",
+            "required": [
+              "honuaBaseUrl",
+              "mapPackageUri",
+              "appPackageUri"
+            ],
+            "properties": {
+              "honuaBaseUrl": {
+                "type": "string",
+                "format": "uri"
+              },
+              "mapPackageUri": {
+                "type": "string",
+                "const": "honua://map-packages/map-pkg-ops-dashboard"
+              },
+              "appPackageUri": {
+                "type": "string",
+                "const": "honua://app-packages/app-pkg-ops-dashboard"
+              }
+            }
+          }
+        }
+      },
+      "plan": {
+        "status": "planned",
+        "planId": "plan-ops-dashboard",
+        "dag": [
+          {
+            "nodeId": "incident-events-source",
+            "kind": "service"
+          },
+          {
+            "nodeId": "response-districts-source",
+            "kind": "service"
+          },
+          {
+            "nodeId": "incident-list",
+            "kind": "report",
+            "dependsOn": [
+              "incident-events-source"
+            ]
+          },
+          {
+            "nodeId": "incident-count",
+            "kind": "aggregate",
+            "dependsOn": [
+              "incident-events-source"
+            ]
+          },
+          {
+            "nodeId": "incidents-by-type",
+            "kind": "aggregate",
+            "dependsOn": [
+              "incident-events-source"
+            ]
+          },
+          {
+            "nodeId": "district-filter",
+            "kind": "filter",
+            "dependsOn": [
+              "incident-events-source",
+              "response-districts-source"
+            ]
+          },
+          {
+            "nodeId": "compose-map-package",
+            "kind": "package",
+            "dependsOn": [
+              "district-filter"
+            ]
+          },
+          {
+            "nodeId": "compose-app-package",
+            "kind": "package",
+            "dependsOn": [
+              "compose-map-package",
+              "incident-list",
+              "incident-count",
+              "incidents-by-type"
+            ]
+          },
+          {
+            "nodeId": "emit-app-manifest",
+            "kind": "artifact",
+            "dependsOn": [
+              "compose-app-package"
+            ]
+          }
+        ],
+        "warnings": [
+          {
+            "code": "mutable_source_cache_warning",
+            "message": "The incident_events layer is mutable; deterministic package output requires the recorded snapshot token."
+          },
+          {
+            "code": "mcp_promotion_surface_gated",
+            "message": "Published services, deployments, map packages, and app packages require the promotion MCP surface when replayed against a live server."
+          }
+        ],
+        "cache": {
+          "key": "sha256:fixture-operations-dashboard",
+          "hit": false,
+          "reproducibility": "snapshot-token-required"
+        }
+      },
+      "apply": {
+        "status": "succeeded",
+        "job": {
+          "jobId": "job-ops-dashboard-success",
+          "status": "succeeded",
+          "resourceUri": "honua://jobs/job-ops-dashboard-success",
+          "progress": {
+            "percentComplete": 100,
+            "phase": "completed",
+            "events": [
+              {
+                "sequence": 1,
+                "stage": "validate-plan",
+                "status": "completed"
+              },
+              {
+                "sequence": 2,
+                "stage": "compose-map-package",
+                "status": "completed"
+              },
+              {
+                "sequence": 3,
+                "stage": "compose-app-package",
+                "status": "completed"
+              },
+              {
+                "sequence": 4,
+                "stage": "emit-app-manifest",
+                "status": "completed"
+              }
+            ]
+          }
+        },
+        "artifacts": [
+          {
+            "artifactId": "map-pkg-ops-dashboard",
+            "kind": "MapPackage",
+            "format": "honua_map_package.v1",
+            "resourceUri": "honua://map-packages/map-pkg-ops-dashboard",
+            "packageable": true
+          },
+          {
+            "artifactId": "app-pkg-ops-dashboard",
+            "kind": "AppPackage",
+            "format": "honua_app_package.v1",
+            "resourceUri": "honua://app-packages/app-pkg-ops-dashboard",
+            "packageable": true
+          },
+          {
+            "artifactId": "artifact-app-manifest-ops",
+            "kind": "AppManifest",
+            "format": "honua_app_manifest.v1",
+            "contentType": "application/vnd.honua.app-manifest+json",
+            "resourceUri": "honua://jobs/job-ops-dashboard-success/results#artifact-app-manifest-ops",
+            "packageable": false
+          },
+          {
+            "artifactId": "artifact-app-bundle-ops",
+            "kind": "AppBundle",
+            "format": "application/gzip",
+            "contentType": "application/gzip",
+            "resourceUri": "honua://jobs/job-ops-dashboard-success/results#artifact-app-bundle-ops",
+            "packageable": true
+          }
+        ],
+        "packages": {
+          "mapPackage": {
+            "mapPackageId": "map-pkg-ops-dashboard",
+            "format": "honua_map_package.v1",
+            "status": "Ready",
+            "templateId": "saved-map-dashboard",
+            "resourceUri": "honua://map-packages/map-pkg-ops-dashboard",
+            "sourceBindings": [
+              {
+                "sourceId": "catalog:layer:incident_events",
+                "protocol": "ogc_features",
+                "filter": "status <> 'closed'"
+              },
+              {
+                "sourceId": "catalog:layer:response_districts",
+                "protocol": "ogc_features"
+              }
+            ],
+            "boundArtifacts": [
+              "map-pkg-ops-dashboard"
+            ]
+          },
+          "appPackage": {
+            "appPackageId": "app-pkg-ops-dashboard",
+            "targetSdk": "honua-sdk-js",
+            "format": "honua_app_package.v1",
+            "status": "Ready",
+            "templateId": "operations-dashboard",
+            "resourceUri": "honua://app-packages/app-pkg-ops-dashboard",
+            "entryPoint": "src/main.tsx",
+            "generatedFiles": [
+              "package.json",
+              "src/main.tsx",
+              "src/dashboard.tsx",
+              "src/honua-app-manifest.json"
+            ],
+            "bundleArtifactId": "artifact-app-bundle-ops",
+            "manifestArtifactId": "artifact-app-manifest-ops",
+            "manifestArtifact": {
+              "artifactId": "artifact-app-manifest-ops",
+              "format": "honua_app_manifest.v1",
+              "contentType": "application/vnd.honua.app-manifest+json",
+              "resourceUri": "honua://jobs/job-ops-dashboard-success/results#artifact-app-manifest-ops"
+            },
+            "assetManifest": [
+              {
+                "path": "index.html",
+                "contentType": "text/html"
+              },
+              {
+                "path": "src/main.tsx",
+                "contentType": "text/typescript-jsx"
+              },
+              {
+                "path": "src/honua-app-manifest.json",
+                "contentType": "application/vnd.honua.app-manifest+json"
+              }
+            ],
+            "mapPackageId": "map-pkg-ops-dashboard",
+            "manifestPreview": {
+              "schemaVersion": "honua.app_manifest.v1",
+              "targetSdk": "honua-sdk-js",
+              "appPackageId": "app-pkg-ops-dashboard",
+              "mapPackageUri": "honua://map-packages/map-pkg-ops-dashboard",
+              "widgets": [
+                "map",
+                "incident-list",
+                "incident-count",
+                "incidents-by-type",
+                "district-filter"
+              ],
+              "dataBindings": {
+                "incidentSource": "catalog:layer:incident_events",
+                "districtSource": "catalog:layer:response_districts",
+                "filterField": "district",
+                "chartGroupBy": "incident_type",
+                "countAggregation": "count"
+              }
+            },
+            "runtimeConfigSchema": {
+              "type": "object",
+              "required": [
+                "honuaBaseUrl",
+                "mapPackageUri",
+                "appPackageUri"
+              ]
+            },
+            "deliveryHints": {
+              "hostingMode": "static_site",
+              "defaultRoutePrefix": "/apps/ops-dashboard"
+            },
+            "boundArtifacts": [
+              "artifact-app-bundle-ops",
+              "artifact-app-manifest-ops"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "ambiguity-source-field-geometry-crs-predicate-aggregation",
+      "case": "ambiguity",
+      "prompt": "Build an incident dashboard from this map and group things by area.",
+      "draft": {
+        "status": "clarification_required"
+      },
+      "clarification": {
+        "candidates": [
+          {
+            "kind": "source",
+            "field": "dataset.selection",
+            "reason": "ambiguous_saved_map_layer",
+            "options": [
+              "catalog:layer:incident_events",
+              "catalog:layer:response_districts"
+            ]
+          },
+          {
+            "kind": "field",
+            "field": "chart.groupBy",
+            "reason": "ambiguous_grouping_field",
+            "options": [
+              "incident_type",
+              "district",
+              "status"
+            ]
+          },
+          {
+            "kind": "geometry",
+            "field": "filter.geometrySource",
+            "reason": "ambiguous_filter_geometry",
+            "options": [
+              "response_districts.geom",
+              "saved_map_extent"
+            ]
+          },
+          {
+            "kind": "crs",
+            "field": "output.crs",
+            "reason": "ambiguous_crs",
+            "options": [
+              "EPSG:4326",
+              "EPSG:3857"
+            ]
+          },
+          {
+            "kind": "predicate",
+            "field": "districtFilter.predicate",
+            "reason": "ambiguous_spatial_predicate",
+            "options": [
+              "intersects",
+              "contains"
+            ]
+          },
+          {
+            "kind": "aggregation",
+            "field": "metric.aggregation",
+            "reason": "ambiguous_aggregation",
+            "options": [
+              "count",
+              "countByType"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "unsupported-kernel-density",
+      "case": "unsupported",
+      "prompt": "Build the incident dashboard with a kernel density hot spot layer and compare it by district.",
+      "draft": {
+        "status": "unsupported"
+      },
+      "capabilityState": {
+        "name": "kernelDensityAggregation",
+        "state": "unsupported",
+        "reason": "The proof fixture supports count and group-by aggregations only."
+      },
+      "warnings": [
+        {
+          "code": "unsupported_capability",
+          "capability": "kernelDensityAggregation"
+        }
+      ]
+    },
+    {
+      "id": "rbac-denied-restricted-incidents",
+      "case": "auth-denied",
+      "prompt": "Build the dashboard from the restricted active law-enforcement incident map.",
+      "error": {
+        "code": "auth_denied",
+        "requiresReauthentication": false,
+        "policyRef": "rbac:source:restricted_law_enforcement_incidents"
+      }
+    },
+    {
+      "id": "oversized-estimate-history",
+      "case": "oversized",
+      "prompt": "Build the dashboard for all incident history and include every raw event in the list.",
+      "plan": {
+        "status": "rejected",
+        "estimate": {
+          "featureCount": 8400000,
+          "limit": 1000000,
+          "unit": "features"
+        },
+        "warnings": [
+          {
+            "code": "estimate_limit_exceeded",
+            "message": "Estimated incident history exceeds the fixture apply limit."
+          }
+        ]
+      }
+    },
+    {
+      "id": "cache-hit-reused-operations-dashboard",
+      "case": "cache-hit",
+      "prompt": "Build an operations dashboard for this saved map showing a map, incident list, incident count, incidents by type chart, and district filter.",
+      "plan": {
+        "status": "planned",
+        "cache": {
+          "key": "sha256:fixture-operations-dashboard",
+          "hit": true,
+          "reproducibility": "snapshot-token-required"
+        },
+        "warnings": [
+          {
+            "code": "cache_hit",
+            "message": "Plan reused the recorded map package, app package, and manifest artifact."
+          },
+          {
+            "code": "mutable_source_cache_warning",
+            "message": "Cached output is valid only for the recorded incident_events snapshot token."
+          }
+        ]
+      },
+      "apply": {
+        "status": "succeeded",
+        "job": {
+          "jobId": "job-ops-dashboard-cache-hit",
+          "status": "succeeded",
+          "resourceUri": "honua://jobs/job-ops-dashboard-cache-hit",
+          "progress": {
+            "percentComplete": 100,
+            "phase": "cache-hit"
+          }
+        },
+        "artifacts": [
+          {
+            "artifactId": "map-pkg-ops-dashboard",
+            "kind": "MapPackage",
+            "format": "honua_map_package.v1",
+            "resourceUri": "honua://map-packages/map-pkg-ops-dashboard",
+            "packageable": true
+          },
+          {
+            "artifactId": "app-pkg-ops-dashboard",
+            "kind": "AppPackage",
+            "format": "honua_app_package.v1",
+            "resourceUri": "honua://app-packages/app-pkg-ops-dashboard",
+            "packageable": true
+          },
+          {
+            "artifactId": "artifact-app-manifest-ops",
+            "kind": "AppManifest",
+            "format": "honua_app_manifest.v1",
+            "contentType": "application/vnd.honua.app-manifest+json",
+            "resourceUri": "honua://jobs/job-ops-dashboard-success/results#artifact-app-manifest-ops",
+            "packageable": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "apply-failure-manifest-write",
+      "case": "apply-failure",
+      "prompt": "Build the operations dashboard and package it for the JavaScript SDK.",
+      "plan": {
+        "status": "planned",
+        "planId": "plan-apply-failure-manifest-write",
+        "dag": [
+          {
+            "nodeId": "compose-app-package",
+            "kind": "package"
+          },
+          {
+            "nodeId": "emit-app-manifest",
+            "kind": "artifact",
+            "dependsOn": [
+              "compose-app-package"
+            ]
+          }
+        ]
+      },
+      "apply": {
+        "status": "failed",
+        "job": {
+          "jobId": "job-apply-failure-manifest-write",
+          "status": "failed",
+          "resourceUri": "honua://jobs/job-apply-failure-manifest-write",
+          "progress": {
+            "percentComplete": 75,
+            "phase": "emit-app-manifest"
+          }
+        },
+        "warnings": [
+          {
+            "code": "artifact_write_failed",
+            "artifactKind": "AppManifest",
+            "retryable": true
+          }
+        ]
+      }
+    }
+  ]
+}

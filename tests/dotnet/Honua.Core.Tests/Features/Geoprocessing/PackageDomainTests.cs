@@ -84,6 +84,7 @@ public sealed class PackageDomainTests
         pkg.EntryPoint.Should().BeNull();
         pkg.GeneratedFiles.Should().BeEmpty();
         pkg.BundleArtifactId.Should().BeNull();
+        pkg.ManifestArtifactId.Should().BeNull();
         pkg.AssetManifest.Should().BeEmpty();
         pkg.MapPackageId.Should().BeNull();
         pkg.RuntimeConfigSchema.Should().BeNull();
@@ -218,6 +219,7 @@ public sealed class PackageDomainTests
             EntryPoint = "src/main.ts",
             GeneratedFiles = ["src/main.ts", "src/config.json"],
             BundleArtifactId = "artifact-bundle-1",
+            ManifestArtifactId = "artifact-manifest-1",
             AssetManifest =
             [
                 new AssetManifestEntry { Path = "index.html", ContentType = "text/html" },
@@ -245,6 +247,7 @@ public sealed class PackageDomainTests
         deserialized.EntryPoint.Should().Be("src/main.ts");
         deserialized.GeneratedFiles.Should().HaveCount(2);
         deserialized.BundleArtifactId.Should().Be("artifact-bundle-1");
+        deserialized.ManifestArtifactId.Should().Be("artifact-manifest-1");
         deserialized.AssetManifest.Should().HaveCount(2);
         deserialized.AssetManifest[0].Path.Should().Be("index.html");
         deserialized.AssetManifest[0].ContentType.Should().Be("text/html");
