@@ -3,9 +3,10 @@
 # JIT build for maximum compatibility (AOT via docker/Dockerfile.aot)
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
 
-# Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:8a90a473da5205a16979de99d2fc20975e922c68304f5c79d564e666dc3982fc
-ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:60eb031b554df75a4b9f358290a2fa15d8961a3bc79b47bb34a00e31f7b78c69
+# Use MCR tags here; GitHub Actions buildx can receive 403 responses when
+# resolving pinned .NET image digests with HEAD requests.
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 
 # Build stage
 FROM ${DOTNET_SDK_IMAGE} AS build
