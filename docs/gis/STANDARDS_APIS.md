@@ -143,6 +143,15 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 - Items always include `properties.datetime`; when a layer has no resolvable time field, the property remains present with a `null` value.
 - Pagination links preserve encoded `bbox` and `datetime` filters so clients can replay sampled queries exactly.
 - Search supports GET and POST with `fields`, `sortby`, and CQL2 filtering (`filter`, `filter-lang`, and registry-backed `filter-crs` / explicit geometry CRS for CQL2 spatial literals).
+- CI runs `stac-api-validator==0.6.8` against the live seeded `/stac` fixture for the `collections` and `filter` conformance classes. This is external validation evidence, not a formal certification claim. The broader advertised-class validator gaps for `core` / `features` and item-search-related extensions are tracked by honua-server issues #956 and #957.
+
+**Local external validator evidence:**
+```
+cd tests/python
+python -m pytest stac_client/test_stac_api_validator.py --tb=short
+```
+
+The validator uses collection `0` from `tests/seed/client-compat-v1.sql` and the bounded San Francisco AOI `[-122.5000,37.7000]` to `[-122.4400,37.7450]`. The pytest wrapper treats validator transcript failures such as `Failed.`, `Error ...`, and tracebacks as failures even if the validator process exits zero. To intentionally bump the pinned validator, update `tests/python/requirements.txt`, run the command above, inspect `tests/TestResults/stac-api-validator-results*.json`, and include the changed validator version in release evidence notes.
 
 **Typical use cases:**
 - STAC browser and catalog interoperability
@@ -574,6 +583,7 @@ Backward compatibility for standards APIs is defined by the external standard, n
 Compatibility is validated through:
 - **Coverage matrices** tracking supported operations per standard (see [Coverage and Compliance](#coverage-and-compliance) below).
 - **CITE conformance results** for OGC standards (scheduled nightly/manual workflows, 100% pass rate required).
+- **STAC API validator evidence** from `stac-api-validator==0.6.8` in the Python client compatibility lane. CI retains `tests/TestResults/stac-api-validator-results*.json` with stdout, stderr, exit code, command, collection id, AOI geometry, status, and validated conformance classes.
 - **Client template validation** via the [Client Templates + Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md).
 - **Release notes** documenting any changes to standards API behavior.
 

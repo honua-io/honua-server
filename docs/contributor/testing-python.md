@@ -158,10 +158,11 @@ pytest -n auto --tb=short
 
 The STAC lane emits both machine-readable and human-readable evidence files at the end of each run:
 
-- `tests/python/stac-client-compat-results*.json`
-- `tests/python/stac-client-compat-results*.md`
+- `tests/TestResults/stac-client-compat-results*.json`
+- `tests/TestResults/stac-client-compat-results*.md`
+- `tests/TestResults/stac-api-validator-results*.json`
 
-Each report includes the runtime server version, local git commit SHA, and the seed snapshot name used for the run.
+Each report includes the runtime server version, local git commit SHA, and the seed snapshot name used for the run. The validator transcript records the pinned `stac-api-validator` version, command, collection id, AOI geometry, exit code, stdout, stderr, and pass/fail status.
 
 ## PyQGIS Lane
 
