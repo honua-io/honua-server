@@ -949,6 +949,19 @@ ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
 // Add security headers middleware (first in pipeline for all requests)
 app.UseSecurityHeaders();
 
+// Some standards validators and older HTTP clients send only `Accept-Encoding: *`.
+// Prefer gzip/deflate for that wildcard so the response remains broadly decodable.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Headers.AcceptEncoding.Count == 1 &&
+        string.Equals(context.Request.Headers.AcceptEncoding[0], "*", StringComparison.Ordinal))
+    {
+        context.Request.Headers.AcceptEncoding = "gzip, deflate";
+    }
+
+    await next(context);
+});
+
 // Add response compression middleware (early in pipeline)
 app.UseResponseCompression();
 app.UseWebSockets();

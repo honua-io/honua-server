@@ -651,6 +651,8 @@ public static class EndpointRegistry
 
         // STAC (SpatioTemporal Asset Catalog)
         new("GET", "/stac"),
+        new("GET", "/stac/conformance"),
+        new("GET", "/stac/openapi.json"),
         new("GET", "/stac/collections"),
         new("GET", "/stac/collections/{collectionId}"),
         new("GET", "/stac/collections/{collectionId}/items"),

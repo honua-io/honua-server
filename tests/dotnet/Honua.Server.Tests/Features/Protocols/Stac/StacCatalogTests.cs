@@ -111,7 +111,7 @@ public sealed class StacCatalogTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.StacCatalog)]
     [Endpoint("GET /stac")]
-    public async Task GetCatalog_DoesNotAdvertiseOgcFeaturesOpenApiAsServiceDescription()
+    public async Task GetCatalog_AdvertisesValidatorRequiredHypermediaLinks()
     {
         var response = await _fixture.Client.GetAsync("/stac");
 
@@ -120,14 +120,59 @@ public sealed class StacCatalogTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
 
-        var serviceDescLinks = json.RootElement.GetProperty("links")
+        var links = json.RootElement.GetProperty("links")
             .EnumerateArray()
-            .Where(link => string.Equals(
-                link.GetProperty("rel").GetString(),
-                "service-desc",
-                StringComparison.Ordinal))
             .ToArray();
 
-        serviceDescLinks.Should().BeEmpty();
+        links.Should().Contain(link =>
+            link.GetProperty("rel").GetString() == "service-desc" &&
+            link.GetProperty("href").GetString()!.EndsWith("/stac/openapi.json", StringComparison.Ordinal));
+        links.Should().Contain(link =>
+            link.GetProperty("rel").GetString() == "service-doc");
+        links.Should().Contain(link =>
+            link.GetProperty("rel").GetString() == "conformance" &&
+            link.GetProperty("href").GetString()!.EndsWith("/stac/conformance", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacCatalog)]
+    [Endpoint("GET /stac/conformance")]
+    public async Task GetConformance_ReturnsStacConformanceClasses()
+    {
+        var response = await _fixture.Client.GetAsync("/stac/conformance");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        var conformsTo = json.RootElement.GetProperty("conformsTo")
+            .EnumerateArray()
+            .Select(e => e.GetString()!)
+            .ToList();
+
+        conformsTo.Should().Contain("https://api.stacspec.org/v1.0.0/core");
+        conformsTo.Should().Contain("https://api.stacspec.org/v1.0.0/ogcapi-features");
+        json.RootElement.GetProperty("links")
+            .EnumerateArray()
+            .Should()
+            .Contain(link => link.GetProperty("rel").GetString() == "self");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacCatalog)]
+    [Endpoint("GET /stac/openapi.json")]
+    public async Task GetOpenApiSpec_ReturnsStacApiDescription()
+    {
+        var response = await _fixture.Client.GetAsync("/stac/openapi.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("openapi").GetString().Should().StartWith("3.");
+        json.RootElement.GetProperty("paths").TryGetProperty("/stac", out _).Should().BeTrue();
+        json.RootElement.GetProperty("paths").TryGetProperty("/stac/search", out _).Should().BeTrue();
     }
 }
