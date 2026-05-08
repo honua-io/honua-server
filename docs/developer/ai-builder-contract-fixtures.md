@@ -8,6 +8,11 @@ lock the structured response shapes that SDK, Portal, and MCP clients can replay
 while the broader app-builder runtime continues to land behind the existing NL
 query, spec, plan/apply, package, and MCP surfaces.
 
+| Fixture | Contract version | Primary use |
+| --- | --- | --- |
+| `spatial-query-contract-v1.json` | `honua.ai_builder.spatial_query.v1` | NL-to-query app-builder smoke tests and recovery states. |
+| `operations-dashboard-contract-v1.json` | `honua.ai_builder.operations_dashboard.v1` | GTM proof for a saved-map operations dashboard and SDK-JS package manifest output. |
+
 The spatial-query fixture covers:
 
 - NL prompt to structured `filterPlan`, `specDraft`, and `appDraft` state.
@@ -55,6 +60,23 @@ SDK-JS should use `manifestArtifact.resourceUri` (or the cached
 should bind review panels from `structuredDraft`, `specDraft`, `plan.warnings`,
 `apply.job.progress`, and the `packages` envelope instead of parsing artifact
 labels.
+
+Manifest/package consumers should treat the response contract as follows:
+
+- `apply.artifacts[*].kind == "AppManifest"` is the generated manifest artifact.
+  It is a job-result artifact, not the package record; its `resourceUri` points
+  to `honua://jobs/{jobId}/results#artifact-app-manifest-ops`.
+- `apply.packages.appPackage.manifestArtifactId` is the stable package-domain
+  pointer to that manifest artifact and mirrors
+  `apply.packages.appPackage.manifestArtifact.artifactId`.
+- `manifestArtifact.format` is `honua_app_manifest.v1`; the preview document
+  inside `manifestPreview.schemaVersion` uses `honua.app_manifest.v1`.
+- `bundleArtifactId` continues to identify the packaged app bundle. Both the
+  bundle and manifest artifact IDs are listed in `boundArtifacts` so SDKs can
+  validate that the runtime package was emitted with both outputs.
+- The fixture is a contract replay input only. It does not add a new live
+  planning endpoint, deployment endpoint, response cache, or cache invalidation
+  rule.
 
 The operations-dashboard edge scenarios cover:
 
