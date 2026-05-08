@@ -384,6 +384,8 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity"),
+        new("POST", "/api/v1/cloud-demo/reset"),
+        new("GET", "/api/v1/realtime/incidents/sse"),
         new("GET", "/tiles/{layerId}/{z}/{x}/{y}.mvt"),
         new("GET", "/tiles/{layerId}/h3/{z}/{x}/{y}.mvt"),
         new("GET", "/tiles/{layerId}/tile.json"),
