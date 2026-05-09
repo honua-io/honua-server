@@ -51,6 +51,11 @@ public sealed record AppPackage
     public string? BundleArtifactId { get; init; }
 
     /// <summary>
+    /// Artifact identifier for the generated application manifest JSON.
+    /// </summary>
+    public string? ManifestArtifactId { get; init; }
+
+    /// <summary>
     /// Manifest of static assets included in the package.
     /// </summary>
     public IReadOnlyList<AssetManifestEntry> AssetManifest { get; init; } = [];

@@ -1,13 +1,19 @@
 # AI Builder Contract Fixtures
 
-`tests/fixtures/ai-builder/spatial-query-contract-v1.json` is the deterministic
-server-side contract fixture for the AI app builder and spatial query demo. It
-does not call a live model and does not authorize raw SQL generation. The fixture
-locks the structured response shapes that SDK and MCP clients can replay while
-the broader app-builder runtime continues to land behind the existing NL query,
-spec, plan/apply, package, and MCP surfaces.
+`tests/fixtures/ai-builder/spatial-query-contract-v1.json` and
+`tests/fixtures/ai-builder/operations-dashboard-contract-v1.json` are the
+deterministic server-side contract fixtures for the AI app builder demos. They
+do not call a live model and do not authorize raw SQL generation. The fixtures
+lock the structured response shapes that SDK, Portal, and MCP clients can replay
+while the broader app-builder runtime continues to land behind the existing NL
+query, spec, plan/apply, package, and MCP surfaces.
 
-The fixture covers:
+| Fixture | Contract version | Primary use |
+| --- | --- | --- |
+| `spatial-query-contract-v1.json` | `honua.ai_builder.spatial_query.v1` | NL-to-query app-builder smoke tests and recovery states. |
+| `operations-dashboard-contract-v1.json` | `honua.ai_builder.operations_dashboard.v1` | GTM proof for a saved-map operations dashboard and SDK-JS package manifest output. |
+
+The spatial-query fixture covers:
 
 - NL prompt to structured `filterPlan`, `specDraft`, and `appDraft` state.
 - Metadata discovery for source selection, schema preview, field labels/domains,
@@ -22,10 +28,76 @@ The fixture covers:
 - Required fixture outcomes: success, ambiguity, unsupported capability,
   auth/RBAC denied, oversized estimate, cache hit, and apply failure.
 
+The operations-dashboard fixture is the GTM proof for this prompt:
+
+> Build an operations dashboard for this saved map showing a map, incident list,
+> incident count, incidents by type chart, and district filter.
+
+It records `modelInvocation.mode = "disabled"` so SDK-JS and Portal demos can
+prove the flow without hidden model state. Its success scenario returns:
+
+- `draft.structuredDraft`: saved-map binding, source IDs, and the five expected
+  dashboard widgets (`map`, `incident-list`, `incident-count`,
+  `incidents-by-type`, and `district-filter`).
+- `draft.specDraft.canonicalSpecDocument`: a reviewable app-capable canonical
+  spec draft with service, report, compute, and `App` nodes. Portal should show
+  this before apply instead of asking clients to infer intent from prose.
+- `plan`: deterministic DAG, mutable-source/cache warnings, and the
+  snapshot-token cache key that SDK-JS can replay.
+- `apply.job.progress`: structured stage progress through plan validation, map
+  package composition, app package composition, and app manifest emission.
+- `apply.artifacts`: `MapPackage`, `AppPackage`, app manifest, and app bundle
+  artifact references. The app manifest uses
+  `application/vnd.honua.app-manifest+json` and
+  `honua_app_manifest.v1`.
+- `apply.packages.appPackage`: the SDK-JS package view, including
+  `manifestArtifactId`, `manifestArtifact`, `manifestPreview`, generated files,
+  asset manifest, `mapPackageId`, runtime config schema, delivery hints, and
+  bound artifacts.
+
+SDK-JS should use `manifestArtifact.resourceUri` (or the cached
+`manifestPreview` in fixture-only tests) as the proof runtime input. Portal
+should bind review panels from `structuredDraft`, `specDraft`, `plan.warnings`,
+`apply.job.progress`, and the `packages` envelope instead of parsing artifact
+labels.
+
+Manifest/package consumers should treat the response contract as follows:
+
+- `apply.artifacts[*].kind == "AppManifest"` is the generated manifest artifact.
+  It is a job-result artifact, not the package record; its `resourceUri` points
+  to `honua://jobs/{jobId}/results#artifact-app-manifest-ops`.
+- `apply.packages.appPackage.manifestArtifactId` is the stable package-domain
+  pointer to that manifest artifact and mirrors
+  `apply.packages.appPackage.manifestArtifact.artifactId`.
+- `manifestArtifact.format` is `honua_app_manifest.v1`; the preview document
+  inside `manifestPreview.schemaVersion` uses `honua.app_manifest.v1`.
+- `bundleArtifactId` continues to identify the packaged app bundle. Both the
+  bundle and manifest artifact IDs are listed in `boundArtifacts` so SDKs can
+  validate that the runtime package was emitted with both outputs.
+- The fixture is a contract replay input only. It does not add a new live
+  planning endpoint, deployment endpoint, response cache, or cache invalidation
+  rule.
+
+The operations-dashboard edge scenarios cover:
+
+- source, field, geometry, CRS, predicate, and aggregation clarification.
+- unsupported capability (`kernelDensityAggregation`).
+- RBAC denial against a restricted incident source.
+- oversized estimate rejection.
+- cache hit with mutable-source warning.
+- apply failure while writing the app manifest artifact.
+
+Its `capabilityDiscovery.mcpInspection.resources` groups the MCP inspection
+surfaces the builder needs: services, schemas, processes, packages, artifacts,
+jobs, and deployments. Schema entries reference the fixture's
+`schemaPreviews`; package/job/deployment entries use the existing MCP URI
+families documented in `MCP_SERVER.md`.
+
 The narrow regression suite is
 `Honua.Core.Tests.Features.AiBuilder.AiBuilderContractFixtureTests`. It verifies
-that the fixture remains complete enough for honua-sdk-js app-builder smoke tests
-to render reviewable drafts and recovery states without hidden model state.
+that the fixtures remain complete enough for honua-sdk-js app-builder smoke
+tests and Portal review flows to render reviewable drafts, package manifests,
+and recovery states without hidden model state.
 
 MCP clients should pair fixture artifacts with these existing inspection routes:
 
