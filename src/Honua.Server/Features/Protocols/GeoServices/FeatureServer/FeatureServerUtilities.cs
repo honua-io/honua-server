@@ -200,6 +200,15 @@ internal static partial class FeatureServerEndpoints
                 "where",
                 "kRingDistance",
                 "outStatistics",
+                "summaries",
+                "groupBy",
+                "include",
+                "page",
+                "requestId",
+                "sourceId",
+                "schemaVersion",
+                "index",
+                "metadata",
                 "f"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);

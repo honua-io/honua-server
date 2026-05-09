@@ -89,8 +89,7 @@ internal static partial class FeatureServerEndpoints
 
         // Parse resolution (required) — validate input before checking server capabilities
         var resolutionStr = GetValueString(values, "resolution");
-        if (string.IsNullOrWhiteSpace(resolutionStr) ||
-            !int.TryParse(resolutionStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var resolution))
+        if (!TryParseH3Resolution(resolutionStr, out var resolution))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "resolution parameter is required",
@@ -180,15 +179,6 @@ internal static partial class FeatureServerEndpoints
             return h3Error;
         }
 
-        var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
-        var h3Query = new H3AggregationQuery
-        {
-            Resolution = resolution,
-            KRingDistance = kRingDistance,
-            OutStatistics = outStatistics,
-            MaxCells = queryLimits.MaxH3CellsPerQuery
-        };
-
         var where = GetValueString(values, "where");
         SqlFragment? sqlFilter = null;
         if (!string.IsNullOrWhiteSpace(where))
@@ -224,6 +214,40 @@ internal static partial class FeatureServerEndpoints
         };
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
+        if (HasSpatialAggregationSummaries(values))
+        {
+            var (summaryResponse, summaryError) = await HandleSpatialAggregationSummaryQueryAsync(
+                context,
+                values,
+                serviceId,
+                layerId,
+                layer,
+                featureQuery,
+                resolution,
+                kRingDistance,
+                queryLimits.MaxH3CellsPerQuery,
+                cancellationToken);
+
+            if (summaryError is not null)
+            {
+                return summaryError;
+            }
+
+            return Results.Json(
+                summaryResponse!,
+                FeatureServerJsonContext.Default.SpatialAggregationResultResponse,
+                contentType: "application/json");
+        }
+
+        var h3Query = new H3AggregationQuery
+        {
+            Resolution = resolution,
+            KRingDistance = kRingDistance,
+            OutStatistics = outStatistics,
+            MaxCells = queryLimits.MaxH3CellsPerQuery
+        };
+
         var rows = await featureReader.QueryH3Async(layer.Id, featureQuery, h3Query, cancellationToken);
 
         var responseFeatures = rows.Select(row =>
@@ -418,6 +442,48 @@ internal static partial class FeatureServerEndpoints
         18 => 11,
         _ => 12
     };
+
+    private static bool TryParseH3Resolution(string? rawResolution, out int resolution)
+    {
+        resolution = default;
+        if (string.IsNullOrWhiteSpace(rawResolution))
+        {
+            return false;
+        }
+
+        if (int.TryParse(rawResolution, NumberStyles.Integer, CultureInfo.InvariantCulture, out resolution))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawResolution);
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty("indexResolution", out var indexResolution))
+            {
+                return false;
+            }
+
+            if (indexResolution.ValueKind == JsonValueKind.Number &&
+                indexResolution.TryGetInt32(out resolution))
+            {
+                return true;
+            }
+
+            if (indexResolution.ValueKind == JsonValueKind.String &&
+                int.TryParse(indexResolution.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out resolution))
+            {
+                return true;
+            }
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Parses a GeoJSON Polygon string (H3 cell boundary) into an Esri-compatible

@@ -75,7 +75,7 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append("SELECT _h3cell::text AS \"cellIndex\"");
             sql.Append(", ST_AsGeoJSON(h3_cell_to_boundary(_h3cell)::geometry) AS \"cellGeometry\"");
 
-            AppendH3StatisticsColumns(sql, h3Query);
+            AppendH3AggregationColumns(sql, h3Query, ref paramIndex, parameters);
 
             // Inner subquery: compute cell once per row, carry all columns for statistics
             sql.Append(CultureInfo.InvariantCulture,
@@ -317,6 +317,25 @@ internal sealed partial class FeatureQueryBuilder
         return geometryOperand;
     }
 
+    private static void AppendH3AggregationColumns(
+        System.Text.StringBuilder sql,
+        H3AggregationQuery h3Query,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        if (h3Query.SummaryDefinitions.HasValue && !h3Query.SummaryDefinitions.Value.IsDefaultOrEmpty)
+        {
+            foreach (var summary in h3Query.SummaryDefinitions.Value)
+            {
+                AppendH3SummaryColumn(sql, summary, ref paramIndex, parameters);
+            }
+
+            return;
+        }
+
+        AppendH3StatisticsColumns(sql, h3Query);
+    }
+
     private static void AppendH3StatisticsColumns(System.Text.StringBuilder sql, H3AggregationQuery h3Query)
     {
         if (h3Query.OutStatistics.HasValue && !h3Query.OutStatistics.Value.IsDefaultOrEmpty)
@@ -334,7 +353,7 @@ internal sealed partial class FeatureQueryBuilder
                 }
 
                 var statFieldExpr = GetFieldExpression(stat.OnStatisticField);
-                var aggregateExpr = BuildAggregateExpression(stat.StatisticType, statFieldExpr);
+                var aggregateExpr = BuildAggregateExpression(stat.StatisticType, statFieldExpr, stat.FieldType);
                 sql.Append(CultureInfo.InvariantCulture,
                     $", {aggregateExpr} AS {SanitizeAlias(stat.OutStatisticFieldName)}");
             }
@@ -346,6 +365,251 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
+    private static void AppendH3SummaryColumn(
+        System.Text.StringBuilder sql,
+        SpatialAggregationSummaryDefinition summary,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        if (string.IsNullOrWhiteSpace(summary.Id))
+        {
+            throw new ArgumentException("Spatial aggregation summary id is required.", nameof(summary));
+        }
+
+        switch (summary.Kind)
+        {
+            case SpatialAggregationSummaryKind.Count:
+            case SpatialAggregationSummaryKind.Sum:
+            case SpatialAggregationSummaryKind.Avg:
+            case SpatialAggregationSummaryKind.Min:
+            case SpatialAggregationSummaryKind.Max:
+                AppendH3MetricSummaryColumn(sql, summary);
+                return;
+            case SpatialAggregationSummaryKind.Category:
+                AppendH3CategorySummaryColumn(sql, summary, ref paramIndex, parameters);
+                return;
+            case SpatialAggregationSummaryKind.Histogram:
+                AppendH3HistogramSummaryColumn(sql, summary);
+                return;
+            case SpatialAggregationSummaryKind.Range:
+                AppendH3RangeSummaryColumn(sql, summary, ref paramIndex, parameters);
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(summary), summary.Kind, "Unsupported spatial aggregation summary kind.");
+        }
+    }
+
+    private static void AppendH3MetricSummaryColumn(
+        System.Text.StringBuilder sql,
+        SpatialAggregationSummaryDefinition summary)
+    {
+        var aggregateExpr = summary.Kind == SpatialAggregationSummaryKind.Count && string.IsNullOrWhiteSpace(summary.Field)
+            ? $"COUNT({DatabaseSchema.ObjectIdColumn})"
+            : BuildAggregateExpression(ToStatisticType(summary.Kind), GetRequiredSummaryFieldExpression(summary), summary.FieldType);
+
+        sql.Append(CultureInfo.InvariantCulture, $", {aggregateExpr} AS {SanitizeAlias(summary.Id)}");
+    }
+
+    private static void AppendH3CategorySummaryColumn(
+        System.Text.StringBuilder sql,
+        SpatialAggregationSummaryDefinition summary,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        var fieldExpr = GetRequiredSummaryFieldExpression(summary);
+        var fieldTextExpr = $"({fieldExpr})::text";
+        var buckets = summary.CategoryBuckets.GetValueOrDefault();
+        var bucketPredicates = new List<string>(buckets.IsDefaultOrEmpty ? 0 : buckets.Length);
+
+        sql.Append(", jsonb_build_object('kind', 'category', 'buckets', ");
+        if (buckets.IsDefaultOrEmpty)
+        {
+            sql.Append("jsonb_build_array()");
+        }
+        else
+        {
+            sql.Append("jsonb_build_array(");
+            for (var i = 0; i < buckets.Length; i++)
+            {
+                if (i > 0)
+                {
+                    sql.Append(", ");
+                }
+
+                var valueParam = $"${paramIndex++}";
+                parameters.Add(buckets[i].Value);
+                bucketPredicates.Add($"{fieldTextExpr} = {valueParam}::text");
+
+                sql.Append(CultureInfo.InvariantCulture,
+                    $"jsonb_build_object('value', {valueParam}::text");
+                if (!string.IsNullOrWhiteSpace(buckets[i].Label))
+                {
+                    var labelParam = $"${paramIndex++}";
+                    parameters.Add(buckets[i].Label!);
+                    sql.Append(CultureInfo.InvariantCulture, $", 'label', {labelParam}::text");
+                }
+
+                sql.Append(CultureInfo.InvariantCulture,
+                    $", 'count', COUNT(*) FILTER (WHERE {fieldTextExpr} = {valueParam}::text))");
+            }
+            sql.Append(')');
+        }
+
+        sql.Append(CultureInfo.InvariantCulture,
+            $", 'otherCount', COUNT(*) FILTER (WHERE {fieldTextExpr} IS NOT NULL");
+        foreach (var predicate in bucketPredicates)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $" AND NOT ({predicate})");
+        }
+        sql.Append(')');
+        sql.Append(CultureInfo.InvariantCulture,
+            $", 'nullCount', COUNT(*) FILTER (WHERE {fieldExpr} IS NULL))::text AS {SanitizeAlias(summary.Id)}");
+    }
+
+    private static void AppendH3HistogramSummaryColumn(
+        System.Text.StringBuilder sql,
+        SpatialAggregationSummaryDefinition summary)
+    {
+        var bins = summary.HistogramBins.GetValueOrDefault(10);
+        var min = summary.HistogramMin;
+        var max = summary.HistogramMax;
+        if (bins <= 0 || !min.HasValue || !max.HasValue || !double.IsFinite(min.Value) ||
+            !double.IsFinite(max.Value) || min.Value >= max.Value)
+        {
+            throw new ArgumentException("Histogram summaries require finite min/max bounds and a positive bin count.", nameof(summary));
+        }
+
+        var fieldExpr = GetRequiredSummaryFieldExpression(summary);
+        var numericExpr = $"({fieldExpr})::numeric";
+        var width = (max.Value - min.Value) / bins;
+
+        sql.Append(", jsonb_build_object('kind', 'histogram', 'buckets', jsonb_build_array(");
+        for (var i = 0; i < bins; i++)
+        {
+            if (i > 0)
+            {
+                sql.Append(", ");
+            }
+
+            var lower = min.Value + (width * i);
+            var upper = i == bins - 1 ? max.Value : min.Value + (width * (i + 1));
+            var lowerLiteral = lower.ToString("R", CultureInfo.InvariantCulture);
+            var upperLiteral = upper.ToString("R", CultureInfo.InvariantCulture);
+            var upperOperator = i == bins - 1 ? "<=" : "<";
+            var includeMax = i == bins - 1 ? "true" : "false";
+
+            sql.Append(CultureInfo.InvariantCulture,
+                $"jsonb_build_object('min', {lowerLiteral}, 'max', {upperLiteral}, 'count', COUNT(*) FILTER (WHERE {numericExpr} >= {lowerLiteral} AND {numericExpr} {upperOperator} {upperLiteral}), 'includeMin', true, 'includeMax', {includeMax})");
+        }
+
+        sql.Append(CultureInfo.InvariantCulture, $"))::text AS {SanitizeAlias(summary.Id)}");
+    }
+
+    private static void AppendH3RangeSummaryColumn(
+        System.Text.StringBuilder sql,
+        SpatialAggregationSummaryDefinition summary,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        var ranges = summary.Ranges.GetValueOrDefault();
+        if (ranges.IsDefaultOrEmpty)
+        {
+            throw new ArgumentException("Range summaries require at least one range.", nameof(summary));
+        }
+
+        var fieldExpr = GetRequiredSummaryFieldExpression(summary);
+        var numericExpr = $"({fieldExpr})::numeric";
+
+        sql.Append(", jsonb_build_object('kind', 'range', 'buckets', jsonb_build_array(");
+        for (var i = 0; i < ranges.Length; i++)
+        {
+            if (i > 0)
+            {
+                sql.Append(", ");
+            }
+
+            var range = ranges[i];
+            var idParam = $"${paramIndex++}";
+            parameters.Add(range.Id);
+            sql.Append(CultureInfo.InvariantCulture,
+                $"jsonb_build_object('id', {idParam}::text");
+
+            if (!string.IsNullOrWhiteSpace(range.Label))
+            {
+                var labelParam = $"${paramIndex++}";
+                parameters.Add(range.Label!);
+                sql.Append(CultureInfo.InvariantCulture, $", 'label', {labelParam}::text");
+            }
+
+            if (range.Min.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture,
+                    $", 'min', {range.Min.Value.ToString("R", CultureInfo.InvariantCulture)}");
+            }
+
+            if (range.Max.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture,
+                    $", 'max', {range.Max.Value.ToString("R", CultureInfo.InvariantCulture)}");
+            }
+
+            var includeMin = range.IncludeMin.GetValueOrDefault(true);
+            var includeMax = range.IncludeMax.GetValueOrDefault(false);
+            sql.Append(CultureInfo.InvariantCulture,
+                $", 'includeMin', {(includeMin ? "true" : "false")}, 'includeMax', {(includeMax ? "true" : "false")}");
+
+            sql.Append(CultureInfo.InvariantCulture,
+                $", 'count', COUNT(*) FILTER (WHERE {BuildNumericRangePredicate(numericExpr, range)}))");
+        }
+
+        sql.Append(CultureInfo.InvariantCulture, $"))::text AS {SanitizeAlias(summary.Id)}");
+    }
+
+    private static string GetRequiredSummaryFieldExpression(SpatialAggregationSummaryDefinition summary)
+    {
+        if (string.IsNullOrWhiteSpace(summary.Field))
+        {
+            throw new ArgumentException($"Summary '{summary.Id}' requires a field.", nameof(summary));
+        }
+
+        if (!IsValidFieldName(summary.Field))
+        {
+            throw new ArgumentException($"Invalid summary field name: {summary.Field}", nameof(summary));
+        }
+
+        return GetFieldExpression(summary.Field);
+    }
+
+    private static string BuildNumericRangePredicate(string numericExpr, SpatialAggregationRangeBucketDefinition range)
+    {
+        var parts = new List<string>(2);
+        if (range.Min.HasValue)
+        {
+            var op = range.IncludeMin.GetValueOrDefault(true) ? ">=" : ">";
+            parts.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{numericExpr} {op} {range.Min.Value.ToString("R", CultureInfo.InvariantCulture)}"));
+        }
+
+        if (range.Max.HasValue)
+        {
+            var op = range.IncludeMax.GetValueOrDefault(false) ? "<=" : "<";
+            parts.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{numericExpr} {op} {range.Max.Value.ToString("R", CultureInfo.InvariantCulture)}"));
+        }
+
+        return parts.Count == 0 ? "TRUE" : string.Join(" AND ", parts);
+    }
+
+    private static StatisticType ToStatisticType(SpatialAggregationSummaryKind kind) => kind switch
+    {
+        SpatialAggregationSummaryKind.Count => StatisticType.Count,
+        SpatialAggregationSummaryKind.Sum => StatisticType.Sum,
+        SpatialAggregationSummaryKind.Avg => StatisticType.Avg,
+        SpatialAggregationSummaryKind.Min => StatisticType.Min,
+        SpatialAggregationSummaryKind.Max => StatisticType.Max,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Summary kind is not a metric statistic.")
+    };
+
     /// <summary>
     /// Appends re-aggregation expressions for the kRing outer GROUP BY.
     /// Each statistic from the inner aggregation is re-aggregated with a
@@ -354,7 +618,21 @@ internal sealed partial class FeatureQueryBuilder
     /// </summary>
     private static void AppendH3KRingReaggregate(System.Text.StringBuilder sql, H3AggregationQuery h3Query)
     {
-        if (h3Query.OutStatistics.HasValue && !h3Query.OutStatistics.Value.IsDefaultOrEmpty)
+        if (h3Query.SummaryDefinitions.HasValue && !h3Query.SummaryDefinitions.Value.IsDefaultOrEmpty)
+        {
+            foreach (var summary in h3Query.SummaryDefinitions.Value)
+            {
+                var alias = SanitizeAlias(summary.Id);
+                var outerAgg = summary.Kind is SpatialAggregationSummaryKind.Category
+                    or SpatialAggregationSummaryKind.Histogram
+                    or SpatialAggregationSummaryKind.Range
+                    ? "MAX"
+                    : GetKRingReaggregateFunction(ToStatisticType(summary.Kind));
+                sql.Append(CultureInfo.InvariantCulture,
+                    $", {outerAgg}(a.{alias}) AS {alias}");
+            }
+        }
+        else if (h3Query.OutStatistics.HasValue && !h3Query.OutStatistics.Value.IsDefaultOrEmpty)
         {
             foreach (var stat in h3Query.OutStatistics.Value)
             {

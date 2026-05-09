@@ -40,6 +40,12 @@ public readonly record struct H3AggregationQuery
     public ImmutableArray<StatisticDefinition>? OutStatistics { get; init; }
 
     /// <summary>
+    /// SDK-compatible structured summaries to compute per H3 cell. When set,
+    /// these take precedence over <see cref="OutStatistics"/> for cell output.
+    /// </summary>
+    public ImmutableArray<SpatialAggregationSummaryDefinition>? SummaryDefinitions { get; init; }
+
+    /// <summary>
     /// Maximum number of H3 cells returned by the aggregation query.
     /// When greater than zero, a LIMIT is applied after GROUP BY to prevent
     /// unbounded result sets at high resolutions. Null or zero disables the limit.
