@@ -26,6 +26,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.CloudDemo;
 using Honua.Server.Features.Export;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Infrastructure.ControlPlane;
@@ -838,6 +839,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.CacheOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.StreamingOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.GeocodingOperationsJsonContext.Default,
+        Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
@@ -1085,6 +1087,10 @@ app.UseApiKeyAuthentication();
 
 // Add limits enforcement middleware (after auth, before request logging)
 app.UseLimitsEnforcement();
+
+// Map public demo service/layer contract IDs to internal seeded layer IDs and guard demo writes.
+app.UseCloudDemoServiceLayerAliases();
+app.UseCloudDemoWritableFeatureGuard();
 
 // Enable output caching middleware
 app.UseOutputCache();

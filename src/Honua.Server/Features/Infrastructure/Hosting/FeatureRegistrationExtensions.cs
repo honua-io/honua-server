@@ -5,6 +5,7 @@ using Honua.Postgres.Features.Scene;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Infrastructure.Scene;
 using Honua.Server.Features.Alerts;
+using Honua.Server.Features.CloudDemo;
 using Honua.Server.Features.Protocols.Cog;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Geocoding;
@@ -59,6 +60,7 @@ internal static class FeatureRegistrationExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddFeatureServer();
+        services.AddCloudDemoServices(configuration);
         services.AddGeocoding(configuration);
         services.AddCogServices(configuration);
         services.AddImageServer();
@@ -110,6 +112,7 @@ internal static class FeatureRegistrationExtensions
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapFeatureServerEndpoints();
+        endpoints.MapCloudDemoEndpoints();
         endpoints.MapGeocodingEndpoints();
         endpoints.MapCogEndpoints();
         endpoints.MapGeoservicesCatalogEndpoints();

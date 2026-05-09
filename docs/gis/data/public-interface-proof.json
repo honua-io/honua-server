@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-05-06T00:00:00Z",
+  "updatedUtc": "2026-05-08T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -32,6 +32,38 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "cloud-demo-services",
+      "displayName": "Cloud demo service endpoints",
+      "surfaceKind": "http-route-family",
+      "protocol": "Cloud Demo HTTP",
+      "canonicalIdentifier": "/api/v1/cloud-demo/* + /api/v1/realtime/incidents/sse",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/cloud-demo/"
+      ],
+      "endpointExactMatches": [
+        "/api/v1/realtime/incidents/sse"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus CloudDemo endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/CloudDemo/CloudDemoEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#963",
           "versionCaptureRule": null
         }
       ]

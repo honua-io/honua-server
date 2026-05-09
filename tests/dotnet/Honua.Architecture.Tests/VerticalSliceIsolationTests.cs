@@ -20,6 +20,7 @@ public sealed class VerticalSliceIsolationTests
     {
         "Admin",
         "Alerts",
+        "CloudDemo",
         "Geocoding",
         "Geoprocessing",
         "Grounding",
