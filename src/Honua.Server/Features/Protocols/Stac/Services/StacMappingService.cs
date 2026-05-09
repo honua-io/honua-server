@@ -119,7 +119,7 @@ internal sealed class StacMappingService
         // Copy feature attributes
         foreach (var kvp in attributes)
         {
-            if (!IsItemIdAttribute(kvp.Key) &&
+            if ((!IsItemIdAttribute(kvp.Key) || selectedPropertiesLookup?.Contains(kvp.Key) == true) &&
                 !string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(kvp.Key, "datetime", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(kvp.Key, "start_datetime", StringComparison.OrdinalIgnoreCase) &&

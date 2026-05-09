@@ -25,6 +25,8 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 [Protocol(TestProtocols.Stac)]
 public sealed class StacSearchTests : IAsyncLifetime
 {
+    private static readonly double[] ValidThreeDimensionalBbox = [100.0, 0.0, 0.0, 105.0, 1.0, 1.0];
+    private static readonly double[] InvalidThreeDimensionalBbox = [100.0, 0.0, 2.0, 105.0, 1.0, 1.0];
     private static readonly double[] OutOfRangeBbox = [200.0, 95.0, 210.0, 100.0];
 
     private readonly WebAppFixture _fixture = new();
@@ -145,6 +147,16 @@ public sealed class StacSearchTests : IAsyncLifetime
 
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
         features.Length.Should().BeLessThanOrEqualTo(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithNegativeLimit_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync("/stac/search?limit=-1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -361,9 +373,19 @@ public sealed class StacSearchTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
-    public async Task SearchGet_WithThreeDimensionalBbox_ReturnsBadRequest()
+    public async Task SearchGet_WithThreeDimensionalBbox_ReturnsItems()
     {
-        var response = await _fixture.Client.GetAsync("/stac/search?bbox=170,-10,-170,10,5,6");
+        var response = await _fixture.Client.GetAsync("/stac/search?bbox=100,0,0,105,1,1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithInvalidThreeDimensionalBbox_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync("/stac/search?bbox=100,0,2,105,1,1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -381,11 +403,28 @@ public sealed class StacSearchTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("POST /stac/search")]
-    public async Task SearchPost_WithThreeDimensionalBbox_ReturnsBadRequest()
+    public async Task SearchPost_WithThreeDimensionalBbox_ReturnsItems()
     {
         var body = JsonSerializer.Serialize(new
         {
-            bbox = new[] { 170.0, -10.0, -170.0, 10.0, 5.0, 6.0 }
+            bbox = ValidThreeDimensionalBbox
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/stac/search",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("POST /stac/search")]
+    public async Task SearchPost_WithInvalidThreeDimensionalBbox_ReturnsBadRequest()
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            bbox = InvalidThreeDimensionalBbox
         });
 
         var response = await _fixture.Client.PostAsync(
@@ -437,6 +476,150 @@ public sealed class StacSearchTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithRfc3339DatetimeForms_ReturnsItems()
+    {
+        var datetimes = new[]
+        {
+            "2023-01-02T00:00:00Z",
+            "2023-01-02t00:00:00z",
+            "2023-01-02T00:00:00+00:00",
+            "../2023-01-05T12:00:00-10:00",
+            "2023-01-02T00:00:00+00:00/2023-01-05t12:00:00z"
+        };
+
+        foreach (var datetime in datetimes)
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"/stac/search?collections={WebAppFixture.TestLayerId}&datetime={Uri.EscapeDataString(datetime)}");
+
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithInvalidRfc3339DatetimeForms_ReturnsBadRequest()
+    {
+        var datetimes = new[]
+        {
+            "1985-04-12",
+            "1985-12-12T23:20:50.52",
+            "1937-01-01T12:00:27.87+0100",
+            "1985-04-12T23:20:50,52Z",
+            "1986-04-12T23:20:50.52Z/1985-04-12T23:20:50.52Z"
+        };
+
+        foreach (var datetime in datetimes)
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"/stac/search?collections={WebAppFixture.TestLayerId}&datetime={Uri.EscapeDataString(datetime)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithValidatorFieldsSyntax_ProjectsTopLevelFields()
+    {
+        var fieldsValues = new[]
+        {
+            "-geometry",
+            "-properties,+properties.name",
+            "+geometry,-geometry"
+        };
+
+        foreach (var fields in fieldsValues)
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"/stac/search?collections={WebAppFixture.TestLayerId}&limit=1&fields={Uri.EscapeDataString(fields)}");
+
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            var json = JsonDocument.Parse(content);
+            var item = json.RootElement.GetProperty("features").EnumerateArray().First();
+
+            if (fields == "-geometry")
+            {
+                item.TryGetProperty("geometry", out _).Should().BeFalse();
+                item.TryGetProperty("id", out _).Should().BeTrue();
+                item.TryGetProperty("assets", out _).Should().BeTrue();
+            }
+            else if (fields == "-properties,+properties.name")
+            {
+                item.TryGetProperty("geometry", out _).Should().BeFalse();
+                item.GetProperty("properties").TryGetProperty("name", out _).Should().BeTrue();
+            }
+            else
+            {
+                item.TryGetProperty("geometry", out _).Should().BeTrue();
+                item.EnumerateObject().Should().ContainSingle();
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithPropertiesPrefixedTopLevelName_ProjectsNestedProperty()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var runId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var stacId = $"fields-{runId}";
+        var nestedId = $"nested-{runId}";
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"fields {runId}");
+        await UpsertLayerFieldAsync("id", "String", 255);
+        await SetFeatureAttributeAsync(featureId, "stac_id", stacId);
+        await SetFeatureAttributeAsync(featureId, "id", nestedId);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={stacId}&limit=1&fields=%2Bproperties.id");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var json = JsonDocument.Parse(content);
+        var item = json.RootElement.GetProperty("features").EnumerateArray().Should().ContainSingle().Subject;
+        item.TryGetProperty("id", out _).Should().BeFalse();
+        var properties = item.GetProperty("properties");
+        properties.EnumerateObject().Select(property => property.Name).Should().Contain("id");
+        properties.GetProperty("id").GetString().Should().Be(nestedId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithSortBy_ReturnsHonuaSortedItems()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var runId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var firstId = $"sort-a-{runId}";
+        var secondId = $"sort-z-{runId}";
+        var firstFeatureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"aaa sort {runId}");
+        var secondFeatureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"zzz sort {runId}");
+        await SetFeatureAttributeAsync(firstFeatureId, "stac_id", firstId);
+        await SetFeatureAttributeAsync(secondFeatureId, "stac_id", secondId);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={firstId},{secondId}&sortby=-name&limit=2");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var json = JsonDocument.Parse(content);
+        var names = json.RootElement.GetProperty("features")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("properties").GetProperty("name").GetString())
+            .ToArray();
+        names.Should().Equal($"zzz sort {runId}", $"aaa sort {runId}");
+    }
+
     private static double[][] BuildSquareRing((double X, double Y) point, double halfSize = 1d)
         =>
         [
@@ -474,6 +657,36 @@ public sealed class StacSearchTests : IAsyncLifetime
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
         return (reader.GetDouble(0), reader.GetDouble(1));
+    }
+
+    private async Task UpsertLayerFieldAsync(string fieldName, string fieldType, int? maxLength = null)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO honua.layer_fields (
+                layer_id,
+                field_name,
+                field_type,
+                field_order,
+                max_length,
+                nullable,
+                description
+            )
+            VALUES (@layerId, @fieldName, @fieldType, 1000, @maxLength, TRUE, @description)
+            ON CONFLICT (layer_id, field_name)
+            DO UPDATE SET
+                field_type = EXCLUDED.field_type,
+                max_length = EXCLUDED.max_length,
+                nullable = EXCLUDED.nullable,
+                description = EXCLUDED.description;
+            """;
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("fieldName", fieldName);
+        command.Parameters.AddWithValue("fieldType", fieldType);
+        command.Parameters.AddWithValue("maxLength", maxLength.HasValue ? maxLength.Value : DBNull.Value);
+        command.Parameters.AddWithValue("description", $"{fieldName} test field");
+        await command.ExecuteNonQueryAsync();
     }
 
     private async Task SetFeatureAttributeAsync(long featureId, string attributeName, string attributeValue)

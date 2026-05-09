@@ -218,12 +218,12 @@ public sealed class StacItemsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /stac/collections/{collectionId}/items")]
-    public async Task GetItems_WithThreeDimensionalBbox_Returns400()
+    public async Task GetItems_WithInvalidThreeDimensionalBbox_Returns400()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         var response = await _fixture.Client.GetAsync(
-            $"/stac/collections/{collectionId}/items?bbox=170,-10,-170,10,5,6");
+            $"/stac/collections/{collectionId}/items?bbox=100,0,2,105,1,1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
