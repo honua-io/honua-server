@@ -28,6 +28,7 @@ public class StreamingImportTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task InitializeAsync()
     {
@@ -650,7 +651,7 @@ public class StreamingImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
-    public async Task Import_InvalidGeoJson_HandlesErrorGracefully()
+    public async Task Import_InvalidGeoJson_ReturnsStructuredValidationAndDoesNotCreateTable()
     {
         // Arrange - Invalid GeoJSON with malformed geometry
         var geoJsonContent = """
@@ -683,10 +684,144 @@ public class StreamingImportTests : IAsyncLifetime
         // Act
         var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
-        // Assert - Should handle the error gracefully (either skip invalid features or fail with message)
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var responseContent = await response.Content.ReadAsStringAsync();
-        // The streaming parser should handle invalid features gracefully
-        (response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.BadRequest).Should().BeTrue();
+        var result = DeserializeImportResult(responseContent);
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(ImportValidationErrorCodes.GeometryUnknownType);
+        result.ValidationErrors.Should().ContainSingle(issue =>
+            issue.Code == ImportValidationErrorCodes.GeometryUnknownType &&
+            issue.FeatureIndex == 1 &&
+            issue.Field == "geometry.type");
+        (await ImportTableExistsAsync("invalid_test_table")).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_GeoJsonMissingGeometry_ReturnsStructuredValidationAndDoesNotCreateTable()
+    {
+        var geoJsonContent = """
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": { "name": "No geometry" }
+                }
+            ]
+        }
+        """;
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "missing-geometry.geojson"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("missing_geometry_table"), "TableName");
+        content.Add(new StringContent("true"), "OverwriteExisting");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = DeserializeImportResult(await response.Content.ReadAsStringAsync());
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(ImportValidationErrorCodes.GeometryMissing);
+        result.ValidationErrors.Should().ContainSingle(issue =>
+            issue.Code == ImportValidationErrorCodes.GeometryMissing &&
+            issue.FeatureIndex == 1 &&
+            issue.Field == "geometry");
+        (await ImportTableExistsAsync("missing_geometry_table")).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_GeoJsonWithUnsupportedTargetSrid_ReturnsStructuredValidationAndDoesNotCreateTable()
+    {
+        var geoJsonContent = """
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [-122.4194, 37.7749]
+                    },
+                    "properties": { "name": "Valid" }
+                }
+            ]
+        }
+        """;
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "bad-target.geojson"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("bad_target_srid_table"), "TableName");
+        content.Add(new StringContent("999999"), "TargetSrid");
+        content.Add(new StringContent("true"), "OverwriteExisting");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = DeserializeImportResult(await response.Content.ReadAsStringAsync());
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(ImportValidationErrorCodes.TargetSridUnsupported);
+        result.ValidationErrors.Should().ContainSingle(issue =>
+            issue.Code == ImportValidationErrorCodes.TargetSridUnsupported &&
+            issue.Field == nameof(ImportRequest.TargetSrid));
+        (await ImportTableExistsAsync("bad_target_srid_table")).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_GeoJsonWithDifferentSourceAndTargetSrid_TransformsAtImport()
+    {
+        var geoJsonContent = """
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [111319.49079327357, 0]
+                    },
+                    "properties": { "name": "Web Mercator one degree east" }
+                }
+            ]
+        }
+        """;
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "mercator.geojson"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("reprojected_geojson_table"), "TableName");
+        content.Add(new StringContent("3857"), "SourceSrid");
+        content.Add(new StringContent("4326"), "TargetSrid");
+        content.Add(new StringContent("true"), "OverwriteExisting");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.BeSuccessful();
+        var result = DeserializeImportResult(await response.Content.ReadAsStringAsync());
+        result.Success.Should().BeTrue();
+        var (x, srid) = await ReadImportedPointAsync("reprojected_geojson_table");
+        x.Should().BeApproximately(1d, 0.000001d);
+        srid.Should().Be(4326);
     }
 
     [IntegrationTest]
@@ -751,7 +886,7 @@ public class StreamingImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
-    public async Task Import_EmptyFeatureCollection_ReturnsError()
+    public async Task Import_EmptyFeatureCollection_ReturnsStructuredValidationAndDoesNotCreateTable()
     {
         // Arrange
         var geoJsonContent = """
@@ -776,8 +911,14 @@ public class StreamingImportTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
-        var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("No features found");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = DeserializeImportResult(await response.Content.ReadAsStringAsync());
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(ImportValidationErrorCodes.EmptyDataset);
+        result.ValidationErrors.Should().ContainSingle(issue =>
+            issue.Code == ImportValidationErrorCodes.EmptyDataset &&
+            issue.Field == "features");
+        (await ImportTableExistsAsync("empty_table")).Should().BeFalse();
     }
 
     private static byte[] BuildKmzArchive(string kmlContent)
@@ -812,4 +953,44 @@ public class StreamingImportTests : IAsyncLifetime
         response.BeSuccessful();
         return await response.Content.ReadAsStringAsync();
     }
+
+    private static ImportResult DeserializeImportResult(string responseContent)
+        => JsonSerializer.Deserialize<ImportResult>(responseContent, JsonOptions)
+           ?? throw new InvalidOperationException("Import response did not deserialize.");
+
+    private async Task<bool> ImportTableExistsAsync(string tableName)
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = @schema
+                  AND table_name = @table_name)
+            """;
+        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue("table_name", "imported_" + tableName);
+        var result = await command.ExecuteScalarAsync();
+        return result is bool exists && exists;
+    }
+
+    private async Task<(double X, int Srid)> ReadImportedPointAsync(string tableName)
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT ST_X(geometry), ST_SRID(geometry) FROM {QuoteIdentifier("imported_" + tableName)} LIMIT 1";
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            throw new InvalidOperationException("Imported point was not found.");
+        }
+
+        return (reader.GetDouble(0), reader.GetInt32(1));
+    }
+
+    private static string QuoteIdentifier(string identifier)
+        => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 }

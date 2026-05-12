@@ -21,6 +21,8 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(MigrationInventoryCodedValue[]))]
 [JsonSerializable(typeof(FilePreview))]
 [JsonSerializable(typeof(ImportResult))]
+[JsonSerializable(typeof(ImportValidationIssue))]
+[JsonSerializable(typeof(IReadOnlyList<ImportValidationIssue>))]
 [JsonSerializable(typeof(ImportProgress))]
 [JsonSerializable(typeof(ImportLimits))]
 [JsonSerializable(typeof(ImportStatus))]
