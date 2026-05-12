@@ -23,6 +23,13 @@ public static class AdminServiceCollectionExtensions
     {
         services.TryAddSingleton<IConfigurationValidator, ConfigurationValidator>();
         services.TryAddSingleton<IConfigurationDiscovery>(sp => (ConfigurationValidator)sp.GetRequiredService<IConfigurationValidator>());
+        services.TryAddSingleton<IExternalServiceDiscoveryNetworkGuard, ExternalServiceDiscoveryNetworkGuard>();
+        services.TryAddScoped<IExternalServiceDiscoveryService, ExternalServiceDiscoveryService>();
+        services.AddHttpClient(ExternalServiceDiscoveryService.HttpClientName, client =>
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("HonuaServer/1.0");
+            client.Timeout = TimeSpan.FromMinutes(2);
+        });
 
         // Register configuration documentation service (existing)
         services.TryAddScoped<ConfigurationDocumentationService>();

@@ -831,6 +831,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
@@ -1122,6 +1123,7 @@ app.MapMobileAuthEndpoints();
 
 // Configure admin endpoints
 app.MapAdminEndpoints();
+app.MapExternalServiceDiscoveryEndpoints();
 app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
 
