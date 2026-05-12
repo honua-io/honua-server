@@ -89,6 +89,11 @@ public sealed record GeoservicesImportRequest
     /// Whether to automatically publish the imported layer.
     /// </summary>
     public bool AutoPublish { get; init; } = true;
+
+    /// <summary>
+    /// Optional target Honua service name for auto-publishing.
+    /// </summary>
+    public string? ServiceName { get; init; }
 }
 
 /// <summary>
@@ -127,14 +132,39 @@ public sealed record GeoservicesImportResult
     public required string SourceServiceUrl { get; init; }
 
     /// <summary>
+    /// Stable source kind for admin clients that render mixed import job results.
+    /// </summary>
+    public string SourceKind { get; init; } = "arcgis-geoservices-rest";
+
+    /// <summary>
+    /// Source URL alias used by generic admin import result views.
+    /// </summary>
+    public string SourceUrl => SourceServiceUrl;
+
+    /// <summary>
     /// The layer ID that was imported.
     /// </summary>
     public int SourceLayerId { get; init; }
 
     /// <summary>
+    /// Source layer display name when discovered.
+    /// </summary>
+    public string? SourceLayerName { get; init; }
+
+    /// <summary>
     /// Error message if import failed.
     /// </summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// Target Honua service name when the import requested or completed publishing.
+    /// </summary>
+    public string? ServiceName { get; init; }
+
+    /// <summary>
+    /// Published layer ID alias used by generic admin import result views.
+    /// </summary>
+    public int? LayerId => PublishedLayerId;
 
     /// <summary>
     /// Import duration.
@@ -156,6 +186,8 @@ public sealed record GeoservicesImportResult
         int featureCount,
         int failedFeatures = 0,
         int? publishedLayerId = null,
+        string? serviceName = null,
+        string? sourceLayerName = null,
         TimeSpan duration = default,
         IReadOnlyList<string>? warnings = null) =>
         new()
@@ -164,9 +196,11 @@ public sealed record GeoservicesImportResult
             TableName = tableName,
             SourceServiceUrl = sourceServiceUrl,
             SourceLayerId = sourceLayerId,
+            SourceLayerName = sourceLayerName,
             FeatureCount = featureCount,
             FailedFeatures = failedFeatures,
             PublishedLayerId = publishedLayerId,
+            ServiceName = serviceName,
             Duration = duration,
             Warnings = warnings ?? []
         };

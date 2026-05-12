@@ -30,6 +30,21 @@ public sealed record ImportRequest
     public required string FileName { get; init; }
 
     /// <summary>
+    /// Stable source kind for admin import job result views.
+    /// </summary>
+    public string SourceKind { get; init; } = "file";
+
+    /// <summary>
+    /// Source URL when the import was accepted from a remote object URL.
+    /// </summary>
+    public string? SourceUrl { get; init; }
+
+    /// <summary>
+    /// Upload operation ID associated with this import, when supplied by the client or storage provider.
+    /// </summary>
+    public string? UploadId { get; init; }
+
+    /// <summary>
     /// Target table name in PostgreSQL
     /// </summary>
     public required string TableName { get; init; }

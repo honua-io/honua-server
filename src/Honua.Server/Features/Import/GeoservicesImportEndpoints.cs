@@ -231,14 +231,18 @@ internal static partial class GeoservicesImportEndpoints
                 BatchSize = request.BatchSize,
                 RequestTimeoutSeconds = request.RequestTimeoutSeconds ?? 120,
                 MaxRetries = request.MaxRetries ?? 3,
-                AutoPublish = request.AutoPublish ?? true
+                AutoPublish = request.AutoPublish ?? true,
+                ServiceName = request.ServiceName
             };
 
             var progress = GeoservicesImportProgress.CreateInitial(
                 jobId,
                 request.ServiceUrl,
                 request.LayerId,
-                request.TableName);
+                request.TableName) with
+            {
+                ServiceName = request.ServiceName
+            };
 
             if (!await ImportEndpointCoordinationHelper.PersistQueuedJobStateAsync(
                     context,
@@ -595,6 +599,11 @@ internal sealed record GeoservicesStartImportRequest
     /// Whether to auto-publish the layer.
     /// </summary>
     public bool? AutoPublish { get; init; }
+
+    /// <summary>
+    /// Optional target Honua service name for auto-publishing.
+    /// </summary>
+    public string? ServiceName { get; init; }
 }
 
 /// <summary>

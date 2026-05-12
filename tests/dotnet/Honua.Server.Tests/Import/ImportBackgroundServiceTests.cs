@@ -24,6 +24,63 @@ namespace Honua.Server.Tests.Import;
 public sealed class ImportBackgroundServiceTests
 {
     [UnitTest]
+    public async Task GeoservicesBackgroundService_PersistsResultFields_WhenImportCompletes()
+    {
+        using var provider = CreateGeoservicesProvider(new SuccessfulGeoservicesImportService());
+        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        using var jobManager = new RedisImportJobManager(
+            universalProgressStore,
+            null,
+            NullLogger<RedisImportJobManager>.Instance,
+            new TestHostEnvironment());
+        var service = new GeoservicesImportBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            jobManager,
+            NullLogger<GeoservicesImportBackgroundService>.Instance);
+
+        const string jobId = "geoservices-result";
+        var request = new GeoservicesImportRequest
+        {
+            JobId = jobId,
+            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 2,
+            TableName = "geoservices_result_test",
+            AutoPublish = true,
+            ServiceName = "imported-service"
+        };
+        var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName) with
+        {
+            ServiceName = request.ServiceName
+        };
+
+        await jobManager.RequestStore.SetProgressAsync(jobId, request, TimeSpan.FromMinutes(10));
+        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
+        await jobManager.JobQueue.EnqueueAsync(jobId);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitForAsync(
+                async () => (await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))?.Status == GeoservicesImportStatus.Completed,
+                TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+            var completed = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
+            completed.Should().NotBeNull();
+            completed!.CurrentPhase.Should().Be("Import completed and layer published");
+            completed.ServiceName.Should().Be("imported-service");
+            completed.PublishedLayerId.Should().Be(42);
+            completed.LayerId.Should().Be(42);
+            completed.SourceKind.Should().Be("arcgis-geoservices-rest");
+            completed.SourceUrl.Should().Be(request.ServiceUrl);
+            completed.SourceLayerName.Should().Be("Roads");
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [UnitTest]
     public async Task GeoservicesBackgroundService_DoesNotReprocessTerminalFailedJob_WhenDuplicateDeliveryOccurs()
     {
         using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.FailImmediately));
@@ -434,11 +491,16 @@ public sealed class ImportBackgroundServiceTests
         }
     }
 
-    private static ServiceProvider CreateGeoservicesProvider(ThrowingGeoservicesImportService service)
+    private static ServiceProvider CreateGeoservicesProvider(IGeoservicesImportService service)
     {
         var services = new ServiceCollection();
         services.AddSingleton(service);
-        services.AddSingleton<IGeoservicesImportService>(sp => sp.GetRequiredService<ThrowingGeoservicesImportService>());
+        if (service is ThrowingGeoservicesImportService throwingService)
+        {
+            services.AddSingleton(throwingService);
+        }
+
+        services.AddSingleton<IGeoservicesImportService>(sp => service);
         return services.BuildServiceProvider();
     }
 
@@ -657,6 +719,54 @@ public sealed class ImportBackgroundServiceTests
             }
 
             throw new InvalidOperationException("unreachable");
+        }
+    }
+
+    private sealed class SuccessfulGeoservicesImportService : IGeoservicesImportService
+    {
+        public Task<GeoservicesServiceInfo> DiscoverServiceAsync(
+            GeoservicesDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+            GeoservicesDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<GeoservicesImportResult> ImportLayerAsync(
+            GeoservicesImportRequest request,
+            CancellationToken cancellationToken = default)
+            => ImportLayerAsync(request, progress: null, cancellationToken);
+
+        public Task<GeoservicesImportResult> ImportLayerAsync(
+            GeoservicesImportRequest request,
+            IProgress<GeoservicesImportProgress>? progress,
+            CancellationToken cancellationToken = default)
+        {
+            progress?.Report(new GeoservicesImportProgress
+            {
+                JobId = request.JobId!,
+                Status = GeoservicesImportStatus.Publishing,
+                FeaturesProcessed = 10,
+                EstimatedTotalFeatures = 10,
+                SourceServiceUrl = request.ServiceUrl,
+                SourceLayerId = request.LayerId,
+                SourceLayerName = "Roads",
+                TableName = request.TableName,
+                ServiceName = request.ServiceName,
+                CurrentPhase = "Publishing imported layer",
+                StartedAt = DateTimeOffset.UtcNow
+            });
+
+            return Task.FromResult(GeoservicesImportResult.CreateSuccess(
+                request.TableName,
+                request.ServiceUrl,
+                request.LayerId,
+                featureCount: 10,
+                publishedLayerId: 42,
+                serviceName: request.ServiceName,
+                sourceLayerName: "Roads"));
         }
     }
 

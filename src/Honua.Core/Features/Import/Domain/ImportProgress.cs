@@ -90,6 +90,51 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
     public required string TableName { get; init; }
 
     /// <summary>
+    /// Original file name being imported.
+    /// </summary>
+    public string? FileName { get; init; }
+
+    /// <summary>
+    /// Stable source kind for admin clients that render mixed import job results.
+    /// </summary>
+    public string SourceKind { get; init; } = "file";
+
+    /// <summary>
+    /// Source URL for URL-based imports.
+    /// </summary>
+    public string? SourceUrl { get; init; }
+
+    /// <summary>
+    /// Cloud storage file ID when the import source was staged to object storage.
+    /// </summary>
+    public string? CloudFileId { get; init; }
+
+    /// <summary>
+    /// Upload operation ID associated with this import job, when supplied by the client or storage provider.
+    /// </summary>
+    public string? UploadId { get; init; }
+
+    /// <summary>
+    /// Detected source SRID from the completed import result, when known.
+    /// </summary>
+    public int? DetectedSrid { get; init; }
+
+    /// <summary>
+    /// Target Honua service name when a future file publish flow associates this import with a service.
+    /// </summary>
+    public string? ServiceName { get; init; }
+
+    /// <summary>
+    /// Published Honua layer ID when a future file publish flow creates a layer.
+    /// </summary>
+    public int? PublishedLayerId { get; init; }
+
+    /// <summary>
+    /// Published layer ID alias used by generic admin import result views.
+    /// </summary>
+    public int? LayerId => PublishedLayerId;
+
+    /// <summary>
     /// Detected or specified file format.
     /// </summary>
     public required SupportedFileFormat Format { get; init; }
@@ -154,12 +199,22 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
         string tableName,
         SupportedFileFormat format,
         long? totalBytes = null,
+        string? fileName = null,
+        string? sourceKind = null,
+        string? sourceUrl = null,
+        string? cloudFileId = null,
+        string? uploadId = null,
         IReadOnlyList<string>? warnings = null)
         => new()
         {
             JobId = jobId,
             Status = ImportStatus.Queued,
             TableName = tableName,
+            FileName = fileName,
+            SourceKind = string.IsNullOrWhiteSpace(sourceKind) ? "file" : sourceKind,
+            SourceUrl = sourceUrl,
+            CloudFileId = cloudFileId,
+            UploadId = uploadId,
             Format = format,
             TotalBytes = totalBytes,
             StartedAt = DateTimeOffset.UtcNow,

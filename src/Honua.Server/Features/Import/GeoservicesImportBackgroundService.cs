@@ -175,12 +175,17 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 FailedFeatures = result.FailedFeatures,
                 SourceServiceUrl = request.ServiceUrl,
                 SourceLayerId = request.LayerId,
+                SourceLayerName = result.SourceLayerName,
                 TableName = request.TableName,
+                ServiceName = result.ServiceName ?? request.ServiceName,
+                PublishedLayerId = result.PublishedLayerId,
                 StartedAt = progressController.CurrentProgress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = result.ErrorMessage,
                 Warnings = result.Warnings,
-                CurrentPhase = result.Success ? "Import completed" : "Import failed"
+                CurrentPhase = result.Success
+                    ? result.PublishedLayerId.HasValue ? "Import completed and layer published" : "Import completed"
+                    : "Import failed"
             };
 
             await progressController.SetFinalProgressAsync(finalProgress, stoppingToken).ConfigureAwait(false);
