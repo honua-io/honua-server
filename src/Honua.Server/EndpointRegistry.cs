@@ -392,6 +392,9 @@ public static class EndpointRegistry
         new("GET", "/terrain/{datasetId}/tile.json"),
         new("GET", "/terrain/{datasetId}/{z}/{x}/{y}.png"),
 
+        // Saved-map collaboration session seam.
+        new("POST", "/api/v1/saved-maps/{mapId}/collaboration/sessions/join"),
+
         // Public SDK-compatible scene discovery (#923).
         new("GET", "/api/scenes"),
         new("GET", "/api/scenes/{sceneId}"),

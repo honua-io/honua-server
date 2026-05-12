@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-05-08T00:00:00Z",
+  "updatedUtc": "2026-05-12T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -64,6 +64,36 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "honua-server#963",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "saved-map-collaboration",
+      "displayName": "Saved-map collaboration session API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Portal Collaboration HTTP",
+      "canonicalIdentifier": "/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/api/v1/saved-maps/{mapId}/collaboration/sessions/join"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus saved-map collaboration session endpoint tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Collaboration/Sessions/CollaborationSessionEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#971",
           "versionCaptureRule": null
         }
       ]

@@ -27,6 +27,8 @@ using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.CloudDemo;
+using Honua.Server.Features.Collaboration;
+using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Server.Features.Export;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Infrastructure.ControlPlane;
@@ -658,6 +660,7 @@ builder.Services.AddHostedService(sp =>
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>>()));
+builder.Services.AddCollaborationSessionTransport();
 
 // Register manifest drift webhook dispatcher (#515)
 builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>, Honua.Server.Features.Admin.ManifestDriftWebhookOptionsValidator>();
@@ -850,6 +853,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Protocols.Stac.StacJsonContext.Default,
         Honua.Server.Features.Protocols.Cog.CogJsonContext.Default,
         Honua.Server.Features.Protocols.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
+        Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
 });
@@ -1212,6 +1216,7 @@ app.MapExportEndpoints();
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();
 app.MapFeatureChangeEventsEndpoints();
+app.MapCollaborationEndpoints();
 app.MapMobileExceptionIngestionEndpoints();
 app.MapFieldCollectionSyncEndpoints();
 app.MapTileOperationsEndpoints();
