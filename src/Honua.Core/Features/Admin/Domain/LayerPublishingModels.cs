@@ -70,6 +70,220 @@ public sealed class LayerPublishRequest
 }
 
 /// <summary>
+/// Request payload for validating a PostGIS table before publishing it as a layer.
+/// </summary>
+public sealed class TablePublishValidationRequest
+{
+    /// <summary>
+    /// Schema containing the source table.
+    /// </summary>
+    public required string Schema { get; init; }
+
+    /// <summary>
+    /// Source table name.
+    /// </summary>
+    public required string Table { get; init; }
+
+    /// <summary>
+    /// Optional layer display name.
+    /// </summary>
+    public string? LayerName { get; init; }
+
+    /// <summary>
+    /// Optional service name for projection compatibility checks.
+    /// </summary>
+    public string? ServiceName { get; init; }
+
+    /// <summary>
+    /// Requested target spatial reference identifier. When omitted, an existing service SRID or table SRID is used.
+    /// </summary>
+    public int? TargetSrid { get; init; }
+
+    /// <summary>
+    /// Requested geometry column name. When omitted, discovery metadata is used.
+    /// </summary>
+    public string? GeometryColumn { get; init; }
+
+    /// <summary>
+    /// Requested primary key column name. When omitted, the table primary key or common object id names are used.
+    /// </summary>
+    public string? PrimaryKey { get; init; }
+
+    /// <summary>
+    /// Selected attribute fields to publish. Empty means all discovered columns.
+    /// </summary>
+    public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>
+/// Structured result for validating a table before layer publishing.
+/// </summary>
+public sealed class TablePublishValidationResult
+{
+    /// <summary>
+    /// Whether validation passed without errors.
+    /// </summary>
+    public bool IsValid { get; init; }
+
+    /// <summary>
+    /// Validation status: valid, warning, or invalid.
+    /// </summary>
+    public required string Status { get; init; }
+
+    /// <summary>
+    /// Source schema.
+    /// </summary>
+    public required string Schema { get; init; }
+
+    /// <summary>
+    /// Source table.
+    /// </summary>
+    public required string Table { get; init; }
+
+    /// <summary>
+    /// Normalized service name used for compatibility checks.
+    /// </summary>
+    public required string ServiceName { get; init; }
+
+    /// <summary>
+    /// Optional layer display name.
+    /// </summary>
+    public string? LayerName { get; init; }
+
+    /// <summary>
+    /// Resolved geometry column.
+    /// </summary>
+    public string? GeometryColumn { get; init; }
+
+    /// <summary>
+    /// Resolved geometry type.
+    /// </summary>
+    public string? GeometryType { get; init; }
+
+    /// <summary>
+    /// Resolved primary key column.
+    /// </summary>
+    public string? PrimaryKey { get; init; }
+
+    /// <summary>
+    /// Source table SRID from discovery metadata.
+    /// </summary>
+    public int? SourceSrid { get; init; }
+
+    /// <summary>
+    /// Existing service SRID when the target service already exists.
+    /// </summary>
+    public int? ServiceSrid { get; init; }
+
+    /// <summary>
+    /// Target SRID the publish operation should use.
+    /// </summary>
+    public int? TargetSrid { get; init; }
+
+    /// <summary>
+    /// Estimated row count from discovery metadata.
+    /// </summary>
+    public long? EstimatedRows { get; init; }
+
+    /// <summary>
+    /// Actual source row count when it could be sampled.
+    /// </summary>
+    public long? FeatureCount { get; init; }
+
+    /// <summary>
+    /// Count of rows with NULL geometry.
+    /// </summary>
+    public long? NullGeometryCount { get; init; }
+
+    /// <summary>
+    /// Count of rows with invalid geometry.
+    /// </summary>
+    public long? InvalidGeometryCount { get; init; }
+
+    /// <summary>
+    /// Discovered field metadata.
+    /// </summary>
+    public TablePublishValidationField[] Fields { get; init; } = [];
+
+    /// <summary>
+    /// Individual validation checks.
+    /// </summary>
+    public TablePublishValidationCheck[] Checks { get; init; } = [];
+}
+
+/// <summary>
+/// Field metadata returned by table publish validation.
+/// </summary>
+public sealed class TablePublishValidationField
+{
+    /// <summary>
+    /// Source column name.
+    /// </summary>
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Source database type.
+    /// </summary>
+    public required string DataType { get; init; }
+
+    /// <summary>
+    /// Honua field type inferred from the source type.
+    /// </summary>
+    public required string FieldType { get; init; }
+
+    /// <summary>
+    /// Whether the source column allows null values.
+    /// </summary>
+    public bool IsNullable { get; init; }
+
+    /// <summary>
+    /// Whether the source column is part of the table primary key.
+    /// </summary>
+    public bool IsPrimaryKey { get; init; }
+
+    /// <summary>
+    /// Whether this field is selected for publishing.
+    /// </summary>
+    public bool IsSelected { get; init; }
+
+    /// <summary>
+    /// Maximum length for character types.
+    /// </summary>
+    public int? MaxLength { get; init; }
+}
+
+/// <summary>
+/// Individual validation check for pre-publish table validation.
+/// </summary>
+public sealed class TablePublishValidationCheck
+{
+    /// <summary>
+    /// Stable machine-readable check code.
+    /// </summary>
+    public required string Code { get; init; }
+
+    /// <summary>
+    /// Severity: pass, warning, or error.
+    /// </summary>
+    public required string Severity { get; init; }
+
+    /// <summary>
+    /// Human-readable check result.
+    /// </summary>
+    public required string Message { get; init; }
+
+    /// <summary>
+    /// Expected value when applicable.
+    /// </summary>
+    public string? Expected { get; init; }
+
+    /// <summary>
+    /// Actual value when applicable.
+    /// </summary>
+    public string? Actual { get; init; }
+}
+
+/// <summary>
 /// Summary information about a published layer.
 /// </summary>
 public sealed class PublishedLayerSummary
