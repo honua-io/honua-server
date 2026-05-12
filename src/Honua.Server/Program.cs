@@ -27,6 +27,7 @@ using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.CloudDemo;
+using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Server.Features.Export;
 using Honua.Server.Features.PrintingTools;
@@ -1215,7 +1216,7 @@ app.MapExportEndpoints();
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();
 app.MapFeatureChangeEventsEndpoints();
-app.MapCollaborationSessionEndpoints();
+app.MapCollaborationEndpoints();
 app.MapMobileExceptionIngestionEndpoints();
 app.MapFieldCollectionSyncEndpoints();
 app.MapTileOperationsEndpoints();
