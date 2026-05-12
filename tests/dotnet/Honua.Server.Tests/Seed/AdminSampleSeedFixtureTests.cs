@@ -13,6 +13,8 @@ namespace Honua.Server.Tests.Seed;
 public sealed class AdminSampleSeedFixtureTests
 {
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public void AdminSampleSeed_DeclaresPreviewableFeatureServerFixture()
     {
         var seed = File.ReadAllText(ResolveRepoFile("tests", "seed", "admin-sample-feature-server.yaml"));
