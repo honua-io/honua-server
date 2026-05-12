@@ -195,6 +195,108 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task PublishLayer_MaterializesFeaturesAndExtentForFeatureServer()
+    {
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer publish materialization integration test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = new[] { "id", "name", "population" },
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var publishResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
+        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
+        publishApi.Should().NotBeNull();
+        publishApi!.Success.Should().BeTrue();
+        publishApi.Data.Should().NotBeNull();
+        _layerId = publishApi.Data!.LayerId;
+
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT
+                    COUNT(*)::int,
+                    MIN(attributes->>'id'),
+                    MIN(attributes->>'name'),
+                    MIN((attributes->>'population')::int),
+                    ST_XMin(l.extent),
+                    ST_YMin(l.extent),
+                    ST_XMax(l.extent),
+                    ST_YMax(l.extent),
+                    ST_SRID(l.extent)
+                FROM features f
+                INNER JOIN honua.layers l
+                    ON l.layer_id = f.layer_id
+                WHERE f.layer_id = @layerId
+                GROUP BY l.extent;
+                """;
+            command.Parameters.AddWithValue("layerId", _layerId.Value);
+
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(1);
+            reader.GetString(1).Should().Be("1");
+            reader.GetString(2).Should().Be("Test Feature");
+            reader.GetInt32(3).Should().Be(100);
+            reader.GetDouble(4).Should().Be(1);
+            reader.GetDouble(5).Should().Be(1);
+            reader.GetDouble(6).Should().Be(1);
+            reader.GetDouble(7).Should().Be(1);
+            reader.GetInt32(8).Should().Be(4326);
+        }
+
+        using var featureClient = _fixture.CreateClient(client =>
+            client.DefaultRequestHeaders.Remove("X-Honua-Test-Schema"));
+
+        var queryResponse = await featureClient.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?where=1%3D1&f=json");
+
+        queryResponse.Be200Ok();
+        var queryPayload = await queryResponse.Content.ReadAsStringAsync();
+        using (var queryDocument = JsonDocument.Parse(queryPayload))
+        {
+            var features = queryDocument.RootElement.GetProperty("features").EnumerateArray().ToArray();
+            features.Should().ContainSingle();
+            var attributes = features[0].GetProperty("attributes");
+            attributes.GetProperty("id").GetInt32().Should().Be(1);
+            attributes.GetProperty("name").GetString().Should().Be("Test Feature");
+            attributes.GetProperty("population").GetInt32().Should().Be(100);
+        }
+
+        var metadataResponse = await featureClient.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}");
+
+        metadataResponse.Be200Ok();
+        var metadataPayload = await metadataResponse.Content.ReadAsStringAsync();
+        using var metadataDocument = JsonDocument.Parse(metadataPayload);
+        var extent = metadataDocument.RootElement.GetProperty("extent");
+        extent.GetProperty("xmin").GetDouble().Should().Be(1);
+        extent.GetProperty("ymin").GetDouble().Should().Be(1);
+        extent.GetProperty("xmax").GetDouble().Should().Be(1);
+        extent.GetProperty("ymax").GetDouble().Should().Be(1);
+        extent.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task PublishLayer_PrimaryKeyNotInFields_ReturnsBadRequest()
     {
@@ -520,6 +622,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.GetConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
+            DELETE FROM features WHERE layer_id = @layerId;
             DELETE FROM honua.layer_fields WHERE layer_id = @layerId;
             DELETE FROM honua.service_layers WHERE layer_id = @layerId;
             DELETE FROM honua.layers WHERE layer_id = @layerId;

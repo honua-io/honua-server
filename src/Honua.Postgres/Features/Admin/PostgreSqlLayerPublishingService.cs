@@ -222,7 +222,22 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await InsertFieldsAsync(connection, transaction, layerId, fields, cancellationToken);
 
+        var materializedCount = await MaterializeLayerFeaturesAsync(
+            connection,
+            transaction,
+            layerId,
+            schema,
+            table,
+            geometryColumn,
+            srid,
+            selectedColumns,
+            cancellationToken);
+        Log.LayerMaterialized(_logger, layerId, materializedCount);
+
+        await UpdateLayerExtentAsync(connection, transaction, layerId, srid, cancellationToken);
+
         await EnsureServiceLayerAsync(connection, transaction, serviceName, layerId, cancellationToken);
+        await UpdateServiceExtentAsync(connection, transaction, serviceName, cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 
@@ -623,6 +638,177 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task<int> MaterializeLayerFeaturesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int layerId,
+        string schema,
+        string table,
+        string geometryColumn,
+        int srid,
+        IReadOnlyList<ColumnInfo> attributeColumns,
+        CancellationToken cancellationToken)
+    {
+        // TODO(honua-server#974): replace this one-time snapshot with the settled
+        // publish refresh/CDC path once source-of-truth policy is finalized.
+        var sourceTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
+        var sourceGeometry = $"src.{QuoteIdentifier(geometryColumn)}";
+        var canonicalGeometry = BuildCanonicalGeometryExpression(sourceGeometry);
+        var attributesExpression = BuildAttributesExpression(attributeColumns);
+
+        var sql = $"""
+            WITH inserted AS (
+                INSERT INTO features (layer_id, geometry, attributes)
+                SELECT
+                    @layerId,
+                    {canonicalGeometry},
+                    {attributesExpression}
+                FROM {sourceTable} AS src
+                RETURNING 1
+            )
+            SELECT COUNT(*)::int
+            FROM inserted;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@layerId", layerId);
+        command.Parameters.AddWithValue("@srid", srid);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is int count
+            ? count
+            : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task UpdateLayerExtentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int layerId,
+        int srid,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            WITH layer_geometries AS (
+                SELECT
+                    CASE
+                        WHEN geometry IS NULL THEN NULL
+                        WHEN COALESCE(NULLIF(ST_SRID(geometry), 0), @srid) = 4326
+                            THEN ST_SetSRID(geometry, 4326)
+                        ELSE ST_Transform(
+                            ST_SetSRID(geometry, COALESCE(NULLIF(ST_SRID(geometry), 0), @srid)),
+                            4326)
+                    END AS geom
+                FROM features
+                WHERE layer_id = @layerId
+                  AND geometry IS NOT NULL
+            ),
+            extent_box AS (
+                SELECT ST_Extent(geom) AS box
+                FROM layer_geometries
+            ),
+            computed_extent AS (
+                SELECT
+                    CASE
+                        WHEN box IS NULL THEN NULL
+                        ELSE ST_MakeEnvelope(
+                            ST_XMin(box),
+                            ST_YMin(box),
+                            ST_XMax(box),
+                            ST_YMax(box),
+                            4326)
+                    END AS extent
+                FROM extent_box
+            )
+            UPDATE honua.layers AS layer
+            SET extent = computed_extent.extent
+            FROM computed_extent
+            WHERE layer.layer_id = @layerId;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@layerId", layerId);
+        command.Parameters.AddWithValue("@srid", srid);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task UpdateServiceExtentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string serviceName,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            WITH extent_box AS (
+                SELECT ST_Extent(l.extent) AS box
+                FROM honua.service_layers sl
+                INNER JOIN honua.layers l
+                    ON l.layer_id = sl.layer_id
+                WHERE sl.service_name = @serviceName
+                  AND l.enabled = TRUE
+                  AND l.extent IS NOT NULL
+            ),
+            computed_extent AS (
+                SELECT
+                    CASE
+                        WHEN box IS NULL THEN NULL
+                        ELSE ST_MakeEnvelope(
+                            ST_XMin(box),
+                            ST_YMin(box),
+                            ST_XMax(box),
+                            ST_YMax(box),
+                            4326)
+                    END AS extent
+                FROM extent_box
+            )
+            UPDATE honua.services AS service
+            SET service_extent = computed_extent.extent,
+                updated_at = NOW()
+            FROM computed_extent
+            WHERE service.service_name = @serviceName;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@serviceName", serviceName);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string BuildCanonicalGeometryExpression(string sourceGeometry)
+    {
+        return $"""
+            CASE
+                WHEN {sourceGeometry} IS NULL THEN NULL
+                WHEN ST_SRID({sourceGeometry}::geometry) = 0
+                    THEN ST_SetSRID({sourceGeometry}::geometry, @srid)
+                WHEN ST_SRID({sourceGeometry}::geometry) = @srid
+                    THEN {sourceGeometry}::geometry
+                ELSE ST_Transform({sourceGeometry}::geometry, @srid)
+            END
+            """;
+    }
+
+    private static string BuildAttributesExpression(IReadOnlyList<ColumnInfo> attributeColumns)
+    {
+        if (attributeColumns.Count == 0)
+        {
+            return "'{}'::jsonb";
+        }
+
+        var parts = new List<string>(attributeColumns.Count * 2);
+        foreach (var column in attributeColumns)
+        {
+            parts.Add(QuoteLiteral(column.Name));
+            parts.Add($"src.{QuoteIdentifier(column.Name)}");
+        }
+
+        return $"jsonb_build_object({string.Join(", ", parts)})";
+    }
+
+    private static string QuoteIdentifier(string identifier)
+        => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+
+    private static string QuoteLiteral(string literal)
+        => "'" + literal.Replace("'", "''", StringComparison.Ordinal) + "'";
+
     private static async Task InsertFieldsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -857,6 +1043,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             Level = LogLevel.Error,
             Message = "Failed to discover tables for layer publishing")]
         public static partial void TableDiscoveryFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(
+            EventId = 8202,
+            Level = LogLevel.Information,
+            Message = "Materialized {FeatureCount} features for published layer {LayerId}")]
+        public static partial void LayerMaterialized(ILogger logger, int layerId, int featureCount);
     }
 
     private sealed record LayerFieldInsert(
