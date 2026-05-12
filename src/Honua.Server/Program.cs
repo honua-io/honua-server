@@ -503,6 +503,7 @@ builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
+builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
     builder.Services.AddOrchestrationBackgroundServices();
@@ -820,6 +821,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.ManifestApprovalJsonContext.Default,
         Honua.Server.Features.Admin.Models.GitOpsWatchJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LayerValidationJsonContext.Default,
         Honua.Server.Features.Admin.Models.StyleSuggestionJsonContext.Default,
         Honua.Server.Features.Admin.Models.AlertAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseJsonContext.Default,
@@ -831,6 +833,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
@@ -1122,8 +1125,10 @@ app.MapMobileAuthEndpoints();
 
 // Configure admin endpoints
 app.MapAdminEndpoints();
+app.MapExternalServiceDiscoveryEndpoints();
 app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
+app.MapAdminRealtimeHub();
 
 // Configure layer publishing endpoints
 app.MapLayerPublishingEndpoints();
@@ -1140,6 +1145,7 @@ app.MapDeployControlEndpoints();
 
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();
+app.MapAdminLayerValidationEndpoints();
 app.MapAdminStyleSuggestionEndpoints();
 app.MapAdminSldStyleEndpoints();
 

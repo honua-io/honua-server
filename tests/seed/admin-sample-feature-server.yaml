@@ -1,0 +1,206 @@
+version: 1
+sql:
+  # Local admin UI sample service. Apply after tests/seed/base-schema.sql or
+  # against a migrated local PostGIS database to expose:
+  #   /rest/services/admin_sample/FeatureServer?f=json
+  #   /rest/services/admin_sample/FeatureServer/3000/query?f=geojson&where=1%3D1
+  - |
+      INSERT INTO honua.services (
+          service_name,
+          description,
+          srid,
+          supported_formats,
+          capabilities,
+          service_extent,
+          metadata
+      )
+      VALUES (
+          'admin_sample',
+          'Local admin UI sample FeatureServer service with previewable Oahu operations data',
+          4326,
+          ARRAY['JSON', 'GeoJSON'],
+          ARRAY['Query', 'Extract'],
+          ST_MakeEnvelope(-158.05, 21.25, -157.65, 21.45, 4326),
+          jsonb_build_object(
+              'accessPolicy', jsonb_build_object('allowAnonymous', true),
+              'source', 'tests/seed/admin-sample-feature-server.yaml',
+              'owner', 'Honua local sample'
+          )
+      )
+      ON CONFLICT (service_name) DO UPDATE SET
+          description = EXCLUDED.description,
+          srid = EXCLUDED.srid,
+          supported_formats = EXCLUDED.supported_formats,
+          capabilities = EXCLUDED.capabilities,
+          service_extent = EXCLUDED.service_extent,
+          metadata = EXCLUDED.metadata,
+          updated_at = NOW();
+
+  - |
+      INSERT INTO honua.layers (
+          layer_id,
+          layer_name,
+          description,
+          table_schema,
+          table_name,
+          primary_key_column,
+          geometry_column,
+          geometry_type,
+          srid,
+          extent,
+          default_visibility,
+          enabled,
+          metadata,
+          geoservices_drawing_info
+      )
+      VALUES (
+          3000,
+          'Oahu Operations Sample',
+          'Previewable point layer for local admin UI service and layer metadata workflows',
+          current_schema(),
+          'features',
+          'objectid',
+          'geometry',
+          'Point',
+          4326,
+          ST_MakeEnvelope(-158.05, 21.25, -157.65, 21.45, 4326),
+          true,
+          true,
+          jsonb_build_object(
+              'accessPolicy', jsonb_build_object('allowAnonymous', true),
+              'displayField', 'name',
+              'source', 'tests/seed/admin-sample-feature-server.yaml'
+          ),
+          jsonb_build_object(
+              'renderer', jsonb_build_object(
+                  'type', 'simple',
+                  'symbol', jsonb_build_object(
+                      'type', 'esriSMS',
+                      'style', 'esriSMSCircle',
+                      'color', jsonb_build_array(44, 123, 229, 210),
+                      'size', 9,
+                      'outline', jsonb_build_object(
+                          'color', jsonb_build_array(255, 255, 255, 255),
+                          'width', 1
+                      )
+                  )
+              )
+          )
+      )
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name,
+          description = EXCLUDED.description,
+          table_schema = EXCLUDED.table_schema,
+          table_name = EXCLUDED.table_name,
+          primary_key_column = EXCLUDED.primary_key_column,
+          geometry_column = EXCLUDED.geometry_column,
+          geometry_type = EXCLUDED.geometry_type,
+          srid = EXCLUDED.srid,
+          extent = EXCLUDED.extent,
+          default_visibility = EXCLUDED.default_visibility,
+          enabled = EXCLUDED.enabled,
+          metadata = EXCLUDED.metadata,
+          geoservices_drawing_info = EXCLUDED.geoservices_drawing_info;
+
+  - |
+      INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+      VALUES ('admin_sample', 3000, 0)
+      ON CONFLICT (service_name, layer_id) DO UPDATE SET
+          layer_order = EXCLUDED.layer_order;
+
+  - |
+      INSERT INTO honua.layer_fields (
+          layer_id,
+          field_name,
+          field_type,
+          field_order,
+          max_length,
+          nullable,
+          description
+      )
+      VALUES
+          (3000, 'objectid', 'Integer', 0, null, false, 'Object ID'),
+          (3000, 'name', 'String', 1, 255, false, 'Site or asset name'),
+          (3000, 'category', 'String', 2, 80, false, 'Operational category'),
+          (3000, 'status', 'String', 3, 32, false, 'Current operating status'),
+          (3000, 'priority', 'Integer', 4, null, true, 'Operator triage priority'),
+          (3000, 'owner', 'String', 5, 120, true, 'Responsible team'),
+          (3000, 'updated_at', 'DateTime', 6, null, true, 'Last sample update timestamp'),
+          (3000, 'shape', 'Geometry', 7, null, true, 'Geometry')
+      ON CONFLICT (layer_id, field_name) DO UPDATE SET
+          field_type = EXCLUDED.field_type,
+          field_order = EXCLUDED.field_order,
+          max_length = EXCLUDED.max_length,
+          nullable = EXCLUDED.nullable,
+          description = EXCLUDED.description;
+
+  - |
+      INSERT INTO features (objectid, layer_id, geometry, attributes)
+      VALUES
+          (
+              300001,
+              3000,
+              ST_SetSRID(ST_MakePoint(-157.8583, 21.3069), 4326),
+              jsonb_build_object(
+                  'objectid', 300001,
+                  'name', 'Honolulu Operations Center',
+                  'category', 'Operations',
+                  'status', 'online',
+                  'priority', 1,
+                  'owner', 'Platform Ops',
+                  'updated_at', '2026-05-01T18:00:00Z'
+              )
+          ),
+          (
+              300002,
+              3000,
+              ST_SetSRID(ST_MakePoint(-157.9225, 21.3187), 4326),
+              jsonb_build_object(
+                  'objectid', 300002,
+                  'name', 'Daniel K. Inouye Airport Feed',
+                  'category', 'Transportation',
+                  'status', 'degraded',
+                  'priority', 2,
+                  'owner', 'Field Integrations',
+                  'updated_at', '2026-05-01T18:15:00Z'
+              )
+          ),
+          (
+              300003,
+              3000,
+              ST_SetSRID(ST_MakePoint(-157.7394, 21.3972), 4326),
+              jsonb_build_object(
+                  'objectid', 300003,
+                  'name', 'Kailua Field Office',
+                  'category', 'Field Office',
+                  'status', 'online',
+                  'priority', 3,
+                  'owner', 'Customer Success',
+                  'updated_at', '2026-05-01T18:30:00Z'
+              )
+          ),
+          (
+              300004,
+              3000,
+              ST_SetSRID(ST_MakePoint(-158.0011, 21.3867), 4326),
+              jsonb_build_object(
+                  'objectid', 300004,
+                  'name', 'Pearl City Sensor Gateway',
+                  'category', 'Telemetry',
+                  'status', 'online',
+                  'priority', 2,
+                  'owner', 'Observability',
+                  'updated_at', '2026-05-01T18:45:00Z'
+              )
+          )
+      ON CONFLICT (objectid) DO UPDATE SET
+          layer_id = EXCLUDED.layer_id,
+          geometry = EXCLUDED.geometry,
+          attributes = EXCLUDED.attributes,
+          updated_at = NOW();
+
+  - |
+      SELECT setval(
+          pg_get_serial_sequence('features', 'objectid'),
+          (SELECT COALESCE(MAX(objectid), 0) FROM features)
+      );
