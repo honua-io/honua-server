@@ -162,6 +162,7 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/validation"),
         new("POST", "/api/v1/admin/metadata/layers/{layerId}/style/import-sld"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style/export-sld"),
         new("POST", "/api/v1/admin/metadata/layers/{layerId}/suggest-style"),

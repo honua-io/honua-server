@@ -40,6 +40,8 @@ public static class AdminServiceCollectionExtensions
         // Register startup connectivity testing service
         services.TryAddScoped<StartupConnectivityTestService>();
 
+        services.TryAddScoped<ILayerValidationService, LayerValidationService>();
+
         return services;
     }
 }
