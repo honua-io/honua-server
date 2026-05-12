@@ -10,6 +10,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Query;
@@ -46,6 +47,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly IETagService _etagService = dependencies.ETagService;
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly OgcFeaturesOptions _ogcFeaturesOptions = dependencies.OgcFeaturesOptions;
+    private readonly FeatureProviderQueryRouter? _providerQueryRouter = dependencies.ProviderQueryRouter;
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 200;
     private const int StreamingFlushInterval = 128;
@@ -154,6 +156,18 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
 
             var query = _queryProcessor.ToFeatureQuery(unifiedQuery, layer);
+            var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
+                context,
+                layerId,
+                ServiceProtocols.OgcFeatures,
+                cancellationToken).ConfigureAwait(false);
+            var featureReader = await ResolveReaderAsync(
+                service,
+                layer,
+                FeatureProviderReadOperation.Query,
+                cancellationToken).ConfigureAwait(false);
+            var resolvedStreamingFeatureStore = featureReader as IStreamingFeatureStore;
+            var streamingFeatureStore = resolvedStreamingFeatureStore ?? _streamingFeatureStore;
 
             var effectiveLimit = query.Limit ?? 0;
             var effectiveOffset = query.Offset ?? 0;
@@ -161,8 +175,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var outputAxisOrder = unifiedQuery.OutputCrs?.AxisOrder ?? AxisOrder.EastNorth;
             var outputCrsUri = unifiedQuery.OutputCrs?.Uri ?? "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
-            var allowStreaming = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase);
+            var hasCompatibleStreamingStore = layer.StorageMapping == null || resolvedStreamingFeatureStore != null;
+            var allowStreaming = hasCompatibleStreamingStore &&
+                                 (string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
+                                 (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
+                                  featureReader is IGmlFeatureStore));
             var omitExactNumberMatched = _ogcFeaturesOptions.NumberMatchedPolicy == OgcFeaturesNumberMatchedPolicy.OmitWhenExpensive;
             var useStreaming = allowStreaming &&
                                !omitExactNumberMatched &&
@@ -201,7 +218,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (useStreaming)
             {
-                var totalCount = await _featureReader.CountAsync(layerId, query, cancellationToken);
+                var totalCount = await featureReader.CountAsync(layerId, query, cancellationToken);
 
                 // Avoid streaming for small result sets even when the requested limit is large.
                 if (totalCount > StreamingThreshold)
@@ -227,7 +244,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
                     {
                         return new StreamingGmlItemsResult(
-                            _streamingFeatureStore,
+                            streamingFeatureStore,
                             layer,
                             query,
                             totalCount,
@@ -238,7 +255,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     }
 
                     return new StreamingItemsResult(
-                        _streamingFeatureStore,
+                        streamingFeatureStore,
                         layer,
                         query,
                         collectionId,
@@ -276,21 +293,21 @@ internal sealed partial class OgcFeaturesQueryHandler(
                                                 query.SpatialFilter?.IsSimpleEnvelope == true;
 
             if (canUseRawPointGeoJsonFastPath &&
-                _featureReader is IPagedRawGeoServicesFeatureStore rawPointFeatureStore)
+                featureReader is IPagedRawGeoServicesFeatureStore rawPointFeatureStore)
             {
                 pagedRawPointResult = await rawPointFeatureStore.QueryGeoServicesRawPointPageAsync(layerId, query, cancellationToken);
             }
             else if (canUseRawGeoJsonFastPath &&
-                _featureReader is IPagedRawGeoJsonFeatureStore rawGeoJsonFeatureStore)
+                featureReader is IPagedRawGeoJsonFeatureStore rawGeoJsonFeatureStore)
             {
                 pagedRawResult = await rawGeoJsonFeatureStore.QueryGeoJsonRawPageAsync(layerId, query, cancellationToken);
             }
             else if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
-                _featureReader is IGmlFeatureStore gmlFeatureStore)
+                featureReader is IGmlFeatureStore gmlFeatureStore)
             {
                 gmlResult = await gmlFeatureStore.QueryGmlAsync(layerId, query, cancellationToken);
             }
-            else if (omitExactNumberMatched && useNativeGeoJson && _featureReader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
+            else if (omitExactNumberMatched && useNativeGeoJson && featureReader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
             {
                 pagedEncodedResult = await pagedGeoJsonFeatureStore.QueryGeoJsonPageAsync(layerId, query, cancellationToken);
                 features = pagedEncodedResult.Value.Items
@@ -313,7 +330,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     })
                     .ToArray();
             }
-            else if (omitExactNumberMatched && _featureReader is IPagedFeatureReader pagedFeatureReader)
+            else if (omitExactNumberMatched && featureReader is IPagedFeatureReader pagedFeatureReader)
             {
                 pagedFeatureResult = await pagedFeatureReader.QueryPageAsync(layerId, query, cancellationToken);
                 features = pagedFeatureResult.Value.Items
@@ -336,7 +353,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     })
                     .ToArray();
             }
-            else if (useNativeGeoJson && _featureReader is IGeoJsonFeatureStore geoJsonFeatureStore)
+            else if (useNativeGeoJson && featureReader is IGeoJsonFeatureStore geoJsonFeatureStore)
             {
                 encodedResult = await geoJsonFeatureStore.QueryGeoJsonAsync(layerId, query, cancellationToken);
                 features = encodedResult.Value.Items
@@ -361,7 +378,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
             else
             {
-                featureResult = await _featureReader.QueryAsync(layerId, query, cancellationToken);
+                featureResult = await featureReader.QueryAsync(layerId, query, cancellationToken);
                 features = featureResult.Value.Items
                     .Select(feature =>
                     {
@@ -560,9 +577,19 @@ internal sealed partial class OgcFeaturesQueryHandler(
             featureActivity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
 
             OgcFeaturesLog.ItemRequested(_logger, collectionId, featureId);
+            var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
+                context,
+                layerId,
+                ServiceProtocols.OgcFeatures,
+                cancellationToken).ConfigureAwait(false);
+            var featureReader = await ResolveReaderAsync(
+                service,
+                layer,
+                FeatureProviderReadOperation.Query,
+                cancellationToken).ConfigureAwait(false);
 
             var resolvedFeature = await OgcFeatureIdentifierResolver.ResolveAsync(
-                _featureReader,
+                featureReader,
                 _queryProcessor,
                 layer,
                 featureId,
@@ -635,7 +662,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
-                _featureReader is IGmlFeatureStore gmlFeatureStore)
+                featureReader is IGmlFeatureStore gmlFeatureStore)
             {
                 var gmlResult = await gmlFeatureStore.QueryGmlAsync(layerId, query, cancellationToken);
                 stopwatch.Stop();
@@ -651,7 +678,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
 
             var responseFeature = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
-                _featureReader,
+                featureReader,
                 layerId,
                 layer,
                 objectId,
@@ -856,6 +883,25 @@ internal sealed partial class OgcFeaturesQueryHandler(
     }
 
     private static string FormatContentCrs(string crsUri) => $"<{crsUri}>";
+
+    private async Task<IFeatureReader> ResolveReaderAsync(
+        ServiceDefinition? service,
+        LayerDefinition layer,
+        FeatureProviderReadOperation operation,
+        CancellationToken cancellationToken)
+    {
+        if (_providerQueryRouter == null || service == null || !ShouldRouteProviderReader(service, layer))
+        {
+            return _featureReader;
+        }
+
+        return await _providerQueryRouter
+            .ResolveReaderAsync(service, layer, operation, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static bool ShouldRouteProviderReader(ServiceDefinition service, LayerDefinition layer)
+        => service.ConnectionId.HasValue || layer.StorageMapping?.IsSourceBacked == true;
 
     internal static ReadOnlyMemory<byte> CreateRawFeatureCollectionPayload(
         ImmutableArray<RawGeoJsonFeature> features,

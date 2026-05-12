@@ -4,6 +4,8 @@
 using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.AutoDocs;
 using Honua.Core.Features.Import;
@@ -86,6 +88,14 @@ internal static class ServiceCollectionExtensions
 
         // Register refactored feature store implementation
         services.AddRefactoredFeatureStore(configuration["Database:Schema"]);
+        services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
+            new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
+        services.TryAddScoped(serviceProvider =>
+            new FeatureProviderBindingResolver(
+                serviceProvider.GetRequiredService<ISecureConnectionRegistry>(),
+                serviceProvider.GetRequiredService<IFeatureDataProviderRegistry>(),
+                DataProviderNames.Postgis));
+        services.TryAddScoped<FeatureProviderQueryRouter>();
 
         // Register raster store implementation
         services.AddPostgresRasterStore(configuration["Database:Schema"]);

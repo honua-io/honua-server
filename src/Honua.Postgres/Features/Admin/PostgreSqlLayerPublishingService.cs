@@ -20,6 +20,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     ILogger<PostgreSqlLayerPublishingService> logger) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
+    private const string SourceBackedStorageOptionsJson = """{"sourceBacked":"true"}""";
     private static readonly string[] _defaultFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _defaultCapabilities = ["Query", "Extract"];
 
@@ -46,13 +47,27 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 l.description,
                 l.table_schema,
                 l.table_name,
+                l.primary_key_column,
                 l.geometry_type,
                 l.srid,
-                l.enabled
+                l.enabled,
+                COUNT(f.field_name)::int AS field_count
             FROM honua.layers l
             INNER JOIN honua.service_layers sl
                 ON sl.layer_id = l.layer_id
+            LEFT JOIN honua.layer_fields f
+                ON f.layer_id = l.layer_id
             WHERE sl.service_name = @serviceName
+            GROUP BY
+                l.layer_id,
+                l.layer_name,
+                l.description,
+                l.table_schema,
+                l.table_name,
+                l.primary_key_column,
+                l.geometry_type,
+                l.srid,
+                l.enabled
             ORDER BY l.layer_id;
             """;
 
@@ -69,10 +84,11 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 Description = reader.IsDBNull(2) ? null : reader.GetString(2),
                 Schema = reader.GetString(3),
                 Table = reader.GetString(4),
-                GeometryType = reader.GetString(5),
-                Srid = reader.GetInt32(6),
-                Enabled = reader.GetBoolean(7),
-                FieldCount = 0,
+                PrimaryKey = reader.IsDBNull(5) ? null : reader.GetString(5),
+                GeometryType = reader.GetString(6),
+                Srid = reader.GetInt32(7),
+                Enabled = reader.GetBoolean(8),
+                FieldCount = reader.GetInt32(9),
                 ServiceName = normalizedService
             });
         }
@@ -195,6 +211,14 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
+        var extent = await ReadLayerExtentAsync(
+            connection,
+            transaction,
+            schema,
+            table,
+            geometryColumn,
+            srid,
+            cancellationToken);
 
         var existingLayerId = await FindExistingLayerAsync(connection, transaction, schema, table, cancellationToken);
         if (existingLayerId.HasValue)
@@ -217,6 +241,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             geometryColumn,
             geometryType,
             srid,
+            extent,
             request.Enabled,
             cancellationToken);
 
@@ -565,6 +590,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         string geometryColumn,
         string geometryType,
         int srid,
+        LayerExtentInsert? extent,
         bool enabled,
         CancellationToken cancellationToken)
     {
@@ -576,13 +602,32 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 table_name,
                 primary_key_column,
                 geometry_column,
+                storage_options,
                 storage_srid,
                 geometry_type,
                 srid,
+                extent,
                 default_visibility,
                 enabled
             )
-            VALUES (@name, @description, @schema, @table, @primaryKeyColumn, @geometryColumn, @srid, @geometryType, @srid, TRUE, @enabled)
+            VALUES (
+                @name,
+                @description,
+                @schema,
+                @table,
+                @primaryKeyColumn,
+                @geometryColumn,
+                @storageOptions,
+                @srid,
+                @geometryType,
+                @srid,
+                CASE
+                    WHEN @extentMinX IS NULL THEN NULL
+                    ELSE ST_MakeEnvelope(@extentMinX, @extentMinY, @extentMaxX, @extentMaxY, @srid)
+                END,
+                TRUE,
+                @enabled
+            )
             RETURNING layer_id;
             """;
 
@@ -593,8 +638,13 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         command.Parameters.AddWithValue("@table", table);
         command.Parameters.AddWithValue("@primaryKeyColumn", primaryKeyColumn);
         command.Parameters.AddWithValue("@geometryColumn", geometryColumn);
+        command.Parameters.Add("@storageOptions", NpgsqlDbType.Jsonb).Value = SourceBackedStorageOptionsJson;
         command.Parameters.AddWithValue("@geometryType", geometryType);
         command.Parameters.AddWithValue("@srid", srid);
+        command.Parameters.AddWithValue("@extentMinX", (object?)extent?.MinX ?? DBNull.Value);
+        command.Parameters.AddWithValue("@extentMinY", (object?)extent?.MinY ?? DBNull.Value);
+        command.Parameters.AddWithValue("@extentMaxX", (object?)extent?.MaxX ?? DBNull.Value);
+        command.Parameters.AddWithValue("@extentMaxY", (object?)extent?.MaxY ?? DBNull.Value);
         command.Parameters.AddWithValue("@enabled", enabled);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
@@ -606,6 +656,42 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         return layerId;
+    }
+
+    private static async Task<LayerExtentInsert?> ReadLayerExtentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string schema,
+        string table,
+        string geometryColumn,
+        int srid,
+        CancellationToken cancellationToken)
+    {
+        var qualifiedTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
+        var quotedGeometryColumn = QuoteIdentifier(geometryColumn);
+        var sql = $"""
+            SELECT ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent)
+            FROM (
+                SELECT ST_Extent({quotedGeometryColumn}::geometry) AS extent
+                FROM {qualifiedTable}
+                WHERE {quotedGeometryColumn} IS NOT NULL
+                  AND ST_SRID({quotedGeometryColumn}::geometry) IN (0, @srid)
+            ) AS extent_query;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@srid", srid);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
+        {
+            return null;
+        }
+
+        return new LayerExtentInsert(
+            reader.GetDouble(0),
+            reader.GetDouble(1),
+            reader.GetDouble(2),
+            reader.GetDouble(3));
     }
 
     private static async Task EnsureLayerSequenceAsync(
@@ -983,14 +1069,28 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 l.description,
                 l.table_schema,
                 l.table_name,
+                l.primary_key_column,
                 l.geometry_type,
                 l.srid,
-                l.enabled
+                l.enabled,
+                COUNT(f.field_name)::int AS field_count
             FROM honua.layers l
             INNER JOIN honua.service_layers sl
                 ON sl.layer_id = l.layer_id
+            LEFT JOIN honua.layer_fields f
+                ON f.layer_id = l.layer_id
             WHERE sl.service_name = @serviceName
-                AND l.layer_id = @layerId;
+                AND l.layer_id = @layerId
+            GROUP BY
+                l.layer_id,
+                l.layer_name,
+                l.description,
+                l.table_schema,
+                l.table_name,
+                l.primary_key_column,
+                l.geometry_type,
+                l.srid,
+                l.enabled;
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -1010,10 +1110,11 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             Description = reader.IsDBNull(2) ? null : reader.GetString(2),
             Schema = reader.GetString(3),
             Table = reader.GetString(4),
-            GeometryType = reader.GetString(5),
-            Srid = reader.GetInt32(6),
-            Enabled = reader.GetBoolean(7),
-            FieldCount = 0,
+            PrimaryKey = reader.IsDBNull(5) ? null : reader.GetString(5),
+            GeometryType = reader.GetString(6),
+            Srid = reader.GetInt32(7),
+            Enabled = reader.GetBoolean(8),
+            FieldCount = reader.GetInt32(9),
             ServiceName = serviceName
         };
     }
@@ -1058,4 +1159,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         bool Nullable,
         string? Description,
         object? DefaultValue = null);
+
+    private sealed record LayerExtentInsert(
+        double MinX,
+        double MinY,
+        double MaxX,
+        double MaxY);
 }

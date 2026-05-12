@@ -6,6 +6,8 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -22,6 +24,64 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class FeatureServerQueryExecutorTests
 {
+    [Fact]
+    public async Task CountAsync_WhenLayerMappingIsNotSourceBacked_UsesCanonicalFeatureReader()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        featureReader.CountAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(3L);
+        var providerReader = Substitute.For<IFeatureReader>();
+        var router = CreateProviderRouter(providerReader);
+        var sut = CreateSut(featureReader, providerQueryRouter: router);
+        var layer = CreatePointLayer() with
+        {
+            StorageMapping = new LayerStorageMapping(
+                "features",
+                SchemaName: "honua",
+                PrimaryKeyColumn: FieldNames.ObjectId,
+                GeometryColumn: "geometry",
+                StorageSrid: 4326)
+        };
+        var service = new ServiceDefinition("maps", "Maps", [layer], SpatialReference.WGS84);
+
+        var count = await sut.CountAsync(service, layer, new FeatureQuery(), CancellationToken.None);
+
+        count.Should().Be(3L);
+        await providerReader.DidNotReceive()
+            .CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CountAsync_WhenLayerMappingIsSourceBackedWithoutConnection_UsesProviderReader()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var providerReader = Substitute.For<IFeatureReader>();
+        providerReader.CountAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(5L);
+        var router = CreateProviderRouter(providerReader);
+        var sut = CreateSut(featureReader, providerQueryRouter: router);
+        var layer = CreatePointLayer() with
+        {
+            StorageMapping = new LayerStorageMapping(
+                "roads",
+                SchemaName: "public",
+                PrimaryKeyColumn: FieldNames.ObjectId,
+                GeometryColumn: "shape",
+                StorageSrid: 4326,
+                ProviderOptions: new Dictionary<string, string>
+                {
+                    [LayerStorageMapping.SourceBackedOption] = "true"
+                })
+        };
+        var service = new ServiceDefinition("maps", "Maps", [layer], SpatialReference.WGS84);
+
+        var count = await sut.CountAsync(service, layer, new FeatureQuery(), CancellationToken.None);
+
+        count.Should().Be(5L);
+        await featureReader.DidNotReceive()
+            .CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task QueryWithValidationAsync_WhenReaderThrowsArgumentException_ThrowsInvalidOperationException()
     {
@@ -509,12 +569,27 @@ public sealed class FeatureServerQueryExecutorTests
 
     private static FeatureServerQueryExecutor CreateSut(
         IFeatureReader featureReader,
-        IStreamingFeatureStore? streamingStore = null)
+        IStreamingFeatureStore? streamingStore = null,
+        FeatureProviderQueryRouter? providerQueryRouter = null)
     {
         streamingStore ??= Substitute.For<IStreamingFeatureStore>();
         var formatter = new StreamingQueryFormatter(Options.Create(new LimitsOptions()));
 
-        return new FeatureServerQueryExecutor(featureReader, streamingStore, formatter);
+        return new FeatureServerQueryExecutor(featureReader, streamingStore, formatter, providerQueryRouter);
+    }
+
+    private static FeatureProviderQueryRouter CreateProviderRouter(IFeatureReader reader)
+    {
+        var provider = Substitute.For<IFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.Postgis);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        provider.Reader.Returns(reader);
+
+        var resolver = new FeatureProviderBindingResolver(
+            Substitute.For<ISecureConnectionRegistry>(),
+            new FeatureDataProviderRegistry([provider]));
+
+        return new FeatureProviderQueryRouter(resolver);
     }
 
     private static LayerDefinition CreateLayer()

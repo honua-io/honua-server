@@ -10,8 +10,12 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.FeatureStore.Services;
+using Microsoft.Extensions.ObjectPool;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
 namespace Honua.Postgres.Features.FeatureStore;
@@ -32,12 +36,15 @@ namespace Honua.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
     private readonly IFeatureCacheManager _cacheManager;
     private readonly ILayerCatalog? _layerCatalog;
+    private readonly IDatabaseConnectionProvider? _connectionProvider;
+    private readonly ObjectPool<Dictionary<string, object?>>? _dictionaryPool;
+    private readonly IConnectionEncryptionService? _connectionEncryptionService;
 
     public PostgresFeatureStoreRefactored(
         IFeatureQueryBuilder queryBuilder,
@@ -52,11 +59,33 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         IFeatureDataAccess dataAccess,
         IFeatureCacheManager cacheManager,
         ILayerCatalog? layerCatalog)
+        : this(
+            queryBuilder,
+            dataAccess,
+            cacheManager,
+            layerCatalog,
+            connectionProvider: null,
+            dictionaryPool: null,
+            connectionEncryptionService: null)
+    {
+    }
+
+    public PostgresFeatureStoreRefactored(
+        IFeatureQueryBuilder queryBuilder,
+        IFeatureDataAccess dataAccess,
+        IFeatureCacheManager cacheManager,
+        ILayerCatalog? layerCatalog,
+        IDatabaseConnectionProvider? connectionProvider,
+        ObjectPool<Dictionary<string, object?>>? dictionaryPool,
+        IConnectionEncryptionService? connectionEncryptionService)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
         _layerCatalog = layerCatalog;
+        _connectionProvider = connectionProvider;
+        _dictionaryPool = dictionaryPool;
+        _connectionEncryptionService = connectionEncryptionService;
     }
 
     public string ProviderName => DataProviderNames.Postgis;
@@ -66,6 +95,23 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     public IFeatureReader Reader => this;
 
     public IFeatureWriter Writer => this;
+
+    public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        if (_connectionProvider == null || _dictionaryPool == null)
+        {
+            return this;
+        }
+
+        return new PostgresStorageMappedFeatureReader(
+            _connectionProvider,
+            _dictionaryPool,
+            binding.Layer,
+            binding.Connection,
+            _connectionEncryptionService);
+    }
 
     #region Core CRUD Operations
 
