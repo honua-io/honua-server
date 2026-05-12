@@ -562,6 +562,105 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/tables/validate")]
+    public async Task ValidateTableForPublish_WithValidTable_ReturnsFieldMetadata()
+    {
+        var validationRequest = new ValidateTablePublishRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            ServiceName = _serviceName,
+            TargetSrid = 4326,
+            GeometryColumn = "geom",
+            PrimaryKey = "id",
+            Fields = new[] { "id", "name", "population" }
+        };
+
+        var response = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/tables/validate",
+            JsonContent.Create(validationRequest, options: _jsonOptions));
+
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
+        var api = JsonSerializer.Deserialize<ApiResponse<TablePublishValidationResult>>(payload, _jsonOptions);
+
+        api.Should().NotBeNull();
+        api!.Success.Should().BeTrue();
+        api.Data.Should().NotBeNull();
+        api.Data!.IsValid.Should().BeTrue();
+        api.Data.Status.Should().Be("valid");
+        api.Data.Schema.Should().Be(_schema);
+        api.Data.Table.Should().Be(_tableName);
+        api.Data.GeometryColumn.Should().Be("geom");
+        api.Data.PrimaryKey.Should().Be("id");
+        api.Data.SourceSrid.Should().Be(4326);
+        api.Data.TargetSrid.Should().Be(4326);
+        api.Data.FeatureCount.Should().Be(1);
+        api.Data.Fields.Should().Contain(field => field.Name == "id" && field.IsPrimaryKey && field.IsSelected);
+        api.Data.Fields.Should().OnlyContain(field => field.Name != "geom");
+        api.Data.Checks.Should().Contain(check => check.Code == "invalid-geometries" && check.Severity == "pass");
+        api.Data.Checks.Should().NotContain(check => check.Severity == "error");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/tables/validate")]
+    public async Task ValidateTableForPublish_WithTextPrimaryKey_ReturnsStructuredError()
+    {
+        var textPrimaryKeyTable = $"layer_textpk_{Guid.NewGuid():N}";
+
+        try
+        {
+            await _fixture.Postgres.ExecuteAsync($"""
+                CREATE TABLE public.{textPrimaryKeyTable} (
+                    code text PRIMARY KEY,
+                    name text NOT NULL,
+                    geom geometry(Point, 4326) NOT NULL
+                );
+
+                INSERT INTO public.{textPrimaryKeyTable} (code, name, geom)
+                VALUES ('A-1', 'Text key feature', ST_SetSRID(ST_Point(1, 1), 4326));
+                """);
+
+            var validationRequest = new ValidateTablePublishRequest
+            {
+                Schema = _schema,
+                Table = textPrimaryKeyTable,
+                LayerName = $"Layer {textPrimaryKeyTable}",
+                ServiceName = _serviceName,
+                TargetSrid = 4326,
+                GeometryColumn = "geom",
+                PrimaryKey = "code",
+                Fields = new[] { "code", "name" }
+            };
+
+            var response = await _client.PostAsync(
+                $"/api/v1/admin/connections/{_connectionId}/tables/validate",
+                JsonContent.Create(validationRequest, options: _jsonOptions));
+
+            var payload = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
+            var api = JsonSerializer.Deserialize<ApiResponse<TablePublishValidationResult>>(payload, _jsonOptions);
+
+            api.Should().NotBeNull();
+            api!.Success.Should().BeTrue();
+            api.Data.Should().NotBeNull();
+            api.Data!.IsValid.Should().BeFalse();
+            api.Data.Status.Should().Be("invalid");
+            api.Data.Checks.Should().Contain(check =>
+                check.Code == "primary-key-type" &&
+                check.Severity == "error" &&
+                check.Actual == "text");
+        }
+        finally
+        {
+            await _fixture.Postgres.ExecuteAsync($"DROP TABLE IF EXISTS public.{textPrimaryKeyTable};");
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task PublishLayer_WhenLayerTableIsEmpty_ReturnsCreated()
