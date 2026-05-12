@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Query;
@@ -28,7 +29,8 @@ internal sealed class OgcFeaturesQueryDependencies
         IResponseCache responseCache,
         IETagService etagService,
         IOptions<CacheOptions> cacheOptions,
-        IOptions<OgcFeaturesOptions> ogcFeaturesOptions)
+        IOptions<OgcFeaturesOptions> ogcFeaturesOptions,
+        FeatureProviderQueryRouter? providerQueryRouter = null)
     {
         FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         StreamingFeatureStore = streamingFeatureStore ?? throw new ArgumentNullException(nameof(streamingFeatureStore));
@@ -43,6 +45,7 @@ internal sealed class OgcFeaturesQueryDependencies
         ETagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
         CacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
         OgcFeaturesOptions = ogcFeaturesOptions?.Value ?? throw new ArgumentNullException(nameof(ogcFeaturesOptions));
+        ProviderQueryRouter = providerQueryRouter;
     }
 
     public IFeatureReader FeatureReader { get; }
@@ -58,4 +61,5 @@ internal sealed class OgcFeaturesQueryDependencies
     public IETagService ETagService { get; }
     public CacheOptions CacheOptions { get; }
     public OgcFeaturesOptions OgcFeaturesOptions { get; }
+    public FeatureProviderQueryRouter? ProviderQueryRouter { get; }
 }

@@ -6,6 +6,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -39,6 +42,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     private HttpClient _client = null!;
     private string _schema = string.Empty;
     private Guid _connectionId;
+    private string _connectionName = string.Empty;
     private bool _connectionCreated;
     private string _tableName = string.Empty;
     private string _serviceName = string.Empty;
@@ -139,6 +143,235 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         toggleApi!.Success.Should().BeTrue();
         toggleApi.Data.Should().NotBeNull();
         toggleApi.Data!.Enabled.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task PublishLayer_FeatureServerQuery_ReadsSourceBackedPostGisTable()
+    {
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer publish FeatureServer query integration test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = new[] { "id", "name", "population" },
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var publishResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
+        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
+        publishApi.Should().NotBeNull();
+        publishApi!.Data.Should().NotBeNull();
+        _layerId = publishApi.Data!.LayerId;
+
+        using (var scope = _fixture.Services.CreateScope())
+        {
+            var catalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
+            var service = await catalog.GetServiceAsync(_serviceName);
+            service.Should().NotBeNull();
+            service!.ConnectionId.Should().Be(_connectionId);
+            var layer = service.Layers.Single(layer => layer.Id == _layerId);
+            layer.StorageMapping.Should().NotBeNull();
+            layer.StorageMapping!.IsSourceBacked.Should().BeTrue();
+
+            var router = scope.ServiceProvider.GetRequiredService<FeatureProviderQueryRouter>();
+            var reader = await router.ResolveReaderAsync(
+                service,
+                layer,
+                FeatureProviderReadOperation.Query);
+            var directResult = await reader.QueryAsync(
+                _layerId.Value,
+                new FeatureQuery { Where = "1=1", Limit = 10, SpatialReferenceSrid = 4326 });
+
+            directResult.Items.Should().HaveCount(1);
+        }
+
+        var metadataResponse = await _client.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
+
+        metadataResponse.Be200Ok();
+        using (var metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync()))
+        {
+            metadata.RootElement.TryGetProperty("extent", out var extent).Should().BeTrue();
+            extent.GetProperty("xmin").GetDouble().Should().Be(1d);
+            extent.GetProperty("ymin").GetDouble().Should().Be(1d);
+            extent.GetProperty("xmax").GetDouble().Should().Be(1d);
+            extent.GetProperty("ymax").GetDouble().Should().Be(1d);
+        }
+
+        var queryResponse = await _client.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=10");
+
+        var queryPayload = await queryResponse.Content.ReadAsStringAsync();
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
+        using var queryDocument = JsonDocument.Parse(queryPayload);
+        var features = queryDocument.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+
+        var attributes = features[0].GetProperty("attributes");
+        attributes.GetProperty("id").GetInt64().Should().Be(1);
+        attributes.GetProperty("name").GetString().Should().Be("Test Feature");
+        attributes.GetProperty("population").GetInt32().Should().Be(100);
+
+        var geometry = features[0].GetProperty("geometry");
+        geometry.GetProperty("x").GetDouble().Should().Be(1d);
+        geometry.GetProperty("y").GetDouble().Should().Be(1d);
+
+        var ogcItemsResponse = await _client.GetAsync(
+            $"/ogc/features/collections/{_layerId}/items?f=json&limit=10");
+
+        var ogcItemsPayload = await ogcItemsResponse.Content.ReadAsStringAsync();
+        ogcItemsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {ogcItemsPayload}");
+        using var ogcItemsDocument = JsonDocument.Parse(ogcItemsPayload);
+        var ogcFeatures = ogcItemsDocument.RootElement.GetProperty("features");
+        ogcFeatures.GetArrayLength().Should().Be(1);
+
+        var ogcFeature = ogcFeatures[0];
+        ogcFeature.GetProperty("id").GetInt64().Should().Be(1);
+        ogcFeature.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+        ogcFeature.GetProperty("properties").GetProperty("population").GetInt32().Should().Be(100);
+        var coordinates = ogcFeature.GetProperty("geometry").GetProperty("coordinates");
+        coordinates[0].GetDouble().Should().Be(1d);
+        coordinates[1].GetDouble().Should().Be(1d);
+
+        var ogcItemResponse = await _client.GetAsync(
+            $"/ogc/features/collections/{_layerId}/items/1?f=json");
+
+        var ogcItemPayload = await ogcItemResponse.Content.ReadAsStringAsync();
+        ogcItemResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {ogcItemPayload}");
+        using var ogcItemDocument = JsonDocument.Parse(ogcItemPayload);
+        ogcItemDocument.RootElement.GetProperty("id").GetInt64().Should().Be(1);
+        ogcItemDocument.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task PublishLayer_ByConnectionName_RoutesStorageMappedFeatureServerQueries()
+    {
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer publish connection-name routing integration test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = new[] { "id", "name", "population" },
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var publishResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionName}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
+        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
+        publishApi.Should().NotBeNull();
+        publishApi!.Data.Should().NotBeNull();
+        _layerId = publishApi.Data!.LayerId;
+
+        using (var scope = _fixture.Services.CreateScope())
+        {
+            var catalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
+            var service = await catalog.GetServiceAsync(_serviceName);
+            service.Should().NotBeNull();
+            service!.ConnectionId.Should().BeNull();
+            var layer = service.Layers.Single(layer => layer.Id == _layerId);
+            layer.StorageMapping.Should().NotBeNull();
+            layer.StorageMapping!.IsSourceBacked.Should().BeTrue();
+        }
+
+        await InsertPostGisFeatureAsync("Name Routed Feature", 200, 2d, 2d);
+
+        var queryResponse = await _client.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=name,population&returnGeometry=false&resultRecordCount=10");
+
+        var queryPayload = await queryResponse.Content.ReadAsStringAsync();
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
+        using var queryDocument = JsonDocument.Parse(queryPayload);
+        var names = queryDocument.RootElement
+            .GetProperty("features")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("attributes").GetProperty("name").GetString())
+            .ToArray();
+
+        names.Should().Contain("Test Feature");
+        names.Should().Contain("Name Routed Feature");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task PublishLayer_FeatureServerNearestNeighbor_OrdersSourceBackedRows()
+    {
+        await InsertPostGisFeatureAsync("Near Feature", 200, 1.01d, 1.01d);
+        await InsertPostGisFeatureAsync("Far Feature", 300, 10d, 10d);
+
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer publish nearest-neighbor integration test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = new[] { "id", "name", "population" },
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var publishResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
+        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
+        publishApi.Should().NotBeNull();
+        publishApi!.Data.Should().NotBeNull();
+        _layerId = publishApi.Data!.LayerId;
+
+        var pointGeometry = Uri.EscapeDataString(@"{""x"":1,""y"":1}");
+        var queryResponse = await _client.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&geometry={pointGeometry}&nearestCount=2&returnDistance=true&outFields=*&returnGeometry=false");
+
+        var queryPayload = await queryResponse.Content.ReadAsStringAsync();
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
+        using var queryDocument = JsonDocument.Parse(queryPayload);
+        var features = queryDocument.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().HaveCount(2);
+
+        var firstAttributes = features[0].GetProperty("attributes");
+        var secondAttributes = features[1].GetProperty("attributes");
+
+        firstAttributes.GetProperty("name").GetString().Should().Be("Test Feature");
+        secondAttributes.GetProperty("name").GetString().Should().Be("Near Feature");
+        firstAttributes.GetProperty("distance").GetDouble().Should().BeLessThanOrEqualTo(secondAttributes.GetProperty("distance").GetDouble());
     }
 
     [IntegrationTest]
@@ -434,6 +667,22 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await _fixture.Postgres.ExecuteAsync(sql);
     }
 
+    private async Task InsertPostGisFeatureAsync(string name, int population, double x, double y)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            INSERT INTO public.{_tableName} (name, population, geom)
+            VALUES (@name, @population, ST_SetSRID(ST_Point(@x, @y), 4326));
+            """;
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.AddWithValue("population", population);
+        command.Parameters.AddWithValue("x", x);
+        command.Parameters.AddWithValue("y", y);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static async Task CreatePostGisTableAsync(string connectionString, string tableName)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -473,8 +722,10 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         var sslRequired = builder.SslMode is Npgsql.SslMode.Require or Npgsql.SslMode.VerifyCA or Npgsql.SslMode.VerifyFull;
         var sslMode = Enum.Parse<CoreSslMode>(builder.SslMode.ToString(), true);
 
+        _connectionName = $"layer-publish-{Guid.NewGuid():N}";
+
         var connection = DataConnection.CreateWithEncryptedCredentials(
-            name: $"layer-publish-{Guid.NewGuid():N}",
+            name: _connectionName,
             host: builder.Host!,
             port: builder.Port,
             databaseName: builder.Database!,
