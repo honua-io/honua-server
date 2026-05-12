@@ -440,13 +440,73 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             if (!sourceSrid.HasValue)
             {
                 errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
+                var validationErrors = new[]
+                {
+                    ImportValidationIssue.Create(
+                        ImportValidationErrorCodes.SourceSridRequired,
+                        errorMessage,
+                        field: nameof(request.SourceSrid))
+                };
                 result = ImportResult.CreateFailure(
                     request.TableName,
                     format.Value,
                     errorMessage,
                     stopwatch.Elapsed,
-                    warnings);
+                    warnings,
+                    ImportValidationErrorCodes.SourceSridRequired,
+                    validationErrors);
                 return result;
+            }
+
+            var sridValidationErrors = await ValidateImportSridsAsync(
+                sourceSrid.Value,
+                request.TargetSrid,
+                cancellationToken);
+            if (sridValidationErrors.Count > 0)
+            {
+                errorMessage = sridValidationErrors[0].Message;
+                result = ImportResult.CreateFailure(
+                    request.TableName,
+                    format.Value,
+                    errorMessage,
+                    stopwatch.Elapsed,
+                    warnings,
+                    sridValidationErrors[0].Code,
+                    sridValidationErrors);
+                return result;
+            }
+
+            if (format.Value == SupportedFileFormat.GeoJson)
+            {
+                if (!fileStream.CanSeek)
+                {
+                    var seekableStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
+                    if (shouldDisposeStream)
+                    {
+                        await fileStream.DisposeAsync();
+                    }
+
+                    fileStream = seekableStream;
+                    shouldDisposeStream = true;
+                    totalBytes = seekableStream.Length;
+                    ImportLog.SpilledToTempFile(_logger, totalBytes.Value);
+                }
+
+                var geoJsonValidation = await _geoJsonReader.ValidateAsync(fileStream, cancellationToken);
+                if (!geoJsonValidation.IsValid)
+                {
+                    var issue = geoJsonValidation.Issues[0];
+                    errorMessage = issue.Message;
+                    result = ImportResult.CreateFailure(
+                        request.TableName,
+                        format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed,
+                        warnings,
+                        issue.Code,
+                        geoJsonValidation.Issues);
+                    return result;
+                }
             }
 
             // Report initial progress
@@ -639,6 +699,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 continue;
             }
 
+            if (format != SupportedFileFormat.FileGdb && feature.Geometry != null)
+            {
+                feature.Geometry.SRID = sourceSrid;
+            }
+
             batch.Add(feature);
 
             // Process batch when full
@@ -762,6 +827,89 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         if (failedCount > 0)
         {
             _performanceMonitor.RecordCounter("honua_import_failures_total", failedCount, tags);
+        }
+    }
+
+    private async Task<IReadOnlyList<ImportValidationIssue>> ValidateImportSridsAsync(
+        int sourceSrid,
+        int targetSrid,
+        CancellationToken cancellationToken)
+    {
+        if (sourceSrid <= 0)
+        {
+            return
+            [
+                ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.SourceSridUnsupported,
+                    $"Source SRID {sourceSrid} is not supported.",
+                    field: nameof(ImportRequest.SourceSrid))
+            ];
+        }
+
+        if (targetSrid <= 0)
+        {
+            return
+            [
+                ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.TargetSridUnsupported,
+                    $"Target SRID {targetSrid} is not supported.",
+                    field: nameof(ImportRequest.TargetSrid))
+            ];
+        }
+
+        if (!await _crsDetectionService.ValidateSridAsync(sourceSrid))
+        {
+            return
+            [
+                ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.SourceSridUnsupported,
+                    $"Source SRID {sourceSrid} is not registered in spatial_ref_sys.",
+                    field: nameof(ImportRequest.SourceSrid))
+            ];
+        }
+
+        if (!await _crsDetectionService.ValidateSridAsync(targetSrid))
+        {
+            return
+            [
+                ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.TargetSridUnsupported,
+                    $"Target SRID {targetSrid} is not registered in spatial_ref_sys.",
+                    field: nameof(ImportRequest.TargetSrid))
+            ];
+        }
+
+        if (sourceSrid != targetSrid && !await CanTransformAsync(sourceSrid, targetSrid, cancellationToken))
+        {
+            return
+            [
+                ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.ProjectionUnsupported,
+                    $"Source SRID {sourceSrid} cannot be transformed to target SRID {targetSrid}.",
+                    field: nameof(ImportRequest.TargetSrid))
+            ];
+        }
+
+        return [];
+    }
+
+    private async Task<bool> CanTransformAsync(int sourceSrid, int targetSrid, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = new NpgsqlCommand(
+                "SELECT ST_Transform(ST_SetSRID(ST_MakePoint(0, 0), @source_srid), @target_srid) IS NOT NULL",
+                connection);
+            command.Parameters.Add("source_srid", NpgsqlDbType.Integer).Value = sourceSrid;
+            command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
+
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            return result is bool transformed && transformed;
+        }
+        catch (PostgresException)
+        {
+            return false;
         }
     }
 

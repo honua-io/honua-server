@@ -26,6 +26,11 @@ internal sealed record JsonProcessingState
     public bool IsComplete { get; init; }
 }
 
+internal sealed record GeoJsonValidationResult(int FeatureCount, IReadOnlyList<ImportValidationIssue> Issues)
+{
+    public bool IsValid => Issues.Count == 0;
+}
+
 /// <summary>
 /// Memory-efficient streaming GeoJSON reader that processes features incrementally.
 /// Uses Utf8JsonReader for low-allocation parsing without loading the entire file into memory.
@@ -34,6 +39,17 @@ internal sealed class StreamingGeoJsonReader
 {
     private readonly ImportLimits _limits;
     private readonly GeometryFactory _geometryFactory;
+    private const int MaxValidationIssues = 100;
+    private static readonly HashSet<string> _knownGeometryTypes = new(StringComparer.Ordinal)
+    {
+        "Point",
+        "MultiPoint",
+        "LineString",
+        "MultiLineString",
+        "Polygon",
+        "MultiPolygon",
+        "GeometryCollection"
+    };
 
     public StreamingGeoJsonReader(ImportLimits? limits = null)
     {
@@ -158,6 +174,90 @@ internal sealed class StreamingGeoJsonReader
                 MemoryPool.ReturnByteArray(leftoverBuffer, clearArray: false);
             }
         }
+    }
+
+    public async Task<GeoJsonValidationResult> ValidateAsync(
+        Stream stream,
+        CancellationToken cancellationToken = default)
+    {
+        var issues = new List<ImportValidationIssue>();
+        var featureCount = 0;
+
+        try
+        {
+            if (stream.CanSeek)
+            {
+                stream.Position = 0;
+            }
+
+            using var document = await JsonDocument.ParseAsync(
+                stream,
+                new JsonDocumentOptions
+                {
+                    AllowTrailingCommas = true,
+                    CommentHandling = JsonCommentHandling.Skip
+                },
+                cancellationToken);
+
+            var root = document.RootElement;
+            if (!root.TryGetProperty("type", out var rootTypeElement) ||
+                !string.Equals(rootTypeElement.GetString(), "FeatureCollection", StringComparison.Ordinal))
+            {
+                issues.Add(ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.InvalidGeoJson,
+                    "GeoJSON root object must have type \"FeatureCollection\".",
+                    field: "type"));
+            }
+
+            if (!root.TryGetProperty("features", out var featuresElement) ||
+                featuresElement.ValueKind != JsonValueKind.Array)
+            {
+                issues.Add(ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.EmptyDataset,
+                    "GeoJSON FeatureCollection does not contain a features array.",
+                    field: "features"));
+            }
+            else
+            {
+                foreach (var featureElement in featuresElement.EnumerateArray())
+                {
+                    featureCount++;
+                    if (issues.Count < MaxValidationIssues)
+                    {
+                        issues.AddRange(ValidateFeature(featureElement, featureCount)
+                            .Take(MaxValidationIssues - issues.Count));
+                    }
+
+                    if (_limits.MaxFeaturesPerFile > 0 && featureCount >= _limits.MaxFeaturesPerFile)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (featureCount == 0 && issues.All(issue => issue.Code != ImportValidationErrorCodes.EmptyDataset))
+            {
+                issues.Add(ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.EmptyDataset,
+                    "GeoJSON FeatureCollection does not contain any features.",
+                    field: "features"));
+            }
+        }
+        catch (JsonException)
+        {
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.InvalidGeoJson,
+                "GeoJSON document is not valid JSON."));
+        }
+        finally
+        {
+            if (stream.CanSeek)
+            {
+                stream.Position = 0;
+            }
+        }
+
+        return new GeoJsonValidationResult(featureCount, issues);
     }
 
     /// <summary>
@@ -286,6 +386,80 @@ internal sealed class StreamingGeoJsonReader
         return (features, reader.CurrentState, newProcessingState, lastConsumed);
     }
 
+    private List<ImportValidationIssue> ValidateFeature(JsonElement root, int featureIndex)
+    {
+        var issues = new List<ImportValidationIssue>(1);
+
+        if (!root.TryGetProperty("type", out var typeElement) ||
+            !string.Equals(typeElement.GetString(), "Feature", StringComparison.Ordinal))
+        {
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.InvalidGeoJson,
+                "GeoJSON features must have type \"Feature\".",
+                featureIndex,
+                "type"));
+            return issues;
+        }
+
+        if (!root.TryGetProperty("geometry", out var geometryElement) ||
+            geometryElement.ValueKind == JsonValueKind.Null)
+        {
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryMissing,
+                "GeoJSON feature is missing geometry.",
+                featureIndex,
+                "geometry"));
+            return issues;
+        }
+
+        if (geometryElement.ValueKind != JsonValueKind.Object)
+        {
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryInvalid,
+                "GeoJSON feature geometry must be an object.",
+                featureIndex,
+                "geometry"));
+            return issues;
+        }
+
+        if (!geometryElement.TryGetProperty("type", out var geometryTypeElement) ||
+            string.IsNullOrWhiteSpace(geometryTypeElement.GetString()))
+        {
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryMissing,
+                "GeoJSON feature geometry is missing a type.",
+                featureIndex,
+                "geometry.type"));
+            return issues;
+        }
+
+        var geometryType = geometryTypeElement.GetString()!;
+        if (!_knownGeometryTypes.Contains(geometryType))
+        {
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryUnknownType,
+                $"GeoJSON geometry type \"{geometryType}\" is not supported.",
+                featureIndex,
+                "geometry.type"));
+            return issues;
+        }
+
+        var geometry = ParseGeometry(geometryElement);
+        var validationError = geometry == null
+            ? "GeoJSON geometry coordinates are invalid or incomplete."
+            : ValidateParsedGeometry(geometry);
+        if (validationError != null)
+        {
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryInvalid,
+                validationError,
+                featureIndex,
+                "geometry"));
+        }
+
+        return issues;
+    }
+
     /// <summary>
     /// Parse a single GeoJSON feature from a byte span.
     /// </summary>
@@ -392,6 +566,69 @@ internal sealed class StreamingGeoJsonReader
         {
             return null;
         }
+    }
+
+    private string? ValidateParsedGeometry(NtsGeometry geometry)
+    {
+        if (geometry.IsEmpty)
+        {
+            return "GeoJSON geometry is empty.";
+        }
+
+        if (geometry.NumPoints > _limits.MaxVertices)
+        {
+            return $"Geometry vertex count ({geometry.NumPoints:N0}) exceeds maximum allowed ({_limits.MaxVertices:N0}).";
+        }
+
+        var ringCount = CountRings(geometry);
+        if (ringCount > _limits.MaxRings)
+        {
+            return $"Geometry ring count ({ringCount:N0}) exceeds maximum allowed ({_limits.MaxRings:N0}).";
+        }
+
+        if (!ValidateCoordinates(geometry))
+        {
+            return "Geometry contains invalid coordinates (NaN or Infinity).";
+        }
+
+        if (!geometry.IsValid)
+        {
+            return "Geometry topology is invalid.";
+        }
+
+        return null;
+    }
+
+    private static int CountRings(NtsGeometry geometry)
+    {
+        return geometry switch
+        {
+            Polygon polygon => 1 + polygon.NumInteriorRings,
+            MultiPolygon multiPolygon => multiPolygon.Geometries
+                .OfType<Polygon>()
+                .Sum(p => 1 + p.NumInteriorRings),
+            GeometryCollection collection => collection.Geometries.Sum(CountRings),
+            _ => 0
+        };
+    }
+
+    private static bool ValidateCoordinates(NtsGeometry geometry)
+    {
+        foreach (var coord in geometry.Coordinates)
+        {
+            if (double.IsNaN(coord.X) || double.IsInfinity(coord.X) ||
+                double.IsNaN(coord.Y) || double.IsInfinity(coord.Y))
+            {
+                return false;
+            }
+
+            if (!double.IsNaN(coord.Z) && double.IsInfinity(coord.Z))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private Point ParsePoint(JsonElement coords)
