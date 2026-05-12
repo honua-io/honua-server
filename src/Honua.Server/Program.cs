@@ -503,6 +503,7 @@ builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
+builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
     builder.Services.AddOrchestrationBackgroundServices();
@@ -1126,6 +1127,7 @@ app.MapAdminEndpoints();
 app.MapExternalServiceDiscoveryEndpoints();
 app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
+app.MapAdminRealtimeHub();
 
 // Configure layer publishing endpoints
 app.MapLayerPublishingEndpoints();
