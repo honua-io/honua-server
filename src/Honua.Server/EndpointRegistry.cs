@@ -70,6 +70,7 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/connections/{id}/tables"),
         new("DELETE", "/api/v1/admin/connections/{id}/tables"),
         new("PATCH", "/api/v1/admin/connections/{id}/tables"),
+        new("POST", "/api/v1/admin/connections/{id}/tables/validate"),
         new("GET", "/api/v1/admin/connections/tables"),
         new("GET", "/api/v1/admin/connections/{*path}"),
         new("POST", "/api/v1/admin/external-services/discover"),

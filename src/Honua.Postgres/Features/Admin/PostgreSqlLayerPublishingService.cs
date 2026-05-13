@@ -21,6 +21,13 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 {
     private const string DefaultServiceName = "default";
     private const string SourceBackedStorageOptionsJson = """{"sourceBacked":"true"}""";
+    private const string SeverityPass = "pass";
+    private const string SeverityWarning = "warning";
+    private const string SeverityError = "error";
+    private const string LayerConflictCheckCode = "layer-conflict";
+    private const string SourceIntegerPrimaryKeyObjectIdStrategy = "source-integer-primary-key";
+    private const string UnsupportedSourcePrimaryKeyObjectIdStrategy = "unsupported-source-primary-key";
+    private const string UnresolvedObjectIdStrategy = "unresolved";
     private static readonly string[] _defaultFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _defaultCapabilities = ["Query", "Extract"];
 
@@ -129,6 +136,23 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         var serviceName = NormalizeServiceName(request.ServiceName);
 
+        var validation = await ValidateTableForPublishAsync(
+                connectionString,
+                new TablePublishValidationRequest
+                {
+                    Schema = schema,
+                    Table = table,
+                    LayerName = request.LayerName,
+                    ServiceName = serviceName,
+                    TargetSrid = request.Srid,
+                    GeometryColumn = request.GeometryColumn,
+                    PrimaryKey = request.PrimaryKey,
+                    Fields = request.Fields
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+        ThrowIfPublishValidationFailed(validation);
+
         var tableInfo = await ResolveTableInfoAsync(connectionString, schema, table, cancellationToken)
             ?? throw new LayerPublishingException(
                 LayerPublishingErrorKind.NotFound,
@@ -158,7 +182,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         var geometryType = NormalizeGeometryType(geometryTypeRaw!);
 
-        var srid = request.Srid ?? tableInfo.Srid ?? 4326;
+        var serviceSrid = await ResolveExistingServiceSridAsync(connectionString, serviceName, cancellationToken)
+            .ConfigureAwait(false);
+        var srid = serviceSrid ?? request.Srid ?? tableInfo.Srid ?? 4326;
         if (srid <= 0)
         {
             srid = 4326;
@@ -282,6 +308,95 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         };
     }
 
+    public async Task<TablePublishValidationResult> ValidateTableForPublishAsync(
+        string connectionString,
+        TablePublishValidationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var schema = request.Schema?.Trim() ?? string.Empty;
+        var table = request.Table?.Trim() ?? string.Empty;
+        var serviceName = NormalizeServiceName(request.ServiceName);
+        var checks = new List<TablePublishValidationCheck>();
+
+        if (string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(table))
+        {
+            checks.Add(Error("source-table", "Schema and table are required."));
+            return BuildValidationResult(request, serviceName, null, null, null, checks);
+        }
+
+        if (!IsSafeIdentifier(schema) || !IsSafeIdentifier(table))
+        {
+            checks.Add(Error("source-table", "Schema or table contains invalid characters.", null, $"{schema}.{table}"));
+            return BuildValidationResult(request, serviceName, null, null, null, checks);
+        }
+
+        checks.Add(Pass("source-table", $"Source table identifier '{schema}.{table}' is syntactically valid."));
+
+        var tableInfo = await ResolveTableInfoForValidationAsync(connectionString, schema, table, cancellationToken)
+            .ConfigureAwait(false);
+        if (tableInfo == null)
+        {
+            checks.Add(Error(
+                "source-table",
+                $"Table '{schema}.{table}' was not found or does not expose a discoverable geometry column.",
+                $"{schema}.{table}",
+                null));
+            return BuildValidationResult(request, serviceName, null, null, null, checks);
+        }
+
+        checks.Add(Pass("source-table", $"Table '{schema}.{table}' is discoverable."));
+
+        var selectedColumns = ResolveSelectedColumnsForValidation(tableInfo.Columns, request.Fields, checks);
+        if (selectedColumns.Count == 0)
+        {
+            checks.Add(Error("selected-fields", "No publishable fields were selected."));
+        }
+        else
+        {
+            checks.Add(Pass("selected-fields", $"{selectedColumns.Count} field(s) selected for publishing."));
+        }
+
+        var geometryColumn = ResolveGeometryColumnForValidation(tableInfo, request.GeometryColumn, checks);
+        var geometryType = ResolveGeometryTypeForValidation(tableInfo, checks);
+        var primaryKeyName = ResolvePrimaryKeyForValidation(tableInfo.Columns, selectedColumns, request.PrimaryKey, checks);
+        var serviceSrid = await ResolveExistingServiceSridAsync(connectionString, serviceName, cancellationToken)
+            .ConfigureAwait(false);
+        var targetSrid = ResolveTargetSridForValidation(tableInfo.Srid, serviceSrid, request.TargetSrid, checks);
+
+        GeometryHealth? geometryHealth = null;
+        if (!string.IsNullOrWhiteSpace(geometryColumn) &&
+            geometryColumn!.Equals(tableInfo.GeometryColumn, StringComparison.OrdinalIgnoreCase))
+        {
+            geometryHealth = await InspectGeometryHealthAsync(
+                    connectionString,
+                    schema,
+                    table,
+                    geometryColumn!,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            AddGeometryHealthChecks(geometryHealth, checks);
+        }
+
+        await AddExistingLayerCheckAsync(connectionString, schema, table, checks, cancellationToken)
+            .ConfigureAwait(false);
+
+        return BuildValidationResult(
+            request,
+            serviceName,
+            tableInfo,
+            new ResolvedPublishValidation(
+                geometryColumn,
+                geometryType,
+                primaryKeyName,
+                serviceSrid,
+                targetSrid),
+            geometryHealth,
+            checks);
+    }
+
     public async Task<PublishedLayerSummary?> SetLayerEnabledAsync(
         string connectionString,
         int layerId,
@@ -379,6 +494,140 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 LayerPublishingErrorKind.Unknown,
                 "Failed to discover tables for publishing.");
         }
+    }
+
+    private async Task<TableInfo?> ResolveTableInfoForValidationAsync(
+        string connectionString,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        var discovered = await ResolveTableInfoAsync(connectionString, schema, table, cancellationToken)
+            .ConfigureAwait(false);
+        if (discovered != null)
+        {
+            return discovered;
+        }
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        if (!await TableExistsAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new TableInfo
+        {
+            Schema = schema,
+            Table = table,
+            GeometryColumn = null,
+            GeometryType = null,
+            Srid = null,
+            EstimatedRows = await GetEstimatedRowCountAsync(connection, schema, table, cancellationToken)
+                .ConfigureAwait(false),
+            Columns = await GetTableColumnsAsync(connection, schema, table, cancellationToken)
+                .ConfigureAwait(false)
+        };
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        NpgsqlConnection connection,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = @schema
+                  AND table_name = @table
+                  AND table_type IN ('BASE TABLE', 'FOREIGN TABLE')
+            );
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is bool exists && exists;
+    }
+
+    private static async Task<long?> GetEstimatedRowCountAsync(
+        NpgsqlConnection connection,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT reltuples::bigint
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = @schema AND c.relname = @table;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result == null || result == DBNull.Value
+            ? null
+            : Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<List<ColumnInfo>> GetTableColumnsAsync(
+        NpgsqlConnection connection,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                c.column_name,
+                c.data_type,
+                c.is_nullable,
+                c.character_maximum_length,
+                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key
+            FROM information_schema.columns c
+            LEFT JOIN (
+                SELECT a.attname as column_name
+                FROM pg_index i
+                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                JOIN pg_class cl ON cl.oid = i.indrelid
+                JOIN pg_namespace n ON n.oid = cl.relnamespace
+                WHERE i.indisprimary
+                  AND n.nspname = @schema
+                  AND cl.relname = @table
+            ) pk ON pk.column_name = c.column_name
+            WHERE c.table_schema = @schema
+              AND c.table_name = @table
+              AND c.data_type NOT IN ('geometry', 'geography')
+              AND c.udt_name NOT IN ('geometry', 'geography')
+            ORDER BY c.ordinal_position;
+            """;
+
+        var columns = new List<ColumnInfo>();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            columns.Add(new ColumnInfo
+            {
+                Name = reader.GetString(0),
+                DataType = reader.GetString(1),
+                IsNullable = reader.GetString(2) == "YES",
+                MaxLength = reader.IsDBNull(3) ? null : reader.GetInt32(3),
+                IsPrimaryKey = reader.GetBoolean(4)
+            });
+        }
+
+        return columns;
     }
 
     private static List<ColumnInfo> ResolveSelectedColumns(
@@ -516,6 +765,379 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             "text" => FieldType.String,
             _ => FieldType.String
         };
+    }
+
+    private static List<ColumnInfo> ResolveSelectedColumnsForValidation(
+        List<ColumnInfo> columns,
+        IReadOnlyList<string> selected,
+        List<TablePublishValidationCheck> checks)
+    {
+        if (selected == null || selected.Count == 0)
+        {
+            return columns;
+        }
+
+        var lookup = columns.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
+        var result = new List<ColumnInfo>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in selected)
+        {
+            if (string.IsNullOrWhiteSpace(field))
+            {
+                continue;
+            }
+
+            if (!lookup.TryGetValue(field.Trim(), out var column))
+            {
+                checks.Add(Error(
+                    "selected-field",
+                    $"Field '{field}' was not found on the source table.",
+                    field,
+                    null));
+                continue;
+            }
+
+            if (seen.Add(column.Name))
+            {
+                result.Add(column);
+            }
+        }
+
+        return result;
+    }
+
+    private static string? ResolveGeometryColumnForValidation(
+        TableInfo tableInfo,
+        string? requestedGeometryColumn,
+        List<TablePublishValidationCheck> checks)
+    {
+        var discoveredGeometryColumn = tableInfo.GeometryColumn;
+        var geometryColumn = string.IsNullOrWhiteSpace(requestedGeometryColumn)
+            ? discoveredGeometryColumn
+            : requestedGeometryColumn.Trim();
+
+        if (string.IsNullOrWhiteSpace(discoveredGeometryColumn))
+        {
+            checks.Add(Error("geometry-column", "Source table does not expose a geometry column."));
+            return geometryColumn;
+        }
+
+        if (string.IsNullOrWhiteSpace(geometryColumn))
+        {
+            checks.Add(Error("geometry-column", "Geometry column is required.", discoveredGeometryColumn, null));
+            return geometryColumn;
+        }
+
+        if (!geometryColumn.Equals(discoveredGeometryColumn, StringComparison.OrdinalIgnoreCase))
+        {
+            checks.Add(Error(
+                "geometry-column",
+                "Requested geometry column does not match the discovered PostGIS geometry column.",
+                discoveredGeometryColumn,
+                geometryColumn));
+            return geometryColumn;
+        }
+
+        checks.Add(Pass("geometry-column", $"Geometry column '{geometryColumn}' exists."));
+        return geometryColumn;
+    }
+
+    private static string? ResolveGeometryTypeForValidation(
+        TableInfo tableInfo,
+        List<TablePublishValidationCheck> checks)
+    {
+        if (string.IsNullOrWhiteSpace(tableInfo.GeometryType))
+        {
+            checks.Add(Error("geometry-type", "Source table does not report a geometry type."));
+            return null;
+        }
+
+        try
+        {
+            var normalized = NormalizeGeometryType(tableInfo.GeometryType);
+            checks.Add(Pass("geometry-type", $"Geometry type '{normalized}' is supported."));
+            return normalized;
+        }
+        catch (LayerPublishingException)
+        {
+            checks.Add(Error(
+                "geometry-type",
+                $"Geometry type '{tableInfo.GeometryType}' is not supported.",
+                null,
+                tableInfo.GeometryType));
+            return tableInfo.GeometryType;
+        }
+    }
+
+    private static string? ResolvePrimaryKeyForValidation(
+        List<ColumnInfo> columns,
+        List<ColumnInfo> selectedColumns,
+        string? requestedPrimaryKey,
+        List<TablePublishValidationCheck> checks)
+    {
+        var primaryKeyName = ResolvePrimaryKeyName(selectedColumns, requestedPrimaryKey);
+        if (string.IsNullOrWhiteSpace(primaryKeyName))
+        {
+            checks.Add(Error(
+                "primary-key",
+                "Primary key is required. Select an integer source column or choose an object id strategy."));
+            return null;
+        }
+
+        var primaryKeyColumn = selectedColumns.FirstOrDefault(col =>
+            string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
+        if (primaryKeyColumn == null)
+        {
+            var existsInTable = columns.Any(col =>
+                string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
+            checks.Add(Error(
+                "primary-key",
+                existsInTable
+                    ? $"Primary key field '{primaryKeyName}' must be included in selected fields."
+                    : $"Primary key field '{primaryKeyName}' was not found on the source table.",
+                primaryKeyName,
+                existsInTable ? "not selected" : null));
+            return primaryKeyName;
+        }
+
+        var primaryKeyType = MapPostgresType(primaryKeyColumn.DataType);
+        if (primaryKeyType is not FieldType.Integer and not FieldType.BigInteger)
+        {
+            checks.Add(Error(
+                "primary-key-type",
+                "Primary key must be an integer column.",
+                "Integer or BigInteger",
+                primaryKeyColumn.DataType));
+            return primaryKeyColumn.Name;
+        }
+
+        checks.Add(Pass("primary-key", $"Primary key column '{primaryKeyColumn.Name}' is publishable."));
+        return primaryKeyColumn.Name;
+    }
+
+    private static int? ResolveTargetSridForValidation(
+        int? tableSrid,
+        int? serviceSrid,
+        int? requestedTargetSrid,
+        List<TablePublishValidationCheck> checks)
+    {
+        if (tableSrid is null or <= 0)
+        {
+            checks.Add(Error(
+                "source-srid",
+                "Source table does not report a valid SRID.",
+                null,
+                tableSrid?.ToString(CultureInfo.InvariantCulture)));
+        }
+        else
+        {
+            checks.Add(Pass("source-srid", $"Source table SRID is {tableSrid.Value}."));
+        }
+
+        var targetSrid = serviceSrid ?? requestedTargetSrid ?? tableSrid;
+        if (targetSrid is null or <= 0)
+        {
+            checks.Add(Error(
+                "target-srid",
+                "Target SRID could not be resolved from the request, service, or source table."));
+            return targetSrid;
+        }
+
+        checks.Add(Pass("target-srid", $"Target SRID is {targetSrid.Value}."));
+
+        if (serviceSrid.HasValue && requestedTargetSrid.HasValue && requestedTargetSrid.Value != serviceSrid.Value)
+        {
+            checks.Add(Warning(
+                "service-srid-authoritative",
+                "Existing service projection overrides the requested target SRID.",
+                serviceSrid.Value.ToString(CultureInfo.InvariantCulture),
+                requestedTargetSrid.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (tableSrid is > 0 && tableSrid.Value != targetSrid.Value)
+        {
+            checks.Add(Warning(
+                "source-srid-transform",
+                "Source geometries will be transformed to the target service projection during publish.",
+                targetSrid.Value.ToString(CultureInfo.InvariantCulture),
+                tableSrid.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        return targetSrid;
+    }
+
+    private static void AddGeometryHealthChecks(
+        GeometryHealth? health,
+        List<TablePublishValidationCheck> checks)
+    {
+        if (health is not { } value)
+        {
+            checks.Add(Error("geometry-scan", "Geometry validation could not inspect the source table."));
+            return;
+        }
+
+        if (value.FeatureCount == 0)
+        {
+            checks.Add(Error("feature-count", "Source table is empty."));
+        }
+        else
+        {
+            checks.Add(Pass(
+                "feature-count",
+                $"Source table contains {value.FeatureCount.ToString(CultureInfo.InvariantCulture)} row(s)."));
+        }
+
+        if (value.NullGeometryCount > 0)
+        {
+            checks.Add(Warning(
+                "null-geometries",
+                "Some source rows have NULL geometry and will publish without geometry.",
+                "0",
+                value.NullGeometryCount.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (value.InvalidGeometryCount > 0)
+        {
+            checks.Add(Error(
+                "invalid-geometries",
+                "Source table contains invalid geometries.",
+                "0",
+                value.InvalidGeometryCount.ToString(CultureInfo.InvariantCulture)));
+        }
+        else
+        {
+            checks.Add(Pass("invalid-geometries", "No invalid geometries were found."));
+        }
+
+        if (value.DistinctGeometryTypeCount > 1)
+        {
+            checks.Add(Error(
+                "mixed-geometry",
+                "Source table contains mixed geometry types.",
+                "1",
+                value.DistinctGeometryTypeCount.ToString(CultureInfo.InvariantCulture)));
+        }
+        else if (value.DistinctGeometryTypeCount == 1)
+        {
+            checks.Add(Pass("mixed-geometry", "Source table uses a single geometry type."));
+        }
+
+        if (value.MinSrid.HasValue && value.MaxSrid.HasValue && value.MinSrid.Value != value.MaxSrid.Value)
+        {
+            checks.Add(Error(
+                "mixed-srid",
+                "Source table contains mixed geometry SRIDs.",
+                value.MinSrid.Value.ToString(CultureInfo.InvariantCulture),
+                value.MaxSrid.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+    }
+
+    private static TablePublishValidationResult BuildValidationResult(
+        TablePublishValidationRequest request,
+        string serviceName,
+        TableInfo? tableInfo,
+        ResolvedPublishValidation? resolved,
+        GeometryHealth? geometryHealth,
+        IReadOnlyCollection<TablePublishValidationCheck> checks)
+    {
+        var hasErrors = checks.Any(check => check.Severity == SeverityError);
+        var hasWarnings = checks.Any(check => check.Severity == SeverityWarning);
+
+        return new TablePublishValidationResult
+        {
+            IsValid = !hasErrors,
+            Status = hasErrors ? "invalid" : hasWarnings ? "warning" : "valid",
+            Schema = request.Schema?.Trim() ?? string.Empty,
+            Table = request.Table?.Trim() ?? string.Empty,
+            ServiceName = serviceName,
+            LayerName = request.LayerName,
+            GeometryColumn = resolved?.GeometryColumn ?? request.GeometryColumn ?? tableInfo?.GeometryColumn,
+            GeometryType = resolved?.GeometryType ?? tableInfo?.GeometryType,
+            PrimaryKey = resolved?.PrimaryKey ?? request.PrimaryKey,
+            ObjectIdStrategy = ResolveObjectIdStrategy(resolved?.PrimaryKey, checks),
+            SourceSrid = tableInfo?.Srid,
+            ServiceSrid = resolved?.ServiceSrid,
+            TargetSrid = resolved?.TargetSrid,
+            EstimatedRows = tableInfo?.EstimatedRows,
+            FeatureCount = geometryHealth?.FeatureCount,
+            NullGeometryCount = geometryHealth?.NullGeometryCount,
+            InvalidGeometryCount = geometryHealth?.InvalidGeometryCount,
+            Fields = BuildValidationFields(tableInfo?.Columns ?? [], request.Fields),
+            Checks = checks.ToArray()
+        };
+    }
+
+    private static void ThrowIfPublishValidationFailed(TablePublishValidationResult validation)
+    {
+        var errors = validation.Checks
+            .Where(check => check.Severity == SeverityError)
+            .ToArray();
+        if (errors.Length == 0)
+        {
+            return;
+        }
+
+        var blockingError = errors.FirstOrDefault(check => check.Code != LayerConflictCheckCode);
+        if (blockingError != null)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                BuildPublishValidationFailureMessage(blockingError));
+        }
+
+        throw new LayerPublishingException(
+            LayerPublishingErrorKind.Conflict,
+            $"Layer already exists for table '{validation.Schema}.{validation.Table}'.");
+    }
+
+    private static string BuildPublishValidationFailureMessage(TablePublishValidationCheck check)
+        => $"Table validation failed ({check.Code}): {check.Message}";
+
+    private static string ResolveObjectIdStrategy(
+        string? primaryKey,
+        IReadOnlyCollection<TablePublishValidationCheck> checks)
+    {
+        var hasPrimaryKeyError = checks.Any(check =>
+            check.Severity == SeverityError &&
+            (check.Code == "primary-key" || check.Code == "primary-key-type"));
+        if (hasPrimaryKeyError)
+        {
+            return UnsupportedSourcePrimaryKeyObjectIdStrategy;
+        }
+
+        var hasPrimaryKeyPass = checks.Any(check =>
+            check.Severity == SeverityPass && check.Code == "primary-key");
+        if (!string.IsNullOrWhiteSpace(primaryKey) && hasPrimaryKeyPass)
+        {
+            return SourceIntegerPrimaryKeyObjectIdStrategy;
+        }
+
+        return UnresolvedObjectIdStrategy;
+    }
+
+    private static TablePublishValidationField[] BuildValidationFields(
+        List<ColumnInfo> columns,
+        IReadOnlyList<string> selected)
+    {
+        var selectedSet = selected == null || selected.Count == 0
+            ? null
+            : new HashSet<string>(
+                selected.Where(field => !string.IsNullOrWhiteSpace(field)).Select(field => field.Trim()),
+                StringComparer.OrdinalIgnoreCase);
+
+        return columns
+            .Select(column => new TablePublishValidationField
+            {
+                Name = column.Name,
+                DataType = column.DataType,
+                FieldType = MapPostgresType(column.DataType).ToString(),
+                IsNullable = column.IsNullable,
+                IsPrimaryKey = column.IsPrimaryKey,
+                IsSelected = selectedSet == null || selectedSet.Contains(column.Name),
+                MaxLength = column.MaxLength
+            })
+            .ToArray();
     }
 
     private static string NormalizeGeometryType(string raw)
@@ -895,6 +1517,183 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private static string QuoteLiteral(string literal)
         => "'" + literal.Replace("'", "''", StringComparison.Ordinal) + "'";
 
+    private static ColumnInfo? FindColumn(TableInfo tableInfo, string columnName)
+        => tableInfo.Columns.FirstOrDefault(column =>
+            column.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+
+    private static async Task<GeometryHealth?> InspectGeometryHealthAsync(
+        string connectionString,
+        string schema,
+        string table,
+        string geometryColumn,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var sourceTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
+        var sourceGeometry = QuoteIdentifier(geometryColumn);
+        var sql = $"""
+            WITH source AS (
+                SELECT {sourceGeometry}::geometry AS geom
+                FROM {sourceTable}
+            )
+            SELECT
+                COUNT(*)::bigint,
+                COUNT(*) FILTER (WHERE geom IS NULL)::bigint,
+                COUNT(*) FILTER (WHERE geom IS NOT NULL AND NOT ST_IsValid(geom))::bigint,
+                COUNT(DISTINCT GeometryType(geom)) FILTER (WHERE geom IS NOT NULL)::int,
+                MIN(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int,
+                MAX(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int
+            FROM source;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new GeometryHealth(
+            reader.GetInt64(0),
+            reader.GetInt64(1),
+            reader.GetInt64(2),
+            reader.IsDBNull(3) ? 0 : reader.GetInt32(3),
+            reader.IsDBNull(4) ? null : reader.GetInt32(4),
+            reader.IsDBNull(5) ? null : reader.GetInt32(5));
+    }
+
+    private static async Task<int?> ResolveExistingServiceSridAsync(
+        string connectionString,
+        string serviceName,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        if (!await HonuaTableExistsAsync(connection, "services", cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        const string sql = """
+            SELECT srid
+            FROM honua.services
+            WHERE service_name = @serviceName
+            LIMIT 1;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@serviceName", serviceName);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result == null || result == DBNull.Value
+            ? null
+            : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task AddExistingLayerCheckAsync(
+        string connectionString,
+        string schema,
+        string table,
+        List<TablePublishValidationCheck> checks,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        if (!await HonuaTableExistsAsync(connection, "layers", cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        const string sql = """
+            SELECT layer_id
+            FROM honua.layers
+            WHERE table_schema = @schema
+              AND table_name = @table
+            LIMIT 1;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (result == null || result == DBNull.Value)
+        {
+            checks.Add(Pass("layer-conflict", "No existing layer is mapped to this source table."));
+            return;
+        }
+
+        checks.Add(Error(
+            "layer-conflict",
+            "A layer already exists for this source table.",
+            null,
+            Convert.ToString(result, CultureInfo.InvariantCulture)));
+    }
+
+    private static async Task<bool> HonuaTableExistsAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'honua'
+                  AND table_name = @tableName
+            );
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@tableName", tableName);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is bool exists && exists;
+    }
+
+    private static TablePublishValidationCheck Pass(
+        string code,
+        string message,
+        string? expected = null,
+        string? actual = null)
+        => new()
+        {
+            Code = code,
+            Severity = SeverityPass,
+            Message = message,
+            Expected = expected,
+            Actual = actual
+        };
+
+    private static TablePublishValidationCheck Warning(
+        string code,
+        string message,
+        string? expected = null,
+        string? actual = null)
+        => new()
+        {
+            Code = code,
+            Severity = SeverityWarning,
+            Message = message,
+            Expected = expected,
+            Actual = actual
+        };
+
+    private static TablePublishValidationCheck Error(
+        string code,
+        string message,
+        string? expected = null,
+        string? actual = null)
+        => new()
+        {
+            Code = code,
+            Severity = SeverityError,
+            Message = message,
+            Expected = expected,
+            Actual = actual
+        };
+
     private static async Task InsertFieldsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -1165,4 +1964,19 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         double MinY,
         double MaxX,
         double MaxY);
+
+    private readonly record struct GeometryHealth(
+        long FeatureCount,
+        long NullGeometryCount,
+        long InvalidGeometryCount,
+        int DistinctGeometryTypeCount,
+        int? MinSrid,
+        int? MaxSrid);
+
+    private readonly record struct ResolvedPublishValidation(
+        string? GeometryColumn,
+        string? GeometryType,
+        string? PrimaryKey,
+        int? ServiceSrid,
+        int? TargetSrid);
 }

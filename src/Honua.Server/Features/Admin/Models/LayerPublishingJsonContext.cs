@@ -16,10 +16,17 @@ namespace Honua.Server.Features.Admin.Models;
     WriteIndented = false)]
 [JsonSerializable(typeof(ApiResponse<IReadOnlyList<PublishedLayerSummary>>))]
 [JsonSerializable(typeof(ApiResponse<PublishedLayerSummary>))]
+[JsonSerializable(typeof(ApiResponse<TablePublishValidationResult>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(PublishLayerRequest))]
+[JsonSerializable(typeof(ValidateTablePublishRequest))]
 [JsonSerializable(typeof(LayerEnabledRequest))]
 [JsonSerializable(typeof(PublishedLayerSummary))]
+[JsonSerializable(typeof(TablePublishValidationResult))]
+[JsonSerializable(typeof(TablePublishValidationCheck))]
+[JsonSerializable(typeof(TablePublishValidationCheck[]))]
+[JsonSerializable(typeof(TablePublishValidationField))]
+[JsonSerializable(typeof(TablePublishValidationField[]))]
 internal sealed partial class LayerPublishingJsonContext : JsonSerializerContext
 {
 }
