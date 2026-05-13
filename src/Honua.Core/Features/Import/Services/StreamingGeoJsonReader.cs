@@ -188,6 +188,15 @@ internal sealed class StreamingGeoJsonReader
             if (stream.CanSeek)
             {
                 stream.Position = 0;
+                if (stream.Length > _limits.MaxMemoryBytes)
+                {
+                    issues.Add(ImportValidationIssue.Create(
+                        ImportValidationErrorCodes.GeoJsonValidationTooLarge,
+                        $"GeoJSON preflight validation is limited to {_limits.MaxMemoryBytes:N0} bytes.",
+                        field: "file"));
+
+                    return new GeoJsonValidationResult(featureCount, issues);
+                }
             }
 
             using var document = await JsonDocument.ParseAsync(

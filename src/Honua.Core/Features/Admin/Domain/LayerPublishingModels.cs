@@ -166,6 +166,11 @@ public sealed class TablePublishValidationResult
     public string? PrimaryKey { get; init; }
 
     /// <summary>
+    /// Object id strategy selected for layer publishing.
+    /// </summary>
+    public string ObjectIdStrategy { get; init; } = "unresolved";
+
+    /// <summary>
     /// Source table SRID from discovery metadata.
     /// </summary>
     public int? SourceSrid { get; init; }

@@ -24,6 +24,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private const string SeverityPass = "pass";
     private const string SeverityWarning = "warning";
     private const string SeverityError = "error";
+    private const string LayerConflictCheckCode = "layer-conflict";
+    private const string SourceIntegerPrimaryKeyObjectIdStrategy = "source-integer-primary-key";
+    private const string UnsupportedSourcePrimaryKeyObjectIdStrategy = "unsupported-source-primary-key";
+    private const string UnresolvedObjectIdStrategy = "unresolved";
     private static readonly string[] _defaultFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _defaultCapabilities = ["Query", "Extract"];
 
@@ -131,6 +135,23 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         var serviceName = NormalizeServiceName(request.ServiceName);
+
+        var validation = await ValidateTableForPublishAsync(
+                connectionString,
+                new TablePublishValidationRequest
+                {
+                    Schema = schema,
+                    Table = table,
+                    LayerName = request.LayerName,
+                    ServiceName = serviceName,
+                    TargetSrid = request.Srid,
+                    GeometryColumn = request.GeometryColumn,
+                    PrimaryKey = request.PrimaryKey,
+                    Fields = request.Fields
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+        ThrowIfPublishValidationFailed(validation);
 
         var tableInfo = await ResolveTableInfoAsync(connectionString, schema, table, cancellationToken)
             ?? throw new LayerPublishingException(
@@ -314,7 +335,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         checks.Add(Pass("source-table", $"Source table identifier '{schema}.{table}' is syntactically valid."));
 
-        var tableInfo = await ResolveTableInfoAsync(connectionString, schema, table, cancellationToken)
+        var tableInfo = await ResolveTableInfoForValidationAsync(connectionString, schema, table, cancellationToken)
             .ConfigureAwait(false);
         if (tableInfo == null)
         {
@@ -473,6 +494,140 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 LayerPublishingErrorKind.Unknown,
                 "Failed to discover tables for publishing.");
         }
+    }
+
+    private async Task<TableInfo?> ResolveTableInfoForValidationAsync(
+        string connectionString,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        var discovered = await ResolveTableInfoAsync(connectionString, schema, table, cancellationToken)
+            .ConfigureAwait(false);
+        if (discovered != null)
+        {
+            return discovered;
+        }
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        if (!await TableExistsAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new TableInfo
+        {
+            Schema = schema,
+            Table = table,
+            GeometryColumn = null,
+            GeometryType = null,
+            Srid = null,
+            EstimatedRows = await GetEstimatedRowCountAsync(connection, schema, table, cancellationToken)
+                .ConfigureAwait(false),
+            Columns = await GetTableColumnsAsync(connection, schema, table, cancellationToken)
+                .ConfigureAwait(false)
+        };
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        NpgsqlConnection connection,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = @schema
+                  AND table_name = @table
+                  AND table_type IN ('BASE TABLE', 'FOREIGN TABLE')
+            );
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is bool exists && exists;
+    }
+
+    private static async Task<long?> GetEstimatedRowCountAsync(
+        NpgsqlConnection connection,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT reltuples::bigint
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = @schema AND c.relname = @table;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result == null || result == DBNull.Value
+            ? null
+            : Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<List<ColumnInfo>> GetTableColumnsAsync(
+        NpgsqlConnection connection,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                c.column_name,
+                c.data_type,
+                c.is_nullable,
+                c.character_maximum_length,
+                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key
+            FROM information_schema.columns c
+            LEFT JOIN (
+                SELECT a.attname as column_name
+                FROM pg_index i
+                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                JOIN pg_class cl ON cl.oid = i.indrelid
+                JOIN pg_namespace n ON n.oid = cl.relnamespace
+                WHERE i.indisprimary
+                  AND n.nspname = @schema
+                  AND cl.relname = @table
+            ) pk ON pk.column_name = c.column_name
+            WHERE c.table_schema = @schema
+              AND c.table_name = @table
+              AND c.data_type NOT IN ('geometry', 'geography')
+              AND c.udt_name NOT IN ('geometry', 'geography')
+            ORDER BY c.ordinal_position;
+            """;
+
+        var columns = new List<ColumnInfo>();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            columns.Add(new ColumnInfo
+            {
+                Name = reader.GetString(0),
+                DataType = reader.GetString(1),
+                IsNullable = reader.GetString(2) == "YES",
+                MaxLength = reader.IsDBNull(3) ? null : reader.GetInt32(3),
+                IsPrimaryKey = reader.GetBoolean(4)
+            });
+        }
+
+        return columns;
     }
 
     private static List<ColumnInfo> ResolveSelectedColumns(
@@ -900,6 +1055,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             GeometryColumn = resolved?.GeometryColumn ?? request.GeometryColumn ?? tableInfo?.GeometryColumn,
             GeometryType = resolved?.GeometryType ?? tableInfo?.GeometryType,
             PrimaryKey = resolved?.PrimaryKey ?? request.PrimaryKey,
+            ObjectIdStrategy = ResolveObjectIdStrategy(resolved?.PrimaryKey, checks),
             SourceSrid = tableInfo?.Srid,
             ServiceSrid = resolved?.ServiceSrid,
             TargetSrid = resolved?.TargetSrid,
@@ -910,6 +1066,54 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             Fields = BuildValidationFields(tableInfo?.Columns ?? [], request.Fields),
             Checks = checks.ToArray()
         };
+    }
+
+    private static void ThrowIfPublishValidationFailed(TablePublishValidationResult validation)
+    {
+        var errors = validation.Checks
+            .Where(check => check.Severity == SeverityError)
+            .ToArray();
+        if (errors.Length == 0)
+        {
+            return;
+        }
+
+        var blockingError = errors.FirstOrDefault(check => check.Code != LayerConflictCheckCode);
+        if (blockingError != null)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                BuildPublishValidationFailureMessage(blockingError));
+        }
+
+        throw new LayerPublishingException(
+            LayerPublishingErrorKind.Conflict,
+            $"Layer already exists for table '{validation.Schema}.{validation.Table}'.");
+    }
+
+    private static string BuildPublishValidationFailureMessage(TablePublishValidationCheck check)
+        => $"Table validation failed ({check.Code}): {check.Message}";
+
+    private static string ResolveObjectIdStrategy(
+        string? primaryKey,
+        IReadOnlyCollection<TablePublishValidationCheck> checks)
+    {
+        var hasPrimaryKeyError = checks.Any(check =>
+            check.Severity == SeverityError &&
+            (check.Code == "primary-key" || check.Code == "primary-key-type"));
+        if (hasPrimaryKeyError)
+        {
+            return UnsupportedSourcePrimaryKeyObjectIdStrategy;
+        }
+
+        var hasPrimaryKeyPass = checks.Any(check =>
+            check.Severity == SeverityPass && check.Code == "primary-key");
+        if (!string.IsNullOrWhiteSpace(primaryKey) && hasPrimaryKeyPass)
+        {
+            return SourceIntegerPrimaryKeyObjectIdStrategy;
+        }
+
+        return UnresolvedObjectIdStrategy;
     }
 
     private static TablePublishValidationField[] BuildValidationFields(
