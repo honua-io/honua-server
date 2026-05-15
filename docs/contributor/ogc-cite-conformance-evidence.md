@@ -1,4 +1,6 @@
-# OGC CITE Conformance Evidence
+# Standards Conformance
+
+## OGC CITE
 
 This page is the stable, website-linkable summary for Honua Server OGC CITE
 evidence. It is not an OGC certification claim. Formal certification still
@@ -21,7 +23,7 @@ That workflow uploads a static bundle containing:
 - `website-conformance.md` for direct website copy
 - raw TeamEngine result trees for each suite
 
-## Latest PR Validation Snapshot
+### Latest PR Validation Snapshot
 
 These results were produced while preparing the CITE stabilization PR from
 branch `codex/cite-nightly-fix`.
@@ -81,6 +83,33 @@ to Honua's generated KML document. The raw ETS `default` diagnostic profile
 reports 42 passed, 0 failed, and 28 skipped because it also loads Level 2 and
 Level 3 checks while the test input declares Level 1.
 
+### Reproducing The Current All-Pass Evidence
+
+Run the suites currently eligible for 100% passed public evidence:
+
+```bash
+scripts/conformance/cite/run-cite-tests.sh --profile default --verbose
+scripts/conformance/cite/run-cite-tiles-tests.sh --profile default --verbose
+scripts/conformance/cite/run-cite-gpkg12-tests.sh --profile applicable --verbose
+scripts/conformance/cite/run-cite-gml32-tests.sh --profile applicable --verbose
+scripts/conformance/cite/run-cite-kml22-tests.sh --profile applicable --verbose
+scripts/conformance/cite/run-cite-wfs10-tests.sh --profile basic --verbose
+scripts/conformance/cite/run-cite-wfs11-tests.sh --profile basic --verbose
+scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic --verbose
+scripts/conformance/cite/run-cite-wcs20-tests.sh --profile core --verbose
+scripts/conformance/cite/run-cite-wms-tests.sh --profile default --verbose
+scripts/conformance/cite/run-cite-wmts-tests.sh --profile default --verbose
+```
+
+Build the website-linkable static bundle from local suite output:
+
+```bash
+scripts/conformance/cite/build-cite-evidence.sh --output artifacts/cite-evidence
+```
+
+For release or marketing evidence, run the GitHub workflow and link to the
+checked-in page above plus the generated workflow artifact for the exact commit.
+
 ## External Standards Validator Evidence
 
 These validators are not OGC CITE suites, but they are included here because
@@ -123,30 +152,3 @@ repository currently has a minimal NAServer route-registration smoke slice, but
 it returns deterministic compatibility envelopes rather than real network
 analysis behavior, so it should not be presented as Esri-compatible NAServer
 validation.
-
-## Reproducing The Current All-Pass Evidence
-
-Run the suites currently eligible for 100% passed public evidence:
-
-```bash
-scripts/conformance/cite/run-cite-tests.sh --profile default --verbose
-scripts/conformance/cite/run-cite-tiles-tests.sh --profile default --verbose
-scripts/conformance/cite/run-cite-gpkg12-tests.sh --profile applicable --verbose
-scripts/conformance/cite/run-cite-gml32-tests.sh --profile applicable --verbose
-scripts/conformance/cite/run-cite-kml22-tests.sh --profile applicable --verbose
-scripts/conformance/cite/run-cite-wfs10-tests.sh --profile basic --verbose
-scripts/conformance/cite/run-cite-wfs11-tests.sh --profile basic --verbose
-scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic --verbose
-scripts/conformance/cite/run-cite-wcs20-tests.sh --profile core --verbose
-scripts/conformance/cite/run-cite-wms-tests.sh --profile default --verbose
-scripts/conformance/cite/run-cite-wmts-tests.sh --profile default --verbose
-```
-
-Build the website-linkable static bundle from local suite output:
-
-```bash
-scripts/conformance/cite/build-cite-evidence.sh --output artifacts/cite-evidence
-```
-
-For release or marketing evidence, run the GitHub workflow and link to the
-checked-in page above plus the generated workflow artifact for the exact commit.
