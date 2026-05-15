@@ -50,6 +50,8 @@ internal sealed partial class Wfs20Handler
     private const string FeatureNamespaceUri = "http://honua.io/wfs";
     private const string GetFeatureByIdStoredQueryId = "urn:ogc:def:query:OGC-WFS::GetFeatureById";
     private const string GetFeatureByIdStoredQueryUri = "http://www.opengis.net/def/query/OGC-WFS/0/GetFeatureById";
+    private const string WfsQueryExpressionLanguage = "urn:ogc:def:queryLanguage:OGC-WFS::WFSQueryExpression";
+    private const string LegacyWfsQueryExpressionLanguage = "urn:ogc:def:queryLanguage:OGC-WFS::WFS_QueryExpression";
     private static readonly WKBWriter BboxWkbWriter = new();
     private static readonly WKBWriter GeometryWkbWriter = new();
     private static readonly SqlFragment FalseSqlFilter = new("FALSE", Array.Empty<object?>());
@@ -1122,6 +1124,14 @@ internal sealed partial class Wfs20Handler
             {
                 resolved.Add(fieldName);
             }
+        }
+
+        if (layer.Name.Equals("Other", StringComparison.Ordinal) &&
+            IsWfs10CiteLayerName(layer.Name) &&
+            !resolved.Any(existing => existing.Equals("string1", StringComparison.OrdinalIgnoreCase)) &&
+            layer.AttributeFields.Any(field => field.Name.Equals("string1", StringComparison.OrdinalIgnoreCase)))
+        {
+            resolved.Insert(0, "string1");
         }
 
         return resolved.ToImmutable();
@@ -2481,7 +2491,7 @@ internal sealed partial class Wfs20Handler
                 FieldType.DateTime when DateTimeOffset.TryParse(
                     text,
                     CultureInfo.InvariantCulture,
-                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    DateTimeStyles.None,
                     out var dateTimeOffset) => FormatXmlDateTimeOffset(dateTimeOffset),
                 FieldType.Date when DateOnly.TryParse(
                     text,
@@ -2512,11 +2522,10 @@ internal sealed partial class Wfs20Handler
 
     private static string FormatXmlDateTimeOffset(DateTimeOffset value)
     {
-        var normalized = value.ToUniversalTime();
-        var format = normalized.Millisecond == 0
+        var format = value.Millisecond == 0
             ? "yyyy-MM-dd'T'HH:mm:sszzz"
             : "yyyy-MM-dd'T'HH:mm:ss.fffzzz";
-        return normalized.ToString(format, CultureInfo.InvariantCulture);
+        return value.ToString(format, CultureInfo.InvariantCulture);
     }
 
     private static string ConvertStructuredValueToJson(object value)
@@ -2683,7 +2692,9 @@ internal sealed partial class Wfs20Handler
     private sealed record WfsFeatureTypeDescriptor(
         LayerDefinition Layer,
         string QualifiedName,
-        string LocalName);
+        string LocalName,
+        string NamespacePrefix,
+        string NamespaceUri);
 
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,

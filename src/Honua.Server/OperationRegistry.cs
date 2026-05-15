@@ -49,6 +49,8 @@ public static class OperationRegistry
         new(Wfs20, "Transaction"),
         new(Wfs20, "ListStoredQueries"),
         new(Wfs20, "DescribeStoredQueries"),
+        new(Wfs20, "CreateStoredQuery"),
+        new(Wfs20, "DropStoredQuery"),
 
         // WFS 1.x read-only compatibility operations (dispatched via GET|POST /wfs?REQUEST=...)
         new(Wfs11, "GetCapabilities"),

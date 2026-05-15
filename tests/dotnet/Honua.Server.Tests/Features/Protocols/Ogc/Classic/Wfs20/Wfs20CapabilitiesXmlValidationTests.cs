@@ -16,31 +16,20 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public class Wfs20CapabilitiesXmlValidationTests
 {
     [Fact]
-    public void GetCapabilitiesXml_TemporalOperators_ShouldContainRuntimeSupportedOperators()
+    public void GetCapabilitiesXml_TemporalConformance_ShouldAdvertiseMinimumTemporalFilterSupport()
     {
         var xml = SerializeToXml(CreateWfsCapabilitiesWithFilterCapabilities());
 
-        xml.Should().Contain("TemporalOperators");
-        foreach (var expected in new[]
-                 {
-                     "After",
-                     "Before",
-                     "Begins",
-                     "BegunBy",
-                     "TContains",
-                     "During",
-                     "TEquals",
-                     "TOverlaps",
-                     "Meets",
-                     "MetBy",
-                     "OverlappedBy",
-                     "EndedBy",
-                     "Ends",
-                     "AnyInteracts"
-                 })
-        {
-            xml.Should().Contain($"name=\"{expected}\"");
-        }
+        xml.Should().Contain("Temporal_Capabilities");
+        xml.Should().MatchRegex(@"<([A-Za-z_][\w.-]*:)?TemporalOperators(\s|>|/)");
+        xml.Should().Contain("name=\"After\"");
+        xml.Should().Contain("name=\"Before\"");
+        xml.Should().Contain("name=\"During\"");
+        xml.Should().NotContain("name=\"AnyInteracts\"");
+        xml.Should().MatchRegex(@"name=""ImplementsMinTemporalFilter""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsTemporalFilter""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsTemporalInstant""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsTemporalPeriod""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
     }
 
     [Fact]
@@ -48,7 +37,7 @@ public class Wfs20CapabilitiesXmlValidationTests
     {
         var xml = SerializeToXml(CreateWfsCapabilitiesWithFilterCapabilities());
 
-        xml.Should().Contain("Functions");
+        xml.Should().NotContain("<Functions");
         xml.Should().NotContain("name=\"ST_Area\"");
         xml.Should().NotContain("name=\"UPPER\"");
         xml.Should().MatchRegex(@"name=""ImplementsFunctions""[^>]*>[\s\S]*?FALSE[\s\S]*?</");

@@ -1,9 +1,8 @@
 services:
-  # Honua Server under test
   honua-server:
     image: honua-server:latest
     ports:
-      - "${HONUA_CITE_WFS20_SERVER_PORT:-8090}:8080"
+      - "${HONUA_CITE_WFS10_SERVER_PORT:-8096}:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
@@ -17,16 +16,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # healthcheck:
-    #   test: ["CMD", "sh", "-c", "netstat -tlnp | grep :8080 || ss -tlnp | grep :8080"]
-    #   interval: 15s
-    #   timeout: 10s
-    #   retries: 5
-    #   start_period: 60s
     networks:
       - cite-network
 
-  # PostgreSQL with PostGIS for test data
   postgres:
     image: postgis/postgis:15-3.3
     environment:
@@ -35,7 +27,7 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --locale=C
     ports:
-      - "${HONUA_CITE_WFS20_POSTGRES_PORT:-5433}:5432"
+      - "${HONUA_CITE_WFS10_POSTGRES_PORT:-5446}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d honua_cite"]
       interval: 10s
@@ -43,16 +35,14 @@ services:
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../shared/test-data/01-init-cite-test-data.sql:/docker-entrypoint-initdb.d/01-init-cite-test-data.sql:ro
-      - ./test-data/99-prune-wfs1-cite-fixtures.sql:/docker-entrypoint-initdb.d/99-prune-wfs1-cite-fixtures.sql:ro
+      - ../shared/test-data:/docker-entrypoint-initdb.d:ro
     networks:
       - cite-network
 
-  # OGC CITE Team Engine for WFS 2.0 conformance testing
   cite-teamengine:
-    image: ogccite/ets-wfs20:latest
+    image: ogccite/ets-wfs10:latest
     ports:
-      - "${HONUA_CITE_WFS20_TEAMENGINE_PORT:-8081}:8080"
+      - "${HONUA_CITE_WFS10_TEAMENGINE_PORT:-8088}:8080"
     environment:
       - CATALINA_OPTS=-Xms1g -Xmx2g
       - TE_BASE=/root/te_base
@@ -61,7 +51,6 @@ services:
       - honua-server
     volumes:
       - cite_data:/root/te_base
-      - ./config:/cite-config:ro
     networks:
       - cite-network
     healthcheck:
@@ -71,9 +60,8 @@ services:
       retries: 10
       start_period: 60s
 
-  # CITE Test Runner - executes the tests and collects results
   cite-runner:
-    image: ogccite/ets-wfs20:latest
+    image: ogccite/ets-wfs10:latest
     user: "0:0"
     depends_on:
       cite-teamengine:
@@ -81,17 +69,17 @@ services:
       honua-server:
         condition: service_started
     environment:
+      - WFS_VERSION=1.0.0
       - WFS_ENDPOINT=http://honua-server:8080/wfs
-      - CITE_ENGINE=http://cite-teamengine:8080/teamengine
       - TEST_PROFILE=${CITE_PROFILE:-basic}
       - HOST_UID=${HOST_UID:-1000}
       - HOST_GID=${HOST_GID:-1000}
     volumes:
-      - ../../../cite-wfs20-results:/results
+      - ../../../cite-wfs10-results:/results
       - ../shared/scripts:/scripts:ro
     networks:
       - cite-network
-    command: ["/scripts/execute-wfs20-tests.sh"]
+    command: ["/scripts/execute-wfs1-tests.sh"]
 
 volumes:
   postgres_data:

@@ -17,6 +17,8 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800
 HONUA_HEALTHCHECK_TIMEOUT=300
 POSTGRES_HEALTHCHECK_TIMEOUT=120
+HONUA_CITE_GPKG12_SERVER_PORT="${HONUA_CITE_GPKG12_SERVER_PORT:-8095}"
+export HONUA_CITE_GPKG12_SERVER_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
 SKIPPED_TESTS=0
@@ -26,7 +28,8 @@ TOTAL_TESTS=0
 CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
-PROFILE="default"
+PROFILE="applicable"
+SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
 
 echo -e "${BLUE}GeoPackage 1.2 CITE Conformance Tests${NC}"
 echo "======================================="
@@ -49,6 +52,10 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift 2
             ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -56,7 +63,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-cleanup      Don't cleanup containers after tests"
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
-            echo "  --profile PROF    Accepted for CLI consistency (GeoPackage 1.2 has a single validation pass)"
+            echo "  --profile PROF    Test profile: applicable (default strict core/features) or default (raw ETS)"
+            echo "  --skip-build      Reuse existing honua-server:latest image"
             echo "  --help, -h        Show this help"
             exit 0
             ;;
@@ -66,6 +74,18 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+case "$PROFILE" in
+    applicable|default)
+        ;;
+    *)
+        echo -e "${RED}Unknown profile: $PROFILE${NC}"
+        echo "Valid profiles: applicable, default"
+        exit 1
+        ;;
+esac
+
+export HONUA_CITE_GPKG12_PROFILE="$PROFILE"
 
 echo -e "${YELLOW}Checking prerequisites...${NC}"
 
@@ -85,13 +105,17 @@ else
     COMPOSE_CMD="docker compose"
 fi
 
-echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
-if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
-    echo -e "${RED}Failed to build Honua Server Docker image${NC}"
-    exit 1
-fi
+if [[ "$SKIP_BUILD" == "true" ]]; then
+    echo -e "${YELLOW}Skipping Honua Server Docker image build; using existing honua-server:latest${NC}"
+else
+    echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
+    if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
+        echo -e "${RED}Failed to build Honua Server Docker image${NC}"
+        exit 1
+    fi
 
-echo -e "${GREEN}Honua Server image built successfully${NC}"
+    echo -e "${GREEN}Honua Server image built successfully${NC}"
+fi
 
 cleanup() {
     if [[ "$CLEANUP" == "true" && "$INTERACTIVE" == "false" ]]; then
@@ -190,7 +214,8 @@ done
 
 echo -e "${GREEN}Honua Server is healthy${NC}"
 
-GPKG_EXPORT_URL_HOST="http://localhost:8080/api/v1/admin/services/cite/layers/0/export?format=gpkg"
+HONUA_BASE_URL="http://localhost:${HONUA_CITE_GPKG12_SERVER_PORT}"
+GPKG_EXPORT_URL_HOST="$HONUA_BASE_URL/api/v1/admin/services/cite/layers/0/export?format=gpkg"
 GPKG_ADMIN_PASSWORD="CiteAdminPassword123!"
 
 echo -e "${YELLOW}Verifying GeoPackage export endpoint...${NC}"
@@ -203,7 +228,7 @@ fi
 if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}Interactive mode enabled${NC}"
     echo "Services are running at:"
-    echo "  Honua Server:     http://localhost:8080"
+    echo "  Honua Server:     $HONUA_BASE_URL"
     echo "  CITE Team Engine: http://localhost:8087/teamengine"
     echo "  PostgreSQL:       localhost:5439"
     echo ""
@@ -220,7 +245,11 @@ if ! curl -s -f -H "X-API-Key: $GPKG_ADMIN_PASSWORD" "$GPKG_EXPORT_URL_HOST" -o 
 fi
 
 echo -e "${YELLOW}Running GeoPackage 1.2 CITE conformance tests (profile: $PROFILE)...${NC}"
-echo -e "${YELLOW}Note: GeoPackage 1.2 format validation has a single pass; --profile is accepted for CLI consistency.${NC}"
+if [[ "$PROFILE" == "applicable" ]]; then
+    echo -e "${YELLOW}Running GeoPackage 1.2 core/features applicable TestNG suite with strict no-skip output.${NC}"
+else
+    echo -e "${YELLOW}Running the raw GeoPackage 1.2 ETS default profile, which includes skipped extension groups for this feature-only export.${NC}"
+fi
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" rm -f -s cite-runner >/dev/null 2>&1 || true
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up --force-recreate cite-runner
 
@@ -328,7 +357,7 @@ cat > "$CITE_RESULTS_DIR/cite-gpkg12-summary.md" << EOF_SUMMARY
 
 ## Environment
 
-- **Profile**: $PROFILE (GeoPackage 1.2 has a single validation pass)
+- **Profile**: $PROFILE
 - **CITE Suite**: ets-gpkg12
 - **Export URL**: $GPKG_EXPORT_URL_HOST
 
@@ -344,8 +373,8 @@ echo -e "${GREEN}Summary report saved to: $CITE_RESULTS_DIR/cite-gpkg12-summary.
 if [[ "$RESULTS_FOUND" != "true" ]]; then
     echo -e "${RED}CITE testing failed to execute properly.${NC}"
     exit 2
-elif [[ $FAILED_TESTS -gt 0 ]]; then
-    echo -e "${YELLOW}CITE testing completed with failures. Review results.${NC}"
+elif [[ $FAILED_TESTS -gt 0 || $SKIPPED_TESTS -gt 0 || $CANTTELL_TESTS -gt 0 ]]; then
+    echo -e "${YELLOW}CITE testing completed with failures, skips, or CantTell results. Review results.${NC}"
     exit 1
 elif [[ $TOTAL_TESTS -eq 0 ]]; then
     echo -e "${RED}CITE testing produced no executable tests.${NC}"

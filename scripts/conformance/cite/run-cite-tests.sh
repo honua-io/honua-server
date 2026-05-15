@@ -19,7 +19,9 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800  # 30 minutes timeout
 HONUA_HEALTHCHECK_TIMEOUT=300  # 5 minutes
 POSTGRES_HEALTHCHECK_TIMEOUT=120  # 2 minutes
+HONUA_CITE_FEATURES_SERVER_PORT="${HONUA_CITE_FEATURES_SERVER_PORT:-8091}"
 HONUA_CITE_POSTGRES_PORT="${HONUA_CITE_POSTGRES_PORT:-5433}"
+export HONUA_CITE_FEATURES_SERVER_PORT
 export HONUA_CITE_POSTGRES_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
@@ -35,6 +37,7 @@ CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
 PROFILE="full"
+SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -54,6 +57,10 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift 2
             ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -62,6 +69,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
             echo "  --profile PROF    Use specific CITE profile (default: full)"
+            echo "  --skip-build      Reuse existing honua-server:latest image"
             echo "  --help, -h        Show this help"
             echo ""
             echo "Examples:"
@@ -126,14 +134,18 @@ wait_for_honua_server() {
     done
 }
 
-# Build Honua Server image if it doesn't exist
-echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
-if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
-    echo -e "${RED}❌ Failed to build Honua Server Docker image${NC}"
-    exit 1
-fi
+# Build Honua Server image unless an existing local image is requested.
+if [[ "$SKIP_BUILD" == "true" ]]; then
+    echo -e "${YELLOW}Skipping Honua Server Docker image build; using existing honua-server:latest${NC}"
+else
+    echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
+    if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
+        echo -e "${RED}❌ Failed to build Honua Server Docker image${NC}"
+        exit 1
+    fi
 
-echo -e "${GREEN}✅ Honua Server image built successfully${NC}"
+    echo -e "${GREEN}✅ Honua Server image built successfully${NC}"
+fi
 
 # Cleanup function
 cleanup() {
@@ -233,21 +245,22 @@ $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d cite-engine
 
 # Verify API endpoints are responding (after seeding to avoid cached empty data)
 echo -e "${YELLOW}Verifying OGC API Features endpoints...${NC}"
+HONUA_BASE_URL="http://localhost:${HONUA_CITE_FEATURES_SERVER_PORT}"
 
 # Test landing page
-if ! curl -s -f http://localhost:8080/ogc/features > /dev/null; then
+if ! curl -s -f "$HONUA_BASE_URL/ogc/features" > /dev/null; then
     echo -e "${RED}❌ Landing page not accessible${NC}"
     exit 1
 fi
 
 # Test conformance endpoint
-if ! curl -s -f http://localhost:8080/ogc/features/conformance > /dev/null; then
+if ! curl -s -f "$HONUA_BASE_URL/ogc/features/conformance" > /dev/null; then
     echo -e "${RED}❌ Conformance endpoint not accessible${NC}"
     exit 1
 fi
 
 # Test collections endpoint
-if ! curl -s -f http://localhost:8080/ogc/features/collections > /dev/null; then
+if ! curl -s -f "$HONUA_BASE_URL/ogc/features/collections" > /dev/null; then
     echo -e "${RED}❌ Collections endpoint not accessible${NC}"
     exit 1
 fi
@@ -257,7 +270,7 @@ echo -e "${GREEN}✅ OGC API Features endpoints are accessible${NC}"
 if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}🔗 Interactive mode enabled${NC}"
     echo "Services are running at:"
-    echo "  Honua Server:     http://localhost:8080"
+    echo "  Honua Server:     $HONUA_BASE_URL"
     echo "  CITE Team Engine: http://localhost:8081/teamengine"
     echo "  PostgreSQL:       localhost:${HONUA_CITE_POSTGRES_PORT}"
     echo ""
@@ -274,7 +287,7 @@ rm -rf "$CITE_RESULTS_DIR"/*
 
 # Capture conformance declaration for CI gating
 echo -e "${YELLOW}Capturing conformance declaration...${NC}"
-if ! curl -s -f http://localhost:8080/ogc/features/conformance > "$CITE_RESULTS_DIR/conformance.json"; then
+if ! curl -s -f "$HONUA_BASE_URL/ogc/features/conformance" > "$CITE_RESULTS_DIR/conformance.json"; then
     echo -e "${RED}❌ Failed to capture conformance declaration${NC}"
     exit 1
 fi
@@ -409,7 +422,7 @@ cat > "$CITE_RESULTS_DIR/cite-summary.md" << EOF
 
 ## Test Environment
 
-- **Honua Server**: http://localhost:8080
+- **Honua Server**: $HONUA_BASE_URL
 - **Database**: PostgreSQL with PostGIS
 - **CITE Version**: Latest OGC API Features 1.0 test suite
 
@@ -433,10 +446,10 @@ cat > "$CITE_RESULTS_DIR/cite-summary.md" << EOF
 
 ## Results
 
-$(if [[ $FAILED_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
+$(if [[ $FAILED_TESTS -eq 0 && $SKIPPED_TESTS -eq 0 && $CANTTELL_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
     echo "✅ **PASSED**: All conformance tests passed successfully."
 elif [[ $TOTAL_TESTS -gt 0 ]]; then
-    echo "⚠️ **PARTIAL**: Some tests failed. Review detailed results."
+    echo "⚠️ **PARTIAL**: Some tests failed, skipped, or returned CantTell. Review detailed results."
 else
     echo "❌ **ERROR**: No tests were executed successfully."
 fi)
@@ -447,7 +460,7 @@ $(if [[ $TOTAL_TESTS -eq 0 ]]; then
     echo "1. Confirm the results were copied from the CITE runner"
     echo "2. Check cite-results for testng-results.xml output"
     echo "3. Re-run CITE tests to validate output capture"
-elif [[ $FAILED_TESTS -gt 0 ]]; then
+elif [[ $FAILED_TESTS -gt 0 || $SKIPPED_TESTS -gt 0 || $CANTTELL_TESTS -gt 0 ]]; then
     echo "1. Review failed test details in the XML/HTML result files"
     echo "2. Fix conformance issues in the Honua Server implementation"
     echo "3. Re-run CITE tests to validate fixes"
@@ -468,11 +481,11 @@ EOF
 echo -e "${GREEN}✅ Summary report saved to: $CITE_RESULTS_DIR/cite-summary.md${NC}"
 
 # Final status
-if [[ $FAILED_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
+if [[ $FAILED_TESTS -eq 0 && $SKIPPED_TESTS -eq 0 && $CANTTELL_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
     echo -e "\n${GREEN}🎉 CITE conformance testing completed successfully!${NC}"
     exit 0
 elif [[ $TOTAL_TESTS -gt 0 ]]; then
-    echo -e "\n${YELLOW}⚠️ CITE testing completed with failures. Review results.${NC}"
+    echo -e "\n${YELLOW}⚠️ CITE testing completed with failures, skips, or CantTell results. Review results.${NC}"
     exit 1
 else
     echo -e "\n${RED}❌ CITE testing failed to execute properly.${NC}"

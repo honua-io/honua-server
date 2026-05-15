@@ -32,6 +32,7 @@ CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
 PROFILE="core"
+SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
 
 echo -e "${BLUE}WCS 2.0 CITE Conformance Tests${NC}"
 echo "================================"
@@ -54,6 +55,10 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift 2
             ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -62,6 +67,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
             echo "  --profile PROF    Use CITE profile (core|crs|extensions|full)"
+            echo "  --skip-build      Reuse existing honua-server:latest image"
             echo "  --help, -h        Show this help"
             echo ""
             echo "Examples:"
@@ -108,7 +114,7 @@ if [[ ! -f "$CITE_COMPOSE_FILE" ]]; then
     exit 1
 fi
 
-if [[ "${HONUA_CITE_SKIP_BUILD:-false}" == "true" ]]; then
+if [[ "$SKIP_BUILD" == "true" ]]; then
     echo -e "${YELLOW}Skipping Honua Server Docker image build; using existing honua-server:latest${NC}"
 else
     echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
@@ -227,8 +233,8 @@ fi
 
 HONUA_BASE_URL="http://localhost:${HONUA_CITE_WCS20_SERVER_PORT}"
 CAPS_URL_HOST="${HONUA_BASE_URL}/ogc/services/cite/wcs?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1"
-DESCRIBE_URL_HOST="${HONUA_BASE_URL}/ogc/services/cite/wcs?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=101,102"
-GETCOVERAGE_URL_HOST="${HONUA_BASE_URL}/ogc/services/cite/wcs?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=101&FORMAT=image/png"
+DESCRIBE_URL_HOST="${HONUA_BASE_URL}/ogc/services/cite/wcs?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=coverage_101,coverage_102"
+GETCOVERAGE_URL_HOST="${HONUA_BASE_URL}/ogc/services/cite/wcs?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_101&FORMAT=image/png"
 
 echo -e "${YELLOW}Verifying WCS endpoints...${NC}"
 if ! curl -sS --fail "$CAPS_URL_HOST" > "$CITE_RESULTS_DIR/capabilities.xml"; then
@@ -242,7 +248,8 @@ if ! curl -sS --fail "$DESCRIBE_URL_HOST" > "$CITE_RESULTS_DIR/describe-coverage
 fi
 
 if ! curl -sS --fail "$GETCOVERAGE_URL_HOST" > "$CITE_RESULTS_DIR/getcoverage.png"; then
-    echo -e "${YELLOW}WCS GetCoverage preflight failed; continuing to CITE execution for full diagnostics${NC}"
+    echo -e "${RED}WCS GetCoverage preflight failed${NC}"
+    exit 1
 fi
 
 echo -e "${GREEN}WCS endpoints are accessible${NC}"
@@ -328,24 +335,16 @@ cat > "$CITE_RESULTS_DIR/cite-wcs20-summary.md" << EOF_SUMMARY
 - **Profile**: $PROFILE
 - **CITE Suite**: ets-wcs20 1.22 / WCS 2.0.1
 - **Capabilities URL**: $CAPS_URL_HOST
-- **Seeded Coverages**: 101, 102
+- **Seeded Coverages**: coverage_101, coverage_102
 - **Data Source**: local PostGIS rasters from docker/cite/wcs20/seed.sql
-
-## Expected Thin-Slice Limitations
-
-The current WCS implementation is expected to fail official ETS coverage outside
-the thin slice, including XML POST/SOAP bindings, GML coverage output,
-processing, scaling, interpolation, range subsetting, broad CRS extension
-coverage, and EO-WCS. See expected-known-failures.md.
 
 ## Artifacts
 
 - capabilities.xml: captured WCS capabilities document
 - describe-coverage.xml: captured DescribeCoverage response
-- getcoverage.png: captured GetCoverage preflight response when available
+- getcoverage.png: captured GetCoverage preflight response
 - testng-results.xml: raw TeamEngine result summary when available
 - cite-compliance-report.xml: normalized result summary
-- expected-known-failures.md: current known limitation notes
 - honua-server.log, cite-teamengine.log, cite-runner.log, postgres.log: service logs
 
 EOF_SUMMARY
@@ -377,7 +376,7 @@ elif [[ $CITE_RUNNER_EXIT_CODE -eq 124 ]]; then
     echo -e "${RED}CITE testing timed out.${NC}"
     exit 2
 elif [[ $FAILED_TESTS -gt 0 || $SKIPPED_TESTS -gt 0 || $CANTTELL_TESTS -gt 0 ]]; then
-    echo -e "${YELLOW}CITE testing completed with expected thin-slice failures. Review results.${NC}"
+    echo -e "${YELLOW}CITE testing completed with failures, skips, or CantTell results. Review results.${NC}"
     exit 1
 else
     echo -e "${GREEN}CITE conformance testing completed successfully!${NC}"

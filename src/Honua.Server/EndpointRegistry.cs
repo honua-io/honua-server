@@ -532,6 +532,7 @@ public static class EndpointRegistry
         new("GET", "/ogc/features/collections/{collectionId}/queryables"),
         new("GET", "/ogc/features/collections/{collectionId}/items"),
         new("GET", "/ogc/features/api"),
+        new("GET", "/ogc/features/schemas/honua-ogcapi-features.xsd"),
         new("GET", "/ogc/features/collections/{collectionId}/items/{featureId}"),
         new("POST", "/ogc/features/collections/{collectionId}/items"),
         new("POST", "/ogc/features/collections/{collectionId}/items/batch"),

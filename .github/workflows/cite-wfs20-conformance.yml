@@ -99,7 +99,7 @@ jobs:
         tags: honua-server:latest
         secrets: |
           github_actor=${{ github.actor }}
-          github_token=${{ github.token }}
+          github_token=${{ secrets.GITHUB_TOKEN }}
         cache-from: type=gha,scope=cite-wfs20
         cache-to: type=gha,mode=max,scope=cite-wfs20
 

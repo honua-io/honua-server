@@ -303,6 +303,26 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("FeatureCollection");
         content.Should().Contain("gml");
+        content.Should().Contain("xsi:schemaLocation=");
+        content.Should().Contain(OgcFeaturesUtilities.GmlApplicationSchemaPath);
+        content.Should().Contain("<app:geometry>");
+        content.Should().Contain($"srsName=\"{OgcFeaturesUtilities.Crs84Uri}\"");
+        content.Should().Contain("gml:id=\"geom_");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/features/schemas/honua-ogcapi-features.xsd")]
+    public async Task GetGmlApplicationSchema_ReturnsFeatureSchema()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/features/schemas/honua-ogcapi-features.xsd");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain($"targetNamespace=\"{OgcFeaturesUtilities.AppNamespace}\"");
+        content.Should().Contain("substitutionGroup=\"gml:AbstractFeature\"");
+        content.Should().Contain("name=\"geometry\" type=\"gml:GeometryPropertyType\"");
     }
 
     [IntegrationTest]
@@ -403,6 +423,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("<app:Feature");
+        content.Should().Contain("<app:geometry>");
+        content.Should().Contain($"srsName=\"{OgcFeaturesUtilities.Crs84Uri}\"");
         content.Should().Contain("gml:id=");
         content.Should().NotContain("<wfs:FeatureCollection");
     }

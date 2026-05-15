@@ -5,11 +5,16 @@ services:
       context: ../../..
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "${HONUA_CITE_WMTS_SERVER_PORT:-8098}:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
       - PUBLIC_BASE_URL=http://honua-server:8080
+      - HONUA_DEV_AUTH=true
+      - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
+      - Cache__Enabled=false
+      - DataSource__Provider=postgres
+      - HostValidation__Enabled=false
       - HostValidation__AllowedHosts__0=honua-server
       - HostValidation__AllowedHosts__1=localhost
       - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
@@ -26,7 +31,7 @@ services:
     networks:
       - cite-wmts-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/healthz/ready"]
+      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/ready"]
       interval: 10s
       timeout: 5s
       retries: 5

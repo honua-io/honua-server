@@ -79,6 +79,32 @@
         }
       }
     },
+    "/schemas/honua-ogcapi-features.xsd": {
+      "get": {
+        "summary": "Get OGC API Features GML application schema",
+        "description": "Returns the XML Schema document used by Honua OGC API Features GML responses.",
+        "tags": [
+          "OGC API Features"
+        ],
+        "responses": {
+          "200": {
+            "description": "GML application schema",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/conformance": {
       "get": {
         "summary": "Get OGC API Features conformance declaration",

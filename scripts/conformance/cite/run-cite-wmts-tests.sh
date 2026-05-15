@@ -16,6 +16,8 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800
 HONUA_HEALTHCHECK_TIMEOUT=300
 POSTGRES_HEALTHCHECK_TIMEOUT=120
+HONUA_CITE_WMTS_SERVER_PORT="${HONUA_CITE_WMTS_SERVER_PORT:-8098}"
+export HONUA_CITE_WMTS_SERVER_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
 SKIPPED_TESTS=0
@@ -239,10 +241,11 @@ done
 echo -e "${GREEN}Honua Server is healthy${NC}"
 
 echo -e "${YELLOW}Verifying WMTS endpoints...${NC}"
-CAPS_URL_HOST="http://localhost:8080/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0"
+HONUA_BASE_URL="http://localhost:${HONUA_CITE_WMTS_SERVER_PORT}"
+CAPS_URL_HOST="${HONUA_BASE_URL}/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0"
 CAPS_URL_CONTAINER="http://honua-server:8080/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0"
 CAPS_URL="$CAPS_URL_HOST"
-GETTILE_URL="http://localhost:8080/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0"
+GETTILE_URL="${HONUA_BASE_URL}/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0"
 
 if ! curl -s -f "$CAPS_URL_HOST" > /dev/null; then
     echo -e "${RED}WMTS GetCapabilities endpoint not accessible${NC}"
@@ -258,7 +261,7 @@ echo -e "${GREEN}WMTS endpoints are accessible${NC}"
 if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}Interactive mode enabled${NC}"
     echo "Services are running at:"
-    echo "  Honua Server:     http://localhost:8080"
+    echo "  Honua Server:     $HONUA_BASE_URL"
     echo "  CITE Team Engine: http://localhost:8084/teamengine"
     echo "  PostgreSQL:       localhost:5436"
     echo ""
@@ -409,8 +412,8 @@ echo -e "${GREEN}Summary report saved to: $CITE_RESULTS_DIR/cite-wmts-summary.md
 if [[ "$RESULTS_FOUND" != "true" ]]; then
     echo -e "${RED}CITE testing failed to execute properly.${NC}"
     exit 2
-elif [[ $FAILED_TESTS -gt 0 ]]; then
-    echo -e "${YELLOW}CITE testing completed with failures. Review results.${NC}"
+elif [[ $FAILED_TESTS -gt 0 || $SKIPPED_TESTS -gt 0 || $CANTTELL_TESTS -gt 0 ]]; then
+    echo -e "${YELLOW}CITE testing completed with failures, skips, or CantTell results. Review results.${NC}"
     exit 1
 elif [[ $TOTAL_TESTS -eq 0 ]]; then
     echo -e "${RED}CITE testing produced no executable tests.${NC}"

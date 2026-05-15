@@ -64,19 +64,20 @@ The CITE regression gates for implemented map/tile standards run on:
 
 | Workflow | Scope | Required baseline |
 |---|---|---|
-| `cite-conformance.yml` | OGC API Features 1.0 (`ets-ogcapi-features10`) | `failed_tests == 0` |
-| `cite-wfs20-conformance.yml` | WFS 2.0 (`ets-wfs20`) | COMPLIANT or PARTIAL with `passed_tests > 0` ¹ |
-| `cite-wms-conformance.yml` | WMS 1.3 (`ets-wms13`) | `results_available` and `failed_tests == 0` |
-| `cite-wmts-conformance.yml` | WMTS 1.0 (`ets-wmts10`) | `results_available` and `failed_tests == 0` |
-| `cite-tiles-conformance.yml` | OGC API Tiles 1.0 (`ets-ogcapi-tiles10`) | `results_available` and `failed_tests == 0` |
-| `ogc-maps-conformance.yml` | OGC API Maps 1.0 (integration conformance suite) | `results_available`, `total_tests > 0`, and `failed_tests == 0` |
-| `cite-kml22-conformance.yml` | KML 2.2 (`ets-kml22`) | `results_available` and `failed_tests == 0` |
-| `cite-gml32-conformance.yml` | GML 3.2 (`ets-gml32`) | `results_available` and `failed_tests == 0` |
-| `cite-gpkg12-conformance.yml` | GeoPackage 1.2 (`ets-gpkg12`) | `results_available` and `failed_tests == 0` |
+| `cite-conformance.yml` | OGC API Features 1.0 (`ets-ogcapi-features10`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
+| `cite-wfs20-conformance.yml` | WFS 2.0 (`ets-wfs20`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
+| `cite-wms-conformance.yml` | WMS 1.3 (`ets-wms13`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
+| `cite-wmts-conformance.yml` | WMTS 1.0 (`ets-wmts10`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
+| `cite-tiles-conformance.yml` | OGC API Tiles 1.0 (`ets-ogcapi-tiles10`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
+| `ogc-maps-conformance.yml` | OGC API Maps 1.0 (integration conformance suite) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
+| `cite-kml22-conformance.yml` | KML 2.2 (`ets-kml22`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
+| `cite-gml32-conformance.yml` | GML 3.2 (`ets-gml32`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
+| `cite-gpkg12-conformance.yml` | GeoPackage 1.2 (`ets-gpkg12`) | `results_available`, `total_tests > 0`, and failed/skipped/CantTell counts all `0` |
 | `windows-client-compat-nightly.yml` | Full CERT-\* matrix (automated) | Zero `fail` results in `.cert.json` envelopes; `skip`/`not-applicable` allowed with documented reason |
 | `client-interop-nightly.yml` | Real-client interop matrix (Docker: gdal, pyqgis, openlayers, cesium, arcgis-stub) | Zero baseline `pass`→non-`pass` regressions vs `tests/baselines/client-compat/`; missing current envelopes, missing `expected-pairs.json` evidence, expected pairs without committed baselines, and new `fail` in unbaselined cases also fail the gate. Baseline-diff failure surfaces in `docs/gis/gap-report.md` |
 
-¹ WFS 2.0 accepts partial compliance during development — the workflow passes when at least one test succeeds, even if some tests fail. NON_COMPLIANT status (zero passed tests) fails the workflow.
+Strict CITE evidence requires every reported assertion to pass. Failed,
+skipped, and CantTell results all fail the workflow.
 
 ### Temporary failures
 
