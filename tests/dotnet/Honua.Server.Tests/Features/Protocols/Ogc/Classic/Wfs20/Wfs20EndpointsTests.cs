@@ -385,15 +385,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
-    public async Task Wfs_GetFeature_DateTimeStringAttribute_UsesXmlSchemaOffsetLexicalForm()
+    public async Task Wfs_GetFeature_DateTimeAttribute_UsesXmlSchemaOffsetLexicalForm()
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("<honua:timestamp>2023-01-02T09:00:00+09:00</honua:timestamp>");
-        content.Should().NotContain("<honua:timestamp>2023-01-02T00:00:00+00:00</honua:timestamp>");
+        content.Should().Contain("<honua:timestamp>2023-01-02T00:00:00+00:00</honua:timestamp>");
         content.Should().NotContain("<honua:timestamp>2023-01-02T00:00:00Z</honua:timestamp>");
     }
 

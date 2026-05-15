@@ -31,6 +31,8 @@ SCHEMA_VALID_FES_TEMPORAL_OPERATORS = {
     "AnyInteracts",
 }
 
+MINIMUM_FES_TEMPORAL_OPERATORS = {"After", "Before", "During"}
+
 
 def _wfs_get_capabilities(http_client: httpx.Client) -> httpx.Response:
     return http_client.get(
@@ -114,10 +116,10 @@ class TestEnhancedStandardsCompliance:
 
     @pytest.mark.integration
     @pytest.mark.ogc
-    def test_wfs_temporal_operators_not_advertised_until_cite_stable(
+    def test_wfs_temporal_operators_advertise_minimum_cite_stable_support(
         self, http_client: httpx.Client
     ):
-        """Test that FES temporal operators stay unadvertised until CITE stability is proven."""
+        """Test that FES temporal capabilities match the CITE-stable minimum profile."""
         response = _wfs_get_capabilities(http_client)
         assert response.status_code == 200
 
@@ -125,13 +127,14 @@ class TestEnhancedStandardsCompliance:
         ns = {"fes": "http://www.opengis.net/fes/2.0"}
 
         temporal_ops = root.findall(".//fes:TemporalOperator", ns)
+        temporal_names = {op.attrib["name"] for op in temporal_ops}
         constraint_defaults = _constraint_defaults(root)
 
-        assert temporal_ops == []
-        assert constraint_defaults["ImplementsMinTemporalFilter"] == "FALSE"
+        assert temporal_names == MINIMUM_FES_TEMPORAL_OPERATORS
+        assert constraint_defaults["ImplementsMinTemporalFilter"] == "TRUE"
         assert constraint_defaults["ImplementsTemporalFilter"] == "FALSE"
-        assert constraint_defaults["ImplementsTemporalInstant"] == "FALSE"
-        assert constraint_defaults["ImplementsTemporalPeriod"] == "FALSE"
+        assert constraint_defaults["ImplementsTemporalInstant"] == "TRUE"
+        assert constraint_defaults["ImplementsTemporalPeriod"] == "TRUE"
 
     @pytest.mark.integration
     @pytest.mark.ogc
@@ -259,13 +262,14 @@ class TestEnhancedStandardsCompliance:
         temporal_ops = root.findall(".//fes:TemporalOperator", ns)
         temporal_names = {op.attrib["name"] for op in temporal_ops}
         constraint_defaults = _constraint_defaults(root)
-        temporal_conformance_enabled = constraint_defaults.get("ImplementsTemporalFilter") == "TRUE"
-        if temporal_conformance_enabled and len(temporal_ops) >= 10:
+        min_temporal_enabled = constraint_defaults.get("ImplementsMinTemporalFilter") == "TRUE"
+        full_temporal_enabled = constraint_defaults.get("ImplementsTemporalFilter") == "TRUE"
+        if min_temporal_enabled and MINIMUM_FES_TEMPORAL_OPERATORS.issubset(temporal_names):
             passed_checks += 1
-        if temporal_conformance_enabled and SCHEMA_VALID_FES_TEMPORAL_OPERATORS.issubset(temporal_names):
+        if full_temporal_enabled and SCHEMA_VALID_FES_TEMPORAL_OPERATORS.issubset(temporal_names):
             passed_checks += 1
-        if not temporal_conformance_enabled and len(temporal_ops) == 0:
-            passed_checks += 2
+        if not full_temporal_enabled and temporal_names == MINIMUM_FES_TEMPORAL_OPERATORS:
+            passed_checks += 1
 
         # Spatial operator coverage (2 checks)
         total_checks += 2

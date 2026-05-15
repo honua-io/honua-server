@@ -1609,7 +1609,9 @@
         "WFS-2.0::GetPropertyValue",
         "WFS-2.0::Transaction",
         "WFS-2.0::ListStoredQueries",
-        "WFS-2.0::DescribeStoredQueries"
+        "WFS-2.0::DescribeStoredQueries",
+        "WFS-2.0::CreateStoredQuery",
+        "WFS-2.0::DropStoredQuery"
       ],
       "proofs": [
         {
