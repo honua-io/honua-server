@@ -36,6 +36,7 @@ suite/profile is removed from the public claim.
 |---|---:|---:|---:|---:|---:|---:|---|
 | OGC API Features 1.0 | `default` | 137 | 137 | 0 | 0 | 0 | Passing |
 | OGC API Tiles 1.0 | `default` | 16 | 16 | 0 | 0 | 0 | Passing |
+| GML 3.2 | `applicable` | 17 | 17 | 0 | 0 | 0 | Passing |
 | WFS 1.0 | `basic` | 162 | 162 | 0 | 0 | 0 | Passing |
 | WFS 1.1 | `basic` | 39 | 39 | 0 | 0 | 0 | Passing |
 | WFS 2.0 | `basic` | 167 | 167 | 0 | 0 | 0 | Passing |
@@ -52,6 +53,15 @@ claim.
 The explicit WFS 2.0 transactional slice was also run separately from the same
 branch and passed 25/25 tests with 0 failed and 0 skipped.
 
+GML 3.2 `applicable` evidence runs the official ETS classes that apply to
+Honua's OGC API Features polygon GML document: application-schema compilation,
+general schema rules, feature component rules, XML Schema validation, GML
+Schematron checks that do not require an application-specific Schematron file,
+property-value checks, and surface geometry checks. The raw ETS `default`
+diagnostic profile now reports 23 passed, 0 failed, and 10 skipped because it
+also loads optional point, curve, line string, envelope, and application
+Schematron checks for object families not present in this polygon document.
+
 ## External Standards Validator Evidence
 
 These validators are not OGC CITE suites, but they are included here because
@@ -60,22 +70,44 @@ by Honua.
 
 | Suite | Tool | Scope | Total | Passed | Failed | Skipped | Status |
 |---|---|---|---:|---:|---:|---:|---|
-| STAC API | `stac-api-validator` 0.6.8 | `collections`, `filter` | 1 | 1 | 0 | 0 | Passing |
+| STAC client compatibility | PySTAC 1.14.3, PySTAC-Client 0.9.0, `stac-api-validator` 0.6.8 | catalog, collections, items, search, fields, sortby, CQL2 filter, validator `collections`/`filter` | 8 | 8 | 0 | 0 | Passing |
 
 The STAC validator evidence was produced by the Python STAC client compatibility
 lane against the live seeded `/stac` fixture on this branch. It validates the
-`collections` and `filter` conformance classes and records the raw validator
-transcript in `tests/TestResults/stac-api-validator-results*.json` during CI.
+catalog, collection, item, and search flows with PySTAC/PySTAC-Client, then
+runs `stac-api-validator` for the `collections` and `filter` conformance
+classes. The lane records the raw client and validator transcripts in
+`tests/TestResults/stac-client-compat-results*.json` and
+`tests/TestResults/stac-api-validator-results*.json` during CI.
 Broader advertised-class validator gaps for `core`, `features`, and
 item-search-related extensions remain tracked separately by issues #956 and
 #957 and are not included in the passing public claim above.
+
+## GeoServices REST Validation Evidence
+
+These are Honua's Esri-compatible GeoServices REST validation suites. They are
+not OGC CITE suites, not official Esri certification evidence, and should be
+presented separately from OGC conformance claims. The inventory below covers all
+GeoServices REST validation tests currently present across the JavaScript,
+browser, Python, and .NET test suites on this branch.
+
+| Runtime | Scope | Tests |
+|---|---|---:|
+| JavaScript API | FeatureServer Vitest suites, MapServer smoke tests, GPServer smoke tests | 303 |
+| Browser JavaScript | Esri Leaflet Playwright coverage for FeatureLayer and DynamicMapLayer flows | 21 |
+| Python | FeatureServer compatibility plus GPServer, GeometryServer, and ImageServer smoke coverage | 210 |
+| .NET integration | Catalog, FeatureServer, GPServer, GeometryService, ImageServer, MapServer, NAServer, and shared spatial-filter coverage | 790 |
+| Total | GeoServices REST validation inventory | 1,324 |
+
+The NAServer coverage in the .NET row is the current minimal mobile-routing
+compatibility slice: route solve, optimized route solve, service area, and
+closest facility.
 
 The following suites are not yet acceptable for a 100% passed public evidence
 claim:
 
 | Suite | Profile | Total | Passed | Failed | Skipped | CantTell | Status |
 |---|---:|---:|---:|---:|---:|---:|---|
-| GML 3.2 | `default` | 33 | 6 | 0 | 27 | 0 | Incomplete |
 | GeoPackage 1.2 | `default` | 109 | 31 | 0 | 78 | 0 | Incomplete |
 | KML 2.2 | `default` | 70 | 42 | 0 | 28 | 0 | Incomplete |
 | WCS 2.0 | `core` | pending | pending | pending | pending | pending | Pending |
@@ -87,6 +119,7 @@ Run the suites currently eligible for 100% passed public evidence:
 ```bash
 scripts/conformance/cite/run-cite-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-tiles-tests.sh --profile default --verbose
+scripts/conformance/cite/run-cite-gml32-tests.sh --profile applicable --verbose
 scripts/conformance/cite/run-cite-wfs10-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wfs11-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic --verbose
@@ -99,7 +132,6 @@ and CantTell results before they can be added to the public evidence table:
 
 ```bash
 scripts/conformance/cite/run-cite-wcs20-tests.sh --profile core --verbose
-scripts/conformance/cite/run-cite-gml32-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-gpkg12-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-kml22-tests.sh --profile default --verbose
 ```

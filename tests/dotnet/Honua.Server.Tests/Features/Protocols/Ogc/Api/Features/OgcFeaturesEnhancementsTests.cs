@@ -305,6 +305,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         content.Should().Contain("gml");
         content.Should().Contain("xsi:schemaLocation=");
         content.Should().Contain(OgcFeaturesUtilities.GmlApplicationSchemaPath);
+        content.Should().Contain("<app:geometry>");
+        content.Should().Contain($"srsName=\"{OgcFeaturesUtilities.Crs84Uri}\"");
         content.Should().Contain("gml:id=\"geom_");
     }
 
@@ -318,8 +320,9 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-        content.Should().Contain("targetNamespace=\"http://www.opengis.net/ogcapi-features-1/1.0\"");
+        content.Should().Contain($"targetNamespace=\"{OgcFeaturesUtilities.AppNamespace}\"");
         content.Should().Contain("substitutionGroup=\"gml:AbstractFeature\"");
+        content.Should().Contain("name=\"geometry\" type=\"gml:GeometryPropertyType\"");
     }
 
     [IntegrationTest]
@@ -420,6 +423,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("<app:Feature");
+        content.Should().Contain("<app:geometry>");
+        content.Should().Contain($"srsName=\"{OgcFeaturesUtilities.Crs84Uri}\"");
         content.Should().Contain("gml:id=");
         content.Should().NotContain("<wfs:FeatureCollection");
     }

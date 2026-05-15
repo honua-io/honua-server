@@ -20,8 +20,8 @@ internal static class CoreEndpoints
 <?xml version="1.0" encoding="UTF-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
            xmlns:gml="http://www.opengis.net/gml/3.2"
-           xmlns:app="http://www.opengis.net/ogcapi-features-1/1.0"
-           targetNamespace="http://www.opengis.net/ogcapi-features-1/1.0"
+           xmlns:app="https://honua.io/gml/ogcapi-features/1.0"
+           targetNamespace="https://honua.io/gml/ogcapi-features/1.0"
            elementFormDefault="qualified"
            attributeFormDefault="unqualified"
            version="1.0">
@@ -32,15 +32,7 @@ internal static class CoreEndpoints
     <xs:complexContent>
       <xs:extension base="gml:AbstractFeatureType">
         <xs:sequence>
-          <xs:choice minOccurs="0" maxOccurs="1">
-            <xs:element ref="gml:Point" />
-            <xs:element ref="gml:LineString" />
-            <xs:element ref="gml:Polygon" />
-            <xs:element ref="gml:MultiPoint" />
-            <xs:element ref="gml:MultiCurve" />
-            <xs:element ref="gml:MultiSurface" />
-            <xs:element ref="gml:MultiGeometry" />
-          </xs:choice>
+          <xs:element name="geometry" type="gml:GeometryPropertyType" minOccurs="0" maxOccurs="1" />
           <xs:element name="property" type="app:PropertyType" minOccurs="0" maxOccurs="unbounded" />
         </xs:sequence>
       </xs:extension>

@@ -90,11 +90,22 @@ services:
 
   cite-runner:
     image: ogccite/ets-gml32:latest
+    environment:
+      - HONUA_CITE_GML32_PROFILE=${HONUA_CITE_GML32_PROFILE:-applicable}
     command:
       - bash
       - -lc
       - |
           set -euo pipefail
+          profile="$${HONUA_CITE_GML32_PROFILE:-applicable}"
+          case "$$profile" in
+            applicable|default)
+              ;;
+            *)
+              echo "Unknown GML 3.2 CITE profile: $$profile"
+              exit 1
+              ;;
+          esac
           echo 'Waiting for services to be ready...'
           sleep 30
           echo 'Fetching GML 3.2 document from server...'
@@ -112,6 +123,7 @@ services:
           rm -rf /root/te_base/scripts/gml32
           unzip -qo -j /root/ets-gml32-*-deps.zip -d /root/te_base/resources/lib || true
           unzip -qo /root/ets-gml32-*-ctl.zip -d /root/te_base/scripts || true
+          rm -rf /root/te_base/users/cite/logs/*
           export TE_BASE=/root/te_base
           cat > /data/test-params.xml <<'EOF_PARAMS'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -124,12 +136,59 @@ services:
             <value key="sch-uri"></value>
           </values>
           EOF_PARAMS
-          echo 'Starting GML 3.2 CITE conformance tests...'
-          /tmp/te-console/bin/unix/test.sh \
-            -source=/root/te_base/scripts/gml32/3.2/ctl/gml-suite.ctl \
-            -form=/data/test-params.xml \
-            -logdir=users/cite/logs \
-            -session=cite-gml32-session-$(date +%Y%m%d-%H%M%S)
+          if [ "$$profile" = "applicable" ]; then
+            session_dir="/root/te_base/users/cite/logs/cite-gml32-applicable-$(date +%Y%m%d-%H%M%S)"
+            cat > /data/testng-applicable.xml <<'EOF_TESTNG'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <suite name="gml32-1.33-applicable-polygon-document" verbose="0" configfailurepolicy="skip">
+            <parameter name="gml" value="file:///data/output.gml" />
+            <parameter name="sch" value="" />
+
+            <listeners>
+              <listener class-name="org.opengis.cite.iso19136.SuiteFixtureListener" />
+            </listeners>
+
+            <test name="All GML application schemas">
+              <classes>
+                <class name="org.opengis.cite.iso19136.general.XMLSchemaTests" />
+                <class name="org.opengis.cite.iso19136.general.GeneralSchemaTests" />
+                <class name="org.opengis.cite.iso19136.general.ModelAndSyntaxTests" />
+                <class name="org.opengis.cite.iso19136.general.ComplexPropertyTests" />
+              </classes>
+            </test>
+            <test name="GML application schemas defining features and feature collections">
+              <classes>
+                <class name="org.opengis.cite.iso19136.components.FeatureComponentTests" />
+              </classes>
+            </test>
+            <test name="GML polygon feature document">
+              <classes>
+                <class name="org.opengis.cite.iso19136.data.XMLSchemaValidationTests" />
+                <class name="org.opengis.cite.iso19136.data.SchematronTests">
+                  <methods>
+                    <include name="checkForDeprecatedGMLElements" />
+                    <include name="checkGMLSchematronConstraints" />
+                  </methods>
+                </class>
+                <class name="org.opengis.cite.iso19136.data.PropertyValueTests" />
+                <class name="org.opengis.cite.iso19136.data.spatial.SurfaceTests" />
+              </classes>
+            </test>
+          </suite>
+          EOF_TESTNG
+            echo "Starting GML 3.2 applicable CITE conformance tests..."
+            java -cp "/tmp/te-console/lib/*:/root/te_base/resources/lib/*" \
+              org.testng.TestNG \
+              -d "$$session_dir" \
+              /data/testng-applicable.xml
+          else
+            echo 'Starting GML 3.2 default CITE conformance tests...'
+            /tmp/te-console/bin/unix/test.sh \
+              -source=/root/te_base/scripts/gml32/3.2/ctl/gml-suite.ctl \
+              -form=/data/test-params.xml \
+              -logdir=users/cite/logs \
+              -session=cite-gml32-session-$(date +%Y%m%d-%H%M%S)
+          fi
           echo 'CITE tests completed. Check results in logdir.'
     volumes:
       - cite-gml32-results:/root/te_base/users/cite/logs

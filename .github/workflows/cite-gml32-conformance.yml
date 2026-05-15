@@ -9,11 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: 'CITE test profile (GML 3.2 has a single validation pass; all values run the same tests)'
+        description: 'CITE test profile: applicable is the strict no-skip polygon-document profile; default is raw ETS diagnostics'
         required: false
-        default: 'default'
+        default: 'applicable'
         type: choice
         options:
+          - applicable
           - default
 
 permissions:
@@ -33,4 +34,4 @@ jobs:
       runner-script: ./scripts/conformance/cite/run-cite-gml32-tests.sh
       results-dir: cite-gml32-results
       summary-file: cite-gml32-summary.md
-      cite-profile: ${{ inputs.profile || 'default' }}
+      cite-profile: ${{ inputs.profile || 'applicable' }}

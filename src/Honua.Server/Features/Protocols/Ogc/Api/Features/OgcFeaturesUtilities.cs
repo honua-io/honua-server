@@ -89,7 +89,7 @@ internal static class OgcFeaturesUtilities
     public const string Epsg3857Uri = "http://www.opengis.net/def/crs/EPSG/0/3857";
     public const string WfsNamespace = "http://www.opengis.net/wfs/2.0";
     public const string GmlNamespace = "http://www.opengis.net/gml/3.2";
-    public const string AppNamespace = "http://www.opengis.net/ogcapi-features-1/1.0";
+    public const string AppNamespace = "https://honua.io/gml/ogcapi-features/1.0";
     public const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     public const string AtomNamespace = "http://www.w3.org/2005/Atom";
     public const string GmlApplicationSchemaPath = "/ogc/features/schemas/honua-ogcapi-features.xsd";
