@@ -17,6 +17,8 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800
 HONUA_HEALTHCHECK_TIMEOUT=300
 POSTGRES_HEALTHCHECK_TIMEOUT=120
+HONUA_CITE_GML32_SERVER_PORT="${HONUA_CITE_GML32_SERVER_PORT:-8094}"
+export HONUA_CITE_GML32_SERVER_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
 SKIPPED_TESTS=0
@@ -27,6 +29,7 @@ CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
 PROFILE="default"
+SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
 
 echo -e "${BLUE}GML 3.2 CITE Conformance Tests${NC}"
 echo "================================"
@@ -49,6 +52,10 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift 2
             ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -57,6 +64,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
             echo "  --profile PROF    Accepted for CLI consistency (GML 3.2 has a single validation pass)"
+            echo "  --skip-build      Reuse existing honua-server:latest image"
             echo "  --help, -h        Show this help"
             exit 0
             ;;
@@ -85,13 +93,17 @@ else
     COMPOSE_CMD="docker compose"
 fi
 
-echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
-if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
-    echo -e "${RED}Failed to build Honua Server Docker image${NC}"
-    exit 1
-fi
+if [[ "$SKIP_BUILD" == "true" ]]; then
+    echo -e "${YELLOW}Skipping Honua Server Docker image build; using existing honua-server:latest${NC}"
+else
+    echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
+    if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
+        echo -e "${RED}Failed to build Honua Server Docker image${NC}"
+        exit 1
+    fi
 
-echo -e "${GREEN}Honua Server image built successfully${NC}"
+    echo -e "${GREEN}Honua Server image built successfully${NC}"
+fi
 
 cleanup() {
     if [[ "$CLEANUP" == "true" && "$INTERACTIVE" == "false" ]]; then
@@ -190,7 +202,8 @@ done
 
 echo -e "${GREEN}Honua Server is healthy${NC}"
 
-GML_URL_HOST="http://localhost:8080/ogc/features/collections/cite:BasicPolygons/items"
+HONUA_BASE_URL="http://localhost:${HONUA_CITE_GML32_SERVER_PORT}"
+GML_URL_HOST="$HONUA_BASE_URL/ogc/features/collections/cite:BasicPolygons/items"
 
 echo -e "${YELLOW}Verifying GML endpoint...${NC}"
 if ! curl -s -f -H 'Accept: application/gml+xml; version=3.2' "$GML_URL_HOST" > /dev/null; then
@@ -202,7 +215,7 @@ fi
 if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}Interactive mode enabled${NC}"
     echo "Services are running at:"
-    echo "  Honua Server:     http://localhost:8080"
+    echo "  Honua Server:     $HONUA_BASE_URL"
     echo "  CITE Team Engine: http://localhost:8086/teamengine"
     echo "  PostgreSQL:       localhost:5438"
     echo ""

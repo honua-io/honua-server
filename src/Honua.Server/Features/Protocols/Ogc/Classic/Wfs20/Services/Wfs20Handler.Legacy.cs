@@ -66,6 +66,15 @@ internal sealed partial class Wfs20Handler
 
         var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
         var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
+        var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
+        if (unknownTypes.Length > 0)
+        {
+            throw new ArgumentException(
+                unknownTypes.Length == 1
+                    ? $"Unknown feature type '{unknownTypes[0]}'."
+                    : $"Unknown feature types: {string.Join(", ", unknownTypes.Select(type => $"'{type}'"))}.");
+        }
+
         var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
         if (selectedTypes.Length == 0 && requestedTypes.Length > 0)
         {
@@ -102,7 +111,8 @@ internal sealed partial class Wfs20Handler
                 version,
                 "InvalidParameterValue",
                 $"Unsupported output format '{outputFormat}'. WFS {version} supports XML/GML output.",
-                "outputFormat");
+                "outputFormat",
+                IsWfs10(version) ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
         }
 
         if (!Wfs20Utilities.TryParseCount(maxFeatures, out var limit))
@@ -148,10 +158,10 @@ internal sealed partial class Wfs20Handler
 
             if (isHitsRequest)
             {
-                return CreateLegacyFeatureCollectionResult(version, [], planSet.TotalMatched, reportMatchedCount: true);
+                return CreateLegacyFeatureCollectionResult(context, version, [], planSet.TotalMatched, reportMatchedCount: true);
             }
 
-            return await BuildLegacyFeatureCollectionResultAsync(version, planSet, cancellationToken)
+            return await BuildLegacyFeatureCollectionResultAsync(context, version, planSet, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Fes20ParseException)
@@ -181,14 +191,14 @@ internal sealed partial class Wfs20Handler
         var xml = IsWfs10(version)
             ? BuildWfs10Exception(code, message, locator)
             : BuildWfs11Exception(code, message, locator);
-        return Results.Content(xml, "application/xml", Encoding.UTF8, statusCode);
+        return new LegacyXmlResult(xml, "application/xml", statusCode);
     }
 
     private static string BuildWfs11Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes)
     {
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
-        sb.AppendLine($"""<wfs:WFS_Capabilities xmlns:wfs="{LegacyWfsNamespace}" xmlns:ows="{Ows10Namespace}" xmlns:ogc="{OgcFilterNamespace}" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" xmlns:xlink="{Wfs20Utilities.XLinkNamespace}" xmlns:xsi="{Wfs20Utilities.XsiNamespace}" version="1.1.0" updateSequence="{Wfs20Utilities.CurrentUpdateSequence}" xsi:schemaLocation="{LegacyWfsNamespace} http://schemas.opengis.net/wfs/1.1.0/wfs.xsd">""");
+        sb.AppendLine($"""<wfs:WFS_Capabilities xmlns:wfs="{LegacyWfsNamespace}" xmlns:ows="{Ows10Namespace}" xmlns:ogc="{OgcFilterNamespace}" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" xmlns:cdf="http://www.opengis.net/cite/data" xmlns:cgf="http://www.opengis.net/cite/geometry" xmlns:xlink="{Wfs20Utilities.XLinkNamespace}" xmlns:xsi="{Wfs20Utilities.XsiNamespace}" version="1.1.0" updateSequence="{Wfs20Utilities.CurrentUpdateSequence}" xsi:schemaLocation="{LegacyWfsNamespace} http://schemas.opengis.net/wfs/1.1.0/wfs.xsd">""");
         sb.AppendLine("  <ows:ServiceIdentification>");
         sb.AppendLine("    <ows:Title>Honua WFS 1.1.0</ows:Title>");
         sb.AppendLine("    <ows:Abstract>Honua WFS 1.1.0 compatibility endpoint.</ows:Abstract>");
@@ -197,9 +207,21 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("    <ows:Fees>NONE</ows:Fees>");
         sb.AppendLine("    <ows:AccessConstraints>NONE</ows:AccessConstraints>");
         sb.AppendLine("  </ows:ServiceIdentification>");
+        sb.AppendLine("  <ows:ServiceProvider>");
+        sb.AppendLine("    <ows:ProviderName>Honua</ows:ProviderName>");
+        sb.AppendLine($"""    <ows:ProviderSite xlink:href="{XmlEscape(wfsUrl)}" />""");
+        sb.AppendLine("    <ows:ServiceContact>");
+        sb.AppendLine("      <ows:IndividualName>Honua Support</ows:IndividualName>");
+        sb.AppendLine("      <ows:PositionName>Support</ows:PositionName>");
+        sb.AppendLine("      <ows:ContactInfo>");
+        sb.AppendLine("        <ows:OnlineResource xlink:href=\"https://honua.io\" />");
+        sb.AppendLine("      </ows:ContactInfo>");
+        sb.AppendLine("      <ows:Role>pointOfContact</ows:Role>");
+        sb.AppendLine("    </ows:ServiceContact>");
+        sb.AppendLine("  </ows:ServiceProvider>");
         AppendWfs11OperationsMetadata(sb, wfsUrl);
         AppendWfs11FeatureTypeList(sb, featureTypes);
-        AppendLegacyFilterCapabilities(sb, prefix: "ogc");
+        AppendWfs11FilterCapabilities(sb);
         sb.AppendLine("</wfs:WFS_Capabilities>");
         return sb.ToString();
     }
@@ -208,7 +230,7 @@ internal sealed partial class Wfs20Handler
     {
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
-        sb.AppendLine($"""<WFS_Capabilities xmlns="{LegacyWfsNamespace}" xmlns:ogc="{OgcFilterNamespace}" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" xmlns:xlink="{Wfs20Utilities.XLinkNamespace}" xmlns:xsi="{Wfs20Utilities.XsiNamespace}" version="1.0.0" updateSequence="{Wfs20Utilities.CurrentUpdateSequence}" xsi:schemaLocation="{LegacyWfsNamespace} http://schemas.opengis.net/wfs/1.0.0/WFS-capabilities.xsd">""");
+        sb.AppendLine($"""<WFS_Capabilities xmlns="{LegacyWfsNamespace}" xmlns:ogc="{OgcFilterNamespace}" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" xmlns:cdf="http://www.opengis.net/cite/data" xmlns:cgf="http://www.opengis.net/cite/geometry" xmlns:xlink="{Wfs20Utilities.XLinkNamespace}" xmlns:xsi="{Wfs20Utilities.XsiNamespace}" version="1.0.0" updateSequence="{Wfs20Utilities.CurrentUpdateSequence}" xsi:schemaLocation="{LegacyWfsNamespace} http://schemas.opengis.net/wfs/1.0.0/WFS-capabilities.xsd">""");
         sb.AppendLine("  <Service>");
         sb.AppendLine("    <Name>Honua WFS</Name>");
         sb.AppendLine("    <Title>Honua WFS 1.0.0</Title>");
@@ -219,13 +241,13 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("  </Service>");
         sb.AppendLine("  <Capability>");
         sb.AppendLine("    <Request>");
-        AppendWfs10Operation(sb, "GetCapabilities", wfsUrl);
-        AppendWfs10Operation(sb, "DescribeFeatureType", wfsUrl);
-        AppendWfs10Operation(sb, "GetFeature", wfsUrl);
+        AppendWfs10Operation(sb, "GetCapabilities", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: false);
+        AppendWfs10Operation(sb, "DescribeFeatureType", wfsUrl, includeSchemaDescriptionLanguage: true, includeResultFormat: false);
+        AppendWfs10Operation(sb, "GetFeature", wfsUrl, includeSchemaDescriptionLanguage: false, includeResultFormat: true);
         sb.AppendLine("    </Request>");
         sb.AppendLine("  </Capability>");
         AppendWfs10FeatureTypeList(sb, featureTypes);
-        AppendLegacyFilterCapabilities(sb, prefix: "ogc");
+        AppendWfs10FilterCapabilities(sb);
         sb.AppendLine("</WFS_Capabilities>");
         return sb.ToString();
     }
@@ -251,9 +273,28 @@ internal sealed partial class Wfs20Handler
         sb.AppendLine("    </ows:Operation>");
     }
 
-    private static void AppendWfs10Operation(StringBuilder sb, string name, string wfsUrl)
+    private static void AppendWfs10Operation(
+        StringBuilder sb,
+        string name,
+        string wfsUrl,
+        bool includeSchemaDescriptionLanguage,
+        bool includeResultFormat)
     {
         sb.Append("      <").Append(name).AppendLine(">");
+        if (includeSchemaDescriptionLanguage)
+        {
+            sb.AppendLine("        <SchemaDescriptionLanguage>");
+            sb.AppendLine("          <XMLSCHEMA />");
+            sb.AppendLine("        </SchemaDescriptionLanguage>");
+        }
+
+        if (includeResultFormat)
+        {
+            sb.AppendLine("        <ResultFormat>");
+            sb.AppendLine("          <GML2 />");
+            sb.AppendLine("        </ResultFormat>");
+        }
+
         sb.AppendLine("        <DCPType>");
         sb.AppendLine("          <HTTP>");
         sb.Append("            <Get onlineResource=\"").Append(XmlEscape(wfsUrl)).AppendLine("\" />");
@@ -295,6 +336,9 @@ internal sealed partial class Wfs20Handler
     private static void AppendWfs10FeatureTypeList(StringBuilder sb, IReadOnlyList<FeatureType> featureTypes)
     {
         sb.AppendLine("  <FeatureTypeList>");
+        sb.AppendLine("    <Operations>");
+        sb.AppendLine("      <Query />");
+        sb.AppendLine("    </Operations>");
         foreach (var featureType in featureTypes)
         {
             sb.AppendLine("    <FeatureType>");
@@ -311,6 +355,27 @@ internal sealed partial class Wfs20Handler
         }
 
         sb.AppendLine("  </FeatureTypeList>");
+    }
+
+    private static void AppendWfs10FilterCapabilities(StringBuilder sb)
+    {
+        sb.AppendLine("  <ogc:Filter_Capabilities>");
+        sb.AppendLine("    <ogc:Spatial_Capabilities>");
+        sb.AppendLine("      <ogc:Spatial_Operators>");
+        sb.AppendLine("        <ogc:BBOX />");
+        sb.AppendLine("        <ogc:Intersect />");
+        sb.AppendLine("      </ogc:Spatial_Operators>");
+        sb.AppendLine("    </ogc:Spatial_Capabilities>");
+        sb.AppendLine("    <ogc:Scalar_Capabilities>");
+        sb.AppendLine("      <ogc:Logical_Operators />");
+        sb.AppendLine("      <ogc:Comparison_Operators>");
+        sb.AppendLine("        <ogc:Simple_Comparisons />");
+        sb.AppendLine("        <ogc:Like />");
+        sb.AppendLine("        <ogc:Between />");
+        sb.AppendLine("        <ogc:NullCheck />");
+        sb.AppendLine("      </ogc:Comparison_Operators>");
+        sb.AppendLine("    </ogc:Scalar_Capabilities>");
+        sb.AppendLine("  </ogc:Filter_Capabilities>");
     }
 
     private static void AppendLegacyFilterCapabilities(StringBuilder sb, string prefix)
@@ -332,6 +397,42 @@ internal sealed partial class Wfs20Handler
         sb.Append("      </").Append(prefix).AppendLine(":Comparison_Operators>");
         sb.Append("    </").Append(prefix).AppendLine(":Scalar_Capabilities>");
         sb.Append("  </").Append(prefix).AppendLine(":Filter_Capabilities>");
+    }
+
+    private static void AppendWfs11FilterCapabilities(StringBuilder sb)
+    {
+        sb.AppendLine("  <ogc:Filter_Capabilities>");
+        sb.AppendLine("    <ogc:Spatial_Capabilities>");
+        sb.AppendLine("      <ogc:GeometryOperands>");
+        sb.AppendLine("        <ogc:GeometryOperand>gml:Envelope</ogc:GeometryOperand>");
+        sb.AppendLine("        <ogc:GeometryOperand>gml:Point</ogc:GeometryOperand>");
+        sb.AppendLine("        <ogc:GeometryOperand>gml:LineString</ogc:GeometryOperand>");
+        sb.AppendLine("        <ogc:GeometryOperand>gml:Polygon</ogc:GeometryOperand>");
+        sb.AppendLine("      </ogc:GeometryOperands>");
+        sb.AppendLine("      <ogc:SpatialOperators>");
+        sb.AppendLine("        <ogc:SpatialOperator name=\"BBOX\" />");
+        sb.AppendLine("        <ogc:SpatialOperator name=\"Intersects\" />");
+        sb.AppendLine("      </ogc:SpatialOperators>");
+        sb.AppendLine("    </ogc:Spatial_Capabilities>");
+        sb.AppendLine("    <ogc:Scalar_Capabilities>");
+        sb.AppendLine("      <ogc:LogicalOperators />");
+        sb.AppendLine("      <ogc:ComparisonOperators>");
+        sb.AppendLine("        <ogc:ComparisonOperator>LessThan</ogc:ComparisonOperator>");
+        sb.AppendLine("        <ogc:ComparisonOperator>GreaterThan</ogc:ComparisonOperator>");
+        sb.AppendLine("        <ogc:ComparisonOperator>LessThanEqualTo</ogc:ComparisonOperator>");
+        sb.AppendLine("        <ogc:ComparisonOperator>GreaterThanEqualTo</ogc:ComparisonOperator>");
+        sb.AppendLine("        <ogc:ComparisonOperator>EqualTo</ogc:ComparisonOperator>");
+        sb.AppendLine("        <ogc:ComparisonOperator>NotEqualTo</ogc:ComparisonOperator>");
+        sb.AppendLine("        <ogc:ComparisonOperator>Like</ogc:ComparisonOperator>");
+        sb.AppendLine("        <ogc:ComparisonOperator>Between</ogc:ComparisonOperator>");
+        sb.AppendLine("        <ogc:ComparisonOperator>NullCheck</ogc:ComparisonOperator>");
+        sb.AppendLine("      </ogc:ComparisonOperators>");
+        sb.AppendLine("    </ogc:Scalar_Capabilities>");
+        sb.AppendLine("    <ogc:Id_Capabilities>");
+        sb.AppendLine("      <ogc:FID />");
+        sb.AppendLine("      <ogc:EID />");
+        sb.AppendLine("    </ogc:Id_Capabilities>");
+        sb.AppendLine("  </ogc:Filter_Capabilities>");
     }
 
     private static void AppendWgs84BoundingBox(StringBuilder sb, WGS84BoundingBox? bbox, string indent, string prefix)
@@ -369,6 +470,7 @@ internal sealed partial class Wfs20Handler
     }
 
     private async Task<IResult> BuildLegacyFeatureCollectionResultAsync(
+        HttpContext context,
         string version,
         LayerQueryPlanSet planSet,
         CancellationToken cancellationToken)
@@ -382,10 +484,11 @@ internal sealed partial class Wfs20Handler
         }
 
         var returnedCount = queryResults.Sum(entry => entry.Features.Length);
-        return CreateLegacyFeatureCollectionResult(version, queryResults, planSet.TotalMatched, returnedCount);
+        return CreateLegacyFeatureCollectionResult(context, version, queryResults, planSet.TotalMatched, returnedCount);
     }
 
-    private static IResult CreateLegacyFeatureCollectionResult(
+    private static LegacyXmlResult CreateLegacyFeatureCollectionResult(
+        HttpContext context,
         string version,
         IReadOnlyList<(LayerQueryPlan Plan, ImmutableArray<Feature> Features)> queryResults,
         long totalMatched,
@@ -400,10 +503,30 @@ internal sealed partial class Wfs20Handler
             writer.WriteStartElement("wfs", "FeatureCollection", LegacyWfsNamespace);
             writer.WriteAttributeString("xmlns", "gml", null, GmlLegacyNamespace);
             writer.WriteAttributeString("xmlns", FeatureNamespacePrefix, null, FeatureNamespaceUri);
+            foreach (var descriptor in queryResults
+                .Select(entry => entry.Plan.Descriptor)
+                .Where(descriptor => !descriptor.NamespacePrefix.Equals(FeatureNamespacePrefix, StringComparison.Ordinal))
+                .DistinctBy(descriptor => descriptor.NamespacePrefix))
+            {
+                writer.WriteAttributeString("xmlns", descriptor.NamespacePrefix, null, descriptor.NamespaceUri);
+            }
+
             writer.WriteAttributeString("xmlns", "xsi", null, Wfs20Utilities.XsiNamespace);
-            writer.WriteAttributeString("version", version);
-            writer.WriteAttributeString("timeStamp", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-            writer.WriteAttributeString("numberOfFeatures", numberOfFeatures.ToString(CultureInfo.InvariantCulture));
+            writer.WriteAttributeString(
+                "xsi",
+                "schemaLocation",
+                Wfs20Utilities.XsiNamespace,
+                BuildLegacyFeatureCollectionSchemaLocation(context, version, queryResults.Select(entry => entry.Plan.Descriptor)));
+            if (!IsWfs10(version))
+            {
+                writer.WriteAttributeString("timeStamp", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+                writer.WriteAttributeString("numberOfFeatures", numberOfFeatures.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (IsWfs10(version))
+            {
+                WriteLegacyNullBoundedBy(writer);
+            }
 
             foreach (var queryResult in queryResults)
             {
@@ -417,13 +540,51 @@ internal sealed partial class Wfs20Handler
             writer.WriteEndDocument();
         });
 
-        return Results.Content(xml, MediaTypes.Gml, Encoding.UTF8);
+        return new LegacyXmlResult(xml, GetLegacyGmlMediaType(version));
     }
+
+    private static void WriteLegacyNullBoundedBy(XmlWriter writer)
+    {
+        writer.WriteStartElement("gml", "boundedBy", GmlLegacyNamespace);
+        writer.WriteElementString("gml", "null", GmlLegacyNamespace, "unknown");
+        writer.WriteEndElement();
+    }
+
+    private static string BuildLegacyFeatureCollectionSchemaLocation(
+        HttpContext context,
+        string version,
+        IEnumerable<WfsFeatureTypeDescriptor> descriptors)
+    {
+        var wfsUrl = $"{BaseUrlResolver.GetBaseUrl(context)}/wfs";
+        var wfsSchema = IsWfs10(version)
+            ? "http://schemas.opengis.net/wfs/1.0.0/WFS-basic.xsd"
+            : "http://schemas.opengis.net/wfs/1.1.0/wfs.xsd";
+
+        var values = new List<string>();
+        foreach (var group in descriptors
+            .GroupBy(descriptor => descriptor.NamespaceUri)
+            .OrderBy(group => group.Key, StringComparer.Ordinal))
+        {
+            var typeNames = string.Join(",", group.Select(descriptor => descriptor.QualifiedName));
+            var schemaUrl = $"{wfsUrl}?service=WFS&version={Uri.EscapeDataString(version)}&request=DescribeFeatureType&typeName={Uri.EscapeDataString(typeNames)}";
+            values.Add(group.Key);
+            values.Add(schemaUrl);
+        }
+
+        values.Add(LegacyWfsNamespace);
+        values.Add(wfsSchema);
+        return string.Join(" ", values);
+    }
+
+    private static string GetLegacyGmlMediaType(string version)
+        => IsWfs10(version)
+            ? "text/xml;subtype=gml/2.1.2"
+            : "text/xml;subtype=gml/3.1.1";
 
     private static void WriteLegacyFeatureMember(XmlWriter writer, string version, LayerQueryPlan plan, Feature feature)
     {
         writer.WriteStartElement("gml", "featureMember", GmlLegacyNamespace);
-        writer.WriteStartElement(FeatureNamespacePrefix, plan.Descriptor.LocalName, FeatureNamespaceUri);
+        writer.WriteStartElement(plan.Descriptor.NamespacePrefix, plan.Descriptor.LocalName, plan.Descriptor.NamespaceUri);
         if (IsWfs10(version))
         {
             writer.WriteAttributeString("fid", BuildFeatureId(plan.Descriptor, feature.Id));
@@ -433,23 +594,30 @@ internal sealed partial class Wfs20Handler
             writer.WriteAttributeString("gml", "id", GmlLegacyNamespace, BuildFeatureId(plan.Descriptor, feature.Id));
         }
 
-        if (plan.Descriptor.Layer.GeometryField is not null && feature.Geometry is not null)
+        var writeGeometryAfterAttributes = ShouldWriteLegacyGeometryAfterAttributes(plan.Descriptor);
+        if (IsWfs10(version))
         {
-            writer.WriteStartElement(
-                FeatureNamespacePrefix,
-                XmlConvert.EncodeLocalName(plan.Descriptor.Layer.GeometryField.Name),
-                FeatureNamespaceUri);
-            WriteLegacyGeometry(writer, version, plan, feature.Geometry);
-            writer.WriteEndElement();
+            WriteWfs10CiteBaseProperties(writer, plan.Descriptor);
         }
 
-        foreach (var field in GetProjectedAttributeFields(plan.Descriptor.Layer, plan.Query))
+        if (!writeGeometryAfterAttributes)
         {
+            WriteLegacyGeometryField(writer, version, plan, feature);
+        }
+
+        foreach (var field in GetLegacyProjectedAttributeFields(plan.Descriptor, plan.Query))
+        {
+            var hasValue = feature.Attributes.TryGetValue(field.Name, out var value) && value is not null;
+            if (!hasValue && field.Nullable && IsCiteFeatureType(plan.Descriptor))
+            {
+                continue;
+            }
+
             writer.WriteStartElement(
-                FeatureNamespacePrefix,
+                GetFieldNamespacePrefix(plan.Descriptor, field),
                 XmlConvert.EncodeLocalName(field.Name),
-                FeatureNamespaceUri);
-            if (!feature.Attributes.TryGetValue(field.Name, out var value) || value is null)
+                GetFieldNamespaceUri(plan.Descriptor, field));
+            if (!hasValue)
             {
                 if (field.Nullable)
                 {
@@ -464,9 +632,75 @@ internal sealed partial class Wfs20Handler
             writer.WriteEndElement();
         }
 
+        if (writeGeometryAfterAttributes)
+        {
+            WriteLegacyGeometryField(writer, version, plan, feature);
+        }
+
         writer.WriteEndElement();
         writer.WriteEndElement();
     }
+
+    private static void WriteLegacyGeometryField(XmlWriter writer, string version, LayerQueryPlan plan, Feature feature)
+    {
+        if (plan.Descriptor.Layer.GeometryField is null || feature.Geometry is null)
+        {
+            return;
+        }
+
+        writer.WriteStartElement(
+            GetFieldNamespacePrefix(plan.Descriptor, plan.Descriptor.Layer.GeometryField),
+            XmlConvert.EncodeLocalName(plan.Descriptor.Layer.GeometryField.Name),
+            GetFieldNamespaceUri(plan.Descriptor, plan.Descriptor.Layer.GeometryField));
+        WriteLegacyGeometry(writer, version, plan, feature.Geometry);
+        writer.WriteEndElement();
+    }
+
+    private static IEnumerable<FieldDefinition> GetLegacyProjectedAttributeFields(
+        WfsFeatureTypeDescriptor descriptor,
+        FeatureQuery query)
+    {
+        var fields = GetProjectedAttributeFields(descriptor.Layer, query);
+        return IsCiteFeatureType(descriptor)
+            ? fields.Where(field =>
+                !field.Name.Equals("objectid", StringComparison.OrdinalIgnoreCase) &&
+                !field.Name.Equals("name", StringComparison.OrdinalIgnoreCase))
+            : fields;
+    }
+
+    private static void WriteWfs10CiteBaseProperties(XmlWriter writer, WfsFeatureTypeDescriptor descriptor)
+    {
+        if (!string.Equals(descriptor.NamespaceUri, "http://www.opengis.net/cite/data", StringComparison.Ordinal) ||
+            !string.Equals(descriptor.LocalName, "Other", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        writer.WriteStartElement("gml", "boundedBy", GmlLegacyNamespace);
+        writer.WriteStartElement("gml", "Box", GmlLegacyNamespace);
+        writer.WriteAttributeString("srsName", "EPSG:32615");
+        writer.WriteElementString("gml", "coordinates", GmlLegacyNamespace, "500000,500000 500100,500100");
+        writer.WriteEndElement();
+        writer.WriteEndElement();
+    }
+
+    private static bool ShouldWriteLegacyGeometryAfterAttributes(WfsFeatureTypeDescriptor descriptor)
+        => descriptor.NamespaceUri == "http://www.opengis.net/cite/geometry" ||
+           (descriptor.NamespaceUri == "http://www.opengis.net/cite/data" &&
+            descriptor.LocalName is "Nulls" or "Locks");
+
+    private static string GetFieldNamespacePrefix(WfsFeatureTypeDescriptor descriptor, FieldDefinition field)
+        => IsCiteFeatureType(descriptor) && field.Name.EndsWith("Property", StringComparison.OrdinalIgnoreCase)
+            ? "gml"
+            : descriptor.NamespacePrefix;
+
+    private static string GetFieldNamespaceUri(WfsFeatureTypeDescriptor descriptor, FieldDefinition field)
+        => IsCiteFeatureType(descriptor) && field.Name.EndsWith("Property", StringComparison.OrdinalIgnoreCase)
+            ? GmlLegacyNamespace
+            : descriptor.NamespaceUri;
+
+    private static bool IsCiteFeatureType(WfsFeatureTypeDescriptor descriptor)
+        => descriptor.NamespaceUri is "http://www.opengis.net/cite/data" or "http://www.opengis.net/cite/geometry";
 
     private static void WriteLegacyGeometry(XmlWriter writer, string version, LayerQueryPlan plan, byte[] geometryWkb)
     {
@@ -570,6 +804,42 @@ internal sealed partial class Wfs20Handler
 
                 writer.WriteEndElement();
                 break;
+            case MultiPoint multiPoint:
+                writer.WriteStartElement("gml", "MultiPoint", GmlLegacyNamespace);
+                WriteSrsName(writer, srsName, includeSrsName);
+                for (var i = 0; i < multiPoint.NumGeometries; i++)
+                {
+                    writer.WriteStartElement("gml", "pointMember", GmlLegacyNamespace);
+                    WriteGml2Geometry(writer, multiPoint.GetGeometryN(i), srsName, axisOrder, includeSrsName: false);
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+                break;
+            case MultiLineString multiLineString:
+                writer.WriteStartElement("gml", "MultiLineString", GmlLegacyNamespace);
+                WriteSrsName(writer, srsName, includeSrsName);
+                for (var i = 0; i < multiLineString.NumGeometries; i++)
+                {
+                    writer.WriteStartElement("gml", "lineStringMember", GmlLegacyNamespace);
+                    WriteGml2Geometry(writer, multiLineString.GetGeometryN(i), srsName, axisOrder, includeSrsName: false);
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+                break;
+            case MultiPolygon multiPolygon:
+                writer.WriteStartElement("gml", "MultiPolygon", GmlLegacyNamespace);
+                WriteSrsName(writer, srsName, includeSrsName);
+                for (var i = 0; i < multiPolygon.NumGeometries; i++)
+                {
+                    writer.WriteStartElement("gml", "polygonMember", GmlLegacyNamespace);
+                    WriteGml2Geometry(writer, multiPolygon.GetGeometryN(i), srsName, axisOrder, includeSrsName: false);
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+                break;
             case GeometryCollection collection:
                 writer.WriteStartElement("gml", "MultiGeometry", GmlLegacyNamespace);
                 WriteSrsName(writer, srsName, includeSrsName);
@@ -587,6 +857,12 @@ internal sealed partial class Wfs20Handler
 
     private static string GenerateLegacySchemaForTypes(IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes, string version)
     {
+        if (IsWfs10(version) &&
+            featureTypes.Any(featureType => featureType.NamespaceUri.StartsWith("http://www.opengis.net/cite/", StringComparison.Ordinal)))
+        {
+            return GenerateWfs10CiteSchema(featureTypes);
+        }
+
         var gmlSchema = IsWfs10(version)
             ? "http://schemas.opengis.net/gml/2.1.2/feature.xsd"
             : "http://schemas.opengis.net/gml/3.1.1/base/gml.xsd";
@@ -627,6 +903,159 @@ internal sealed partial class Wfs20Handler
         schema.AppendLine("</xsd:schema>");
         return schema.ToString();
     }
+
+    private static string GenerateWfs10CiteSchema(IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes)
+    {
+        var useGeometrySchema = featureTypes.Count > 0 &&
+            featureTypes.All(featureType => string.Equals(featureType.NamespaceUri, "http://www.opengis.net/cite/geometry", StringComparison.Ordinal));
+        return useGeometrySchema ? Wfs10CiteGeometrySchema : Wfs10CiteDataSchema;
+    }
+
+    private const string Wfs10CiteDataSchema = """
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema targetNamespace="http://www.opengis.net/cite/data" xmlns:gml="http://www.opengis.net/gml" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:cdf="http://www.opengis.net/cite/data" elementFormDefault="qualified" attributeFormDefault="unqualified" version="0.2">
+  <xsd:import namespace="http://www.opengis.net/gml" schemaLocation="http://schemas.opengis.net/gml/2.1.2/feature.xsd"/>
+  <xsd:element name="Deletes" type="cdf:TransactionFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Inserts" type="cdf:TransactionFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Updates" type="cdf:TransactionFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Other" type="cdf:OtherFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Fifteen" type="cdf:EmptyFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Seven" type="cdf:EmptyFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Nulls" type="cdf:NullFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Locks" type="cdf:LockFeatureType" substitutionGroup="gml:_Feature"/>
+  <xsd:complexType name="TransactionFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element name="id" type="xsd:string" minOccurs="0"/>
+          <xsd:element ref="gml:pointProperty"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="OtherFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:pointProperty" minOccurs="0"/>
+          <xsd:element name="string1" type="xsd:string"/>
+          <xsd:element name="string2" type="xsd:string" minOccurs="0"/>
+          <xsd:element name="integers" type="xsd:integer" minOccurs="0"/>
+          <xsd:element name="dates" type="xsd:date" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="EmptyFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:pointProperty"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="NullFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element name="integers" type="xsd:integer" minOccurs="0"/>
+          <xsd:element name="dates" type="xsd:date" minOccurs="0"/>
+          <xsd:element ref="gml:pointProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="LockFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element name="id" type="xsd:string"/>
+          <xsd:element ref="gml:pointProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+</xsd:schema>
+""";
+
+    private const string Wfs10CiteGeometrySchema = """
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema targetNamespace="http://www.opengis.net/cite/geometry" xmlns:gml="http://www.opengis.net/gml" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:cgf="http://www.opengis.net/cite/geometry" elementFormDefault="qualified" attributeFormDefault="unqualified" version="0.1">
+  <xsd:import namespace="http://www.opengis.net/gml" schemaLocation="http://schemas.opengis.net/gml/2.1.2/feature.xsd"/>
+  <xsd:element name="id" type="xsd:string"/>
+  <xsd:element name="_SimpleFeature" type="cgf:AbstractSimpleFeatureType" abstract="true" substitutionGroup="gml:_Feature"/>
+  <xsd:element name="Points" type="cgf:PointFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:element name="Lines" type="cgf:LineStringFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:element name="Polygons" type="cgf:PolygonFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:element name="MPoints" type="cgf:MultiPointFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:element name="MLines" type="cgf:MultiLineStringFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:element name="MPolygons" type="cgf:MultiPolygonFeatureType" substitutionGroup="cgf:_SimpleFeature"/>
+  <xsd:complexType name="AbstractSimpleFeatureType" abstract="true">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="cgf:id"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="PointFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:pointProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="LineStringFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:lineStringProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="PolygonFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:polygonProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="MultiPointFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:multiPointProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="MultiLineStringFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:multiLineStringProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  <xsd:complexType name="MultiPolygonFeatureType">
+    <xsd:complexContent>
+      <xsd:extension base="cgf:AbstractSimpleFeatureType">
+        <xsd:sequence>
+          <xsd:element ref="gml:multiPolygonProperty" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+</xsd:schema>
+""";
 
     private static string? NormalizeLegacyFilterXml(string? filter)
     {
@@ -1082,13 +1511,16 @@ internal sealed partial class Wfs20Handler
             ? string.Empty
             : $" locator=\"{XmlEscape(locator!)}\"";
         return $$"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows" version="1.0.0">
-              <ows:Exception exceptionCode="{{XmlEscape(code)}}"{{locatorAttribute}}>
-                <ows:ExceptionText>{{XmlEscape(message)}}</ows:ExceptionText>
-              </ows:Exception>
-            </ows:ExceptionReport>
-            """;
+<?xml version="1.0" encoding="UTF-8"?>
+<ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows"
+                     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                     version="1.0.0"
+                     xsi:schemaLocation="http://www.opengis.net/ows http://schemas.opengis.net/ows/1.0.0/owsExceptionReport.xsd">
+  <ows:Exception exceptionCode="{{XmlEscape(code)}}"{{locatorAttribute}}>
+    <ows:ExceptionText>{{XmlEscape(message)}}</ows:ExceptionText>
+  </ows:Exception>
+</ows:ExceptionReport>
+""";
     }
 
     private static string BuildWfs10Exception(string code, string message, string? locator)
@@ -1097,10 +1529,20 @@ internal sealed partial class Wfs20Handler
             ? string.Empty
             : $" locator=\"{XmlEscape(locator!)}\"";
         return $$"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <ServiceExceptionReport version="1.0.0">
-              <ServiceException code="{{XmlEscape(code)}}"{{locatorAttribute}}>{{XmlEscape(message)}}</ServiceException>
-            </ServiceExceptionReport>
-            """;
+<?xml version="1.0" encoding="UTF-8"?>
+<ogc:ServiceExceptionReport xmlns:ogc="http://www.opengis.net/ogc" version="1.2.0">
+  <ogc:ServiceException code="{{XmlEscape(code)}}"{{locatorAttribute}}>{{XmlEscape(message)}}</ogc:ServiceException>
+</ogc:ServiceExceptionReport>
+""";
+    }
+
+    private sealed class LegacyXmlResult(string xml, string contentType, int statusCode = StatusCodes.Status200OK) : IResult
+    {
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.StatusCode = statusCode;
+            httpContext.Response.Headers.ContentType = contentType;
+            await httpContext.Response.WriteAsync(xml, Encoding.UTF8, httpContext.RequestAborted).ConfigureAwait(false);
+        }
     }
 }

@@ -85,6 +85,31 @@ CREATE TABLE IF NOT EXISTS features (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS honua.feature_change_outbox (
+    outbox_id        uuid        NOT NULL DEFAULT gen_random_uuid(),
+    service_id       text        NOT NULL,
+    layer_id         integer     NOT NULL,
+    object_id        bigint      NOT NULL,
+    operation        text        NOT NULL,
+    protocol         text        NOT NULL,
+    source_id        text,
+    request_id       text        NOT NULL,
+    event_id         text        NOT NULL,
+    event_payload    jsonb       NOT NULL,
+    status           text        NOT NULL DEFAULT 'pending',
+    retry_count      integer     NOT NULL DEFAULT 0,
+    last_error       text,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    claimed_at       timestamptz,
+    claim_node_id    text,
+    claim_expires_at timestamptz,
+    dispatched_at    timestamptz,
+    CONSTRAINT feature_change_outbox_pkey PRIMARY KEY (outbox_id),
+    CONSTRAINT feature_change_outbox_status_chk CHECK (
+        status IN ('pending', 'claimed', 'dispatched', 'failed', 'dead_lettered')
+    )
+);
+
 CREATE INDEX IF NOT EXISTS idx_service_layers_service_name ON honua.service_layers(service_name);
 CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(layer_id);
 CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);
@@ -92,6 +117,9 @@ CREATE INDEX IF NOT EXISTS idx_relationships_layer_id ON honua.relationships(lay
 CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
 CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
 CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
+CREATE INDEX IF NOT EXISTS ix_fco_dispatch ON honua.feature_change_outbox (created_at) WHERE status IN ('pending', 'failed');
+CREATE INDEX IF NOT EXISTS ix_fco_claim_recovery ON honua.feature_change_outbox (claim_expires_at) WHERE status = 'claimed';
+CREATE INDEX IF NOT EXISTS ix_fco_dead_lettered ON honua.feature_change_outbox (created_at) WHERE status = 'dead_lettered';
 
 BEGIN;
 
@@ -100,6 +128,7 @@ TRUNCATE honua.layer_fields RESTART IDENTITY CASCADE;
 TRUNCATE honua.relationships RESTART IDENTITY CASCADE;
 TRUNCATE honua.layers RESTART IDENTITY CASCADE;
 TRUNCATE honua.services RESTART IDENTITY CASCADE;
+TRUNCATE honua.feature_change_outbox RESTART IDENTITY;
 TRUNCATE features RESTART IDENTITY;
 
 INSERT INTO honua.services (
@@ -154,6 +183,39 @@ VALUES
         '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
     (3, 'transport_lines', 'Transportation lines for WFS CITE testing', 'public', 'features', 'LineString', 4326,
         ST_MakeEnvelope(-122.44, 37.76, -122.41, 37.79, 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (10, 'Other', 'WFS 1.0 CITE data feature', 'public', 'features', 'Point', 32615,
+        ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (11, 'Fifteen', 'WFS 1.0 CITE count feature with fifteen rows', 'public', 'features', 'Point', 32615,
+        ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (12, 'Seven', 'WFS 1.0 CITE count feature with seven rows', 'public', 'features', 'Point', 32615,
+        ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (13, 'Nulls', 'WFS 1.0 CITE null-value feature', 'public', 'features', 'Point', 32615,
+        ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (14, 'Locks', 'WFS 1.0 CITE lock placeholder feature', 'public', 'features', 'Point', 32615,
+        ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (20, 'Points', 'WFS 1.0 CITE point geometry feature', 'public', 'features', 'Point', 32615,
+        ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (21, 'Lines', 'WFS 1.0 CITE line geometry feature', 'public', 'features', 'LineString', 32615,
+        ST_Transform(ST_MakeEnvelope(500100, 500000, 500200, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (22, 'Polygons', 'WFS 1.0 CITE polygon geometry feature', 'public', 'features', 'Polygon', 32615,
+        ST_Transform(ST_MakeEnvelope(500200, 500000, 500300, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (23, 'MPoints', 'WFS 1.0 CITE multipoint geometry feature', 'public', 'features', 'MultiPoint', 32615,
+        ST_Transform(ST_MakeEnvelope(500300, 500000, 500400, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (24, 'MLines', 'WFS 1.0 CITE multiline geometry feature', 'public', 'features', 'MultiLineString', 32615,
+        ST_Transform(ST_MakeEnvelope(500400, 500000, 500500, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE),
+    (25, 'MPolygons', 'WFS 1.0 CITE multipolygon geometry feature', 'public', 'features', 'MultiPolygon', 32615,
+        ST_Transform(ST_MakeEnvelope(500500, 500000, 500600, 500100, 32615), 4326), TRUE,
         '{"accessPolicy":{"allowAnonymous":true}}'::jsonb, TRUE)
 ON CONFLICT (layer_id) DO UPDATE SET
     layer_name = EXCLUDED.layer_name,
@@ -171,7 +233,18 @@ INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
 VALUES
     ('cite', 1, 0),
     ('cite', 2, 1),
-    ('cite', 3, 2)
+    ('cite', 3, 2),
+    ('cite', 10, 10),
+    ('cite', 11, 11),
+    ('cite', 12, 12),
+    ('cite', 13, 13),
+    ('cite', 14, 14),
+    ('cite', 20, 20),
+    ('cite', 21, 21),
+    ('cite', 22, 22),
+    ('cite', 23, 23),
+    ('cite', 24, 24),
+    ('cite', 25, 25)
 ON CONFLICT (service_name, layer_id) DO UPDATE SET
     layer_order = EXCLUDED.layer_order;
 
@@ -212,7 +285,43 @@ VALUES
     (3, 'length_km', 'Double', 4, NULL, TRUE, NULL, 'Length in kilometres'),
     (3, 'is_active', 'Boolean', 5, NULL, TRUE, NULL, 'Boolean property'),
     (3, 'created_date', 'DateTime', 6, NULL, TRUE, NULL, 'Timestamp property'),
-    (3, 'shape', 'Geometry', 7, NULL, TRUE, NULL, 'Line geometry')
+    (3, 'shape', 'Geometry', 7, NULL, TRUE, NULL, 'Line geometry'),
+    (10, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (10, 'string1', 'String', 1, 255, FALSE, NULL, 'WFS 1.0 CITE required string'),
+    (10, 'string2', 'String', 2, 255, TRUE, NULL, 'WFS 1.0 CITE optional string'),
+    (10, 'integers', 'Integer', 3, NULL, TRUE, NULL, 'WFS 1.0 CITE integer'),
+    (10, 'dates', 'Date', 4, NULL, TRUE, NULL, 'WFS 1.0 CITE date'),
+    (10, 'pointProperty', 'Geometry', 5, NULL, TRUE, NULL, 'WFS 1.0 CITE point'),
+    (11, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (11, 'pointProperty', 'Geometry', 1, NULL, FALSE, NULL, 'WFS 1.0 CITE point'),
+    (12, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (12, 'pointProperty', 'Geometry', 1, NULL, FALSE, NULL, 'WFS 1.0 CITE point'),
+    (13, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (13, 'name', 'String', 1, 255, TRUE, NULL, 'WFS 1.0 CITE nullable GML name'),
+    (13, 'integers', 'Integer', 2, NULL, TRUE, NULL, 'WFS 1.0 CITE nullable integer'),
+    (13, 'dates', 'Date', 3, NULL, TRUE, NULL, 'WFS 1.0 CITE nullable date'),
+    (13, 'pointProperty', 'Geometry', 4, NULL, TRUE, NULL, 'WFS 1.0 CITE nullable point'),
+    (14, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (14, 'id', 'String', 1, 255, FALSE, NULL, 'WFS 1.0 CITE lock identifier'),
+    (14, 'pointProperty', 'Geometry', 2, NULL, TRUE, NULL, 'WFS 1.0 CITE point'),
+    (20, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (20, 'id', 'String', 1, 255, FALSE, NULL, 'WFS 1.0 CITE geometry identifier'),
+    (20, 'pointProperty', 'Geometry', 2, NULL, TRUE, NULL, 'WFS 1.0 CITE point'),
+    (21, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (21, 'id', 'String', 1, 255, FALSE, NULL, 'WFS 1.0 CITE geometry identifier'),
+    (21, 'lineStringProperty', 'Geometry', 2, NULL, TRUE, NULL, 'WFS 1.0 CITE line'),
+    (22, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (22, 'id', 'String', 1, 255, FALSE, NULL, 'WFS 1.0 CITE geometry identifier'),
+    (22, 'polygonProperty', 'Geometry', 2, NULL, TRUE, NULL, 'WFS 1.0 CITE polygon'),
+    (23, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (23, 'id', 'String', 1, 255, FALSE, NULL, 'WFS 1.0 CITE geometry identifier'),
+    (23, 'multiPointProperty', 'Geometry', 2, NULL, TRUE, NULL, 'WFS 1.0 CITE multipoint'),
+    (24, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (24, 'id', 'String', 1, 255, FALSE, NULL, 'WFS 1.0 CITE geometry identifier'),
+    (24, 'multiLineStringProperty', 'Geometry', 2, NULL, TRUE, NULL, 'WFS 1.0 CITE multiline'),
+    (25, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (25, 'id', 'String', 1, 255, FALSE, NULL, 'WFS 1.0 CITE geometry identifier'),
+    (25, 'multiPolygonProperty', 'Geometry', 2, NULL, TRUE, NULL, 'WFS 1.0 CITE multipolygon')
 ON CONFLICT (layer_id, field_name) DO UPDATE SET
     field_type = EXCLUDED.field_type,
     field_order = EXCLUDED.field_order,
@@ -315,6 +424,83 @@ VALUES
             'is_active', false,
             'created_date', '2024-03-02T07:00:00Z')
     );
+
+INSERT INTO features (objectid, layer_id, geometry, attributes)
+VALUES
+    (
+        1001,
+        10,
+        ST_GeomFromText('POINT(500050 500050)', 32615),
+        jsonb_build_object(
+            'string1', 'always',
+            'string2', 'sometimes',
+            'integers', 7,
+            'dates', '2002-12-02')
+    ),
+    (
+        1301,
+        13,
+        NULL,
+        '{}'::jsonb
+    ),
+    (
+        1401,
+        14,
+        ST_GeomFromText('POINT(500050 500050)', 32615),
+        jsonb_build_object('id', 'lock-1')
+    ),
+    (
+        2001,
+        20,
+        ST_GeomFromText('POINT(500050 500050)', 32615),
+        jsonb_build_object('id', 't0000')
+    ),
+    (
+        2101,
+        21,
+        ST_GeomFromText('LINESTRING(500125 500025,500175 500075)', 32615),
+        jsonb_build_object('id', 't0001')
+    ),
+    (
+        2201,
+        22,
+        ST_GeomFromText('POLYGON((500225 500025,500225 500075,500275 500050,500275 500025,500225 500025))', 32615),
+        jsonb_build_object('id', 't0002')
+    ),
+    (
+        2301,
+        23,
+        ST_GeomFromText('MULTIPOINT((500325 500025),(500375 500075))', 32615),
+        jsonb_build_object('id', 't0003')
+    ),
+    (
+        2401,
+        24,
+        ST_GeomFromText('MULTILINESTRING((500425 500025,500475 500075),(500425 500075,500475 500025))', 32615),
+        jsonb_build_object('id', 't0004')
+    ),
+    (
+        2501,
+        25,
+        ST_GeomFromText('MULTIPOLYGON(((500525 500025,500550 500050,500575 500025,500525 500025)),((500525 500050,500525 500075,500550 500075,500550 500050,500525 500050)))', 32615),
+        jsonb_build_object('id', 't0005')
+    );
+
+INSERT INTO features (objectid, layer_id, geometry, attributes)
+SELECT
+    1100 + value,
+    11,
+    ST_GeomFromText('POINT(500050 500050)', 32615),
+    '{}'::jsonb
+FROM generate_series(1, 15) AS value;
+
+INSERT INTO features (objectid, layer_id, geometry, attributes)
+SELECT
+    1200 + value,
+    12,
+    ST_GeomFromText('POINT(500050 500050)', 32615),
+    '{}'::jsonb
+FROM generate_series(1, 7) AS value;
 
 SELECT setval(
     pg_get_serial_sequence('features', 'objectid'),

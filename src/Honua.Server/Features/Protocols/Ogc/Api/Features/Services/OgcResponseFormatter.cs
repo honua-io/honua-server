@@ -22,6 +22,7 @@ namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
 internal static class OgcResponseFormatter
 {
     private const int StreamingFlushInterval = 32;
+    private const string Wfs20SchemaUrl = "http://schemas.opengis.net/wfs/2.0/wfs.xsd";
 
     /// <summary>
     /// Formats feature responses based on requested output format.
@@ -175,10 +176,11 @@ internal static class OgcResponseFormatter
         IEnumerable<GeoJsonFeature> features,
         long? numberMatched = null,
         int? numberReturned = null,
-        DateTimeOffset? timeStamp = null)
+        DateTimeOffset? timeStamp = null,
+        string? gmlApplicationSchemaUrl = null)
     {
         var builder = new StringBuilder();
-        builder.Append($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\"");
+        AppendGmlFeatureCollectionStart(builder, gmlApplicationSchemaUrl);
         if (numberMatched.HasValue)
         {
             builder.Append($" numberMatched=\"{numberMatched.Value.ToString(CultureInfo.InvariantCulture)}\"");
@@ -198,13 +200,13 @@ internal static class OgcResponseFormatter
 
         foreach (var feature in features)
         {
-            var escapedId = SecurityElement.Escape(feature.Id?.ToString() ?? string.Empty);
+            var escapedId = CreateGmlId(feature.Id, "feature_");
             builder.AppendLine("  <wfs:member>");
             builder.AppendLine($"    <app:Feature gml:id=\"{escapedId}\">");
             var geometryMarkup = BuildGmlGeometry(feature.Geometry, "      ");
             if (!string.IsNullOrEmpty(geometryMarkup))
             {
-                builder.AppendLine(geometryMarkup);
+                builder.AppendLine(EnsureGmlGeometryId(geometryMarkup, escapedId));
             }
 
             BuildGmlProperties(builder, feature.Properties, "      ");
@@ -216,6 +218,23 @@ internal static class OgcResponseFormatter
         return builder.ToString();
     }
 
+    private static void AppendGmlFeatureCollectionStart(StringBuilder builder, string? gmlApplicationSchemaUrl)
+        => builder.Append(CreateGmlFeatureCollectionStart(gmlApplicationSchemaUrl));
+
+    private static string CreateGmlFeatureCollectionStart(string? gmlApplicationSchemaUrl)
+    {
+        var builder = new StringBuilder()
+            .Append($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\" xmlns:xsi=\"{OgcFeaturesUtilities.XsiNamespace}\"");
+
+        if (!string.IsNullOrWhiteSpace(gmlApplicationSchemaUrl))
+        {
+            var escapedSchemaUrl = SecurityElement.Escape(gmlApplicationSchemaUrl);
+            builder.Append($" xsi:schemaLocation=\"{OgcFeaturesUtilities.WfsNamespace} {Wfs20SchemaUrl} {OgcFeaturesUtilities.AppNamespace} {escapedSchemaUrl}\"");
+        }
+
+        return builder.ToString();
+    }
+
     /// <summary>
     /// Builds GML representation of a feature collection from provider-backed GML features.
     /// </summary>
@@ -223,10 +242,11 @@ internal static class OgcResponseFormatter
         IEnumerable<GmlFeature> features,
         long? numberMatched = null,
         int? numberReturned = null,
-        DateTimeOffset? timeStamp = null)
+        DateTimeOffset? timeStamp = null,
+        string? gmlApplicationSchemaUrl = null)
     {
         var builder = new StringBuilder();
-        builder.Append($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\"");
+        AppendGmlFeatureCollectionStart(builder, gmlApplicationSchemaUrl);
         if (numberMatched.HasValue)
         {
             builder.Append($" numberMatched=\"{numberMatched.Value.ToString(CultureInfo.InvariantCulture)}\"");
@@ -246,11 +266,11 @@ internal static class OgcResponseFormatter
 
         foreach (var feature in features)
         {
-            var escapedId = SecurityElement.Escape(feature.Id.ToString(CultureInfo.InvariantCulture));
+            var escapedId = CreateGmlId(feature.Id, "feature_");
             builder.AppendLine("  <wfs:member>");
             builder.AppendLine($"    <app:Feature gml:id=\"{escapedId}\">");
             using var writer = new StringWriter(builder, CultureInfo.InvariantCulture);
-            WriteGmlGeometry(writer, feature.GeometryGml, "      ");
+            WriteGmlGeometry(writer, feature.GeometryGml, "      ", escapedId);
             WriteGmlProperties(writer, feature.Attributes, "      ");
             builder.AppendLine("    </app:Feature>");
             builder.AppendLine("  </wfs:member>");
@@ -269,6 +289,7 @@ internal static class OgcResponseFormatter
         long? numberMatched,
         int? numberReturned,
         DateTimeOffset? timeStamp,
+        string? gmlApplicationSchemaUrl,
         CancellationToken cancellationToken)
     {
         await using var writer = new StreamWriter(
@@ -278,7 +299,7 @@ internal static class OgcResponseFormatter
             leaveOpen: true);
 
         var header = new StringBuilder()
-            .Append($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\"");
+            .Append(CreateGmlFeatureCollectionStart(gmlApplicationSchemaUrl));
         if (numberMatched.HasValue)
         {
             header.Append($" numberMatched=\"{numberMatched.Value.ToString(CultureInfo.InvariantCulture)}\"");
@@ -300,10 +321,10 @@ internal static class OgcResponseFormatter
         var writtenSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
-            var escapedId = SecurityElement.Escape(feature.Id.ToString());
+            var escapedId = CreateGmlId(feature.Id, "feature_");
             await writer.WriteLineAsync("  <wfs:member>");
             await writer.WriteLineAsync($"    <app:Feature gml:id=\"{escapedId}\">");
-            WriteGmlGeometry(writer, feature.GeometryGml, "      ");
+            WriteGmlGeometry(writer, feature.GeometryGml, "      ", escapedId);
             WriteGmlProperties(writer, feature.Attributes, "      ");
             await writer.WriteLineAsync("    </app:Feature>");
             await writer.WriteLineAsync("  </wfs:member>");
@@ -324,14 +345,14 @@ internal static class OgcResponseFormatter
     public static string BuildGmlSingleFeature(GeoJsonFeature feature)
     {
         var builder = new StringBuilder();
-        var escapedId = SecurityElement.Escape(feature.Id?.ToString());
-        builder.AppendLine($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\">");
+        var escapedId = CreateGmlId(feature.Id, "feature_");
+        builder.AppendLine($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\" xmlns:xsi=\"{OgcFeaturesUtilities.XsiNamespace}\">");
         builder.AppendLine("  <wfs:member>");
         builder.AppendLine($"    <app:Feature gml:id=\"{escapedId}\">");
         var geometryMarkup = BuildGmlGeometry(feature.Geometry, "      ");
         if (!string.IsNullOrEmpty(geometryMarkup))
         {
-            builder.AppendLine(geometryMarkup);
+            builder.AppendLine(EnsureGmlGeometryId(geometryMarkup, escapedId));
         }
 
         BuildGmlProperties(builder, feature.Properties, "      ");
@@ -347,10 +368,10 @@ internal static class OgcResponseFormatter
     public static string BuildGmlSingleFeature(GmlFeature feature)
     {
         var builder = new StringBuilder();
-        var escapedId = SecurityElement.Escape(feature.Id.ToString(CultureInfo.InvariantCulture));
+        var escapedId = CreateGmlId(feature.Id, "feature_");
         builder.AppendLine($"<app:Feature xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" gml:id=\"{escapedId}\">");
         using var writer = new StringWriter(builder, CultureInfo.InvariantCulture);
-        WriteGmlGeometry(writer, feature.GeometryGml, "  ");
+        WriteGmlGeometry(writer, feature.GeometryGml, "  ", escapedId);
         WriteGmlProperties(writer, feature.Attributes, "  ");
         builder.AppendLine("</app:Feature>");
         return builder.ToString();
@@ -673,6 +694,27 @@ internal static class OgcResponseFormatter
         return $"{indent}<gml:MultiPolygon />";
     }
 
+    private static string CreateGmlId(object? id, string prefix)
+    {
+        var rawId = Convert.ToString(id, CultureInfo.InvariantCulture);
+        if (string.IsNullOrWhiteSpace(rawId))
+        {
+            return string.Concat(prefix, "unknown");
+        }
+
+        var builder = new StringBuilder(prefix.Length + rawId.Length);
+        builder.Append(prefix);
+        foreach (var ch in rawId)
+        {
+            builder.Append(IsXmlNcNameChar(ch) ? ch : '_');
+        }
+
+        return SecurityElement.Escape(builder.ToString()) ?? string.Concat(prefix, "unknown");
+    }
+
+    private static bool IsXmlNcNameChar(char ch)
+        => char.IsAsciiLetterOrDigit(ch) || ch is '_' or '-' or '.';
+
     private static void BuildGmlProperties(StringBuilder builder, Dictionary<string, object?>? properties, string indent)
     {
         if (properties == null || properties.Count == 0)
@@ -699,19 +741,51 @@ internal static class OgcResponseFormatter
         }
     }
 
-    private static void WriteGmlGeometry(TextWriter writer, string? geometryGml, string indent)
+    private static void WriteGmlGeometry(TextWriter writer, string? geometryGml, string indent, string? featureId = null)
     {
         if (string.IsNullOrWhiteSpace(geometryGml))
         {
             return;
         }
 
-        var lines = geometryGml.Split('\n');
+        var geometryMarkup = EnsureGmlGeometryId(geometryGml, featureId);
+        var lines = geometryMarkup.Split('\n');
         foreach (var line in lines)
         {
             writer.Write(indent);
             writer.WriteLine(line.TrimEnd('\r'));
         }
+    }
+
+    private static string EnsureGmlGeometryId(string geometryMarkup, string? featureId)
+    {
+        if (string.IsNullOrWhiteSpace(featureId) ||
+            geometryMarkup.Contains(" gml:id=", StringComparison.Ordinal) ||
+            geometryMarkup.Contains(" xml:id=", StringComparison.Ordinal))
+        {
+            return geometryMarkup;
+        }
+
+        var trimmedId = featureId.Trim();
+        if (trimmedId.Length == 0)
+        {
+            return geometryMarkup;
+        }
+
+        var safeId = SecurityElement.Escape($"geom_{trimmedId.Replace(':', '_').Replace('.', '_')}");
+        var elementStart = geometryMarkup.IndexOf("<gml:", StringComparison.Ordinal);
+        if (elementStart < 0)
+        {
+            return geometryMarkup;
+        }
+
+        var insertAt = geometryMarkup.IndexOfAny([' ', '>', '/'], elementStart + 5);
+        if (insertAt < 0 || geometryMarkup[insertAt] is '>' or '/')
+        {
+            return geometryMarkup.Insert(insertAt < 0 ? geometryMarkup.Length : insertAt, $" gml:id=\"{safeId}\"");
+        }
+
+        return geometryMarkup.Insert(insertAt, $" gml:id=\"{safeId}\"");
     }
 
     private static void WriteGmlProperties(TextWriter writer, ImmutableDictionary<string, object?> properties, string indent)

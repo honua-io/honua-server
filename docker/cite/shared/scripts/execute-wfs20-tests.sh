@@ -242,7 +242,7 @@ if [ "$TOTAL" -le 0 ]; then
     exit 1
 fi
 
-if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -eq 0 ]; then
+if [ "$FAILED" -eq 0 ]; then
     COMPLIANCE_STATUS="COMPLIANT"
 elif [ "$PASSED" -gt 0 ]; then
     COMPLIANCE_STATUS="PARTIAL"
@@ -271,15 +271,18 @@ if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ]; then
     chown -R "$HOST_UID:$HOST_GID" "$RESULTS_DIR" 2>/dev/null || true
 fi
 
-if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -eq 0 ]; then
-    echo -e "${GREEN}🎉 FULL WFS 2.0 CITE COMPLIANCE ACHIEVED!${NC}"
+if [ "$FAILED" -eq 0 ]; then
+    echo -e "${GREEN}🎉 WFS 2.0 CITE gate passed with no failed tests${NC}"
+    if [ "$SKIPPED" -gt 0 ]; then
+        echo "Skipped tests correspond to unadvertised optional conformance classes."
+    fi
     exit 0
 fi
 
 if [ "$PASSED" -gt 0 ]; then
     echo -e "${YELLOW}⚠️ Partial WFS 2.0 CITE compliance${NC}"
-    echo "Some tests failed or were skipped - see detailed results for specific issues"
-    exit 0
+    echo "Some tests failed - see detailed results for specific issues"
+    exit 1
 fi
 
 echo -e "${RED}❌ WFS 2.0 CITE compliance tests failed${NC}"

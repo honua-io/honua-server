@@ -593,6 +593,9 @@ public static class Fes20Parser
             "Point" => geometryFactory.CreatePoint(ParseSingleCoordinate(element, axisOrder)),
             "LineString" or "Curve" => geometryFactory.CreateLineString(ParseCoordinateSequence(element, axisOrder)),
             "Polygon" or "Surface" => ParsePolygonGeometry(element, geometryFactory, axisOrder),
+            "MultiPoint" => ParseMultiPointGeometry(element, geometryFactory, axisOrder),
+            "MultiLineString" or "MultiCurve" => ParseMultiLineStringGeometry(element, geometryFactory, axisOrder),
+            "MultiPolygon" or "MultiSurface" => ParseMultiPolygonGeometry(element, geometryFactory, axisOrder),
             _ => throw new Fes20ParseException($"GML geometry parsing is not yet implemented for {element.Name.LocalName}")
         };
 
@@ -600,6 +603,60 @@ public static class Fes20Parser
             new WKBWriter(ByteOrder.LittleEndian, handleSRID: false).Write(geometry),
             srid,
             element.ToString(SaveOptions.DisableFormatting));
+    }
+
+    private static MultiPoint ParseMultiPointGeometry(
+        XElement element,
+        GeometryFactory geometryFactory,
+        AxisOrder axisOrder)
+    {
+        var points = element.Descendants()
+            .Where(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                candidate.Name.LocalName == "Point")
+            .Select(candidate => geometryFactory.CreatePoint(ParseSingleCoordinate(candidate, axisOrder)))
+            .ToArray();
+        if (points.Length == 0)
+        {
+            throw new Fes20ParseException($"{element.Name.LocalName} must contain at least one point member.");
+        }
+
+        return geometryFactory.CreateMultiPoint(points);
+    }
+
+    private static MultiLineString ParseMultiLineStringGeometry(
+        XElement element,
+        GeometryFactory geometryFactory,
+        AxisOrder axisOrder)
+    {
+        var lines = element.Descendants()
+            .Where(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                candidate.Name.LocalName is "LineString" or "Curve")
+            .Select(candidate => geometryFactory.CreateLineString(ParseCoordinateSequence(candidate, axisOrder)))
+            .ToArray();
+        if (lines.Length == 0)
+        {
+            throw new Fes20ParseException($"{element.Name.LocalName} must contain at least one line member.");
+        }
+
+        return geometryFactory.CreateMultiLineString(lines);
+    }
+
+    private static MultiPolygon ParseMultiPolygonGeometry(
+        XElement element,
+        GeometryFactory geometryFactory,
+        AxisOrder axisOrder)
+    {
+        var polygons = element.Descendants()
+            .Where(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                candidate.Name.LocalName is "Polygon" or "Surface")
+            .Select(candidate => ParsePolygonGeometry(candidate, geometryFactory, axisOrder))
+            .ToArray();
+        if (polygons.Length == 0)
+        {
+            throw new Fes20ParseException($"{element.Name.LocalName} must contain at least one polygon member.");
+        }
+
+        return geometryFactory.CreateMultiPolygon(polygons);
     }
 
     private static FilterExpression ParseTemporalOperand(XElement element)

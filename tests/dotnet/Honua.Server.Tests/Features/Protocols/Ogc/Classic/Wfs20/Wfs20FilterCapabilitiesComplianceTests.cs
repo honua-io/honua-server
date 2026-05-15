@@ -14,28 +14,17 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public class Wfs20FilterCapabilitiesComplianceTests
 {
     [Fact]
-    public void FilterCapabilities_TemporalOperators_ShouldAdvertiseRuntimeSupportedOperators()
+    public void FilterCapabilities_TemporalConformance_ShouldNotBeAdvertisedUntilCiteStable()
     {
         var filterCapabilities = GetActualFilterCapabilities();
-        var operatorNames = filterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
-            .Select(op => op.Name)
-            .ToArray();
+        var constraintDict = filterCapabilities.Conformance.Constraints
+            .ToDictionary(c => c.Name, c => c.DefaultValue);
 
-        operatorNames.Should().BeEquivalentTo(
-            "After",
-            "Before",
-            "Begins",
-            "BegunBy",
-            "TContains",
-            "During",
-            "TEquals",
-            "TOverlaps",
-            "Meets",
-            "MetBy",
-            "OverlappedBy",
-            "EndedBy",
-            "Ends",
-            "AnyInteracts");
+        filterCapabilities.TemporalCapabilities.Should().BeNull();
+        constraintDict["ImplementsMinTemporalFilter"].Should().Be("FALSE");
+        constraintDict["ImplementsTemporalFilter"].Should().Be("FALSE");
+        constraintDict["ImplementsTemporalInstant"].Should().Be("FALSE");
+        constraintDict["ImplementsTemporalPeriod"].Should().Be("FALSE");
     }
 
     [Fact]
@@ -45,8 +34,7 @@ public class Wfs20FilterCapabilitiesComplianceTests
         var constraintDict = filterCapabilities.Conformance.Constraints
             .ToDictionary(c => c.Name, c => c.DefaultValue);
 
-        filterCapabilities.Functions.Should().NotBeNull();
-        filterCapabilities.Functions!.Functions.Should().BeEmpty();
+        filterCapabilities.Functions.Should().BeNull();
         constraintDict["ImplementsFunctions"].Should().Be("FALSE");
         constraintDict["ImplementsArithmeticOperators"].Should().Be("FALSE");
         constraintDict["ImplementsExtendedOperators"].Should().Be("TRUE");

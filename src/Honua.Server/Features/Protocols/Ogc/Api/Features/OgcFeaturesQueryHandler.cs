@@ -243,6 +243,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
                     if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
                     {
+                        var streamGmlSchemaUrl = OgcFeaturesUtilities.BuildGmlApplicationSchemaUrl(streamBaseUrl);
                         return new StreamingGmlItemsResult(
                             streamingFeatureStore,
                             layer,
@@ -250,6 +251,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             totalCount,
                             estimatedReturned,
                             outputCrsUri,
+                            streamGmlSchemaUrl,
                             streamLinks,
                             cancellationToken);
                     }
@@ -474,9 +476,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
+                var gmlSchemaUrl = OgcFeaturesUtilities.BuildGmlApplicationSchemaUrl(baseUrl);
                 var gml = gmlResult.HasValue
-                    ? OgcResponseFormatter.BuildGmlFeatureCollection(gmlResult.Value.Items, queryTotalCount, gmlResult.Value.Items.Length, DateTimeOffset.UtcNow)
-                    : OgcResponseFormatter.BuildGmlFeatureCollection(features, queryTotalCount, features.Length, DateTimeOffset.UtcNow);
+                    ? OgcResponseFormatter.BuildGmlFeatureCollection(gmlResult.Value.Items, queryTotalCount, gmlResult.Value.Items.Length, DateTimeOffset.UtcNow, gmlSchemaUrl)
+                    : OgcResponseFormatter.BuildGmlFeatureCollection(features, queryTotalCount, features.Length, DateTimeOffset.UtcNow, gmlSchemaUrl);
                 return Results.Text(gml, MediaTypes.Gml);
             }
 
@@ -1415,6 +1418,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly long _numberMatched;
         private readonly int _numberReturned;
         private readonly string _crsUri;
+        private readonly string _gmlApplicationSchemaUrl;
         private readonly ImmutableArray<Link> _links;
         private readonly CancellationToken _requestCancellationToken;
 
@@ -1425,6 +1429,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             long numberMatched,
             int numberReturned,
             string crsUri,
+            string gmlApplicationSchemaUrl,
             ImmutableArray<Link> links,
             CancellationToken requestCancellationToken)
         {
@@ -1434,6 +1439,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             _numberMatched = numberMatched;
             _numberReturned = numberReturned;
             _crsUri = crsUri;
+            _gmlApplicationSchemaUrl = gmlApplicationSchemaUrl;
             _links = links;
             _requestCancellationToken = requestCancellationToken;
         }
@@ -1471,6 +1477,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 _numberMatched,
                 _numberReturned,
                 DateTimeOffset.UtcNow,
+                _gmlApplicationSchemaUrl,
                 cancellationToken);
 
             await httpContext.Response.BodyWriter.CompleteAsync();

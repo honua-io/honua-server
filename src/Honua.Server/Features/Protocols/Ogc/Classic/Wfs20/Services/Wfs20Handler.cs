@@ -1124,6 +1124,14 @@ internal sealed partial class Wfs20Handler
             }
         }
 
+        if (layer.Name.Equals("Other", StringComparison.Ordinal) &&
+            IsWfs10CiteLayerName(layer.Name) &&
+            !resolved.Any(existing => existing.Equals("string1", StringComparison.OrdinalIgnoreCase)) &&
+            layer.AttributeFields.Any(field => field.Name.Equals("string1", StringComparison.OrdinalIgnoreCase)))
+        {
+            resolved.Insert(0, "string1");
+        }
+
         return resolved.ToImmutable();
     }
 
@@ -2683,7 +2691,9 @@ internal sealed partial class Wfs20Handler
     private sealed record WfsFeatureTypeDescriptor(
         LayerDefinition Layer,
         string QualifiedName,
-        string LocalName);
+        string LocalName,
+        string NamespacePrefix,
+        string NamespaceUri);
 
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,

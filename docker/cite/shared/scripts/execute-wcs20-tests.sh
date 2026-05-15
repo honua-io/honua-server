@@ -95,7 +95,7 @@ rm -rf "$RESULTS_DIR"/* /tmp/te-console /tmp/teamengine-console-bin.zip
 
 curl -sS --fail "$WCS_CAPABILITIES_URL" > "$RESULTS_DIR/capabilities.xml"
 
-ESCAPED_WCS_CAPABILITIES_URL=$(printf '%s' "$WCS_CAPABILITIES_URL" | sed 's/&/\&amp;/g')
+ESCAPED_WCS_ENDPOINT=$(printf '%s' "$WCS_ENDPOINT" | sed 's/&/\&amp;/g')
 cat > "$RESULTS_DIR/test-params.xml" << EOF_PARAMS
 <?xml version="1.0" encoding="UTF-8"?>
 <values xmlns:parsers="http://www.occamlab.com/te/parsers">
@@ -103,7 +103,7 @@ cat > "$RESULTS_DIR/test-params.xml" << EOF_PARAMS
     <parsers:test>ets-wcs20-${WCS_ETS_VERSION}</parsers:test>
     <parsers:profile>${TEST_PROFILE}</parsers:profile>
   </parsers:session>
-  <value key="url">${ESCAPED_WCS_CAPABILITIES_URL}</value>
+  <value key="url">${ESCAPED_WCS_ENDPOINT}</value>
   <value key="core">${WCS_CORE}</value>
   <value key="ext_post">${WCS_EXT_POST}</value>
   <value key="ext_proc">${WCS_EXT_PROC}</value>
@@ -155,7 +155,7 @@ set +e
 /tmp/te-console/bin/unix/test.sh \
     -source="$TE_BASE_DIR/scripts/wcs/2.0.1/ctl/wcs2suite-auto.xml" \
     -test=wcs2:main \
-    "@url=$WCS_CAPABILITIES_URL" \
+    "@url=$WCS_ENDPOINT" \
     "@core=$WCS_CORE" \
     "@ext_post=$WCS_EXT_POST" \
     "@ext_proc=$WCS_EXT_PROC" \

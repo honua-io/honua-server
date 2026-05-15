@@ -19,6 +19,8 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800  # 30 minutes timeout
 HONUA_HEALTHCHECK_TIMEOUT=300  # 5 minutes
 POSTGRES_HEALTHCHECK_TIMEOUT=120  # 2 minutes
+HONUA_CITE_TILES_SERVER_PORT="${HONUA_CITE_TILES_SERVER_PORT:-8093}"
+export HONUA_CITE_TILES_SERVER_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
 SKIPPED_TESTS=0
@@ -34,6 +36,7 @@ CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
 PROFILE="full"
+SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -53,6 +56,10 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift 2
             ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -61,6 +68,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
             echo "  --profile PROF    Use specific CITE profile (default: full)"
+            echo "  --skip-build      Reuse existing honua-server:latest image"
             echo "  --help, -h        Show this help"
             echo ""
             echo "Examples:"
@@ -171,14 +179,18 @@ wait_for_http_endpoint() {
     done
 }
 
-# Build Honua Server image if it doesn't exist
-echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
-if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
-    echo -e "${RED}Failed to build Honua Server Docker image${NC}"
-    exit 1
-fi
+# Build Honua Server image unless an existing local image is requested.
+if [[ "$SKIP_BUILD" == "true" ]]; then
+    echo -e "${YELLOW}Skipping Honua Server Docker image build; using existing honua-server:latest${NC}"
+else
+    echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
+    if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
+        echo -e "${RED}Failed to build Honua Server Docker image${NC}"
+        exit 1
+    fi
 
-echo -e "${GREEN}Honua Server image built successfully${NC}"
+    echo -e "${GREEN}Honua Server image built successfully${NC}"
+fi
 
 # Cleanup function
 cleanup() {
@@ -261,29 +273,30 @@ $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d cite-engine
 
 # Verify API endpoints are responding (after seeding to avoid cached empty data)
 echo -e "${YELLOW}Verifying OGC API Tiles endpoints...${NC}"
+HONUA_BASE_URL="http://localhost:${HONUA_CITE_TILES_SERVER_PORT}"
 
 # Test landing page
-if ! wait_for_http_endpoint "http://localhost:8080/ogc/tiles" "Tiles landing page"; then
+if ! wait_for_http_endpoint "$HONUA_BASE_URL/ogc/tiles" "Tiles landing page"; then
     exit 1
 fi
 
 # Test conformance endpoint
-if ! wait_for_http_endpoint "http://localhost:8080/ogc/tiles/conformance" "Tiles conformance endpoint"; then
+if ! wait_for_http_endpoint "$HONUA_BASE_URL/ogc/tiles/conformance" "Tiles conformance endpoint"; then
     exit 1
 fi
 
 # Test collections endpoint
-if ! wait_for_http_endpoint "http://localhost:8080/ogc/tiles/collections" "Tiles collections endpoint"; then
+if ! wait_for_http_endpoint "$HONUA_BASE_URL/ogc/tiles/collections" "Tiles collections endpoint"; then
     exit 1
 fi
 
 # Test tileMatrixSets endpoint
-if ! wait_for_http_endpoint "http://localhost:8080/ogc/tiles/tileMatrixSets" "TileMatrixSets endpoint"; then
+if ! wait_for_http_endpoint "$HONUA_BASE_URL/ogc/tiles/tileMatrixSets" "TileMatrixSets endpoint"; then
     exit 1
 fi
 
 # Test tiles endpoint
-if ! wait_for_http_endpoint "http://localhost:8080/ogc/tiles/tiles" "Tiles tilesets endpoint"; then
+if ! wait_for_http_endpoint "$HONUA_BASE_URL/ogc/tiles/tiles" "Tiles tilesets endpoint"; then
     exit 1
 fi
 
@@ -292,16 +305,16 @@ echo -e "${GREEN}OGC API Tiles endpoints are accessible${NC}"
 if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}Interactive mode enabled${NC}"
     echo "Services are running at:"
-    echo "  Honua Server:     http://localhost:8080"
+    echo "  Honua Server:     $HONUA_BASE_URL"
     echo "  CITE Team Engine: http://localhost:8082/teamengine"
     echo "  PostgreSQL:       localhost:5434"
     echo ""
     echo "OGC API Tiles endpoints:"
-    echo "  Landing page:     http://localhost:8080/ogc/tiles"
-    echo "  Conformance:      http://localhost:8080/ogc/tiles/conformance"
-    echo "  Collections:      http://localhost:8080/ogc/tiles/collections"
-    echo "  TileMatrixSets:   http://localhost:8080/ogc/tiles/tileMatrixSets"
-    echo "  Tilesets:         http://localhost:8080/ogc/tiles/tiles"
+    echo "  Landing page:     $HONUA_BASE_URL/ogc/tiles"
+    echo "  Conformance:      $HONUA_BASE_URL/ogc/tiles/conformance"
+    echo "  Collections:      $HONUA_BASE_URL/ogc/tiles/collections"
+    echo "  TileMatrixSets:   $HONUA_BASE_URL/ogc/tiles/tileMatrixSets"
+    echo "  Tilesets:         $HONUA_BASE_URL/ogc/tiles/tiles"
     echo ""
     echo "Run CITE tests manually via Team Engine web interface"
     echo "Press Ctrl+C to stop all services"
@@ -316,7 +329,7 @@ rm -rf "$CITE_RESULTS_DIR"/*
 
 # Capture conformance declaration for CI gating
 echo -e "${YELLOW}Capturing conformance declaration...${NC}"
-if ! curl -s -f http://localhost:8080/ogc/tiles/conformance > "$CITE_RESULTS_DIR/conformance.json"; then
+if ! curl -s -f "$HONUA_BASE_URL/ogc/tiles/conformance" > "$CITE_RESULTS_DIR/conformance.json"; then
     echo -e "${RED}Failed to capture conformance declaration${NC}"
     exit 1
 fi
@@ -488,7 +501,7 @@ cat > "$SUMMARY_FILE" << EOF
 
 ## Test Environment
 
-- **Honua Server**: http://localhost:8080/ogc/tiles
+- **Honua Server**: $HONUA_BASE_URL/ogc/tiles
 - **Database**: PostgreSQL with PostGIS
 - **CITE Version**: OGC API Tiles 1.0 test suite
 

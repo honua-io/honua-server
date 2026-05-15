@@ -23,10 +23,11 @@ public class Wfs20StandardsComplianceIntegrationTests
         xml.Should().NotBeEmpty();
         xml.Should().Contain("Filter_Capabilities");
         xml.Should().Contain("Conformance");
-        xml.Should().Contain("TemporalOperators");
+        xml.Should().NotMatchRegex(@"<([A-Za-z_][\w.-]*:)?TemporalOperators(\s|>|/)");
+        xml.Should().NotContain("Temporal_Capabilities");
         xml.Should().Contain("SpatialOperators");
         xml.Should().Contain("ComparisonOperators");
-        xml.Should().Contain("Functions");
+        xml.Should().NotContain("<Functions");
         xml.Should().NotContain("ST_Area");
 
         var xmlDoc = new XmlDocument();
@@ -35,33 +36,11 @@ public class Wfs20StandardsComplianceIntegrationTests
     }
 
     [Fact]
-    public void FilterCapabilities_TemporalOperators_ShouldFollowOGCNaming()
+    public void FilterCapabilities_TemporalCapabilities_ShouldBeOmittedUntilCiteStable()
     {
         var capabilities = CreateCompleteWfsCapabilities();
-        var temporalOps = capabilities.FilterCapabilities!.TemporalCapabilities!
-            .TemporalOperators!.Operators;
 
-        foreach (var op in temporalOps)
-        {
-            op.Name.Should().MatchRegex(@"^[A-Z][a-zA-Z]*$");
-            op.Name.Should().NotStartWith("T_");
-        }
-
-        temporalOps.Select(op => op.Name).Should().BeEquivalentTo(
-            "After",
-            "Before",
-            "Begins",
-            "BegunBy",
-            "TContains",
-            "During",
-            "TEquals",
-            "TOverlaps",
-            "Meets",
-            "MetBy",
-            "OverlappedBy",
-            "EndedBy",
-            "Ends",
-            "AnyInteracts");
+        capabilities.FilterCapabilities!.TemporalCapabilities.Should().BeNull();
     }
 
     [Fact]
@@ -78,9 +57,7 @@ public class Wfs20StandardsComplianceIntegrationTests
                      "ImplementsResourceId",
                      "ImplementsStandardFilter",
                      "ImplementsMinSpatialFilter",
-                     "ImplementsSpatialFilter",
-                     "ImplementsMinTemporalFilter",
-                     "ImplementsTemporalFilter"
+                     "ImplementsSpatialFilter"
                  })
         {
             constraintValues[required].Should().Be("TRUE");
@@ -102,7 +79,11 @@ public class Wfs20StandardsComplianceIntegrationTests
                      "ImplementsCQL2JSON",
                      "ImplementsCQL2SpatialOperators",
                      "ImplementsCQL2TemporalOperators",
-                     "ImplementsCQL2Functions"
+                     "ImplementsCQL2Functions",
+                     "ImplementsMinTemporalFilter",
+                     "ImplementsTemporalFilter",
+                     "ImplementsTemporalInstant",
+                     "ImplementsTemporalPeriod"
                  })
         {
             constraintValues[unsupported].Should().Be("FALSE");

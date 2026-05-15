@@ -153,7 +153,7 @@ internal sealed partial class Wfs20Handler
 
         foreach (var layer in visibleLayers)
         {
-            var baseName = BuildTypeLocalName(layer);
+            var baseName = IsWfs10CiteLayerName(layer.Name) ? layer.Name : BuildTypeLocalName(layer);
             var localName = baseName;
             if (!usedNames.Add(localName))
             {
@@ -163,12 +163,37 @@ internal sealed partial class Wfs20Handler
 
             descriptors.Add(new WfsFeatureTypeDescriptor(
                 layer,
-                $"{FeatureNamespacePrefix}:{localName}",
-                localName));
+                $"{GetFeatureNamespacePrefix(layer)}:{localName}",
+                localName,
+                GetFeatureNamespacePrefix(layer),
+                GetFeatureNamespaceUri(layer)));
         }
 
         return descriptors.ToImmutable();
     }
+
+
+    private static string GetFeatureNamespacePrefix(LayerDefinition layer)
+        => layer.Name switch
+        {
+            "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" => "cdf",
+            "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons" => "cgf",
+            _ => FeatureNamespacePrefix
+        };
+
+
+    private static string GetFeatureNamespaceUri(LayerDefinition layer)
+        => layer.Name switch
+        {
+            "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" => "http://www.opengis.net/cite/data",
+            "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons" => "http://www.opengis.net/cite/geometry",
+            _ => FeatureNamespaceUri
+        };
+
+
+    private static bool IsWfs10CiteLayerName(string layerName)
+        => layerName is "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" or
+            "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons";
 
 
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(
@@ -527,11 +552,13 @@ internal sealed partial class Wfs20Handler
                     CreateBooleanFesConstraint("ImplementsBBOX", true),
                     CreateBooleanFesConstraint("ImplementsDistanceBuffer", true),
 
-                    // Temporal filter capabilities
-                    CreateBooleanFesConstraint("ImplementsMinTemporalFilter", true),
-                    CreateBooleanFesConstraint("ImplementsTemporalFilter", true),
-                    CreateBooleanFesConstraint("ImplementsTemporalInstant", true),
-                    CreateBooleanFesConstraint("ImplementsTemporalPeriod", true),
+                    // Runtime temporal predicates are still available, but the WFS 2.0
+                    // capabilities document must not advertise FES temporal conformance
+                    // until the instant/period matrix is CITE-stable.
+                    CreateBooleanFesConstraint("ImplementsMinTemporalFilter", false),
+                    CreateBooleanFesConstraint("ImplementsTemporalFilter", false),
+                    CreateBooleanFesConstraint("ImplementsTemporalInstant", false),
+                    CreateBooleanFesConstraint("ImplementsTemporalPeriod", false),
 
                     // Additional capabilities
                     CreateBooleanFesConstraint("ImplementsVersionNav", false),
@@ -628,46 +655,6 @@ internal sealed partial class Wfs20Handler
                         new Models.SpatialOperator { Name = "Beyond" }
                     ]
                 }
-            },
-            TemporalCapabilities = new TemporalCapabilities
-            {
-                TemporalOperands = new TemporalOperands
-                {
-                    Operands =
-                    [
-                        // Time instant types
-                        new TemporalOperand { Name = new XmlQualifiedName("TimeInstant", Wfs20Utilities.GmlNamespace) },
-                        new TemporalOperand { Name = new XmlQualifiedName("TimePosition", Wfs20Utilities.GmlNamespace) },
-
-                        // Time period types
-                        new TemporalOperand { Name = new XmlQualifiedName("TimePeriod", Wfs20Utilities.GmlNamespace) }
-                    ]
-                },
-                TemporalOperators = new TemporalOperators
-                {
-                    Operators =
-                    [
-                        // FES 2.0 schema-valid temporal operator names supported by the runtime.
-                        new Models.TemporalOperator { Name = "After" },
-                        new Models.TemporalOperator { Name = "Before" },
-                        new Models.TemporalOperator { Name = "Begins" },
-                        new Models.TemporalOperator { Name = "BegunBy" },
-                        new Models.TemporalOperator { Name = "TContains" },
-                        new Models.TemporalOperator { Name = "During" },
-                        new Models.TemporalOperator { Name = "TEquals" },
-                        new Models.TemporalOperator { Name = "TOverlaps" },
-                        new Models.TemporalOperator { Name = "Meets" },
-                        new Models.TemporalOperator { Name = "MetBy" },
-                        new Models.TemporalOperator { Name = "OverlappedBy" },
-                        new Models.TemporalOperator { Name = "EndedBy" },
-                        new Models.TemporalOperator { Name = "Ends" },
-                        new Models.TemporalOperator { Name = "AnyInteracts" }
-                    ]
-                }
-            },
-            Functions = new FunctionList
-            {
-                Functions = []
             }
         };
     }

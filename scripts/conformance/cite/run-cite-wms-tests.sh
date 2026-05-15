@@ -16,6 +16,8 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800
 HONUA_HEALTHCHECK_TIMEOUT=300
 POSTGRES_HEALTHCHECK_TIMEOUT=120
+HONUA_CITE_WMS_SERVER_PORT="${HONUA_CITE_WMS_SERVER_PORT:-8097}"
+export HONUA_CITE_WMS_SERVER_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
 SKIPPED_TESTS=0
@@ -26,6 +28,7 @@ CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
 PROFILE="default"
+SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
 WMS_BASIC="false"
 WMS_QUERYABLE="false"
 WMS_RECOMMENDED="false"
@@ -89,6 +92,10 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift 2
             ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -97,6 +104,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
             echo "  --profile PROF    Use specific CITE profile (minimal|default|full)"
+            echo "  --skip-build      Reuse existing honua-server:latest image"
             echo "  --help, -h        Show this help"
             exit 0
             ;;
@@ -125,7 +133,7 @@ else
     COMPOSE_CMD="docker compose"
 fi
 
-if [[ "${HONUA_CITE_SKIP_BUILD:-false}" == "true" ]]; then
+if [[ "$SKIP_BUILD" == "true" ]]; then
     echo -e "${YELLOW}Skipping Honua Server Docker image build; using existing honua-server:latest${NC}"
 else
     echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
@@ -235,10 +243,11 @@ done
 echo -e "${GREEN}Honua Server is healthy${NC}"
 
 echo -e "${YELLOW}Verifying WMS endpoints...${NC}"
-CAPS_URL_HOST="http://localhost:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0"
+HONUA_BASE_URL="http://localhost:${HONUA_CITE_WMS_SERVER_PORT}"
+CAPS_URL_HOST="${HONUA_BASE_URL}/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0"
 CAPS_URL_CONTAINER="http://honua-server:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0"
 CAPS_URL="$CAPS_URL_HOST"
-GETMAP_URL="http://localhost:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=EPSG:4326&WIDTH=256&HEIGHT=256&LAYERS=0&FORMAT=image/png"
+GETMAP_URL="${HONUA_BASE_URL}/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=EPSG:4326&WIDTH=256&HEIGHT=256&LAYERS=0&FORMAT=image/png"
 
 if ! curl -s -f "$CAPS_URL_HOST" > /dev/null; then
     echo -e "${RED}WMS GetCapabilities endpoint not accessible${NC}"
@@ -254,7 +263,7 @@ echo -e "${GREEN}WMS endpoints are accessible${NC}"
 if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}Interactive mode enabled${NC}"
     echo "Services are running at:"
-    echo "  Honua Server:     http://localhost:8080"
+    echo "  Honua Server:     $HONUA_BASE_URL"
     echo "  CITE Team Engine: http://localhost:8083/teamengine"
     echo "  PostgreSQL:       localhost:5435"
     echo ""

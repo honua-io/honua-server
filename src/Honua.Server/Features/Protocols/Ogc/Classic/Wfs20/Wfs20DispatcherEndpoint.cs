@@ -137,6 +137,16 @@ internal static class Wfs20DispatcherEndpoint
 
             if (string.IsNullOrEmpty(requestParam))
             {
+                var malformedLegacyVersion = GetLegacyVersionForMalformedRequest(parameters);
+                if (malformedLegacyVersion is not null)
+                {
+                    return Wfs20Handler.CreateLegacyWfsException(
+                        malformedLegacyVersion,
+                        "MissingParameterValue",
+                        "Missing required 'request' parameter. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature.",
+                        "request");
+                }
+
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
                     "MissingParameterValue",
@@ -234,7 +244,7 @@ internal static class Wfs20DispatcherEndpoint
 
                 var schema = await handler.HandleLegacyDescribeFeatureTypeAsync(context, version, typeNames, cancellationToken)
                     .ConfigureAwait(false);
-                return Results.Content(schema, "application/xml", Encoding.UTF8);
+                return Results.Content(schema, "text/xml", Encoding.UTF8);
             }
 
             if (string.Equals(requestParam, Wfs20Utilities.Operations.GetFeature, StringComparison.OrdinalIgnoreCase))
@@ -789,8 +799,7 @@ internal static class Wfs20DispatcherEndpoint
         string version)
     {
         var service = parameters.Get(Wfs20Utilities.ParameterNames.Service);
-        if (string.IsNullOrWhiteSpace(service) &&
-            !string.Equals(requestParam, Wfs20Utilities.Operations.GetCapabilities, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(service))
         {
             return new WfsValidationError(
                 "MissingParameterValue",
@@ -827,6 +836,12 @@ internal static class Wfs20DispatcherEndpoint
         }
 
         return null;
+    }
+
+    private static string? GetLegacyVersionForMalformedRequest(WfsRequestParameters parameters)
+    {
+        var version = parameters.Get(Wfs20Utilities.ParameterNames.Version);
+        return IsLegacyWfsVersion(version) ? version!.Trim() : null;
     }
 
     private static string? SelectLegacyWfsVersion(WfsRequestParameters parameters, string requestParam)
@@ -1051,6 +1066,7 @@ internal static class Wfs20DispatcherEndpoint
         SetValue(values, Wfs20Utilities.ParameterNames.Request, root.Name.LocalName);
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Service, "service");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Version, "version");
+        ApplyLegacyXmlDefaults(root, values);
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.OutputFormat, "outputFormat");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Count, "count", "maxFeatures");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.StartIndex, "startIndex");
@@ -1198,6 +1214,24 @@ internal static class Wfs20DispatcherEndpoint
 
         CopyElementValue(root, values, Wfs20Utilities.ParameterNames.ValueReference, "ValueReference");
         return queries.Length;
+    }
+
+    private static void ApplyLegacyXmlDefaults(XElement root, Dictionary<string, string> values)
+    {
+        if (!string.Equals(root.Name.NamespaceName, "http://www.opengis.net/wfs", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!values.ContainsKey(Wfs20Utilities.ParameterNames.Service))
+        {
+            SetValue(values, Wfs20Utilities.ParameterNames.Service, Wfs20Utilities.ServiceType);
+        }
+
+        if (!values.ContainsKey(Wfs20Utilities.ParameterNames.Version))
+        {
+            SetValue(values, Wfs20Utilities.ParameterNames.Version, Wfs11Version);
+        }
     }
 
     private static string? NormalizeXmlTypeNames(string? typeNames)

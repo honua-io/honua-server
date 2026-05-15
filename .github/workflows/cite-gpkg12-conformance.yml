@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: cite-gpkg12-conformance-${{ github.ref }}

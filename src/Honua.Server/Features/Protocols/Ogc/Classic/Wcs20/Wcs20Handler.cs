@@ -228,10 +228,10 @@ internal sealed class Wcs20Handler
 
             if (coverage.Coverage is null)
             {
-                Wcs20Log.CoverageNotFound(_logger, coverageId.ToString(CultureInfo.InvariantCulture));
+                Wcs20Log.CoverageNotFound(_logger, coverageId.Raw);
                 return Wcs20ErrorResults.CreateNotFound(
                     Wcs20Utilities.ExceptionCodes.NoSuchCoverage,
-                    $"Coverage '{coverageId.ToString(CultureInfo.InvariantCulture)}' was not found.",
+                    $"Coverage '{coverageId.Raw}' was not found.",
                     Wcs20Utilities.Parameters.CoverageId);
             }
 
@@ -291,10 +291,10 @@ internal sealed class Wcs20Handler
 
         if (coverage.Coverage is null)
         {
-            Wcs20Log.CoverageNotFound(_logger, coverageId.ToString(CultureInfo.InvariantCulture));
+            Wcs20Log.CoverageNotFound(_logger, coverageId.Raw);
             return Wcs20ErrorResults.CreateNotFound(
                 Wcs20Utilities.ExceptionCodes.NoSuchCoverage,
-                $"Coverage '{coverageId.ToString(CultureInfo.InvariantCulture)}' was not found.",
+                $"Coverage '{coverageId.Raw}' was not found.",
                 Wcs20Utilities.Parameters.CoverageId);
         }
 
@@ -312,12 +312,12 @@ internal sealed class Wcs20Handler
         if (!TryResolveCoverageQuery(context.Request.Query, coverage.Coverage.Value.Raster, outputFormat, out var query, out var queryError))
         {
             Wcs20Log.ValidationFailed(_logger, Wcs20Utilities.Operations.GetCoverage, queryError.Detail);
-            return Wcs20ErrorResults.CreateBadRequest(queryError.ExceptionCode, queryError.Detail, queryError.Locator);
+            return CreateGetCoverageParameterError(queryError);
         }
 
         telemetry
-            .WithTag(HonuaTelemetry.Tags.LayerId, coverageId)
-            .WithTag("honua.coverage.id", coverageId)
+            .WithTag(HonuaTelemetry.Tags.LayerId, coverage.Coverage.Value.Layer.Id)
+            .WithTag("honua.coverage.id", coverageId.Raw)
             .WithTag("honua.output.format", formatContentType);
 
         var result = await _rasterStore.ExportImageAsync(
@@ -331,10 +331,9 @@ internal sealed class Wcs20Handler
             .WithTag("honua.result.content_type", result.ContentType);
         telemetry.SetSuccess(1);
 
-        var coverageIdText = coverageId.ToString(CultureInfo.InvariantCulture);
         Wcs20Log.CoverageReturned(
             _logger,
-            coverageIdText,
+            coverageId.Raw,
             result.Data.Length,
             result.ContentType);
 
@@ -395,17 +394,23 @@ internal sealed class Wcs20Handler
     private async Task<CoverageResolutionResult> ResolveCoverageAsync(
         HttpContext context,
         Wcs20RouteScope scope,
-        int coverageId,
+        WcsCoverageIdentifier coverageId,
         CancellationToken cancellationToken)
     {
+        if (!coverageId.LayerId.HasValue)
+        {
+            return new CoverageResolutionResult(null, null);
+        }
+
+        var layerId = coverageId.LayerId.Value;
         if (scope.IsLayerScoped)
         {
-            if (coverageId != scope.LayerId!.Value)
+            if (layerId != scope.LayerId!.Value)
             {
                 return new CoverageResolutionResult(null, null);
             }
 
-            var result = await ResolveLayerScopedCoverageAsync(context, coverageId, failOnAccessDenied: false, cancellationToken)
+            var result = await ResolveLayerScopedCoverageAsync(context, layerId, failOnAccessDenied: false, cancellationToken)
                 .ConfigureAwait(false);
             return new CoverageResolutionResult(result.Coverage, result.Error);
         }
@@ -421,7 +426,7 @@ internal sealed class Wcs20Handler
             return new CoverageResolutionResult(null, null);
         }
 
-        var layer = service.Service.GetLayer(coverageId);
+        var layer = service.Service.GetLayer(layerId);
         if (layer is null ||
             !IsLayerWcsEnabled(layer) ||
             !AccessPolicyHelpers.IsLayerAccessible(context, layer, service.Service))
@@ -429,7 +434,7 @@ internal sealed class Wcs20Handler
             return new CoverageResolutionResult(null, null);
         }
 
-        var raster = await GetPrimaryRasterWithExtentAsync(coverageId, cancellationToken).ConfigureAwait(false);
+        var raster = await GetPrimaryRasterWithExtentAsync(layerId, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new CoverageResolutionResult(null, null)
             : new CoverageResolutionResult(new WcsCoverage(layer, raster.Value, service.Service), null);
@@ -606,6 +611,7 @@ internal sealed class Wcs20Handler
                     new XElement(Ows + "Keyword", "raster")),
                 new XElement(Ows + "ServiceType", "WCS"),
                 new XElement(Ows + "ServiceTypeVersion", Wcs20Utilities.Version),
+                new XElement(Ows + "Profile", "http://www.opengis.net/spec/WCS_protocol-binding_get-kvp/1.0"),
                 new XElement(Ows + "Fees", "NONE"),
                 new XElement(Ows + "AccessConstraints", "NONE")));
         }
@@ -626,19 +632,10 @@ internal sealed class Wcs20Handler
 
         if (IncludesSection(sections, "ServiceMetadata"))
         {
-            var serviceMetadataChildren = new List<object>
-            {
+            rootChildren.Add(new XElement(Wcs + "ServiceMetadata",
                 new XElement(Wcs + "formatSupported", Wcs20Utilities.TiffContentType),
                 new XElement(Wcs + "formatSupported", Wcs20Utilities.PngContentType),
-                new XElement(Wcs + "formatSupported", Wcs20Utilities.JpegContentType)
-            };
-            var supportedCrsElements = BuildSupportedCrsElements(coverages).ToArray();
-            if (supportedCrsElements.Length > 0)
-            {
-                serviceMetadataChildren.Add(new XElement(Wcs + "Extension", supportedCrsElements));
-            }
-
-            rootChildren.Add(new XElement(Wcs + "ServiceMetadata", serviceMetadataChildren));
+                new XElement(Wcs + "formatSupported", Wcs20Utilities.JpegContentType)));
         }
 
         if (IncludesSection(sections, "Contents"))
@@ -683,7 +680,7 @@ internal sealed class Wcs20Handler
             new XElement(Ows + "DCP",
                 new XElement(Ows + "HTTP",
                     new XElement(Ows + "Get",
-                        new XAttribute(XLink + "href", BuildOperationUrl(endpoint, operationName))))),
+                        new XAttribute(XLink + "href", endpoint)))),
             parameters);
 
     private static XElement BuildAllowedValuesParameter(string name, params string[] values)
@@ -696,19 +693,6 @@ internal sealed class Wcs20Handler
         => new(Ows + "Parameter",
             new XAttribute("name", name),
             new XElement(Ows + "AnyValue"));
-
-    private static IEnumerable<XElement> BuildSupportedCrsElements(IReadOnlyCollection<WcsCoverage> coverages)
-    {
-        var seenSrids = new HashSet<int>();
-        foreach (var coverage in coverages)
-        {
-            var srid = ResolveCoverageDescriptionSrid(coverage);
-            if (srid.HasValue && seenSrids.Add(srid.Value))
-            {
-                yield return new XElement(Wcs + "crsSupported", CreateEpsgUri(srid.Value));
-            }
-        }
-    }
 
     private static int? ResolveCoverageDescriptionSrid(WcsCoverage coverage)
     {
@@ -741,15 +725,15 @@ internal sealed class Wcs20Handler
             children.Add(new XElement(Ows + "Abstract", coverage.Layer.Description));
         }
 
-        if (TryResolveExtent(coverage.Raster, out var extent))
+        if (TryResolveExtent(coverage.Raster, out var extent) &&
+            (extent.Srid ?? coverage.Raster.Srid ?? coverage.Layer.SpatialReference.Wkid) == 4326)
         {
-            children.Add(new XElement(Ows + "BoundingBox",
-                new XAttribute("crs", CreateEpsgUri(extent.Srid ?? coverage.Raster.Srid ?? coverage.Layer.SpatialReference.Wkid)),
+            children.Add(new XElement(Ows + "WGS84BoundingBox",
                 new XElement(Ows + "LowerCorner", FormatPosition(extent.XMin, extent.YMin)),
                 new XElement(Ows + "UpperCorner", FormatPosition(extent.XMax, extent.YMax))));
         }
 
-        children.Add(new XElement(Wcs + "CoverageId", coverage.Layer.Id.ToString(CultureInfo.InvariantCulture)));
+        children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.Layer.Id)));
         children.Add(new XElement(Wcs + "CoverageSubtype", "gmlcov:RectifiedGridCoverage"));
 
         return new XElement(Wcs + "CoverageSummary", children);
@@ -782,10 +766,10 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        var coverageId = coverage.Layer.Id.ToString(CultureInfo.InvariantCulture);
+        var coverageId = FormatCoverageId(coverage.Layer.Id);
         var srsName = CreateEpsgUri(srid);
         description = new XElement(Wcs + "CoverageDescription",
-            new XAttribute(Gml + "id", "coverage_" + coverageId),
+            new XAttribute(Gml + "id", coverageId),
             new XElement(Gml + "boundedBy",
                 new XElement(Gml + "Envelope",
                     new XAttribute("srsName", srsName),
@@ -993,11 +977,11 @@ internal sealed class Wcs20Handler
                 continue;
             }
 
-            if (!TryParseSingleSubset(subsetValue, out var axis, out var low, out var high))
+            if (!TryParseSingleSubset(subsetValue, out var axis, out var low, out var high, out var isSlice))
             {
                 error = new WcsParameterError(
                     Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
-                    "SUBSET values must use axis(low,high) syntax.",
+                    "SUBSET values must use axis(low) or axis(low,high) syntax.",
                     Wcs20Utilities.Parameters.Subset);
                 return false;
             }
@@ -1007,8 +991,17 @@ internal sealed class Wcs20Handler
                 if (minX.HasValue)
                 {
                     error = new WcsParameterError(
-                        Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                        Wcs20Utilities.ExceptionCodes.InvalidAxisLabel,
                         "Duplicate X/E/Long subset axis.",
+                        Wcs20Utilities.Parameters.Subset);
+                    return false;
+                }
+
+                if (!isSlice && low >= high)
+                {
+                    error = new WcsParameterError(
+                        Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                        "X/E/Long subset lower bound must be less than the upper bound.",
                         Wcs20Utilities.Parameters.Subset);
                     return false;
                 }
@@ -1021,8 +1014,17 @@ internal sealed class Wcs20Handler
                 if (minY.HasValue)
                 {
                     error = new WcsParameterError(
-                        Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                        Wcs20Utilities.ExceptionCodes.InvalidAxisLabel,
                         "Duplicate Y/N/Lat subset axis.",
+                        Wcs20Utilities.Parameters.Subset);
+                    return false;
+                }
+
+                if (!isSlice && low >= high)
+                {
+                    error = new WcsParameterError(
+                        Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                        "Y/N/Lat subset lower bound must be less than the upper bound.",
                         Wcs20Utilities.Parameters.Subset);
                     return false;
                 }
@@ -1086,11 +1088,13 @@ internal sealed class Wcs20Handler
         string subset,
         out string normalizedAxis,
         out double low,
-        out double high)
+        out double high,
+        out bool isSlice)
     {
         normalizedAxis = string.Empty;
         low = 0;
         high = 0;
+        isSlice = false;
 
         var trimmed = subset.Trim();
         var open = trimmed.IndexOf('(', StringComparison.Ordinal);
@@ -1101,10 +1105,18 @@ internal sealed class Wcs20Handler
 
         var axis = trimmed[..open].Trim();
         var values = trimmed[(open + 1)..^1].Split(",", StringSplitOptions.TrimEntries);
-        if (values.Length != 2 ||
-            !double.TryParse(values[0], NumberStyles.Float, CultureInfo.InvariantCulture, out low) ||
-            !double.TryParse(values[1], NumberStyles.Float, CultureInfo.InvariantCulture, out high) ||
-            low >= high)
+        if (values.Length is < 1 or > 2 ||
+            !double.TryParse(values[0], NumberStyles.Float, CultureInfo.InvariantCulture, out low))
+        {
+            return false;
+        }
+
+        if (values.Length == 1)
+        {
+            high = low;
+            isSlice = true;
+        }
+        else if (!double.TryParse(values[1], NumberStyles.Float, CultureInfo.InvariantCulture, out high))
         {
             return false;
         }
@@ -1257,7 +1269,7 @@ internal sealed class Wcs20Handler
 
     private static bool TryParseCoverageIds(
         IQueryCollection query,
-        out int[] coverageIds,
+        out WcsCoverageIdentifier[] coverageIds,
         out WcsParameterError error)
     {
         coverageIds = [];
@@ -1273,15 +1285,14 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        var parsed = new List<int>();
+        var parsed = new List<WcsCoverageIdentifier>();
         foreach (var token in SplitCsvValues(values))
         {
-            if (!int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out var coverageId) ||
-                coverageId < 0)
+            if (!TryParseCoverageId(token, out var coverageId))
             {
                 error = new WcsParameterError(
                     Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
-                    "COVERAGEID values must be bare non-negative integer layer IDs.",
+                    "COVERAGEID values must be valid coverage identifiers.",
                     Wcs20Utilities.Parameters.CoverageId);
                 return false;
             }
@@ -1301,6 +1312,60 @@ internal sealed class Wcs20Handler
         coverageIds = parsed.Distinct().ToArray();
         return true;
     }
+
+    private static bool TryParseCoverageId(string token, out WcsCoverageIdentifier coverageId)
+    {
+        const string CoveragePrefix = "coverage_";
+
+        coverageId = default;
+        var value = token.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var layerIdCandidate = value;
+        if (layerIdCandidate.StartsWith(CoveragePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            layerIdCandidate = layerIdCandidate[CoveragePrefix.Length..];
+        }
+
+        if (int.TryParse(layerIdCandidate, NumberStyles.None, CultureInfo.InvariantCulture, out var layerId) &&
+            layerId >= 0)
+        {
+            coverageId = new WcsCoverageIdentifier(value, layerId);
+            return true;
+        }
+
+        if (IsValidCoverageIdentifier(value))
+        {
+            coverageId = new WcsCoverageIdentifier(value, null);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsValidCoverageIdentifier(string value)
+    {
+        try
+        {
+            XmlConvert.VerifyNCName(value);
+            return true;
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
+    private static IResult CreateGetCoverageParameterError(WcsParameterError error)
+        => error.ExceptionCode is Wcs20Utilities.ExceptionCodes.InvalidAxisLabel or Wcs20Utilities.ExceptionCodes.InvalidSubsetting
+            ? Wcs20ErrorResults.CreateNotFound(error.ExceptionCode, error.Detail, error.Locator)
+            : Wcs20ErrorResults.CreateBadRequest(error.ExceptionCode, error.Detail, error.Locator);
+
+    private static string FormatCoverageId(int layerId)
+        => string.Concat("coverage_", layerId.ToString(CultureInfo.InvariantCulture));
 
     private static bool TryParseSections(string? value, out IReadOnlySet<string>? sections, out string? error)
     {
@@ -1423,9 +1488,6 @@ internal sealed class Wcs20Handler
         return string.Concat(baseUrl, path);
     }
 
-    private static string BuildOperationUrl(string endpoint, string operation)
-        => string.Concat(endpoint, "?SERVICE=WCS&REQUEST=", operation, "&VERSION=", Wcs20Utilities.Version);
-
     private static string CreateEpsgUri(int srid)
         => FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{srid}");
 
@@ -1496,6 +1558,8 @@ internal sealed class Wcs20Handler
     private readonly record struct ServiceResolutionResult(ServiceDefinition? Service, IResult? Error);
 
     private readonly record struct WcsCoverage(LayerDefinition Layer, RasterInfo Raster, ServiceDefinition? Service);
+
+    private readonly record struct WcsCoverageIdentifier(string Raw, int? LayerId);
 
     private readonly record struct WcsParameterError(string ExceptionCode, string Detail, string Locator);
 }

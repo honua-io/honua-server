@@ -5,11 +5,16 @@ services:
       context: ../../..
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "${HONUA_CITE_KML22_SERVER_PORT:-8096}:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
       - PUBLIC_BASE_URL=http://honua-server:8080
+      - HONUA_DEV_AUTH=true
+      - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
+      - Cache__Enabled=false
+      - DataSource__Provider=postgres
+      - HostValidation__Enabled=false
       - HostValidation__AllowedHosts__0=honua-server
       - HostValidation__AllowedHosts__1=localhost
       - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
@@ -26,7 +31,7 @@ services:
     networks:
       - cite-kml22-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/healthz/ready"]
+      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/ready"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -102,10 +107,22 @@ services:
           unzip -qo -j /root/ets-kml22-*-deps.zip -d /root/te_base/resources/lib || true
           unzip -qo /root/ets-kml22-*-ctl.zip -d /root/te_base/scripts || true
           export TE_BASE=/root/te_base
+          mkdir -p /data
+          cat > /data/test-params.xml <<EOF_PARAMS
+          <?xml version="1.0" encoding="UTF-8"?>
+          <values xmlns:parsers="http://www.occamlab.com/te/parsers">
+            <parsers:session>
+              <parsers:test>ets-kml22-1.16</parsers:test>
+              <parsers:profile>default</parsers:profile>
+            </parsers:session>
+            <value key="uri">$${KML_IUT_URL}</value>
+            <value key="level">1</value>
+          </values>
+          EOF_PARAMS
           echo 'Starting KML 2.2 CITE conformance tests...'
           /tmp/te-console/bin/unix/test.sh \
             -source=/root/te_base/scripts/kml22/2.2/ctl/kml22-suite.ctl \
-            @iut=$${KML_IUT_URL} \
+            -form=/data/test-params.xml \
             -logdir=users/cite/logs \
             -session=cite-kml22-session-$(date +%Y%m%d-%H%M%S)
           echo 'CITE tests completed. Check results in logdir.'

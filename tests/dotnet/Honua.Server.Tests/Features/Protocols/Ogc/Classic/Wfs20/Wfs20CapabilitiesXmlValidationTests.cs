@@ -16,31 +16,17 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public class Wfs20CapabilitiesXmlValidationTests
 {
     [Fact]
-    public void GetCapabilitiesXml_TemporalOperators_ShouldContainRuntimeSupportedOperators()
+    public void GetCapabilitiesXml_TemporalConformance_ShouldNotBeAdvertisedUntilCiteStable()
     {
         var xml = SerializeToXml(CreateWfsCapabilitiesWithFilterCapabilities());
 
-        xml.Should().Contain("TemporalOperators");
-        foreach (var expected in new[]
-                 {
-                     "After",
-                     "Before",
-                     "Begins",
-                     "BegunBy",
-                     "TContains",
-                     "During",
-                     "TEquals",
-                     "TOverlaps",
-                     "Meets",
-                     "MetBy",
-                     "OverlappedBy",
-                     "EndedBy",
-                     "Ends",
-                     "AnyInteracts"
-                 })
-        {
-            xml.Should().Contain($"name=\"{expected}\"");
-        }
+        xml.Should().NotContain("Temporal_Capabilities");
+        xml.Should().NotMatchRegex(@"<([A-Za-z_][\w.-]*:)?TemporalOperators(\s|>|/)");
+        xml.Should().NotContain("name=\"AnyInteracts\"");
+        xml.Should().MatchRegex(@"name=""ImplementsMinTemporalFilter""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsTemporalFilter""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsTemporalInstant""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsTemporalPeriod""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
     }
 
     [Fact]
@@ -48,7 +34,7 @@ public class Wfs20CapabilitiesXmlValidationTests
     {
         var xml = SerializeToXml(CreateWfsCapabilitiesWithFilterCapabilities());
 
-        xml.Should().Contain("Functions");
+        xml.Should().NotContain("<Functions");
         xml.Should().NotContain("name=\"ST_Area\"");
         xml.Should().NotContain("name=\"UPPER\"");
         xml.Should().MatchRegex(@"name=""ImplementsFunctions""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
@@ -69,7 +55,7 @@ public class Wfs20CapabilitiesXmlValidationTests
         xml.Should().Contain("Conformance");
         xml.Should().Contain("Scalar_Capabilities");
         xml.Should().Contain("Spatial_Capabilities");
-        xml.Should().Contain("Temporal_Capabilities");
+        xml.Should().NotContain("Temporal_Capabilities");
         xml.Should().Contain("xmlns:fes=");
         xml.Should().Contain("xmlns:gml=");
         xml.Should().Contain("xmlns:xsd=");

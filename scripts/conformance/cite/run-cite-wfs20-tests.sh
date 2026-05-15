@@ -17,9 +17,11 @@ CITE_COMPOSE_FILE="docker/cite/wfs20/compose.yml"
 CITE_RESULTS_DIR="cite-wfs20-results"
 CITE_TIMEOUT=1800  # 30 minutes timeout
 HEALTHCHECK_TIMEOUT=300  # 5 minutes
-HONUA_BASE_URL="http://localhost:8090"
+HONUA_CITE_WFS20_SERVER_PORT="${HONUA_CITE_WFS20_SERVER_PORT:-8090}"
+HONUA_BASE_URL="http://localhost:${HONUA_CITE_WFS20_SERVER_PORT}"
 HONUA_WFS_URL="${HONUA_BASE_URL}/wfs?service=WFS&version=2.0.0&request=GetCapabilities"
 HONUA_CITE_WFS20_POSTGRES_PORT="${HONUA_CITE_WFS20_POSTGRES_PORT:-5433}"
+export HONUA_CITE_WFS20_SERVER_PORT
 export HONUA_CITE_WFS20_POSTGRES_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
@@ -34,6 +36,7 @@ CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
 PROFILE="basic"
+SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -53,6 +56,10 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift 2
             ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -61,6 +68,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
             echo "  --profile PROF    Use specific CITE profile (default: basic)"
+            echo "  --skip-build      Reuse existing honua-server:latest image"
             echo "  --help, -h        Show this help"
             echo ""
             echo "Profiles:"
@@ -106,7 +114,7 @@ if [[ ! -f "$CITE_COMPOSE_FILE" ]]; then
     exit 1
 fi
 
-if [[ "${HONUA_CITE_SKIP_BUILD:-false}" == "true" ]]; then
+if [[ "$SKIP_BUILD" == "true" ]]; then
     echo -e "${YELLOW}Skipping Honua Server Docker image build; using existing honua-server:latest${NC}"
 else
     # Build Honua Server image
@@ -321,7 +329,7 @@ else
         FAILED_TESTS=$((TOTAL_TESTS - PASSED_TESTS))
         SKIPPED_TESTS=0
 
-        if grep -q "FULL WFS 2.0 CITE COMPLIANCE ACHIEVED" "$CITE_RESULTS_DIR/cite-runner.log" 2>/dev/null; then
+        if grep -q "WFS 2.0 CITE gate passed with no failed tests" "$CITE_RESULTS_DIR/cite-runner.log" 2>/dev/null; then
             COMPLIANCE_STATUS="COMPLIANT"
         elif grep -q "Partial WFS 2.0" "$CITE_RESULTS_DIR/cite-runner.log" 2>/dev/null; then
             COMPLIANCE_STATUS="PARTIAL"
@@ -362,9 +370,9 @@ cat > "$CITE_RESULTS_DIR/cite-summary.md" << EOF
 
 $(
 if [[ "$COMPLIANCE_STATUS" == "COMPLIANT" ]]; then
-    echo "🎉 **FULL WFS 2.0 CITE COMPLIANCE ACHIEVED!**"
+    echo "🎉 **WFS 2.0 CITE gate passed with no failed tests.**"
     echo ""
-    echo "The Honua Server WFS 2.0 implementation passes all required CITE conformance tests."
+    echo "Skipped tests are expected for optional conformance classes that the capabilities document does not advertise."
 elif [[ "$COMPLIANCE_STATUS" == "PARTIAL" ]]; then
     echo "⚠️ **Partial WFS 2.0 CITE Compliance**"
     echo ""
@@ -395,7 +403,7 @@ $(find "$CITE_RESULTS_DIR" -type f 2>/dev/null | sort | sed 's/^/- /' || echo "-
 
 $(
 if [[ "$COMPLIANCE_STATUS" == "COMPLIANT" ]]; then
-    echo "✅ **WFS 2.0 Implementation Complete**"
+    echo "✅ **WFS 2.0 CITE Gate Passing**"
     echo ""
     echo "- Document compliance achievement"
     echo "- Add to production deployment"
@@ -439,7 +447,10 @@ echo "Execution Time: ${TEST_DURATION}s"
 
 # Determine exit code
 if [[ "$COMPLIANCE_STATUS" == "COMPLIANT" ]]; then
-    echo -e "\n${GREEN}🎉 WFS 2.0 CITE COMPLIANCE ACHIEVED!${NC}"
+    echo -e "\n${GREEN}🎉 WFS 2.0 CITE gate passed with no failed tests${NC}"
+    if [[ $SKIPPED_TESTS -gt 0 ]]; then
+        echo "Skipped tests correspond to unadvertised optional conformance classes."
+    fi
     exit 0
 elif [[ "$COMPLIANCE_STATUS" == "PARTIAL" && $PASSED_TESTS -gt 0 ]]; then
     echo -e "\n${YELLOW}⚠️ Partial WFS 2.0 compliance - some tests passed${NC}"

@@ -5,11 +5,16 @@ services:
       context: ../../..
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "${HONUA_CITE_GML32_SERVER_PORT:-8094}:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
       - PUBLIC_BASE_URL=http://honua-server:8080
+      - HONUA_DEV_AUTH=true
+      - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
+      - Cache__Enabled=false
+      - DataSource__Provider=postgres
+      - HostValidation__Enabled=false
       - HostValidation__AllowedHosts__0=honua-server
       - HostValidation__AllowedHosts__1=localhost
       - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
@@ -26,7 +31,7 @@ services:
     networks:
       - cite-gml32-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/healthz/ready"]
+      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/ready"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -108,10 +113,21 @@ services:
           unzip -qo -j /root/ets-gml32-*-deps.zip -d /root/te_base/resources/lib || true
           unzip -qo /root/ets-gml32-*-ctl.zip -d /root/te_base/scripts || true
           export TE_BASE=/root/te_base
+          cat > /data/test-params.xml <<'EOF_PARAMS'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <values xmlns:parsers="http://www.occamlab.com/te/parsers">
+            <parsers:session>
+              <parsers:test>ets-gml32-1.33</parsers:test>
+              <parsers:profile>default</parsers:profile>
+            </parsers:session>
+            <value key="gml-uri">file:///data/output.gml</value>
+            <value key="sch-uri"></value>
+          </values>
+          EOF_PARAMS
           echo 'Starting GML 3.2 CITE conformance tests...'
           /tmp/te-console/bin/unix/test.sh \
             -source=/root/te_base/scripts/gml32/3.2/ctl/gml-suite.ctl \
-            @iut=file:///data/output.gml \
+            -form=/data/test-params.xml \
             -logdir=users/cite/logs \
             -session=cite-gml32-session-$(date +%Y%m%d-%H%M%S)
           echo 'CITE tests completed. Check results in logdir.'

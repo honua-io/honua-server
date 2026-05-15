@@ -303,6 +303,23 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("FeatureCollection");
         content.Should().Contain("gml");
+        content.Should().Contain("xsi:schemaLocation=");
+        content.Should().Contain(OgcFeaturesUtilities.GmlApplicationSchemaPath);
+        content.Should().Contain("gml:id=\"geom_");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/features/schemas/honua-ogcapi-features.xsd")]
+    public async Task GetGmlApplicationSchema_ReturnsFeatureSchema()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/features/schemas/honua-ogcapi-features.xsd");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("targetNamespace=\"http://www.opengis.net/ogcapi-features-1/1.0\"");
+        content.Should().Contain("substitutionGroup=\"gml:AbstractFeature\"");
     }
 
     [IntegrationTest]

@@ -54,7 +54,7 @@ internal static class GeoPackageExportWriter
 
         await CreateMetadataTablesAsync(connection, cancellationToken).ConfigureAwait(false);
         await InsertSpatialRefAsync(connection, srid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
-        await CreateFeatureTableAsync(connection, fields, cancellationToken).ConfigureAwait(false);
+        await CreateFeatureTableAsync(connection, fields, geometryType, cancellationToken).ConfigureAwait(false);
         await RegisterContentsAsync(connection, srid, cancellationToken).ConfigureAwait(false);
 
         var insertSummary = await InsertFeaturesAsync(connection, features, fields, srid, cancellationToken)
@@ -79,7 +79,7 @@ internal static class GeoPackageExportWriter
 
             CREATE TABLE IF NOT EXISTS gpkg_contents (
                 table_name TEXT NOT NULL PRIMARY KEY,
-                data_type TEXT NOT NULL DEFAULT 'features',
+                data_type TEXT NOT NULL,
                 identifier TEXT UNIQUE,
                 description TEXT DEFAULT '',
                 last_change DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -154,9 +154,13 @@ internal static class GeoPackageExportWriter
     }
 
     private static async Task CreateFeatureTableAsync(
-        SqliteConnection connection, FieldDefinition[] fields, CancellationToken ct)
+        SqliteConnection connection, FieldDefinition[] fields, GeometryType geometryType, CancellationToken ct)
     {
-        var columns = new List<string> { "fid INTEGER PRIMARY KEY AUTOINCREMENT", "geom BLOB" };
+        var columns = new List<string>
+        {
+            "fid INTEGER PRIMARY KEY AUTOINCREMENT",
+            $"geom {MapGpkgGeometryType(geometryType)}"
+        };
 
         foreach (var field in fields)
         {

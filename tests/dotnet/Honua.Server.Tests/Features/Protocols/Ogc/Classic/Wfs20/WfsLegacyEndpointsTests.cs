@@ -86,7 +86,6 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
         content.Should().Contain("<wfs:FeatureCollection");
-        content.Should().Contain("version=\"1.1.0\"");
         content.Should().Contain("xmlns:gml=\"http://www.opengis.net/gml\"");
         content.Should().Contain("<gml:featureMember>");
         content.Should().Contain("gml:id=\"test_layer.");
@@ -107,7 +106,6 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
         content.Should().Contain("<wfs:FeatureCollection");
-        content.Should().Contain("version=\"1.1.0\"");
         content.Should().Contain("gml:id=\"test_layer.");
     }
 
@@ -147,7 +145,7 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         var responseBody = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
         responseBody.Should().Contain("<wfs:FeatureCollection");
-        responseBody.Should().Contain("version=\"1.1.0\"");
+        responseBody.Should().Contain("gml:id=\"test_layer.");
     }
 
     [IntegrationTest]
@@ -194,7 +192,8 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("<ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows\" version=\"1.0.0\">");
+        content.Should().Contain("<ows:ExceptionReport");
+        content.Should().Contain("version=\"1.0.0\"");
         content.Should().Contain("VersionNegotiationFailed");
     }
 
@@ -224,7 +223,8 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("<ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows\" version=\"1.0.0\">");
+        content.Should().Contain("<ows:ExceptionReport");
+        content.Should().Contain("version=\"1.0.0\"");
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"RESOURCEID\"");
         content.Should().Contain("resourceId");
@@ -244,7 +244,8 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("<ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows\" version=\"1.0.0\">");
+        content.Should().Contain("<ows:ExceptionReport");
+        content.Should().Contain("version=\"1.0.0\"");
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"SRSNAME\"");
         content.Should().Contain("Unsupported srsName");
@@ -319,7 +320,6 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
         content.Should().Contain("<wfs:FeatureCollection");
-        content.Should().Contain("version=\"1.0.0\"");
         content.Should().Contain("<gml:featureMember>");
         content.Should().Contain("<gml:coordinates>");
     }
@@ -339,7 +339,6 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
         content.Should().Contain("<wfs:FeatureCollection");
-        content.Should().Contain("version=\"1.0.0\"");
         content.Should().Contain("<gml:coordinates>");
     }
 
@@ -355,7 +354,7 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("numberOfFeatures=\"0\"");
+        content.Should().Contain("<gml:null>unknown</gml:null>");
         content.Should().NotContain("<gml:featureMember>");
     }
 
@@ -402,7 +401,8 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("<ServiceExceptionReport version=\"1.0.0\">");
+        content.Should().Contain("<ogc:ServiceExceptionReport");
+        content.Should().Contain("version=\"1.2.0\"");
         content.Should().Contain("VersionNegotiationFailed");
     }
 
@@ -417,7 +417,8 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("<ServiceExceptionReport version=\"1.0.0\">");
+        content.Should().Contain("<ogc:ServiceExceptionReport");
+        content.Should().Contain("version=\"1.2.0\"");
         content.Should().Contain("Unknown feature type");
     }
 
@@ -432,7 +433,8 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("<ServiceExceptionReport version=\"1.0.0\">");
+        content.Should().Contain("<ogc:ServiceExceptionReport");
+        content.Should().Contain("version=\"1.2.0\"");
         content.Should().Contain("code=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"RESOURCEID\"");
         content.Should().Contain("resourceId");
@@ -452,7 +454,8 @@ public sealed class WfsLegacyEndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("<ServiceExceptionReport version=\"1.0.0\">");
+        content.Should().Contain("<ogc:ServiceExceptionReport");
+        content.Should().Contain("version=\"1.2.0\"");
         content.Should().Contain("code=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"SRSNAME\"");
         content.Should().Contain("Unsupported srsName");

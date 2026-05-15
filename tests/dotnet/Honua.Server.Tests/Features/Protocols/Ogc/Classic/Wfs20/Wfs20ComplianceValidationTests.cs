@@ -26,7 +26,10 @@ public class Wfs20ComplianceValidationTests
         constraintValues["ImplementsResourceId"].Should().Be("TRUE");
         constraintValues["ImplementsStandardFilter"].Should().Be("TRUE");
         constraintValues["ImplementsSpatialFilter"].Should().Be("TRUE");
-        constraintValues["ImplementsTemporalFilter"].Should().Be("TRUE");
+        constraintValues["ImplementsMinTemporalFilter"].Should().Be("FALSE");
+        constraintValues["ImplementsTemporalFilter"].Should().Be("FALSE");
+        constraintValues["ImplementsTemporalInstant"].Should().Be("FALSE");
+        constraintValues["ImplementsTemporalPeriod"].Should().Be("FALSE");
         constraintValues["ImplementsFunctions"].Should().Be("FALSE");
         constraintValues["ImplementsCQL2Text"].Should().Be("FALSE");
         constraintValues["ImplementsCQL2JSON"].Should().Be("FALSE");
@@ -45,28 +48,19 @@ public class Wfs20ComplianceValidationTests
     }
 
     [Fact]
-    public void TemporalOperators_ShouldFollowOGCNamingConventions()
+    public void TemporalCapabilities_ShouldBeOmittedWhenTemporalConformanceIsFalse()
     {
         var filterCapabilities = InvokeBuildFilterCapabilities();
-        var temporalOperators = filterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators;
 
-        foreach (var op in temporalOperators)
-        {
-            op.Name.Should().NotBeNullOrWhiteSpace();
-            op.Name.Should().MatchRegex(@"^[A-Z][a-zA-Z]*$");
-            op.Name.Should().NotStartWith("T_");
-        }
-
-        temporalOperators.Select(op => op.Name).Should().OnlyHaveUniqueItems();
+        filterCapabilities.TemporalCapabilities.Should().BeNull();
     }
 
     [Fact]
-    public void FunctionDefinitions_ShouldBeEmptyWhenFunctionsConformanceIsFalse()
+    public void FunctionDefinitions_ShouldBeOmittedWhenFunctionsConformanceIsFalse()
     {
         var filterCapabilities = InvokeBuildFilterCapabilities();
 
-        filterCapabilities.Functions.Should().NotBeNull();
-        filterCapabilities.Functions!.Functions.Should().BeEmpty();
+        filterCapabilities.Functions.Should().BeNull();
         filterCapabilities.Conformance.Constraints
             .Single(c => c.Name == "ImplementsFunctions")
             .DefaultValue.Should().Be("FALSE");
