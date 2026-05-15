@@ -16,21 +16,27 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public class Wfs20EnhancedFilterCapabilitiesTests
 {
     [Fact]
-    public void BuildFilterCapabilities_ShouldNotAdvertiseTemporalConformanceUntilCiteStable()
+    public void BuildFilterCapabilities_ShouldAdvertiseMinimumTemporalConformance()
     {
         // Act
         var filterCapabilities = InvokeBuildFilterCapabilities();
 
         // Assert
         filterCapabilities.Should().NotBeNull();
-        filterCapabilities.TemporalCapabilities.Should().BeNull();
+        filterCapabilities.TemporalCapabilities.Should().NotBeNull();
+        filterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
+            .Select(op => op.Name)
+            .Should().BeEquivalentTo("After", "Before", "During");
+        filterCapabilities.TemporalCapabilities.TemporalOperands!.Operands
+            .Select(op => op.Name.Name)
+            .Should().BeEquivalentTo("TimeInstant", "TimePeriod");
 
         var constraints = filterCapabilities.Conformance.Constraints
             .ToDictionary(c => c.Name, c => c.DefaultValue);
-        constraints["ImplementsMinTemporalFilter"].Should().Be("FALSE");
+        constraints["ImplementsMinTemporalFilter"].Should().Be("TRUE");
         constraints["ImplementsTemporalFilter"].Should().Be("FALSE");
-        constraints["ImplementsTemporalInstant"].Should().Be("FALSE");
-        constraints["ImplementsTemporalPeriod"].Should().Be("FALSE");
+        constraints["ImplementsTemporalInstant"].Should().Be("TRUE");
+        constraints["ImplementsTemporalPeriod"].Should().Be("TRUE");
     }
 
     [Fact]
@@ -154,10 +160,10 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         constraintNames.Should().Contain("ImplementsComparisonOperators");
 
         constraints.Should().Contain(c => c.Name == "ImplementsFunctions" && c.DefaultValue == "FALSE");
-        constraints.Should().Contain(c => c.Name == "ImplementsMinTemporalFilter" && c.DefaultValue == "FALSE");
+        constraints.Should().Contain(c => c.Name == "ImplementsMinTemporalFilter" && c.DefaultValue == "TRUE");
         constraints.Should().Contain(c => c.Name == "ImplementsTemporalFilter" && c.DefaultValue == "FALSE");
-        constraints.Should().Contain(c => c.Name == "ImplementsTemporalInstant" && c.DefaultValue == "FALSE");
-        constraints.Should().Contain(c => c.Name == "ImplementsTemporalPeriod" && c.DefaultValue == "FALSE");
+        constraints.Should().Contain(c => c.Name == "ImplementsTemporalInstant" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsTemporalPeriod" && c.DefaultValue == "TRUE");
         constraints.Should().Contain(c => c.Name == "ImplementsArithmeticOperators" && c.DefaultValue == "FALSE");
         constraints.Should().Contain(c => c.Name == "ImplementsExtendedOperators" && c.DefaultValue == "TRUE");
         constraints.Should().Contain(c => c.Name == "ImplementsCQL2Text" && c.DefaultValue == "FALSE");
@@ -187,8 +193,8 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         xml.Should().NotBeEmpty();
         xml.Should().Contain("Filter_Capabilities");
         xml.Should().Contain("Conformance");
-        xml.Should().NotMatchRegex(@"<([A-Za-z_][\w.-]*:)?TemporalOperators(\s|>|/)");
-        xml.Should().NotContain("Temporal_Capabilities");
+        xml.Should().MatchRegex(@"<([A-Za-z_][\w.-]*:)?TemporalOperators(\s|>|/)");
+        xml.Should().Contain("Temporal_Capabilities");
         xml.Should().Contain("SpatialOperators");
         xml.Should().Contain("ComparisonOperators");
         xml.Should().NotContain("<Functions");

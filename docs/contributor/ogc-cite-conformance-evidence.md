@@ -38,15 +38,25 @@ suite/profile is removed from the public claim.
 | OGC API Tiles 1.0 | `default` | 16 | 16 | 0 | 0 | 0 | Passing |
 | WFS 1.0 | `basic` | 162 | 162 | 0 | 0 | 0 | Passing |
 | WFS 1.1 | `basic` | 39 | 39 | 0 | 0 | 0 | Passing |
+| WFS 2.0 | `basic` | 167 | 167 | 0 | 0 | 0 | Passing |
 | WMS 1.3 | `default` | 199 | 199 | 0 | 0 | 0 | Passing |
 | WMTS 1.0 | `default` | 60 | 60 | 0 | 0 | 0 | Passing |
+
+WFS 2.0 `basic` evidence runs the official ETS tests for the WFS 2.0
+capabilities Honua advertises in this profile: basic/read, temporal filters,
+spatial filters, response paging, transactions, and managed stored queries.
+Unsupported optional WFS 2.0 capabilities that Honua does not advertise, such as
+locking, feature versioning, and spatial joins, are outside this public evidence
+claim.
+
+The explicit WFS 2.0 transactional slice was also run separately from the same
+branch and passed 25/25 tests with 0 failed and 0 skipped.
 
 The following suites are not yet acceptable for a 100% passed public evidence
 claim:
 
 | Suite | Profile | Total | Passed | Failed | Skipped | CantTell | Status |
 |---|---:|---:|---:|---:|---:|---:|---|
-| WFS 2.0 | `basic` | 240 | 180 | 0 | 60 | 0 | Incomplete |
 | GML 3.2 | `default` | 33 | 6 | 0 | 27 | 0 | Incomplete |
 | GeoPackage 1.2 | `default` | 109 | 31 | 0 | 78 | 0 | Incomplete |
 | KML 2.2 | `default` | 70 | 42 | 0 | 28 | 0 | Incomplete |
@@ -61,6 +71,7 @@ scripts/conformance/cite/run-cite-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-tiles-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-wfs10-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wfs11-tests.sh --profile basic --verbose
+scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wms-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-wmts-tests.sh --profile default --verbose
 ```
@@ -69,7 +80,6 @@ Run the strict burn-down suites locally; these must reach zero failed, skipped,
 and CantTell results before they can be added to the public evidence table:
 
 ```bash
-scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wcs20-tests.sh --profile core --verbose
 scripts/conformance/cite/run-cite-gml32-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-gpkg12-tests.sh --profile default --verbose

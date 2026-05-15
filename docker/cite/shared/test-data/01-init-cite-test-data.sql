@@ -343,7 +343,7 @@ VALUES
             'description', 'Municipal government building',
             'rating', 4.5,
             'is_public', true,
-            'created_date', '2024-01-01T09:00:00Z',
+            'created_date', '2024-01-01T18:00:00.123+09:00',
             'event_date', '2024-01-01')
     ),
     (
@@ -357,7 +357,7 @@ VALUES
             'description', NULL,
             'rating', 4.9,
             'is_public', true,
-            'created_date', '2024-01-02T10:15:00Z',
+            'created_date', '2024-01-02T19:15:00.123+09:00',
             'event_date', '2024-01-02')
     ),
     (
@@ -371,7 +371,7 @@ VALUES
             'description', 'Regional hospital',
             'rating', 4.2,
             'is_public', false,
-            'created_date', '2024-01-03T12:30:00Z',
+            'created_date', '2024-01-03T21:30:00.123+09:00',
             'event_date', NULL)
     ),
     (
@@ -385,7 +385,7 @@ VALUES
             'area_km2', 5.2,
             'population', 15000,
             'status', 'active',
-            'created_date', '2024-02-01T08:00:00Z')
+            'created_date', '2024-02-01T17:00:00.123+09:00')
     ),
     (
         102,
@@ -398,7 +398,7 @@ VALUES
             'area_km2', 12.8,
             'population', 45000,
             'status', 'planned',
-            'created_date', '2024-02-02T08:00:00Z')
+            'created_date', '2024-02-02T17:00:00.123+09:00')
     ),
     (
         201,
@@ -410,7 +410,7 @@ VALUES
             'transport_type', 'road',
             'length_km', 2.5,
             'is_active', true,
-            'created_date', '2024-03-01T07:00:00Z')
+            'created_date', '2024-03-01T16:00:00.123+09:00')
     ),
     (
         202,
@@ -422,7 +422,7 @@ VALUES
             'transport_type', 'rail',
             'length_km', 8.2,
             'is_active', false,
-            'created_date', '2024-03-02T07:00:00Z')
+            'created_date', '2024-03-02T16:00:00.123+09:00')
     );
 
 INSERT INTO features (objectid, layer_id, geometry, attributes)

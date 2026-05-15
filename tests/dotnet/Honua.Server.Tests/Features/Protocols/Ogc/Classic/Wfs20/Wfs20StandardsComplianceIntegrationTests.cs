@@ -23,8 +23,8 @@ public class Wfs20StandardsComplianceIntegrationTests
         xml.Should().NotBeEmpty();
         xml.Should().Contain("Filter_Capabilities");
         xml.Should().Contain("Conformance");
-        xml.Should().NotMatchRegex(@"<([A-Za-z_][\w.-]*:)?TemporalOperators(\s|>|/)");
-        xml.Should().NotContain("Temporal_Capabilities");
+        xml.Should().MatchRegex(@"<([A-Za-z_][\w.-]*:)?TemporalOperators(\s|>|/)");
+        xml.Should().Contain("Temporal_Capabilities");
         xml.Should().Contain("SpatialOperators");
         xml.Should().Contain("ComparisonOperators");
         xml.Should().NotContain("<Functions");
@@ -36,11 +36,14 @@ public class Wfs20StandardsComplianceIntegrationTests
     }
 
     [Fact]
-    public void FilterCapabilities_TemporalCapabilities_ShouldBeOmittedUntilCiteStable()
+    public void FilterCapabilities_TemporalCapabilities_ShouldAdvertiseMinimumTemporalOperators()
     {
         var capabilities = CreateCompleteWfsCapabilities();
 
-        capabilities.FilterCapabilities!.TemporalCapabilities.Should().BeNull();
+        capabilities.FilterCapabilities!.TemporalCapabilities.Should().NotBeNull();
+        capabilities.FilterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
+            .Select(op => op.Name)
+            .Should().BeEquivalentTo("After", "Before", "During");
     }
 
     [Fact]
@@ -57,7 +60,10 @@ public class Wfs20StandardsComplianceIntegrationTests
                      "ImplementsResourceId",
                      "ImplementsStandardFilter",
                      "ImplementsMinSpatialFilter",
-                     "ImplementsSpatialFilter"
+                     "ImplementsSpatialFilter",
+                     "ImplementsMinTemporalFilter",
+                     "ImplementsTemporalInstant",
+                     "ImplementsTemporalPeriod"
                  })
         {
             constraintValues[required].Should().Be("TRUE");
@@ -80,10 +86,7 @@ public class Wfs20StandardsComplianceIntegrationTests
                      "ImplementsCQL2SpatialOperators",
                      "ImplementsCQL2TemporalOperators",
                      "ImplementsCQL2Functions",
-                     "ImplementsMinTemporalFilter",
-                     "ImplementsTemporalFilter",
-                     "ImplementsTemporalInstant",
-                     "ImplementsTemporalPeriod"
+                     "ImplementsTemporalFilter"
                  })
         {
             constraintValues[unsupported].Should().Be("FALSE");

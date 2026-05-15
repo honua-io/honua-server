@@ -690,16 +690,8 @@ public static class Fes20Parser
 
     private static IntervalLiteral ParseTimePeriod(XElement element)
     {
-        var beginPosition = element.Descendants()
-            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
-                                         candidate.Name.LocalName is "beginPosition" or "timePosition" &&
-                                         candidate.Parent?.Name.LocalName is "TimePeriod" or "begin" or "TimeInstant")
-            ?.Value;
-        var endPosition = element.Descendants()
-            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
-                                         candidate.Name.LocalName is "endPosition" or "timePosition" &&
-                                         candidate.Parent?.Name.LocalName is "TimePeriod" or "end" or "TimeInstant")
-            ?.Value;
+        var beginPosition = FindTimePeriodPosition(element, "begin", "beginPosition");
+        var endPosition = FindTimePeriodPosition(element, "end", "endPosition");
 
         if (string.IsNullOrWhiteSpace(beginPosition) || string.IsNullOrWhiteSpace(endPosition))
         {
@@ -709,6 +701,29 @@ public static class Fes20Parser
         return new IntervalLiteral(
             ParseTemporalPosition(beginPosition),
             ParseTemporalPosition(endPosition));
+    }
+
+    private static string? FindTimePeriodPosition(
+        XElement period,
+        string containerName,
+        string directPositionName)
+    {
+        var direct = period.Elements()
+            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                         candidate.Name.LocalName == directPositionName)
+            ?.Value;
+        if (!string.IsNullOrWhiteSpace(direct))
+        {
+            return direct;
+        }
+
+        return period.Elements()
+            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                         candidate.Name.LocalName == containerName)
+            ?.Descendants()
+            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                         candidate.Name.LocalName == "timePosition")
+            ?.Value;
     }
 
     private static Literal ParseTemporalPosition(string value)

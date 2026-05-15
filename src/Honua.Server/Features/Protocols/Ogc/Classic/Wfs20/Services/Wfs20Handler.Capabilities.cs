@@ -440,6 +440,14 @@ internal sealed partial class Wfs20Handler
                 CreateOperation(Wfs20Utilities.Operations.DescribeStoredQueries, wfsUrl,
                 [
                     CreateParameter("storedquery_id", allowAnyValue: true)
+                ]),
+                CreateOperation(Wfs20Utilities.Operations.CreateStoredQuery, wfsUrl,
+                [
+                    CreateParameter("language", WfsQueryExpressionLanguage)
+                ]),
+                CreateOperation(Wfs20Utilities.Operations.DropStoredQuery, wfsUrl,
+                [
+                    CreateParameter("storedquery_id", allowAnyValue: true)
                 ])
             ],
             Parameters =
@@ -459,7 +467,7 @@ internal sealed partial class Wfs20Handler
                 CreateBooleanConstraint("ImplementsSpatialJoins", false),
                 CreateBooleanConstraint("ImplementsTemporalJoins", false),
                 CreateBooleanConstraint("ImplementsFeatureVersioning", false),
-                CreateBooleanConstraint("ManageStoredQueries", false),
+                CreateBooleanConstraint("ManageStoredQueries", true),
                 CreateBooleanConstraint("KVPEncoding", true),
                 CreateBooleanConstraint("XMLEncoding", true),
                 CreateBooleanConstraint("SOAPEncoding", false),
@@ -552,13 +560,10 @@ internal sealed partial class Wfs20Handler
                     CreateBooleanFesConstraint("ImplementsBBOX", true),
                     CreateBooleanFesConstraint("ImplementsDistanceBuffer", true),
 
-                    // Runtime temporal predicates are still available, but the WFS 2.0
-                    // capabilities document must not advertise FES temporal conformance
-                    // until the instant/period matrix is CITE-stable.
-                    CreateBooleanFesConstraint("ImplementsMinTemporalFilter", false),
+                    CreateBooleanFesConstraint("ImplementsMinTemporalFilter", true),
                     CreateBooleanFesConstraint("ImplementsTemporalFilter", false),
-                    CreateBooleanFesConstraint("ImplementsTemporalInstant", false),
-                    CreateBooleanFesConstraint("ImplementsTemporalPeriod", false),
+                    CreateBooleanFesConstraint("ImplementsTemporalInstant", true),
+                    CreateBooleanFesConstraint("ImplementsTemporalPeriod", true),
 
                     // Additional capabilities
                     CreateBooleanFesConstraint("ImplementsVersionNav", false),
@@ -653,6 +658,26 @@ internal sealed partial class Wfs20Handler
                         // Distance operators
                         new Models.SpatialOperator { Name = "DWithin" },
                         new Models.SpatialOperator { Name = "Beyond" }
+                    ]
+                }
+            },
+            TemporalCapabilities = new TemporalCapabilities
+            {
+                TemporalOperands = new TemporalOperands
+                {
+                    Operands =
+                    [
+                        new TemporalOperand { Name = new XmlQualifiedName("TimeInstant", Wfs20Utilities.GmlNamespace) },
+                        new TemporalOperand { Name = new XmlQualifiedName("TimePeriod", Wfs20Utilities.GmlNamespace) }
+                    ]
+                },
+                TemporalOperators = new TemporalOperators
+                {
+                    Operators =
+                    [
+                        new Models.TemporalOperator { Name = "After" },
+                        new Models.TemporalOperator { Name = "Before" },
+                        new Models.TemporalOperator { Name = "During" }
                     ]
                 }
             }

@@ -26,10 +26,10 @@ public class Wfs20ComplianceValidationTests
         constraintValues["ImplementsResourceId"].Should().Be("TRUE");
         constraintValues["ImplementsStandardFilter"].Should().Be("TRUE");
         constraintValues["ImplementsSpatialFilter"].Should().Be("TRUE");
-        constraintValues["ImplementsMinTemporalFilter"].Should().Be("FALSE");
+        constraintValues["ImplementsMinTemporalFilter"].Should().Be("TRUE");
         constraintValues["ImplementsTemporalFilter"].Should().Be("FALSE");
-        constraintValues["ImplementsTemporalInstant"].Should().Be("FALSE");
-        constraintValues["ImplementsTemporalPeriod"].Should().Be("FALSE");
+        constraintValues["ImplementsTemporalInstant"].Should().Be("TRUE");
+        constraintValues["ImplementsTemporalPeriod"].Should().Be("TRUE");
         constraintValues["ImplementsFunctions"].Should().Be("FALSE");
         constraintValues["ImplementsCQL2Text"].Should().Be("FALSE");
         constraintValues["ImplementsCQL2JSON"].Should().Be("FALSE");
@@ -48,11 +48,14 @@ public class Wfs20ComplianceValidationTests
     }
 
     [Fact]
-    public void TemporalCapabilities_ShouldBeOmittedWhenTemporalConformanceIsFalse()
+    public void TemporalCapabilities_ShouldAdvertiseMinimumTemporalOperators()
     {
         var filterCapabilities = InvokeBuildFilterCapabilities();
 
-        filterCapabilities.TemporalCapabilities.Should().BeNull();
+        filterCapabilities.TemporalCapabilities.Should().NotBeNull();
+        filterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
+            .Select(op => op.Name)
+            .Should().BeEquivalentTo("After", "Before", "During");
     }
 
     [Fact]

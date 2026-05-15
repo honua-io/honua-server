@@ -16,17 +16,20 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public class Wfs20CapabilitiesXmlValidationTests
 {
     [Fact]
-    public void GetCapabilitiesXml_TemporalConformance_ShouldNotBeAdvertisedUntilCiteStable()
+    public void GetCapabilitiesXml_TemporalConformance_ShouldAdvertiseMinimumTemporalFilterSupport()
     {
         var xml = SerializeToXml(CreateWfsCapabilitiesWithFilterCapabilities());
 
-        xml.Should().NotContain("Temporal_Capabilities");
-        xml.Should().NotMatchRegex(@"<([A-Za-z_][\w.-]*:)?TemporalOperators(\s|>|/)");
+        xml.Should().Contain("Temporal_Capabilities");
+        xml.Should().MatchRegex(@"<([A-Za-z_][\w.-]*:)?TemporalOperators(\s|>|/)");
+        xml.Should().Contain("name=\"After\"");
+        xml.Should().Contain("name=\"Before\"");
+        xml.Should().Contain("name=\"During\"");
         xml.Should().NotContain("name=\"AnyInteracts\"");
-        xml.Should().MatchRegex(@"name=""ImplementsMinTemporalFilter""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsMinTemporalFilter""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
         xml.Should().MatchRegex(@"name=""ImplementsTemporalFilter""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
-        xml.Should().MatchRegex(@"name=""ImplementsTemporalInstant""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
-        xml.Should().MatchRegex(@"name=""ImplementsTemporalPeriod""[^>]*>[\s\S]*?FALSE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsTemporalInstant""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
+        xml.Should().MatchRegex(@"name=""ImplementsTemporalPeriod""[^>]*>[\s\S]*?TRUE[\s\S]*?</");
     }
 
     [Fact]
@@ -55,7 +58,7 @@ public class Wfs20CapabilitiesXmlValidationTests
         xml.Should().Contain("Conformance");
         xml.Should().Contain("Scalar_Capabilities");
         xml.Should().Contain("Spatial_Capabilities");
-        xml.Should().NotContain("Temporal_Capabilities");
+        xml.Should().Contain("Temporal_Capabilities");
         xml.Should().Contain("xmlns:fes=");
         xml.Should().Contain("xmlns:gml=");
         xml.Should().Contain("xmlns:xsd=");

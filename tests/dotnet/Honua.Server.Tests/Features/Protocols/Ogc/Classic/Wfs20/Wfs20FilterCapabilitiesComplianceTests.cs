@@ -14,17 +14,20 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public class Wfs20FilterCapabilitiesComplianceTests
 {
     [Fact]
-    public void FilterCapabilities_TemporalConformance_ShouldNotBeAdvertisedUntilCiteStable()
+    public void FilterCapabilities_TemporalConformance_ShouldAdvertiseMinimumTemporalFilterSupport()
     {
         var filterCapabilities = GetActualFilterCapabilities();
         var constraintDict = filterCapabilities.Conformance.Constraints
             .ToDictionary(c => c.Name, c => c.DefaultValue);
 
-        filterCapabilities.TemporalCapabilities.Should().BeNull();
-        constraintDict["ImplementsMinTemporalFilter"].Should().Be("FALSE");
+        filterCapabilities.TemporalCapabilities.Should().NotBeNull();
+        filterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
+            .Select(op => op.Name)
+            .Should().BeEquivalentTo("After", "Before", "During");
+        constraintDict["ImplementsMinTemporalFilter"].Should().Be("TRUE");
         constraintDict["ImplementsTemporalFilter"].Should().Be("FALSE");
-        constraintDict["ImplementsTemporalInstant"].Should().Be("FALSE");
-        constraintDict["ImplementsTemporalPeriod"].Should().Be("FALSE");
+        constraintDict["ImplementsTemporalInstant"].Should().Be("TRUE");
+        constraintDict["ImplementsTemporalPeriod"].Should().Be("TRUE");
     }
 
     [Fact]

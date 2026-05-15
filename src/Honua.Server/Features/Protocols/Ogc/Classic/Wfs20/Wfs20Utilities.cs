@@ -77,6 +77,8 @@ internal static class Wfs20Utilities
         public const string Transaction = "Transaction";
         public const string ListStoredQueries = "ListStoredQueries";
         public const string DescribeStoredQueries = "DescribeStoredQueries";
+        public const string CreateStoredQuery = "CreateStoredQuery";
+        public const string DropStoredQuery = "DropStoredQuery";
         public const string LockFeature = "LockFeature";
         public const string GetFeatureWithLock = "GetFeatureWithLock";
     }
