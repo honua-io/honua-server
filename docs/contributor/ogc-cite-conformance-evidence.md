@@ -42,6 +42,7 @@ suite/profile is removed from the public claim.
 | WFS 1.0 | `basic` | 162 | 162 | 0 | 0 | 0 | Passing |
 | WFS 1.1 | `basic` | 39 | 39 | 0 | 0 | 0 | Passing |
 | WFS 2.0 | `basic` | 167 | 167 | 0 | 0 | 0 | Passing |
+| WCS 2.0 | `core` | 82 | 82 | 0 | 0 | 0 | Passing |
 | WMS 1.3 | `default` | 199 | 199 | 0 | 0 | 0 | Passing |
 | WMTS 1.0 | `default` | 60 | 60 | 0 | 0 | 0 | Passing |
 
@@ -54,6 +55,10 @@ claim.
 
 The explicit WFS 2.0 transactional slice was also run separately from the same
 branch and passed 25/25 tests with 0 failed and 0 skipped.
+
+WCS 2.0 `core` evidence runs the official ETS core profile against the seeded
+WCS 2.0.1 service. The runner also hard-fails if `GetCapabilities`,
+`DescribeCoverage`, or `GetCoverage` preflight fails before TeamEngine starts.
 
 GML 3.2 `applicable` evidence runs the official ETS classes that apply to
 Honua's OGC API Features polygon GML document: application-schema compilation,
@@ -119,12 +124,6 @@ it returns deterministic compatibility envelopes rather than real network
 analysis behavior, so it should not be presented as Esri-compatible NAServer
 validation.
 
-WCS 2.0 is intentionally excluded from this public evidence page until its
-dedicated CITE workflow produces a zero failed, zero skipped, zero CantTell run.
-The WCS burn-down remains tracked in
-[`cite-wcs20-conformance-testing.md`](cite-wcs20-conformance-testing.md) and
-[`ogc-certification-path.md`](ogc-certification-path.md).
-
 ## Reproducing The Current All-Pass Evidence
 
 Run the suites currently eligible for 100% passed public evidence:
@@ -138,15 +137,9 @@ scripts/conformance/cite/run-cite-kml22-tests.sh --profile applicable --verbose
 scripts/conformance/cite/run-cite-wfs10-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wfs11-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic --verbose
+scripts/conformance/cite/run-cite-wcs20-tests.sh --profile core --verbose
 scripts/conformance/cite/run-cite-wms-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-wmts-tests.sh --profile default --verbose
-```
-
-Run the strict burn-down suites locally; these must reach zero failed, skipped,
-and CantTell results before they can be added to the public evidence table:
-
-```bash
-scripts/conformance/cite/run-cite-wcs20-tests.sh --profile core --verbose
 ```
 
 Build the website-linkable static bundle from local suite output:

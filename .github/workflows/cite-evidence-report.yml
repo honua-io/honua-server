@@ -83,6 +83,7 @@ jobs:
           run_suite "WFS 2.0" ./scripts/conformance/cite/run-cite-wfs20-tests.sh basic
           run_suite "WMS 1.3" ./scripts/conformance/cite/run-cite-wms-tests.sh default
           run_suite "WMTS 1.0" ./scripts/conformance/cite/run-cite-wmts-tests.sh default
+          run_suite "WCS 2.0" ./scripts/conformance/cite/run-cite-wcs20-tests.sh core
           run_suite "GML 3.2" ./scripts/conformance/cite/run-cite-gml32-tests.sh applicable
           run_suite "GeoPackage 1.2" ./scripts/conformance/cite/run-cite-gpkg12-tests.sh applicable
           run_suite "KML 2.2" ./scripts/conformance/cite/run-cite-kml22-tests.sh applicable

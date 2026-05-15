@@ -29,17 +29,14 @@ Example:
 
 The stable results directory is `cite-wcs20-results/`. It includes captured WCS
 responses, TeamEngine XML/HTML reports when available, container logs, a
-normalized `cite-compliance-report.xml`, `expected-known-failures.md`, and
-`cite-wcs20-summary.md`.
+normalized `cite-compliance-report.xml`, and `cite-wcs20-summary.md`.
 
-## Expected Thin-Slice Limitations
+## Passing Criteria
 
-The current WCS implementation intentionally covers a thin WCS 2.0.1 KVP slice.
-Failures are expected for XML POST/SOAP bindings, GML coverage output, WCPS and
-processing, scaling, interpolation, range subsetting, broad CRS extension
-coverage, and EO-WCS. Treat missing result files, zero executable tests, failed
-GetCapabilities, or missing seeded coverages as harness failures rather than
-known protocol limitations.
+The core profile is eligible for public evidence only when the runner reports
+nonzero tests with zero failed, zero skipped, and zero CantTell results. The
+local preflight also verifies `GetCapabilities`, `DescribeCoverage`, and
+`GetCoverage` before TeamEngine starts.
 
 The scheduled workflow is `.github/workflows/cite-wcs20-conformance.yml`. It is
 manual/scheduled only and is not part of normal PR or push gates.

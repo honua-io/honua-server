@@ -248,7 +248,8 @@ if ! curl -sS --fail "$DESCRIBE_URL_HOST" > "$CITE_RESULTS_DIR/describe-coverage
 fi
 
 if ! curl -sS --fail "$GETCOVERAGE_URL_HOST" > "$CITE_RESULTS_DIR/getcoverage.png"; then
-    echo -e "${YELLOW}WCS GetCoverage preflight failed; continuing to CITE execution for full diagnostics${NC}"
+    echo -e "${RED}WCS GetCoverage preflight failed${NC}"
+    exit 1
 fi
 
 echo -e "${GREEN}WCS endpoints are accessible${NC}"
@@ -337,21 +338,13 @@ cat > "$CITE_RESULTS_DIR/cite-wcs20-summary.md" << EOF_SUMMARY
 - **Seeded Coverages**: coverage_101, coverage_102
 - **Data Source**: local PostGIS rasters from docker/cite/wcs20/seed.sql
 
-## Expected Thin-Slice Limitations
-
-The current WCS implementation is expected to fail official ETS coverage outside
-the thin slice, including XML POST/SOAP bindings, GML coverage output,
-processing, scaling, interpolation, range subsetting, broad CRS extension
-coverage, and EO-WCS. See expected-known-failures.md.
-
 ## Artifacts
 
 - capabilities.xml: captured WCS capabilities document
 - describe-coverage.xml: captured DescribeCoverage response
-- getcoverage.png: captured GetCoverage preflight response when available
+- getcoverage.png: captured GetCoverage preflight response
 - testng-results.xml: raw TeamEngine result summary when available
 - cite-compliance-report.xml: normalized result summary
-- expected-known-failures.md: current known limitation notes
 - honua-server.log, cite-teamengine.log, cite-runner.log, postgres.log: service logs
 
 EOF_SUMMARY
