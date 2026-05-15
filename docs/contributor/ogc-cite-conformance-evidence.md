@@ -52,6 +52,24 @@ claim.
 The explicit WFS 2.0 transactional slice was also run separately from the same
 branch and passed 25/25 tests with 0 failed and 0 skipped.
 
+## External Standards Validator Evidence
+
+These validators are not OGC CITE suites, but they are included here because
+they provide website-linkable interoperability evidence for standards implemented
+by Honua.
+
+| Suite | Tool | Scope | Total | Passed | Failed | Skipped | Status |
+|---|---|---|---:|---:|---:|---:|---|
+| STAC API | `stac-api-validator` 0.6.8 | `collections`, `filter` | 1 | 1 | 0 | 0 | Passing |
+
+The STAC validator evidence was produced by the Python STAC client compatibility
+lane against the live seeded `/stac` fixture on this branch. It validates the
+`collections` and `filter` conformance classes and records the raw validator
+transcript in `tests/TestResults/stac-api-validator-results*.json` during CI.
+Broader advertised-class validator gaps for `core`, `features`, and
+item-search-related extensions remain tracked separately by issues #956 and
+#957 and are not included in the passing public claim above.
+
 The following suites are not yet acceptable for a 100% passed public evidence
 claim:
 
