@@ -358,8 +358,8 @@ echo -e "${GREEN}Summary report saved to: $CITE_RESULTS_DIR/cite-kml22-summary.m
 if [[ "$RESULTS_FOUND" != "true" ]]; then
     echo -e "${RED}CITE testing failed to execute properly.${NC}"
     exit 2
-elif [[ $FAILED_TESTS -gt 0 ]]; then
-    echo -e "${YELLOW}CITE testing completed with failures. Review results.${NC}"
+elif [[ $FAILED_TESTS -gt 0 || $SKIPPED_TESTS -gt 0 || $CANTTELL_TESTS -gt 0 ]]; then
+    echo -e "${YELLOW}CITE testing completed with failures, skips, or CantTell results. Review results.${NC}"
     exit 1
 elif [[ $TOTAL_TESTS -eq 0 ]]; then
     echo -e "${RED}CITE testing produced no executable tests.${NC}"

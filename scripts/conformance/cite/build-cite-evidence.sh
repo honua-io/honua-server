@@ -237,7 +237,7 @@ for suite_entry in "${SUITES[@]}"; do
 
         if [[ "$total" -eq 0 ]]; then
             status="no-results"
-        elif [[ "$failed" -gt 0 || "$canttell" -gt 0 ]]; then
+        elif [[ "$failed" -gt 0 || "$skipped" -gt 0 || "$canttell" -gt 0 ]]; then
             status="failed"
         else
             status="passed"
@@ -340,7 +340,7 @@ jq -s \
         failed: ([.[].failed] | add // 0),
         skipped: ([.[].skipped] | add // 0),
         cantTell: ([.[].cantTell] | add // 0),
-        allPassed: all(.[]; .status == "passed")
+        allPassed: all(.[]; .status == "passed" and .totalTests > 0 and .passed == .totalTests and .failed == 0 and .skipped == 0 and .cantTell == 0)
       },
       suites: .
     }' "$SUITE_JSONL" > "$OUTPUT_DIR/conformance-summary.json"
@@ -389,6 +389,9 @@ fi
 - Skipped: $total_skipped
 - CantTell: $total_canttell
 
+A passing evidence bundle requires every suite to report 100% passed tests:
+failed, skipped, and CantTell counts must all be zero.
+
 ## Suites
 
 | Suite | Status | Total | Passed | Failed | Skipped | CantTell | Success | Summary | Full report |
@@ -415,9 +418,8 @@ Summary for this run:
 - Skipped: $total_skipped
 - CantTell: $total_canttell
 
-Certified CITE rows in this evidence bundle include OGC API Features, OGC API Tiles,
-WFS 1.0, WFS 1.1, WFS 2.0, WMS 1.3, WMTS 1.0, WCS 2.0, GML 3.2,
-GeoPackage 1.2, and KML 2.2.
+This evidence bundle is passing only when every listed CITE suite has 100%
+passed tests with zero failed, skipped, or CantTell results.
 EOF_WEBSITE
 
 cat > "$OUTPUT_DIR/index.html" <<EOF_HTML

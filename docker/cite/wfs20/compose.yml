@@ -43,7 +43,8 @@ services:
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../shared/test-data:/docker-entrypoint-initdb.d:ro
+      - ../shared/test-data/01-init-cite-test-data.sql:/docker-entrypoint-initdb.d/01-init-cite-test-data.sql:ro
+      - ./test-data/99-prune-wfs1-cite-fixtures.sql:/docker-entrypoint-initdb.d/99-prune-wfs1-cite-fixtures.sql:ro
     networks:
       - cite-network
 

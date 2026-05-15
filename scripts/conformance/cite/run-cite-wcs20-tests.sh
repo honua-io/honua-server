@@ -383,7 +383,7 @@ elif [[ $CITE_RUNNER_EXIT_CODE -eq 124 ]]; then
     echo -e "${RED}CITE testing timed out.${NC}"
     exit 2
 elif [[ $FAILED_TESTS -gt 0 || $SKIPPED_TESTS -gt 0 || $CANTTELL_TESTS -gt 0 ]]; then
-    echo -e "${YELLOW}CITE testing completed with expected thin-slice failures. Review results.${NC}"
+    echo -e "${YELLOW}CITE testing completed with failures, skips, or CantTell results. Review results.${NC}"
     exit 1
 else
     echo -e "${GREEN}CITE conformance testing completed successfully!${NC}"

@@ -271,12 +271,15 @@ if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ]; then
     chown -R "$HOST_UID:$HOST_GID" "$RESULTS_DIR" 2>/dev/null || true
 fi
 
-if [ "$FAILED" -eq 0 ]; then
-    echo -e "${GREEN}🎉 WFS 2.0 CITE gate passed with no failed tests${NC}"
-    if [ "$SKIPPED" -gt 0 ]; then
-        echo "Skipped tests correspond to unadvertised optional conformance classes."
-    fi
+if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -eq 0 ]; then
+    echo -e "${GREEN}🎉 WFS 2.0 CITE gate passed with 100% passed tests${NC}"
     exit 0
+fi
+
+if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -gt 0 ]; then
+    echo -e "${YELLOW}⚠️ WFS 2.0 CITE run has skipped tests${NC}"
+    echo "Skipped tests do not satisfy the strict 100% passed evidence gate."
+    exit 1
 fi
 
 if [ "$PASSED" -gt 0 ]; then

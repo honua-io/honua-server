@@ -446,10 +446,10 @@ cat > "$CITE_RESULTS_DIR/cite-summary.md" << EOF
 
 ## Results
 
-$(if [[ $FAILED_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
+$(if [[ $FAILED_TESTS -eq 0 && $SKIPPED_TESTS -eq 0 && $CANTTELL_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
     echo "✅ **PASSED**: All conformance tests passed successfully."
 elif [[ $TOTAL_TESTS -gt 0 ]]; then
-    echo "⚠️ **PARTIAL**: Some tests failed. Review detailed results."
+    echo "⚠️ **PARTIAL**: Some tests failed, skipped, or returned CantTell. Review detailed results."
 else
     echo "❌ **ERROR**: No tests were executed successfully."
 fi)
@@ -460,7 +460,7 @@ $(if [[ $TOTAL_TESTS -eq 0 ]]; then
     echo "1. Confirm the results were copied from the CITE runner"
     echo "2. Check cite-results for testng-results.xml output"
     echo "3. Re-run CITE tests to validate output capture"
-elif [[ $FAILED_TESTS -gt 0 ]]; then
+elif [[ $FAILED_TESTS -gt 0 || $SKIPPED_TESTS -gt 0 || $CANTTELL_TESTS -gt 0 ]]; then
     echo "1. Review failed test details in the XML/HTML result files"
     echo "2. Fix conformance issues in the Honua Server implementation"
     echo "3. Re-run CITE tests to validate fixes"
@@ -481,11 +481,11 @@ EOF
 echo -e "${GREEN}✅ Summary report saved to: $CITE_RESULTS_DIR/cite-summary.md${NC}"
 
 # Final status
-if [[ $FAILED_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
+if [[ $FAILED_TESTS -eq 0 && $SKIPPED_TESTS -eq 0 && $CANTTELL_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then
     echo -e "\n${GREEN}🎉 CITE conformance testing completed successfully!${NC}"
     exit 0
 elif [[ $TOTAL_TESTS -gt 0 ]]; then
-    echo -e "\n${YELLOW}⚠️ CITE testing completed with failures. Review results.${NC}"
+    echo -e "\n${YELLOW}⚠️ CITE testing completed with failures, skips, or CantTell results. Review results.${NC}"
     exit 1
 else
     echo -e "\n${RED}❌ CITE testing failed to execute properly.${NC}"

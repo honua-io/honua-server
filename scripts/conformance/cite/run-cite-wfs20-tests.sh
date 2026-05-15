@@ -369,10 +369,14 @@ cat > "$CITE_RESULTS_DIR/cite-summary.md" << EOF
 ## CITE Team Engine Results
 
 $(
-if [[ "$COMPLIANCE_STATUS" == "COMPLIANT" ]]; then
-    echo "🎉 **WFS 2.0 CITE gate passed with no failed tests.**"
+if [[ "$COMPLIANCE_STATUS" == "COMPLIANT" && $SKIPPED_TESTS -eq 0 ]]; then
+    echo "🎉 **WFS 2.0 CITE gate passed with 100% passed tests.**"
     echo ""
-    echo "Skipped tests are expected for optional conformance classes that the capabilities document does not advertise."
+    echo "Failed, skipped, and CantTell counts are all zero."
+elif [[ "$COMPLIANCE_STATUS" == "COMPLIANT" && $SKIPPED_TESTS -gt 0 ]]; then
+    echo "⚠️ **Incomplete WFS 2.0 CITE Compliance**"
+    echo ""
+    echo "The run has skipped tests. Skips do not satisfy the strict 100% passed evidence gate."
 elif [[ "$COMPLIANCE_STATUS" == "PARTIAL" ]]; then
     echo "⚠️ **Partial WFS 2.0 CITE Compliance**"
     echo ""
@@ -402,12 +406,18 @@ $(find "$CITE_RESULTS_DIR" -type f 2>/dev/null | sort | sed 's/^/- /' || echo "-
 ## Next Steps
 
 $(
-if [[ "$COMPLIANCE_STATUS" == "COMPLIANT" ]]; then
+if [[ "$COMPLIANCE_STATUS" == "COMPLIANT" && $SKIPPED_TESTS -eq 0 ]]; then
     echo "✅ **WFS 2.0 CITE Gate Passing**"
     echo ""
     echo "- Document compliance achievement"
     echo "- Add to production deployment"
     echo "- Consider WFS 2.0 extensions or optimizations"
+elif [[ "$COMPLIANCE_STATUS" == "COMPLIANT" && $SKIPPED_TESTS -gt 0 ]]; then
+    echo "🔧 **Burn Down Skipped Tests**"
+    echo ""
+    echo "1. Review skipped test details in the TeamEngine HTML report"
+    echo "2. Implement or remove the capability/profile claim that causes each skip"
+    echo "3. Re-run tests until passed equals total and skipped is zero"
 elif [[ "$COMPLIANCE_STATUS" == "PARTIAL" ]]; then
     echo "🔧 **Address Failing Tests**"
     echo ""
@@ -446,12 +456,13 @@ echo "Compliance Status: $COMPLIANCE_STATUS"
 echo "Execution Time: ${TEST_DURATION}s"
 
 # Determine exit code
-if [[ "$COMPLIANCE_STATUS" == "COMPLIANT" ]]; then
-    echo -e "\n${GREEN}🎉 WFS 2.0 CITE gate passed with no failed tests${NC}"
-    if [[ $SKIPPED_TESTS -gt 0 ]]; then
-        echo "Skipped tests correspond to unadvertised optional conformance classes."
-    fi
+if [[ "$COMPLIANCE_STATUS" == "COMPLIANT" && $SKIPPED_TESTS -eq 0 ]]; then
+    echo -e "\n${GREEN}🎉 WFS 2.0 CITE gate passed with 100% passed tests${NC}"
     exit 0
+elif [[ "$COMPLIANCE_STATUS" == "COMPLIANT" && $SKIPPED_TESTS -gt 0 ]]; then
+    echo -e "\n${YELLOW}⚠️ WFS 2.0 CITE run has skipped tests${NC}"
+    echo -e "${RED}❌ Skips are not sufficient for the strict CITE conformance evidence gate${NC}"
+    exit 1
 elif [[ "$COMPLIANCE_STATUS" == "PARTIAL" && $PASSED_TESTS -gt 0 ]]; then
     echo -e "\n${YELLOW}⚠️ Partial WFS 2.0 compliance - some tests passed${NC}"
     echo -e "${RED}❌ Partial compliance is not sufficient for the CITE conformance gate${NC}"

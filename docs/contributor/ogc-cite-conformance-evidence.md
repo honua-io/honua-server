@@ -24,9 +24,13 @@ That workflow uploads a static bundle containing:
 ## Latest PR Validation Snapshot
 
 These results were produced while preparing the CITE stabilization PR from
-branch `codex/cite-nightly-fix`. Suites with skipped tests had zero failed or
-CantTell results; skipped rows are non-applicable or optional CITE assertions in
-the selected profile.
+branch `codex/cite-nightly-fix`.
+
+Honua's public evidence target is strict: a suite only counts as passing when
+100% of reported tests pass and failed, skipped, and CantTell counts are all
+zero. Suites with skipped assertions are tracked below as incomplete and must not
+be used as 100% conformance evidence until those skips are burned down or the
+suite/profile is removed from the public claim.
 
 | Suite | Profile | Total | Passed | Failed | Skipped | CantTell | Status |
 |---|---:|---:|---:|---:|---:|---:|---|
@@ -34,28 +38,38 @@ the selected profile.
 | OGC API Tiles 1.0 | `default` | 16 | 16 | 0 | 0 | 0 | Passing |
 | WFS 1.0 | `basic` | 162 | 162 | 0 | 0 | 0 | Passing |
 | WFS 1.1 | `basic` | 39 | 39 | 0 | 0 | 0 | Passing |
-| WFS 2.0 | `basic` | 240 | 180 | 0 | 60 | 0 | Passing |
 | WMS 1.3 | `default` | 199 | 199 | 0 | 0 | 0 | Passing |
 | WMTS 1.0 | `default` | 60 | 60 | 0 | 0 | 0 | Passing |
-| GML 3.2 | `default` | 33 | 6 | 0 | 27 | 0 | Passing |
-| GeoPackage 1.2 | `default` | 109 | 31 | 0 | 78 | 0 | Passing |
-| KML 2.2 | `default` | 70 | 42 | 0 | 28 | 0 | Passing |
 
-WCS 2.0 is included in the evidence workflow and should be reported from the
-next workflow evidence run, where the generated bundle is the source of truth.
+The following suites are not yet acceptable for a 100% passed public evidence
+claim:
 
-## Reproducing The Evidence
+| Suite | Profile | Total | Passed | Failed | Skipped | CantTell | Status |
+|---|---:|---:|---:|---:|---:|---:|---|
+| WFS 2.0 | `basic` | 240 | 180 | 0 | 60 | 0 | Incomplete |
+| GML 3.2 | `default` | 33 | 6 | 0 | 27 | 0 | Incomplete |
+| GeoPackage 1.2 | `default` | 109 | 31 | 0 | 78 | 0 | Incomplete |
+| KML 2.2 | `default` | 70 | 42 | 0 | 28 | 0 | Incomplete |
+| WCS 2.0 | `core` | pending | pending | pending | pending | pending | Pending |
 
-Run individual suites locally:
+## Reproducing The Current All-Pass Evidence
+
+Run the suites currently eligible for 100% passed public evidence:
 
 ```bash
 scripts/conformance/cite/run-cite-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-tiles-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-wfs10-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wfs11-tests.sh --profile basic --verbose
-scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wms-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-wmts-tests.sh --profile default --verbose
+```
+
+Run the strict burn-down suites locally; these must reach zero failed, skipped,
+and CantTell results before they can be added to the public evidence table:
+
+```bash
+scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wcs20-tests.sh --profile core --verbose
 scripts/conformance/cite/run-cite-gml32-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-gpkg12-tests.sh --profile default --verbose
