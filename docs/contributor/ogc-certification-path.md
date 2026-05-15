@@ -10,6 +10,11 @@ Evidence snapshot: GitHub Actions and retained artifacts were checked on
 retention; preserve release or certification evidence outside normal workflow
 artifacts before making any public certification claim.
 
+Current PR evidence is tracked in
+[OGC CITE Conformance Evidence](ogc-cite-conformance-evidence.md), including the
+checked-in website link and the generated evidence workflow that supersedes
+expiring per-suite artifacts for public proof pages.
+
 ## Decision
 
 Formal OGC certification is deferred.
@@ -124,5 +129,6 @@ specific scoped certification target:
 - [CITE GeoPackage 1.2](cite-gpkg12-conformance-testing.md)
 - [OGC API - Maps Conformance](ogc-maps-conformance-testing.md)
 - [Legacy OGC CITE](cite-legacy-ogc-conformance-testing.md)
+- [OGC CITE Conformance Evidence](ogc-cite-conformance-evidence.md)
 - [CI Gate Model](../ci/gate-model.md)
 - [CI Workflow Inventory](../ci/workflow-inventory.md)
