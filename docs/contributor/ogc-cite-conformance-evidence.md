@@ -96,12 +96,14 @@ browser, Python, and .NET test suites on this branch.
 | JavaScript API | FeatureServer Vitest suites, MapServer smoke tests, GPServer smoke tests | 303 |
 | Browser JavaScript | Esri Leaflet Playwright coverage for FeatureLayer and DynamicMapLayer flows | 21 |
 | Python | FeatureServer compatibility plus GPServer, GeometryServer, and ImageServer smoke coverage | 210 |
-| .NET integration | Catalog, FeatureServer, GPServer, GeometryService, ImageServer, MapServer, NAServer, and shared spatial-filter coverage | 790 |
-| Total | GeoServices REST validation inventory | 1,324 |
+| .NET integration | Catalog, FeatureServer, GPServer, GeometryService, ImageServer, MapServer, and shared spatial-filter coverage | 786 |
+| Total | GeoServices REST validation inventory | 1,320 |
 
-The NAServer coverage in the .NET row is the current minimal mobile-routing
-compatibility slice: route solve, optimized route solve, service area, and
-closest facility.
+NAServer is not included in the interoperability evidence count above. The
+repository currently has a minimal NAServer route-registration smoke slice, but
+it returns deterministic compatibility envelopes rather than real network
+analysis behavior, so it should not be presented as Esri-compatible NAServer
+validation.
 
 The following suites are not yet acceptable for a 100% passed public evidence
 claim:
