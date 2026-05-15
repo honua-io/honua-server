@@ -28,7 +28,7 @@ TOTAL_TESTS=0
 CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
-PROFILE="default"
+PROFILE="applicable"
 SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
 
 echo -e "${BLUE}GeoPackage 1.2 CITE Conformance Tests${NC}"
@@ -63,7 +63,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-cleanup      Don't cleanup containers after tests"
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
-            echo "  --profile PROF    Accepted for CLI consistency (GeoPackage 1.2 has a single validation pass)"
+            echo "  --profile PROF    Test profile: applicable (default strict core/features) or default (raw ETS)"
             echo "  --skip-build      Reuse existing honua-server:latest image"
             echo "  --help, -h        Show this help"
             exit 0
@@ -74,6 +74,18 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+case "$PROFILE" in
+    applicable|default)
+        ;;
+    *)
+        echo -e "${RED}Unknown profile: $PROFILE${NC}"
+        echo "Valid profiles: applicable, default"
+        exit 1
+        ;;
+esac
+
+export HONUA_CITE_GPKG12_PROFILE="$PROFILE"
 
 echo -e "${YELLOW}Checking prerequisites...${NC}"
 
@@ -233,7 +245,11 @@ if ! curl -s -f -H "X-API-Key: $GPKG_ADMIN_PASSWORD" "$GPKG_EXPORT_URL_HOST" -o 
 fi
 
 echo -e "${YELLOW}Running GeoPackage 1.2 CITE conformance tests (profile: $PROFILE)...${NC}"
-echo -e "${YELLOW}Note: GeoPackage 1.2 format validation has a single pass; --profile is accepted for CLI consistency.${NC}"
+if [[ "$PROFILE" == "applicable" ]]; then
+    echo -e "${YELLOW}Running GeoPackage 1.2 core/features applicable TestNG suite with strict no-skip output.${NC}"
+else
+    echo -e "${YELLOW}Running the raw GeoPackage 1.2 ETS default profile, which includes skipped extension groups for this feature-only export.${NC}"
+fi
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" rm -f -s cite-runner >/dev/null 2>&1 || true
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up --force-recreate cite-runner
 
@@ -341,7 +357,7 @@ cat > "$CITE_RESULTS_DIR/cite-gpkg12-summary.md" << EOF_SUMMARY
 
 ## Environment
 
-- **Profile**: $PROFILE (GeoPackage 1.2 has a single validation pass)
+- **Profile**: $PROFILE
 - **CITE Suite**: ets-gpkg12
 - **Export URL**: $GPKG_EXPORT_URL_HOST
 

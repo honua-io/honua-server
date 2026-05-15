@@ -90,11 +90,22 @@ services:
 
   cite-runner:
     image: ogccite/ets-gpkg12:latest
+    environment:
+      - HONUA_CITE_GPKG12_PROFILE=${HONUA_CITE_GPKG12_PROFILE:-applicable}
     command:
       - bash
       - -lc
       - |
           set -euo pipefail
+          profile="$${HONUA_CITE_GPKG12_PROFILE:-applicable}"
+          case "$$profile" in
+            applicable|default)
+              ;;
+            *)
+              echo "Unknown GeoPackage 1.2 CITE profile: $$profile"
+              exit 1
+              ;;
+          esac
           echo 'Waiting for services to be ready...'
           sleep 30
           echo 'Fetching GeoPackage from server...'
@@ -112,6 +123,7 @@ services:
           rm -rf /root/te_base/scripts/gpkg12
           unzip -qo -j /root/ets-gpkg12-*-deps.zip -d /root/te_base/resources/lib || true
           unzip -qo /root/ets-gpkg12-*-ctl.zip -d /root/te_base/scripts || true
+          rm -rf /root/te_base/users/cite/logs/*
           export TE_BASE=/root/te_base
           cat > /data/test-params.xml <<'EOF_PARAMS'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -123,12 +135,50 @@ services:
             <value key="uri">file:///data/export.gpkg</value>
           </values>
           EOF_PARAMS
-          echo 'Starting GeoPackage 1.2 CITE conformance tests...'
-          /tmp/te-console/bin/unix/test.sh \
-            -source=/root/te_base/scripts/gpkg12/1.2/ctl/gpkg12-suite.ctl \
-            -form=/data/test-params.xml \
-            -logdir=users/cite/logs \
-            -session=cite-gpkg12-session-$(date +%Y%m%d-%H%M%S)
+          if [ "$$profile" = "applicable" ]; then
+            session_dir="/root/te_base/users/cite/logs/cite-gpkg12-applicable-$(date +%Y%m%d-%H%M%S)"
+            cat > /data/testng-applicable.xml <<'EOF_TESTNG'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+          <suite name="gpkg12-1.3-applicable-core-features" verbose="0" configfailurepolicy="skip">
+            <parameter name="iut" value="file:///data/export.gpkg" />
+            <parameter name="ics" value="" />
+
+            <listeners>
+              <listener class-name="org.opengis.cite.gpkg12.TestRunListener" />
+              <listener class-name="org.opengis.cite.gpkg12.SuiteFixtureListener" />
+              <listener class-name="org.opengis.cite.gpkg12.TestFailureListener" />
+            </listeners>
+
+            <test name="Core">
+              <classes>
+                <class name="org.opengis.cite.gpkg12.SuitePreconditions" />
+                <class name="org.opengis.cite.gpkg12.core.VersionTests" />
+                <class name="org.opengis.cite.gpkg12.core.DataContentsTests" />
+                <class name="org.opengis.cite.gpkg12.core.SpatialReferenceSystemsTests" />
+                <class name="org.opengis.cite.gpkg12.core.SQLiteContainerTests" />
+              </classes>
+            </test>
+            <test name="Features">
+              <packages>
+                <package name="org.opengis.cite.gpkg12.features" />
+              </packages>
+            </test>
+          </suite>
+          EOF_TESTNG
+            echo "Starting GeoPackage 1.2 applicable CITE conformance tests..."
+            java -cp "/tmp/te-console/lib/*:/root/te_base/resources/lib/*" \
+              org.testng.TestNG \
+              -d "$$session_dir" \
+              /data/testng-applicable.xml
+          else
+            echo 'Starting GeoPackage 1.2 default CITE conformance tests...'
+            /tmp/te-console/bin/unix/test.sh \
+              -source=/root/te_base/scripts/gpkg12/1.2/ctl/gpkg12-suite.ctl \
+              -form=/data/test-params.xml \
+              -logdir=users/cite/logs \
+              -session=cite-gpkg12-session-$(date +%Y%m%d-%H%M%S)
+          fi
           echo 'CITE tests completed. Check results in logdir.'
     volumes:
       - cite-gpkg12-results:/root/te_base/users/cite/logs

@@ -9,11 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: 'CITE test profile (KML 2.2 has a single validation pass; all values run the same tests)'
+        description: 'CITE test profile: applicable is the strict Level 1 profile; default is raw ETS diagnostics'
         required: false
-        default: 'default'
+        default: 'applicable'
         type: choice
         options:
+          - applicable
           - default
 
 permissions:
@@ -33,4 +34,4 @@ jobs:
       runner-script: ./scripts/conformance/cite/run-cite-kml22-tests.sh
       results-dir: cite-kml22-results
       summary-file: cite-kml22-summary.md
-      cite-profile: ${{ inputs.profile || 'default' }}
+      cite-profile: ${{ inputs.profile || 'applicable' }}

@@ -67,6 +67,9 @@ elif [[ "$REPOSITORY" == */* && "$RUN_ID" != "local" ]]; then
     GITHUB_RUN_URL="https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}"
 fi
 
+# Keep this list limited to suites that are eligible for the public 100% passed
+# evidence claim. Burn-down suites such as WCS run in their own workflows until
+# they have zero failed, skipped, and CantTell results.
 SUITES=(
     "ogcapi-features|OGC API Features|cite-results|cite-summary.md"
     "ogcapi-tiles|OGC API Tiles|cite-tiles-results|cite-tiles-summary.md"
@@ -75,7 +78,6 @@ SUITES=(
     "wfs20|WFS 2.0|cite-wfs20-results|cite-summary.md"
     "wms13|WMS 1.3|cite-wms-results|cite-wms-summary.md"
     "wmts10|WMTS 1.0|cite-wmts-results|cite-wmts-summary.md"
-    "wcs20|WCS 2.0|cite-wcs20-results|cite-wcs20-summary.md"
     "gml32|GML 3.2|cite-gml32-results|cite-gml32-summary.md"
     "gpkg12|GeoPackage 1.2|cite-gpkg12-results|cite-gpkg12-summary.md"
     "kml22|KML 2.2|cite-kml22-results|cite-kml22-summary.md"

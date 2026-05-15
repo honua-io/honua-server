@@ -36,7 +36,9 @@ suite/profile is removed from the public claim.
 |---|---:|---:|---:|---:|---:|---:|---|
 | OGC API Features 1.0 | `default` | 137 | 137 | 0 | 0 | 0 | Passing |
 | OGC API Tiles 1.0 | `default` | 16 | 16 | 0 | 0 | 0 | Passing |
+| GeoPackage 1.2 | `applicable` | 31 | 31 | 0 | 0 | 0 | Passing |
 | GML 3.2 | `applicable` | 17 | 17 | 0 | 0 | 0 | Passing |
+| KML 2.2 | `applicable` | 42 | 42 | 0 | 0 | 0 | Passing |
 | WFS 1.0 | `basic` | 162 | 162 | 0 | 0 | 0 | Passing |
 | WFS 1.1 | `basic` | 39 | 39 | 0 | 0 | 0 | Passing |
 | WFS 2.0 | `basic` | 167 | 167 | 0 | 0 | 0 | Passing |
@@ -61,6 +63,18 @@ property-value checks, and surface geometry checks. The raw ETS `default`
 diagnostic profile now reports 23 passed, 0 failed, and 10 skipped because it
 also loads optional point, curve, line string, envelope, and application
 Schematron checks for object families not present in this polygon document.
+
+GeoPackage 1.2 `applicable` evidence runs the official ETS core and feature
+classes that apply to Honua's exported feature-only GeoPackage. The raw ETS
+`default` diagnostic profile reports 31 passed, 0 failed, and 78 skipped because
+it also loads tile, attribute, extension, non-linear geometry, RTree, WebP,
+metadata, schema, CRS WKT, gridded coverage, and related-tables checks for
+content families not present in this export.
+
+KML 2.2 `applicable` evidence runs the official ETS Level 1 classes that apply
+to Honua's generated KML document. The raw ETS `default` diagnostic profile
+reports 42 passed, 0 failed, and 28 skipped because it also loads Level 2 and
+Level 3 checks while the test input declares Level 1.
 
 ## External Standards Validator Evidence
 
@@ -105,14 +119,11 @@ it returns deterministic compatibility envelopes rather than real network
 analysis behavior, so it should not be presented as Esri-compatible NAServer
 validation.
 
-The following suites are not yet acceptable for a 100% passed public evidence
-claim:
-
-| Suite | Profile | Total | Passed | Failed | Skipped | CantTell | Status |
-|---|---:|---:|---:|---:|---:|---:|---|
-| GeoPackage 1.2 | `default` | 109 | 31 | 0 | 78 | 0 | Incomplete |
-| KML 2.2 | `default` | 70 | 42 | 0 | 28 | 0 | Incomplete |
-| WCS 2.0 | `core` | pending | pending | pending | pending | pending | Pending |
+WCS 2.0 is intentionally excluded from this public evidence page until its
+dedicated CITE workflow produces a zero failed, zero skipped, zero CantTell run.
+The WCS burn-down remains tracked in
+[`cite-wcs20-conformance-testing.md`](cite-wcs20-conformance-testing.md) and
+[`ogc-certification-path.md`](ogc-certification-path.md).
 
 ## Reproducing The Current All-Pass Evidence
 
@@ -121,7 +132,9 @@ Run the suites currently eligible for 100% passed public evidence:
 ```bash
 scripts/conformance/cite/run-cite-tests.sh --profile default --verbose
 scripts/conformance/cite/run-cite-tiles-tests.sh --profile default --verbose
+scripts/conformance/cite/run-cite-gpkg12-tests.sh --profile applicable --verbose
 scripts/conformance/cite/run-cite-gml32-tests.sh --profile applicable --verbose
+scripts/conformance/cite/run-cite-kml22-tests.sh --profile applicable --verbose
 scripts/conformance/cite/run-cite-wfs10-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wfs11-tests.sh --profile basic --verbose
 scripts/conformance/cite/run-cite-wfs20-tests.sh --profile basic --verbose
@@ -134,8 +147,6 @@ and CantTell results before they can be added to the public evidence table:
 
 ```bash
 scripts/conformance/cite/run-cite-wcs20-tests.sh --profile core --verbose
-scripts/conformance/cite/run-cite-gpkg12-tests.sh --profile default --verbose
-scripts/conformance/cite/run-cite-kml22-tests.sh --profile default --verbose
 ```
 
 Build the website-linkable static bundle from local suite output:

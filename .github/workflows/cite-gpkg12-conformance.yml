@@ -9,11 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: 'CITE test profile (GeoPackage 1.2 has a single validation pass; all values run the same tests)'
+        description: 'CITE test profile: applicable is the strict core/features profile; default is raw ETS diagnostics'
         required: false
-        default: 'default'
+        default: 'applicable'
         type: choice
         options:
+          - applicable
           - default
 
 permissions:
@@ -33,4 +34,4 @@ jobs:
       runner-script: ./scripts/conformance/cite/run-cite-gpkg12-tests.sh
       results-dir: cite-gpkg12-results
       summary-file: cite-gpkg12-summary.md
-      cite-profile: ${{ inputs.profile || 'default' }}
+      cite-profile: ${{ inputs.profile || 'applicable' }}
