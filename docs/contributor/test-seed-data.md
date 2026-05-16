@@ -79,7 +79,7 @@ runner.apply(postgis.get_connection(schema), schema=schema, profile="core")
 | `tests/seed/client-compat-v1.sql` | Versioned client compatibility certification seed snapshot; canonical source for desktop/BI smoke evidence, Docker real-client interop GDAL/PyQGIS lanes, and the Python STAC client compatibility lane | `windows-client-compat-nightly.yml`, `client-interop-nightly.yml` (`gdal`, `pyqgis`), `tests/python/stac_client` |
 | `tests/seed/mobile-offline-demo-v1.sql` | Deterministic SDK-backed mobile offline field-operations fixture with service/layer/form metadata, provisional offline manifest metadata, baseline edit records, and safe reset semantics | Manual local/staging/cloud provisioning for honua-server#895; see [Mobile Offline Demo Fixture](../developer/mobile-offline-demo-fixture.md) |
 | `tests/seed/mobile-offline-demo-conflict-delta.sql` | Advances the mobile offline conflict target from `sync_version = 1` to `sync_version = 2` after package download | Manual/mobile harness conflict scenario for honua-server#895 |
-| `tests/seed/admin-sample-feature-server.yaml` | Local admin UI sample FeatureServer fixture (`admin_sample`, layer `3000`) with Oahu point features, extents, fields, and renderer metadata | Manual/local PostGIS bootstrap after `base-schema.sql` or a migrated database |
+| `tests/seed/admin-sample-feature-server.yaml` | Local admin UI sample FeatureServer fixture (`admin_sample`, layers `3000`-`3002`) with Oahu point, projected line, and polygon features, extents, fields, and renderer metadata | Manual/local PostGIS bootstrap after `base-schema.sql` or a migrated database |
 | `tests/seed/mcp.yaml` | MCP certification data (second service, polygon layer, deterministic features) | CI `mcp-certification` and `mcp-llm-smoke` jobs |
 | `tests/seed/browser-compat.yaml` | Browser compatibility service with point/line/polygon layers (IDs 2000–2002) and seeded features in the San Francisco area; anonymous access | CI `maplibre-compat` job (via `setup-honua-server` action) |
 | `tests/seed/apply-yaml-seed.sh` | Extracts SQL from a YAML seed file with a top-level `sql:` key and applies via `psql` | CI `mcp-certification`, `mcp-llm-smoke`, and `maplibre-compat` jobs |
@@ -90,14 +90,37 @@ runner.apply(postgis.get_connection(schema), schema=schema, profile="core")
 
 The current snapshot seeds anonymous access for service `test_service`, layer/collection `0`, and layer title `Test Layer` so the Windows client compatibility transcripts and manual follow-through remain repeatable. It also enables `postgis_raster` and creates the raster metadata tables expected by raster-aware startup paths in the Docker client-interop stack; the browser-specific service and layers are applied separately from `tests/seed/browser-compat.yaml`.
 
-For a local admin UI sample service, apply the base schema and the admin sample fixture:
+For a local admin UI sample service, reset the shared test schema and apply the admin sample fixture:
+
+```bash
+bash scripts/dev/seed-admin-sample.sh
+```
+
+The script uses the same connection defaults as the other seed helpers:
+`PGHOST=localhost`, `PGPORT=5432`, `PGUSER=honua`, `PGPASSWORD=honua`,
+and `PGDATABASE=honua_test`. Override those environment variables for a
+different local database.
+
+To run the steps manually:
 
 ```bash
 psql -f tests/seed/base-schema.sql
 bash tests/seed/apply-yaml-seed.sh tests/seed/admin-sample-feature-server.yaml
 ```
 
-That creates `admin_sample` with layer `3000`, so the UI can preview `/rest/services/admin_sample/FeatureServer/3000/query?f=geojson&where=1%3D1` without relying on fake client-side rows.
+That creates `admin_sample` with point layer `3000`, projected line layer
+`3001`, and polygon layer `3002`, so the UI can preview these routes without
+fake client-side rows:
+
+```text
+/rest/services/admin_sample/FeatureServer/3000/query?f=geojson&where=1%3D1
+/rest/services/admin_sample/FeatureServer/3001/query?f=geojson&where=1%3D1
+/rest/services/admin_sample/FeatureServer/3002/query?f=geojson&where=1%3D1
+```
+
+The admin sample seed is deterministic and safe to re-run. It removes only the
+`admin_sample` service/layer bindings and the reserved sample object ids before
+reinserting known rows.
 
 ## Profiles in CI
 

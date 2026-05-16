@@ -4,6 +4,34 @@ sql:
   # against a migrated local PostGIS database to expose:
   #   /rest/services/admin_sample/FeatureServer?f=json
   #   /rest/services/admin_sample/FeatureServer/3000/query?f=geojson&where=1%3D1
+  #   /rest/services/admin_sample/FeatureServer/3001/query?f=geojson&where=1%3D1
+  #   /rest/services/admin_sample/FeatureServer/3002/query?f=geojson&where=1%3D1
+  - |
+      DELETE FROM features
+      WHERE layer_id IN (3000, 3001, 3002)
+         OR objectid IN (
+              300001, 300002, 300003, 300004,
+              300101, 300102, 300103,
+              300201, 300202
+          );
+
+  - |
+      DELETE FROM honua.service_layers
+      WHERE service_name = 'admin_sample'
+         OR layer_id IN (3000, 3001, 3002);
+
+  - |
+      DELETE FROM honua.layer_fields
+      WHERE layer_id IN (3000, 3001, 3002);
+
+  - |
+      DELETE FROM honua.layers
+      WHERE layer_id IN (3000, 3001, 3002);
+
+  - |
+      DELETE FROM honua.services
+      WHERE service_name = 'admin_sample';
+
   - |
       INSERT INTO honua.services (
           service_name,
@@ -24,17 +52,14 @@ sql:
           jsonb_build_object(
               'accessPolicy', jsonb_build_object('allowAnonymous', true),
               'source', 'tests/seed/admin-sample-feature-server.yaml',
-              'owner', 'Honua local sample'
+              'owner', 'Honua local sample',
+              'reservedObjectIds', jsonb_build_array(
+                  300001, 300002, 300003, 300004,
+                  300101, 300102, 300103,
+                  300201, 300202
+              )
           )
-      )
-      ON CONFLICT (service_name) DO UPDATE SET
-          description = EXCLUDED.description,
-          srid = EXCLUDED.srid,
-          supported_formats = EXCLUDED.supported_formats,
-          capabilities = EXCLUDED.capabilities,
-          service_extent = EXCLUDED.service_extent,
-          metadata = EXCLUDED.metadata,
-          updated_at = NOW();
+      );
 
   - |
       INSERT INTO honua.layers (
@@ -45,6 +70,7 @@ sql:
           table_name,
           primary_key_column,
           geometry_column,
+          storage_srid,
           geometry_type,
           srid,
           extent,
@@ -53,60 +79,128 @@ sql:
           metadata,
           geoservices_drawing_info
       )
-      VALUES (
-          3000,
-          'Oahu Operations Sample',
-          'Previewable point layer for local admin UI service and layer metadata workflows',
-          current_schema(),
-          'features',
-          'objectid',
-          'geometry',
-          'Point',
-          4326,
-          ST_MakeEnvelope(-158.05, 21.25, -157.65, 21.45, 4326),
-          true,
-          true,
-          jsonb_build_object(
-              'accessPolicy', jsonb_build_object('allowAnonymous', true),
-              'displayField', 'name',
-              'source', 'tests/seed/admin-sample-feature-server.yaml'
-          ),
-          jsonb_build_object(
-              'renderer', jsonb_build_object(
-                  'type', 'simple',
-                  'symbol', jsonb_build_object(
-                      'type', 'esriSMS',
-                      'style', 'esriSMSCircle',
-                      'color', jsonb_build_array(44, 123, 229, 210),
-                      'size', 9,
-                      'outline', jsonb_build_object(
-                          'color', jsonb_build_array(255, 255, 255, 255),
-                          'width', 1
+      VALUES
+          (
+              3000,
+              'Oahu Operations Sites',
+              'Previewable point layer for local admin UI service and layer metadata workflows',
+              current_schema(),
+              'features',
+              'objectid',
+              'geometry',
+              4326,
+              'Point',
+              4326,
+              ST_MakeEnvelope(-158.0011, 21.3069, -157.7394, 21.3972, 4326),
+              true,
+              true,
+              jsonb_build_object(
+                  'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                  'displayField', 'name',
+                  'source', 'tests/seed/admin-sample-feature-server.yaml',
+                  'domains', jsonb_build_object(
+                      'category', jsonb_build_array('Operations', 'Transportation', 'Field Office', 'Telemetry'),
+                      'status', jsonb_build_array('online', 'degraded', 'planned', 'offline')
+                  )
+              ),
+              jsonb_build_object(
+                  'renderer', jsonb_build_object(
+                      'type', 'simple',
+                      'symbol', jsonb_build_object(
+                          'type', 'esriSMS',
+                          'style', 'esriSMSCircle',
+                          'color', jsonb_build_array(44, 123, 229, 210),
+                          'size', 9,
+                          'outline', jsonb_build_object(
+                              'color', jsonb_build_array(255, 255, 255, 255),
+                              'width', 1
+                          )
                       )
                   )
               )
-          )
-      )
-      ON CONFLICT (layer_id) DO UPDATE SET
-          layer_name = EXCLUDED.layer_name,
-          description = EXCLUDED.description,
-          table_schema = EXCLUDED.table_schema,
-          table_name = EXCLUDED.table_name,
-          primary_key_column = EXCLUDED.primary_key_column,
-          geometry_column = EXCLUDED.geometry_column,
-          geometry_type = EXCLUDED.geometry_type,
-          srid = EXCLUDED.srid,
-          extent = EXCLUDED.extent,
-          default_visibility = EXCLUDED.default_visibility,
-          enabled = EXCLUDED.enabled,
-          metadata = EXCLUDED.metadata,
-          geoservices_drawing_info = EXCLUDED.geoservices_drawing_info;
+          ),
+          (
+              3001,
+              'Oahu Response Routes',
+              'Projected Web Mercator line layer for validating preview reprojection behavior',
+              current_schema(),
+              'features',
+              'objectid',
+              'geometry',
+              3857,
+              'LineString',
+              3857,
+              ST_MakeEnvelope(-158.0011, 21.3069, -157.7394, 21.3972, 4326),
+              true,
+              true,
+              jsonb_build_object(
+                  'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                  'displayField', 'name',
+                  'source', 'tests/seed/admin-sample-feature-server.yaml',
+                  'domains', jsonb_build_object(
+                      'category', jsonb_build_array('Primary Route', 'Connector', 'Evacuation'),
+                      'status', jsonb_build_array('online', 'degraded', 'planned', 'offline')
+                  )
+              ),
+              jsonb_build_object(
+                  'renderer', jsonb_build_object(
+                      'type', 'simple',
+                      'symbol', jsonb_build_object(
+                          'type', 'esriSLS',
+                          'style', 'esriSLSSolid',
+                          'color', jsonb_build_array(21, 132, 99, 220),
+                          'width', 3
+                      )
+                  )
+              )
+          ),
+          (
+              3002,
+              'Oahu Service Areas',
+              'Previewable polygon layer for local admin UI area rendering and extent smoke tests',
+              current_schema(),
+              'features',
+              'objectid',
+              'geometry',
+              4326,
+              'Polygon',
+              4326,
+              ST_MakeEnvelope(-157.95, 21.29, -157.70, 21.43, 4326),
+              true,
+              true,
+              jsonb_build_object(
+                  'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                  'displayField', 'name',
+                  'source', 'tests/seed/admin-sample-feature-server.yaml',
+                  'domains', jsonb_build_object(
+                      'category', jsonb_build_array('Urban Core', 'Windward'),
+                      'status', jsonb_build_array('online', 'planned')
+                  )
+              ),
+              jsonb_build_object(
+                  'renderer', jsonb_build_object(
+                      'type', 'simple',
+                      'symbol', jsonb_build_object(
+                          'type', 'esriSFS',
+                          'style', 'esriSFSSolid',
+                          'color', jsonb_build_array(239, 168, 67, 85),
+                          'outline', jsonb_build_object(
+                              'type', 'esriSLS',
+                              'style', 'esriSLSSolid',
+                              'color', jsonb_build_array(196, 111, 34, 220),
+                              'width', 1.25
+                          )
+                      )
+                  )
+              )
+          );
 
   - |
       INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
-      VALUES ('admin_sample', 3000, 0)
-      ON CONFLICT (service_name, layer_id) DO UPDATE SET
-          layer_order = EXCLUDED.layer_order;
+      VALUES
+          ('admin_sample', 3000, 0),
+          ('admin_sample', 3001, 1),
+          ('admin_sample', 3002, 2);
 
   - |
       INSERT INTO honua.layer_fields (
@@ -126,13 +220,23 @@ sql:
           (3000, 'priority', 'Integer', 4, null, true, 'Operator triage priority'),
           (3000, 'owner', 'String', 5, 120, true, 'Responsible team'),
           (3000, 'updated_at', 'DateTime', 6, null, true, 'Last sample update timestamp'),
-          (3000, 'shape', 'Geometry', 7, null, true, 'Geometry')
-      ON CONFLICT (layer_id, field_name) DO UPDATE SET
-          field_type = EXCLUDED.field_type,
-          field_order = EXCLUDED.field_order,
-          max_length = EXCLUDED.max_length,
-          nullable = EXCLUDED.nullable,
-          description = EXCLUDED.description;
+          (3000, 'shape', 'Geometry', 7, null, true, 'Geometry'),
+          (3001, 'objectid', 'Integer', 0, null, false, 'Object ID'),
+          (3001, 'name', 'String', 1, 255, false, 'Route name'),
+          (3001, 'category', 'String', 2, 80, false, 'Route category'),
+          (3001, 'status', 'String', 3, 32, false, 'Current route status'),
+          (3001, 'priority', 'Integer', 4, null, true, 'Operator triage priority'),
+          (3001, 'owner', 'String', 5, 120, true, 'Responsible team'),
+          (3001, 'updated_at', 'DateTime', 6, null, true, 'Last sample update timestamp'),
+          (3001, 'shape', 'Geometry', 7, null, true, 'Geometry'),
+          (3002, 'objectid', 'Integer', 0, null, false, 'Object ID'),
+          (3002, 'name', 'String', 1, 255, false, 'Area name'),
+          (3002, 'category', 'String', 2, 80, false, 'Area category'),
+          (3002, 'status', 'String', 3, 32, false, 'Current area status'),
+          (3002, 'priority', 'Integer', 4, null, true, 'Operator triage priority'),
+          (3002, 'owner', 'String', 5, 120, true, 'Responsible team'),
+          (3002, 'updated_at', 'DateTime', 6, null, true, 'Last sample update timestamp'),
+          (3002, 'shape', 'Geometry', 7, null, true, 'Geometry');
 
   - |
       INSERT INTO features (objectid, layer_id, geometry, attributes)
@@ -192,15 +296,102 @@ sql:
                   'owner', 'Observability',
                   'updated_at', '2026-05-01T18:45:00Z'
               )
-          )
-      ON CONFLICT (objectid) DO UPDATE SET
-          layer_id = EXCLUDED.layer_id,
-          geometry = EXCLUDED.geometry,
-          attributes = EXCLUDED.attributes,
-          updated_at = NOW();
+          ),
+          (
+              300101,
+              3001,
+              ST_Transform(
+                  ST_SetSRID(
+                      ST_GeomFromText('LINESTRING(-157.8583 21.3069, -157.8892 21.3189, -157.9225 21.3187)'),
+                      4326),
+                  3857),
+              jsonb_build_object(
+                  'objectid', 300101,
+                  'name', 'Town to Airport Response Route',
+                  'category', 'Primary Route',
+                  'status', 'online',
+                  'priority', 1,
+                  'owner', 'Field Integrations',
+                  'updated_at', '2026-05-01T19:00:00Z'
+              )
+          ),
+          (
+              300102,
+              3001,
+              ST_Transform(
+                  ST_SetSRID(
+                      ST_GeomFromText('LINESTRING(-157.9225 21.3187, -157.9650 21.3480, -158.0011 21.3867)'),
+                      4326),
+                  3857),
+              jsonb_build_object(
+                  'objectid', 300102,
+                  'name', 'Airport to Pearl City Connector',
+                  'category', 'Connector',
+                  'status', 'degraded',
+                  'priority', 2,
+                  'owner', 'Transportation Ops',
+                  'updated_at', '2026-05-01T19:15:00Z'
+              )
+          ),
+          (
+              300103,
+              3001,
+              ST_Transform(
+                  ST_SetSRID(
+                      ST_GeomFromText('LINESTRING(-157.8583 21.3069, -157.7950 21.3490, -157.7394 21.3972)'),
+                      4326),
+                  3857),
+              jsonb_build_object(
+                  'objectid', 300103,
+                  'name', 'Windward Field Connector',
+                  'category', 'Evacuation',
+                  'status', 'planned',
+                  'priority', 3,
+                  'owner', 'Customer Success',
+                  'updated_at', '2026-05-01T19:30:00Z'
+              )
+          ),
+          (
+              300201,
+              3002,
+              ST_SetSRID(
+                  ST_GeomFromText('POLYGON((-157.95 21.29, -157.83 21.29, -157.83 21.36, -157.95 21.36, -157.95 21.29))'),
+                  4326),
+              jsonb_build_object(
+                  'objectid', 300201,
+                  'name', 'Urban Core Service Area',
+                  'category', 'Urban Core',
+                  'status', 'online',
+                  'priority', 1,
+                  'owner', 'Platform Ops',
+                  'updated_at', '2026-05-01T20:00:00Z'
+              )
+          ),
+          (
+              300202,
+              3002,
+              ST_SetSRID(
+                  ST_GeomFromText('POLYGON((-157.78 21.36, -157.70 21.36, -157.70 21.43, -157.78 21.43, -157.78 21.36))'),
+                  4326),
+              jsonb_build_object(
+                  'objectid', 300202,
+                  'name', 'Windward Service Area',
+                  'category', 'Windward',
+                  'status', 'planned',
+                  'priority', 2,
+                  'owner', 'Customer Success',
+                  'updated_at', '2026-05-01T20:15:00Z'
+              )
+          );
 
   - |
       SELECT setval(
           pg_get_serial_sequence('features', 'objectid'),
           (SELECT COALESCE(MAX(objectid), 0) FROM features)
+      );
+
+  - |
+      SELECT setval(
+          pg_get_serial_sequence('honua.layers', 'layer_id'),
+          (SELECT COALESCE(MAX(layer_id), 0) FROM honua.layers)
       );
