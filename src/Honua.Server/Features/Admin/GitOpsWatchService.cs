@@ -47,7 +47,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
                     continue;
                 }
 
-                pollInterval = await PollAsync(stoppingToken).ConfigureAwait(false);
+                pollInterval = await PollOnceAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -62,7 +62,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         }
     }
 
-    private async Task<TimeSpan> PollAsync(CancellationToken cancellationToken)
+    internal async Task<TimeSpan> PollOnceAsync(CancellationToken cancellationToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var watchStore = scope.ServiceProvider.GetRequiredService<IGitOpsWatchStore>();
@@ -99,9 +99,8 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
         if (fetchResult == null)
         {
+            // Leave the commit unobserved so transient fetch, path, or parse failures retry on the next poll.
             LogManifestFetchFailed(_logger, config.RepositoryUrl, config.ManifestPath);
-            await watchStore.UpdatePollStateAsync(config.ConfigId, latestCommit.Sha, DateTimeOffset.UtcNow, cancellationToken)
-                .ConfigureAwait(false);
             return pollInterval;
         }
 
@@ -532,6 +531,18 @@ internal sealed partial class GitOpsWatchService : BackgroundService
                 CommitMessage = commitMessage,
                 CommitTimestamp = commitTimestamp
             };
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
         }
         finally
         {
