@@ -70,14 +70,17 @@
     },
     {
       "surfaceId": "saved-map-collaboration",
-      "displayName": "Saved-map collaboration session API",
+      "displayName": "Saved-map collaboration and feature-lock API",
       "surfaceKind": "http-route-family",
       "protocol": "Portal Collaboration HTTP",
       "canonicalIdentifier": "/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
       "parentSurfaceId": null,
       "endpointPrefixes": [],
       "endpointExactMatches": [
-        "/api/v1/saved-maps/{mapId}/collaboration/sessions/join"
+        "/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
+        "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim",
+        "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew",
+        "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release"
       ],
       "endpointContains": [],
       "operationKeys": [],
@@ -89,7 +92,8 @@
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Collaboration/Sessions/CollaborationSessionEndpointsTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Collaboration/Sessions/CollaborationSessionEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Collaboration/FeatureLocks/FeatureLockEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
