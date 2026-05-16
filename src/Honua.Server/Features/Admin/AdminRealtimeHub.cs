@@ -25,21 +25,26 @@ internal static class AdminRealtimeHubExtensions
     }
 
     public static IEndpointConventionBuilder MapAdminRealtimeHub(this IEndpointRouteBuilder endpoints)
-        => endpoints.MapHub<AdminHub>("/hubs/admin")
+        => endpoints.MapHub<AdminHub>(AdminRealtimeContract.HubPath)
             .WithDisplayName("Admin realtime hub")
             .RequireAdminAuthorization();
+}
+
+internal static class AdminRealtimeContract
+{
+    internal const string HubPath = "/hubs/admin";
+    internal const string Protocol = "signalr";
+    internal const string StatusChangedEventName = "AdminStatusChanged";
 }
 
 internal sealed class AdminHub(
     IHostEnvironment environment,
     MigrationState migrationState) : Hub
 {
-    private const string StatusChangedEventName = "AdminStatusChanged";
-
     public override async Task OnConnectedAsync()
     {
         await Clients.Caller.SendAsync(
-            StatusChangedEventName,
+            AdminRealtimeContract.StatusChangedEventName,
             CreateStatus(),
             Context.ConnectionAborted).ConfigureAwait(false);
 
