@@ -59,6 +59,16 @@ public sealed record ImportResult
     public string? ErrorMessage { get; init; }
 
     /// <summary>
+    /// Stable machine-readable error code if import failed.
+    /// </summary>
+    public string? ErrorCode { get; init; }
+
+    /// <summary>
+    /// Structured validation issues that blocked import before rows were created.
+    /// </summary>
+    public IReadOnlyList<ImportValidationIssue> ValidationErrors { get; init; } = [];
+
+    /// <summary>
     /// Import duration
     /// </summary>
     public TimeSpan Duration { get; init; }
@@ -97,14 +107,61 @@ public sealed record ImportResult
         SupportedFileFormat format,
         string errorMessage,
         TimeSpan duration = default,
-        IReadOnlyList<string>? warnings = null) =>
+        IReadOnlyList<string>? warnings = null,
+        string? errorCode = null,
+        IReadOnlyList<ImportValidationIssue>? validationErrors = null) =>
         new()
         {
             Success = false,
             TableName = tableName,
             Format = format,
             ErrorMessage = errorMessage,
+            ErrorCode = errorCode,
             Duration = duration,
-            Warnings = warnings ?? []
+            Warnings = warnings ?? [],
+            ValidationErrors = validationErrors ?? []
+        };
+}
+
+/// <summary>
+/// Stable import validation error codes surfaced in import failure responses.
+/// </summary>
+public static class ImportValidationErrorCodes
+{
+    public const string EmptyDataset = "import.empty_dataset";
+    public const string GeometryMissing = "import.geometry_missing";
+    public const string GeometryUnknownType = "import.geometry_unknown_type";
+    public const string GeometryInvalid = "import.geometry_invalid";
+    public const string InvalidGeoJson = "import.geojson_invalid";
+    public const string SourceSridRequired = "import.source_srid_required";
+    public const string SourceSridUnsupported = "import.source_srid_unsupported";
+    public const string TargetSridUnsupported = "import.target_srid_unsupported";
+    public const string ProjectionUnsupported = "import.projection_unsupported";
+}
+
+/// <summary>
+/// Machine-readable validation issue for file import failures.
+/// </summary>
+public sealed record ImportValidationIssue
+{
+    public required string Code { get; init; }
+
+    public required string Message { get; init; }
+
+    public int? FeatureIndex { get; init; }
+
+    public string? Field { get; init; }
+
+    public static ImportValidationIssue Create(
+        string code,
+        string message,
+        int? featureIndex = null,
+        string? field = null) =>
+        new()
+        {
+            Code = code,
+            Message = message,
+            FeatureIndex = featureIndex,
+            Field = field
         };
 }
