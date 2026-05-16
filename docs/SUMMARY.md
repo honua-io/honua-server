@@ -69,6 +69,7 @@
 - [NVIDIA Construction Demo Fixture](demo/nvidia-construction.md)
 - [Scene Dataset Registry (Admin API)](admin-api/scene-dataset-registry.md)
 - [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
+- [SDK Standards Coverage](developer/SDK_STANDARDS_COVERAGE.md)
 - [Mobile SDK Roadmap](developer/mobile-sdk-roadmap.md)
 - [FieldCollection Mobile Sync API](developer/fieldcollection-mobile-sync-api.md)
 - [MCP Server](developer/MCP_SERVER.md)

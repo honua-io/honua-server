@@ -19,6 +19,7 @@ Build applications and integrations with Honua APIs and SDKs.
 ## SDKs
 
 - [SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md) — Server/SDK version support
+- [SDK Standards Coverage](SDK_STANDARDS_COVERAGE.md) — Server-owned SDK coverage by language and protocol
 - [SDK Metadata Format](SDK_COMPATIBILITY_METADATA.md) — Compatibility metadata schema
 - [Mobile SDK Roadmap](mobile-sdk-roadmap.md) — Read / write / edit / sync / offline-cache cycle plan for `honua-mobile-sdk` (MAUI, iOS + Android)
 - [MCP Server](MCP_SERVER.md) — SDK-hosted discovery/query MCP package plus the server-owned operator surface for AI agents
