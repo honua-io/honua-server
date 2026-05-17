@@ -443,7 +443,9 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         {
             ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
             LayerId = 0,
-            TableName = "test_job_status"
+            TableName = "test_job_status",
+            AutoPublish = true,
+            ServiceName = "imported-service"
         };
 
         var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", startRequest);
@@ -462,6 +464,9 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         content.Should().Contain("jobId");
         content.Should().Contain("status");
         content.Should().Contain("tableName");
+        content.Should().Contain("sourceKind");
+        content.Should().Contain("sourceUrl");
+        content.Should().Contain("imported-service");
     }
 
     #endregion

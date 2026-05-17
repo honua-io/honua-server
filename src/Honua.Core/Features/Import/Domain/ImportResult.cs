@@ -24,6 +24,26 @@ public sealed record ImportResult
     public required string TableName { get; init; }
 
     /// <summary>
+    /// Stable source kind for admin import result views.
+    /// </summary>
+    public string SourceKind { get; init; } = "file";
+
+    /// <summary>
+    /// Source URL for URL-based imports.
+    /// </summary>
+    public string? SourceUrl { get; init; }
+
+    /// <summary>
+    /// Upload operation ID associated with this import, when known.
+    /// </summary>
+    public string? UploadId { get; init; }
+
+    /// <summary>
+    /// Cloud storage file ID when the source was staged to object storage.
+    /// </summary>
+    public string? CloudFileId { get; init; }
+
+    /// <summary>
     /// Detected file format
     /// </summary>
     public required SupportedFileFormat Format { get; init; }

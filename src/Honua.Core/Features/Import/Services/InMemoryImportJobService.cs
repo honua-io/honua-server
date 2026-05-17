@@ -58,7 +58,16 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         while (true)
         {
             jobId = Guid.NewGuid().ToString("N")[..8];
-            var progress = ImportProgress.CreateInitial(jobId, request.TableName, format, fileSize);
+            var progress = ImportProgress.CreateInitial(
+                jobId,
+                request.TableName,
+                format,
+                fileSize,
+                request.FileName,
+                request.SourceKind,
+                request.SourceUrl,
+                request.CloudFileId,
+                request.UploadId);
             state = new ImportJobState
             {
                 Progress = progress,
@@ -164,7 +173,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
             {
                 if (_jobs.TryGetValue(jobId, out var s))
                 {
-                    s.Progress = p;
+                    s.Progress = p with { JobId = jobId };
                 }
             });
 
@@ -182,7 +191,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     Status = result.Success ? ImportStatus.Completed : ImportStatus.Failed,
                     FeaturesProcessed = result.FeatureCount,
                     CompletedAt = DateTimeOffset.UtcNow,
-                    ErrorMessage = result.ErrorMessage
+                    ErrorMessage = result.ErrorMessage,
+                    Warnings = result.Warnings,
+                    DetectedSrid = result.DetectedSrid,
+                    CurrentPhase = result.Success ? "Import completed" : "Import failed"
                 };
                 state.Result = result;
 
@@ -547,7 +559,16 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         while (true)
         {
             jobId = Guid.NewGuid().ToString("N")[..8];
-            var progress = ImportProgress.CreateInitial(jobId, request.TableName, format, fileSize);
+            var progress = ImportProgress.CreateInitial(
+                jobId,
+                request.TableName,
+                format,
+                fileSize,
+                request.FileName,
+                request.SourceKind,
+                request.SourceUrl,
+                request.CloudFileId,
+                request.UploadId);
 
             // Store initial progress in unified store
             try
@@ -668,7 +689,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             {
                 try
                 {
-                    await _progressStore.SetProgressAsync(jobId, p, TimeSpan.FromDays(1), CancellationToken.None);
+                    await _progressStore.SetProgressAsync(jobId, p with { JobId = jobId }, TimeSpan.FromDays(1), CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
@@ -696,7 +717,9 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                         FeaturesProcessed = result.FeatureCount,
                         CompletedAt = DateTimeOffset.UtcNow,
                         ErrorMessage = result.ErrorMessage,
-                        Warnings = result.Warnings
+                        Warnings = result.Warnings,
+                        DetectedSrid = result.DetectedSrid,
+                        CurrentPhase = result.Success ? "Import completed" : "Import failed"
                     };
                     await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromDays(1), cancellationToken);
                 }

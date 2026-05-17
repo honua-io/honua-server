@@ -58,6 +58,16 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
     public required string SourceServiceUrl { get; init; }
 
     /// <summary>
+    /// Stable source kind for admin clients that render mixed import job results.
+    /// </summary>
+    public string SourceKind { get; init; } = "arcgis-geoservices-rest";
+
+    /// <summary>
+    /// Source URL alias used by generic admin import result views.
+    /// </summary>
+    public string SourceUrl => SourceServiceUrl;
+
+    /// <summary>
     /// Source layer ID.
     /// </summary>
     public required int SourceLayerId { get; init; }
@@ -71,6 +81,21 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
     /// Target table name.
     /// </summary>
     public required string TableName { get; init; }
+
+    /// <summary>
+    /// Target Honua service name when the import requested or completed publishing.
+    /// </summary>
+    public string? ServiceName { get; init; }
+
+    /// <summary>
+    /// Published Honua layer ID when auto-publish completed successfully.
+    /// </summary>
+    public int? PublishedLayerId { get; init; }
+
+    /// <summary>
+    /// Published layer ID alias used by generic admin import result views.
+    /// </summary>
+    public int? LayerId => PublishedLayerId;
 
     /// <summary>
     /// When the import started.

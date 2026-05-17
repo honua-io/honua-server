@@ -3,7 +3,9 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -635,6 +637,70 @@ public class ImportEndpointTests : IAsyncLifetime
         var responseBody = await response.Content.ReadAsStringAsync();
         responseBody.Should().Contain("jobId");
         responseBody.Should().Contain("File queued for background processing");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("GET /api/v1/admin/import/uploads/{uploadId}/progress")]
+    [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
+    public async Task ImportFile_WithClientUploadId_ExposesAcceptedUploadAndImportJobResultFields()
+    {
+        var uploadId = $"client-upload-{Guid.NewGuid():N}";
+        var tableName = $"background_import_{Guid.NewGuid():N}"[..30];
+        var geoJsonContent = """
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [-122.4194, 37.7749]
+                    },
+                    "properties": {
+                        "name": "Background Point"
+                    }
+                }
+            ]
+        }
+        """;
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "background.geojson"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent(tableName), "TableName");
+        content.Add(new StringContent("true"), "ForceBackground");
+        content.Add(new StringContent(uploadId), "UploadId");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var queued = await response.Content.ReadFromJsonAsync<JsonElement>();
+        queued.GetProperty("uploadId").GetString().Should().Be(uploadId);
+        var jobId = queued.GetProperty("jobId").GetString();
+        jobId.Should().NotBeNullOrWhiteSpace();
+
+        var uploadProgressResponse = await _client.GetAsync($"/api/v1/admin/import/uploads/{uploadId}/progress");
+        uploadProgressResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var uploadProgress = await uploadProgressResponse.Content.ReadFromJsonAsync<JsonElement>();
+        uploadProgress.GetProperty("uploadId").GetString().Should().Be(uploadId);
+        uploadProgress.GetProperty("currentPhase").GetString().Should().NotBeNullOrWhiteSpace();
+        uploadProgress.GetProperty("status").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+
+        var jobResponse = await _client.GetAsync($"/api/v1/admin/import/jobs/{jobId}");
+        jobResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var jobProgress = await jobResponse.Content.ReadFromJsonAsync<JsonElement>();
+        jobProgress.GetProperty("jobId").GetString().Should().Be(jobId);
+        jobProgress.GetProperty("tableName").GetString().Should().Be(tableName);
+        jobProgress.GetProperty("fileName").GetString().Should().Be("background.geojson");
+        jobProgress.GetProperty("sourceKind").GetString().Should().BeOneOf("file", "cloud-file");
+        jobProgress.GetProperty("uploadId").GetString().Should().Be(uploadId);
+        jobProgress.GetProperty("currentPhase").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
     [IntegrationTest]

@@ -491,6 +491,8 @@ internal static partial class ImportEndpoints
         {
             File = staged.File!,
             TableName = request.TableName,
+            SourceKind = "url",
+            SourceUrl = request.SourceUrl,
             SourceSrid = request.SourceSrid,
             TargetSrid = request.TargetSrid,
             OverwriteExisting = request.OverwriteExisting,
@@ -531,7 +533,7 @@ internal static partial class ImportEndpoints
         var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
         var deleteLocalFile = true;
         string? cloudFileId = null;
-        string? uploadId = null;
+        string? uploadId = request.UploadId;
 
         try
         {
@@ -550,12 +552,22 @@ internal static partial class ImportEndpoints
                 cloudFileId = cloudUploadResult.CloudFileId;
                 uploadId = cloudUploadResult.UploadId;
             }
+            else if (!string.IsNullOrWhiteSpace(uploadId))
+            {
+                // Server-side multipart parsing can only expose progress after the
+                // upload has been accepted because form fields may arrive after the
+                // file section. The import job progress is authoritative from here.
+                await ReportAcceptedUploadAsync(context, uploadId, request, cancellationToken).ConfigureAwait(false);
+            }
 
             var importRequest = new ImportRequest
             {
                 CloudFileId = cloudFileId,
                 LocalFilePath = cloudFileId == null ? request.File.LocalFilePath : null,
                 FileName = request.File.FileName,
+                SourceKind = cloudFileId != null ? "cloud-file" : request.SourceKind,
+                SourceUrl = request.SourceUrl,
+                UploadId = uploadId,
                 TableName = request.TableName,
                 SourceSrid = request.SourceSrid,
                 TargetSrid = request.TargetSrid,
@@ -595,6 +607,13 @@ internal static partial class ImportEndpoints
             }
 
             ImportResult importResult = await importService.ImportFileAsync(importRequest, cancellationToken);
+            importResult = importResult with
+            {
+                SourceKind = importRequest.SourceKind,
+                SourceUrl = importRequest.SourceUrl,
+                UploadId = importRequest.UploadId,
+                CloudFileId = importRequest.CloudFileId
+            };
             IResult syncResult = Results.Json(importResult, ImportJsonContext.Default.ImportResult);
             await syncResult.ExecuteAsync(context);
         }
@@ -647,8 +666,8 @@ internal static partial class ImportEndpoints
         ICloudFileStorage cloudStorage,
         CancellationToken cancellationToken)
     {
-        var uploadId = Guid.NewGuid().ToString();
-        var progressReporter = request.TrackProgress
+        var uploadId = string.IsNullOrWhiteSpace(request.UploadId) ? Guid.NewGuid().ToString() : request.UploadId!;
+        var progressReporter = request.TrackProgress || !string.IsNullOrWhiteSpace(request.UploadId)
             ? CreateUploadProgressReporter(context, uploadId)
             : null;
         var contentType = string.IsNullOrWhiteSpace(request.File.ContentType)
@@ -673,6 +692,8 @@ internal static partial class ImportEndpoints
             {
                 ["tableName"] = request.TableName,
                 ["uploadedAt"] = DateTimeOffset.UtcNow.ToString("O"),
+                ["sourceKind"] = request.SourceKind,
+                ["sourceUrl"] = request.SourceUrl ?? string.Empty,
                 ["sourceSrid"] = request.SourceSrid?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
                 ["targetSrid"] = request.TargetSrid.ToString(CultureInfo.InvariantCulture)
             }.ToImmutableDictionary()
@@ -723,6 +744,36 @@ internal static partial class ImportEndpoints
                 Log.ProgressUpdateFailed(progressLogger, uploadId, ex);
             }
         }
+    }
+
+    private static async Task ReportAcceptedUploadAsync(
+        HttpContext context,
+        string uploadId,
+        ImportExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var progressStore = context.RequestServices.GetService<IUploadProgressStore>();
+        if (progressStore == null)
+        {
+            return;
+        }
+
+        var acceptedAt = DateTimeOffset.UtcNow;
+        var progress = new UploadProgress
+        {
+            UploadId = uploadId,
+            Status = OperationStatus.Completed,
+            BytesUploaded = request.File.SizeBytes,
+            TotalBytes = request.File.SizeBytes,
+            FileName = request.File.FileName,
+            ContentType = request.File.ContentType,
+            StartedAt = acceptedAt,
+            CompletedAt = acceptedAt,
+            CurrentPhase = "Upload accepted; import job progress is available"
+        };
+
+        await progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task<MultipartImportParseResult> ParseMultipartImportUploadAsync(
@@ -814,6 +865,7 @@ internal static partial class ImportEndpoints
             {
                 File = stagedFile,
                 TableName = tableName,
+                UploadId = NormalizeOptionalOperationId(fields, "UploadId"),
                 SourceSrid = TryParseNullableInt(fields, "SourceSrid"),
                 TargetSrid = TryParseNullableInt(fields, "TargetSrid") ?? 4326,
                 OverwriteExisting = TryParseBool(fields, "OverwriteExisting"),
@@ -992,6 +1044,22 @@ internal static partial class ImportEndpoints
             ? parsed
             : null;
 
+    private static string? NormalizeOptionalOperationId(Dictionary<string, string> fields, string fieldName)
+    {
+        if (!fields.TryGetValue(fieldName, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > 128 || trimmed.Any(static ch => !(char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.' or ':')))
+        {
+            throw new ArgumentException("UploadId contains invalid characters.");
+        }
+
+        return trimmed;
+    }
+
     private static bool TryParseBool(Dictionary<string, string> fields, string fieldName)
         => fields.TryGetValue(fieldName, out var value) &&
            bool.TryParse(value, out var parsed) &&
@@ -1053,6 +1121,19 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        CancellationToken cancellationToken = context.RequestAborted;
+        var progressStore = context.RequestServices.GetService<IUploadProgressStore>();
+        if (progressStore != null)
+        {
+            var storedProgress = await progressStore.GetProgressAsync(uploadId, cancellationToken);
+            if (storedProgress != null)
+            {
+                IResult storedResult = Results.Json(storedProgress, ImportJsonContext.Default.UploadProgress);
+                await storedResult.ExecuteAsync(context);
+                return;
+            }
+        }
+
         var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
         if (cloudStorage == null)
         {
@@ -1060,7 +1141,6 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        CancellationToken cancellationToken = context.RequestAborted;
         var progress = await cloudStorage.GetUploadProgressAsync(uploadId, cancellationToken);
 
         if (progress == null)
@@ -1123,14 +1203,24 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        CancellationToken cancellationToken = context.RequestAborted;
+        var progressStore = context.RequestServices.GetService<IUploadProgressStore>();
         var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
+        if (cloudStorage == null && progressStore != null)
+        {
+            var uploadsFromStore = await progressStore.GetActiveUploadsAsync(cancellationToken);
+            var storeResponse = new ActiveUploadsResponse { Uploads = uploadsFromStore.ToArray() };
+            IResult storeResult = Results.Json(storeResponse, ImportJsonContext.Default.ActiveUploadsResponse);
+            await storeResult.ExecuteAsync(context);
+            return;
+        }
+
         if (cloudStorage == null)
         {
             await AdminResponseWriter.WriteErrorAsync(context, "File storage service not available", StatusCodes.Status503ServiceUnavailable);
             return;
         }
 
-        CancellationToken cancellationToken = context.RequestAborted;
         var uploads = await cloudStorage.GetActiveUploadsAsync(cancellationToken);
 
         var response = new ActiveUploadsResponse { Uploads = uploads.ToArray() };
@@ -1395,6 +1485,9 @@ internal sealed record ImportExecutionRequest
 {
     public required StagedImportFile File { get; init; }
     public required string TableName { get; init; }
+    public string SourceKind { get; init; } = "file";
+    public string? SourceUrl { get; init; }
+    public string? UploadId { get; init; }
     public int? SourceSrid { get; init; }
     public int TargetSrid { get; init; } = 4326;
     public bool OverwriteExisting { get; init; }

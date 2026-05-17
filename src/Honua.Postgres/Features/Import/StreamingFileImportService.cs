@@ -515,6 +515,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 request.TableName,
                 format.Value,
                 fileStream.CanSeek ? fileStream.Length : null,
+                request.FileName,
+                request.SourceKind,
+                request.SourceUrl,
+                request.CloudFileId,
+                request.UploadId,
                 warnings));
 
             // Stream features and insert in batches
@@ -732,11 +737,17 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     FailedFeatures = totalFailed,
                     BatchesCommitted = batchesCommitted,
                     TableName = request.TableName,
+                    FileName = request.FileName,
+                    SourceKind = request.SourceKind,
+                    SourceUrl = request.SourceUrl,
+                    CloudFileId = request.CloudFileId,
+                    UploadId = request.UploadId,
                     Format = format,
                     StartedAt = startTime,
                     BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
                     TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
-                    Warnings = warnings
+                    Warnings = warnings,
+                    CurrentPhase = "Importing features"
                 });
 
                 // Yield control to prevent blocking
@@ -788,12 +799,18 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             FailedFeatures = totalFailed,
             BatchesCommitted = batchesCommitted,
             TableName = request.TableName,
+            FileName = request.FileName,
+            SourceKind = request.SourceKind,
+            SourceUrl = request.SourceUrl,
+            CloudFileId = request.CloudFileId,
+            UploadId = request.UploadId,
             Format = format,
             StartedAt = startTime,
             CompletedAt = DateTimeOffset.UtcNow,
             BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
             TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
-            Warnings = completionWarnings
+            Warnings = completionWarnings,
+            CurrentPhase = "Import completed"
         });
 
         return (totalImported, totalFailed, completionWarnings);

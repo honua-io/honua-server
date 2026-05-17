@@ -8,6 +8,8 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Services;
@@ -29,17 +31,20 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly ArcGisRestClient _restClient;
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsRegistry _crsRegistry;
+    private readonly ILayerPublishingService? _layerPublishingService;
     private readonly ILogger<GeoservicesImportService> _logger;
 
     public GeoservicesImportService(
         ArcGisRestClient restClient,
         IDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
-        ILogger<GeoservicesImportService> logger)
+        ILogger<GeoservicesImportService> logger,
+        ILayerPublishingService? layerPublishingService = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
+        _layerPublishingService = layerPublishingService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -1209,6 +1214,20 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
             await transaction.CommitAsync(cancellationToken);
 
+            PublishedLayerSummary? publishedLayer = null;
+            if (request.AutoPublish)
+            {
+                publishedLayer = await TryPublishImportedLayerAsync(
+                    request,
+                    layerInfo,
+                    warnings,
+                    progress,
+                    jobId,
+                    startedAt,
+                    featuresProcessed,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             stopwatch.Stop();
 
             Log.ImportCompleted(_logger, request.TableName, featuresProcessed, failedFeatures,
@@ -1216,7 +1235,11 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
             // Report final progress
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Completed, request,
-                "Import completed", featuresProcessed, featuresProcessed, layerInfo.Name);
+                publishedLayer == null ? "Import completed" : "Import completed and layer published",
+                featuresProcessed,
+                featuresProcessed,
+                layerInfo.Name,
+                publishedLayer?.LayerId);
 
             return GeoservicesImportResult.CreateSuccess(
                 request.TableName,
@@ -1224,6 +1247,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 request.LayerId,
                 featuresProcessed,
                 failedFeatures,
+                publishedLayer?.LayerId,
+                publishedLayer?.ServiceName ?? request.ServiceName,
+                layerInfo.Name,
                 duration: stopwatch.Elapsed,
                 warnings: warnings);
         }
@@ -1873,6 +1899,77 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private Task<NpgsqlConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken)
         => _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken);
 
+    private async Task<PublishedLayerSummary?> TryPublishImportedLayerAsync(
+        GeoservicesImportRequest request,
+        GeoservicesLayerInfo layerInfo,
+        List<string> warnings,
+        IProgress<GeoservicesImportProgress>? progress,
+        string jobId,
+        DateTimeOffset startedAt,
+        int featuresProcessed,
+        CancellationToken cancellationToken)
+    {
+        if (_layerPublishingService == null)
+        {
+            warnings.Add("AutoPublish was requested, but no layer publishing service is registered for this server.");
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.ServiceName))
+        {
+            warnings.Add("AutoPublish was requested, but no target serviceName was supplied; the imported table was not published.");
+            return null;
+        }
+
+        try
+        {
+            ReportProgress(
+                progress,
+                jobId,
+                startedAt,
+                GeoservicesImportStatus.Publishing,
+                request,
+                "Publishing imported layer",
+                featuresProcessed,
+                featuresProcessed,
+                layerInfo.Name);
+
+            var publishRequest = new LayerPublishRequest
+            {
+                Schema = "public",
+                Table = request.TableName,
+                LayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
+                Description = layerInfo.Description,
+                GeometryColumn = "geom",
+                GeometryType = string.IsNullOrWhiteSpace(layerInfo.GeometryType)
+                    ? null
+                    : MapEsriGeometryType(layerInfo.GeometryType),
+                Srid = request.TargetSrid,
+                PrimaryKey = FieldNames.ObjectId,
+                Fields = [],
+                ServiceName = request.ServiceName,
+                Enabled = true
+            };
+
+            return await _layerPublishingService.PublishLayerAsync(
+                    _connectionProvider.GetConnectionString(),
+                    publishRequest,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (LayerPublishingException ex)
+        {
+            warnings.Add($"AutoPublish was requested, but publishing did not complete: {ex.Message}");
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.AutoPublishFailed(_logger, request.TableName, request.ServiceName!, ex);
+            warnings.Add("AutoPublish was requested, but publishing did not complete.");
+            return null;
+        }
+    }
+
     private static void ReportProgress(
         IProgress<GeoservicesImportProgress>? progress,
         string jobId,
@@ -1882,7 +1979,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         string phase,
         int featuresProcessed,
         int? totalFeatures,
-        string? layerName = null)
+        string? layerName = null,
+        int? publishedLayerId = null)
     {
         progress?.Report(new GeoservicesImportProgress
         {
@@ -1894,6 +1992,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             SourceLayerId = request.LayerId,
             SourceLayerName = layerName,
             TableName = request.TableName,
+            ServiceName = request.ServiceName,
+            PublishedLayerId = publishedLayerId,
             StartedAt = startedAt,
             CurrentPhase = phase
         });
@@ -1993,5 +2093,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         [LoggerMessage(7831, LogLevel.Warning,
             "Batch contains {Count} features with higher-dimension (Z/M) coordinates that will be dropped during 2D import in table {TableName}")]
         public static partial void HigherDimensionGeometryDetected(ILogger logger, int count, string tableName);
+
+        [LoggerMessage(7832, LogLevel.Warning, "Auto-publish failed for imported table {TableName} into service {ServiceName}")]
+        public static partial void AutoPublishFailed(ILogger logger, string tableName, string serviceName, Exception exception);
     }
 }
