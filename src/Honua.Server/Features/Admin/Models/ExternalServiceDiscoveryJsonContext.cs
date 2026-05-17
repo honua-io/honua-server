@@ -21,6 +21,8 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ArcGisServiceDocument))]
 [JsonSerializable(typeof(ArcGisLayerDocument))]
 [JsonSerializable(typeof(ArcGisCountDocument))]
+[JsonSerializable(typeof(OgcLandingDocument))]
+[JsonSerializable(typeof(OgcCollectionsDocument))]
 internal sealed partial class ExternalServiceDiscoveryJsonContext : JsonSerializerContext
 {
 }

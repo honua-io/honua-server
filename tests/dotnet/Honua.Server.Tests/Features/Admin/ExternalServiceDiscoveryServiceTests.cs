@@ -59,22 +59,60 @@ public sealed class ExternalServiceDiscoveryServiceTests
     }
 
     [UnitTest]
-    public async Task DiscoverAsync_WithOgcApiFeaturesUrl_ReturnsExplicitBacklogError()
+    public async Task DiscoverAsync_WithOgcApiFeaturesUrl_ReturnsCollectionCandidates()
     {
-        using var factory = new StubHttpClientFactory(new Dictionary<string, string>());
+        using var factory = new StubHttpClientFactory(OgcApiFeaturesResponses());
         var service = new ExternalServiceDiscoveryService(
             factory,
             new AllowingNetworkGuard(),
             NullLogger<ExternalServiceDiscoveryService>.Instance);
 
-        var act = async () => await service.DiscoverAsync(new ExternalServiceDiscoveryRequest
+        var response = await service.DiscoverAsync(new ExternalServiceDiscoveryRequest
         {
-            Url = "https://ogc.example.test/collections"
+            Url = "https://ogc.example.test/api",
+            TimeoutSeconds = 5
         });
 
-        await act.Should().ThrowAsync<ExternalServiceDiscoveryRequestException>()
-            .WithMessage("*honua-server#977*");
-        factory.RequestedUrls.Should().BeEmpty();
+        response.SourceKind.Should().Be("ogc-api-features");
+        response.ServiceType.Should().Be("OGC API Features");
+        response.ServiceName.Should().Be("Honolulu OGC");
+        response.NormalizedUrl.Should().Be("https://ogc.example.test/api/collections");
+        response.Srid.Should().Be(4326);
+        response.Candidates.Should().ContainSingle();
+
+        var candidate = response.Candidates[0];
+        candidate.LayerId.Should().BeNull();
+        candidate.ExternalId.Should().Be("zoning");
+        candidate.Name.Should().Be("Zoning");
+        candidate.LayerType.Should().Be("collection");
+        candidate.GeometryType.Should().Be("feature");
+        candidate.Srid.Should().Be(4326);
+        candidate.FeatureCount.Should().Be(7);
+        candidate.ServiceUrl.Should().Be("https://ogc.example.test/api/collections/zoning");
+        candidate.Extent.Should().BeEquivalentTo(new ExternalServiceExtent
+        {
+            XMin = -158.3,
+            YMin = 21.2,
+            XMax = -157.6,
+            YMax = 21.8,
+            Srid = 4326
+        });
+
+        factory.RequestedUrls.Should().BeEquivalentTo([
+            "https://ogc.example.test/api",
+            "https://ogc.example.test/api/collections"
+        ], options => options.WithStrictOrdering());
+    }
+
+    internal static Dictionary<string, string> AllDiscoveryResponses()
+    {
+        var responses = ArcGisFeatureServerResponses();
+        foreach (var (url, body) in OgcApiFeaturesResponses())
+        {
+            responses[url] = body;
+        }
+
+        return responses;
     }
 
     internal static Dictionary<string, string> ArcGisFeatureServerResponses()
@@ -113,6 +151,58 @@ public sealed class ExternalServiceDiscoveryServiceTests
             ["https://services.example.test/arcgis/rest/services/Planning/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json"] = """
             {
               "count": 42
+            }
+            """
+        };
+
+    internal static Dictionary<string, string> OgcApiFeaturesResponses()
+        => new(StringComparer.Ordinal)
+        {
+            ["https://ogc.example.test/api"] = """
+            {
+              "title": "Honolulu OGC",
+              "description": "OGC API Features fixture",
+              "links": [
+                {
+                  "href": "https://ogc.example.test/api/collections",
+                  "rel": "data",
+                  "type": "application/json",
+                  "title": "Collections"
+                }
+              ]
+            }
+            """,
+            ["https://ogc.example.test/api/collections"] = """
+            {
+              "title": "Honolulu Collections",
+              "collections": [
+                {
+                  "id": "zoning",
+                  "title": "Zoning",
+                  "description": "Zoning district polygons",
+                  "itemType": "feature",
+                  "storageCrs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                  "crs": [
+                    "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+                  ],
+                  "itemCount": 7,
+                  "extent": {
+                    "spatial": {
+                      "bbox": [
+                        [-158.3, 21.2, -157.6, 21.8]
+                      ],
+                      "crs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+                    }
+                  },
+                  "links": [
+                    {
+                      "href": "https://ogc.example.test/api/collections/zoning",
+                      "rel": "self",
+                      "type": "application/json"
+                    }
+                  ]
+                }
+              ]
             }
             """
         };

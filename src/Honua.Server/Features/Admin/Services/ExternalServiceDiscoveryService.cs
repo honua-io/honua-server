@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Globalization;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Import;
 
@@ -34,9 +35,12 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
         if (serviceType is null)
         {
-            // TODO honua-server#977: add OGC API Features landing/collections discovery here.
-            throw new ExternalServiceDiscoveryRequestException(
-                "Only ArcGIS REST FeatureServer and MapServer service root URLs are supported. OGC API Features discovery is tracked by honua-server#977.");
+            return await DiscoverOgcApiFeaturesAsync(
+                    sourceUrl,
+                    normalizedUri,
+                    ClampTimeout(request.TimeoutSeconds),
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return await DiscoverArcGisAsync(
@@ -247,6 +251,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
             SourceKind = sourceKind,
             ServiceName = serviceName,
             ServiceUrl = serviceUri.ToString(),
+            ExternalId = layer.Id.ToString(CultureInfo.InvariantCulture),
             LayerId = layer.Id,
             Name = FirstNonWhiteSpace(layer.Name, reference.Name, $"Layer {reference.Id}"),
             Description = layer.Description,
@@ -270,10 +275,212 @@ internal sealed partial class ExternalServiceDiscoveryService(
             SourceKind = sourceKind,
             ServiceName = serviceName,
             ServiceUrl = serviceUri.ToString(),
+            ExternalId = reference.Id.ToString(CultureInfo.InvariantCulture),
             LayerId = reference.Id,
             Name = FirstNonWhiteSpace(reference.Name, $"Layer {reference.Id}"),
             Srid = GetSrid(serviceSpatialReference)
         };
+
+    private async Task<ExternalServiceDiscoveryResponse> DiscoverOgcApiFeaturesAsync(
+        string sourceUrl,
+        Uri serviceUri,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        var landingDocument = await TryGetOgcLandingAsync(serviceUri, timeoutSeconds, cancellationToken)
+            .ConfigureAwait(false);
+        var collectionsUri = ResolveOgcCollectionsUri(serviceUri, landingDocument);
+        var collectionsDocument = await GetJsonAsync(
+                collectionsUri,
+                ExternalServiceDiscoveryJsonContext.Default.OgcCollectionsDocument,
+                timeoutSeconds,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (collectionsDocument.Collections is null)
+        {
+            throw new ExternalServiceDiscoveryRemoteException(
+                "OGC API Features collections response did not include a collections array.");
+        }
+
+        var serviceName = FirstNonWhiteSpace(
+            landingDocument?.Title,
+            collectionsDocument.Title,
+            ExtractOgcServiceName(serviceUri));
+
+        var candidates = collectionsDocument.Collections
+            .Where(collection => !string.IsNullOrWhiteSpace(collection.Id))
+            .Select(collection => MapOgcCandidate(collection, serviceName, serviceUri, collectionsUri))
+            .ToArray();
+
+        string[] warnings = collectionsDocument.Collections.Length == candidates.Length
+            ? []
+            : new[] { "One or more OGC API Features collections without an id were skipped." };
+
+        var normalizedUrl = collectionsUri.ToString();
+        Log.ServiceDiscovered(logger, normalizedUrl, candidates.Length);
+
+        return new ExternalServiceDiscoveryResponse
+        {
+            SourceUrl = sourceUrl,
+            NormalizedUrl = normalizedUrl,
+            SourceKind = "ogc-api-features",
+            ServiceType = "OGC API Features",
+            ServiceName = serviceName,
+            Description = FirstNonWhiteSpaceOrNull(landingDocument?.Description, collectionsDocument.Description),
+            Srid = 4326,
+            Candidates = candidates,
+            Warnings = warnings
+        };
+    }
+
+    private async Task<OgcLandingDocument?> TryGetOgcLandingAsync(
+        Uri serviceUri,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        if (IsOgcCollectionsUri(serviceUri))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await GetJsonAsync(
+                    serviceUri,
+                    ExternalServiceDiscoveryJsonContext.Default.OgcLandingDocument,
+                    timeoutSeconds,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
+        {
+            Log.OgcLandingPageFailed(logger, serviceUri, ex);
+            return null;
+        }
+    }
+
+    private static Uri ResolveOgcCollectionsUri(Uri serviceUri, OgcLandingDocument? landingDocument)
+    {
+        if (IsOgcCollectionsUri(serviceUri))
+        {
+            return serviceUri;
+        }
+
+        var linkedCollections = landingDocument?.Links?
+            .Where(static link =>
+                !string.IsNullOrWhiteSpace(link.Href) &&
+                (string.Equals(link.Rel, "data", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(link.Rel, "collections", StringComparison.OrdinalIgnoreCase)))
+            .Select(link => TryResolveSameOriginUri(serviceUri, link.Href!))
+            .FirstOrDefault(uri => uri is not null);
+
+        return linkedCollections ?? AppendPathSegment(serviceUri, "collections");
+    }
+
+    private static ExternalServiceLayerCandidate MapOgcCandidate(
+        OgcCollectionDocument collection,
+        string serviceName,
+        Uri serviceUri,
+        Uri collectionsUri)
+    {
+        var sourceUrl = ResolveOgcCollectionUri(collection, serviceUri, collectionsUri).ToString();
+        return new ExternalServiceLayerCandidate
+        {
+            SourceKind = "ogc-api-features",
+            ServiceName = serviceName,
+            ServiceUrl = sourceUrl,
+            ExternalId = collection.Id,
+            Name = FirstNonWhiteSpace(collection.Title, collection.Id, "Collection"),
+            Description = collection.Description,
+            LayerType = "collection",
+            GeometryType = collection.ItemType,
+            Srid = GetOgcSrid(collection),
+            Extent = MapOgcExtent(collection.Extent),
+            FeatureCount = collection.ItemCount
+        };
+    }
+
+    private static Uri ResolveOgcCollectionUri(
+        OgcCollectionDocument collection,
+        Uri serviceUri,
+        Uri collectionsUri)
+    {
+        var selfLink = collection.Links?
+            .Where(static link =>
+                !string.IsNullOrWhiteSpace(link.Href) &&
+                string.Equals(link.Rel, "self", StringComparison.OrdinalIgnoreCase))
+            .Select(link => TryResolveSameOriginUri(serviceUri, link.Href!))
+            .FirstOrDefault(uri => uri is not null);
+
+        if (selfLink is not null)
+        {
+            return selfLink;
+        }
+
+        return AppendPathSegment(collectionsUri, Uri.EscapeDataString(collection.Id ?? string.Empty));
+    }
+
+    private static ExternalServiceExtent? MapOgcExtent(OgcExtentDocument? extent)
+    {
+        var bbox = extent?.Spatial?.Bbox?.FirstOrDefault(static values => values.Length >= 4);
+        if (bbox is null)
+        {
+            return null;
+        }
+
+        return new ExternalServiceExtent
+        {
+            XMin = bbox[0],
+            YMin = bbox[1],
+            XMax = bbox[2],
+            YMax = bbox[3],
+            Srid = ParseOgcCrsSrid(extent?.Spatial?.Crs) ?? 4326
+        };
+    }
+
+    private static int? GetOgcSrid(OgcCollectionDocument collection)
+    {
+        if (ParseOgcCrsSrid(collection.StorageCrs) is { } storageSrid)
+        {
+            return storageSrid;
+        }
+
+        if (collection.Crs is not null)
+        {
+            foreach (var crs in collection.Crs)
+            {
+                if (ParseOgcCrsSrid(crs) is { } srid)
+                {
+                    return srid;
+                }
+            }
+        }
+
+        return ParseOgcCrsSrid(collection.Extent?.Spatial?.Crs) ?? 4326;
+    }
+
+    private static int? ParseOgcCrsSrid(string? crs)
+    {
+        if (string.IsNullOrWhiteSpace(crs))
+        {
+            return null;
+        }
+
+        if (crs.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        {
+            return 4326;
+        }
+
+        var lastSegment = crs.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+        return int.TryParse(lastSegment, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) && srid > 0
+            ? srid
+            : null;
+    }
 
     private static ExternalServiceExtent? MapExtent(ArcGisExtentDocument? extent)
         => extent is null
@@ -311,6 +518,47 @@ internal sealed partial class ExternalServiceDiscoveryService(
     private static Uri BuildLayerCountUri(Uri serviceUri, int layerId)
         => new($"{serviceUri}/{layerId}/query?where=1%3D1&returnCountOnly=true&f=json", UriKind.Absolute);
 
+    private static Uri AppendPathSegment(Uri baseUri, string segment)
+    {
+        var builder = new UriBuilder(baseUri)
+        {
+            Query = string.Empty,
+            Fragment = string.Empty,
+            Path = $"{baseUri.AbsolutePath.TrimEnd('/')}/{segment.TrimStart('/')}"
+        };
+
+        return builder.Uri;
+    }
+
+    private static bool IsOgcCollectionsUri(Uri uri)
+    {
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length > 0 && segments[^1].Equals("collections", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static Uri? TryResolveSameOriginUri(Uri baseUri, string href)
+    {
+        if (!Uri.TryCreate(baseUri, href, out var resolved))
+        {
+            return null;
+        }
+
+        if (!string.Equals(baseUri.Scheme, resolved.Scheme, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(baseUri.Host, resolved.Host, StringComparison.OrdinalIgnoreCase) ||
+            baseUri.Port != resolved.Port)
+        {
+            return null;
+        }
+
+        var builder = new UriBuilder(resolved)
+        {
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+
+        return builder.Uri;
+    }
+
     private static string? GetServiceType(Uri serviceUri)
     {
         var segments = serviceUri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -345,6 +593,22 @@ internal sealed partial class ExternalServiceDiscoveryService(
         return segments.Length > 0 ? Uri.UnescapeDataString(segments[^1]) : "External Service";
     }
 
+    private static string ExtractOgcServiceName(Uri serviceUri)
+    {
+        var segments = serviceUri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return serviceUri.Host;
+        }
+
+        if (segments[^1].Equals("collections", StringComparison.OrdinalIgnoreCase) && segments.Length > 1)
+        {
+            return Uri.UnescapeDataString(segments[^2]);
+        }
+
+        return Uri.UnescapeDataString(segments[^1]);
+    }
+
     private static int? GetSrid(ArcGisSpatialReferenceDocument? spatialReference)
         => spatialReference?.LatestWkid ?? spatialReference?.Wkid;
 
@@ -353,6 +617,9 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
     private static string FirstNonWhiteSpace(params string?[] values)
         => values.FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value)) ?? "External Service";
+
+    private static string? FirstNonWhiteSpaceOrNull(params string?[] values)
+        => values.FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value));
 
     private static partial class Log
     {
@@ -373,6 +640,12 @@ internal sealed partial class ExternalServiceDiscoveryService(
             Level = LogLevel.Debug,
             Message = "Failed to read external service layer {LayerId} feature count")]
         public static partial void FeatureCountFailed(ILogger logger, int layerId, Exception exception);
+
+        [LoggerMessage(
+            EventId = 4183,
+            Level = LogLevel.Debug,
+            Message = "Failed to read OGC API Features landing page {ServiceUrl}")]
+        public static partial void OgcLandingPageFailed(ILogger logger, Uri serviceUrl, Exception exception);
     }
 }
 
