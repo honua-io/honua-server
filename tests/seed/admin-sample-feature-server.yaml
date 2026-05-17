@@ -7,6 +7,11 @@ sql:
   #   /rest/services/admin_sample/FeatureServer/3001/query?f=geojson&where=1%3D1
   #   /rest/services/admin_sample/FeatureServer/3002/query?f=geojson&where=1%3D1
   - |
+      DROP TABLE IF EXISTS admin_sample_sites_source;
+      DROP TABLE IF EXISTS admin_sample_routes_source;
+      DROP TABLE IF EXISTS admin_sample_areas_source;
+
+  - |
       DELETE FROM features
       WHERE layer_id IN (3000, 3001, 3002)
          OR objectid IN (
@@ -383,6 +388,111 @@ sql:
                   'updated_at', '2026-05-01T20:15:00Z'
               )
           );
+
+  - |
+      CREATE TABLE admin_sample_sites_source (
+          objectid integer PRIMARY KEY,
+          name text NOT NULL,
+          category text NOT NULL,
+          status text NOT NULL,
+          priority integer,
+          owner text,
+          updated_at timestamptz,
+          geometry geometry(Point, 4326) NOT NULL
+      );
+
+      INSERT INTO admin_sample_sites_source (
+          objectid,
+          name,
+          category,
+          status,
+          priority,
+          owner,
+          updated_at,
+          geometry
+      )
+      SELECT
+          objectid,
+          attributes->>'name',
+          attributes->>'category',
+          attributes->>'status',
+          (attributes->>'priority')::integer,
+          attributes->>'owner',
+          (attributes->>'updated_at')::timestamptz,
+          geometry::geometry(Point, 4326)
+      FROM features
+      WHERE layer_id = 3000
+      ORDER BY objectid;
+
+  - |
+      CREATE TABLE admin_sample_routes_source (
+          objectid integer PRIMARY KEY,
+          name text NOT NULL,
+          category text NOT NULL,
+          status text NOT NULL,
+          priority integer,
+          owner text,
+          updated_at timestamptz,
+          geometry geometry(LineString, 4326) NOT NULL
+      );
+
+      INSERT INTO admin_sample_routes_source (
+          objectid,
+          name,
+          category,
+          status,
+          priority,
+          owner,
+          updated_at,
+          geometry
+      )
+      SELECT
+          objectid,
+          attributes->>'name',
+          attributes->>'category',
+          attributes->>'status',
+          (attributes->>'priority')::integer,
+          attributes->>'owner',
+          (attributes->>'updated_at')::timestamptz,
+          ST_Transform(geometry, 4326)::geometry(LineString, 4326)
+      FROM features
+      WHERE layer_id = 3001
+      ORDER BY objectid;
+
+  - |
+      CREATE TABLE admin_sample_areas_source (
+          objectid integer PRIMARY KEY,
+          name text NOT NULL,
+          category text NOT NULL,
+          status text NOT NULL,
+          priority integer,
+          owner text,
+          updated_at timestamptz,
+          geometry geometry(Polygon, 4326) NOT NULL
+      );
+
+      INSERT INTO admin_sample_areas_source (
+          objectid,
+          name,
+          category,
+          status,
+          priority,
+          owner,
+          updated_at,
+          geometry
+      )
+      SELECT
+          objectid,
+          attributes->>'name',
+          attributes->>'category',
+          attributes->>'status',
+          (attributes->>'priority')::integer,
+          attributes->>'owner',
+          (attributes->>'updated_at')::timestamptz,
+          geometry::geometry(Polygon, 4326)
+      FROM features
+      WHERE layer_id = 3002
+      ORDER BY objectid;
 
   - |
       SELECT setval(

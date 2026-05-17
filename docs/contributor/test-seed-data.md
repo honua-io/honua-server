@@ -110,7 +110,10 @@ bash tests/seed/apply-yaml-seed.sh tests/seed/admin-sample-feature-server.yaml
 
 That creates `admin_sample` with point layer `3000`, projected line layer
 `3001`, and polygon layer `3002`, so the UI can preview these routes without
-fake client-side rows:
+fake client-side rows. The same seed also creates publishable source tables
+derived from the deterministic sample rows:
+`admin_sample_sites_source`, `admin_sample_routes_source`, and
+`admin_sample_areas_source`.
 
 ```text
 /rest/services/admin_sample/FeatureServer/3000/query?f=geojson&where=1%3D1
@@ -119,8 +122,13 @@ fake client-side rows:
 ```
 
 The admin sample seed is deterministic and safe to re-run. It removes only the
-`admin_sample` service/layer bindings and the reserved sample object ids before
-reinserting known rows.
+`admin_sample` service/layer bindings, the reserved sample object ids, and the
+derived admin sample source tables before reinserting known rows. To verify the
+same registration path used by the admin API, publish those source tables with
+`POST /api/v1/admin/connections/{id}/layers` using schema `public` for a manual
+local seed, geometry column `geometry`, primary key `objectid`, SRID `4326`, and
+the attribute fields `objectid`, `name`, `category`, `status`, `priority`,
+`owner`, and `updated_at`.
 
 ## Profiles in CI
 
