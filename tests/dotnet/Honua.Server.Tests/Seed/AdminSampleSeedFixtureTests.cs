@@ -31,6 +31,9 @@ public sealed class AdminSampleSeedFixtureTests
         seed.Should().Contain("Oahu Operations Sites");
         seed.Should().Contain("Oahu Response Routes");
         seed.Should().Contain("Oahu Service Areas");
+        seed.Should().Contain("admin_sample_sites_source");
+        seed.Should().Contain("admin_sample_routes_source");
+        seed.Should().Contain("admin_sample_areas_source");
         seed.Should().Contain("Honolulu Operations Center");
         seed.Should().Contain("Pearl City Sensor Gateway");
         seed.Should().Contain("Town to Airport Response Route");
