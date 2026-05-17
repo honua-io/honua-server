@@ -636,6 +636,29 @@ public sealed class GitOpsWatchEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /api/v1/admin/gitops/watch")]
+    public async Task ConfigureWatch_ManifestPathGlob_Returns400()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var request = new GitOpsWatchConfigRequest
+        {
+            RepositoryUrl = "https://github.com/example/repo.git",
+            Branch = "main",
+            ManifestPath = "manifests/*.json"
+        };
+
+        var response = await client.PostAsync(
+            "/api/v1/admin/gitops/watch",
+            JsonContent.Create(request, GitOpsWatchJsonContext.Default.GitOpsWatchConfigRequest));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("glob patterns are not supported");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/gitops/watch")]
     public async Task ConfigureWatch_PruneEnabledRoundTrips()
     {
         var client = _fixture.CreateAdminClient();

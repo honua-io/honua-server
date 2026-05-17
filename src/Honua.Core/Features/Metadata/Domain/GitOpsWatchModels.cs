@@ -26,7 +26,9 @@ public sealed class GitOpsWatchConfig
     public string Branch { get; init; } = "main";
 
     /// <summary>
-    /// Glob pattern for manifest files within the repository.
+    /// Relative exact manifest file path or directory path within the repository. Directory paths resolve to
+    /// honua-manifest.json first, then manifest.json; slashless paths without a file extension are normalized as
+    /// directories. Glob patterns are not supported.
     /// </summary>
     public string ManifestPath { get; init; } = "manifests/";
 

@@ -33,7 +33,7 @@ public sealed class GitOpsWatchServiceTests : IDisposable
     [UnitTest]
     public async Task PollOnceAsync_MissingManifestPath_DoesNotMarkCommitObserved()
     {
-        var repoDir = await CreateLocalRepositoryAsync(includeManifest: false);
+        var repoDir = await CreateLocalRepositoryAsync();
         var latestCommit = await RunGitForOutputAsync(repoDir, "rev-parse", "HEAD");
         var watchStore = new TestGitOpsWatchStore(CreateConfig(repoDir, manifestPath: "missing/"));
 
@@ -49,11 +49,11 @@ public sealed class GitOpsWatchServiceTests : IDisposable
     }
 
     [UnitTest]
-    public async Task PollOnceAsync_ValidManifestPath_QueuesApprovalAndMarksCommitObserved()
+    public async Task PollOnceAsync_ExactManifestFile_QueuesApprovalAndMarksCommitObserved()
     {
-        var repoDir = await CreateLocalRepositoryAsync(includeManifest: true);
+        var repoDir = await CreateLocalRepositoryAsync(("manifests/group.json", ValidGroupManifest));
         var latestCommit = await RunGitForOutputAsync(repoDir, "rev-parse", "HEAD");
-        var watchStore = new TestGitOpsWatchStore(CreateConfig(repoDir, manifestPath: "manifests/"));
+        var watchStore = new TestGitOpsWatchStore(CreateConfig(repoDir, manifestPath: "manifests/group.json"));
         var pendingStore = new TestManifestPendingChangeStore();
 
         using var services = CreateServices(watchStore, pendingStore);
@@ -69,6 +69,107 @@ public sealed class GitOpsWatchServiceTests : IDisposable
         pendingStore.Changes.Should().ContainSingle();
         pendingStore.Changes[0].PendingId.Should().Be(watchStore.ChangeRecords[0].PendingApprovalId!.Value);
         pendingStore.Changes[0].ResourceCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task PollOnceAsync_DirectoryManifestPath_UsesHonuaManifest()
+    {
+        var repoDir = await CreateLocalRepositoryAsync(("manifests/honua-manifest.json", ValidGroupManifest));
+        var latestCommit = await RunGitForOutputAsync(repoDir, "rev-parse", "HEAD");
+        var watchStore = new TestGitOpsWatchStore(CreateConfig(repoDir, manifestPath: "manifests/"));
+        var pendingStore = new TestManifestPendingChangeStore();
+
+        using var services = CreateServices(watchStore, pendingStore);
+        var service = CreateService(services);
+
+        await service.PollOnceAsync(CancellationToken.None);
+
+        watchStore.PollStateUpdateCount.Should().Be(1);
+        watchStore.CurrentConfig.LastKnownCommitSha.Should().Be(latestCommit);
+        watchStore.ChangeRecords.Should().ContainSingle();
+        watchStore.ChangeRecords[0].Status.Should().Be(GitOpsChangeStatus.PendingApproval);
+        pendingStore.Changes.Should().ContainSingle();
+        pendingStore.Changes[0].ResourceCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task PollOnceAsync_DirectoryManifestPath_UsesManifestFallback()
+    {
+        var repoDir = await CreateLocalRepositoryAsync(("deploy/manifest.json", ValidGroupManifest));
+        var latestCommit = await RunGitForOutputAsync(repoDir, "rev-parse", "HEAD");
+        var watchStore = new TestGitOpsWatchStore(CreateConfig(repoDir, manifestPath: "deploy/"));
+        var pendingStore = new TestManifestPendingChangeStore();
+
+        using var services = CreateServices(watchStore, pendingStore);
+        var service = CreateService(services);
+
+        await service.PollOnceAsync(CancellationToken.None);
+
+        watchStore.PollStateUpdateCount.Should().Be(1);
+        watchStore.CurrentConfig.LastKnownCommitSha.Should().Be(latestCommit);
+        watchStore.ChangeRecords.Should().ContainSingle();
+        watchStore.ChangeRecords[0].Status.Should().Be(GitOpsChangeStatus.PendingApproval);
+        pendingStore.Changes.Should().ContainSingle();
+        pendingStore.Changes[0].ResourceCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public void BuildSparseCheckoutPatterns_SlashlessDirectoryPath_FetchesOnlyDefaultManifestFiles()
+    {
+        var normalized = GitOpsWatchManifestPath.TryNormalize(
+            "manifests",
+            out var manifestPath,
+            out var errorMessage);
+
+        normalized.Should().BeTrue();
+        errorMessage.Should().BeNull();
+        manifestPath.Should().Be("manifests/");
+
+        var patterns = GitOpsWatchManifestPath.BuildSparseCheckoutPatterns(manifestPath);
+
+        patterns.Should().Equal(
+            "manifests/honua-manifest.json",
+            "manifests/manifest.json");
+        patterns.Should().NotContain("manifests");
+    }
+
+    [UnitTest]
+    public async Task PollOnceAsync_DirectoryWithoutDefaultManifest_DoesNotMarkCommitObserved()
+    {
+        var repoDir = await CreateLocalRepositoryAsync(("manifests/group.json", ValidGroupManifest));
+        var latestCommit = await RunGitForOutputAsync(repoDir, "rev-parse", "HEAD");
+        var watchStore = new TestGitOpsWatchStore(CreateConfig(repoDir, manifestPath: "manifests/"));
+
+        using var services = CreateServices(watchStore);
+        var service = CreateService(services);
+
+        await service.PollOnceAsync(CancellationToken.None);
+
+        watchStore.PollStateUpdateCount.Should().Be(0);
+        watchStore.CurrentConfig.LastKnownCommitSha.Should().BeNull();
+        watchStore.ChangeRecords.Should().BeEmpty();
+        latestCommit.Should().HaveLength(40);
+    }
+
+    [UnitTest]
+    public async Task PollOnceAsync_GlobManifestPath_RecordsSafeFailureAndDoesNotMarkCommitObserved()
+    {
+        var repoDir = await CreateLocalRepositoryAsync(("manifests/honua-manifest.json", ValidGroupManifest));
+        var latestCommit = await RunGitForOutputAsync(repoDir, "rev-parse", "HEAD");
+        var watchStore = new TestGitOpsWatchStore(CreateConfig(repoDir, manifestPath: "manifests/*.json"));
+
+        using var services = CreateServices(watchStore);
+        var service = CreateService(services);
+
+        await service.PollOnceAsync(CancellationToken.None);
+
+        watchStore.PollStateUpdateCount.Should().Be(0);
+        watchStore.CurrentConfig.LastKnownCommitSha.Should().BeNull();
+        watchStore.ChangeRecords.Should().ContainSingle();
+        watchStore.ChangeRecords[0].CommitSha.Should().Be(latestCommit);
+        watchStore.ChangeRecords[0].Status.Should().Be(GitOpsChangeStatus.Failed);
+        watchStore.ChangeRecords[0].ErrorMessage.Should().Be(GitOpsWatchManifestPath.GlobUnsupportedErrorMessage);
+        watchStore.ChangeRecords[0].ErrorMessage.Should().NotContain(repoDir);
     }
 
     public void Dispose()
@@ -136,7 +237,7 @@ public sealed class GitOpsWatchServiceTests : IDisposable
         UpdatedAt = DateTimeOffset.UtcNow
     };
 
-    private async Task<string> CreateLocalRepositoryAsync(bool includeManifest)
+    private async Task<string> CreateLocalRepositoryAsync(params (string RelativePath, string Content)[] files)
     {
         var repoDir = Path.Combine(Path.GetTempPath(), $"honua-gitops-watch-{Guid.NewGuid():N}");
         Directory.CreateDirectory(repoDir);
@@ -147,11 +248,14 @@ public sealed class GitOpsWatchServiceTests : IDisposable
         await RunGitCheckedAsync(repoDir, "config", "user.name", "GitOps Test");
         await RunGitCheckedAsync(repoDir, "checkout", "-b", "main");
 
-        if (includeManifest)
+        if (files.Length > 0)
         {
-            var manifestDir = Path.Combine(repoDir, "manifests");
-            Directory.CreateDirectory(manifestDir);
-            await File.WriteAllTextAsync(Path.Combine(manifestDir, "group.json"), ValidGroupManifest);
+            foreach (var (relativePath, content) in files)
+            {
+                var filePath = Path.Combine(repoDir, relativePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+                await File.WriteAllTextAsync(filePath, content);
+            }
         }
         else
         {
@@ -159,7 +263,7 @@ public sealed class GitOpsWatchServiceTests : IDisposable
         }
 
         await RunGitCheckedAsync(repoDir, "add", ".");
-        await RunGitCheckedAsync(repoDir, "commit", "-m", includeManifest ? "add manifest" : "initial commit");
+        await RunGitCheckedAsync(repoDir, "commit", "-m", files.Length > 0 ? "add manifest" : "initial commit");
 
         return repoDir;
     }

@@ -789,7 +789,7 @@ Git repository watching is an **enterprise edition** feature. When enabled, the 
 |-------|------|---------|-------------|
 | `repositoryUrl` | string | — | Git repository URL (HTTPS, SSH, or git protocol) |
 | `branch` | string | `"main"` | Branch to watch |
-| `manifestPath` | string | `"manifests/"` | Relative path for manifest files |
+| `manifestPath` | string | `"manifests/"` | Relative exact manifest file path or directory path. Directory paths resolve to `honua-manifest.json`, then `manifest.json`; slashless paths without a file extension are normalized as directories. Glob patterns are rejected. |
 | `pollIntervalSeconds` | int | `60` | Poll interval (floored to server minimum) |
 | `approvalRequired` | bool | `false` | Queue changes for approval instead of auto-applying |
 | `pruneEnabled` | bool | `false` | Delete server resources absent from the repository manifest |
