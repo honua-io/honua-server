@@ -328,6 +328,14 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             return Task.FromResult<IReadOnlyList<PublishedLayerSummary>>(Array.Empty<PublishedLayerSummary>());
         }
+
+        public Task<LayerExtentRefreshResult?> RefreshLayerExtentsAsync(
+            string connectionString,
+            string serviceName,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<LayerExtentRefreshResult?>(null);
+        }
     }
 
     private sealed class NullDatabaseMigrationRunner : IDatabaseMigrationRunner

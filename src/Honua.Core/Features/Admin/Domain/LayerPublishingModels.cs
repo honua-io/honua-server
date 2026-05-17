@@ -350,6 +350,68 @@ public sealed class PublishedLayerSummary
 }
 
 /// <summary>
+/// Result of refreshing catalog extents for published layers in a service.
+/// </summary>
+public sealed class LayerExtentRefreshResult
+{
+    /// <summary>
+    /// Service whose layer extents were refreshed.
+    /// </summary>
+    public required string ServiceName { get; init; }
+
+    /// <summary>
+    /// Number of layers processed by the refresh.
+    /// </summary>
+    public int RefreshedLayerCount { get; init; }
+
+    /// <summary>
+    /// Number of processed layers that produced a non-null extent.
+    /// </summary>
+    public int LayersWithExtent { get; init; }
+
+    /// <summary>
+    /// Number of processed layers that produced a null extent.
+    /// </summary>
+    public int LayersWithoutExtent { get; init; }
+
+    /// <summary>
+    /// Whether the containing service extent was recomputed.
+    /// </summary>
+    public bool ServiceExtentUpdated { get; init; }
+
+    /// <summary>
+    /// Per-layer refresh results.
+    /// </summary>
+    public IReadOnlyList<LayerExtentRefreshLayerResult> Layers { get; init; } = [];
+}
+
+/// <summary>
+/// Per-layer result of a catalog extent refresh.
+/// </summary>
+public sealed class LayerExtentRefreshLayerResult
+{
+    /// <summary>
+    /// Refreshed layer identifier.
+    /// </summary>
+    public int LayerId { get; init; }
+
+    /// <summary>
+    /// Layer display name.
+    /// </summary>
+    public required string LayerName { get; init; }
+
+    /// <summary>
+    /// Whether the source table produced a non-null extent.
+    /// </summary>
+    public bool HasExtent { get; init; }
+
+    /// <summary>
+    /// Spatial reference identifier of the refreshed extent.
+    /// </summary>
+    public int? ExtentSrid { get; init; }
+}
+
+/// <summary>
 /// Error categories for layer publishing operations.
 /// </summary>
 public enum LayerPublishingErrorKind

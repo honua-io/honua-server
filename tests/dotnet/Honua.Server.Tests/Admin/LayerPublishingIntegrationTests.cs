@@ -530,6 +530,105 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnExtentOnly=true")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    public async Task RefreshLayerExtents_WithProjectedSource_RecomputesLayerAndServiceExtentInWgs84()
+    {
+        const double firstLon = -157.8583;
+        const double firstLat = 21.3069;
+        const double secondLon = -157.9225;
+        const double secondLat = 21.3187;
+        const double tolerance = 0.0001;
+        var projectedTable = $"layer_3857_{Guid.NewGuid():N}";
+
+        try
+        {
+            await _fixture.Postgres.ExecuteAsync(FormattableString.Invariant($"""
+                CREATE TABLE public.{projectedTable} (
+                    id integer PRIMARY KEY,
+                    name text NOT NULL,
+                    population integer,
+                    geom geometry(Point, 3857) NOT NULL
+                );
+
+                INSERT INTO public.{projectedTable} (id, name, population, geom)
+                VALUES (
+                    1,
+                    'Projected Feature',
+                    100,
+                    ST_Transform(ST_SetSRID(ST_Point({firstLon}, {firstLat}), 4326), 3857)
+                );
+                """));
+
+            var publishRequest = new PublishLayerRequest
+            {
+                Schema = _schema,
+                Table = projectedTable,
+                LayerName = $"Layer {projectedTable}",
+                Description = "Layer publish projected extent refresh integration test",
+                GeometryColumn = "geom",
+                GeometryType = "Point",
+                Srid = 4326,
+                PrimaryKey = "id",
+                Fields = new[] { "id", "name", "population" },
+                ServiceName = _serviceName,
+                Enabled = true
+            };
+
+            var publishedLayer = await PublishLayerAsync(publishRequest);
+            _layerId = publishedLayer.LayerId;
+
+            await _fixture.Postgres.ExecuteAsync(FormattableString.Invariant($"""
+                INSERT INTO public.{projectedTable} (id, name, population, geom)
+                VALUES (
+                    2,
+                    'Projected Feature 2',
+                    200,
+                    ST_Transform(ST_SetSRID(ST_Point({secondLon}, {secondLat}), 4326), 3857)
+                );
+
+                UPDATE honua.layers
+                SET extent = NULL
+                WHERE layer_id = {_layerId.Value};
+
+                UPDATE honua.services
+                SET service_extent = NULL
+                WHERE service_name = '{_serviceName}';
+                """));
+
+            var refreshResponse = await _client.PostAsync(
+                $"/api/v1/admin/connections/{_connectionId}/layers/extents/refresh?serviceName={_serviceName}",
+                content: null);
+
+            var refreshPayload = await refreshResponse.Content.ReadAsStringAsync();
+            refreshResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {refreshPayload}");
+            var refreshApi = JsonSerializer.Deserialize<ApiResponse<LayerExtentRefreshResult>>(
+                refreshPayload,
+                _jsonOptions);
+
+            refreshApi.Should().NotBeNull();
+            refreshApi!.Success.Should().BeTrue();
+            refreshApi.Data.Should().NotBeNull();
+            refreshApi.Data!.RefreshedLayerCount.Should().Be(1);
+            refreshApi.Data.LayersWithExtent.Should().Be(1);
+            refreshApi.Data.Layers.Single().ExtentSrid.Should().Be(4326);
+
+            await AssertPersistedExtentAsync(secondLon, firstLat, firstLon, secondLat, tolerance);
+            await AssertFeatureServerExtentAsync(secondLon, firstLat, firstLon, secondLat, tolerance);
+            await AssertFeatureServerQueryExtentAsync(secondLon, firstLat, firstLon, secondLat, tolerance);
+            await AssertOgcCollectionExtentAsync(secondLon, firstLat, firstLon, secondLat, tolerance);
+        }
+        finally
+        {
+            await _fixture.Postgres.ExecuteAsync($"DROP TABLE IF EXISTS public.{projectedTable};");
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task PublishLayer_PrimaryKeyNotInFields_ReturnsBadRequest()
@@ -1035,6 +1134,156 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         api!.Success.Should().BeTrue();
         api.Data.Should().NotBeNull();
         return api.Data!;
+    }
+
+    private async Task<PublishedLayerSummary> PublishLayerAsync(PublishLayerRequest request)
+    {
+        var response = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(request, options: _jsonOptions));
+
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {payload}");
+        var api = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions);
+
+        api.Should().NotBeNull();
+        api!.Success.Should().BeTrue();
+        api.Data.Should().NotBeNull();
+        return api.Data!;
+    }
+
+    private async Task AssertPersistedExtentAsync(
+        double expectedXmin,
+        double expectedYmin,
+        double expectedXmax,
+        double expectedYmax,
+        double tolerance)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                ST_XMin(l.extent),
+                ST_YMin(l.extent),
+                ST_XMax(l.extent),
+                ST_YMax(l.extent),
+                ST_SRID(l.extent),
+                ST_XMin(s.service_extent),
+                ST_YMin(s.service_extent),
+                ST_XMax(s.service_extent),
+                ST_YMax(s.service_extent),
+                ST_SRID(s.service_extent)
+            FROM honua.layers l
+            INNER JOIN honua.service_layers sl
+                ON sl.layer_id = l.layer_id
+            INNER JOIN honua.services s
+                ON s.service_name = sl.service_name
+            WHERE l.layer_id = @layerId
+              AND s.service_name = @serviceName;
+            """;
+        command.Parameters.AddWithValue("layerId", _layerId!.Value);
+        command.Parameters.AddWithValue("serviceName", _serviceName);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        AssertReaderExtent(reader, 0, expectedXmin, expectedYmin, expectedXmax, expectedYmax, tolerance);
+        reader.GetInt32(4).Should().Be(4326);
+        AssertReaderExtent(reader, 5, expectedXmin, expectedYmin, expectedXmax, expectedYmax, tolerance);
+        reader.GetInt32(9).Should().Be(4326);
+    }
+
+    private async Task AssertFeatureServerExtentAsync(
+        double expectedXmin,
+        double expectedYmin,
+        double expectedXmax,
+        double expectedYmax,
+        double tolerance)
+    {
+        var response = await _client.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertEsriExtent(
+            document.RootElement.GetProperty("extent"),
+            expectedXmin,
+            expectedYmin,
+            expectedXmax,
+            expectedYmax,
+            tolerance);
+    }
+
+    private async Task AssertFeatureServerQueryExtentAsync(
+        double expectedXmin,
+        double expectedYmin,
+        double expectedXmax,
+        double expectedYmax,
+        double tolerance)
+    {
+        var response = await _client.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?where=1%3D1&returnExtentOnly=true&outSR=4326&f=json");
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertEsriExtent(
+            document.RootElement.GetProperty("extent"),
+            expectedXmin,
+            expectedYmin,
+            expectedXmax,
+            expectedYmax,
+            tolerance);
+    }
+
+    private async Task AssertOgcCollectionExtentAsync(
+        double expectedXmin,
+        double expectedYmin,
+        double expectedXmax,
+        double expectedYmax,
+        double tolerance)
+    {
+        var response = await _client.GetAsync($"/ogc/features/collections/{_layerId}");
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var bbox = document.RootElement
+            .GetProperty("extent")
+            .GetProperty("spatial")
+            .GetProperty("bbox")[0];
+
+        bbox[0].GetDouble().Should().BeApproximately(expectedXmin, tolerance);
+        bbox[1].GetDouble().Should().BeApproximately(expectedYmin, tolerance);
+        bbox[2].GetDouble().Should().BeApproximately(expectedXmax, tolerance);
+        bbox[3].GetDouble().Should().BeApproximately(expectedYmax, tolerance);
+    }
+
+    private static void AssertReaderExtent(
+        NpgsqlDataReader reader,
+        int offset,
+        double expectedXmin,
+        double expectedYmin,
+        double expectedXmax,
+        double expectedYmax,
+        double tolerance)
+    {
+        reader.GetDouble(offset).Should().BeApproximately(expectedXmin, tolerance);
+        reader.GetDouble(offset + 1).Should().BeApproximately(expectedYmin, tolerance);
+        reader.GetDouble(offset + 2).Should().BeApproximately(expectedXmax, tolerance);
+        reader.GetDouble(offset + 3).Should().BeApproximately(expectedYmax, tolerance);
+    }
+
+    private static void AssertEsriExtent(
+        JsonElement extent,
+        double expectedXmin,
+        double expectedYmin,
+        double expectedXmax,
+        double expectedYmax,
+        double tolerance)
+    {
+        extent.GetProperty("xmin").GetDouble().Should().BeApproximately(expectedXmin, tolerance);
+        extent.GetProperty("ymin").GetDouble().Should().BeApproximately(expectedYmin, tolerance);
+        extent.GetProperty("xmax").GetDouble().Should().BeApproximately(expectedXmax, tolerance);
+        extent.GetProperty("ymax").GetDouble().Should().BeApproximately(expectedYmax, tolerance);
+        extent.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
     }
 
     private async Task<bool> LayerMetadataExistsAsync(string tableName)
