@@ -443,6 +443,8 @@ builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserSto
     Honua.Server.Features.Admin.Services.InMemoryUserStore>();
 builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
     Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
+    new Honua.Server.Features.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
 builder.Services.AddSingleton<IMetadataSchemaRegistry, MetadataSchemaRegistry>();
 builder.Services.AddSingleton<IMetadataCompiler, DefaultMetadataCompiler>();
 
@@ -828,6 +830,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
         Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
+        Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
         Honua.Server.Features.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
@@ -1168,6 +1171,7 @@ app.MapLicenseEndpoints();
 app.MapOidcProviderEndpoints();
 app.MapUserManagementEndpoints();
 app.MapRoleEndpoints();
+app.MapAdminApiKeyEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)
 app.MapMetadataResourceEndpoints();
