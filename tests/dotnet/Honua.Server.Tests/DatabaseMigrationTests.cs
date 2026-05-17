@@ -65,11 +65,15 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         // Verify schema was created
         await using var connection = await _postgres.GetConnectionAsync(_schemaName);
 
-        // Check honua schema exists
+        // Check metadata and operational-data schemas exist
         await using var schemaCmd = connection.CreateCommand();
-        schemaCmd.CommandText = "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'honua')";
-        var schemaExists = (bool)(await schemaCmd.ExecuteScalarAsync())!;
-        schemaExists.Should().BeTrue("honua schema should be created");
+        schemaCmd.CommandText = """
+            SELECT COUNT(*)::int
+            FROM information_schema.schemata
+            WHERE schema_name IN ('honua', 'honua_data')
+            """;
+        var schemaCount = (int)(await schemaCmd.ExecuteScalarAsync())!;
+        schemaCount.Should().Be(2, "metadata and operational-data schemas should be created");
 
         // Check PostGIS extension is enabled
         await using var postgisCmd = connection.CreateCommand();

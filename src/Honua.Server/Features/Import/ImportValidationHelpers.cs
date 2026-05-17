@@ -18,4 +18,15 @@ internal static class ImportValidationHelpers
         return tableName.All(c => char.IsLetterOrDigit(c) || c == '_') &&
                char.IsLetter(tableName[0]);
     }
+
+    public static bool IsValidSchemaName(string schemaName)
+    {
+        if (string.IsNullOrWhiteSpace(schemaName) || schemaName.Length > 63)
+        {
+            return false;
+        }
+
+        return schemaName.All(c => char.IsLetterOrDigit(c) || c == '_') &&
+               (char.IsLetter(schemaName[0]) || schemaName[0] == '_');
+    }
 }

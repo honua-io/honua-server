@@ -1213,6 +1213,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             "MULTILINESTRING" => GeometryType.MultiLineString,
             "POLYGON" => GeometryType.Polygon,
             "MULTIPOLYGON" => GeometryType.MultiPolygon,
+            "GEOMETRY" => GeometryType.GeometryCollection,
             "GEOMETRYCOLLECTION" => GeometryType.GeometryCollection,
             _ => GeometryType.None
         };

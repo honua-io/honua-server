@@ -45,9 +45,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<StreamingFileImportService> _logger;
     private readonly Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? _cloudStorage;
+    private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
-    private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
-    private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
+    private const string CreateImportTableSql = "SELECT honua.create_import_table(@schema_name, @table_name, @target_srid)";
+    private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties)";
     private const int CrsDetectionHeaderSize = 8192;
     private const long DefaultMaxArchiveEntryBytes = 500L * 1024 * 1024;
     private const long DefaultMaxArchiveExtractedBytes = 1024L * 1024 * 1024;
@@ -81,7 +82,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         IPerformanceMonitor performanceMonitor,
         ILogger<StreamingFileImportService> logger,
         ImportLimits? limits = null,
-        Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null)
+        Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null,
+        PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
@@ -91,6 +93,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         _limits = limits ?? ImportLimits.Default;
         _geoJsonReader = new StreamingGeoJsonReader(_limits);
         _cloudStorage = cloudStorage;
+        _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
+            PostgresSchemaConfiguration.DefaultMetadataSchema,
+            PostgresSchemaConfiguration.DefaultDataSchema,
+            [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
     }
 
     /// <inheritdoc/>
@@ -658,10 +664,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
         // Validate and prepare table
         var allowedTableName = GetAllowedTableName(request.TableName);
+        var targetSchema = ResolveTargetSchema(request.TargetSchema);
 
         if (request.OverwriteExisting)
         {
-            await CreateTableAsync(connection, allowedTableName, cancellationToken);
+            await CreateTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
         }
 
         var wkbWriter = new WKBWriter();
@@ -716,6 +723,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             {
                 var (imported, failed) = await InsertBatchAsync(
                     connection,
+                    targetSchema,
                     allowedTableName,
                     batch,
                     sourceSrid,
@@ -760,6 +768,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             var (imported, failed) = await InsertBatchAsync(
                 connection,
+                targetSchema,
                 allowedTableName,
                 batch,
                 sourceSrid,
@@ -772,7 +781,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             batchesCommitted++;
         }
 
-        await AnalyzeTableAsync(connection, allowedTableName, cancellationToken);
+        await AnalyzeTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
 
         // Surface skipped null-geometry rows in the completion progress report
         // so background/queued imports expose the same warning as synchronous results.
@@ -935,6 +944,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// </summary>
     private async Task<(int imported, int failed)> InsertBatchAsync(
         NpgsqlConnection connection,
+        string schemaName,
         string tableName,
         IReadOnlyList<IFeature> features,
         int sourceSrid,
@@ -958,6 +968,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 imported = await InsertBatchFastAsync(
                     connection,
                     transaction,
+                    schemaName,
                     tableName,
                     features,
                     sourceSrid,
@@ -974,6 +985,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 (imported, failed) = await InsertBatchIndividuallyAsync(
                     connection,
                     transaction,
+                    schemaName,
                     tableName,
                     features,
                     sourceSrid,
@@ -1002,6 +1014,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private async Task<int> InsertBatchFastAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        string schemaName,
         string tableName,
         IReadOnlyList<IFeature> features,
         int sourceSrid,
@@ -1028,6 +1041,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
         const string sql = """
             SELECT honua.insert_import_feature(
+                @schema_name,
                 @table_name,
                 payload.wkb,
                 payload.source_srid,
@@ -1040,6 +1054,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             Transaction = transaction
         };
+        command.Parameters.Add("schema_name", NpgsqlDbType.Text).Value = schemaName;
         command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
         command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
         command.Parameters.Add("wkbs", NpgsqlDbType.Array | NpgsqlDbType.Bytea).Value = wkbs;
@@ -1059,6 +1074,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private async Task<(int imported, int failed)> InsertBatchIndividuallyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        string schemaName,
         string tableName,
         IReadOnlyList<IFeature> features,
         int sourceSrid,
@@ -1073,6 +1089,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             Transaction = transaction
         };
+        command.Parameters.Add("schema_name", NpgsqlDbType.Text).Value = schemaName;
         command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
         var wkbParameter = command.Parameters.Add("wkb", NpgsqlDbType.Bytea);
         var sourceSridParameter = command.Parameters.Add("source_srid", NpgsqlDbType.Integer);
@@ -2943,21 +2960,40 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
     private static async Task CreateTableAsync(
         NpgsqlConnection connection,
+        string schemaName,
         string tableName,
+        int targetSrid,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(CreateImportTableSql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
         command.Parameters.AddWithValue("table_name", tableName);
+        command.Parameters.AddWithValue("target_srid", targetSrid);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task AnalyzeTableAsync(
         NpgsqlConnection connection,
+        string schemaName,
         string tableName,
         CancellationToken cancellationToken)
     {
-        await using var command = PostgresSqlSafety.CreateAnalyzeCommand(connection, tableName);
+        await using var command = PostgresSqlSafety.CreateAnalyzeCommand(connection, schemaName, tableName);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private string ResolveTargetSchema(string? requestedSchema)
+    {
+        var schema = string.IsNullOrWhiteSpace(requestedSchema)
+            ? _schemaConfiguration.DefaultOperationalSchema
+            : requestedSchema.Trim();
+
+        if (!SchemaSearchPath.IsValidIdentifier(schema))
+        {
+            throw new ArgumentException("Target schema contains invalid characters.", nameof(requestedSchema));
+        }
+
+        return schema;
     }
 
     private Task<NpgsqlConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken)

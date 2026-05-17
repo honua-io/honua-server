@@ -37,6 +37,13 @@ internal static class PostgresSqlSafety
         return new NpgsqlCommand($"ANALYZE {quotedTableName}", connection);
     }
 
+    public static NpgsqlCommand CreateAnalyzeCommand(NpgsqlConnection connection, string schemaName, string tableName)
+    {
+        var quotedSchemaName = SchemaSearchPath.ValidateAndQuote(schemaName);
+        var quotedTableName = SchemaSearchPath.ValidateAndQuote(tableName);
+        return new NpgsqlCommand($"ANALYZE {quotedSchemaName}.{quotedTableName}", connection);
+    }
+
     public static bool IsReadOnlySingleStatement(string sql)
     {
         try

@@ -50,6 +50,12 @@ public sealed record ImportRequest
     public required string TableName { get; init; }
 
     /// <summary>
+    /// Optional target schema for imported operational data.
+    /// When omitted, the configured PostgreSQL operational-data schema is used.
+    /// </summary>
+    public string? TargetSchema { get; init; }
+
+    /// <summary>
     /// Source coordinate reference system ID (detected or specified)
     /// </summary>
     public int? SourceSrid { get; init; }

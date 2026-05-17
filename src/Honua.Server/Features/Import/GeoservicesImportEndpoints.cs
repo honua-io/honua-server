@@ -189,6 +189,15 @@ internal static partial class GeoservicesImportEndpoints
             return;
         }
 
+        if (!string.IsNullOrWhiteSpace(request.TargetSchema) &&
+            !ImportValidationHelpers.IsValidSchemaName(request.TargetSchema))
+        {
+            await AdminResponseWriter.WriteErrorAsync(context,
+                "Invalid target schema. Use only letters, numbers, and underscores.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         var startUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(request.ServiceUrl, cancellationToken);
         if (!startUrlValidation.IsValid)
         {
@@ -224,6 +233,7 @@ internal static partial class GeoservicesImportEndpoints
                 ServiceUrl = request.ServiceUrl,
                 LayerId = request.LayerId,
                 TableName = request.TableName,
+                TargetSchema = request.TargetSchema,
                 TargetSrid = request.TargetSrid ?? 4326,
                 OverwriteExisting = request.OverwriteExisting ?? false,
                 WhereClause = request.WhereClause,
@@ -559,6 +569,11 @@ internal sealed record GeoservicesStartImportRequest
     /// Target table name in PostGIS.
     /// </summary>
     public string? TableName { get; init; }
+
+    /// <summary>
+    /// Optional target schema for imported operational data.
+    /// </summary>
+    public string? TargetSchema { get; init; }
 
     /// <summary>
     /// Target SRID (default: 4326).

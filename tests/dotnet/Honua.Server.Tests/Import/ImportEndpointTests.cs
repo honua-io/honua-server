@@ -7,10 +7,13 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -18,6 +21,7 @@ using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
+using Npgsql;
 
 namespace Honua.Server.Tests.Import;
 
@@ -496,6 +500,139 @@ public class ImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ImportFile_DefaultOperationalSchema_CanDiscoverPublishAndQueryFeatureServer()
+    {
+        var requestedTableName = $"schema_boundary_{Guid.NewGuid():N}"[..48];
+        var physicalTableName = $"imported_{requestedTableName}".ToLowerInvariant();
+        var serviceName = $"schema_boundary_svc_{Guid.NewGuid():N}"[..48];
+        int? layerId = null;
+
+        try
+        {
+            var geoJsonContent = """
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [-157.8583, 21.3069]
+                        },
+                        "properties": {
+                            "name": "Schema Boundary Point"
+                        }
+                    }
+                ]
+            }
+            """;
+
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+            {
+                Name = "File",
+                FileName = "schema-boundary.geojson"
+            };
+            content.Add(fileContent);
+            content.Add(new StringContent(requestedTableName), "TableName");
+            content.Add(new StringContent("4326"), "TargetSrid");
+            content.Add(new StringContent("true"), "OverwriteExisting");
+
+            var importResponse = await _client.PostAsync("/api/v1/admin/import/upload", content);
+            var importPayload = await importResponse.Content.ReadAsStringAsync();
+            importResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {importPayload}");
+
+            await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+            {
+                var operationalTableExists = await TableExistsAsync(connection, "honua_data", physicalTableName);
+                operationalTableExists.Should().BeTrue("imports should default to the operational data schema");
+
+                var metadataTableExists = await TableExistsAsync(connection, "honua", physicalTableName);
+                metadataTableExists.Should().BeFalse("imports should not create operator tables in the metadata schema");
+            }
+
+            var connectionId = await _fixture.GetTestSecureConnectionIdAsync()
+                ?? throw new InvalidOperationException("Test secure connection was not initialized.");
+            var discoveryResponse = await _client.GetAsync($"/api/v1/admin/connections/{connectionId}/tables");
+            var discoveryPayload = await discoveryResponse.Content.ReadAsStringAsync();
+            discoveryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {discoveryPayload}");
+            var discovery = JsonSerializer.Deserialize<TableDiscoveryResponse>(discoveryPayload, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            discovery.Should().NotBeNull();
+            discovery!.Tables.Should().Contain(table =>
+                table.Schema == "honua_data" &&
+                table.Table == physicalTableName &&
+                table.GeometryColumn == "geometry");
+            discovery.Tables
+                .Where(static table =>
+                    table.Schema == "honua" &&
+                    (table.Table == "services" ||
+                     table.Table == "layers" ||
+                     table.Table == "service_layers" ||
+                     table.Table == "layer_fields"))
+                .Should()
+                .BeEmpty();
+
+            var publishRequest = new PublishLayerRequest
+            {
+                Schema = "honua_data",
+                Table = physicalTableName,
+                LayerName = "Schema Boundary Import",
+                Description = "Issue 991 schema-boundary import publish test",
+                GeometryColumn = "geometry",
+                GeometryType = "Point",
+                Srid = 4326,
+                PrimaryKey = "id",
+                Fields = ["id", "properties"],
+                ServiceName = serviceName,
+                Enabled = true
+            };
+
+            var publishResponse = await _client.PostAsJsonAsync(
+                $"/api/v1/admin/connections/{connectionId}/layers",
+                publishRequest);
+            var publishPayload = await publishResponse.Content.ReadAsStringAsync();
+            publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
+            var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            publishApi.Should().NotBeNull();
+            publishApi!.Data.Should().NotBeNull();
+            publishApi.Data!.Schema.Should().Be("honua_data");
+            publishApi.Data.Table.Should().Be(physicalTableName);
+            layerId = publishApi.Data.LayerId;
+
+            var queryResponse = await _client.GetAsync(
+                $"/rest/services/{serviceName}/FeatureServer/{layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=10");
+            var queryPayload = await queryResponse.Content.ReadAsStringAsync();
+            queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
+
+            using var queryDocument = JsonDocument.Parse(queryPayload);
+            var features = queryDocument.RootElement.GetProperty("features");
+            features.GetArrayLength().Should().Be(1);
+            features[0].GetProperty("attributes").GetProperty("id").GetInt64().Should().Be(1);
+            features[0].GetProperty("attributes")
+                .GetProperty("properties")
+                .GetProperty("name")
+                .GetString()
+                .Should()
+                .Be("Schema Boundary Point");
+        }
+        finally
+        {
+            await CleanupSchemaBoundaryImportAsync(layerId, serviceName, physicalTableName);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task ImportFile_RepeatRequest_WithValidRequest_ReturnsImportResult()
     {
         // Arrange
@@ -822,4 +959,41 @@ public class ImportEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
     }
+
+    private static async Task<bool> TableExistsAsync(NpgsqlConnection connection, string schemaName, string tableName)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = @schemaName
+                  AND table_name = @tableName
+            )
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("schemaName", schemaName);
+        command.Parameters.AddWithValue("tableName", tableName);
+        return (bool)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task CleanupSchemaBoundaryImportAsync(int? layerId, string serviceName, string tableName)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM features WHERE layer_id = @layerId;
+            DELETE FROM honua.layer_fields WHERE layer_id = @layerId;
+            DELETE FROM honua.service_layers WHERE layer_id = @layerId;
+            DELETE FROM honua.layers WHERE layer_id = @layerId;
+            DELETE FROM honua.services WHERE service_name = @serviceName;
+            DROP TABLE IF EXISTS honua_data."PLACEHOLDER" CASCADE;
+            """.Replace("\"PLACEHOLDER\"", QuoteIdentifier(tableName), StringComparison.Ordinal);
+        command.Parameters.AddWithValue("layerId", (object?)layerId ?? DBNull.Value);
+        command.Parameters.AddWithValue("serviceName", serviceName);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static string QuoteIdentifier(string identifier)
+        => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 }

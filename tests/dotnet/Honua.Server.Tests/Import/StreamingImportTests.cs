@@ -970,7 +970,7 @@ public class StreamingImportTests : IAsyncLifetime
                 WHERE table_schema = @schema
                   AND table_name = @table_name)
             """;
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue("schema", "honua_data");
         command.Parameters.AddWithValue("table_name", "imported_" + tableName);
         var result = await command.ExecuteScalarAsync();
         return result is bool exists && exists;
@@ -981,7 +981,7 @@ public class StreamingImportTests : IAsyncLifetime
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT ST_X(geometry), ST_SRID(geometry) FROM {QuoteIdentifier("imported_" + tableName)} LIMIT 1";
+        command.CommandText = $"SELECT ST_X(geometry), ST_SRID(geometry) FROM {QuoteIdentifier("honua_data")}.{QuoteIdentifier("imported_" + tableName)} LIMIT 1";
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
         {
