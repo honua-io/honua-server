@@ -35,6 +35,7 @@ internal sealed class ApiKeyAuthenticationHandler(
 
     private readonly ApiKeyAuthenticationOptions _authOptions = dependencies?.Options ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IConnectionSecretResolver? _secretResolver = dependencies.SecretResolver;
+    private readonly IAdminApiKeyStore? _adminApiKeyStore = dependencies.AdminApiKeyStore;
 
     /// <summary>
     /// Handles API key authentication with development bypass support
@@ -67,6 +68,20 @@ internal sealed class ApiKeyAuthenticationHandler(
         {
             AuthenticationLog.NoApiKeyFound(Logger, ApiKeyHeader);
             return AuthenticateResult.NoResult();
+        }
+
+        if (_adminApiKeyStore is not null)
+        {
+            var storedKey = await _adminApiKeyStore.ValidateAsync(providedApiKey, Context.RequestAborted);
+            if (storedKey is not null)
+            {
+                AuthenticationLog.ApiKeyAuthenticationSuccessful(Logger);
+                return CreateSuccessfulAuthenticationResult(
+                    "admin-api-key",
+                    storedKey.Record.Id,
+                    storedKey.Record.Name,
+                    storedKey.Record.Permissions);
+            }
         }
 
         // Get configured admin password
@@ -267,14 +282,36 @@ internal sealed class ApiKeyAuthenticationHandler(
     /// <summary>
     /// Creates a successful authentication result with admin claims
     /// </summary>
-    private AuthenticateResult CreateSuccessfulAuthenticationResult(string authenticationType)
+    private AuthenticateResult CreateSuccessfulAuthenticationResult(
+        string authenticationType,
+        Guid? apiKeyId = null,
+        string? apiKeyName = null,
+        IReadOnlyList<string>? permissions = null)
     {
-        Claim[] claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(ClaimTypes.Name, "admin"),
             new Claim(ClaimTypes.Role, "admin"),
             new Claim("auth_type", authenticationType)
         };
+
+        if (apiKeyId.HasValue)
+        {
+            claims.Add(new Claim("api_key_id", apiKeyId.Value.ToString("D")));
+        }
+
+        if (!string.IsNullOrWhiteSpace(apiKeyName))
+        {
+            claims.Add(new Claim("api_key_name", apiKeyName));
+        }
+
+        if (permissions is not null)
+        {
+            foreach (var permission in permissions)
+            {
+                claims.Add(new Claim("permission", permission));
+            }
+        }
 
         var identity = new ClaimsIdentity(claims, Scheme.Name);
         var principal = new ClaimsPrincipal(identity);
