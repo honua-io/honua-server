@@ -32,6 +32,7 @@ namespace Honua.Server.Tests.Admin;
 public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 {
     private static readonly string[] _idNameFields = ["id", "name"];
+    private static readonly string[] _idNamePopulationFields = ["id", "name", "population"];
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -629,6 +630,139 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
+    public async Task RefreshLayerExtents_WithEnabledEmptyLayer_NullsLayerExtentAndKeepsServiceExtentFromNonEmptyLayer()
+    {
+        var emptyTable = $"layer_empty_{Guid.NewGuid():N}";
+        var disabledTable = $"layer_disabled_{Guid.NewGuid():N}";
+
+        try
+        {
+            await _fixture.Postgres.ExecuteAsync($"""
+                CREATE TABLE public.{emptyTable} (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    population INTEGER,
+                    geom geometry(Point, 4326) NOT NULL
+                );
+
+                INSERT INTO public.{emptyTable} (name, population, geom)
+                VALUES ('Empty Candidate', 200, ST_SetSRID(ST_Point(10, 10), 4326));
+
+                CREATE TABLE public.{disabledTable} (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    population INTEGER,
+                    geom geometry(Point, 4326) NOT NULL
+                );
+
+                INSERT INTO public.{disabledTable} (name, population, geom)
+                VALUES ('Disabled Candidate', 300, ST_SetSRID(ST_Point(20, 20), 4326));
+                """);
+
+            var nonEmptyLayer = await PublishLayerAsync(new PublishLayerRequest
+            {
+                Schema = _schema,
+                Table = _tableName,
+                LayerName = $"Layer {_tableName}",
+                Description = "Layer publish non-empty extent refresh integration test",
+                GeometryColumn = "geom",
+                GeometryType = "Point",
+                Srid = 4326,
+                PrimaryKey = "id",
+                Fields = _idNamePopulationFields,
+                ServiceName = _serviceName,
+                Enabled = true
+            });
+            _layerId = nonEmptyLayer.LayerId;
+
+            var emptyLayer = await PublishLayerAsync(new PublishLayerRequest
+            {
+                Schema = _schema,
+                Table = emptyTable,
+                LayerName = $"Layer {emptyTable}",
+                Description = "Layer publish empty extent refresh integration test",
+                GeometryColumn = "geom",
+                GeometryType = "Point",
+                Srid = 4326,
+                PrimaryKey = "id",
+                Fields = _idNamePopulationFields,
+                ServiceName = _serviceName,
+                Enabled = true
+            });
+
+            var disabledLayer = await PublishLayerAsync(new PublishLayerRequest
+            {
+                Schema = _schema,
+                Table = disabledTable,
+                LayerName = $"Layer {disabledTable}",
+                Description = "Layer publish disabled extent refresh integration test",
+                GeometryColumn = "geom",
+                GeometryType = "Point",
+                Srid = 4326,
+                PrimaryKey = "id",
+                Fields = _idNamePopulationFields,
+                ServiceName = _serviceName,
+                Enabled = false
+            });
+
+            await _fixture.Postgres.ExecuteAsync($"""
+                DELETE FROM public.{emptyTable};
+
+                UPDATE honua.layers
+                SET extent = ST_MakeEnvelope(10, 10, 10, 10, 4326)
+                WHERE layer_id = {emptyLayer.LayerId};
+
+                UPDATE honua.services
+                SET service_extent = ST_MakeEnvelope(20, 20, 20, 20, 4326)
+                WHERE service_name = '{_serviceName}';
+                """);
+
+            var refreshResponse = await _client.PostAsync(
+                $"/api/v1/admin/connections/{_connectionId}/layers/extents/refresh?serviceName={_serviceName}",
+                content: null);
+
+            var refreshPayload = await refreshResponse.Content.ReadAsStringAsync();
+            refreshResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {refreshPayload}");
+            var refreshApi = JsonSerializer.Deserialize<ApiResponse<LayerExtentRefreshResult>>(
+                refreshPayload,
+                _jsonOptions);
+
+            refreshApi.Should().NotBeNull();
+            refreshApi!.Success.Should().BeTrue();
+            refreshApi.Data.Should().NotBeNull();
+            refreshApi.Data!.RefreshedLayerCount.Should().Be(3);
+            refreshApi.Data.LayersWithExtent.Should().Be(2);
+            refreshApi.Data.LayersWithoutExtent.Should().Be(1);
+            refreshApi.Data.ServiceExtentUpdated.Should().BeTrue();
+
+            var emptyLayerResult = refreshApi.Data.Layers.Single(layer => layer.LayerId == emptyLayer.LayerId);
+            emptyLayerResult.HasExtent.Should().BeFalse();
+            emptyLayerResult.ExtentSrid.Should().BeNull();
+
+            var nonEmptyLayerResult = refreshApi.Data.Layers.Single(layer => layer.LayerId == nonEmptyLayer.LayerId);
+            nonEmptyLayerResult.HasExtent.Should().BeTrue();
+            nonEmptyLayerResult.ExtentSrid.Should().Be(4326);
+
+            var disabledLayerResult = refreshApi.Data.Layers.Single(layer => layer.LayerId == disabledLayer.LayerId);
+            disabledLayerResult.HasExtent.Should().BeTrue();
+            disabledLayerResult.ExtentSrid.Should().Be(4326);
+
+            await AssertLayerExtentIsNullAsync(emptyLayer.LayerId);
+            await AssertPersistedLayerAndServiceExtentAsync(nonEmptyLayer.LayerId, 1, 1, 1, 1, 0);
+        }
+        finally
+        {
+            await _fixture.Postgres.ExecuteAsync($"""
+                DROP TABLE IF EXISTS public.{emptyTable};
+                DROP TABLE IF EXISTS public.{disabledTable};
+                """);
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task PublishLayer_PrimaryKeyNotInFields_ReturnsBadRequest()
@@ -1192,6 +1326,59 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         reader.GetInt32(9).Should().Be(4326);
     }
 
+    private async Task AssertLayerExtentIsNullAsync(int layerId)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT extent IS NULL
+            FROM honua.layers
+            WHERE layer_id = @layerId;
+            """;
+        command.Parameters.AddWithValue("layerId", layerId);
+
+        var result = await command.ExecuteScalarAsync();
+        result.Should().Be(true);
+    }
+
+    private async Task AssertPersistedLayerAndServiceExtentAsync(
+        int layerId,
+        double expectedXmin,
+        double expectedYmin,
+        double expectedXmax,
+        double expectedYmax,
+        double tolerance)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                ST_XMin(l.extent),
+                ST_YMin(l.extent),
+                ST_XMax(l.extent),
+                ST_YMax(l.extent),
+                ST_SRID(l.extent),
+                ST_XMin(s.service_extent),
+                ST_YMin(s.service_extent),
+                ST_XMax(s.service_extent),
+                ST_YMax(s.service_extent),
+                ST_SRID(s.service_extent)
+            FROM honua.layers l
+            CROSS JOIN honua.services s
+            WHERE l.layer_id = @layerId
+              AND s.service_name = @serviceName;
+            """;
+        command.Parameters.AddWithValue("layerId", layerId);
+        command.Parameters.AddWithValue("serviceName", _serviceName);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        AssertReaderExtent(reader, 0, expectedXmin, expectedYmin, expectedXmax, expectedYmax, tolerance);
+        reader.GetInt32(4).Should().Be(4326);
+        AssertReaderExtent(reader, 5, expectedXmin, expectedYmin, expectedXmax, expectedYmax, tolerance);
+        reader.GetInt32(9).Should().Be(4326);
+    }
+
     private async Task AssertFeatureServerExtentAsync(
         double expectedXmin,
         double expectedYmin,
@@ -1519,7 +1706,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
     private async Task CleanupPublishedLayerAsync()
     {
-        if (_layerId is null)
+        if (_layerId is null && string.IsNullOrWhiteSpace(_serviceName))
         {
             return;
         }
@@ -1527,12 +1714,25 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.GetConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            DELETE FROM features WHERE layer_id = @layerId;
-            DELETE FROM honua.layer_fields WHERE layer_id = @layerId;
-            DELETE FROM honua.service_layers WHERE layer_id = @layerId;
-            DELETE FROM honua.layers WHERE layer_id = @layerId;
+            DELETE FROM features
+            WHERE (@hasLayerId AND layer_id = @layerId)
+               OR layer_id IN (
+                    SELECT layer_id
+                    FROM honua.service_layers
+                    WHERE service_name = @serviceName
+               );
+
+            DELETE FROM honua.layers
+            WHERE (@hasLayerId AND layer_id = @layerId)
+               OR layer_id IN (
+                    SELECT layer_id
+                    FROM honua.service_layers
+                    WHERE service_name = @serviceName
+               );
             """;
-        command.Parameters.AddWithValue("layerId", _layerId.Value);
+        command.Parameters.AddWithValue("hasLayerId", _layerId.HasValue);
+        command.Parameters.AddWithValue("layerId", _layerId.GetValueOrDefault());
+        command.Parameters.AddWithValue("serviceName", _serviceName);
         await command.ExecuteNonQueryAsync();
 
         if (!string.IsNullOrWhiteSpace(_serviceName))
