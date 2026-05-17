@@ -99,6 +99,11 @@ internal sealed record ExternalServiceLayerCandidate
     public required string ServiceUrl { get; init; }
 
     /// <summary>
+    /// Stable source identifier for the candidate when the source does not expose a numeric layer id.
+    /// </summary>
+    public string? ExternalId { get; init; }
+
+    /// <summary>
     /// Numeric layer id when the source exposes one.
     /// </summary>
     public int? LayerId { get; init; }
@@ -309,4 +314,88 @@ internal sealed record ArcGisErrorDocument
 
     [JsonPropertyName("details")]
     public JsonElement? Details { get; init; }
+}
+
+internal sealed record OgcLandingDocument
+{
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("links")]
+    public OgcLinkDocument[]? Links { get; init; }
+}
+
+internal sealed record OgcCollectionsDocument
+{
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("collections")]
+    public OgcCollectionDocument[]? Collections { get; init; }
+}
+
+internal sealed record OgcCollectionDocument
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; init; }
+
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("itemType")]
+    public string? ItemType { get; init; }
+
+    [JsonPropertyName("extent")]
+    public OgcExtentDocument? Extent { get; init; }
+
+    [JsonPropertyName("crs")]
+    public string[]? Crs { get; init; }
+
+    [JsonPropertyName("storageCrs")]
+    public string? StorageCrs { get; init; }
+
+    [JsonPropertyName("itemCount")]
+    public int? ItemCount { get; init; }
+
+    [JsonPropertyName("links")]
+    public OgcLinkDocument[]? Links { get; init; }
+}
+
+internal sealed record OgcExtentDocument
+{
+    [JsonPropertyName("spatial")]
+    public OgcSpatialExtentDocument? Spatial { get; init; }
+}
+
+internal sealed record OgcSpatialExtentDocument
+{
+    [JsonPropertyName("bbox")]
+    public double[][]? Bbox { get; init; }
+
+    [JsonPropertyName("crs")]
+    public string? Crs { get; init; }
+}
+
+internal sealed record OgcLinkDocument
+{
+    [JsonPropertyName("href")]
+    public string? Href { get; init; }
+
+    [JsonPropertyName("rel")]
+    public string? Rel { get; init; }
+
+    [JsonPropertyName("type")]
+    public string? Type { get; init; }
+
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
 }

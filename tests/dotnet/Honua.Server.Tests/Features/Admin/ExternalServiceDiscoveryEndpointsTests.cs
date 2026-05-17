@@ -21,7 +21,7 @@ public sealed class ExternalServiceDiscoveryEndpointsTests : IAsyncLifetime, IDi
     private const string AdminPassword = "external-service-discovery-admin-key";
 
     private readonly ExternalServiceDiscoveryServiceTests.StubHttpClientFactory _httpClientFactory =
-        new(ExternalServiceDiscoveryServiceTests.ArcGisFeatureServerResponses());
+        new(ExternalServiceDiscoveryServiceTests.AllDiscoveryResponses());
 
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
@@ -90,6 +90,36 @@ public sealed class ExternalServiceDiscoveryEndpointsTests : IAsyncLifetime, IDi
         candidate.GetProperty("srid").GetInt32().Should().Be(4326);
         candidate.GetProperty("featureCount").GetInt32().Should().Be(42);
         candidate.GetProperty("fields").GetArrayLength().Should().Be(2);
+        candidate.GetProperty("extent").GetProperty("xMin").GetDouble().Should().Be(-158.3);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/external-services/discover")]
+    public async Task DiscoverExternalService_WithOgcApiFeaturesFixture_ReturnsCollectionCandidates()
+    {
+        using var response = await _client.PostAsync(
+            "/api/v1/admin/external-services/discover",
+            JsonContent("""
+            {
+              "url": "https://ogc.example.test/api"
+            }
+            """));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("sourceKind").GetString().Should().Be("ogc-api-features");
+        json.RootElement.GetProperty("serviceType").GetString().Should().Be("OGC API Features");
+        json.RootElement.GetProperty("serviceName").GetString().Should().Be("Honolulu OGC");
+
+        var candidate = json.RootElement.GetProperty("candidates")[0];
+        candidate.GetProperty("externalId").GetString().Should().Be("zoning");
+        candidate.GetProperty("name").GetString().Should().Be("Zoning");
+        candidate.GetProperty("layerType").GetString().Should().Be("collection");
+        candidate.GetProperty("geometryType").GetString().Should().Be("feature");
+        candidate.GetProperty("srid").GetInt32().Should().Be(4326);
+        candidate.GetProperty("featureCount").GetInt32().Should().Be(7);
         candidate.GetProperty("extent").GetProperty("xMin").GetDouble().Should().Be(-158.3);
     }
 
