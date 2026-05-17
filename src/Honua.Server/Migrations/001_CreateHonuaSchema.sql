@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS honua.layer_fields (
     nullable BOOLEAN NOT NULL DEFAULT TRUE,
     default_value TEXT,
     description TEXT,
+    domain JSONB,
     PRIMARY KEY (layer_id, field_name)
 );
 
@@ -121,4 +122,5 @@ COMMENT ON COLUMN honua.layers.storage_srid IS 'SRID/CRS used by the stored geom
 COMMENT ON COLUMN honua.layers.temporal_column IS 'Optional physical temporal column used by time-aware layers';
 COMMENT ON COLUMN honua.layers.storage_options IS 'Provider-specific storage binding options when neutral layer fields are not sufficient';
 COMMENT ON COLUMN honua.layer_fields.field_type IS 'Field data type: text, integer, double, boolean, date, timestamp';
+COMMENT ON COLUMN honua.layer_fields.domain IS 'Operator-managed field domain metadata such as coded-value domains';
 COMMENT ON COLUMN features.attributes IS 'Feature properties stored as JSONB for flexible schema';

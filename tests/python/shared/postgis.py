@@ -403,9 +403,14 @@ class PostGISFixture:
                         nullable BOOLEAN NOT NULL DEFAULT TRUE,
                         default_value TEXT,
                         description TEXT,
+                        domain JSONB,
                         PRIMARY KEY (layer_id, field_name)
                     );
                     """
+                )
+                conn.execute(
+                    "ALTER TABLE IF EXISTS honua.layer_fields "
+                    "ADD COLUMN IF NOT EXISTS domain JSONB;"
                 )
 
                 conn.execute(

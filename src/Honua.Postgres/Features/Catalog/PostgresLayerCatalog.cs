@@ -333,7 +333,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 f.max_length,
                 f.nullable,
                 f.default_value,
-                f.description
+                f.description,
+                f.domain
             FROM {_fieldsTable} f
             WHERE f.layer_id = @layerId
             ORDER BY f.field_order
@@ -367,7 +368,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 f.max_length,
                 f.nullable,
                 f.default_value,
-                f.description
+                f.description,
+                f.domain
             FROM {_fieldsTable} f
             WHERE f.layer_id = ANY(@layerIds)
             ORDER BY f.layer_id, f.field_order
@@ -666,8 +668,14 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         object? defaultValue = reader.IsDBNull(defaultValueOrdinal) ? null : reader.GetValue(defaultValueOrdinal);
         int descriptionOrdinal = reader.GetOrdinal("description");
         string? description = reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal);
+        int domainOrdinal = reader.GetOrdinal("domain");
+        FieldDomainDefinition? domain = reader.IsDBNull(domainOrdinal)
+            ? null
+            : JsonSerializer.Deserialize(
+                reader.GetString(domainOrdinal),
+                CatalogJsonContext.Default.FieldDomainDefinition);
 
-        return new FieldDefinition(fieldName, fieldType, maxLength, nullable, defaultValue, description);
+        return new FieldDefinition(fieldName, fieldType, maxLength, nullable, defaultValue, description, domain);
     }
 
     private static LayerDefinition PopulateLayerDetails(
