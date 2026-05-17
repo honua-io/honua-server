@@ -33,6 +33,17 @@ public interface ILayerPublishingService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Validate a PostGIS table before publishing it as a layer.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="request">Table publish validation request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<TablePublishValidationResult> ValidateTableForPublishAsync(
+        string connectionString,
+        TablePublishValidationRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Enable or disable a layer within a service.
     /// </summary>
     /// <param name="connectionString">PostgreSQL connection string.</param>

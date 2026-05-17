@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
@@ -22,6 +23,8 @@ namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
 internal static class OgcResponseFormatter
 {
     private const int StreamingFlushInterval = 32;
+    private const string Wfs20SchemaUrl = "http://schemas.opengis.net/wfs/2.0/wfs.xsd";
+    private const string Epsg4326UrnSrsName = "urn:ogc:def:crs:EPSG::4326";
 
     /// <summary>
     /// Formats feature responses based on requested output format.
@@ -175,10 +178,13 @@ internal static class OgcResponseFormatter
         IEnumerable<GeoJsonFeature> features,
         long? numberMatched = null,
         int? numberReturned = null,
-        DateTimeOffset? timeStamp = null)
+        DateTimeOffset? timeStamp = null,
+        string? gmlApplicationSchemaUrl = null,
+        string? outputCrsUri = null,
+        AxisOrder outputAxisOrder = AxisOrder.EastNorth)
     {
         var builder = new StringBuilder();
-        builder.Append($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\"");
+        AppendGmlFeatureCollectionStart(builder, gmlApplicationSchemaUrl);
         if (numberMatched.HasValue)
         {
             builder.Append($" numberMatched=\"{numberMatched.Value.ToString(CultureInfo.InvariantCulture)}\"");
@@ -198,14 +204,11 @@ internal static class OgcResponseFormatter
 
         foreach (var feature in features)
         {
-            var escapedId = SecurityElement.Escape(feature.Id?.ToString() ?? string.Empty);
+            var escapedId = CreateGmlId(feature.Id, "feature_");
             builder.AppendLine("  <wfs:member>");
             builder.AppendLine($"    <app:Feature gml:id=\"{escapedId}\">");
-            var geometryMarkup = BuildGmlGeometry(feature.Geometry, "      ");
-            if (!string.IsNullOrEmpty(geometryMarkup))
-            {
-                builder.AppendLine(geometryMarkup);
-            }
+            var geometryMarkup = BuildGmlGeometry(feature.Geometry, outputCrsUri: outputCrsUri, outputAxisOrder: outputAxisOrder);
+            AppendGmlGeometryProperty(builder, geometryMarkup, "      ", escapedId, outputCrsUri, outputAxisOrder);
 
             BuildGmlProperties(builder, feature.Properties, "      ");
             builder.AppendLine("    </app:Feature>");
@@ -216,6 +219,23 @@ internal static class OgcResponseFormatter
         return builder.ToString();
     }
 
+    private static void AppendGmlFeatureCollectionStart(StringBuilder builder, string? gmlApplicationSchemaUrl)
+        => builder.Append(CreateGmlFeatureCollectionStart(gmlApplicationSchemaUrl));
+
+    private static string CreateGmlFeatureCollectionStart(string? gmlApplicationSchemaUrl)
+    {
+        var builder = new StringBuilder()
+            .Append($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\" xmlns:xsi=\"{OgcFeaturesUtilities.XsiNamespace}\"");
+
+        if (!string.IsNullOrWhiteSpace(gmlApplicationSchemaUrl))
+        {
+            var escapedSchemaUrl = SecurityElement.Escape(gmlApplicationSchemaUrl);
+            builder.Append($" xsi:schemaLocation=\"{OgcFeaturesUtilities.WfsNamespace} {Wfs20SchemaUrl} {OgcFeaturesUtilities.AppNamespace} {escapedSchemaUrl}\"");
+        }
+
+        return builder.ToString();
+    }
+
     /// <summary>
     /// Builds GML representation of a feature collection from provider-backed GML features.
     /// </summary>
@@ -223,10 +243,13 @@ internal static class OgcResponseFormatter
         IEnumerable<GmlFeature> features,
         long? numberMatched = null,
         int? numberReturned = null,
-        DateTimeOffset? timeStamp = null)
+        DateTimeOffset? timeStamp = null,
+        string? gmlApplicationSchemaUrl = null,
+        string? outputCrsUri = null,
+        AxisOrder outputAxisOrder = AxisOrder.EastNorth)
     {
         var builder = new StringBuilder();
-        builder.Append($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\"");
+        AppendGmlFeatureCollectionStart(builder, gmlApplicationSchemaUrl);
         if (numberMatched.HasValue)
         {
             builder.Append($" numberMatched=\"{numberMatched.Value.ToString(CultureInfo.InvariantCulture)}\"");
@@ -246,11 +269,11 @@ internal static class OgcResponseFormatter
 
         foreach (var feature in features)
         {
-            var escapedId = SecurityElement.Escape(feature.Id.ToString(CultureInfo.InvariantCulture));
+            var escapedId = CreateGmlId(feature.Id, "feature_");
             builder.AppendLine("  <wfs:member>");
             builder.AppendLine($"    <app:Feature gml:id=\"{escapedId}\">");
             using var writer = new StringWriter(builder, CultureInfo.InvariantCulture);
-            WriteGmlGeometry(writer, feature.GeometryGml, "      ");
+            WriteGmlGeometryProperty(writer, feature.GeometryGml, "      ", escapedId, outputCrsUri, outputAxisOrder);
             WriteGmlProperties(writer, feature.Attributes, "      ");
             builder.AppendLine("    </app:Feature>");
             builder.AppendLine("  </wfs:member>");
@@ -269,6 +292,9 @@ internal static class OgcResponseFormatter
         long? numberMatched,
         int? numberReturned,
         DateTimeOffset? timeStamp,
+        string? gmlApplicationSchemaUrl,
+        string? outputCrsUri,
+        AxisOrder outputAxisOrder,
         CancellationToken cancellationToken)
     {
         await using var writer = new StreamWriter(
@@ -278,7 +304,7 @@ internal static class OgcResponseFormatter
             leaveOpen: true);
 
         var header = new StringBuilder()
-            .Append($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\"");
+            .Append(CreateGmlFeatureCollectionStart(gmlApplicationSchemaUrl));
         if (numberMatched.HasValue)
         {
             header.Append($" numberMatched=\"{numberMatched.Value.ToString(CultureInfo.InvariantCulture)}\"");
@@ -300,10 +326,10 @@ internal static class OgcResponseFormatter
         var writtenSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
-            var escapedId = SecurityElement.Escape(feature.Id.ToString());
+            var escapedId = CreateGmlId(feature.Id, "feature_");
             await writer.WriteLineAsync("  <wfs:member>");
             await writer.WriteLineAsync($"    <app:Feature gml:id=\"{escapedId}\">");
-            WriteGmlGeometry(writer, feature.GeometryGml, "      ");
+            WriteGmlGeometryProperty(writer, feature.GeometryGml, "      ", escapedId, outputCrsUri, outputAxisOrder);
             WriteGmlProperties(writer, feature.Attributes, "      ");
             await writer.WriteLineAsync("    </app:Feature>");
             await writer.WriteLineAsync("  </wfs:member>");
@@ -321,18 +347,18 @@ internal static class OgcResponseFormatter
     /// <summary>
     /// Builds GML representation of a single feature.
     /// </summary>
-    public static string BuildGmlSingleFeature(GeoJsonFeature feature)
+    public static string BuildGmlSingleFeature(
+        GeoJsonFeature feature,
+        string? outputCrsUri = null,
+        AxisOrder outputAxisOrder = AxisOrder.EastNorth)
     {
         var builder = new StringBuilder();
-        var escapedId = SecurityElement.Escape(feature.Id?.ToString());
-        builder.AppendLine($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\">");
+        var escapedId = CreateGmlId(feature.Id, "feature_");
+        builder.AppendLine($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\" xmlns:xsi=\"{OgcFeaturesUtilities.XsiNamespace}\">");
         builder.AppendLine("  <wfs:member>");
         builder.AppendLine($"    <app:Feature gml:id=\"{escapedId}\">");
-        var geometryMarkup = BuildGmlGeometry(feature.Geometry, "      ");
-        if (!string.IsNullOrEmpty(geometryMarkup))
-        {
-            builder.AppendLine(geometryMarkup);
-        }
+        var geometryMarkup = BuildGmlGeometry(feature.Geometry, outputCrsUri: outputCrsUri, outputAxisOrder: outputAxisOrder);
+        AppendGmlGeometryProperty(builder, geometryMarkup, "      ", escapedId, outputCrsUri, outputAxisOrder);
 
         BuildGmlProperties(builder, feature.Properties, "      ");
         builder.AppendLine("    </app:Feature>");
@@ -344,13 +370,16 @@ internal static class OgcResponseFormatter
     /// <summary>
     /// Builds GML representation of a single provider-backed feature.
     /// </summary>
-    public static string BuildGmlSingleFeature(GmlFeature feature)
+    public static string BuildGmlSingleFeature(
+        GmlFeature feature,
+        string? outputCrsUri = null,
+        AxisOrder outputAxisOrder = AxisOrder.EastNorth)
     {
         var builder = new StringBuilder();
-        var escapedId = SecurityElement.Escape(feature.Id.ToString(CultureInfo.InvariantCulture));
+        var escapedId = CreateGmlId(feature.Id, "feature_");
         builder.AppendLine($"<app:Feature xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" gml:id=\"{escapedId}\">");
         using var writer = new StringWriter(builder, CultureInfo.InvariantCulture);
-        WriteGmlGeometry(writer, feature.GeometryGml, "  ");
+        WriteGmlGeometryProperty(writer, feature.GeometryGml, "  ", escapedId, outputCrsUri, outputAxisOrder);
         WriteGmlProperties(writer, feature.Attributes, "  ");
         builder.AppendLine("</app:Feature>");
         return builder.ToString();
@@ -359,26 +388,31 @@ internal static class OgcResponseFormatter
     /// <summary>
     /// Builds GML geometry representation from GeoJSON geometry.
     /// </summary>
-    private static string BuildGmlGeometry(SimpleGeoJsonGeometry? geometry, string indent = "")
+    private static string BuildGmlGeometry(
+        SimpleGeoJsonGeometry? geometry,
+        string indent = "",
+        string? outputCrsUri = null,
+        AxisOrder outputAxisOrder = AxisOrder.EastNorth)
     {
         if (geometry == null)
         {
             return string.Empty;
         }
 
+        var srsName = ResolveGmlSrsName(outputCrsUri, outputAxisOrder);
         return geometry.Type?.ToUpperInvariant() switch
         {
-            "POINT" when geometry.CoordinatesJson != null => BuildGmlPoint(geometry.CoordinatesJson, indent),
-            "LINESTRING" when geometry.CoordinatesJson != null => BuildGmlLineString(geometry.CoordinatesJson, indent),
-            "POLYGON" when geometry.CoordinatesJson != null => BuildGmlPolygon(geometry.CoordinatesJson, indent),
-            "MULTIPOINT" when geometry.CoordinatesJson != null => BuildGmlMultiPoint(geometry.CoordinatesJson, indent),
-            "MULTILINESTRING" when geometry.CoordinatesJson != null => BuildGmlMultiLineString(geometry.CoordinatesJson, indent),
-            "MULTIPOLYGON" when geometry.CoordinatesJson != null => BuildGmlMultiPolygon(geometry.CoordinatesJson, indent),
+            "POINT" when geometry.CoordinatesJson != null => BuildGmlPoint(geometry.CoordinatesJson, indent, srsName),
+            "LINESTRING" when geometry.CoordinatesJson != null => BuildGmlLineString(geometry.CoordinatesJson, indent, srsName),
+            "POLYGON" when geometry.CoordinatesJson != null => BuildGmlPolygon(geometry.CoordinatesJson, indent, srsName),
+            "MULTIPOINT" when geometry.CoordinatesJson != null => BuildGmlMultiPoint(geometry.CoordinatesJson, indent, srsName),
+            "MULTILINESTRING" when geometry.CoordinatesJson != null => BuildGmlMultiLineString(geometry.CoordinatesJson, indent, srsName),
+            "MULTIPOLYGON" when geometry.CoordinatesJson != null => BuildGmlMultiPolygon(geometry.CoordinatesJson, indent, srsName),
             _ => string.Empty
         };
     }
 
-    private static string BuildGmlPoint(string coordinatesJson, string indent)
+    private static string BuildGmlPoint(string coordinatesJson, string indent, string srsName)
     {
         try
         {
@@ -388,7 +422,7 @@ internal static class OgcResponseFormatter
             {
                 var x = coords[0].GetDouble();
                 var y = coords[1].GetDouble();
-                return $"{indent}<gml:Point><gml:pos>{x} {y}</gml:pos></gml:Point>";
+                return $"{indent}<gml:Point srsName=\"{srsName}\"><gml:pos srsDimension=\"2\">{x} {y}</gml:pos></gml:Point>";
             }
         }
         catch (JsonException)
@@ -396,10 +430,10 @@ internal static class OgcResponseFormatter
             // Fall back to simple representation
         }
 
-        return $"{indent}<gml:Point><gml:pos>{coordinatesJson}</gml:pos></gml:Point>";
+        return $"{indent}<gml:Point srsName=\"{srsName}\"><gml:pos>{coordinatesJson}</gml:pos></gml:Point>";
     }
 
-    private static string BuildGmlLineString(string coordinatesJson, string indent)
+    private static string BuildGmlLineString(string coordinatesJson, string indent, string srsName)
     {
         try
         {
@@ -419,7 +453,7 @@ internal static class OgcResponseFormatter
             if (coordinates.Count > 0)
             {
                 var posListContent = string.Join(" ", coordinates);
-                return $"{indent}<gml:LineString><gml:posList>{posListContent}</gml:posList></gml:LineString>";
+                return $"{indent}<gml:LineString srsName=\"{srsName}\"><gml:posList srsDimension=\"2\">{posListContent}</gml:posList></gml:LineString>";
             }
         }
         catch (JsonException)
@@ -427,10 +461,10 @@ internal static class OgcResponseFormatter
             // Fall back to simple representation
         }
 
-        return $"{indent}<gml:LineString />";
+        return $"{indent}<gml:LineString srsName=\"{srsName}\" />";
     }
 
-    private static string BuildGmlPolygon(string coordinatesJson, string indent)
+    private static string BuildGmlPolygon(string coordinatesJson, string indent, string srsName)
     {
         try
         {
@@ -439,7 +473,7 @@ internal static class OgcResponseFormatter
             if (rings.Length > 0)
             {
                 var builder = new StringBuilder();
-                builder.AppendLine($"{indent}<gml:Polygon>");
+                builder.AppendLine($"{indent}<gml:Polygon srsName=\"{srsName}\">");
 
                 // Exterior ring
                 var exteriorRing = rings[0];
@@ -460,7 +494,7 @@ internal static class OgcResponseFormatter
                     var posListContent = string.Join(" ", coordinates);
                     builder.AppendLine($"{indent}  <gml:exterior>");
                     builder.AppendLine($"{indent}    <gml:LinearRing>");
-                    builder.AppendLine($"{indent}      <gml:posList>{posListContent}</gml:posList>");
+                    builder.AppendLine($"{indent}      <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
                     builder.AppendLine($"{indent}    </gml:LinearRing>");
                     builder.AppendLine($"{indent}  </gml:exterior>");
                 }
@@ -486,7 +520,7 @@ internal static class OgcResponseFormatter
                         var posListContent = string.Join(" ", interiorCoordinates);
                         builder.AppendLine($"{indent}  <gml:interior>");
                         builder.AppendLine($"{indent}    <gml:LinearRing>");
-                        builder.AppendLine($"{indent}      <gml:posList>{posListContent}</gml:posList>");
+                        builder.AppendLine($"{indent}      <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
                         builder.AppendLine($"{indent}    </gml:LinearRing>");
                         builder.AppendLine($"{indent}  </gml:interior>");
                     }
@@ -501,10 +535,10 @@ internal static class OgcResponseFormatter
             // Fall back to simple representation
         }
 
-        return $"{indent}<gml:Polygon />";
+        return $"{indent}<gml:Polygon srsName=\"{srsName}\" />";
     }
 
-    private static string BuildGmlMultiPoint(string coordinatesJson, string indent)
+    private static string BuildGmlMultiPoint(string coordinatesJson, string indent, string srsName)
     {
         try
         {
@@ -513,7 +547,7 @@ internal static class OgcResponseFormatter
             if (points.Length > 0)
             {
                 var builder = new StringBuilder();
-                builder.AppendLine($"{indent}<gml:MultiPoint>");
+                builder.AppendLine($"{indent}<gml:MultiPoint srsName=\"{srsName}\">");
 
                 foreach (var point in points)
                 {
@@ -523,7 +557,7 @@ internal static class OgcResponseFormatter
                         var x = coords[0].GetDouble();
                         var y = coords[1].GetDouble();
                         builder.AppendLine($"{indent}  <gml:pointMember>");
-                        builder.AppendLine($"{indent}    <gml:Point><gml:pos>{x} {y}</gml:pos></gml:Point>");
+                        builder.AppendLine($"{indent}    <gml:Point><gml:pos srsDimension=\"2\">{x} {y}</gml:pos></gml:Point>");
                         builder.AppendLine($"{indent}  </gml:pointMember>");
                     }
                 }
@@ -537,10 +571,10 @@ internal static class OgcResponseFormatter
             // Fall back to simple representation
         }
 
-        return $"{indent}<gml:MultiPoint />";
+        return $"{indent}<gml:MultiPoint srsName=\"{srsName}\" />";
     }
 
-    private static string BuildGmlMultiLineString(string coordinatesJson, string indent)
+    private static string BuildGmlMultiLineString(string coordinatesJson, string indent, string srsName)
     {
         try
         {
@@ -549,7 +583,7 @@ internal static class OgcResponseFormatter
             if (lineStrings.Length > 0)
             {
                 var builder = new StringBuilder();
-                builder.AppendLine($"{indent}<gml:MultiLineString>");
+                builder.AppendLine($"{indent}<gml:MultiLineString srsName=\"{srsName}\">");
 
                 foreach (var lineString in lineStrings)
                 {
@@ -569,7 +603,7 @@ internal static class OgcResponseFormatter
                     {
                         var posListContent = string.Join(" ", coordinates);
                         builder.AppendLine($"{indent}  <gml:lineStringMember>");
-                        builder.AppendLine($"{indent}    <gml:LineString><gml:posList>{posListContent}</gml:posList></gml:LineString>");
+                        builder.AppendLine($"{indent}    <gml:LineString><gml:posList srsDimension=\"2\">{posListContent}</gml:posList></gml:LineString>");
                         builder.AppendLine($"{indent}  </gml:lineStringMember>");
                     }
                 }
@@ -583,10 +617,10 @@ internal static class OgcResponseFormatter
             // Fall back to simple representation
         }
 
-        return $"{indent}<gml:MultiLineString />";
+        return $"{indent}<gml:MultiLineString srsName=\"{srsName}\" />";
     }
 
-    private static string BuildGmlMultiPolygon(string coordinatesJson, string indent)
+    private static string BuildGmlMultiPolygon(string coordinatesJson, string indent, string srsName)
     {
         try
         {
@@ -595,7 +629,7 @@ internal static class OgcResponseFormatter
             if (polygons.Length > 0)
             {
                 var builder = new StringBuilder();
-                builder.AppendLine($"{indent}<gml:MultiPolygon>");
+                builder.AppendLine($"{indent}<gml:MultiPolygon srsName=\"{srsName}\">");
 
                 foreach (var polygon in polygons)
                 {
@@ -624,7 +658,7 @@ internal static class OgcResponseFormatter
                             var posListContent = string.Join(" ", coordinates);
                             builder.AppendLine($"{indent}      <gml:exterior>");
                             builder.AppendLine($"{indent}        <gml:LinearRing>");
-                            builder.AppendLine($"{indent}          <gml:posList>{posListContent}</gml:posList>");
+                            builder.AppendLine($"{indent}          <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
                             builder.AppendLine($"{indent}        </gml:LinearRing>");
                             builder.AppendLine($"{indent}      </gml:exterior>");
                         }
@@ -650,7 +684,7 @@ internal static class OgcResponseFormatter
                                 var posListContent = string.Join(" ", interiorCoordinates);
                                 builder.AppendLine($"{indent}      <gml:interior>");
                                 builder.AppendLine($"{indent}        <gml:LinearRing>");
-                                builder.AppendLine($"{indent}          <gml:posList>{posListContent}</gml:posList>");
+                                builder.AppendLine($"{indent}          <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
                                 builder.AppendLine($"{indent}        </gml:LinearRing>");
                                 builder.AppendLine($"{indent}      </gml:interior>");
                             }
@@ -670,7 +704,85 @@ internal static class OgcResponseFormatter
             // Fall back to simple representation
         }
 
-        return $"{indent}<gml:MultiPolygon />";
+        return $"{indent}<gml:MultiPolygon srsName=\"{srsName}\" />";
+    }
+
+    private static string CreateGmlId(object? id, string prefix)
+    {
+        var rawId = Convert.ToString(id, CultureInfo.InvariantCulture);
+        if (string.IsNullOrWhiteSpace(rawId))
+        {
+            return string.Concat(prefix, "unknown");
+        }
+
+        var builder = new StringBuilder(prefix.Length + rawId.Length);
+        builder.Append(prefix);
+        foreach (var ch in rawId)
+        {
+            builder.Append(IsXmlNcNameChar(ch) ? ch : '_');
+        }
+
+        return SecurityElement.Escape(builder.ToString()) ?? string.Concat(prefix, "unknown");
+    }
+
+    private static bool IsXmlNcNameChar(char ch)
+        => char.IsAsciiLetterOrDigit(ch) || ch is '_' or '-' or '.';
+
+    private static string ResolveGmlSrsName(string? outputCrsUri, AxisOrder outputAxisOrder)
+    {
+        if (outputAxisOrder == AxisOrder.EastNorth &&
+            (string.IsNullOrWhiteSpace(outputCrsUri) ||
+             string.Equals(outputCrsUri, OgcFeaturesUtilities.Crs84Uri, StringComparison.OrdinalIgnoreCase)))
+        {
+            return OgcFeaturesUtilities.Crs84Uri;
+        }
+
+        var resolvedCrsUri = string.IsNullOrWhiteSpace(outputCrsUri)
+            ? OgcFeaturesUtilities.Crs84Uri
+            : outputCrsUri;
+        return SecurityElement.Escape(resolvedCrsUri) ?? OgcFeaturesUtilities.Crs84Uri;
+    }
+
+    private static string NormalizeGmlGeometryMarkup(
+        string geometryMarkup,
+        string? outputCrsUri,
+        AxisOrder outputAxisOrder)
+    {
+        if (outputAxisOrder == AxisOrder.EastNorth &&
+            (string.IsNullOrWhiteSpace(outputCrsUri) ||
+             string.Equals(outputCrsUri, OgcFeaturesUtilities.Crs84Uri, StringComparison.OrdinalIgnoreCase)))
+        {
+            return geometryMarkup
+                .Replace(
+                    $"srsName=\"{Epsg4326UrnSrsName}\"",
+                    $"srsName=\"{OgcFeaturesUtilities.Crs84Uri}\"",
+                    StringComparison.Ordinal)
+                .Replace(
+                    $"srsName=\"{OgcFeaturesUtilities.Epsg4326Uri}\"",
+                    $"srsName=\"{OgcFeaturesUtilities.Crs84Uri}\"",
+                    StringComparison.Ordinal);
+        }
+
+        return geometryMarkup;
+    }
+
+    private static void AppendGmlGeometryProperty(
+        StringBuilder builder,
+        string geometryMarkup,
+        string indent,
+        string? featureId,
+        string? outputCrsUri,
+        AxisOrder outputAxisOrder)
+    {
+        if (string.IsNullOrWhiteSpace(geometryMarkup))
+        {
+            return;
+        }
+
+        builder.AppendLine($"{indent}<app:geometry>");
+        using var writer = new StringWriter(builder, CultureInfo.InvariantCulture);
+        WriteGmlGeometry(writer, geometryMarkup, string.Concat(indent, "  "), featureId, outputCrsUri, outputAxisOrder);
+        builder.AppendLine($"{indent}</app:geometry>");
     }
 
     private static void BuildGmlProperties(StringBuilder builder, Dictionary<string, object?>? properties, string indent)
@@ -699,19 +811,84 @@ internal static class OgcResponseFormatter
         }
     }
 
-    private static void WriteGmlGeometry(TextWriter writer, string? geometryGml, string indent)
+    private static void WriteGmlGeometryProperty(
+        TextWriter writer,
+        string? geometryGml,
+        string indent,
+        string? featureId,
+        string? outputCrsUri,
+        AxisOrder outputAxisOrder)
     {
         if (string.IsNullOrWhiteSpace(geometryGml))
         {
             return;
         }
 
-        var lines = geometryGml.Split('\n');
+        writer.WriteLine($"{indent}<app:geometry>");
+        WriteGmlGeometry(
+            writer,
+            geometryGml,
+            string.Concat(indent, "  "),
+            featureId,
+            outputCrsUri,
+            outputAxisOrder);
+        writer.WriteLine($"{indent}</app:geometry>");
+    }
+
+    private static void WriteGmlGeometry(
+        TextWriter writer,
+        string? geometryGml,
+        string indent,
+        string? featureId,
+        string? outputCrsUri,
+        AxisOrder outputAxisOrder)
+    {
+        if (string.IsNullOrWhiteSpace(geometryGml))
+        {
+            return;
+        }
+
+        var geometryMarkup = NormalizeGmlGeometryMarkup(
+            EnsureGmlGeometryId(geometryGml, featureId),
+            outputCrsUri,
+            outputAxisOrder);
+        var lines = geometryMarkup.Split('\n');
         foreach (var line in lines)
         {
             writer.Write(indent);
             writer.WriteLine(line.TrimEnd('\r'));
         }
+    }
+
+    private static string EnsureGmlGeometryId(string geometryMarkup, string? featureId)
+    {
+        if (string.IsNullOrWhiteSpace(featureId) ||
+            geometryMarkup.Contains(" gml:id=", StringComparison.Ordinal) ||
+            geometryMarkup.Contains(" xml:id=", StringComparison.Ordinal))
+        {
+            return geometryMarkup;
+        }
+
+        var trimmedId = featureId.Trim();
+        if (trimmedId.Length == 0)
+        {
+            return geometryMarkup;
+        }
+
+        var safeId = SecurityElement.Escape($"geom_{trimmedId.Replace(':', '_').Replace('.', '_')}");
+        var elementStart = geometryMarkup.IndexOf("<gml:", StringComparison.Ordinal);
+        if (elementStart < 0)
+        {
+            return geometryMarkup;
+        }
+
+        var insertAt = geometryMarkup.IndexOfAny([' ', '>', '/'], elementStart + 5);
+        if (insertAt < 0 || geometryMarkup[insertAt] is '>' or '/')
+        {
+            return geometryMarkup.Insert(insertAt < 0 ? geometryMarkup.Length : insertAt, $" gml:id=\"{safeId}\"");
+        }
+
+        return geometryMarkup.Insert(insertAt, $" gml:id=\"{safeId}\"");
     }
 
     private static void WriteGmlProperties(TextWriter writer, ImmutableDictionary<string, object?> properties, string indent)

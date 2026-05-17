@@ -135,6 +135,117 @@ generate_transactional_suite() {
 EOF_SUITE
 }
 
+generate_basic_suite() {
+    suite_path="$1"
+
+    cat > "$suite_path" << EOF_SUITE
+<?xml version="1.0" encoding="UTF-8"?>
+<suite name="wfs20-1.43-basic-applicable" verbose="0" configfailurepolicy="skip">
+  <parameter name="wfs" value="$ESCAPED_WFS_CAPABILITIES_URL"/>
+  <listeners>
+    <listener class-name="org.opengis.cite.iso19142.SuiteFixtureListener" />
+  </listeners>
+  <test name="Preconditions">
+    <classes>
+      <class name="org.opengis.cite.iso19142.SuitePreconditions"/>
+    </classes>
+  </test>
+  <test name="All GML application schemas">
+    <classes>
+      <class name="org.opengis.cite.iso19136.general.XMLSchemaTests" />
+      <class name="org.opengis.cite.iso19136.general.GeneralSchemaTests" />
+      <class name="org.opengis.cite.iso19136.general.ModelAndSyntaxTests" />
+      <class name="org.opengis.cite.iso19136.general.ComplexPropertyTests" />
+    </classes>
+  </test>
+  <test name="GML application schemas defining features">
+    <classes>
+      <class name="org.opengis.cite.iso19136.components.FeatureComponentTests" />
+    </classes>
+  </test>
+  <test name="Simple WFS">
+    <classes>
+      <class name="org.opengis.cite.iso19142.simple.ServiceMetadataTests" />
+      <class name="org.opengis.cite.iso19142.simple.SimpleCapabilitiesTests" />
+      <class name="org.opengis.cite.iso19142.simple.DescribeFeatureTypeTests" />
+      <class name="org.opengis.cite.iso19142.simple.ListStoredQueriesTests" />
+      <class name="org.opengis.cite.iso19142.simple.DescribeStoredQueriesTests" />
+      <class name="org.opengis.cite.iso19142.simple.StoredQueryTests" />
+    </classes>
+  </test>
+  <test name="Basic WFS">
+    <classes>
+      <class name="org.opengis.cite.iso19142.basic.BasicCapabilitiesTests" />
+      <class name="org.opengis.cite.iso19142.basic.BasicGetFeatureTests" />
+      <class name="org.opengis.cite.iso19142.basic.GetPropertyValueTests" />
+      <class name="org.opengis.cite.iso19142.basic.filter.PropertyIsEqualToOperatorTests" />
+      <class name="org.opengis.cite.iso19142.basic.filter.PropertyIsLikeOperatorTests" />
+      <class name="org.opengis.cite.iso19142.basic.filter.PropertyIsNullOperatorTests" />
+      <class name="org.opengis.cite.iso19142.basic.filter.PropertyIsNilOperatorTests" />
+      <class name="org.opengis.cite.iso19142.basic.filter.ComparisonOperatorTests" />
+      <class name="org.opengis.cite.iso19142.basic.filter.ResourceIdFilterTests" />
+    </classes>
+  </test>
+  <test name="Temporal filter">
+    <classes>
+      <class name="org.opengis.cite.iso19142.basic.filter.temporal.TemporalFilter" />
+      <class name="org.opengis.cite.iso19142.basic.filter.temporal.AfterTests" />
+      <class name="org.opengis.cite.iso19142.basic.filter.temporal.BeforeTests" />
+      <class name="org.opengis.cite.iso19142.basic.filter.temporal.DuringTests" />
+    </classes>
+  </test>
+  <test name="Spatial filter">
+    <classes>
+      <class name="org.opengis.cite.iso19142.basic.filter.spatial.BBOXTests" />
+      <class name="org.opengis.cite.iso19142.basic.filter.spatial.IntersectsTests" />
+    </classes>
+  </test>
+  <test name="Transactional WFS">
+    <classes>
+      <class name="org.opengis.cite.iso19142.transaction.TransactionCapabilitiesTests" />
+      <class name="org.opengis.cite.iso19142.transaction.Update" />
+      <class name="org.opengis.cite.iso19142.transaction.InsertTests" />
+      <class name="org.opengis.cite.iso19142.transaction.ReplaceTests" />
+      <class name="org.opengis.cite.iso19142.transaction.DeleteTests" />
+    </classes>
+  </test>
+  <test name="Response paging">
+    <classes>
+      <class name="org.opengis.cite.iso19142.paging.ResponsePaging" />
+      <class name="org.opengis.cite.iso19142.paging.PagingTests" />
+    </classes>
+  </test>
+  <test name="Manage stored queries">
+    <classes>
+      <class name="org.opengis.cite.iso19142.querymgmt.StoredQueryManagement" />
+      <class name="org.opengis.cite.iso19142.querymgmt.CreateStoredQueryTests" />
+      <class name="org.opengis.cite.iso19142.querymgmt.DropStoredQueryTests" />
+    </classes>
+  </test>
+</suite>
+EOF_SUITE
+}
+
+run_basic_suite() {
+    suite_path="$RESULTS_DIR/testng-basic-applicable.xml"
+    output_dir="$RESULTS_DIR/test-output"
+    generate_basic_suite "$suite_path"
+    rm -rf "$output_dir"
+    mkdir -p "$output_dir"
+
+    classpath="/tmp/te-console/lib/*:$TE_BASE_DIR/resources/lib/*"
+
+    set +e
+    java -cp "$classpath" org.testng.TestNG -d "$output_dir" "$suite_path" > "$CONSOLE_LOG" 2>&1
+    TEST_EXIT_CODE=$?
+    set -e
+
+    if [ -d "$output_dir" ]; then
+        mkdir -p "$RESULTS_DIR/html-report"
+        cp -R "$output_dir/." "$RESULTS_DIR/html-report/" 2>/dev/null || true
+    fi
+}
+
 run_transactional_suite() {
     suite_path="$RESULTS_DIR/testng-transactional.xml"
     output_dir="$RESULTS_DIR/test-output"
@@ -163,7 +274,10 @@ TEST_EXECUTION_START=$(date +%s)
 TEST_EXIT_CODE=0
 CONSOLE_LOG="$RESULTS_DIR/cite-console.log"
 
-if [ "$TEST_PROFILE" = "transactional" ]; then
+if [ "$TEST_PROFILE" = "basic" ]; then
+    echo "Running the applicable WFS 2.0 basic TestNG suite only."
+    run_basic_suite
+elif [ "$TEST_PROFILE" = "transactional" ]; then
     echo "Running the transactional WFS TestNG suite only."
     run_transactional_suite
 else
@@ -191,7 +305,7 @@ echo -e "${YELLOW}Collecting CITE test results...${NC}"
 mkdir -p "$RESULTS_DIR/te-logs"
 cp -R "$TE_BASE_DIR/users/cite/logs/." "$RESULTS_DIR/te-logs/" 2>/dev/null || true
 
-if [ "$TEST_PROFILE" = "transactional" ]; then
+if [ "$TEST_PROFILE" = "basic" ] || [ "$TEST_PROFILE" = "transactional" ]; then
     TESTNG_RESULTS="$RESULTS_DIR/test-output/testng-results.xml"
     HTML_REPORT="$RESULTS_DIR/test-output/index.html"
 else
@@ -242,7 +356,7 @@ if [ "$TOTAL" -le 0 ]; then
     exit 1
 fi
 
-if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -eq 0 ]; then
+if [ "$FAILED" -eq 0 ]; then
     COMPLIANCE_STATUS="COMPLIANT"
 elif [ "$PASSED" -gt 0 ]; then
     COMPLIANCE_STATUS="PARTIAL"
@@ -272,14 +386,20 @@ if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ]; then
 fi
 
 if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -eq 0 ]; then
-    echo -e "${GREEN}🎉 FULL WFS 2.0 CITE COMPLIANCE ACHIEVED!${NC}"
+    echo -e "${GREEN}🎉 WFS 2.0 CITE gate passed with 100% passed tests${NC}"
     exit 0
+fi
+
+if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -gt 0 ]; then
+    echo -e "${YELLOW}⚠️ WFS 2.0 CITE run has skipped tests${NC}"
+    echo "Skipped tests do not satisfy the strict 100% passed evidence gate."
+    exit 1
 fi
 
 if [ "$PASSED" -gt 0 ]; then
     echo -e "${YELLOW}⚠️ Partial WFS 2.0 CITE compliance${NC}"
-    echo "Some tests failed or were skipped - see detailed results for specific issues"
-    exit 0
+    echo "Some tests failed - see detailed results for specific issues"
+    exit 1
 fi
 
 echo -e "${RED}❌ WFS 2.0 CITE compliance tests failed${NC}"

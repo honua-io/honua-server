@@ -17,6 +17,8 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800
 HONUA_HEALTHCHECK_TIMEOUT=300
 POSTGRES_HEALTHCHECK_TIMEOUT=120
+HONUA_CITE_KML22_SERVER_PORT="${HONUA_CITE_KML22_SERVER_PORT:-8096}"
+export HONUA_CITE_KML22_SERVER_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
 SKIPPED_TESTS=0
@@ -26,7 +28,8 @@ TOTAL_TESTS=0
 CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
-PROFILE="default"
+PROFILE="applicable"
+SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
 
 echo -e "${BLUE}KML 2.2 CITE Conformance Tests${NC}"
 echo "================================"
@@ -49,6 +52,10 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift 2
             ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -56,7 +63,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-cleanup      Don't cleanup containers after tests"
             echo "  --interactive     Run in interactive mode (keep containers running)"
             echo "  --verbose         Enable verbose logging"
-            echo "  --profile PROF    Accepted for CLI consistency (KML 2.2 has a single validation pass)"
+            echo "  --profile PROF    Test profile: applicable (default strict Level 1) or default (raw ETS)"
+            echo "  --skip-build      Reuse existing honua-server:latest image"
             echo "  --help, -h        Show this help"
             exit 0
             ;;
@@ -66,6 +74,18 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+case "$PROFILE" in
+    applicable|default)
+        ;;
+    *)
+        echo -e "${RED}Unknown profile: $PROFILE${NC}"
+        echo "Valid profiles: applicable, default"
+        exit 1
+        ;;
+esac
+
+export HONUA_CITE_KML22_PROFILE="$PROFILE"
 
 echo -e "${YELLOW}Checking prerequisites...${NC}"
 
@@ -85,13 +105,17 @@ else
     COMPOSE_CMD="docker compose"
 fi
 
-echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
-if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
-    echo -e "${RED}Failed to build Honua Server Docker image${NC}"
-    exit 1
-fi
+if [[ "$SKIP_BUILD" == "true" ]]; then
+    echo -e "${YELLOW}Skipping Honua Server Docker image build; using existing honua-server:latest${NC}"
+else
+    echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
+    if ! scripts/docker/build-with-github-packages.sh -t honua-server:latest .; then
+        echo -e "${RED}Failed to build Honua Server Docker image${NC}"
+        exit 1
+    fi
 
-echo -e "${GREEN}Honua Server image built successfully${NC}"
+    echo -e "${GREEN}Honua Server image built successfully${NC}"
+fi
 
 cleanup() {
     if [[ "$CLEANUP" == "true" && "$INTERACTIVE" == "false" ]]; then
@@ -190,7 +214,8 @@ done
 
 echo -e "${GREEN}Honua Server is healthy${NC}"
 
-KML_URL_HOST="http://localhost:8080/rest/services/cite/MapServer/generateKml"
+HONUA_BASE_URL="http://localhost:${HONUA_CITE_KML22_SERVER_PORT}"
+KML_URL_HOST="$HONUA_BASE_URL/rest/services/cite/MapServer/generateKml"
 
 echo -e "${YELLOW}Verifying KML endpoint...${NC}"
 if ! curl -s -f "$KML_URL_HOST" > /dev/null; then
@@ -203,7 +228,7 @@ echo -e "${GREEN}KML endpoint is accessible${NC}"
 if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}Interactive mode enabled${NC}"
     echo "Services are running at:"
-    echo "  Honua Server:     http://localhost:8080"
+    echo "  Honua Server:     $HONUA_BASE_URL"
     echo "  CITE Team Engine: http://localhost:8085/teamengine"
     echo "  PostgreSQL:       localhost:5437"
     echo ""
@@ -221,7 +246,11 @@ if ! curl -s -f "$KML_URL_HOST" > "$CITE_RESULTS_DIR/output.kml"; then
 fi
 
 echo -e "${YELLOW}Running KML 2.2 CITE conformance tests (profile: $PROFILE)...${NC}"
-echo -e "${YELLOW}Note: KML 2.2 format validation has a single pass; --profile is accepted for CLI consistency.${NC}"
+if [[ "$PROFILE" == "applicable" ]]; then
+    echo -e "${YELLOW}Running KML 2.2 Level 1 applicable TestNG suite with strict no-skip output.${NC}"
+else
+    echo -e "${YELLOW}Running the raw KML 2.2 ETS default profile, which includes Level 2/3 skips for this Level 1 document.${NC}"
+fi
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" rm -f -s cite-runner >/dev/null 2>&1 || true
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up --force-recreate cite-runner
 
@@ -329,7 +358,7 @@ cat > "$CITE_RESULTS_DIR/cite-kml22-summary.md" << EOF_SUMMARY
 
 ## Environment
 
-- **Profile**: $PROFILE (KML 2.2 has a single validation pass)
+- **Profile**: $PROFILE
 - **CITE Suite**: ets-kml22
 - **KML URL**: $KML_URL_HOST
 
@@ -345,8 +374,8 @@ echo -e "${GREEN}Summary report saved to: $CITE_RESULTS_DIR/cite-kml22-summary.m
 if [[ "$RESULTS_FOUND" != "true" ]]; then
     echo -e "${RED}CITE testing failed to execute properly.${NC}"
     exit 2
-elif [[ $FAILED_TESTS -gt 0 ]]; then
-    echo -e "${YELLOW}CITE testing completed with failures. Review results.${NC}"
+elif [[ $FAILED_TESTS -gt 0 || $SKIPPED_TESTS -gt 0 || $CANTTELL_TESTS -gt 0 ]]; then
+    echo -e "${YELLOW}CITE testing completed with failures, skips, or CantTell results. Review results.${NC}"
     exit 1
 elif [[ $TOTAL_TESTS -eq 0 ]]; then
     echo -e "${RED}CITE testing produced no executable tests.${NC}"

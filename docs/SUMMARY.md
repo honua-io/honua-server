@@ -90,6 +90,7 @@
 - [TestKit](contributor/testkit.md)
 - [Public Interface Quality Model](contributor/public-interface-quality-model.md)
 - [OGC Certification Path](contributor/ogc-certification-path.md)
+- [OGC CITE Conformance Evidence](contributor/ogc-cite-conformance-evidence.md)
 - [Release Checklist](contributor/RELEASE_CHECKLIST.md)
 - [GeoETL Roadmap](contributor/geoetl-roadmap.md)
 - [GeoETL Strategy Spike](contributor/geoetl-spike.md)

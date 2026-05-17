@@ -48,6 +48,8 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("Operation name=\"Transaction\"");
         content.Should().Contain("Operation name=\"ListStoredQueries\"");
         content.Should().Contain("Operation name=\"DescribeStoredQueries\"");
+        content.Should().Contain("Operation name=\"CreateStoredQuery\"");
+        content.Should().Contain("Operation name=\"DropStoredQuery\"");
         content.Should().Contain("name=\"ImplementsBasicWFS\"");
         content.Should().Contain("name=\"ImplementsTransactionalWFS\"");
         content.Should().Contain("name=\"KVPEncoding\"");
@@ -70,7 +72,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
-    public async Task Wfs_GetCapabilities_DeAdvertisesUnsupportedStoredQueryAndVersioningConformance()
+    public async Task Wfs_GetCapabilities_AdvertisesStoredQueryManagementWithoutVersioningConformance()
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
@@ -88,10 +90,10 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
         operations.Should().Contain("ListStoredQueries");
         operations.Should().Contain("DescribeStoredQueries");
-        operations.Should().NotContain("CreateStoredQuery");
-        operations.Should().NotContain("DropStoredQuery");
+        operations.Should().Contain("CreateStoredQuery");
+        operations.Should().Contain("DropStoredQuery");
 
-        AssertFalseConstraintDoesNotAdvertiseTrue(document, "ManageStoredQueries");
+        AssertTrueConstraintAdvertisesDefault(document, "ManageStoredQueries");
         AssertFalseConstraintDoesNotAdvertiseTrue(document, "ImplementsFeatureVersioning");
         AssertFalseConstraintDoesNotAdvertiseTrue(document, "ImplementsVersionNav");
     }
@@ -383,7 +385,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
-    public async Task Wfs_GetFeature_DateTimeStringAttribute_UsesXmlSchemaOffsetLexicalForm()
+    public async Task Wfs_GetFeature_DateTimeAttribute_UsesXmlSchemaOffsetLexicalForm()
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.1");
@@ -638,38 +640,104 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
+    [Operation(Operations.Metadata)]
     [Endpoint("POST /wfs")]
-    public async Task Wfs_CreateStoredQuery_WhenManagementNotAdvertised_ReturnsOperationNotSupported()
+    [InterfaceOperation(TestProtocols.Wfs20, "CreateStoredQuery")]
+    public async Task Wfs_CreateStoredQuery_WithSupportedQueryLanguage_ReturnsOk()
     {
-        const string requestBody = """
+        var storedQueryId = $"urn:honua:test:create:{Guid.NewGuid():N}";
+        var requestBody = $$"""
             <wfs:CreateStoredQuery service="WFS" version="2.0.0"
-                xmlns:wfs="http://www.opengis.net/wfs/2.0" />
+                xmlns:wfs="http://www.opengis.net/wfs/2.0" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+              <wfs:StoredQueryDefinition id="{{storedQueryId}}">
+                <wfs:Title>GetFeatureByTypeName</wfs:Title>
+                <wfs:Parameter name="typeName" type="xsd:QName" />
+                <wfs:QueryExpressionText returnFeatureTypes=""
+                    language="urn:ogc:def:queryLanguage:OGC-WFS::WFSQueryExpression" isPrivate="false">
+                  <wfs:Query typeNames="${typeName}" />
+                </wfs:QueryExpressionText>
+              </wfs:StoredQueryDefinition>
+            </wfs:CreateStoredQuery>
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
         var response = await _fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-        content.Should().Contain("ExceptionReport");
-        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
+        content.Should().Contain("CreateStoredQueryResponse");
     }
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
-    [Endpoint("GET /wfs")]
-    public async Task Wfs_DropStoredQuery_WhenManagementNotAdvertised_ReturnsOperationNotSupported()
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "CreateStoredQuery")]
+    public async Task Wfs_CreateStoredQuery_WithDuplicateId_ReturnsDuplicateIdLocator()
     {
-        var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=DropStoredQuery&VERSION=2.0.0&STOREDQUERY_ID=urn:honua:test");
+        var storedQueryId = $"urn:honua:test:duplicate:{Guid.NewGuid():N}";
+        var requestBody = $$"""
+            <wfs:CreateStoredQuery service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+              <wfs:StoredQueryDefinition id="{{storedQueryId}}">
+                <wfs:Title>GetFeatureByTypeName</wfs:Title>
+                <wfs:Parameter name="typeName" type="xsd:QName" />
+                <wfs:QueryExpressionText returnFeatureTypes=""
+                    language="urn:ogc:def:queryLanguage:OGC-WFS::WFSQueryExpression" isPrivate="false">
+                  <wfs:Query typeNames="${typeName}" />
+                </wfs:QueryExpressionText>
+              </wfs:StoredQueryDefinition>
+            </wfs:CreateStoredQuery>
+            """;
+
+        using var firstRequestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var firstResponse = await _fixture.Client.PostAsync("/wfs", firstRequestContent);
+        var firstContent = await firstResponse.Content.ReadAsStringAsync();
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK, firstContent);
+
+        using var duplicateRequestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", duplicateRequestContent);
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-        content.Should().Contain("ExceptionReport");
-        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
+        content.Should().Contain("exceptionCode=\"DuplicateStoredQueryIdValue\"");
+        content.Should().Contain($"locator=\"{storedQueryId}\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "DropStoredQuery")]
+    public async Task Wfs_DropStoredQuery_WithExistingQuery_ReturnsOk()
+    {
+        var storedQueryId = $"urn:honua:test:drop:{Guid.NewGuid():N}";
+        var requestBody = $$"""
+            <wfs:CreateStoredQuery service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+              <wfs:StoredQueryDefinition id="{{storedQueryId}}">
+                <wfs:Title>GetFeatureByTypeName</wfs:Title>
+                <wfs:Parameter name="typeName" type="xsd:QName" />
+                <wfs:QueryExpressionText returnFeatureTypes=""
+                    language="urn:ogc:def:queryLanguage:OGC-WFS::WFSQueryExpression" isPrivate="false">
+                  <wfs:Query typeNames="${typeName}" />
+                </wfs:QueryExpressionText>
+              </wfs:StoredQueryDefinition>
+            </wfs:CreateStoredQuery>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var createResponse = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var createContent = await createResponse.Content.ReadAsStringAsync();
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK, createContent);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=DropStoredQuery&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(storedQueryId)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("DropStoredQueryResponse");
     }
 
     [IntegrationTest]
@@ -1031,7 +1099,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
-    public async Task Wfs_GetFeature_UnknownStoredQuery_ReturnsOperationParsingFailedException()
+    public async Task Wfs_GetFeature_UnknownStoredQuery_ReturnsInvalidParameterValueException()
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::UnknownQuery&ID=test_layer.1");
@@ -1040,7 +1108,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("ExceptionReport");
-        content.Should().Contain("exceptionCode=\"OperationParsingFailed\"");
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"storedquery_id\"");
     }
 
@@ -1642,6 +1710,32 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
         allowedValues.Should().Contain("FALSE");
         allowedValues.Should().NotContain("TRUE");
+    }
+
+    private static void AssertTrueConstraintAdvertisesDefault(XDocument document, string name)
+    {
+        var constraint = document
+            .Descendants()
+            .Single(element => element.Name.LocalName == "Constraint" &&
+                               element.Attribute("name")?.Value == name);
+
+        constraint.Descendants()
+            .Where(element => element.Name.LocalName == "DefaultValue")
+            .Select(element => element.Value.Trim())
+            .Should()
+            .ContainSingle()
+            .Which
+            .Should()
+            .Be("TRUE");
+
+        var allowedValues = constraint
+            .Descendants()
+            .Where(element => element.Name.LocalName == "Value")
+            .Select(element => element.Value.Trim())
+            .ToArray();
+
+        allowedValues.Should().Contain("TRUE");
+        allowedValues.Should().Contain("FALSE");
     }
 
     private static string?[] ReadGeoJsonFeatureNames(string responseBody)

@@ -31,6 +31,8 @@ SCHEMA_VALID_FES_TEMPORAL_OPERATORS = {
     "AnyInteracts",
 }
 
+MINIMUM_FES_TEMPORAL_OPERATORS = {"After", "Before", "During"}
+
 
 def _wfs_get_capabilities(http_client: httpx.Client) -> httpx.Response:
     return http_client.get(
@@ -114,24 +116,25 @@ class TestEnhancedStandardsCompliance:
 
     @pytest.mark.integration
     @pytest.mark.ogc
-    def test_wfs_enhanced_temporal_operators_advertised(
+    def test_wfs_temporal_operators_advertise_minimum_cite_stable_support(
         self, http_client: httpx.Client
     ):
-        """Test that schema-valid FES temporal operators are advertised in capabilities."""
+        """Test that FES temporal capabilities match the CITE-stable minimum profile."""
         response = _wfs_get_capabilities(http_client)
         assert response.status_code == 200
 
         root = ET.fromstring(response.content)
         ns = {"fes": "http://www.opengis.net/fes/2.0"}
 
-        # Find temporal operators
         temporal_ops = root.findall(".//fes:TemporalOperator", ns)
-        advertised_ops = {op.attrib["name"] for op in temporal_ops}
+        temporal_names = {op.attrib["name"] for op in temporal_ops}
+        constraint_defaults = _constraint_defaults(root)
 
-        for op in SCHEMA_VALID_FES_TEMPORAL_OPERATORS:
-            assert op in advertised_ops, f"Missing temporal operator: {op}"
-
-        assert len(advertised_ops) >= len(SCHEMA_VALID_FES_TEMPORAL_OPERATORS)
+        assert temporal_names == MINIMUM_FES_TEMPORAL_OPERATORS
+        assert constraint_defaults["ImplementsMinTemporalFilter"] == "TRUE"
+        assert constraint_defaults["ImplementsTemporalFilter"] == "FALSE"
+        assert constraint_defaults["ImplementsTemporalInstant"] == "TRUE"
+        assert constraint_defaults["ImplementsTemporalPeriod"] == "TRUE"
 
     @pytest.mark.integration
     @pytest.mark.ogc
@@ -254,13 +257,18 @@ class TestEnhancedStandardsCompliance:
         }
         passed_checks += len(core_constraints.intersection(constraint_names))
 
-        # Temporal operator coverage (2 checks)
+        # Temporal operator consistency (2 checks)
         total_checks += 2
         temporal_ops = root.findall(".//fes:TemporalOperator", ns)
         temporal_names = {op.attrib["name"] for op in temporal_ops}
-        if len(temporal_ops) >= 10:
+        constraint_defaults = _constraint_defaults(root)
+        min_temporal_enabled = constraint_defaults.get("ImplementsMinTemporalFilter") == "TRUE"
+        full_temporal_enabled = constraint_defaults.get("ImplementsTemporalFilter") == "TRUE"
+        if min_temporal_enabled and MINIMUM_FES_TEMPORAL_OPERATORS.issubset(temporal_names):
             passed_checks += 1
-        if SCHEMA_VALID_FES_TEMPORAL_OPERATORS.issubset(temporal_names):
+        if full_temporal_enabled and SCHEMA_VALID_FES_TEMPORAL_OPERATORS.issubset(temporal_names):
+            passed_checks += 1
+        if not full_temporal_enabled and temporal_names == MINIMUM_FES_TEMPORAL_OPERATORS:
             passed_checks += 1
 
         # Spatial operator coverage (2 checks)
@@ -274,7 +282,6 @@ class TestEnhancedStandardsCompliance:
         # FES function advertisement consistency (2 checks)
         total_checks += 2
         functions = root.findall(".//fes:Function", ns)
-        constraint_defaults = _constraint_defaults(root)
         if constraint_defaults.get("ImplementsFunctions") == "FALSE" and len(functions) == 0:
             passed_checks += 1
         if constraint_defaults.get("ImplementsArithmeticOperators") == "FALSE":

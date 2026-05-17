@@ -85,6 +85,8 @@ internal static class Wfs20DispatcherEndpoint
             ["Transaction"] = HandleTransaction,
             ["ListStoredQueries"] = HandleListStoredQueries,
             ["DescribeStoredQueries"] = HandleDescribeStoredQueries,
+            ["CreateStoredQuery"] = HandleCreateStoredQuery,
+            ["DropStoredQuery"] = HandleDropStoredQuery,
         };
 
     /// <summary>
@@ -106,7 +108,7 @@ internal static class Wfs20DispatcherEndpoint
             .WithDisplayName("WFS 2.0 Service")
             .WithName("Wfs20Service")
             .WithSummary("OGC Web Feature Service 2.0")
-            .WithDescription("Handles all WFS 2.0 operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries")
+            .WithDescription("Handles all WFS 2.0 operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries, CreateStoredQuery, DropStoredQuery")
             .WithTags("WFS 2.0", "OGC")
             .Produces<object>(200, "application/xml")
             .Produces<ExceptionReport>(400, "application/xml")
@@ -137,10 +139,20 @@ internal static class Wfs20DispatcherEndpoint
 
             if (string.IsNullOrEmpty(requestParam))
             {
+                var malformedLegacyVersion = GetLegacyVersionForMalformedRequest(parameters);
+                if (malformedLegacyVersion is not null)
+                {
+                    return Wfs20Handler.CreateLegacyWfsException(
+                        malformedLegacyVersion,
+                        "MissingParameterValue",
+                        "Missing required 'request' parameter. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature.",
+                        "request");
+                }
+
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
                     "MissingParameterValue",
-                    "Missing required 'request' parameter. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries",
+                    "Missing required 'request' parameter. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries, CreateStoredQuery, DropStoredQuery",
                     "request");
             }
 
@@ -160,7 +172,7 @@ internal static class Wfs20DispatcherEndpoint
             return Wfs20ErrorResults.CreateNotImplemented(
                 context,
                 "OperationNotSupported",
-                $"Unsupported operation '{requestParam}'. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries",
+                $"Unsupported operation '{requestParam}'. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries, CreateStoredQuery, DropStoredQuery",
                 "request");
         }
         catch (InvalidDataException ex)
@@ -234,7 +246,7 @@ internal static class Wfs20DispatcherEndpoint
 
                 var schema = await handler.HandleLegacyDescribeFeatureTypeAsync(context, version, typeNames, cancellationToken)
                     .ConfigureAwait(false);
-                return Results.Content(schema, "application/xml", Encoding.UTF8);
+                return Results.Content(schema, "text/xml", Encoding.UTF8);
             }
 
             if (string.Equals(requestParam, Wfs20Utilities.Operations.GetFeature, StringComparison.OrdinalIgnoreCase))
@@ -522,10 +534,15 @@ internal static class Wfs20DispatcherEndpoint
 
             if (!string.IsNullOrWhiteSpace(storedQueryId))
             {
+                var storedQueryTypeName = parameters.Get(
+                    Wfs20Utilities.ParameterNames.TypeNames,
+                    Wfs20Utilities.ParameterNames.TypeName);
+
                 return await handler.HandleStoredQueryGetFeatureAsync(
                     context,
                     storedQueryId,
                     storedQueryFeatureId,
+                    storedQueryTypeName,
                     outputFormat,
                     count,
                     cancellationToken);
@@ -747,6 +764,83 @@ internal static class Wfs20DispatcherEndpoint
         }
     }
 
+    private static Task<IResult> HandleCreateStoredQuery(
+        HttpContext context,
+        WfsRequestParameters parameters,
+        Wfs20Handler handler,
+        ILogger logger)
+    {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        try
+        {
+            var validationError = ValidateOperationRequestParameters(parameters);
+
+            if (validationError is not null)
+            {
+                return Task.FromResult(Wfs20ErrorResults.CreateBadRequest(
+                    context,
+                    validationError.ExceptionCode,
+                    validationError.Detail,
+                    validationError.Locator));
+            }
+
+            if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
+            {
+                return Task.FromResult(Results.StatusCode(StatusCodes.Status406NotAcceptable));
+            }
+
+            return Task.FromResult(Wfs20Handler.HandleCreateStoredQuery(context));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
+            return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(context, "Failed to process CreateStoredQuery request"));
+        }
+    }
+
+    private static Task<IResult> HandleDropStoredQuery(
+        HttpContext context,
+        WfsRequestParameters parameters,
+        Wfs20Handler handler,
+        ILogger logger)
+    {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        try
+        {
+            var validationError = ValidateOperationRequestParameters(parameters);
+
+            if (validationError is not null)
+            {
+                return Task.FromResult(Wfs20ErrorResults.CreateBadRequest(
+                    context,
+                    validationError.ExceptionCode,
+                    validationError.Detail,
+                    validationError.Locator));
+            }
+
+            if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
+            {
+                return Task.FromResult(Results.StatusCode(StatusCodes.Status406NotAcceptable));
+            }
+
+            var storedQueryId = parameters.Get(Wfs20Utilities.ParameterNames.StoredQueryId);
+            return Task.FromResult(Wfs20Handler.HandleDropStoredQuery(context, storedQueryId));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
+            return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(context, "Failed to process DropStoredQuery request"));
+        }
+    }
+
     private static WfsValidationError? ValidateCapabilitiesRequestParameters(WfsRequestParameters parameters)
     {
         var service = parameters.Get(Wfs20Utilities.ParameterNames.Service);
@@ -789,8 +883,7 @@ internal static class Wfs20DispatcherEndpoint
         string version)
     {
         var service = parameters.Get(Wfs20Utilities.ParameterNames.Service);
-        if (string.IsNullOrWhiteSpace(service) &&
-            !string.Equals(requestParam, Wfs20Utilities.Operations.GetCapabilities, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(service))
         {
             return new WfsValidationError(
                 "MissingParameterValue",
@@ -827,6 +920,12 @@ internal static class Wfs20DispatcherEndpoint
         }
 
         return null;
+    }
+
+    private static string? GetLegacyVersionForMalformedRequest(WfsRequestParameters parameters)
+    {
+        var version = parameters.Get(Wfs20Utilities.ParameterNames.Version);
+        return IsLegacyWfsVersion(version) ? version!.Trim() : null;
     }
 
     private static string? SelectLegacyWfsVersion(WfsRequestParameters parameters, string requestParam)
@@ -1051,6 +1150,7 @@ internal static class Wfs20DispatcherEndpoint
         SetValue(values, Wfs20Utilities.ParameterNames.Request, root.Name.LocalName);
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Service, "service");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Version, "version");
+        ApplyLegacyXmlDefaults(root, values);
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.OutputFormat, "outputFormat");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Count, "count", "maxFeatures");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.StartIndex, "startIndex");
@@ -1169,19 +1269,16 @@ internal static class Wfs20DispatcherEndpoint
         {
             CopyAttribute(storedQuery, values, Wfs20Utilities.ParameterNames.StoredQueryId, "id");
 
-            var storedQueryFeatureId = storedQuery.Elements()
-                .FirstOrDefault(element =>
-                    string.Equals(element.Name.LocalName, "Parameter", StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(
-                        element.Attributes()
-                            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "name", StringComparison.OrdinalIgnoreCase))
-                            ?.Value,
-                        "id",
-                        StringComparison.OrdinalIgnoreCase))
-                ?.Value;
-            if (!string.IsNullOrWhiteSpace(storedQueryFeatureId))
+            foreach (var parameterElement in storedQuery.Elements()
+                         .Where(element => string.Equals(element.Name.LocalName, "Parameter", StringComparison.OrdinalIgnoreCase)))
             {
-                SetValue(values, Wfs20Utilities.ParameterNames.Id, storedQueryFeatureId);
+                var parameterName = parameterElement.Attributes()
+                    .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "name", StringComparison.OrdinalIgnoreCase))
+                    ?.Value;
+                if (!string.IsNullOrWhiteSpace(parameterName))
+                {
+                    SetValue(values, parameterName, parameterElement.Value);
+                }
             }
         }
 
@@ -1198,6 +1295,24 @@ internal static class Wfs20DispatcherEndpoint
 
         CopyElementValue(root, values, Wfs20Utilities.ParameterNames.ValueReference, "ValueReference");
         return queries.Length;
+    }
+
+    private static void ApplyLegacyXmlDefaults(XElement root, Dictionary<string, string> values)
+    {
+        if (!string.Equals(root.Name.NamespaceName, "http://www.opengis.net/wfs", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!values.ContainsKey(Wfs20Utilities.ParameterNames.Service))
+        {
+            SetValue(values, Wfs20Utilities.ParameterNames.Service, Wfs20Utilities.ServiceType);
+        }
+
+        if (!values.ContainsKey(Wfs20Utilities.ParameterNames.Version))
+        {
+            SetValue(values, Wfs20Utilities.ParameterNames.Version, Wfs11Version);
+        }
     }
 
     private static string? NormalizeXmlTypeNames(string? typeNames)

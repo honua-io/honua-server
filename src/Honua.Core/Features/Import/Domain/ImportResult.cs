@@ -133,6 +133,7 @@ public static class ImportValidationErrorCodes
     public const string GeometryUnknownType = "import.geometry_unknown_type";
     public const string GeometryInvalid = "import.geometry_invalid";
     public const string InvalidGeoJson = "import.geojson_invalid";
+    public const string GeoJsonValidationTooLarge = "import.geojson_validation_too_large";
     public const string SourceSridRequired = "import.source_srid_required";
     public const string SourceSridUnsupported = "import.source_srid_unsupported";
     public const string TargetSridUnsupported = "import.target_srid_unsupported";

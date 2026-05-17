@@ -8,13 +8,16 @@ Honua Server produces KML output via `MapServer/generateKml`. The KML 2.2 CITE s
 
 KML output is always EPSG:4326.
 
-Unlike service-level conformance suites (WMS, WMTS, etc.), the KML 2.2 suite has a single validation pass. The `--profile` flag is accepted for CLI consistency but all values run the same tests.
+Unlike service-level conformance suites (WMS, WMTS, etc.), the KML 2.2 suite validates a concrete KML document rather than a service endpoint. The default `applicable` profile runs the official ETS Level 1 classes that apply to Honua's generated KML document and is the strict no-skip evidence profile. The raw ETS `default` profile remains available for diagnostics and can report skips for Level 2 and Level 3 checks.
 
 ## Run Locally
 
 ```bash
-# Default run
+# Default strict no-skip applicable run
 ./scripts/conformance/cite/run-cite-kml22-tests.sh
+
+# Raw ETS default diagnostic run
+./scripts/conformance/cite/run-cite-kml22-tests.sh --profile default --verbose
 
 # Keep containers for debugging
 ./scripts/conformance/cite/run-cite-kml22-tests.sh --no-cleanup --verbose
@@ -35,6 +38,8 @@ Triggered by:
 
 - `results_available` must be `true`
 - `failed_tests` must be `0`
+- `skipped_tests` must be `0`
+- `canttell_tests` must be `0`
 - Results are uploaded as artifacts, including markdown summary and raw TeamEngine outputs
 
 ## Artifacts

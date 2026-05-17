@@ -59,6 +59,21 @@ internal static class LayerPublishingEndpoints
         group.MapPut("/enabled", HandleSetServiceLayersEnabled)
             .WithDisplayName("Set Service Layers Enabled")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+
+        var tableGroup = endpoints.MapGroup("/api/v{version:apiVersion}/admin/connections/{id}/tables")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
+            .WithTags("Admin", "Layers")
+            .RequireAdminAuthorization();
+
+        tableGroup.MapPost("/validate", HandleValidateTableForPublish)
+            .WithDisplayName("Validate Table For Layer Publishing")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .Produces<ApiResponse<TablePublishValidationResult>>(StatusCodes.Status200OK)
+            .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
     }
 
     private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
@@ -208,6 +223,80 @@ internal static class LayerPublishingEndpoints
             return TypedResults.Problem(
                 title: "Layer publish failed",
                 detail: "An internal error occurred while publishing the layer.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return TypedResults.Forbid();
+        }
+    }
+
+    private static async Task<IResult>
+        HandleValidateTableForPublish(
+            string id,
+            ValidateTablePublishRequest request,
+            [FromServices] ISecureConnectionResolver resolver,
+            [FromServices] ILayerPublishingService publishingService,
+            HttpContext context,
+            [FromServices] ILogger<LayerPublishingEndpointsLog> logger)
+    {
+        var validationResults = new List<ValidationResult>();
+        if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+        {
+            var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
+        }
+
+        try
+        {
+            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var validationRequest = new TablePublishValidationRequest
+            {
+                Schema = request.Schema,
+                Table = request.Table,
+                LayerName = request.LayerName,
+                ServiceName = request.ServiceName,
+                TargetSrid = request.TargetSrid,
+                GeometryColumn = request.GeometryColumn,
+                PrimaryKey = request.PrimaryKey,
+                Fields = request.Fields ?? Array.Empty<string>()
+            };
+
+            var result = await publishingService.ValidateTableForPublishAsync(
+                connectionString,
+                validationRequest,
+                context.RequestAborted);
+
+            return Results.Json(
+                ApiResponse<TablePublishValidationResult>.CreateSuccess(result),
+                LayerPublishingJsonContext.Default.ApiResponseTablePublishValidationResult);
+        }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
+        {
+            LayerPublishingLog.LayerPublishNotFound(logger, ex);
+            return TypedResults.NotFound(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
+        }
+        catch (LayerPublishingException ex)
+        {
+            LayerPublishingLog.LayerPublishValidationFailed(logger, ex);
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
+        }
+        catch (ArgumentException ex)
+        {
+            LayerPublishingLog.LayerPublishInvalidRequest(logger, ex);
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
+        }
+        catch (ResourceNotFoundException ex)
+        {
+            LayerPublishingLog.LayerListConnectionNotFound(logger, ex);
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            LayerPublishingLog.LayerPublishInvalidOperation(logger, ex);
+            return TypedResults.Problem(
+                title: "Layer validation failed",
+                detail: "An internal error occurred while validating the layer.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (UnauthorizedAccessException)

@@ -29,10 +29,23 @@ public sealed record LayerStorageMapping(
     IReadOnlyDictionary<string, string>? ProviderOptions = null)
 {
     /// <summary>
+    /// Provider option key indicating that reads should be routed back to the source table.
+    /// </summary>
+    public const string SourceBackedOption = "sourceBacked";
+
+    /// <summary>
     /// Provider-specific extension values, normalized to an empty dictionary when unset.
     /// </summary>
     public IReadOnlyDictionary<string, string> ProviderOptions { get; init; } =
         ProviderOptions ?? new Dictionary<string, string>();
+
+    /// <summary>
+    /// Gets a value indicating whether the mapping should be read from the source provider.
+    /// </summary>
+    public bool IsSourceBacked =>
+        ProviderOptions.TryGetValue(SourceBackedOption, out var value)
+        && bool.TryParse(value, out var sourceBacked)
+        && sourceBacked;
 
     /// <summary>
     /// Gets the best available fully qualified storage name for diagnostics and capability reporting.

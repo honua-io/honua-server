@@ -139,10 +139,9 @@ internal sealed class GmlSerializer : IGmlSerializer
 
     private static string FormatXmlDateTimeOffset(DateTimeOffset value)
     {
-        var normalized = value.ToUniversalTime();
-        var format = normalized.Millisecond == 0
+        var format = value.Millisecond == 0
             ? "yyyy-MM-dd'T'HH:mm:sszzz"
             : "yyyy-MM-dd'T'HH:mm:ss.fffzzz";
-        return normalized.ToString(format, CultureInfo.InvariantCulture);
+        return value.ToString(format, CultureInfo.InvariantCulture);
     }
 }

@@ -5,11 +5,16 @@ services:
       context: ../../..
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "${HONUA_CITE_KML22_SERVER_PORT:-8096}:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
       - PUBLIC_BASE_URL=http://honua-server:8080
+      - HONUA_DEV_AUTH=true
+      - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
+      - Cache__Enabled=false
+      - DataSource__Provider=postgres
+      - HostValidation__Enabled=false
       - HostValidation__AllowedHosts__0=honua-server
       - HostValidation__AllowedHosts__1=localhost
       - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
@@ -26,7 +31,7 @@ services:
     networks:
       - cite-kml22-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/healthz/ready"]
+      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/ready"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -85,11 +90,22 @@ services:
 
   cite-runner:
     image: ogccite/ets-kml22:latest
+    environment:
+      - HONUA_CITE_KML22_PROFILE=${HONUA_CITE_KML22_PROFILE:-applicable}
     command:
       - bash
       - -lc
       - |
           set -euo pipefail
+          profile="$${HONUA_CITE_KML22_PROFILE:-applicable}"
+          case "$$profile" in
+            applicable|default)
+              ;;
+            *)
+              echo "Unknown KML 2.2 CITE profile: $$profile"
+              exit 1
+              ;;
+          esac
           KML_IUT_URL="http://honua-server:8080/rest/services/cite/MapServer/generateKml"
           echo 'Waiting for services to be ready...'
           sleep 30
@@ -101,13 +117,61 @@ services:
           rm -rf /root/te_base/scripts/kml22
           unzip -qo -j /root/ets-kml22-*-deps.zip -d /root/te_base/resources/lib || true
           unzip -qo /root/ets-kml22-*-ctl.zip -d /root/te_base/scripts || true
+          rm -rf /root/te_base/users/cite/logs/*
           export TE_BASE=/root/te_base
-          echo 'Starting KML 2.2 CITE conformance tests...'
-          /tmp/te-console/bin/unix/test.sh \
-            -source=/root/te_base/scripts/kml22/2.2/ctl/kml22-suite.ctl \
-            @iut=$${KML_IUT_URL} \
-            -logdir=users/cite/logs \
-            -session=cite-kml22-session-$(date +%Y%m%d-%H%M%S)
+          mkdir -p /data
+          cat > /data/test-params.xml <<EOF_PARAMS
+          <?xml version="1.0" encoding="UTF-8"?>
+          <values xmlns:parsers="http://www.occamlab.com/te/parsers">
+            <parsers:session>
+              <parsers:test>ets-kml22-1.16</parsers:test>
+              <parsers:profile>default</parsers:profile>
+            </parsers:session>
+            <value key="uri">$${KML_IUT_URL}</value>
+            <value key="level">1</value>
+          </values>
+          EOF_PARAMS
+          if [ "$$profile" = "applicable" ]; then
+            session_dir="/root/te_base/users/cite/logs/cite-kml22-applicable-$(date +%Y%m%d-%H%M%S)"
+            cat > /data/testng-applicable.xml <<EOF_TESTNG
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+          <suite name="kml22-1.16-applicable-level1" verbose="0" configfailurepolicy="skip">
+            <parameter name="iut" value="$${KML_IUT_URL}" />
+            <parameter name="ics" value="1" />
+
+            <listeners>
+              <listener class-name="org.opengis.cite.kml22.TestRunListener" />
+              <listener class-name="org.opengis.cite.kml22.SuiteFixtureListener" />
+            </listeners>
+
+            <test name="Conformance Level 1">
+              <classes>
+                <class name="org.opengis.cite.kml22.level1.KmlDocumentTests" />
+                <class name="org.opengis.cite.kml22.level1.SpatialTests" />
+                <class name="org.opengis.cite.kml22.level1.StyleTests" />
+                <class name="org.opengis.cite.kml22.level1.TemporalElementTests" />
+                <class name="org.opengis.cite.kml22.level1.LinkTests" />
+                <class name="org.opengis.cite.kml22.level1.FeatureTests" />
+                <class name="org.opengis.cite.kml22.level1.UserDefinedDataTests" />
+                <class name="org.opengis.cite.kml22.level1.ViewTests" />
+              </classes>
+            </test>
+          </suite>
+          EOF_TESTNG
+            echo "Starting KML 2.2 applicable CITE conformance tests..."
+            java -cp "/tmp/te-console/lib/*:/root/te_base/resources/lib/*" \
+              org.testng.TestNG \
+              -d "$$session_dir" \
+              /data/testng-applicable.xml
+          else
+            echo 'Starting KML 2.2 default CITE conformance tests...'
+            /tmp/te-console/bin/unix/test.sh \
+              -source=/root/te_base/scripts/kml22/2.2/ctl/kml22-suite.ctl \
+              -form=/data/test-params.xml \
+              -logdir=users/cite/logs \
+              -session=cite-kml22-session-$(date +%Y%m%d-%H%M%S)
+          fi
           echo 'CITE tests completed. Check results in logdir.'
     volumes:
       - cite-kml22-results:/root/te_base/users/cite/logs

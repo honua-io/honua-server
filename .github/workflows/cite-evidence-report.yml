@@ -1,0 +1,156 @@
+name: CITE Evidence Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_pages:
+        description: 'Publish the evidence bundle to GitHub Pages after the run'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: cite-evidence-report
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    name: Build CITE Evidence Bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build Honua Server image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: honua-server:latest
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha,scope=cite-evidence
+          cache-to: type=gha,mode=max,scope=cite-evidence
+
+      - name: Install evidence dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+
+      - name: Run CITE suites
+        id: run-cite
+        env:
+          HONUA_CITE_SKIP_BUILD: 'true'
+        run: |
+          set -euo pipefail
+          exit_codes="$RUNNER_TEMP/cite-exit-codes.txt"
+          : > "$exit_codes"
+
+          run_suite() {
+            local name="$1"
+            local script="$2"
+            local profile="$3"
+            local exit_code=0
+
+            echo "::group::$name"
+            set +e
+            "$script" --profile "$profile" --skip-build --verbose
+            exit_code=$?
+            set -e
+            echo "::endgroup::"
+
+            printf '%s=%s\n' "$name" "$exit_code" >> "$exit_codes"
+          }
+
+          run_suite "OGC API Features" ./scripts/conformance/cite/run-cite-tests.sh default
+          run_suite "OGC API Tiles" ./scripts/conformance/cite/run-cite-tiles-tests.sh default
+          run_suite "WFS 1.0" ./scripts/conformance/cite/run-cite-wfs10-tests.sh basic
+          run_suite "WFS 1.1" ./scripts/conformance/cite/run-cite-wfs11-tests.sh basic
+          run_suite "WFS 2.0" ./scripts/conformance/cite/run-cite-wfs20-tests.sh basic
+          run_suite "WMS 1.3" ./scripts/conformance/cite/run-cite-wms-tests.sh default
+          run_suite "WMTS 1.0" ./scripts/conformance/cite/run-cite-wmts-tests.sh default
+          run_suite "WCS 2.0" ./scripts/conformance/cite/run-cite-wcs20-tests.sh core
+          run_suite "GML 3.2" ./scripts/conformance/cite/run-cite-gml32-tests.sh applicable
+          run_suite "GeoPackage 1.2" ./scripts/conformance/cite/run-cite-gpkg12-tests.sh applicable
+          run_suite "KML 2.2" ./scripts/conformance/cite/run-cite-kml22-tests.sh applicable
+
+          {
+            echo 'exit_codes<<EOF'
+            cat "$exit_codes"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build static evidence bundle
+        if: always()
+        env:
+          CITE_EVIDENCE_PUBLIC_BASE_URL: ${{ inputs.publish_pages && format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) || '' }}
+        run: scripts/conformance/cite/build-cite-evidence.sh --output artifacts/cite-evidence
+
+      - name: Upload CITE evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cite-conformance-evidence-${{ github.run_number }}
+          path: artifacts/cite-evidence/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Append evidence summary
+        if: always()
+        run: |
+          if [[ -f artifacts/cite-evidence/conformance-summary.md ]]; then
+            cat artifacts/cite-evidence/conformance-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Configure GitHub Pages
+        if: inputs.publish_pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        if: inputs.publish_pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: artifacts/cite-evidence
+
+      - name: Fail on conformance issues
+        if: always()
+        env:
+          EXIT_CODES: ${{ steps.run-cite.outputs.exit_codes }}
+        run: |
+          set -euo pipefail
+
+          printf '%s\n' "$EXIT_CODES" > "$RUNNER_TEMP/cite-exit-codes.txt"
+          if grep -Ev '=0$' "$RUNNER_TEMP/cite-exit-codes.txt"; then
+            echo "One or more CITE runner scripts exited non-zero."
+            cat "$RUNNER_TEMP/cite-exit-codes.txt"
+            exit 1
+          fi
+
+          jq -e '.totals.allPassed == true' artifacts/cite-evidence/conformance-summary.json >/dev/null
+
+  deploy-pages:
+    name: Deploy CITE Evidence Pages
+    needs: evidence
+    if: inputs.publish_pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy-pages.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deploy-pages
+        uses: actions/deploy-pages@v4

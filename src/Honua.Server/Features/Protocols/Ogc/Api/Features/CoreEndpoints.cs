@@ -16,6 +16,33 @@ internal static class CoreEndpoints
 {
     private static readonly TimeSpan _landingPageCacheDuration = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan _conformanceCacheDuration = TimeSpan.FromHours(1);
+    private const string GmlApplicationSchema = """
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:gml="http://www.opengis.net/gml/3.2"
+           xmlns:app="https://honua.io/gml/ogcapi-features/1.0"
+           targetNamespace="https://honua.io/gml/ogcapi-features/1.0"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified"
+           version="1.0">
+  <xs:import namespace="http://www.opengis.net/gml/3.2"
+             schemaLocation="http://schemas.opengis.net/gml/3.2.1/gml.xsd" />
+  <xs:element name="Feature" type="app:FeatureType" substitutionGroup="gml:AbstractFeature" />
+  <xs:complexType name="FeatureType">
+    <xs:complexContent>
+      <xs:extension base="gml:AbstractFeatureType">
+        <xs:sequence>
+          <xs:element name="geometry" type="gml:GeometryPropertyType" minOccurs="0" maxOccurs="1" />
+          <xs:element name="property" type="app:PropertyType" minOccurs="0" maxOccurs="unbounded" />
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <xs:complexType name="PropertyType" mixed="true">
+    <xs:attribute name="name" type="xs:string" use="required" />
+  </xs:complexType>
+</xs:schema>
+""";
 
     /// <summary>
     /// Maps core metadata endpoints for OGC API Features
@@ -65,8 +92,20 @@ internal static class CoreEndpoints
             .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(404);
 
+        _ = endpoints.MapGet(OgcFeaturesUtilities.GmlApplicationSchemaPath, HandleGetGmlApplicationSchema)
+            .WithDisplayName("OGC API Features GML Application Schema")
+            .WithName("OgcFeaturesGmlApplicationSchema")
+            .WithSummary("Get the GML application schema for OGC API Features GML responses")
+            .WithDescription("The schema declares Honua's feature member and property elements used by GML feature collection responses.")
+            .WithTags("OGC API Features")
+            .CacheOutput("OgcGmlApplicationSchema")
+            .Produces<string>(200, "application/xml");
+
         return endpoints;
     }
+
+    private static IResult HandleGetGmlApplicationSchema()
+        => Results.Text(GmlApplicationSchema, "application/xml");
 
     /// <summary>
     /// Handles the OGC API Features landing page request

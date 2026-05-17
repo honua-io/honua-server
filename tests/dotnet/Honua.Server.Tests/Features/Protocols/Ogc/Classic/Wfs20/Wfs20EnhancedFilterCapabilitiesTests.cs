@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public class Wfs20EnhancedFilterCapabilitiesTests
 {
     [Fact]
-    public void BuildFilterCapabilities_ShouldAdvertiseSupportedTemporalOperatorsOnly()
+    public void BuildFilterCapabilities_ShouldAdvertiseMinimumTemporalConformance()
     {
         // Act
         var filterCapabilities = InvokeBuildFilterCapabilities();
@@ -24,28 +24,19 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         // Assert
         filterCapabilities.Should().NotBeNull();
         filterCapabilities.TemporalCapabilities.Should().NotBeNull();
-        filterCapabilities.TemporalCapabilities!.TemporalOperators.Should().NotBeNull();
+        filterCapabilities.TemporalCapabilities!.TemporalOperators!.Operators
+            .Select(op => op.Name)
+            .Should().BeEquivalentTo("After", "Before", "During");
+        filterCapabilities.TemporalCapabilities.TemporalOperands!.Operands
+            .Select(op => op.Name.Name)
+            .Should().BeEquivalentTo("TimeInstant", "TimePeriod");
 
-        var temporalOperators = filterCapabilities.TemporalCapabilities.TemporalOperators!.Operators;
-        temporalOperators.Should().NotBeEmpty();
-
-        var operatorNames = temporalOperators.Select(op => op.Name).ToList();
-
-        operatorNames.Should().BeEquivalentTo(
-            "After",
-            "Before",
-            "Begins",
-            "BegunBy",
-            "TContains",
-            "During",
-            "TEquals",
-            "TOverlaps",
-            "Meets",
-            "MetBy",
-            "OverlappedBy",
-            "EndedBy",
-            "Ends",
-            "AnyInteracts");
+        var constraints = filterCapabilities.Conformance.Constraints
+            .ToDictionary(c => c.Name, c => c.DefaultValue);
+        constraints["ImplementsMinTemporalFilter"].Should().Be("TRUE");
+        constraints["ImplementsTemporalFilter"].Should().Be("FALSE");
+        constraints["ImplementsTemporalInstant"].Should().Be("TRUE");
+        constraints["ImplementsTemporalPeriod"].Should().Be("TRUE");
     }
 
     [Fact]
@@ -132,8 +123,7 @@ public class Wfs20EnhancedFilterCapabilitiesTests
 
         // Assert
         filterCapabilities.Should().NotBeNull();
-        filterCapabilities.Functions.Should().NotBeNull();
-        filterCapabilities.Functions!.Functions.Should().BeEmpty();
+        filterCapabilities.Functions.Should().BeNull("FES 2.0 Functions cannot be serialized as an empty element");
     }
 
     [Fact]
@@ -170,6 +160,10 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         constraintNames.Should().Contain("ImplementsComparisonOperators");
 
         constraints.Should().Contain(c => c.Name == "ImplementsFunctions" && c.DefaultValue == "FALSE");
+        constraints.Should().Contain(c => c.Name == "ImplementsMinTemporalFilter" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsTemporalFilter" && c.DefaultValue == "FALSE");
+        constraints.Should().Contain(c => c.Name == "ImplementsTemporalInstant" && c.DefaultValue == "TRUE");
+        constraints.Should().Contain(c => c.Name == "ImplementsTemporalPeriod" && c.DefaultValue == "TRUE");
         constraints.Should().Contain(c => c.Name == "ImplementsArithmeticOperators" && c.DefaultValue == "FALSE");
         constraints.Should().Contain(c => c.Name == "ImplementsExtendedOperators" && c.DefaultValue == "TRUE");
         constraints.Should().Contain(c => c.Name == "ImplementsCQL2Text" && c.DefaultValue == "FALSE");
@@ -199,10 +193,11 @@ public class Wfs20EnhancedFilterCapabilitiesTests
         xml.Should().NotBeEmpty();
         xml.Should().Contain("Filter_Capabilities");
         xml.Should().Contain("Conformance");
-        xml.Should().Contain("TemporalOperators");
+        xml.Should().MatchRegex(@"<([A-Za-z_][\w.-]*:)?TemporalOperators(\s|>|/)");
+        xml.Should().Contain("Temporal_Capabilities");
         xml.Should().Contain("SpatialOperators");
         xml.Should().Contain("ComparisonOperators");
-        xml.Should().Contain("<Functions");
+        xml.Should().NotContain("<Functions");
         xml.Should().NotContain("ST_NumGeometries");
     }
 

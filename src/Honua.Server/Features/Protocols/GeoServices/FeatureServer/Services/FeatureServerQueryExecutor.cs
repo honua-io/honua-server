@@ -787,7 +787,7 @@ internal sealed class FeatureServerQueryExecutor
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
     {
-        if (_providerQueryRouter == null || (layer.StorageMapping == null && !service.ConnectionId.HasValue))
+        if (_providerQueryRouter == null || !ShouldRouteProviderReader(service, layer))
         {
             return _featureReader;
         }
@@ -796,6 +796,9 @@ internal sealed class FeatureServerQueryExecutor
             .ResolveReaderAsync(service, layer, operation, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    private static bool ShouldRouteProviderReader(ServiceDefinition service, LayerDefinition layer)
+        => service.ConnectionId.HasValue || layer.StorageMapping?.IsSourceBacked == true;
 
     private static void EnableChunkedEncodingIfHttp1(HttpContext context)
     {

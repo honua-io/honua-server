@@ -3,9 +3,11 @@
 
 using System.Text;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Postgres.Features.Infrastructure.Caching;
@@ -80,8 +82,16 @@ internal static class ServiceCollectionExtensions
             return new FeatureDataAccess(dependencies);
         });
 
-        // Register the main feature store implementation
-        services.AddScoped<PostgresFeatureStoreRefactored>();
+        // Register the main feature store implementation.
+        services.AddScoped<PostgresFeatureStoreRefactored>(provider =>
+            new PostgresFeatureStoreRefactored(
+                provider.GetRequiredService<IFeatureQueryBuilder>(),
+                provider.GetRequiredService<IFeatureDataAccess>(),
+                provider.GetRequiredService<IFeatureCacheManager>(),
+                provider.GetService<ILayerCatalog>(),
+                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>(),
+                provider.GetService<IConnectionEncryptionService>()));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
