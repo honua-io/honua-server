@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Server.Features.Collaboration.FeatureLocks;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
@@ -13,6 +14,7 @@ internal static class CollaborationSessionServices
         services.TryAddSingleton<ICollaborationSessionClock, SystemCollaborationSessionClock>();
         services.TryAddSingleton<ISavedMapCollaborationAuthorizer, FailClosedSavedMapCollaborationAuthorizer>();
         services.TryAddSingleton<InMemoryCollaborationSessionService>();
+        services.AddFeatureLockCollaboration();
         return services;
     }
 }
