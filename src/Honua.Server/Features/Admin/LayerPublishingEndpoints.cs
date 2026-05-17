@@ -60,6 +60,15 @@ internal static class LayerPublishingEndpoints
             .WithDisplayName("Set Service Layers Enabled")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
+        group.MapPost("/extents/refresh", HandleRefreshLayerExtents)
+            .WithDisplayName("Refresh Layer Extents")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .Produces<ApiResponse<LayerExtentRefreshResult>>(StatusCodes.Status200OK)
+            .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
         var tableGroup = endpoints.MapGroup("/api/v{version:apiVersion}/admin/connections/{id}/tables")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
@@ -297,6 +306,92 @@ internal static class LayerPublishingEndpoints
             return TypedResults.Problem(
                 title: "Layer validation failed",
                 detail: "An internal error occurred while validating the layer.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return TypedResults.Forbid();
+        }
+    }
+
+    private static async Task<IResult>
+        HandleRefreshLayerExtents(
+            string id,
+            string? serviceName,
+            [FromServices] ISecureConnectionResolver resolver,
+            [FromServices] ILayerPublishingService publishingService,
+            [FromServices] IDatabaseMigrationRunner migrationRunner,
+            HttpContext context,
+            [FromServices] ILogger<LayerPublishingEndpointsLog> logger)
+    {
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var approvalResult = gate.EvaluateApproval(
+            context, OperatorResourceType.Catalog, OperatorOperation.Publish);
+        if (approvalResult != null) return approvalResult;
+
+        try
+        {
+            var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
+            var migrationResult = await migrationRunner.RunMigrationsAsync(
+                connectionString,
+                typeof(Program).Assembly,
+                context.RequestAborted);
+
+            if (!migrationResult.Successful)
+            {
+                LayerPublishingLog.LayerExtentRefreshMigrationFailed(
+                    logger,
+                    migrationResult.ErrorMessage,
+                    migrationResult.Error);
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
+            }
+
+            var result = await publishingService.RefreshLayerExtentsAsync(
+                connectionString,
+                serviceName ?? "default",
+                context.RequestAborted);
+
+            if (result == null)
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure("Service not found."));
+            }
+
+            await InvalidateServiceCatalogCacheAsync(
+                context,
+                result.ServiceName,
+                result.Layers.Select(layer => layer.LayerId),
+                logger).ConfigureAwait(false);
+
+            return Results.Json(
+                ApiResponse<LayerExtentRefreshResult>.CreateSuccess(result),
+                LayerPublishingJsonContext.Default.ApiResponseLayerExtentRefreshResult);
+        }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
+        {
+            LayerPublishingLog.LayerExtentRefreshNotFound(logger, ex);
+            return TypedResults.NotFound(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
+        }
+        catch (LayerPublishingException ex)
+        {
+            LayerPublishingLog.LayerExtentRefreshFailed(logger, ex);
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
+        }
+        catch (ArgumentException ex)
+        {
+            LayerPublishingLog.LayerExtentRefreshInvalidRequest(logger, ex);
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
+        }
+        catch (ResourceNotFoundException ex)
+        {
+            LayerPublishingLog.LayerExtentRefreshConnectionNotFound(logger, ex);
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            LayerPublishingLog.LayerExtentRefreshInvalidOperation(logger, ex);
+            return TypedResults.Problem(
+                title: "Layer extent refresh failed",
+                detail: "An internal error occurred while refreshing layer extents.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (UnauthorizedAccessException)

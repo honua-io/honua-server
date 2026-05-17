@@ -20,6 +20,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     ILogger<PostgreSqlLayerPublishingService> logger) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
+    private const int CatalogExtentSrid = 4326;
     private const string SourceBackedStorageOptionsJson = """{"sourceBacked":"true"}""";
     private const string SeverityPass = "pass";
     private const string SeverityWarning = "warning";
@@ -189,6 +190,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         {
             srid = 4326;
         }
+        var storageSrid = tableInfo.Srid is > 0 ? tableInfo.Srid.Value : srid;
 
         var columns = tableInfo.Columns;
         if (columns.Count == 0)
@@ -237,15 +239,6 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
-        var extent = await ReadLayerExtentAsync(
-            connection,
-            transaction,
-            schema,
-            table,
-            geometryColumn,
-            srid,
-            cancellationToken);
-
         var existingLayerId = await FindExistingLayerAsync(connection, transaction, schema, table, cancellationToken);
         if (existingLayerId.HasValue)
         {
@@ -267,7 +260,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             geometryColumn,
             geometryType,
             srid,
-            extent,
+            storageSrid,
+            null,
             request.Enabled,
             cancellationToken);
 
@@ -285,7 +279,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             cancellationToken);
         Log.LayerMaterialized(_logger, layerId, materializedCount);
 
-        await UpdateLayerExtentAsync(connection, transaction, layerId, srid, cancellationToken);
+        await RefreshLayerExtentAsync(connection, transaction, layerId, cancellationToken);
 
         await EnsureServiceLayerAsync(connection, transaction, serviceName, layerId, cancellationToken);
         await UpdateServiceExtentAsync(connection, transaction, serviceName, cancellationToken);
@@ -433,6 +427,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await updateCommand.ExecuteNonQueryAsync(cancellationToken);
         layer = CloneWithEnabled(layer, enabled);
 
+        await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return layer;
     }
@@ -466,9 +461,68 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         updateCommand.Parameters.AddWithValue("@serviceName", normalizedService);
         await updateCommand.ExecuteNonQueryAsync(cancellationToken);
 
+        await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         return await ListPublishedLayersAsync(connectionString, normalizedService, cancellationToken);
+    }
+
+    public async Task<LayerExtentRefreshResult?> RefreshLayerExtentsAsync(
+        string connectionString,
+        string serviceName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+
+        var normalizedService = NormalizeServiceName(serviceName);
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        if (!await ServiceExistsAsync(connection, transaction, normalizedService, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var layerIds = await ListServiceLayerIdsAsync(
+                connection,
+                transaction,
+                normalizedService,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var layers = new List<LayerExtentRefreshLayerResult>(layerIds.Count);
+        foreach (var layerId in layerIds)
+        {
+            var layerResult = await RefreshLayerExtentAsync(
+                    connection,
+                    transaction,
+                    layerId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (layerResult != null)
+            {
+                layers.Add(layerResult);
+            }
+        }
+
+        await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken)
+            .ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        var layersWithExtent = layers.Count(layer => layer.HasExtent);
+        return new LayerExtentRefreshResult
+        {
+            ServiceName = normalizedService,
+            RefreshedLayerCount = layers.Count,
+            LayersWithExtent = layersWithExtent,
+            LayersWithoutExtent = layers.Count - layersWithExtent,
+            ServiceExtentUpdated = true,
+            Layers = layers
+        };
     }
 
     private async Task<TableInfo?> ResolveTableInfoAsync(
@@ -1212,6 +1266,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         string geometryColumn,
         string geometryType,
         int srid,
+        int storageSrid,
         LayerExtentInsert? extent,
         bool enabled,
         CancellationToken cancellationToken)
@@ -1240,12 +1295,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 @primaryKeyColumn,
                 @geometryColumn,
                 @storageOptions,
-                @srid,
+                @storageSrid,
                 @geometryType,
                 @srid,
                 CASE
                     WHEN @extentMinX IS NULL THEN NULL
-                    ELSE ST_MakeEnvelope(@extentMinX, @extentMinY, @extentMaxX, @extentMaxY, @srid)
+                    ELSE ST_MakeEnvelope(@extentMinX, @extentMinY, @extentMaxX, @extentMaxY, @extentSrid)
                 END,
                 TRUE,
                 @enabled
@@ -1263,10 +1318,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         command.Parameters.Add("@storageOptions", NpgsqlDbType.Jsonb).Value = SourceBackedStorageOptionsJson;
         command.Parameters.AddWithValue("@geometryType", geometryType);
         command.Parameters.AddWithValue("@srid", srid);
-        command.Parameters.AddWithValue("@extentMinX", (object?)extent?.MinX ?? DBNull.Value);
-        command.Parameters.AddWithValue("@extentMinY", (object?)extent?.MinY ?? DBNull.Value);
-        command.Parameters.AddWithValue("@extentMaxX", (object?)extent?.MaxX ?? DBNull.Value);
-        command.Parameters.AddWithValue("@extentMaxY", (object?)extent?.MaxY ?? DBNull.Value);
+        command.Parameters.AddWithValue("@storageSrid", storageSrid);
+        AddNullableDouble(command, "@extentMinX", extent?.MinX);
+        AddNullableDouble(command, "@extentMinY", extent?.MinY);
+        AddNullableDouble(command, "@extentMaxX", extent?.MaxX);
+        AddNullableDouble(command, "@extentMaxY", extent?.MaxY);
+        command.Parameters.AddWithValue("@extentSrid", extent?.Srid ?? CatalogExtentSrid);
         command.Parameters.AddWithValue("@enabled", enabled);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
@@ -1286,23 +1343,41 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         string schema,
         string table,
         string geometryColumn,
-        int srid,
+        int sourceSrid,
         CancellationToken cancellationToken)
     {
         var qualifiedTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
         var quotedGeometryColumn = QuoteIdentifier(geometryColumn);
+        var normalizedSourceSrid = sourceSrid > 0 ? sourceSrid : CatalogExtentSrid;
         var sql = $"""
-            SELECT ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent)
-            FROM (
-                SELECT ST_Extent({quotedGeometryColumn}::geometry) AS extent
+            WITH source_geometries AS (
+                SELECT {quotedGeometryColumn}::geometry AS geom
                 FROM {qualifiedTable}
                 WHERE {quotedGeometryColumn} IS NOT NULL
-                  AND ST_SRID({quotedGeometryColumn}::geometry) IN (0, @srid)
+            ),
+            catalog_geometries AS (
+                SELECT
+                    CASE
+                        WHEN geom IS NULL OR ST_IsEmpty(geom) THEN NULL
+                        WHEN COALESCE(NULLIF(ST_SRID(geom), 0), @sourceSrid) = @catalogSrid
+                            THEN ST_SetSRID(geom, @catalogSrid)
+                        ELSE ST_Transform(
+                            ST_SetSRID(geom, COALESCE(NULLIF(ST_SRID(geom), 0), @sourceSrid)),
+                            @catalogSrid)
+                    END AS geom
+                FROM source_geometries
+            )
+            SELECT ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent)
+            FROM (
+                SELECT ST_Extent(geom) AS extent
+                FROM catalog_geometries
+                WHERE geom IS NOT NULL
             ) AS extent_query;
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.AddWithValue("@srid", srid);
+        command.Parameters.AddWithValue("@sourceSrid", normalizedSourceSrid);
+        command.Parameters.AddWithValue("@catalogSrid", CatalogExtentSrid);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
         {
@@ -1313,7 +1388,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             reader.GetDouble(0),
             reader.GetDouble(1),
             reader.GetDouble(2),
-            reader.GetDouble(3));
+            reader.GetDouble(3),
+            CatalogExtentSrid);
     }
 
     private static async Task EnsureLayerSequenceAsync(
@@ -1388,55 +1464,58 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             : Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
-    private static async Task UpdateLayerExtentAsync(
+    private static async Task<LayerExtentRefreshLayerResult?> RefreshLayerExtentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
-        int srid,
         CancellationToken cancellationToken)
     {
+        var metadata = await GetLayerExtentRefreshMetadataAsync(
+                connection,
+                transaction,
+                layerId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (metadata == null)
+        {
+            return null;
+        }
+
+        var extent = await ReadLayerExtentAsync(
+                connection,
+                transaction,
+                metadata.Schema,
+                metadata.Table,
+                metadata.GeometryColumn,
+                metadata.SourceSrid,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         const string sql = """
-            WITH layer_geometries AS (
-                SELECT
-                    CASE
-                        WHEN geometry IS NULL THEN NULL
-                        WHEN COALESCE(NULLIF(ST_SRID(geometry), 0), @srid) = 4326
-                            THEN ST_SetSRID(geometry, 4326)
-                        ELSE ST_Transform(
-                            ST_SetSRID(geometry, COALESCE(NULLIF(ST_SRID(geometry), 0), @srid)),
-                            4326)
-                    END AS geom
-                FROM features
-                WHERE layer_id = @layerId
-                  AND geometry IS NOT NULL
-            ),
-            extent_box AS (
-                SELECT ST_Extent(geom) AS box
-                FROM layer_geometries
-            ),
-            computed_extent AS (
-                SELECT
-                    CASE
-                        WHEN box IS NULL THEN NULL
-                        ELSE ST_MakeEnvelope(
-                            ST_XMin(box),
-                            ST_YMin(box),
-                            ST_XMax(box),
-                            ST_YMax(box),
-                            4326)
-                    END AS extent
-                FROM extent_box
-            )
-            UPDATE honua.layers AS layer
-            SET extent = computed_extent.extent
-            FROM computed_extent
-            WHERE layer.layer_id = @layerId;
+            UPDATE honua.layers
+            SET extent = CASE
+                WHEN @extentMinX IS NULL THEN NULL
+                ELSE ST_MakeEnvelope(@extentMinX, @extentMinY, @extentMaxX, @extentMaxY, @extentSrid)
+            END
+            WHERE layer_id = @layerId;
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@layerId", layerId);
-        command.Parameters.AddWithValue("@srid", srid);
+        AddNullableDouble(command, "@extentMinX", extent?.MinX);
+        AddNullableDouble(command, "@extentMinY", extent?.MinY);
+        AddNullableDouble(command, "@extentMaxX", extent?.MaxX);
+        AddNullableDouble(command, "@extentMaxY", extent?.MaxY);
+        command.Parameters.AddWithValue("@extentSrid", extent?.Srid ?? CatalogExtentSrid);
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return new LayerExtentRefreshLayerResult
+        {
+            LayerId = metadata.LayerId,
+            LayerName = metadata.LayerName,
+            HasExtent = extent != null,
+            ExtentSrid = extent?.Srid
+        };
     }
 
     private static async Task UpdateServiceExtentAsync(
@@ -1464,7 +1543,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                             ST_YMin(box),
                             ST_XMax(box),
                             ST_YMax(box),
-                            4326)
+                            @catalogSrid)
                     END AS extent
                 FROM extent_box
             )
@@ -1477,7 +1556,94 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@serviceName", serviceName);
+        command.Parameters.AddWithValue("@catalogSrid", CatalogExtentSrid);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> ServiceExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string serviceName,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM honua.services
+                WHERE service_name = @serviceName
+            );
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@serviceName", serviceName);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is bool exists && exists;
+    }
+
+    private static async Task<List<int>> ListServiceLayerIdsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string serviceName,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT layer_id
+            FROM honua.service_layers
+            WHERE service_name = @serviceName
+            ORDER BY layer_order, layer_id;
+            """;
+
+        var layerIds = new List<int>();
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@serviceName", serviceName);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            layerIds.Add(reader.GetInt32(0));
+        }
+
+        return layerIds;
+    }
+
+    private static async Task<LayerExtentRefreshMetadata?> GetLayerExtentRefreshMetadataAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                layer_id,
+                layer_name,
+                table_schema,
+                table_name,
+                geometry_column,
+                COALESCE(NULLIF(storage_srid, 0), NULLIF(srid, 0), @catalogSrid) AS source_srid
+            FROM honua.layers
+            WHERE layer_id = @layerId;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@layerId", layerId);
+        command.Parameters.AddWithValue("@catalogSrid", CatalogExtentSrid);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        if (reader.IsDBNull(4))
+        {
+            return null;
+        }
+
+        return new LayerExtentRefreshMetadata(
+            reader.GetInt32(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            reader.GetInt32(5));
     }
 
     private static string BuildCanonicalGeometryExpression(string sourceGeometry)
@@ -1516,6 +1682,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
     private static string QuoteLiteral(string literal)
         => "'" + literal.Replace("'", "''", StringComparison.Ordinal) + "'";
+
+    private static void AddNullableDouble(NpgsqlCommand command, string name, double? value)
+    {
+        var parameter = command.Parameters.Add(name, NpgsqlDbType.Double);
+        parameter.Value = (object?)value ?? DBNull.Value;
+    }
 
     private static ColumnInfo? FindColumn(TableInfo tableInfo, string columnName)
         => tableInfo.Columns.FirstOrDefault(column =>
@@ -1963,7 +2135,16 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         double MinX,
         double MinY,
         double MaxX,
-        double MaxY);
+        double MaxY,
+        int Srid);
+
+    private sealed record LayerExtentRefreshMetadata(
+        int LayerId,
+        string LayerName,
+        string Schema,
+        string Table,
+        string GeometryColumn,
+        int SourceSrid);
 
     private readonly record struct GeometryHealth(
         long FeatureCount,

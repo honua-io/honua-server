@@ -70,4 +70,15 @@ public interface ILayerPublishingService
         string serviceName,
         bool enabled,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Recompute published layer extents and the containing service extent from source tables.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="serviceName">Service name whose layers should be refreshed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<LayerExtentRefreshResult?> RefreshLayerExtentsAsync(
+        string connectionString,
+        string serviceName,
+        CancellationToken cancellationToken = default);
 }

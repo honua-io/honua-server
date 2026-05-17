@@ -75,4 +75,22 @@ internal static partial class LayerPublishingLog
 
     [LoggerMessage(EventId = 9643, Level = LogLevel.Warning, Message = "Failed to invalidate service catalog cache for {ServiceName}")]
     public static partial void InvalidateServiceCatalogCacheFailed(ILogger logger, string? serviceName, Exception exception);
+
+    [LoggerMessage(EventId = 9644, Level = LogLevel.Error, Message = "Layer extent refresh migration failed: {Message}")]
+    public static partial void LayerExtentRefreshMigrationFailed(ILogger logger, string? message, Exception? exception);
+
+    [LoggerMessage(EventId = 9645, Level = LogLevel.Warning, Message = "Layer extent refresh not found")]
+    public static partial void LayerExtentRefreshNotFound(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9646, Level = LogLevel.Warning, Message = "Layer extent refresh failed")]
+    public static partial void LayerExtentRefreshFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9647, Level = LogLevel.Warning, Message = "Layer extent refresh invalid request")]
+    public static partial void LayerExtentRefreshInvalidRequest(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9648, Level = LogLevel.Warning, Message = "Layer extent refresh connection not found")]
+    public static partial void LayerExtentRefreshConnectionNotFound(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9649, Level = LogLevel.Error, Message = "Layer extent refresh failed due to invalid operation")]
+    public static partial void LayerExtentRefreshInvalidOperation(ILogger logger, Exception exception);
 }
