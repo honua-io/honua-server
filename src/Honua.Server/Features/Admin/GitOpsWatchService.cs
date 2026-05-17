@@ -94,13 +94,22 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
         LogPollNewCommit(_logger, config.RepositoryUrl, latestCommit.Sha);
 
-        var fetchResult = await FetchManifestContentAsync(config, latestCommit.Sha, cancellationToken)
+        if (!GitOpsWatchManifestPath.TryNormalize(config.ManifestPath, out var manifestPath, out var manifestPathError))
+        {
+            var errorMessage = manifestPathError ?? GitOpsWatchManifestPath.RelativePathErrorMessage;
+            await RecordManifestPathFailureAsync(watchStore, config, latestCommit, errorMessage, cancellationToken)
+                .ConfigureAwait(false);
+            LogManifestPathRejected(_logger, config.RepositoryUrl, errorMessage);
+            return pollInterval;
+        }
+
+        var fetchResult = await FetchManifestContentAsync(config, manifestPath, latestCommit.Sha, cancellationToken)
             .ConfigureAwait(false);
 
         if (fetchResult == null)
         {
             // Leave the commit unobserved so transient fetch, path, or parse failures retry on the next poll.
-            LogManifestFetchFailed(_logger, config.RepositoryUrl, config.ManifestPath);
+            LogManifestFetchFailed(_logger, config.RepositoryUrl, manifestPath);
             return pollInterval;
         }
 
@@ -339,6 +348,40 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         LogChangeApplied(_logger, commit.Sha, summary);
     }
 
+    private static async Task RecordManifestPathFailureAsync(
+        IGitOpsWatchStore watchStore,
+        GitOpsWatchConfig config,
+        GitCommitInfo commit,
+        string errorMessage,
+        CancellationToken cancellationToken)
+    {
+        var recentRecords = await watchStore.ListChangeRecordsAsync(10, 0, cancellationToken).ConfigureAwait(false);
+        if (recentRecords.Any(record =>
+                record.ConfigId == config.ConfigId &&
+                string.Equals(record.CommitSha, commit.Sha, StringComparison.Ordinal) &&
+                record.Status == GitOpsChangeStatus.Failed &&
+                string.Equals(record.ErrorMessage, errorMessage, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        var changeRecord = new GitOpsChangeRecord
+        {
+            ChangeId = Guid.NewGuid(),
+            ConfigId = config.ConfigId,
+            CommitSha = commit.Sha,
+            CommitMessage = commit.Message,
+            CommitAuthor = commit.Author,
+            CommitTimestamp = commit.Timestamp,
+            ManifestAfter = CreateEmptyManifestElement(),
+            Status = GitOpsChangeStatus.Failed,
+            ErrorMessage = errorMessage,
+            DetectedAt = DateTimeOffset.UtcNow
+        };
+
+        await watchStore.CreateChangeRecordAsync(changeRecord, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Fetches the latest commit information from the configured git repository
     /// using the git CLI.
@@ -387,6 +430,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
     /// </summary>
     private static async Task<ManifestFetchResult?> FetchManifestContentAsync(
         GitOpsWatchConfig config,
+        string manifestPath,
         string commitSha,
         CancellationToken cancellationToken)
     {
@@ -411,7 +455,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
             Directory.CreateDirectory(sparseCheckoutDir);
             await File.WriteAllTextAsync(
                 Path.Combine(sparseCheckoutDir, "sparse-checkout"),
-                config.ManifestPath + "\n",
+                string.Join("\n", GitOpsWatchManifestPath.BuildSparseCheckoutPatterns(manifestPath)) + "\n",
                 cancellationToken).ConfigureAwait(false);
 
             // Fetch only the specific commit
@@ -453,80 +497,17 @@ internal sealed partial class GitOpsWatchService : BackgroundService
                 }
             }
 
-            // Read manifest files and build a combined JSON array.
-            // Verify resolved paths stay within tempDir to prevent path traversal.
-            var manifestDir = Path.GetFullPath(Path.Combine(tempDir, config.ManifestPath.TrimEnd('/')));
-            if (!manifestDir.StartsWith(tempDir, StringComparison.Ordinal))
+            var manifestFile = ResolveManifestFile(tempDir, manifestPath);
+            if (manifestFile == null)
             {
                 return null;
             }
 
-            if (!Directory.Exists(manifestDir))
-            {
-                // Try as a single file path
-                var singleFile = Path.GetFullPath(Path.Combine(tempDir, config.ManifestPath));
-                if (!singleFile.StartsWith(tempDir, StringComparison.Ordinal))
-                {
-                    return null;
-                }
-
-                if (File.Exists(singleFile))
-                {
-                    var content = await File.ReadAllTextAsync(singleFile, cancellationToken).ConfigureAwait(false);
-                    using var doc = JsonDocument.Parse(content);
-                    return new ManifestFetchResult
-                    {
-                        ManifestContent = doc.RootElement.Clone(),
-                        CommitAuthor = commitAuthor,
-                        CommitMessage = commitMessage,
-                        CommitTimestamp = commitTimestamp
-                    };
-                }
-
-                return null;
-            }
-
-            var jsonFiles = Directory.GetFiles(manifestDir, "*.json", SearchOption.AllDirectories);
-            if (jsonFiles.Length == 0)
-            {
-                return null;
-            }
-
-            var resources = new List<JsonElement>();
-            foreach (var file in jsonFiles.OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
-            {
-                var content = await File.ReadAllTextAsync(file, cancellationToken).ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(content);
-                var root = doc.RootElement;
-
-                if (root.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in root.EnumerateArray())
-                    {
-                        resources.Add(item.Clone());
-                    }
-                }
-                else if (root.ValueKind == JsonValueKind.Object)
-                {
-                    // Check if it's a manifest wrapper with a "resources" array
-                    if (root.TryGetProperty("resources", out var resourcesArray) &&
-                        resourcesArray.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var item in resourcesArray.EnumerateArray())
-                        {
-                            resources.Add(item.Clone());
-                        }
-                    }
-                    else
-                    {
-                        resources.Add(root.Clone());
-                    }
-                }
-            }
-
+            var content = await File.ReadAllTextAsync(manifestFile, cancellationToken).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(content);
             return new ManifestFetchResult
             {
-                ManifestContent = JsonSerializer.SerializeToElement(resources),
+                ManifestContent = doc.RootElement.Clone(),
                 CommitAuthor = commitAuthor,
                 CommitMessage = commitMessage,
                 CommitTimestamp = commitTimestamp
@@ -560,6 +541,62 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         }
     }
 
+    private static string? ResolveManifestFile(string repositoryRoot, string manifestPath)
+    {
+        var exactPath = GetSafeRepositoryPath(repositoryRoot, manifestPath);
+        if (exactPath == null)
+        {
+            return null;
+        }
+
+        if (!GitOpsWatchManifestPath.IsDirectoryIntent(manifestPath) && IsRegularManifestFile(exactPath))
+        {
+            return exactPath;
+        }
+
+        if (!Directory.Exists(exactPath))
+        {
+            return null;
+        }
+
+        foreach (var fileName in new[] { GitOpsWatchManifestPath.HonuaManifestFileName, GitOpsWatchManifestPath.ManifestFileName })
+        {
+            var candidate = Path.GetFullPath(Path.Combine(exactPath, fileName));
+            if (IsWithinRepositoryRoot(repositoryRoot, candidate) && IsRegularManifestFile(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? GetSafeRepositoryPath(string repositoryRoot, string relativePath)
+    {
+        var fullPath = Path.GetFullPath(Path.Combine(repositoryRoot, relativePath));
+        return IsWithinRepositoryRoot(repositoryRoot, fullPath) ? fullPath : null;
+    }
+
+    private static bool IsWithinRepositoryRoot(string repositoryRoot, string fullPath)
+    {
+        var root = Path.GetFullPath(repositoryRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+                   Path.DirectorySeparatorChar;
+        var normalizedFullPath = Path.GetFullPath(fullPath);
+        return normalizedFullPath.StartsWith(root, StringComparison.Ordinal);
+    }
+
+    private static bool IsRegularManifestFile(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        var attributes = File.GetAttributes(path);
+        return !attributes.HasFlag(FileAttributes.Directory) &&
+               !attributes.HasFlag(FileAttributes.ReparsePoint);
+    }
+
     private static MetadataResource[]? DeserializeManifestResources(JsonElement manifestContent)
     {
         try
@@ -574,9 +611,22 @@ internal sealed partial class GitOpsWatchService : BackgroundService
             if (manifestContent.ValueKind == JsonValueKind.Object &&
                 manifestContent.TryGetProperty("resources", out var resourcesArray))
             {
+                if (resourcesArray.ValueKind != JsonValueKind.Array)
+                {
+                    return null;
+                }
+
                 return JsonSerializer.Deserialize(
                     resourcesArray.GetRawText(),
                     MetadataResourceJsonContext.Default.MetadataResourceArray);
+            }
+
+            if (manifestContent.ValueKind == JsonValueKind.Object)
+            {
+                var resource = JsonSerializer.Deserialize(
+                    manifestContent.GetRawText(),
+                    MetadataResourceJsonContext.Default.MetadataResource);
+                return resource == null ? null : [resource];
             }
 
             return null;
@@ -585,6 +635,12 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         {
             return null;
         }
+    }
+
+    private static JsonElement CreateEmptyManifestElement()
+    {
+        using var document = JsonDocument.Parse("[]");
+        return document.RootElement.Clone();
     }
 
     private static async Task<GitProcessResult?> RunGitCommandAsync(
@@ -695,6 +751,9 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
     [LoggerMessage(EventId = 9406, Level = LogLevel.Warning, Message = "GitOps could not fetch manifest from {RepositoryUrl} at path {ManifestPath}.")]
     private static partial void LogManifestFetchFailed(ILogger logger, string repositoryUrl, string manifestPath);
+
+    [LoggerMessage(EventId = 9412, Level = LogLevel.Warning, Message = "GitOps manifest path rejected for {RepositoryUrl}: {Error}.")]
+    private static partial void LogManifestPathRejected(ILogger logger, string repositoryUrl, string error);
 
     [LoggerMessage(EventId = 9407, Level = LogLevel.Warning, Message = "GitOps manifest from {RepositoryUrl} contained no resources.")]
     private static partial void LogManifestEmpty(ILogger logger, string repositoryUrl);

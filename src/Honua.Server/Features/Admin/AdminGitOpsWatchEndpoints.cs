@@ -100,11 +100,10 @@ internal static class AdminGitOpsWatchEndpoints
             return;
         }
 
-        var manifestPath = string.IsNullOrWhiteSpace(request.ManifestPath) ? "manifests/" : request.ManifestPath;
-        if (!IsRelativePath(manifestPath))
+        if (!GitOpsWatchManifestPath.TryNormalize(request.ManifestPath, out var manifestPath, out var manifestPathError))
         {
             await AdminResponseWriter.WriteErrorAsync(context, StatusCodes.Status400BadRequest,
-                "Manifest path must be a relative path without '..' segments.");
+                manifestPathError ?? GitOpsWatchManifestPath.RelativePathErrorMessage);
             return;
         }
 
@@ -420,22 +419,4 @@ internal static class AdminGitOpsWatchEndpoints
         return repositoryUrl.IndexOf('/', atIndex + 1, colonIndex - atIndex - 1) < 0;
     }
 
-    /// <summary>
-    /// Validates that a path is relative and does not contain traversal sequences.
-    /// Prevents path traversal via absolute paths or '..' segments.
-    /// </summary>
-    internal static bool IsRelativePath(string path)
-    {
-        if (string.IsNullOrEmpty(path))
-        {
-            return false;
-        }
-
-        if (path.StartsWith('/') || path.StartsWith('\\') || path.Contains(".."))
-        {
-            return false;
-        }
-
-        return true;
-    }
 }
