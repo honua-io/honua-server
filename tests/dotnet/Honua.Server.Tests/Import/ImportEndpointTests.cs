@@ -633,6 +633,80 @@ public class ImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task ImportFile_CustomTargetSchema_CanDiscoverAdHocImportSchema()
+    {
+        var requestedTableName = $"custom_schema_{Guid.NewGuid():N}";
+        var physicalTableName = $"imported_{requestedTableName}".ToLowerInvariant();
+        var targetSchema = $"adhoc_{Guid.NewGuid():N}";
+
+        try
+        {
+            var geoJsonContent = """
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [-157.8583, 21.3069]
+                        },
+                        "properties": {
+                            "name": "Ad Hoc Schema Point"
+                        }
+                    }
+                ]
+            }
+            """;
+
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+            {
+                Name = "File",
+                FileName = "custom-schema.geojson"
+            };
+            content.Add(fileContent);
+            content.Add(new StringContent(requestedTableName), "TableName");
+            content.Add(new StringContent(targetSchema), "TargetSchema");
+            content.Add(new StringContent("4326"), "TargetSrid");
+            content.Add(new StringContent("true"), "OverwriteExisting");
+
+            var importResponse = await _client.PostAsync("/api/v1/admin/import/upload", content);
+            var importPayload = await importResponse.Content.ReadAsStringAsync();
+            importResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {importPayload}");
+
+            await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+            {
+                var tableExists = await TableExistsAsync(connection, targetSchema, physicalTableName);
+                tableExists.Should().BeTrue("imports should create valid ad hoc target schemas");
+            }
+
+            var connectionId = await _fixture.GetTestSecureConnectionIdAsync()
+                ?? throw new InvalidOperationException("Test secure connection was not initialized.");
+            var discoveryResponse = await _client.GetAsync($"/api/v1/admin/connections/{connectionId}/tables");
+            var discoveryPayload = await discoveryResponse.Content.ReadAsStringAsync();
+            discoveryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {discoveryPayload}");
+
+            var discovery = JsonSerializer.Deserialize<TableDiscoveryResponse>(discoveryPayload, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            discovery.Should().NotBeNull();
+            discovery!.Tables.Should().Contain(table =>
+                table.Schema == targetSchema &&
+                table.Table == physicalTableName &&
+                table.GeometryColumn == "geometry");
+        }
+        finally
+        {
+            await DropSchemaIfExistsAsync(targetSchema);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task ImportFile_RepeatRequest_WithValidRequest_ReturnsImportResult()
     {
         // Arrange
@@ -991,6 +1065,15 @@ public class ImportEndpointTests : IAsyncLifetime
             """.Replace("\"PLACEHOLDER\"", QuoteIdentifier(tableName), StringComparison.Ordinal);
         command.Parameters.AddWithValue("layerId", (object?)layerId ?? DBNull.Value);
         command.Parameters.AddWithValue("serviceName", serviceName);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task DropSchemaIfExistsAsync(string schemaName)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DROP SCHEMA IF EXISTS PLACEHOLDER CASCADE;"
+            .Replace("PLACEHOLDER", QuoteIdentifier(schemaName), StringComparison.Ordinal);
         await command.ExecuteNonQueryAsync();
     }
 

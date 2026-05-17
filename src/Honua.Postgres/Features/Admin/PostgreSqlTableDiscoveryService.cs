@@ -90,11 +90,6 @@ internal sealed class PostgreSqlTableDiscoveryService(
         await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var discoverySchemas = _schemaConfiguration.ResolveDiscoverySchemas(_schemaContext?.CurrentSchema);
-        if (discoverySchemas.Count == 0)
-        {
-            return [];
-        }
-
         const string sql = """
             SELECT DISTINCT
                 f_table_schema as schema,
@@ -104,8 +99,14 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 srid,
                 'geometry' as column_type
             FROM geometry_columns
-            WHERE f_table_schema = ANY(@discoverySchemas)
-              AND f_table_schema <> ALL(@metadataSchemas)
+            WHERE f_table_schema <> ALL(@metadataSchemas)
+              AND (
+                  f_table_schema = ANY(@discoverySchemas)
+                  OR (
+                      f_table_schema <> 'information_schema'
+                      AND f_table_schema !~ '^pg_'
+                  )
+              )
 
             UNION ALL
 
@@ -117,8 +118,14 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 srid,
                 'geography' as column_type
             FROM geography_columns
-            WHERE f_table_schema = ANY(@discoverySchemas)
-              AND f_table_schema <> ALL(@metadataSchemas)
+            WHERE f_table_schema <> ALL(@metadataSchemas)
+              AND (
+                  f_table_schema = ANY(@discoverySchemas)
+                  OR (
+                      f_table_schema <> 'information_schema'
+                      AND f_table_schema !~ '^pg_'
+                  )
+              )
 
             ORDER BY schema, table_name
             """;
