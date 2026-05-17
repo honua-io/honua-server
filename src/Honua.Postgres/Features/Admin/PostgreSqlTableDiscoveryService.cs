@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Postgres.Features.Admin;
 
@@ -20,10 +21,15 @@ namespace Honua.Postgres.Features.Admin;
 /// </remarks>
 internal sealed class PostgreSqlTableDiscoveryService(
     ILogger<PostgreSqlTableDiscoveryService> logger,
-    ISchemaContext? schemaContext = null) : ITableDiscoveryService
+    ISchemaContext? schemaContext = null,
+    PostgresSchemaConfiguration? schemaConfiguration = null) : ITableDiscoveryService
 {
     private readonly ILogger<PostgreSqlTableDiscoveryService> _logger = logger;
     private readonly ISchemaContext? _schemaContext = schemaContext;
+    private readonly PostgresSchemaConfiguration _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
+        PostgresSchemaConfiguration.DefaultMetadataSchema,
+        PostgresSchemaConfiguration.DefaultDataSchema,
+        [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
 
     /// <inheritdoc />
     public async Task<List<TableInfo>> DiscoverPostGisTablesAsync(
@@ -83,6 +89,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
     {
         await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
+        var discoverySchemas = _schemaConfiguration.ResolveDiscoverySchemas(_schemaContext?.CurrentSchema);
         const string sql = """
             SELECT DISTINCT
                 f_table_schema as schema,
@@ -92,7 +99,14 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 srid,
                 'geometry' as column_type
             FROM geometry_columns
-            WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema', 'topology')
+            WHERE f_table_schema <> ALL(@metadataSchemas)
+              AND (
+                  f_table_schema = ANY(@discoverySchemas)
+                  OR (
+                      f_table_schema <> 'information_schema'
+                      AND f_table_schema !~ '^pg_'
+                  )
+              )
 
             UNION ALL
 
@@ -104,7 +118,14 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 srid,
                 'geography' as column_type
             FROM geography_columns
-            WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema', 'topology')
+            WHERE f_table_schema <> ALL(@metadataSchemas)
+              AND (
+                  f_table_schema = ANY(@discoverySchemas)
+                  OR (
+                      f_table_schema <> 'information_schema'
+                      AND f_table_schema !~ '^pg_'
+                  )
+              )
 
             ORDER BY schema, table_name
             """;
@@ -112,8 +133,11 @@ internal sealed class PostgreSqlTableDiscoveryService(
         var discoveredTables = new Dictionary<string, (string Schema, string Table, string GeometryColumn, string GeometryType, int Srid)>();
 
         await using (var command = new NpgsqlCommand(sql, connection))
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
+            command.Parameters.Add("discoverySchemas", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = discoverySchemas.ToArray();
+            command.Parameters.Add("metadataSchemas", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = _schemaConfiguration.MetadataSchemas.ToArray();
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
                 string schema = reader.GetString(0);

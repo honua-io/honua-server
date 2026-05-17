@@ -43,13 +43,14 @@ public sealed class GeoservicesImportServiceSqlTests
 
         method.Should().NotBeNull();
 
-        var sql = (string)method!.Invoke(null, new object[] { "test_table", layerInfo, 4326 })!;
+        var sql = (string)method!.Invoke(null, new object[] { "honua_data", "test_table", layerInfo, 4326 })!;
 
         var lines = sql.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         lines[^1].Trim().Should().Be(");");
         lines[^2].TrimEnd('\r').TrimEnd().Should().NotEndWith(",");
 
         sql.Should().Contain("objectid BIGSERIAL PRIMARY KEY");
+        sql.Should().Contain("CREATE TABLE \"honua_data\".\"test_table\"");
         sql.Should().Contain("geom geometry(POINT, 4326)");
         sql.Should().Contain("\"name\"");
     }

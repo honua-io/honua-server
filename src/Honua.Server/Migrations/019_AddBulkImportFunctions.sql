@@ -4,6 +4,7 @@
 -- Bulk import helper functions for memory-efficient feature insertion
 
 CREATE OR REPLACE FUNCTION honua.bulk_insert_import_features(
+    schema_name text,
     table_name text,
     wkb_array bytea[],
     source_srid_array integer[],
@@ -30,7 +31,7 @@ BEGIN
     -- Bulk insert using unnest for optimal performance
     BEGIN
         EXECUTE format(
-            'INSERT INTO %I (geometry, properties)
+            'INSERT INTO %I.%I (geometry, properties)
              SELECT CASE
                         WHEN wkb IS NOT NULL AND srid > 0
                         THEN ST_Transform(ST_GeomFromWKB(wkb, srid), %s)
@@ -38,7 +39,7 @@ BEGIN
                     END,
                     props
              FROM unnest($1, $2, $3) AS t(wkb, srid, props)',
-            table_name, target_srid)
+            schema_name, table_name, target_srid)
         USING wkb_array, source_srid_array, properties_array;
 
         processed := max_i;
@@ -48,8 +49,8 @@ BEGIN
             WHILE i <= max_i LOOP
                 BEGIN
                     EXECUTE format(
-                        'INSERT INTO %I (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB($1, $2), $3), $4)',
-                        table_name)
+                        'INSERT INTO %I.%I (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB($1, $2), $3), $4)',
+                        schema_name, table_name)
                     USING wkb_array[i], source_srid_array[i], target_srid, properties_array[i];
                     processed := processed + 1;
                 EXCEPTION
@@ -61,6 +62,28 @@ BEGIN
     END;
 
     RETURN QUERY SELECT processed, failed;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION honua.bulk_insert_import_features(
+    table_name text,
+    wkb_array bytea[],
+    source_srid_array integer[],
+    target_srid integer,
+    properties_array jsonb[])
+RETURNS TABLE(processed_count integer, failed_count integer)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT *
+    FROM honua.bulk_insert_import_features(
+        'honua_data',
+        table_name,
+        wkb_array,
+        source_srid_array,
+        target_srid,
+        properties_array);
 END;
 $$;
 

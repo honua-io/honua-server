@@ -33,19 +33,25 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly ICrsRegistry _crsRegistry;
     private readonly ILayerPublishingService? _layerPublishingService;
     private readonly ILogger<GeoservicesImportService> _logger;
+    private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
     public GeoservicesImportService(
         ArcGisRestClient restClient,
         IDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
         ILogger<GeoservicesImportService> logger,
-        ILayerPublishingService? layerPublishingService = null)
+        ILayerPublishingService? layerPublishingService = null,
+        PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _layerPublishingService = layerPublishingService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
+            PostgresSchemaConfiguration.DefaultMetadataSchema,
+            PostgresSchemaConfiguration.DefaultDataSchema,
+            [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
     }
 
     /// <inheritdoc />
@@ -1115,6 +1121,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             ? Guid.NewGuid().ToString("N")[..8]
             : request.JobId;
         var startedAt = DateTimeOffset.UtcNow;
+        var targetSchema = ResolveTargetSchema(request.TargetSchema);
 
         Log.ImportStarting(_logger, request.ServiceUrl, request.LayerId, request.TableName);
 
@@ -1143,7 +1150,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.CreatingTable, request,
                 "Creating PostGIS table", 0, totalFeatures, layerInfo.Name);
 
-            await CreateTableAsync(connection, request.TableName, layerInfo, request.TargetSrid,
+            await CreateTableAsync(connection, targetSchema, request.TableName, layerInfo, request.TargetSrid,
                 request.OverwriteExisting, cancellationToken);
 
             // Phase 3: Retrieve and insert features
@@ -1185,6 +1192,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
                 var (inserted, failed) = await InsertFeaturesAsync(
                     connection,
+                    targetSchema,
                     request.TableName,
                     layerInfo,
                     queryResult.Features,
@@ -1209,8 +1217,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Publishing, request,
                 "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
 
-            await CreateSpatialIndexAsync(connection, request.TableName, cancellationToken);
-            await AnalyzeTableAsync(connection, request.TableName, cancellationToken);
+            await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
+            await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
 
@@ -1219,6 +1227,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             {
                 publishedLayer = await TryPublishImportedLayerAsync(
                     request,
+                    targetSchema,
                     layerInfo,
                     warnings,
                     progress,
@@ -1276,6 +1285,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
     private async Task CreateTableAsync(
         NpgsqlConnection connection,
+        string schemaName,
         string tableName,
         GeoservicesLayerInfo layerInfo,
         int targetSrid,
@@ -1285,11 +1295,11 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         if (overwriteExisting)
         {
             await using var dropCmd = connection.CreateCommand();
-            dropCmd.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(tableName)} CASCADE";
+            dropCmd.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} CASCADE";
             await dropCmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        var createSql = BuildCreateTableSql(tableName, layerInfo, targetSrid);
+        var createSql = BuildCreateTableSql(schemaName, tableName, layerInfo, targetSrid);
         await using var createCmd = connection.CreateCommand();
         createCmd.CommandText = createSql;
         await createCmd.ExecuteNonQueryAsync(cancellationToken);
@@ -1297,7 +1307,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         Log.TableCreated(_logger, tableName);
     }
 
-    private static string BuildCreateTableSql(string tableName, GeoservicesLayerInfo layerInfo, int targetSrid)
+    private static string BuildCreateTableSql(string schemaName, string tableName, GeoservicesLayerInfo layerInfo, int targetSrid)
     {
         var columns = new List<string>
         {
@@ -1323,7 +1333,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {QuoteIdentifier(tableName)} (");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE SCHEMA IF NOT EXISTS {QuoteIdentifier(schemaName)};");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} (");
 
         for (var i = 0; i < columns.Count; i++)
         {
@@ -1359,6 +1370,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
     private async Task<(int inserted, int failed)> InsertFeaturesAsync(
         NpgsqlConnection connection,
+        string schemaName,
         string tableName,
         GeoservicesLayerInfo layerInfo,
         ArcGisFeature[] features,
@@ -1386,7 +1398,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             parameterPlaceholders += $", ST_SetSRID(ST_GeomFromGeoJSON(@geom), {targetSrid})";
         }
 
-        var insertSql = $"INSERT INTO {QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders})";
+        var insertSql = $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders})";
 
         // Create the command once, add parameters with placeholder values, and prepare
         await using var cmd = connection.CreateCommand();
@@ -1880,27 +1892,50 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    private async Task CreateSpatialIndexAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellationToken)
+    private async Task CreateSpatialIndexAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(tableName + "_geom_idx")} ON {QuoteIdentifier(tableName)} USING GIST (geom)";
+        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(tableName + "_geom_idx")} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         Log.SpatialIndexCreated(_logger, tableName);
     }
 
-    private static async Task AnalyzeTableAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellationToken)
+    private static async Task AnalyzeTableAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"ANALYZE {QuoteIdentifier(tableName)}";
+        cmd.CommandText = $"ANALYZE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private Task<NpgsqlConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken)
         => _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken);
 
+    private string ResolveTargetSchema(string? requestedSchema)
+    {
+        var schema = string.IsNullOrWhiteSpace(requestedSchema)
+            ? _schemaConfiguration.DefaultOperationalSchema
+            : requestedSchema.Trim();
+
+        if (!SchemaSearchPath.IsValidIdentifier(schema))
+        {
+            throw new ArgumentException("Target schema contains invalid characters.", nameof(requestedSchema));
+        }
+
+        return schema;
+    }
+
     private async Task<PublishedLayerSummary?> TryPublishImportedLayerAsync(
         GeoservicesImportRequest request,
+        string targetSchema,
         GeoservicesLayerInfo layerInfo,
         List<string> warnings,
         IProgress<GeoservicesImportProgress>? progress,
@@ -1936,7 +1971,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
             var publishRequest = new LayerPublishRequest
             {
-                Schema = "public",
+                Schema = targetSchema,
                 Table = request.TableName,
                 LayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
                 Description = layerInfo.Description,

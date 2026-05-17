@@ -74,6 +74,8 @@ internal static class ServiceCollectionExtensions
         var connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
 
         var defaultSchema = configuration["Database:Schema"];
+        var schemaConfiguration = PostgresSchemaConfiguration.FromConfiguration(configuration);
+        services.TryAddSingleton(schemaConfiguration);
 
         // Register concurrency gate as singleton — shared across all scoped providers.
         // Factory form so the DI container tracks the IDisposable for shutdown disposal.
@@ -300,7 +302,8 @@ internal static class ServiceCollectionExtensions
                 performanceMonitor,
                 logger,
                 limits,
-                cloudStorage);
+                cloudStorage,
+                serviceProvider.GetRequiredService<PostgresSchemaConfiguration>());
         });
 
         // Register universal import job service using unified progress store

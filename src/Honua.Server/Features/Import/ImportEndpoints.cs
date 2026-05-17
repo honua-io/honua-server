@@ -466,6 +466,16 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        if (!string.IsNullOrWhiteSpace(request.TargetSchema) &&
+            !ImportValidationHelpers.IsValidSchemaName(request.TargetSchema))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Invalid target schema. Use only letters, numbers, and underscores.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
@@ -495,6 +505,7 @@ internal static partial class ImportEndpoints
             SourceUrl = request.SourceUrl,
             SourceSrid = request.SourceSrid,
             TargetSrid = request.TargetSrid,
+            TargetSchema = request.TargetSchema,
             OverwriteExisting = request.OverwriteExisting,
             ForceBackground = request.ForceBackground,
             TrackProgress = request.TrackProgress
@@ -569,6 +580,7 @@ internal static partial class ImportEndpoints
                 SourceUrl = request.SourceUrl,
                 UploadId = uploadId,
                 TableName = request.TableName,
+                TargetSchema = request.TargetSchema,
                 SourceSrid = request.SourceSrid,
                 TargetSrid = request.TargetSrid,
                 OverwriteExisting = request.OverwriteExisting
@@ -861,6 +873,16 @@ internal static partial class ImportEndpoints
                     StatusCodes.Status400BadRequest);
             }
 
+            var targetSchema = NormalizeOptionalField(fields, "TargetSchema");
+            if (!string.IsNullOrWhiteSpace(targetSchema) &&
+                !ImportValidationHelpers.IsValidSchemaName(targetSchema))
+            {
+                MultipartParsingHelpers.TryDeleteFile(stagedFile.LocalFilePath);
+                return MultipartImportParseResult.Failure(
+                    "Invalid target schema. Use only letters, numbers, and underscores.",
+                    StatusCodes.Status400BadRequest);
+            }
+
             var request = new ImportExecutionRequest
             {
                 File = stagedFile,
@@ -868,6 +890,7 @@ internal static partial class ImportEndpoints
                 UploadId = NormalizeOptionalOperationId(fields, "UploadId"),
                 SourceSrid = TryParseNullableInt(fields, "SourceSrid"),
                 TargetSrid = TryParseNullableInt(fields, "TargetSrid") ?? 4326,
+                TargetSchema = targetSchema,
                 OverwriteExisting = TryParseBool(fields, "OverwriteExisting"),
                 ForceBackground = TryParseBool(fields, "ForceBackground"),
                 TrackProgress = TryParseBool(fields, "TrackProgress")
@@ -1059,6 +1082,11 @@ internal static partial class ImportEndpoints
 
         return trimmed;
     }
+
+    private static string? NormalizeOptionalField(Dictionary<string, string> fields, string fieldName)
+        => fields.TryGetValue(fieldName, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : null;
 
     private static bool TryParseBool(Dictionary<string, string> fields, string fieldName)
         => fields.TryGetValue(fieldName, out var value) &&
@@ -1466,6 +1494,7 @@ internal sealed record ImportUrlImportRequest
     public required string SourceUrl { get; init; }
     public string? FileName { get; init; }
     public required string TableName { get; init; }
+    public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
     public int TargetSrid { get; init; } = 4326;
     public bool OverwriteExisting { get; init; }
@@ -1488,6 +1517,7 @@ internal sealed record ImportExecutionRequest
     public string SourceKind { get; init; } = "file";
     public string? SourceUrl { get; init; }
     public string? UploadId { get; init; }
+    public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
     public int TargetSrid { get; init; } = 4326;
     public bool OverwriteExisting { get; init; }

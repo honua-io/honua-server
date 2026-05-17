@@ -48,6 +48,12 @@ public sealed record GeoservicesImportRequest
     public required string TableName { get; init; }
 
     /// <summary>
+    /// Optional target schema for imported operational data.
+    /// When omitted, the configured PostgreSQL operational-data schema is used.
+    /// </summary>
+    public string? TargetSchema { get; init; }
+
+    /// <summary>
     /// Target coordinate reference system ID (for transformation).
     /// Default is 4326 (WGS84).
     /// </summary>
