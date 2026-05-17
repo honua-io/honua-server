@@ -148,7 +148,9 @@ internal static class AdminMetadataEndpoints
                 ManifestDryRun = true,
                 ManifestPrune = true,
                 ManifestApproval = approvalEnabled,
-                GitOpsWatch = gitOpsWatchEnabled
+                GitOpsWatch = gitOpsWatchEnabled,
+                AdminRealtime = true,
+                ObservabilityStatus = true
             }
         };
     }

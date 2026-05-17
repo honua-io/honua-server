@@ -17,6 +17,10 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class ObservabilityEndpoints
 {
+    private const string ExporterStateConfigured = "configured";
+    private const string ExporterStateDisabled = "disabled";
+    private const string ExporterStateMisconfigured = "misconfigured";
+    private const string ExporterStateNotConfigured = "notConfigured";
     private const string MigrationPlanUnavailableMessage = "Migration planning is temporarily unavailable.";
 
     public static void MapAdminObservabilityEndpoints(this IEndpointRouteBuilder endpoints)
@@ -61,12 +65,36 @@ internal static class ObservabilityEndpoints
     {
         var tracingOptions = options.Value;
         var otlpEndpoint = ResolveOtlpEndpoint(tracingOptions, configuration);
+        var otlpHeaders = ResolveOtlpHeaders(tracingOptions, configuration);
+        var otlpConfigured = !string.IsNullOrWhiteSpace(otlpEndpoint);
+        var otlpEndpointValid = IsValidOtlpEndpoint(otlpEndpoint);
+        var telemetryPipelineConfigured = IsTelemetryPipelineConfigured(configuration);
+        var otlpExporterState = telemetryPipelineConfigured
+            ? ResolveOtlpExporterState(otlpConfigured, otlpEndpointValid)
+            : ExporterStateDisabled;
 
         var response = new ObservabilityStatusResponse
         {
+            GeneratedAt = DateTimeOffset.UtcNow,
+            Realtime = new ObservabilityRealtimeStatus
+            {
+                Supported = true,
+                HubPath = AdminRealtimeContract.HubPath,
+                Protocol = AdminRealtimeContract.Protocol,
+                Events = [AdminRealtimeContract.StatusChangedEventName]
+            },
             TracingEnabled = tracingOptions.Enabled,
-            OtlpConfigured = tracingOptions.Enabled && !string.IsNullOrWhiteSpace(otlpEndpoint),
-            OtlpEndpoint = string.IsNullOrWhiteSpace(otlpEndpoint) ? null : otlpEndpoint
+            MetricsEnabled = telemetryPipelineConfigured,
+            LogsEnabled = telemetryPipelineConfigured,
+            OtlpConfigured = otlpConfigured,
+            OtlpEndpointValid = otlpEndpointValid,
+            OtlpEndpoint = otlpConfigured ? otlpEndpoint : null,
+            OtlpHeadersConfigured = !string.IsNullOrWhiteSpace(otlpHeaders),
+            OtlpExporterState = otlpExporterState,
+            TraceExportState = tracingOptions.Enabled ? otlpExporterState : ExporterStateDisabled,
+            MetricsExportState = telemetryPipelineConfigured ? otlpExporterState : ExporterStateDisabled,
+            LogExportState = telemetryPipelineConfigured ? otlpExporterState : ExporterStateDisabled,
+            LastExportError = null
         };
 
         return Results.Json(response, MetricsJsonContext.Default.ObservabilityStatusResponse);
@@ -129,6 +157,37 @@ internal static class ObservabilityEndpoints
         }
 
         return configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+    }
+
+    private static string? ResolveOtlpHeaders(TracingOptions tracingOptions, IConfiguration configuration)
+    {
+        if (!string.IsNullOrWhiteSpace(tracingOptions.OtlpHeaders))
+        {
+            return tracingOptions.OtlpHeaders;
+        }
+
+        return configuration["OTEL_EXPORTER_OTLP_HEADERS"];
+    }
+
+    private static bool IsTelemetryPipelineConfigured(IConfiguration configuration)
+    {
+        var tracingSection = configuration.GetSection(TracingOptions.SectionName);
+        return tracingSection.Exists() || tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled));
+    }
+
+    private static bool IsValidOtlpEndpoint(string? otlpEndpoint)
+        => !string.IsNullOrWhiteSpace(otlpEndpoint) &&
+           Uri.TryCreate(otlpEndpoint, UriKind.Absolute, out var uri) &&
+           (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private static string ResolveOtlpExporterState(bool otlpConfigured, bool otlpEndpointValid)
+    {
+        if (!otlpConfigured)
+        {
+            return ExporterStateNotConfigured;
+        }
+
+        return otlpEndpointValid ? ExporterStateConfigured : ExporterStateMisconfigured;
     }
 
     private static string GetMigrationStatusLabel(MigrationLifecycleStatus status) =>

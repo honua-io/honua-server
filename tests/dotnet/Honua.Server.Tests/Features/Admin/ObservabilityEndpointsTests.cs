@@ -12,6 +12,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -131,32 +132,144 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/telemetry")]
-    public async Task GetTelemetryStatus_ReturnsTracingEnabledAndEndpointInfo()
+    public async Task GetTelemetryStatus_WhenOtlpNotConfigured_ReturnsRealtimeCapabilityAndNormalState()
     {
-        var response = await _client.GetAsync("/api/v1/admin/observability/telemetry");
+        var fixture = CreateTelemetryFixture(new Dictionary<string, string?>
+        {
+            ["Tracing:Enabled"] = "true",
+            ["Tracing:OtlpEndpoint"] = "",
+            ["Tracing:OtlpHeaders"] = "",
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
+            ["OTEL_EXPORTER_OTLP_HEADERS"] = ""
+        });
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
 
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var root = document.RootElement;
-        root.TryGetProperty("tracingEnabled", out _).Should().BeTrue();
-        root.TryGetProperty("otlpConfigured", out _).Should().BeTrue();
+            var response = await client.GetAsync("/api/v1/admin/observability/telemetry");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+
+            var realtime = root.GetProperty("realtime");
+            realtime.GetProperty("supported").GetBoolean().Should().BeTrue();
+            realtime.GetProperty("hubPath").GetString().Should().Be("/hubs/admin");
+            realtime.GetProperty("protocol").GetString().Should().Be("signalr");
+            realtime.GetProperty("events").EnumerateArray()
+                .Should()
+                .Contain(element => element.GetString() == "AdminStatusChanged");
+
+            root.GetProperty("tracingEnabled").GetBoolean().Should().BeTrue();
+            root.GetProperty("metricsEnabled").GetBoolean().Should().BeTrue();
+            root.GetProperty("logsEnabled").GetBoolean().Should().BeTrue();
+            root.GetProperty("otlpConfigured").GetBoolean().Should().BeFalse();
+            root.GetProperty("otlpEndpointValid").GetBoolean().Should().BeFalse();
+            root.GetProperty("otlpHeadersConfigured").GetBoolean().Should().BeFalse();
+            root.GetProperty("otlpExporterState").GetString().Should().Be("notConfigured");
+            root.GetProperty("traceExportState").GetString().Should().Be("notConfigured");
+            root.GetProperty("metricsExportState").GetString().Should().Be("notConfigured");
+            root.GetProperty("logExportState").GetString().Should().Be("notConfigured");
+            root.GetProperty("lastExportError").ValueKind.Should().Be(JsonValueKind.Null);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/telemetry")]
+    public async Task GetTelemetryStatus_WhenOtlpConfigured_ReturnsConfiguredExporterState()
+    {
+        var fixture = CreateTelemetryFixture(new Dictionary<string, string?>
+        {
+            ["Tracing:Enabled"] = "true",
+            ["Tracing:OtlpEndpoint"] = "http://localhost:4317",
+            ["Tracing:OtlpHeaders"] = "Authorization=Bearer test-token",
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
+            ["OTEL_EXPORTER_OTLP_HEADERS"] = ""
+        });
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+
+            var response = await client.GetAsync("/api/v1/admin/observability/telemetry");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            root.GetProperty("tracingEnabled").GetBoolean().Should().BeTrue();
+            root.GetProperty("otlpConfigured").GetBoolean().Should().BeTrue();
+            root.GetProperty("otlpEndpointValid").GetBoolean().Should().BeTrue();
+            root.GetProperty("otlpEndpoint").GetString().Should().Be("http://localhost:4317");
+            root.GetProperty("otlpHeadersConfigured").GetBoolean().Should().BeTrue();
+            root.GetProperty("otlpExporterState").GetString().Should().Be("configured");
+            root.GetProperty("traceExportState").GetString().Should().Be("configured");
+            root.GetProperty("metricsExportState").GetString().Should().Be("configured");
+            root.GetProperty("logExportState").GetString().Should().Be("configured");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/telemetry")]
+    public async Task GetTelemetryStatus_WhenOtlpEndpointInvalid_ReturnsMisconfiguredExporterState()
+    {
+        var fixture = CreateTelemetryFixture(new Dictionary<string, string?>
+        {
+            ["Tracing:Enabled"] = "true",
+            ["Tracing:OtlpEndpoint"] = "not-a-uri",
+            ["Tracing:OtlpHeaders"] = "",
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
+            ["OTEL_EXPORTER_OTLP_HEADERS"] = ""
+        });
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+
+            var response = await client.GetAsync("/api/v1/admin/observability/telemetry");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            root.GetProperty("otlpConfigured").GetBoolean().Should().BeTrue();
+            root.GetProperty("otlpEndpointValid").GetBoolean().Should().BeFalse();
+            root.GetProperty("otlpExporterState").GetString().Should().Be("misconfigured");
+            root.GetProperty("traceExportState").GetString().Should().Be("misconfigured");
+            root.GetProperty("metricsExportState").GetString().Should().Be("misconfigured");
+            root.GetProperty("logExportState").GetString().Should().Be("misconfigured");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/telemetry")]
     public async Task GetTelemetryStatus_WhenTracingDisabled_ReturnsDisabledStatus()
     {
-        var disabledFixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("Tracing:Enabled", "false");
-            })
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IDatabaseMigrationRunner>();
-                services.AddSingleton<IDatabaseMigrationRunner>(new StubDatabaseMigrationRunner());
-            });
+        var disabledFixture = CreateTelemetryFixture(new Dictionary<string, string?>
+        {
+            ["Tracing:Enabled"] = "false",
+            ["Tracing:OtlpEndpoint"] = "",
+            ["Tracing:OtlpHeaders"] = "",
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
+            ["OTEL_EXPORTER_OTLP_HEADERS"] = ""
+        });
 
         try
         {
@@ -170,13 +283,39 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var root = document.RootElement;
             root.GetProperty("tracingEnabled").GetBoolean().Should().BeFalse();
+            root.GetProperty("metricsEnabled").GetBoolean().Should().BeTrue();
+            root.GetProperty("logsEnabled").GetBoolean().Should().BeTrue();
             root.GetProperty("otlpConfigured").GetBoolean().Should().BeFalse();
+            root.GetProperty("otlpExporterState").GetString().Should().Be("notConfigured");
+            root.GetProperty("traceExportState").GetString().Should().Be("disabled");
+            root.GetProperty("metricsExportState").GetString().Should().Be("notConfigured");
+            root.GetProperty("logExportState").GetString().Should().Be("notConfigured");
         }
         finally
         {
             await disabledFixture.DisposeAsync();
         }
     }
+
+    private static WebAppFixture CreateTelemetryFixture(IReadOnlyDictionary<string, string?> settings)
+        => new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                foreach (var setting in settings)
+                {
+                    builder.UseSetting(setting.Key, setting.Value);
+                }
+
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(settings);
+                });
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDatabaseMigrationRunner>();
+                services.AddSingleton<IDatabaseMigrationRunner>(new StubDatabaseMigrationRunner());
+            });
 
     private sealed class StubDatabaseMigrationRunner : IDatabaseMigrationRunner
     {

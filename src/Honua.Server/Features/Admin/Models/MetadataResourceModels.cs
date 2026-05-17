@@ -353,6 +353,18 @@ public sealed class AdminCompatibilityFeatureFlags
     /// </summary>
     [JsonPropertyName("gitOpsWatch")]
     public bool GitOpsWatch { get; init; }
+
+    /// <summary>
+    /// Indicates support for the admin realtime status hub.
+    /// </summary>
+    [JsonPropertyName("adminRealtime")]
+    public bool AdminRealtime { get; init; }
+
+    /// <summary>
+    /// Indicates support for the admin observability status endpoints.
+    /// </summary>
+    [JsonPropertyName("observabilityStatus")]
+    public bool ObservabilityStatus { get; init; }
 }
 
 /// <summary>

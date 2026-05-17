@@ -88,6 +88,8 @@ public sealed class MetadataResourceEndpointsTests : IAsyncLifetime
         apiResponse.Data.Compatibility.Features.ManifestApply.Should().BeTrue();
         apiResponse.Data.Compatibility.Features.ManifestDryRun.Should().BeTrue();
         apiResponse.Data.Compatibility.Features.ManifestPrune.Should().BeTrue();
+        apiResponse.Data.Compatibility.Features.AdminRealtime.Should().BeTrue();
+        apiResponse.Data.Compatibility.Features.ObservabilityStatus.Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -112,6 +114,8 @@ public sealed class MetadataResourceEndpointsTests : IAsyncLifetime
         compatibility.GetProperty("controlPlaneApi").GetProperty("deprecated").GetBoolean().Should().BeFalse();
         compatibility.GetProperty("features").GetProperty("metadataResources").GetBoolean().Should().BeTrue();
         compatibility.GetProperty("features").GetProperty("manifestApply").GetBoolean().Should().BeTrue();
+        compatibility.GetProperty("features").GetProperty("adminRealtime").GetBoolean().Should().BeTrue();
+        compatibility.GetProperty("features").GetProperty("observabilityStatus").GetBoolean().Should().BeTrue();
         compatibility.GetProperty("metadataSchemas")
             .EnumerateArray()
             .Should()
