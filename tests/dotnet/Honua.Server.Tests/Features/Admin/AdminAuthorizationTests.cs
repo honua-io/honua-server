@@ -275,6 +275,22 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/fields")]
+    public async Task GetLayerFields_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/metadata/layers/1/fields");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/fields")]
+    public async Task PutLayerFields_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.PutAsJsonAsync("/api/v1/admin/metadata/layers/1/fields", new { });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     // --- MetadataResourceEndpoints ---
 
     [IntegrationTest]

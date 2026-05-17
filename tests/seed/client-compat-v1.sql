@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS honua.layer_fields (
     nullable BOOLEAN NOT NULL DEFAULT TRUE,
     default_value TEXT,
     description TEXT,
+    domain JSONB,
     PRIMARY KEY (layer_id, field_name)
 );
 
