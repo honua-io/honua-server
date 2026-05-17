@@ -45,7 +45,7 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 - **Control Plane**: Durable job orchestration substrate — queue, claim/heartbeat, retry, reconciliation, structured execution logs, and artifact references ([ADR-0031](adr/0031-durable-job-orchestration-substrate.md)). `AddJobOrchestration()` is safe for lean API images; `AddJobWorker()` adds queue-based claim/execute for dedicated worker hosts (not yet wired). The pluggable batch-compute backend contract and execution-job reconciler are registered directly in the combined host. The execution-job reconciler (`ExecutionJobReconcilerBackgroundService`) runs on every Redis-enabled host, polling active jobs and dispatching to pluggable `IBatchComputeBackend` adapters resolved by `(BackendName, TargetKind)`. The `LocalBatchComputeBackend` bridges in-process worker progress; additional backends (AWS Batch, Kubernetes Job) plug in through the same contract.
 - **Orchestration**: Declarative workflow layer that composes canonical `AnalysisPlan` jobs into chained, scheduled, and DAG-style runs ([ADR-0032](adr/0032-workflow-orchestration-layer.md)). Steps submit through `IWorkflowJobExecutor` (geoprocessing-backed) so every workflow step reuses canonical job, retry, and cancellation semantics. Background services (`WorkflowOrchestrationBackgroundService`, `WorkflowSchedulerBackgroundService`) only start when Redis-backed stores are available.
 - **Admin**: connections, publishing, metadata, styles, imports, operations, observability.
-- **Import**: file import pipeline + Esri service import.
+- **Import**: file import pipeline, public ArcGIS GeoServices REST layer import, and GeoServer/ArcGIS migration inventory.
 
 ## Data Access
 

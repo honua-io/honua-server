@@ -127,7 +127,7 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 
 **File import** — GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf (`.fgb`), File Geodatabase (`.gdb.zip`), and GeoParquet (`.parquet`, `.geoparquet`). CRS auto-detection and PostGIS-based reprojection.
 
-**Service import** — Migrate existing Esri feature and map services, preserving structure and metadata.
+**Service import and migration planning** — Import public, queryable ArcGIS GeoServices REST feature/map-service layers into PostGIS, with optional auto-publishing. Scan ArcGIS GeoServices REST and GeoServer REST sources for deterministic migration inventories; GeoServer catalog migration is currently dry-run planning only.
 
 **Admin** — REST API for managing connections, services, layers, relationships, styles (with auto-cartographic suggestions), and import jobs. The Blazor admin UI lives in the separate `honua-server-admin` repo and is deployed as a standalone static app.
 

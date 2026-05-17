@@ -90,6 +90,7 @@
 - [ADRs](contributor/adr/README.md)
 - [TestKit](contributor/testkit.md)
 - [Public Interface Quality Model](contributor/public-interface-quality-model.md)
+- [Import and Migration Capability Evidence](contributor/import-capability-evidence.md)
 - [OGC Certification Path](contributor/ogc-certification-path.md)
 - [OGC CITE Conformance Evidence](contributor/ogc-cite-conformance-evidence.md)
 - [Release Checklist](contributor/RELEASE_CHECKLIST.md)

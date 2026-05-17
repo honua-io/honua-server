@@ -7,7 +7,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - GeoServices-style FeatureServer query, applyEdits, attachments, related records, MapServer export/identify/legend/find/query, ImageServer raster routes, Geometry Service operations, and NAServer-style routing hooks.
 - OGC API Features, Tiles, Maps, Coverages, Processes, WFS 2.0, WMS 1.3, WMTS 1.0, WCS 2.0.1, OData v4, STAC catalog/search/items, COG registration, vector tiles, Terrain-RGB tiles, and elevation value/profile APIs.
 - Output formats and negotiation for JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, GeoArrow, and native GeoBuf when supported by the feature store.
-- File import for GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase zips, GeoParquet, raster import, GeoServer/GeoServices migration, and cross-server consume probes.
+- File import for GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase zips, GeoParquet, and raster import; ArcGIS GeoServices REST layer import and migration inventory; GeoServer REST migration inventory and dry-run validation; and cross-server consume probes.
 - Streaming feature change/events endpoints and async geoprocessing over the canonical process runtime.
 
 ## Control Plane
