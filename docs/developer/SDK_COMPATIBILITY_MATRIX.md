@@ -13,6 +13,7 @@ Use this page first when you need to:
 
 Use it together with:
 - [Machine-readable SDK compatibility version manifest](sdk-compatibility-versions.json)
+- [SDK Standards Coverage by Language](SDK_STANDARDS_COVERAGE.md)
 - [2026-05 Preview release-train manifest](../../release/honua-2026-05-preview.json)
 - [Control Plane API](../operator/CONTROL_PLANE_API.md)
 - [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
@@ -27,6 +28,8 @@ Use it together with:
   catalog, and FeatureServer smoke paths, and .NET currently covers admin
   compatibility. It is not a comprehensive standards-conformance matrix for
   FeatureServer, OGC, OData, WMS, WMTS, or other protocol adapters.
+  Use [SDK Standards Coverage by Language](SDK_STANDARDS_COVERAGE.md) for
+  server-owned SDK coverage positioning by language and protocol.
 - Current admin API major in this repo: `v1`.
 - JavaScript/TypeScript, Python, and .NET SDK artifacts are generated from the
   same curated admin OpenAPI contract and should be treated as one versioned
