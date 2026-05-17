@@ -137,15 +137,15 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
         var manifest = fetchResult.ManifestContent;
 
-        if (config.ApprovalRequired)
-        {
-            await HandleApprovalRequiredAsync(scope, watchStore, config, latestCommit, manifest, previousManifest, now, cancellationToken)
+        var commitObserved = config.ApprovalRequired
+            ? await HandleApprovalRequiredAsync(scope, watchStore, config, latestCommit, manifest, previousManifest, now, cancellationToken)
+                .ConfigureAwait(false)
+            : await HandleAutoApplyAsync(scope, watchStore, config, latestCommit, manifest, previousManifest, now, cancellationToken)
                 .ConfigureAwait(false);
-        }
-        else
+
+        if (!commitObserved)
         {
-            await HandleAutoApplyAsync(scope, watchStore, config, latestCommit, manifest, previousManifest, now, cancellationToken)
-                .ConfigureAwait(false);
+            return pollInterval;
         }
 
         await watchStore.UpdatePollStateAsync(config.ConfigId, latestCommit.Sha, now, cancellationToken)
@@ -154,7 +154,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         return pollInterval;
     }
 
-    private async Task HandleApprovalRequiredAsync(
+    private async Task<bool> HandleApprovalRequiredAsync(
         AsyncServiceScope scope,
         IGitOpsWatchStore watchStore,
         GitOpsWatchConfig config,
@@ -164,15 +164,22 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var pendingStore = scope.ServiceProvider.GetRequiredService<IManifestPendingChangeStore>();
         var schemaRegistry = scope.ServiceProvider.GetRequiredService<IMetadataSchemaRegistry>();
 
         // Parse and validate resources from the manifest
         var resources = DeserializeManifestResources(manifestContent);
-        if (resources == null || resources.Length == 0)
+        if (resources == null)
+        {
+            await RecordManifestParseFailureAsync(watchStore, config, commit, manifestContent, now, cancellationToken)
+                .ConfigureAwait(false);
+            LogManifestParseFailed(_logger, config.RepositoryUrl);
+            return false;
+        }
+
+        if (resources.Length == 0)
         {
             LogManifestEmpty(_logger, config.RepositoryUrl);
-            return;
+            return true;
         }
 
         var (normalizedResources, validationError) = AdminMetadataEndpoints.ValidateAndNormalizeResources(resources!, schemaRegistry);
@@ -194,7 +201,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
             };
             await watchStore.CreateChangeRecordAsync(changeRecord, cancellationToken).ConfigureAwait(false);
             LogManifestValidationFailed(_logger, config.RepositoryUrl, validationError ?? "Unknown error");
-            return;
+            return true;
         }
 
         var snapshotJson = JsonSerializer.SerializeToElement(new ManifestApplyRequest
@@ -206,6 +213,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
         var manifestHash = AdminMetadataEndpoints.ComputeManifestHash(normalizedResources);
 
+        var pendingStore = scope.ServiceProvider.GetRequiredService<IManifestPendingChangeStore>();
         var approvalOptions = scope.ServiceProvider.GetRequiredService<IOptions<ManifestApprovalOptions>>();
         var expiresAt = approvalOptions.Value.DefaultTimeoutMinutes.HasValue
             ? now.AddMinutes(approvalOptions.Value.DefaultTimeoutMinutes.Value)
@@ -245,9 +253,10 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         await watchStore.CreateChangeRecordAsync(changeRecord2, cancellationToken).ConfigureAwait(false);
 
         LogChangeQueuedForApproval(_logger, commit.Sha, pending.PendingId);
+        return true;
     }
 
-    private async Task HandleAutoApplyAsync(
+    private async Task<bool> HandleAutoApplyAsync(
         AsyncServiceScope scope,
         IGitOpsWatchStore watchStore,
         GitOpsWatchConfig config,
@@ -263,10 +272,18 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         var versionStore = scope.ServiceProvider.GetRequiredService<IManifestVersionStore>();
 
         var resources = DeserializeManifestResources(manifestContent);
-        if (resources == null || resources.Length == 0)
+        if (resources == null)
+        {
+            await RecordManifestParseFailureAsync(watchStore, config, commit, manifestContent, now, cancellationToken)
+                .ConfigureAwait(false);
+            LogManifestParseFailed(_logger, config.RepositoryUrl);
+            return false;
+        }
+
+        if (resources.Length == 0)
         {
             LogManifestEmpty(_logger, config.RepositoryUrl);
-            return;
+            return true;
         }
 
         var (normalizedResources, validationError) = AdminMetadataEndpoints.ValidateAndNormalizeResources(resources!, schemaRegistry);
@@ -288,7 +305,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
             };
             await watchStore.CreateChangeRecordAsync(failedRecord, cancellationToken).ConfigureAwait(false);
             LogManifestValidationFailed(_logger, config.RepositoryUrl, validationError ?? "Unknown error");
-            return;
+            return true;
         }
 
         ManifestApplyResult applyResult;
@@ -322,7 +339,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
             };
             await watchStore.CreateChangeRecordAsync(failedRecord, cancellationToken).ConfigureAwait(false);
             LogApplyFailed(_logger, commit.Sha, ex);
-            return;
+            return true;
         }
 
         var summary = $"Created: {applyResult.Summary.Created}, Updated: {applyResult.Summary.Updated}, " +
@@ -346,6 +363,45 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         await watchStore.CreateChangeRecordAsync(changeRecord, cancellationToken).ConfigureAwait(false);
 
         LogChangeApplied(_logger, commit.Sha, summary);
+        return true;
+    }
+
+    private static async Task RecordManifestParseFailureAsync(
+        IGitOpsWatchStore watchStore,
+        GitOpsWatchConfig config,
+        GitCommitInfo commit,
+        JsonElement manifestContent,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        const string errorMessage =
+            "Manifest parse failed: expected a metadata resource object, an array of metadata resources, or an object with a resources array.";
+
+        var recentRecords = await watchStore.ListChangeRecordsAsync(10, 0, cancellationToken).ConfigureAwait(false);
+        if (recentRecords.Any(record =>
+                record.ConfigId == config.ConfigId &&
+                string.Equals(record.CommitSha, commit.Sha, StringComparison.Ordinal) &&
+                record.Status == GitOpsChangeStatus.Failed &&
+                string.Equals(record.ErrorMessage, errorMessage, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        var changeRecord = new GitOpsChangeRecord
+        {
+            ChangeId = Guid.NewGuid(),
+            ConfigId = config.ConfigId,
+            CommitSha = commit.Sha,
+            CommitMessage = commit.Message,
+            CommitAuthor = commit.Author,
+            CommitTimestamp = commit.Timestamp,
+            ManifestAfter = manifestContent,
+            Status = GitOpsChangeStatus.Failed,
+            ErrorMessage = errorMessage,
+            DetectedAt = now
+        };
+
+        await watchStore.CreateChangeRecordAsync(changeRecord, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task RecordManifestPathFailureAsync(
@@ -757,6 +813,9 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
     [LoggerMessage(EventId = 9407, Level = LogLevel.Warning, Message = "GitOps manifest from {RepositoryUrl} contained no resources.")]
     private static partial void LogManifestEmpty(ILogger logger, string repositoryUrl);
+
+    [LoggerMessage(EventId = 9413, Level = LogLevel.Warning, Message = "GitOps manifest from {RepositoryUrl} could not be parsed into metadata resources.")]
+    private static partial void LogManifestParseFailed(ILogger logger, string repositoryUrl);
 
     [LoggerMessage(EventId = 9408, Level = LogLevel.Warning, Message = "GitOps manifest validation failed for {RepositoryUrl}: {Error}.")]
     private static partial void LogManifestValidationFailed(ILogger logger, string repositoryUrl, string error);

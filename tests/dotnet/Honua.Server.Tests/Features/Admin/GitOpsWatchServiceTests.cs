@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain;
@@ -170,6 +171,36 @@ public sealed class GitOpsWatchServiceTests : IDisposable
         watchStore.ChangeRecords[0].Status.Should().Be(GitOpsChangeStatus.Failed);
         watchStore.ChangeRecords[0].ErrorMessage.Should().Be(GitOpsWatchManifestPath.GlobUnsupportedErrorMessage);
         watchStore.ChangeRecords[0].ErrorMessage.Should().NotContain(repoDir);
+    }
+
+    [UnitTest]
+    public async Task PollOnceAsync_InvalidResourcesManifest_RecordsSafeFailureAndDoesNotMarkCommitObserved()
+    {
+        const string invalidManifest = """
+            {
+              "resources": {
+                "kind": "Group"
+              }
+            }
+            """;
+        var repoDir = await CreateLocalRepositoryAsync(("manifests/honua-manifest.json", invalidManifest));
+        var latestCommit = await RunGitForOutputAsync(repoDir, "rev-parse", "HEAD");
+        var watchStore = new TestGitOpsWatchStore(CreateConfig(repoDir, manifestPath: "manifests/"));
+
+        using var services = CreateServices(watchStore);
+        var service = CreateService(services);
+
+        await service.PollOnceAsync(CancellationToken.None);
+        await service.PollOnceAsync(CancellationToken.None);
+
+        watchStore.PollStateUpdateCount.Should().Be(0);
+        watchStore.CurrentConfig.LastKnownCommitSha.Should().BeNull();
+        watchStore.ChangeRecords.Should().ContainSingle();
+        watchStore.ChangeRecords[0].CommitSha.Should().Be(latestCommit);
+        watchStore.ChangeRecords[0].Status.Should().Be(GitOpsChangeStatus.Failed);
+        watchStore.ChangeRecords[0].ErrorMessage.Should().StartWith("Manifest parse failed:");
+        watchStore.ChangeRecords[0].ErrorMessage.Should().NotContain(repoDir);
+        watchStore.ChangeRecords[0].ManifestAfter.GetProperty("resources").ValueKind.Should().Be(JsonValueKind.Object);
     }
 
     public void Dispose()
