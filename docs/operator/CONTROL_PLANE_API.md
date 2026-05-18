@@ -363,18 +363,21 @@ The artifact includes:
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/v1/admin/import/geoserver/discover` | POST | Discover GeoServer REST configuration and migration compatibility |
-| `/api/v1/admin/import/geoserver/start` | POST | Queue a GeoServer dry-run validation or deterministic apply-plan job |
+| `/api/v1/admin/import/geoserver/start` | POST | Queue a GeoServer dry-run validation or bounded apply job |
 | `/api/v1/admin/import/geoserver/jobs` | GET | List active GeoServer import jobs |
 | `/api/v1/admin/import/geoserver/jobs/{jobId}` | GET | Get GeoServer import job status |
 | `/api/v1/admin/import/geoserver/jobs/{jobId}/cancel` | POST | Cancel a GeoServer import job |
 
 `POST /api/v1/admin/import/geoserver/start` accepts `dryRun=true` for validation
-and `dryRun=false` for the first non-dry-run planning slice. Non-dry-run jobs
-emit a `honua.migration.apply-plan` artifact in the completed progress/result
-payload. The artifact contains a stable `replayToken`/`planFingerprint`, ordered
-`steps`, `manualReviewItems`, and `unsupportedItems`. It records replayable
-intent only; it does not yet mutate the Honua catalog, copy source data, or
-persist migrated styles.
+and `dryRun=false` for the first non-dry-run apply slice. Non-dry-run jobs emit
+`honua.migration.apply-plan` and `honua.migration.apply-execution` artifacts in
+the completed progress/result payload. The plan artifact contains a stable
+`replayToken`/`planFingerprint`, ordered `steps`, `manualReviewItems`, and
+`unsupportedItems`. The execution artifact records per-step outcomes. Current
+catalog mutation is limited to idempotent publication of PostGIS-backed layers
+whose source tables already exist in the target Honua database; data copy, layer
+groups, service exposure changes, and bulk style persistence remain
+manual-review or unsupported records.
 
 Queued GeoServer jobs persist request state before a worker runs, so secret
 values must use secret references such as

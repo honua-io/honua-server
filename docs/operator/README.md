@@ -30,7 +30,7 @@ Deploy, configure, monitor, and manage Honua Server.
 - [Control Plane API](CONTROL_PLANE_API.md) — Admin REST API for connections, layers, services, and migration inventory scans
 - [Migration Toolkit](migration-toolkit.md) — Inventory, manifest, parity evidence, and cutover readiness artifact workflow
 - [ArcGIS Inventory Discovery](arcgis-inventory-discovery.md) — Deterministic FeatureServer/MapServer inventory artifact, JSON export, and compatibility codes
-- [GeoServer Migration Guide](../gis/tutorials/geoserver-migration-guide.md) — Discovery scanner workflow, compatibility review, dry-run validation, and apply-plan generation
+- [GeoServer Migration Guide](../gis/tutorials/geoserver-migration-guide.md) — Discovery scanner workflow, compatibility review, dry-run validation, and bounded catalog apply
 - [Tile Operations](tile-operations-runbook.md) — Vector tile seeding, warming, invalidation, archive
 - [PMTiles Publishing](pmtiles-publishing.md) — Durable PMTiles artifacts for MapLibre/PMTiles browser clients
 - [Operations](operations.md) — Backups, migrations, connection pooling, query tuning, job orchestration, workflow orchestration, workspace lifecycle
