@@ -337,7 +337,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
     {
         var requestUri = uri;
 
-        for (var redirectCount = 0;; redirectCount++)
+        for (var redirectCount = 0; ; redirectCount++)
         {
             using var message = new HttpRequestMessage(HttpMethod.Get, requestUri);
             message.Headers.Accept.ParseAdd("application/json");
