@@ -128,6 +128,21 @@ public sealed class ReadinessCheckServiceTests
 
     [UnitTest]
     [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithAvailableFeatureChangeStore_ReturnsReady()
+    {
+        var mockDatabaseChecker = new MockHealthyDatabaseChecker();
+        var featureChangeStoreHealth = new MockFeatureChangeEventStoreHealth(canPersistEvents: true);
+        var service = CreateService(mockDatabaseChecker, featureChangeEventStoreHealth: featureChangeStoreHealth);
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeTrue();
+        result.StatusCode.Should().Be(200);
+        result.Message.Should().Be("Ready");
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithUnhealthyCache_ReturnsNotReady()
     {
         // Arrange
