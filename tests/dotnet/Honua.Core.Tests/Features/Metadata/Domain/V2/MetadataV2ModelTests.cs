@@ -386,6 +386,25 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void Validate_WithNullDeserializedResourceStorageBindingIds_ReturnsValidationError()
+    {
+        var json = JsonSerializer.Serialize(CreateValidGraph(), MetadataV2JsonContext.Default.MetadataV2Graph)
+            .Replace(
+                "\"storageBindingIds\":[\"storage.parcels.postgis\"]",
+                "\"storageBindingIds\":null",
+                StringComparison.Ordinal);
+        json.Should().Contain("\"storageBindingIds\":null");
+        var graph = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Graph);
+
+        var result = MetadataV2GraphValidator.Validate(graph!);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(
+            "resource 'resource.parcels' primary storage binding 'storage.parcels.postgis' must be listed in storageBindingIds.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void Validate_WithDuplicateGraphEntityId_ReturnsError()
     {
         var graph = CreateValidGraph() with

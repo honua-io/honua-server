@@ -126,7 +126,9 @@ public static class MetadataV2GraphValidator
     {
         foreach (var resource in resources)
         {
-            foreach (var storageBindingId in resource.StorageBindingIds)
+            var storageBindingIds = resource.StorageBindingIds ?? Array.Empty<string>();
+
+            foreach (var storageBindingId in storageBindingIds)
             {
                 if (!storageBindingsById.TryGetValue(storageBindingId, out var storageBinding))
                 {
@@ -142,7 +144,7 @@ public static class MetadataV2GraphValidator
                 }
             }
 
-            if (resource.PrimaryStorageBindingId is not null && !resource.StorageBindingIds.Contains(
+            if (resource.PrimaryStorageBindingId is not null && !storageBindingIds.Contains(
                     resource.PrimaryStorageBindingId,
                     StringComparer.Ordinal))
             {
