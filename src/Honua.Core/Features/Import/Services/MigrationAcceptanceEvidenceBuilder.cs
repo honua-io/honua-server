@@ -57,6 +57,8 @@ public static class MigrationAcceptanceEvidenceBuilder
             manifest,
             input.ReadinessAttestation,
             input.PerformanceCost);
+        ValidateEvidenceIdentity(input.Inventory, manifest, parityEvidence);
+
         var stages = BuildStages(
             input,
             manifest,
@@ -77,7 +79,7 @@ public static class MigrationAcceptanceEvidenceBuilder
             Stages = stages,
             ManualReviewCount = manualReviewCount,
             UnsupportedCount = unsupportedCount,
-            ManifestAvailable = parityEvidence.ManifestAvailable,
+            ManifestAvailable = true,
             InventoryArtifactKind = input.Inventory.ArtifactKind,
             ManifestArtifactKind = manifest.ArtifactKind,
             ParityEvidenceArtifactKind = parityEvidence.ArtifactKind,
@@ -85,6 +87,39 @@ public static class MigrationAcceptanceEvidenceBuilder
             Notes = BuildEntryNotes(manifest, parityEvidence, options)
         };
     }
+
+    private static void ValidateEvidenceIdentity(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationManifestArtifact manifest,
+        MigrationParityEvidenceArtifact parityEvidence)
+    {
+        if (!StringEquals(inventory.SourceKind, manifest.SourceKind))
+        {
+            throw new ArgumentException("Migration manifest source kind must match inventory source kind.");
+        }
+
+        if (!SourceIdentityMatches(inventory.Source, manifest.Source))
+        {
+            throw new ArgumentException("Migration manifest source identity must match inventory source identity.");
+        }
+
+        if (!StringEquals(inventory.SourceKind, parityEvidence.SourceKind))
+        {
+            throw new ArgumentException("Migration parity evidence source kind must match inventory source kind.");
+        }
+
+        if (!SourceIdentityMatches(inventory.Source, parityEvidence.Source))
+        {
+            throw new ArgumentException("Migration parity evidence source identity must match inventory source identity.");
+        }
+    }
+
+    private static bool SourceIdentityMatches(MigrationSourceIdentity left, MigrationSourceIdentity right)
+        => StringEquals(left.DisplayName, right.DisplayName) &&
+           StringEquals(left.BaseUrl, right.BaseUrl);
+
+    private static bool StringEquals(string? left, string? right)
+        => string.Equals(left?.Trim(), right?.Trim(), StringComparison.Ordinal);
 
     private static IEnumerable<MigrationAcceptanceEvidenceGap> BuildBlockingGaps(
         IReadOnlyCollection<MigrationAcceptanceEvidenceEntry> entries,

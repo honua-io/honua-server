@@ -156,6 +156,61 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
         json.Should().NotContain("#fragment");
     }
 
+    [Fact]
+    public void Build_WithMismatchedManifestSourceKind_Throws()
+    {
+        var input = AutomatedInput("arcgis", "arcgis-geoservices-rest");
+        var otherManifest = MigrationManifestTranslator.Translate(CreateInventory(
+            "geoserver-rest",
+            [CreateResource("workspace:roads", "Roads", "compatible", "Schema can be mapped.")]));
+
+        Action act = () => MigrationAcceptanceEvidenceBuilder.Build(
+            "nightly-20260518",
+            [input with { Manifest = otherManifest }]);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("Migration manifest source kind must match inventory source kind.");
+    }
+
+    [Fact]
+    public void Build_WithMismatchedParitySourceIdentity_Throws()
+    {
+        var input = AutomatedInput("arcgis", "arcgis-geoservices-rest");
+        var parity = MigrationParityEvidenceGenerator.Generate(
+            input.Inventory,
+            MigrationManifestTranslator.Translate(input.Inventory),
+            CreatePassingAttestation()) with
+        {
+            Source = input.Inventory.Source with { BaseUrl = "https://example.test/other-source" }
+        };
+
+        Action act = () => MigrationAcceptanceEvidenceBuilder.Build(
+            "nightly-20260518",
+            [input with { ParityEvidence = parity }]);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("Migration parity evidence source identity must match inventory source identity.");
+    }
+
+    [Fact]
+    public void Build_WithSuppliedManifestAndStaleParityManifestFlag_ReportsManifestAvailable()
+    {
+        var input = AutomatedInput("arcgis", "arcgis-geoservices-rest");
+        var manifest = MigrationManifestTranslator.Translate(input.Inventory);
+        var parity = MigrationParityEvidenceGenerator.Generate(
+            input.Inventory,
+            attestation: CreatePassingAttestation());
+
+        parity.ManifestAvailable.Should().BeFalse();
+
+        var suite = MigrationAcceptanceEvidenceBuilder.Build(
+            "nightly-20260518",
+            [input with { Manifest = manifest, ParityEvidence = parity }]);
+
+        suite.Entries.Should().ContainSingle()
+            .Which.ManifestAvailable.Should().BeTrue();
+    }
+
     private static MigrationAcceptanceEvidenceInput AutomatedInput(
         string id,
         string sourceKind,
