@@ -136,7 +136,7 @@ public static class OgcApiFeaturesMigrationInventoryScanner
         var schemaLinks = GetSchemaLinks(collection.Links).ToArray();
         var spatialReferences = BuildSpatialReferences(
             collection.CrsDeclarations.Length > 0 ? collection.CrsDeclarations : sourceCrsDeclarations);
-        var itemEncodings = BuildItemEncodings(collection, itemLinks);
+        var itemEncodings = BuildItemEncodings(collection, itemLinks, collection.PaginationLinks);
 
         return new MigrationInventoryResource
         {
@@ -179,7 +179,7 @@ public static class OgcApiFeaturesMigrationInventoryScanner
         string[] itemEncodings,
         bool hasTransactionalConformance)
     {
-        if (itemLinks.Length == 0)
+        if (itemLinks.Length == 0 && collection.PaginationLinks.Length == 0)
         {
             return MigrationInventoryHelpers.Incompatible(
                 "OGC API Features collection does not advertise an items endpoint.",
@@ -319,39 +319,52 @@ public static class OgcApiFeaturesMigrationInventoryScanner
         string resourceId,
         Uri baseUri)
     {
-        foreach (var link in collection.Links.Concat(collection.PaginationLinks)
-                     .OrderBy(static link => link.Rel, StringComparer.Ordinal)
-                     .ThenBy(static link => link.Href, StringComparer.Ordinal))
+        return collection.Links.Concat(collection.PaginationLinks)
+            .Select(link => BuildCollectionDependency(link, resourceId, baseUri))
+            .Where(static dependency => dependency != null)
+            .Select(static dependency => dependency!)
+            .OrderBy(static dependency => dependency.Id, StringComparer.Ordinal)
+            .ThenBy(static dependency => dependency.Name, StringComparer.Ordinal)
+            .ThenBy(static dependency => GetMetadataValue(dependency, "rel"), StringComparer.Ordinal)
+            .ThenBy(static dependency => GetMetadataValue(dependency, "type"), StringComparer.Ordinal)
+            .ThenBy(static dependency => GetMetadataValue(dependency, "title"), StringComparer.Ordinal)
+            .ThenBy(static dependency => GetMetadataValue(dependency, "queryParameters"), StringComparer.Ordinal)
+            .DistinctBy(static dependency => dependency.Id, StringComparer.Ordinal);
+    }
+
+    private static MigrationExternalDependency? BuildCollectionDependency(
+        OgcApiFeaturesLink link,
+        string resourceId,
+        Uri baseUri)
+    {
+        var dependencyType = ClassifyCollectionLink(link);
+        if (dependencyType == null)
         {
-            var dependencyType = ClassifyCollectionLink(link);
-            if (dependencyType == null)
-            {
-                continue;
-            }
-
-            var address = NormalizeAddress(link.Href, baseUri);
-            var compatibility = string.Equals(dependencyType, "manual-review-link", StringComparison.Ordinal)
-                ? MigrationInventoryHelpers.Partial(
-                    "OGC API Features link relation needs manual migration review.",
-                    manualSteps: ["Classify the link relation as automated, assisted, manual-review, or unsupported."],
-                    code: OgcApiFeaturesImportCompatibilityCodes.ManualReview)
-                : MigrationInventoryHelpers.Compatible(
-                    $"OGC API Features {dependencyType} link was captured for migration planning.",
-                    code: OgcApiFeaturesImportCompatibilityCodes.CollectionSource);
-
-            yield return new MigrationExternalDependency
-            {
-                Id = BuildDependencyId($"{resourceId}:{dependencyType}", address ?? link.Href),
-                ContainerId = ContainerId,
-                ResourceId = resourceId,
-                Kind = $"ogc-api-features-{dependencyType}",
-                Name = BuildLinkName(link, dependencyType),
-                DependencyType = dependencyType,
-                Address = address,
-                Metadata = BuildLinkMetadata(link, baseUri),
-                Compatibility = compatibility
-            };
+            return null;
         }
+
+        var address = NormalizeAddress(link.Href, baseUri);
+        var compatibility = string.Equals(dependencyType, "manual-review-link", StringComparison.Ordinal)
+            ? MigrationInventoryHelpers.Partial(
+                "OGC API Features link relation needs manual migration review.",
+                manualSteps: ["Classify the link relation as automated, assisted, manual-review, or unsupported."],
+                code: OgcApiFeaturesImportCompatibilityCodes.ManualReview)
+            : MigrationInventoryHelpers.Compatible(
+                $"OGC API Features {dependencyType} link was captured for migration planning.",
+                code: OgcApiFeaturesImportCompatibilityCodes.CollectionSource);
+
+        return new MigrationExternalDependency
+        {
+            Id = BuildDependencyId($"{resourceId}:{dependencyType}", address ?? link.Href),
+            ContainerId = ContainerId,
+            ResourceId = resourceId,
+            Kind = $"ogc-api-features-{dependencyType}",
+            Name = BuildLinkName(link, dependencyType),
+            DependencyType = dependencyType,
+            Address = address,
+            Metadata = BuildLinkMetadata(link, baseUri),
+            Compatibility = compatibility
+        };
     }
 
     private static IEnumerable<MigrationExternalDependency> BuildConformanceDependencies(IEnumerable<string> conformanceClasses)
@@ -488,7 +501,7 @@ public static class OgcApiFeaturesMigrationInventoryScanner
             "ogcapi-features:collections"
         };
 
-        if (itemLinks.Length > 0)
+        if (itemLinks.Length > 0 || paginationLinks.Length > 0)
         {
             capabilities.Add("ogcapi-features:items");
         }
@@ -606,8 +619,14 @@ public static class OgcApiFeaturesMigrationInventoryScanner
             string.Equals(link.Rel, "schema", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(link.Rel, "http://www.opengis.net/def/rel/ogc/1.0/schema", StringComparison.OrdinalIgnoreCase));
 
-    private static string[] BuildItemEncodings(OgcApiFeaturesCollectionSnapshot collection, OgcApiFeaturesLink[] itemLinks)
-        => MigrationInventoryHelpers.NormalizeStrings(collection.ItemEncodings.Concat(BuildItemEncodings(itemLinks)));
+    private static string[] BuildItemEncodings(
+        OgcApiFeaturesCollectionSnapshot collection,
+        OgcApiFeaturesLink[] itemLinks,
+        OgcApiFeaturesLink[] paginationLinks)
+        => MigrationInventoryHelpers.NormalizeStrings(
+            collection.ItemEncodings
+                .Concat(BuildItemEncodings(itemLinks))
+                .Concat(BuildItemEncodings(paginationLinks)));
 
     private static string[] BuildItemEncodings(IEnumerable<OgcApiFeaturesLink> itemLinks)
         => MigrationInventoryHelpers.NormalizeStrings(
@@ -751,6 +770,9 @@ public static class OgcApiFeaturesMigrationInventoryScanner
 
     private static string BuildLinkName(OgcApiFeaturesLink link, string fallback)
         => string.IsNullOrWhiteSpace(link.Title) ? fallback : link.Title.Trim();
+
+    private static string GetMetadataValue(MigrationExternalDependency dependency, string key)
+        => dependency.Metadata.GetValueOrDefault(key, string.Empty);
 
     private static string NormalizeRel(string rel)
         => string.IsNullOrWhiteSpace(rel) ? "link" : ToStableId(rel);

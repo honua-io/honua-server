@@ -122,6 +122,83 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
     }
 
     [Fact]
+    public void BuildInventory_WithProbedPaginationButNoItemsLink_TreatsItemsEndpointAsSupported()
+    {
+        var artifact = OgcApiFeaturesMigrationInventoryScanner.BuildInventory(new OgcApiFeaturesMigrationSourceSnapshot
+        {
+            BaseUrl = "https://demo.example/ogcapi/",
+            Title = "Demo OGC API Features",
+            Collections =
+            [
+                new OgcApiFeaturesCollectionSnapshot
+                {
+                    Id = "buildings",
+                    Links =
+                    [
+                        Link("queryables", "https://demo.example/ogcapi/collections/buildings/queryables", "application/schema+json"),
+                        Link("describedby", "https://demo.example/ogcapi/collections/buildings/schema", "application/schema+json")
+                    ],
+                    PaginationLinks =
+                    [
+                        Link("next", "https://demo.example/ogcapi/collections/buildings/items?offset=100&limit=100", "application/geo+json")
+                    ],
+                    CrsDeclarations = [Crs("storage", "http://www.opengis.net/def/crs/EPSG/0/4326")]
+                }
+            ]
+        });
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        resource.Capabilities.Should().Contain("ogcapi-features:items");
+        resource.Capabilities.Should().Contain("ogcapi-features:geojson-items");
+        resource.Compatibility.Level.Should().Be("compatible");
+        resource.Compatibility.Code.Should().Be(OgcApiFeaturesImportCompatibilityCodes.CollectionSource);
+        resource.Compatibility.Code.Should().NotBe(OgcApiFeaturesImportCompatibilityCodes.MissingItemsEndpoint);
+    }
+
+    [Fact]
+    public void BuildInventory_WithDuplicateCollectionLinks_EmitsUniqueDependencyIds()
+    {
+        var artifact = OgcApiFeaturesMigrationInventoryScanner.BuildInventory(new OgcApiFeaturesMigrationSourceSnapshot
+        {
+            BaseUrl = "https://demo.example/ogcapi/",
+            Title = "Demo OGC API Features",
+            Collections =
+            [
+                new OgcApiFeaturesCollectionSnapshot
+                {
+                    Id = "roads",
+                    Links =
+                    [
+                        Link("items", "https://demo.example/ogcapi/collections/roads/items", "application/geo+json"),
+                        Link("items", "https://demo.example/ogcapi/collections/roads/items", "text/html"),
+                        Link("queryables", "https://demo.example/ogcapi/collections/roads/queryables", "application/schema+json"),
+                        Link("describedby", "https://demo.example/ogcapi/collections/roads/schema", "application/schema+json")
+                    ],
+                    PaginationLinks =
+                    [
+                        Link("next", "https://demo.example/ogcapi/collections/roads/items?offset=100&limit=100", "application/geo+json"),
+                        Link("prev", "https://demo.example/ogcapi/collections/roads/items?offset=0&limit=100", "application/geo+json")
+                    ],
+                    CrsDeclarations = [Crs("storage", "http://www.opengis.net/def/crs/EPSG/0/4326")],
+                    ItemEncodings = ["application/geo+json"]
+                }
+            ]
+        });
+
+        var dependencyIds = artifact.ExternalDependencies.Select(static dependency => dependency.Id).ToArray();
+        dependencyIds.Should().OnlyHaveUniqueItems();
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        var collectionDependencies = artifact.ExternalDependencies
+            .Where(dependency => dependency.ResourceId == resource.Id)
+            .ToArray();
+
+        collectionDependencies.Should().ContainSingle(dependency => dependency.DependencyType == "items");
+        collectionDependencies.Should().ContainSingle(dependency => dependency.DependencyType == "pagination");
+        resource.ExternalDependencyIds.Should().BeEquivalentTo(collectionDependencies.Select(static dependency => dependency.Id));
+    }
+
+    [Fact]
     public void BuildInventory_WithTransactionsVendorExtensionsAndMissingLinks_ReturnsManualReviewWarnings()
     {
         var artifact = OgcApiFeaturesMigrationInventoryScanner.BuildInventory(new OgcApiFeaturesMigrationSourceSnapshot
