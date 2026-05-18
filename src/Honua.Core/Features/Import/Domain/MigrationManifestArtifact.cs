@@ -67,6 +67,11 @@ public sealed record MigrationManifestArtifact
     public MigrationManifestIdentityRemap[] IdentityRemaps { get; init; } = [];
 
     /// <summary>
+    /// Optional fidelity matrix enriched with target identity mappings from this manifest.
+    /// </summary>
+    public MigrationFidelityMatrix? FidelityMatrix { get; init; }
+
+    /// <summary>
     /// Items that require operator review before migration can proceed.
     /// </summary>
     public MigrationManifestReviewItem[] ManualReviewItems { get; init; } = [];

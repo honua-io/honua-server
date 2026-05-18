@@ -133,6 +133,14 @@ public static partial class MigrationManifestTranslator
 
         servicePlans.AddRange(BuildServicePlans(inventory, targetServiceName));
 
+        var orderedIdentityRemaps = identityRemaps
+            .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
+            .ThenBy(static item => item.TargetId, StringComparer.Ordinal)
+            .ToArray();
+        var fidelityMatrix = inventory.FidelityClassifications.Length > 0
+            ? MigrationFidelityMatrixBuilder.Build(inventory.FidelityClassifications, orderedIdentityRemaps)
+            : inventory.FidelityMatrix;
+
         return new MigrationManifestArtifact
         {
             SourceArtifactKind = inventory.ArtifactKind,
@@ -153,10 +161,8 @@ public static partial class MigrationManifestTranslator
             ServicePlans = servicePlans
                 .OrderBy(static item => item.SourceContainerId, StringComparer.Ordinal)
                 .ToArray(),
-            IdentityRemaps = identityRemaps
-                .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
-                .ThenBy(static item => item.TargetId, StringComparer.Ordinal)
-                .ToArray(),
+            IdentityRemaps = orderedIdentityRemaps,
+            FidelityMatrix = fidelityMatrix,
             ManualReviewItems = manualReviewItems
                 .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
                 .ThenBy(static item => item.Code, StringComparer.Ordinal)

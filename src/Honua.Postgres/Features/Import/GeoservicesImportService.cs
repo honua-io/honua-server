@@ -222,7 +222,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 Resources = orderedResources,
                 Styles = orderedStyles,
                 ExternalDependencies = orderedDependencies,
-                FidelityClassifications = orderedFidelityClassifications
+                FidelityClassifications = orderedFidelityClassifications,
+                FidelityMatrix = MigrationFidelityMatrixBuilder.Build(orderedFidelityClassifications)
             };
         }
         catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)

@@ -157,6 +157,75 @@ public sealed class MigrationManifestTranslatorTests
     }
 
     [Fact]
+    public void Translate_WithFidelityClassifications_EmitsManifestFidelityMatrixWithTargetIds()
+    {
+        var inventory = CreateInventory(
+            sourceKind: "arcgis-geoservices-rest",
+            serviceType: "FeatureServer",
+            resources:
+            [
+                CreateResource(
+                    "layer:fidelity:0",
+                    "Inspections",
+                    "partial",
+                    "Attachments and relationships require review.",
+                    code: ImportCompatibilityCodes.ArcGisAttachments,
+                    capabilities: ["Query", "Extract"],
+                    manualSteps: ["Plan attachment migration."])
+            ],
+            styles:
+            [
+                CreateStyle(
+                    "renderer:fidelity:0",
+                    "partial",
+                    "Renderer can be recreated with manual follow-up.",
+                    code: ImportCompatibilityCodes.ManualReview)
+            ],
+            fidelityClassifications:
+            [
+                CreateFidelity(
+                    "classification:layer:fidelity:0:identity",
+                    "layer:fidelity:0",
+                    "layer",
+                    "identity",
+                    MigrationFidelityAutomationStatuses.Automated,
+                    ImportCompatibilityCodes.Compatible),
+                CreateFidelity(
+                    "classification:layer:fidelity:0:attachments",
+                    "layer:fidelity:0",
+                    "attachment",
+                    "attachments",
+                    MigrationFidelityAutomationStatuses.ManualReview,
+                    ImportCompatibilityCodes.ArcGisAttachments,
+                    manualSteps: ["Plan attachment migration."]),
+                CreateFidelity(
+                    "classification:renderer:fidelity:0:renderer",
+                    "renderer:fidelity:0",
+                    "renderer",
+                    "renderers",
+                    MigrationFidelityAutomationStatuses.ManualReview,
+                    ImportCompatibilityCodes.ManualReview,
+                    manualSteps: ["Recreate renderer in Honua style endpoints."])
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "ArcGIS Fidelity"
+        });
+
+        manifest.FidelityMatrix.Should().NotBeNull();
+        manifest.FidelityMatrix!.Summary.ManualReviewCount.Should().Be(2);
+        manifest.FidelityMatrix.Cells.Should().ContainSingle(cell =>
+                cell.Category == "identity" &&
+                cell.AutomationStatus == MigrationFidelityAutomationStatuses.Automated)
+            .Which.TargetIds.Should().Equal("target:resource:arcgis-fidelity:inspections");
+        manifest.FidelityMatrix.Cells.Should().ContainSingle(cell =>
+                cell.Category == "renderers" &&
+                cell.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview)
+            .Which.TargetIds.Should().Equal("target:style:arcgis-fidelity:renderer-fidelity-0");
+    }
+
+    [Fact]
     public void Translate_WithOgcWmsRenderOnlyInventory_EmitsManualReviewServicePlan()
     {
         var inventory = CreateInventory(
@@ -276,7 +345,8 @@ public sealed class MigrationManifestTranslatorTests
         string? serviceType = null,
         string containerKind = "workspace",
         MigrationInventoryStyle[]? styles = null,
-        MigrationExternalDependency[]? dependencies = null)
+        MigrationExternalDependency[]? dependencies = null,
+        MigrationFidelityClassificationRecord[]? fidelityClassifications = null)
     {
         var containers = new[]
         {
@@ -334,7 +404,9 @@ public sealed class MigrationManifestTranslatorTests
             Containers = containers,
             Resources = resources,
             Styles = styleItems,
-            ExternalDependencies = dependencyItems
+            ExternalDependencies = dependencyItems,
+            FidelityClassifications = fidelityClassifications ?? [],
+            FidelityMatrix = MigrationFidelityMatrixBuilder.Build(fidelityClassifications ?? [])
         };
     }
 
@@ -403,6 +475,26 @@ public sealed class MigrationManifestTranslatorTests
             Format = "sld",
             ResourceIds = ["workspace:roads"],
             Compatibility = Assessment(level, reason, code, manualSteps)
+        };
+
+    private static MigrationFidelityClassificationRecord CreateFidelity(
+        string id,
+        string sourceId,
+        string kind,
+        string category,
+        string automationStatus,
+        string code,
+        string[]? manualSteps = null)
+        => new()
+        {
+            Id = id,
+            SourceId = sourceId,
+            Kind = kind,
+            Category = category,
+            AutomationStatus = automationStatus,
+            Code = code,
+            Reason = $"{category} disposition captured.",
+            ManualSteps = manualSteps ?? []
         };
 
     private static MigrationCompatibilityAssessment Compatible(string reason)

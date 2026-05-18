@@ -404,5 +404,118 @@
         "serviceType": "MapServer"
       }
     }
-  ]
+  ],
+  "fidelityMatrix": {
+    "summary": {
+      "totalCount": 10,
+      "automatedCount": 8,
+      "assistedCount": 0,
+      "manualReviewCount": 1,
+      "unsupportedCount": 1
+    },
+    "cells": [
+      {
+        "category": "capabilities",
+        "automationStatus": "automated",
+        "count": 3,
+        "kinds": [
+          "layer",
+          "service"
+        ],
+        "sourceIds": [
+          "resource:Public:layer:0",
+          "resource:Public:layer:1",
+          "service:Public"
+        ],
+        "codes": [
+          "COMPATIBLE"
+        ],
+        "targetIds": [],
+        "relatedIds": [],
+        "manualSteps": []
+      },
+      {
+        "category": "fields",
+        "automationStatus": "automated",
+        "count": 2,
+        "kinds": [
+          "field"
+        ],
+        "sourceIds": [
+          "resource:Public:layer:0",
+          "resource:Public:layer:1"
+        ],
+        "codes": [
+          "COMPATIBLE"
+        ],
+        "targetIds": [],
+        "relatedIds": [],
+        "manualSteps": []
+      },
+      {
+        "category": "identity",
+        "automationStatus": "automated",
+        "count": 3,
+        "kinds": [
+          "layer",
+          "service"
+        ],
+        "sourceIds": [
+          "resource:Public:layer:0",
+          "resource:Public:layer:1",
+          "service:Public"
+        ],
+        "codes": [
+          "COMPATIBLE"
+        ],
+        "targetIds": [],
+        "relatedIds": [],
+        "manualSteps": []
+      },
+      {
+        "category": "renderers",
+        "automationStatus": "manual-review",
+        "count": 1,
+        "kinds": [
+          "renderer"
+        ],
+        "sourceIds": [
+          "renderer:Public:0"
+        ],
+        "codes": [
+          "ARCGIS_EXTERNAL_SYMBOL"
+        ],
+        "targetIds": [],
+        "relatedIds": [
+          "renderer:Public:0:external:d17760187e25b243",
+          "resource:Public:layer:0"
+        ],
+        "manualSteps": [
+          "Mirror or replace external symbol assets in the target deployment.",
+          "Recreate the renderer via the Honua style endpoints after data import."
+        ]
+      },
+      {
+        "category": "renderers",
+        "automationStatus": "unsupported",
+        "count": 1,
+        "kinds": [
+          "renderer"
+        ],
+        "sourceIds": [
+          "renderer:Public:1"
+        ],
+        "codes": [
+          "ARCGIS_UNSUPPORTED_RENDERER"
+        ],
+        "targetIds": [],
+        "relatedIds": [
+          "resource:Public:layer:1"
+        ],
+        "manualSteps": [
+          "Review the renderer manually and rebuild an equivalent target style."
+        ]
+      }
+    ]
+  }
 }
