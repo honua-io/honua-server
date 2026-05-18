@@ -466,23 +466,65 @@ jobs:
                 "platform-http",
                 "geoservices-catalog",
                 "feature-server",
-                "ogc-api-features"
+                "ogc-api-features",
+                "migration-scan",
+                "arcgis-import",
+                "geoserver-dry-run",
+                "migration-evidence"
               ],
               protocol_surfaces_by_sdk: {
                 js: [
                   "control-plane-admin",
                   "geoservices-catalog",
                   "feature-server",
-                  "ogc-api-features"
+                  "ogc-api-features",
+                  "migration-scan",
+                  "arcgis-import",
+                  "geoserver-dry-run",
+                  "migration-evidence"
                 ],
                 python: [
                   "control-plane-admin",
                   "platform-http",
                   "geoservices-catalog",
-                  "feature-server"
+                  "feature-server",
+                  "migration-scan",
+                  "arcgis-import",
+                  "geoserver-dry-run",
+                  "migration-evidence"
                 ],
                 dotnet: [
-                  "control-plane-admin"
+                  "control-plane-admin",
+                  "migration-scan",
+                  "arcgis-import",
+                  "geoserver-dry-run",
+                  "migration-evidence"
+                ]
+              },
+              migration_automation: {
+                required: false,
+                status: "unsupported",
+                passed: false,
+                reason: "Server compatibility artifacts declare migration automation surfaces, but SDK-owned wrappers and live fixture flows are tracked outside this server slice."
+              },
+              migration_automation_by_sdk: {
+                js: [
+                  { surface: "migration-scan", status: "unsupported", passed: false, linked_ticket: "honua-sdk-js#105" },
+                  { surface: "arcgis-import", status: "unsupported", passed: false, linked_ticket: "honua-sdk-js#105" },
+                  { surface: "geoserver-dry-run", status: "unsupported", passed: false, linked_ticket: "honua-sdk-js#105" },
+                  { surface: "migration-evidence", status: "unsupported", passed: false, linked_ticket: "honua-sdk-js#105" }
+                ],
+                python: [
+                  { surface: "migration-scan", status: "unsupported", passed: false, linked_ticket: "honua-sdk-python#49" },
+                  { surface: "arcgis-import", status: "unsupported", passed: false, linked_ticket: "honua-sdk-python#49" },
+                  { surface: "geoserver-dry-run", status: "unsupported", passed: false, linked_ticket: "honua-sdk-python#49" },
+                  { surface: "migration-evidence", status: "unsupported", passed: false, linked_ticket: "honua-sdk-python#49" }
+                ],
+                dotnet: [
+                  { surface: "migration-scan", status: "unsupported", passed: false, linked_ticket: "honua-sdk-dotnet#134" },
+                  { surface: "arcgis-import", status: "unsupported", passed: false, linked_ticket: "honua-sdk-dotnet#134" },
+                  { surface: "geoserver-dry-run", status: "unsupported", passed: false, linked_ticket: "honua-sdk-dotnet#134" },
+                  { surface: "migration-evidence", status: "unsupported", passed: false, linked_ticket: "honua-sdk-dotnet#134" }
                 ]
               },
               cell_status: $cellStatus,

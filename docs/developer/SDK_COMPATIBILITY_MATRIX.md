@@ -127,11 +127,17 @@ records:
   runs are introduced
 - seed profile, service id, layer id, and `protocol_surfaces_by_sdk` for the
   exact surfaces each SDK exercised in that cell
+- migration automation surface visibility for `migration-scan`,
+  `arcgis-import`, `geoserver-dry-run`, and `migration-evidence`, including a
+  per-SDK pass/fail flag and `unsupported` status while SDK-owned wrappers and
+  live fixture flows are still tracked in the SDK repositories
 - pass/fail status, exit code, workflow run metadata, server log path, run log
   path, and a bounded failure log tail for reproduction
 
 Do not infer implemented per-SDK protocol coverage from package-version capture
-alone; the proof ledger must follow `protocol_surfaces_by_sdk`.
+alone. For migration automation, follow `migration_automation_by_sdk` before
+making a language-specific SDK claim; entries marked `unsupported` are evidence
+that the surface is recorded but not yet release-supported for that SDK.
 
 The smoke command uses a 40-minute command timeout inside a 75-minute job
 timeout. The remaining job budget covers checkout/setup, kill grace, evidence
