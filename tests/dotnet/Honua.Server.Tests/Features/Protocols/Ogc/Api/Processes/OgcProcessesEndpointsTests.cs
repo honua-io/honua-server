@@ -25,6 +25,8 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
 {
+    private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
+
     private readonly WebAppFixture _fixture = new();
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
@@ -163,6 +165,9 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
         first.TryGetProperty("jobControlOptions", out var jco).Should().BeTrue();
         jco.EnumerateArray().Select(e => e.GetString()).Should().Contain("async-execute");
         jco.EnumerateArray().Select(e => e.GetString()).Should().NotContain("dismiss");
+
+        processes.Select(p => p.GetProperty("id").GetString())
+            .Should().Contain(["geometry.buffer", "geometry.clip", "geometry.intersect", "geometry.project"]);
     }
 
     // -----------------------------------------------------------------------
@@ -185,6 +190,24 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
             .Select(e => e.GetString()).Should().Contain("async-execute");
         json.RootElement.GetProperty("jobControlOptions").EnumerateArray()
             .Select(e => e.GetString()).Should().NotContain("dismiss");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    public async Task ProcessDescription_FirstSliceVectorProcess_ReturnsConcreteInputsAndOutputs()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/processes/processes/geometry.buffer");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        root.GetProperty("id").GetString().Should().Be("geometry.buffer");
+        root.GetProperty("inputs").GetProperty("wkb").GetProperty("schema")
+            .GetProperty("contentMediaType").GetString().Should().Be("application/wkb");
+        root.GetProperty("inputs").GetProperty("distance").GetProperty("schema")
+            .GetProperty("type").GetString().Should().Be("number");
+        root.GetProperty("outputs").TryGetProperty("outputFeatureLayer", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -215,6 +238,21 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
             "/ogc/processes/processes/honua-geoprocessing/execution", content);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
+        response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_FirstSliceVectorProcess_SubmitsConcreteProcessId()
+    {
+        var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/ogc/processes/processes/geometry.buffer/execution", content);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
+        response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
         response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
     }
 

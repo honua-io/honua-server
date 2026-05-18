@@ -125,7 +125,7 @@ internal static class JobEndpoints
             }).IsAllowed)
             .Take(effectiveLimit)
             .Select(j => OgcProcessesConversionHelpers.ToOgcStatusInfo(
-                j, ProcessEndpoints.CanonicalProcessId, baseUrl))
+                j, ResolveOgcProcessId(j), baseUrl))
             .ToImmutableArray();
 
         var jobList = new OgcJobList
@@ -187,7 +187,7 @@ internal static class JobEndpoints
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(
-            job, ProcessEndpoints.CanonicalProcessId, baseUrl);
+            job, ResolveOgcProcessId(job), baseUrl);
 
         return Results.Json(statusInfo, OgcProcessesJsonContext.Default.OgcStatusInfo, MediaTypes.Json);
     }
@@ -800,14 +800,20 @@ internal static class JobEndpoints
         string jobId,
         ExecutionJobRecord job)
         => job.Status == ExecutionJobStatus.Cancelled
-            ? OgcProcessesResults.Dismissed(job, ProcessEndpoints.CanonicalProcessId, baseUrl)
+            ? OgcProcessesResults.Dismissed(job, ResolveOgcProcessId(job), baseUrl)
             : Results.Json(
                 OgcProcessesConversionHelpers.ToOgcStatusInfo(
                     job,
-                    ProcessEndpoints.CanonicalProcessId,
+                    ResolveOgcProcessId(job),
                     baseUrl),
                 OgcProcessesJsonContext.Default.OgcStatusInfo,
                 MediaTypes.Json);
+
+    private static string ResolveOgcProcessId(ExecutionJobRecord job)
+        => job.Spec.Parameters.TryGetValue("protocolProcessId", out var protocolProcessId)
+            && !string.IsNullOrWhiteSpace(protocolProcessId)
+                ? protocolProcessId
+                : ProcessEndpoints.CanonicalProcessId;
 
     private static void EnrichActivity(string operation)
     {

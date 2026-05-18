@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -22,9 +23,10 @@ internal static class ProcessEndpoints
     private const string BasePath = "/ogc/processes";
     private const string Tag = "OGC API Processes";
 
-    // V1 stub: single canonical process representing the Honua geoprocessing runtime.
-    // CatalogService formalization is follow-on work; this stub allows the OGC adapter
-    // to serve a valid process list and description while the catalog is being built.
+    // Canonical process representing the Honua geoprocessing runtime. The
+    // first process-migration evidence slice also projects selected catalog
+    // process ids individually, but the canonical plan surface remains
+    // available for multi-step DAG submission.
     internal const string CanonicalProcessId = "honua-geoprocessing";
 
     private static readonly OgcProcessSummary CanonicalProcessSummary = new()
@@ -100,7 +102,8 @@ internal static class ProcessEndpoints
 
     private static IResult GetProcessList(
         HttpContext context,
-        ILogger<OgcProcessesEndpointsLog> logger)
+        ILogger<OgcProcessesEndpointsLog> logger,
+        IProcessCatalog processCatalog)
     {
         EnrichActivity("GetProcessList");
         OgcProcessesLog.ProcessListRequested(logger);
@@ -116,9 +119,19 @@ internal static class ProcessEndpoints
                     "Process description"))
         };
 
+        var processBuilder = ImmutableArray.CreateBuilder<OgcProcessSummary>();
+        processBuilder.Add(summary);
+
+        foreach (var definition in processCatalog.ListProcesses()
+                     .Where(ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess)
+                     .OrderBy(process => process.ProcessId, StringComparer.Ordinal))
+        {
+            processBuilder.Add(ToOgcProcessSummary(definition, baseUrl));
+        }
+
         var processList = new OgcProcessList
         {
-            Processes = ImmutableArray.Create(summary),
+            Processes = processBuilder.ToImmutable(),
             Links = ImmutableArray.Create(
                 Link.Create($"{baseUrl}{BasePath}/processes", RelationTypes.Self, MediaTypes.Json, "This document"))
         };
@@ -129,33 +142,45 @@ internal static class ProcessEndpoints
     private static IResult GetProcessDescription(
         string processId,
         HttpContext context,
-        ILogger<OgcProcessesEndpointsLog> logger)
+        ILogger<OgcProcessesEndpointsLog> logger,
+        IProcessCatalog processCatalog)
     {
         EnrichActivity("GetProcess");
         OgcProcessesLog.ProcessDescriptionRequested(logger, processId);
 
-        if (!string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase))
+        {
+            var canonicalBaseUrl = BaseUrlResolver.GetBaseUrl(context);
+            var description = CanonicalProcessDescription with
+            {
+                Links = ImmutableArray.Create(
+                    Link.Create($"{canonicalBaseUrl}{BasePath}/processes/{CanonicalProcessId}", RelationTypes.Self, MediaTypes.Json, "This document"),
+                    Link.Create($"{canonicalBaseUrl}{BasePath}/processes/{CanonicalProcessId}/execution", "http://www.opengis.net/def/rel/ogc/1.0/execute", MediaTypes.Json, "Execute process"))
+            };
+
+            return Results.Json(description, OgcProcessesJsonContext.Default.OgcProcessDescription, MediaTypes.Json);
+        }
+
+        var definition = processCatalog.GetProcess(processId);
+        if (definition == null || !ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition))
         {
             OgcProcessesLog.ProcessNotFound(logger, processId);
             return OgcProcessesResults.NoSuchProcess(processId);
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var description = CanonicalProcessDescription with
-        {
-            Links = ImmutableArray.Create(
-                Link.Create($"{baseUrl}{BasePath}/processes/{CanonicalProcessId}", RelationTypes.Self, MediaTypes.Json, "This document"),
-                Link.Create($"{baseUrl}{BasePath}/processes/{CanonicalProcessId}/execution", "http://www.opengis.net/def/rel/ogc/1.0/execute", MediaTypes.Json, "Execute process"))
-        };
-
-        return Results.Json(description, OgcProcessesJsonContext.Default.OgcProcessDescription, MediaTypes.Json);
+        return Results.Json(
+            ToOgcProcessDescription(definition, baseUrl),
+            OgcProcessesJsonContext.Default.OgcProcessDescription,
+            MediaTypes.Json);
     }
 
     private static async Task<IResult> ExecuteProcess(
         string processId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IGeoprocessingJobService jobService)
+        IGeoprocessingJobService jobService,
+        IProcessCatalog processCatalog)
     {
         EnrichActivity("ExecuteProcess");
 
@@ -169,7 +194,16 @@ internal static class ProcessEndpoints
                 OperatorResourceType.Process,
                 OperatorOperation.Execute);
 
-            if (!string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase))
+            var definition = string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : processCatalog.GetProcess(processId);
+            if (definition != null && !ProcessMigrationEvidenceClassifier.IsFirstSliceOgcProcess(definition))
+            {
+                definition = null;
+            }
+
+            if (!string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase)
+                && definition == null)
             {
                 OgcProcessesLog.ProcessNotFound(logger, processId);
                 return OgcProcessesResults.NoSuchProcess(processId);
@@ -212,18 +246,7 @@ internal static class ProcessEndpoints
                     $"Response mode '{request.Response}' is not supported. V1 only supports 'document' mode.");
             }
 
-            if (request.Inputs == null
-                || !request.Inputs.TryGetValue("plan", out var planElement)
-                || planElement.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
-            {
-                OgcProcessesLog.ExecutionRequestInvalid(logger, processId);
-                return OgcProcessesResults.Error(
-                    StatusCodes.Status400BadRequest,
-                    "Invalid execution request",
-                    "The 'inputs' object must contain a 'plan' property with a non-null analysis plan.");
-            }
-
-            if (!TryParseAnalysisPlan(planElement, out var analysisPlan, out var parseError))
+            if (!TryBuildAnalysisPlan(processId, request, definition, out var analysisPlan, out var parseError))
             {
                 OgcProcessesLog.PlanStructureInvalid(logger, processId, parseError ?? "Unknown plan parsing error.");
                 return OgcProcessesResults.Error(
@@ -399,6 +422,198 @@ internal static class ProcessEndpoints
             Outputs = outputs
         };
         return true;
+    }
+
+    private static bool TryBuildAnalysisPlan(
+        string processId,
+        OgcExecuteRequest request,
+        ProcessDefinition? processDefinition,
+        out AnalysisPlan? plan,
+        out string? error)
+    {
+        plan = null;
+        error = null;
+
+        if (processDefinition == null)
+        {
+            if (request.Inputs == null
+                || !request.Inputs.TryGetValue("plan", out var planElement)
+                || planElement.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+            {
+                error = "The 'inputs' object must contain a 'plan' property with a non-null analysis plan.";
+                return false;
+            }
+
+            return TryParseAnalysisPlan(planElement, out plan, out error);
+        }
+
+        if (request.Inputs == null)
+        {
+            error = "The 'inputs' object is required.";
+            return false;
+        }
+
+        var inputs = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var input in request.Inputs)
+        {
+            if (input.Value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+            {
+                error = $"Input '{input.Key}' must not be null.";
+                return false;
+            }
+
+            inputs[input.Key] = JsonElementToCanonicalInput(input.Value);
+        }
+
+        var slug = processDefinition.ProcessId.Replace(".", "-", StringComparison.Ordinal);
+        plan = new AnalysisPlan
+        {
+            PlanId = $"ogc-{slug}-{Guid.NewGuid():N}",
+            IntentId = $"ogc-process:{processDefinition.ProcessId}",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = $"ogc-{slug}",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = processDefinition.ProcessId,
+                    Inputs = inputs
+                }
+            ],
+            Outputs = processDefinition.OutputArtifactKinds
+        };
+
+        return true;
+    }
+
+    private static string JsonElementToCanonicalInput(JsonElement element)
+        => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString() ?? string.Empty,
+            JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False => element.GetRawText(),
+            _ => element.GetRawText()
+        };
+
+    private static OgcProcessSummary ToOgcProcessSummary(ProcessDefinition definition, string baseUrl)
+        => new()
+        {
+            Id = definition.ProcessId,
+            Title = definition.Title,
+            Description = definition.Description,
+            Version = "1.0.0",
+            JobControlOptions = ImmutableArray.Create("async-execute"),
+            OutputTransmission = ImmutableArray.Create("value"),
+            Links = ImmutableArray.Create(
+                Link.Create(
+                    $"{baseUrl}{BasePath}/processes/{Uri.EscapeDataString(definition.ProcessId)}",
+                    RelationTypes.Self,
+                    MediaTypes.Json,
+                    "Process description"))
+        };
+
+    private static OgcProcessDescription ToOgcProcessDescription(ProcessDefinition definition, string baseUrl)
+        => new()
+        {
+            Id = definition.ProcessId,
+            Title = definition.Title,
+            Description = $"{definition.Description} First-slice migration evidence projection; execution is asynchronous and returns document-mode artifact references when the runtime publishes results.",
+            Version = "1.0.0",
+            JobControlOptions = ImmutableArray.Create("async-execute"),
+            OutputTransmission = ImmutableArray.Create("value"),
+            Inputs = definition.Parameters
+                .ToImmutableDictionary(
+                    parameter => parameter.Name,
+                    ToOgcInputDescription,
+                    StringComparer.Ordinal),
+            Outputs = BuildOgcOutputDescriptions(definition),
+            Links = ImmutableArray.Create(
+                Link.Create(
+                    $"{baseUrl}{BasePath}/processes/{Uri.EscapeDataString(definition.ProcessId)}",
+                    RelationTypes.Self,
+                    MediaTypes.Json,
+                    "This document"),
+                Link.Create(
+                    $"{baseUrl}{BasePath}/processes/{Uri.EscapeDataString(definition.ProcessId)}/execution",
+                    "http://www.opengis.net/def/rel/ogc/1.0/execute",
+                    MediaTypes.Json,
+                    "Execute process"))
+        };
+
+    private static OgcProcessIoDescription ToOgcInputDescription(ProcessParameterSpec parameter)
+        => new()
+        {
+            Title = parameter.DisplayName,
+            Description = parameter.Required
+                ? $"{parameter.Description} Required."
+                : parameter.Description,
+            Schema = new OgcProcessIoSchema
+            {
+                Type = parameter.ValueType switch
+                {
+                    ProcessParameterValueType.WholeNumber or ProcessParameterValueType.Srid => "integer",
+                    ProcessParameterValueType.FloatingPoint => "number",
+                    ProcessParameterValueType.Flag => "boolean",
+                    ProcessParameterValueType.WkbArray => "array",
+                    _ => "string"
+                },
+                ContentMediaType = parameter.ValueType switch
+                {
+                    ProcessParameterValueType.Wkb => "application/wkb",
+                    ProcessParameterValueType.WkbArray => "application/json",
+                    _ => null
+                }
+            }
+        };
+
+    private static ImmutableDictionary<string, OgcProcessIoDescription> BuildOgcOutputDescriptions(
+        ProcessDefinition definition)
+    {
+        var outputs = ImmutableDictionary.CreateBuilder<string, OgcProcessIoDescription>(StringComparer.Ordinal);
+        for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
+        {
+            var kind = definition.OutputArtifactKinds[index];
+            var name = BuildOutputName(kind, index, definition.OutputArtifactKinds);
+            outputs[name] = new OgcProcessIoDescription
+            {
+                Title = name,
+                Description = $"Artifact result of type {kind}.",
+                Schema = new OgcProcessIoSchema { Type = "object", ContentMediaType = MediaTypes.Json }
+            };
+        }
+
+        return outputs.ToImmutable();
+    }
+
+    private static string BuildOutputName(ArtifactKind kind, int index, IReadOnlyList<ArtifactKind> allKinds)
+    {
+        var baseName = kind switch
+        {
+            ArtifactKind.FeatureLayer => "outputFeatureLayer",
+            ArtifactKind.Table => "outputTable",
+            ArtifactKind.Raster => "outputRaster",
+            ArtifactKind.File => "outputFile",
+            ArtifactKind.Report => "outputReport",
+            ArtifactKind.Map => "outputMap",
+            ArtifactKind.Scalar => "outputScalar",
+            ArtifactKind.AppBundle => "outputBundle",
+            _ => "output"
+        };
+
+        if (allKinds.Count(candidate => candidate == kind) <= 1)
+        {
+            return baseName;
+        }
+
+        var ordinal = 0;
+        for (var i = 0; i <= index; i++)
+        {
+            if (allKinds[i] == kind)
+            {
+                ordinal++;
+            }
+        }
+
+        return $"{baseName}{ordinal}";
     }
 
     private static bool TryParseStep(
