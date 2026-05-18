@@ -8,12 +8,19 @@ the cross-repo epic
 
 The machine-readable inventory is
 [`metadata-catalog-endpoints.v1.json`](metadata-catalog-endpoints.v1.json).
+This is a server-side contract slice related to #954; it does not close the
+epic until the downstream SDK parity issues are complete or explicitly
+deferred with rationale.
 SDK implementation slices are tracked in
 [honua-sdk-dotnet#146](https://github.com/honua-io/honua-sdk-dotnet/issues/146),
 [honua-sdk-js#139](https://github.com/honua-io/honua-sdk-js/issues/139), and
 [honua-sdk-python#54](https://github.com/honua-io/honua-sdk-python/issues/54).
 OGC API Records server implementation is tracked by
 [honua-server#952](https://github.com/honua-io/honua-server/issues/952).
+Metadata v2 projection work is tracked by
+[honua-server#1035](https://github.com/honua-io/honua-server/issues/1035),
+[honua-server#1040](https://github.com/honua-io/honua-server/issues/1040), and
+[honua-server#1043](https://github.com/honua-io/honua-server/issues/1043).
 
 ## Use The Right Catalog
 
@@ -22,8 +29,24 @@ OGC API Records server implementation is tracked by
 | OGC API Records | Public, standards-based catalog discovery across services, layers, records, and safe metadata once #952 lands. | Admin-only metadata mutation or migration planning. |
 | Honua admin catalog and metadata resources | Operator/control-plane service, layer, group, source descriptor, manifest, and style metadata. | Anonymous public discovery. |
 | STAC | Spatiotemporal asset cataloging, collection/item search, and imagery/asset-oriented discovery. | General service catalog replacement. |
-| Migration source inventory | External ArcGIS GeoServices REST and GeoServer REST assessment before import or cutover. | Publishing Honua's public catalog outward. |
+| Migration source inventory | External ArcGIS GeoServices REST, GeoServer REST, WFS, WMS, and WMTS assessment before import or cutover. | Publishing Honua's public catalog outward. |
 | Protocol-native metadata | Exact service capabilities for FeatureServer, MapServer, ImageServer, OGC, WFS, WMS, WMTS, WCS, OData, and scenes. | Cross-protocol catalog normalization by itself. |
+
+## Metadata v2 Projection Alignment
+
+Metadata v2 keeps one canonical resource/control-plane source of truth and
+projects it into catalog or protocol read models. The endpoint inventory uses
+machine-readable `capabilities`, `projectionTargetSlugs`, and
+`surfaceAlignment` fields so SDK parity work can decide which reader to call
+without reverse-engineering protocol shape.
+
+| Surface | Matrix entries | Canonical read model | SDK parity gate |
+|---|---|---|---|
+| OGC Records | `ogc-records-catalog` | Planned public standards catalog projection over safe service, layer, source-descriptor, STAC, and protocol metadata. | Wait for #952 to pin route, query, paging, auth, error, and raw-payload semantics. |
+| Honua admin catalog | `admin-sdk-capabilities`; `admin-service-catalog`; `admin-connection-layer-inventory`; `admin-metadata-resources`; `admin-metadata-manifests`; `admin-manifest-lifecycle`; `admin-style-metadata`; `admin-scene-dataset-registry` | Admin control-plane source for Metadata v2 resources, manifests, service settings, source descriptors, GitOps state, style metadata, and scene registry metadata. | Call `GET /api/v1/admin/capabilities` first; preserve envelopes, ETags, feature flags, edition gates, and precondition errors. |
+| STAC | `stac-catalog` | Standards projection for asset and spatiotemporal catalog/search workloads. | Preserve STAC-native links, item paging, filter/search semantics, ETags, and raw item payloads. |
+| Migration inventory | `migration-source-inventory`; `legacy-external-discovery` | External ArcGIS, GeoServer, WFS, WMS, and WMTS source assessment artifact chain before a source is imported or published. | Preserve inventory, generated manifest, parity evidence, readiness states, and stable compatibility codes. |
+| Protocol-native metadata | `geoservices-service-directory`; `geoservices-featureserver-metadata`; `geoservices-mapserver-metadata`; `geoservices-imageserver-metadata`; `ogc-api-features-metadata`; `ogc-api-maps-metadata`; `ogc-api-tiles-metadata`; `ogc-api-coverages-metadata`; `wfs-capabilities-and-schema`; `wms-wmts-wcs-capabilities`; `odata-service-metadata`; `scene-sdk-metadata` | Exact generated metadata for one protocol family, derived from catalog resources, service settings, layer metadata, and runtime capabilities. | Preserve native payload access while aligning service/layer identifiers, auth behavior, errors, and paging conventions. |
 
 ## Categories
 
@@ -48,10 +71,12 @@ OGC API Records server implementation is tracked by
 
 | ID | Endpoint path patterns | Audience and auth posture | SDK method target | Response, paging, filters | Test expectation |
 |---|---|---|---|---|---|
+| `admin-sdk-capabilities` | `GET /api/v1/admin/version`; `GET /api/v1/admin/capabilities` | Admin SDKs, automation, and operators. Admin authorization required. | .NET/JS/Python admin clients should perform this compatibility handshake before admin metadata/catalog calls. | Admin `ApiResponse` envelope with server version, metadata API version, resource kinds, metadata schema compatibility, and feature flags. No paging. | Admin endpoint tests cover version/capabilities and 401 behavior; SDK parity tests branch on `data.compatibility.controlPlaneApi.major` and feature flags before admin calls. |
 | `admin-service-catalog` | `GET /api/v1/admin/services`; `GET /api/v1/admin/services/{serviceName}/settings` | Operators and admin SDKs. Admin authorization required. | .NET `IHonuaCatalogClient.ListServicesAsync` and admin service settings; JS/Python admin service catalog methods. | Admin `ApiResponse` envelope with service summaries or settings. No paging. | Admin service settings tests and SDK admin catalog tests cover list/detail and protocol metadata. |
 | `admin-connection-layer-inventory` | `GET /api/v1/admin/connections/{id}/tables`; `GET /api/v1/admin/connections/{id}/layers` | Operators and SDK publishing workflows. Admin authorization required. | .NET `HonuaAdminClient`; JS/Python admin connection/table/layer discovery methods. | Admin `ApiResponse` envelope with table or published layer summaries. No SDK-visible paging. | Layer publishing and table discovery tests cover response contracts; SDKs keep this separate from public catalog reads. |
 | `admin-metadata-resources` | `GET /api/v1/admin/metadata/resources`; `GET /api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` | Operators and SDKs reading Honua metadata resources such as `Group` and `SourceDescriptor`. Admin authorization required. | .NET metadata resources plus `IHonuaCatalogClient` groups/source descriptors; JS/Python admin metadata resource methods. | Admin `ApiResponse` envelope with `honua.io` metadata documents and ETags on detail reads. List filters by `kind` and `namespace`; no paging. | Metadata resource tests cover filters, URL encoding, ETags, 404, 412, and 428 behavior; SDK parity tests cover `Group` and `SourceDescriptor`. |
 | `admin-metadata-manifests` | `GET /api/v1/admin/manifest`; `POST /api/v1/admin/manifest/apply` | Operators and GitOps automation. Admin authorization required. | .NET/JS/Python admin manifest export/apply methods. | Admin `ApiResponse` envelope with metadata manifest or apply result. No paging; apply supports dry-run, prune, and approval semantics where enabled. | Manifest tests cover export, apply, dry-run, prune, and SDK compatibility feature flags. |
+| `admin-manifest-lifecycle` | `GET /api/v1/admin/manifest/drift`; `GET /api/v1/admin/manifest/versions`; `GET /api/v1/admin/manifest/versions/{versionId}`; `GET /api/v1/admin/manifest/pending/`; `GET /api/v1/admin/manifest/pending/{id}`; `GET /api/v1/admin/manifest/pending/history`; `GET /api/v1/admin/gitops/watch`; `GET /api/v1/admin/gitops/changes`; `GET /api/v1/admin/gitops/changes/{id}`; `GET /api/v1/admin/gitops/changes/{id}/diff` | Operators, GitOps automation, and admin SDKs. Admin authorization required; approval and GitOps reads can be edition-gated. | .NET/JS/Python admin manifest lifecycle and GitOps read methods where enabled. | Admin `ApiResponse` envelope with drift reports, manifest versions, pending changes, approval history, GitOps watch configuration, change records, or diffs. Versions use `limit`/`offset`; pending reads filter by status; drift supports `verbose=true`. | Manifest drift, approval, and GitOps watch endpoint tests cover happy paths, gating, paging/filter behavior, and SDKs must check capabilities before edition-gated lifecycle reads. |
 | `admin-style-metadata` | `GET /api/v1/admin/metadata/layers/{layerId}/style`; `GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld`; `POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld`; `POST /api/v1/admin/metadata/layers/{layerId}/suggest-style` | Operators and SDKs that inspect or move style metadata as data. Admin authorization required. | .NET/JS/Python admin layer style methods. | Admin style JSON, SLD XML export, or style suggestion response. No paging. | Style endpoint tests cover MapLibre JSON, SLD import/export diagnostics, and stable unsupported-style codes. |
 | `admin-scene-dataset-registry` | `GET /api/v1/admin/scenes`; `GET /api/v1/admin/scenes/{id}`; `GET /api/v1/admin/scenes/{id}/resolve` | Operators managing registered scene datasets. Admin authorization required. | Admin scene dataset registry methods where exposed by each SDK. | Admin scene dataset summary/detail/resolve JSON. List supports `includeInactive`; no paging. | Scene dataset registry tests cover list/detail/resolve; SDKs document unsupported rows if a language does not expose admin scene registry methods. |
 
@@ -74,7 +99,7 @@ OGC API Records server implementation is tracked by
 
 | ID | Endpoint path patterns | Audience and auth posture | SDK method target | Response, paging, filters | Test expectation |
 |---|---|---|---|---|---|
-| `migration-source-inventory` | `POST /api/v1/admin/import/scan`; `POST /api/v1/admin/import/scan?export=json` | Operators and SDK migration tooling that inventory external ArcGIS GeoServices REST or GeoServer REST sources. Admin authorization required. | .NET `HonuaAdminClient.ScanMigrationSourceAsync`; JS/Python admin migration toolkit client methods. | `honua.migration.source-inventory` v1.0 artifact, optionally as indented JSON attachment. Request body uses `sourceKind`, `sourceUrl`, `timeoutSeconds`, credentials where supported, and scanner validation. No response paging. | Migration scanner tests cover source kind normalization, ArcGIS/GeoServer inventory artifacts, compatibility codes, failed-artifact behavior, `export=json`, and SDK model round trips. |
+| `migration-source-inventory` | `POST /api/v1/admin/import/scan`; `POST /api/v1/admin/import/scan?export=json` | Operators and SDK migration tooling that inventory external ArcGIS GeoServices REST, GeoServer REST, WFS, WMS, or WMTS sources. Admin authorization required. | .NET `HonuaAdminClient.ScanMigrationSourceAsync`; JS/Python admin migration toolkit client methods. | `honua.migration.source-inventory` v1.0 artifact, optionally as indented JSON attachment. Request body uses `sourceKind`, `sourceUrl`, `timeoutSeconds`, credentials where supported, `includeStyleContent`, `serviceVersion`, `artifactSet=all`, optional `targetServiceName`, and scanner validation. `artifactSet=all` returns inventory plus generated manifest and parity evidence artifacts. No response paging. | Migration scanner tests cover source kind normalization, ArcGIS/GeoServer/OGC inventory artifacts, compatibility codes, failed-artifact behavior, `artifactSet=all`, `export=json`, and SDK model round trips. |
 | `legacy-external-discovery` | `POST /api/v1/admin/import/geoservices/discover`; `POST /api/v1/admin/import/geoserver/discover` | Existing admin workflows that predate the unified migration inventory artifact. Admin authorization required. | SDKs should prefer the unified migration scanner and expose legacy discovery only for compatibility. | Legacy discovery JSON specific to ArcGIS GeoServices or GeoServer import flows. No response paging. | Legacy import endpoint tests remain in place; new SDK parity should prefer `migration-source-inventory` unless a compatibility reason is documented. |
 
 ## SDK Alignment Rules
