@@ -536,6 +536,14 @@ public static class EndpointRegistry
         new("POST", "/ogc/features/collections/{collectionId}/buffer-aggregate"),
         new("POST", "/ogc/features/collections/{collectionId}/density"),
 
+        // OGC API Records
+        new("GET", "/ogc/records"),
+        new("GET", "/ogc/records/conformance"),
+        new("GET", "/ogc/records/collections"),
+        new("GET", "/ogc/records/collections/{collectionId}"),
+        new("GET", "/ogc/records/collections/{collectionId}/items"),
+        new("GET", "/ogc/records/collections/{collectionId}/items/{recordId}"),
+
         // OGC API Coverages
         new("GET", "/ogc/coverages"),
         new("GET", "/ogc/coverages/conformance"),

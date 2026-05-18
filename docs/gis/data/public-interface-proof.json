@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-05-06T00:00:00Z",
+  "updatedUtc": "2026-05-18T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -1128,6 +1128,50 @@
           "status": "bounded-child-ticket",
           "linkedTicket": "#31",
           "versionCaptureRule": "When the .NET OGC API Features lane is implemented, the SDK compatibility evidence must record Honua.Sdk.OgcFeatures package version, Honua Server commit, seed profile, the ogc-api-features surface, and bounded failure diagnostics."
+        }
+      ]
+    },
+    {
+      "surfaceId": "ogc-api-records",
+      "displayName": "OGC API Records",
+      "surfaceKind": "http-route-family",
+      "protocol": "OGC API Records",
+      "canonicalIdentifier": "/ogc/records",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/ogc/records"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Records/OgcRecordsEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#952",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "Supported OGC API Records subset is documented and validated by targeted endpoint coverage",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "docs/gis/specifications/ogc-api-records-coverage.md",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Records/OgcRecordsEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#952",
+          "versionCaptureRule": null
         }
       ]
     },

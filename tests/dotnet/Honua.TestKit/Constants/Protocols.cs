@@ -45,6 +45,11 @@ public static class Protocols
     public const string OgcApiProcesses = "OGC-API-Processes";
 
     /// <summary>
+    /// OGC API - Records (Part 1: Core).
+    /// </summary>
+    public const string OgcApiRecords = "OGC-API-Records";
+
+    /// <summary>
     /// OGC API - Tiles (Part 1: Core).
     /// </summary>
     public const string OgcApiTiles = "OGC-API-Tiles";

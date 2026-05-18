@@ -63,6 +63,11 @@ internal static class RequestTelemetryClassifier
             return HonuaTelemetry.Protocols.OgcProcesses;
         }
 
+        if (StartsWithPathSegment(value, "/ogc/records"))
+        {
+            return HonuaTelemetry.Protocols.OgcRecords;
+        }
+
         if (StartsWithPathSegment(value, "/wfs"))
         {
             return HonuaTelemetry.Protocols.Wfs20;
