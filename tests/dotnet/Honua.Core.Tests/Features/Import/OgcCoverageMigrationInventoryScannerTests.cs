@@ -113,6 +113,7 @@ public sealed class OgcCoverageMigrationInventoryScannerTests
 
         artifact.SourceKind.Should().Be("ogc-wcs");
         artifact.Source.ServiceType.Should().Be("WCS");
+        artifact.Source.Product.Should().Be("GeoServer");
         artifact.Source.Version.Should().Be("2.0.1");
         artifact.AuthPosture.Mode.Should().Be("anonymous");
         artifact.ScanCompleteness.Status.Should().Be("complete");
@@ -230,6 +231,42 @@ public sealed class OgcCoverageMigrationInventoryScannerTests
                     OgcCoverageMigrationCompatibilityCodes.HdfUnsupported,
                     OgcCoverageMigrationCompatibilityCodes.ZarrUnsupported
                 ]);
+    }
+
+    [Fact]
+    public async Task ScanAsync_CoverageLevelAccessConstraints_MarkServiceMetadataForManualReview()
+    {
+        var scanner = CreateScanner();
+
+        var artifact = await scanner.ScanAsync(new OgcCoverageServiceScanRequest
+        {
+            ServiceType = "WCS",
+            ServiceUrl = "https://example.com/wcs",
+            ServiceMetadata = new OgcCoverageServiceMetadata
+            {
+                Title = "Reference WCS",
+                AccessConstraints = ["none"]
+            },
+            Coverages =
+            [
+                BuildGeoTiffCoverage("restricted") with
+                {
+                    AccessConstraints = ["internal use only"]
+                }
+            ]
+        });
+
+        artifact.AuthPosture.Mode.Should().Be("access-constrained");
+        artifact.AuthPosture.Notes.Should().ContainSingle().Which.Should().Be("internal use only");
+
+        var serviceMetadata = artifact.ExternalDependencies.Should()
+            .ContainSingle(dependency => dependency.Id == "metadata:coverage-service")
+            .Subject;
+        serviceMetadata.Metadata["accessConstraints"].Should().Be("internal use only");
+        serviceMetadata.Compatibility.Should().Match<MigrationCompatibilityAssessment>(compatibility =>
+            compatibility.Level == "partial" &&
+            compatibility.Code == OgcCoverageMigrationCompatibilityCodes.ManualReview &&
+            compatibility.Warnings.Contains("internal use only"));
     }
 
     [Fact]

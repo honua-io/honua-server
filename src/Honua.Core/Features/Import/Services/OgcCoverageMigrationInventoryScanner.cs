@@ -39,7 +39,9 @@ public sealed partial class OgcCoverageMigrationInventoryScanner
 
         var serviceKind = NormalizeServiceType(request.ServiceType);
         var sourceKind = serviceKind == "WCS" ? "ogc-wcs" : "ogc-api-coverages";
-        var product = serviceKind == "WCS" ? "OGC Web Coverage Service" : "OGC API Coverages";
+        var product = FirstNonBlank(
+            request.ServiceMetadata.Product,
+            serviceKind == "WCS" ? "OGC Web Coverage Service" : "OGC API Coverages")!;
         var serviceUri = ValidateServiceUri(request.ServiceUrl);
         var version = FirstNonBlank(request.Version) ?? "unknown";
         var displayName = FirstNonBlank(request.ServiceMetadata.Title, serviceUri.Host) ?? product;
@@ -236,9 +238,11 @@ public sealed partial class OgcCoverageMigrationInventoryScanner
         AddMetadata(metadata, "description", request.ServiceMetadata.Description);
         AddMetadata(metadata, "providerName", request.ServiceMetadata.ProviderName);
         AddMetadata(metadata, "fees", string.Join("; ", NormalizeStrings(request.ServiceMetadata.Fees)));
-        AddMetadata(metadata, "accessConstraints", string.Join("; ", NormalizeAccessConstraints(request.ServiceMetadata.AccessConstraints)));
+        var accessConstraints = NormalizeAccessConstraints(request.ServiceMetadata.AccessConstraints
+            .Concat(request.Coverages.SelectMany(static coverage => coverage.AccessConstraints)));
+        AddMetadata(metadata, "accessConstraints", string.Join("; ", accessConstraints));
 
-        var hasAccessConstraints = NormalizeAccessConstraints(request.ServiceMetadata.AccessConstraints).Length > 0;
+        var hasAccessConstraints = accessConstraints.Length > 0;
         return new MigrationExternalDependency
         {
             Id = "metadata:coverage-service",
@@ -250,7 +254,7 @@ public sealed partial class OgcCoverageMigrationInventoryScanner
             Compatibility = hasAccessConstraints
                 ? MigrationInventoryHelpers.Partial(
                     "Coverage service metadata advertises access constraints that must be reviewed before cutover.",
-                    request.ServiceMetadata.AccessConstraints,
+                    accessConstraints,
                     ["Confirm licensing, authentication, and redistribution constraints before automating coverage migration."],
                     OgcCoverageMigrationCompatibilityCodes.ManualReview)
                 : MigrationInventoryHelpers.Compatible(
