@@ -100,8 +100,9 @@ public sealed class OgcProcessesDurableRuntimeTests(RedisFixture redis)
                 "/ogc/processes/processes/geometry.buffer/execution");
             request.Headers.Add("Prefer", "respond-async");
             request.Content = new StringContent(
-                "{\"response\":\"document\",\"inputs\":{" +
-                $"\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}",
+                "{\"response\":\"document\",\"inputs\":{\"wkb\":\"" +
+                PointWkbBase64 +
+                "\",\"srid\":4326,\"distance\":25.5}}",
                 Encoding.UTF8,
                 "application/json");
 
