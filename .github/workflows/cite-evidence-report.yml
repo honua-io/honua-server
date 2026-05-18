@@ -122,7 +122,7 @@ jobs:
 
       - name: Upload GitHub Pages artifact
         if: inputs.publish_pages
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
           path: artifacts/cite-evidence
 
