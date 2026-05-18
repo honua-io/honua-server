@@ -448,13 +448,20 @@ public sealed class LayerPublishingException : Exception
     public LayerPublishingErrorKind ErrorKind { get; }
 
     /// <summary>
+    /// Gets the existing layer identifier associated with a conflict, when known.
+    /// </summary>
+    public int? LayerId { get; }
+
+    /// <summary>
     /// Initializes a new instance of <see cref="LayerPublishingException"/>.
     /// </summary>
     /// <param name="errorKind">The error category.</param>
     /// <param name="message">A message describing the failure.</param>
-    public LayerPublishingException(LayerPublishingErrorKind errorKind, string message)
+    /// <param name="layerId">Existing layer identifier associated with a conflict, when known.</param>
+    public LayerPublishingException(LayerPublishingErrorKind errorKind, string message, int? layerId = null)
         : base(message)
     {
         ErrorKind = errorKind;
+        LayerId = layerId;
     }
 }

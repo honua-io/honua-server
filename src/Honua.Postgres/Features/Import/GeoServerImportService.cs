@@ -872,6 +872,32 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 .ConfigureAwait(false);
             var applyPlanWarnings = BuildApplyPlanWarnings(applyPlan, applyExecution);
 
+            if (applyExecution.Summary.FailedStepCount > 0)
+            {
+                var failureMessage = BuildApplyFailureMessage(applyExecution);
+                currentProgress = currentProgress with
+                {
+                    Status = GeoServerImportStatus.Failed,
+                    ResourcesProcessed = applyPlan.Summary.TotalStepCount,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Apply plan failed",
+                    ErrorMessage = failureMessage,
+                    Warnings = applyPlanWarnings,
+                    ApplyPlan = applyPlan,
+                    ApplyExecution = applyExecution
+                };
+                progress?.Report(currentProgress);
+
+                return CreateFailedApplyPlanResult(
+                    serviceInfo,
+                    applyPlan,
+                    applyExecution,
+                    request,
+                    stopwatch.Elapsed,
+                    applyPlanWarnings,
+                    failureMessage);
+            }
+
             currentProgress = currentProgress with
             {
                 Status = GeoServerImportStatus.Completed,
@@ -1341,23 +1367,23 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             return CreateExecutionStepResult(step, "manual-review", targetError);
         }
 
+        var publishRequest = new LayerPublishRequest
+        {
+            Schema = target.Schema,
+            Table = target.Table,
+            LayerName = step.TargetResourceName ?? layer.Name,
+            Description = layer.Abstract,
+            GeometryColumn = null,
+            GeometryType = null,
+            Srid = request.TargetSrid ?? ResolveSrid(layer.SRS),
+            PrimaryKey = null,
+            Fields = [],
+            ServiceName = step.TargetServiceName,
+            Enabled = request.AutoPublishLayers && layer.Enabled
+        };
+
         try
         {
-            var publishRequest = new LayerPublishRequest
-            {
-                Schema = target.Schema,
-                Table = target.Table,
-                LayerName = step.TargetResourceName ?? layer.Name,
-                Description = layer.Abstract,
-                GeometryColumn = null,
-                GeometryType = null,
-                Srid = request.TargetSrid ?? ResolveSrid(layer.SRS),
-                PrimaryKey = null,
-                Fields = [],
-                ServiceName = step.TargetServiceName,
-                Enabled = request.AutoPublishLayers && layer.Enabled
-            };
-
             var publishedLayer = await _layerPublishingService.PublishLayerAsync(
                     _connectionProvider.GetConnectionString(),
                     publishRequest,
@@ -1372,10 +1398,12 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         }
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.Conflict)
         {
-            return CreateExecutionStepResult(
-                step,
-                "already-applied",
-                "A catalog layer for the target table already exists; the apply step is idempotent.");
+            return await HandleLayerPublishingConflictAsync(
+                    step,
+                    publishRequest,
+                    ex,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
         {
@@ -1404,6 +1432,60 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 step,
                 "failed",
                 "The catalog apply step failed unexpectedly and requires operator review.");
+        }
+    }
+
+    private async Task<MigrationApplyExecutionStepResult> HandleLayerPublishingConflictAsync(
+        MigrationApplyPlanStep step,
+        LayerPublishRequest publishRequest,
+        LayerPublishingException exception,
+        CancellationToken cancellationToken)
+    {
+        if (_layerPublishingService == null || !exception.LayerId.HasValue)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "A catalog layer for the target table already exists, but the publisher did not return the existing layer id needed to link it to the target service.");
+        }
+
+        try
+        {
+            var linkedLayer = await _layerPublishingService.LinkExistingLayerToServiceAsync(
+                    _connectionProvider.GetConnectionString(),
+                    exception.LayerId.Value,
+                    publishRequest.ServiceName ?? "default",
+                    publishRequest.Enabled,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (linkedLayer == null)
+            {
+                return CreateExecutionStepResult(
+                    step,
+                    "manual-review",
+                    "A catalog layer for the target table already exists, but it could not be linked to the target service automatically.");
+            }
+
+            return CreateExecutionStepResult(
+                step,
+                "already-applied",
+                $"Catalog layer {linkedLayer.LayerId} already exists for target table {publishRequest.Schema}.{publishRequest.Table} and is linked to target service {linkedLayer.ServiceName}.",
+                linkedLayer.LayerId);
+        }
+        catch (LayerPublishingException)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "failed",
+                "The catalog apply conflict recovery failed in the target catalog publisher and requires operator review.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "failed",
+                "The catalog apply conflict recovery failed unexpectedly and requires operator review.");
         }
     }
 
@@ -1556,6 +1638,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         return warnings;
     }
 
+    private static string BuildApplyFailureMessage(MigrationApplyExecutionArtifact applyExecution)
+        => $"{applyExecution.Summary.FailedStepCount} GeoServer apply execution step(s) failed unexpectedly; inspect apply execution evidence before retrying.";
+
     private static GeoServerImportResult CreateApplyPlanResult(
         GeoServerServiceInfo serviceInfo,
         MigrationApplyPlanArtifact applyPlan,
@@ -1576,6 +1661,33 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             ResourcesAlreadyApplied = applyExecution.Summary.AlreadyAppliedStepCount,
             ResourcesManualReview = applyExecution.Summary.ManualReviewStepCount,
             ResourcesUnsupported = applyExecution.Summary.UnsupportedStepCount,
+            ApplyPlan = applyPlan,
+            ApplyExecution = applyExecution
+        };
+
+    private static GeoServerImportResult CreateFailedApplyPlanResult(
+        GeoServerServiceInfo serviceInfo,
+        MigrationApplyPlanArtifact applyPlan,
+        MigrationApplyExecutionArtifact applyExecution,
+        GeoServerImportRequest request,
+        TimeSpan duration,
+        List<string> warnings,
+        string failureMessage)
+        => GeoServerImportResult.CreateFailure(
+                request.GeoServerRestUrl,
+                request.TargetHonuaUrl,
+                failureMessage,
+                duration)
+            with
+        {
+            SourceGeoServerVersion = serviceInfo.Version,
+            FailedResources = applyExecution.Summary.FailedStepCount,
+            ResourcesPlanned = applyPlan.Summary.TotalStepCount,
+            ResourcesApplied = applyExecution.Summary.AppliedStepCount,
+            ResourcesAlreadyApplied = applyExecution.Summary.AlreadyAppliedStepCount,
+            ResourcesManualReview = applyExecution.Summary.ManualReviewStepCount,
+            ResourcesUnsupported = applyExecution.Summary.UnsupportedStepCount,
+            Warnings = warnings,
             ApplyPlan = applyPlan,
             ApplyExecution = applyExecution
         };

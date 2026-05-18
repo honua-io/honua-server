@@ -127,8 +127,74 @@ public sealed class GeoServerImportServiceApplyPlanTests
         secondResult.ResourcesAlreadyApplied.Should().Be(1);
         secondResult.ApplyExecution!.StepResults.Should().Contain(result =>
             result.SourceId == "layer:demo:roads" &&
-            result.Outcome == "already-applied");
+            result.Outcome == "already-applied" &&
+            result.HonuaLayerId == 100);
         secondResult.Warnings.Should().Contain(warning => warning.Contains("idempotent", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ImportConfigurationAsync_WithExistingLayerConflict_LinksLayerToTargetService()
+    {
+        var fixture = LoadFixture("MixedCatalog");
+        var publisher = new RecordingLayerPublishingService();
+        publisher.SeedExistingLayer("public", "roads", 240);
+
+        var result = await CreateService(new FixtureHttpHandler(fixture.Responses), publisher)
+            .ImportConfigurationAsync(new GeoServerImportRequest
+            {
+                GeoServerRestUrl = fixture.ServiceUrl,
+                TargetHonuaUrl = "https://honua.example.test",
+                DryRun = false,
+                ImportStyles = true,
+                AutoPublishLayers = true,
+                RequestTimeoutSeconds = 5
+            });
+
+        result.Success.Should().BeTrue();
+        result.ResourcesAlreadyApplied.Should().Be(1);
+        result.ApplyExecution!.StepResults.Should().Contain(result =>
+            result.SourceId == "layer:demo:roads" &&
+            result.Outcome == "already-applied" &&
+            result.HonuaLayerId == 240);
+
+        publisher.AttachRequests.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new
+            {
+                LayerId = 240,
+                ServiceName = "demo-geoserver",
+                Enabled = true
+            });
+    }
+
+    [Fact]
+    public async Task ImportConfigurationAsync_WithUnexpectedApplyFailure_FailsOverallResultWithEvidence()
+    {
+        var fixture = LoadFixture("MixedCatalog");
+        var publisher = new RecordingLayerPublishingService
+        {
+            FailNextPublish = true
+        };
+
+        var result = await CreateService(new FixtureHttpHandler(fixture.Responses), publisher)
+            .ImportConfigurationAsync(new GeoServerImportRequest
+            {
+                GeoServerRestUrl = fixture.ServiceUrl,
+                TargetHonuaUrl = "https://honua.example.test",
+                DryRun = false,
+                ImportStyles = true,
+                AutoPublishLayers = true,
+                RequestTimeoutSeconds = 5
+            });
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("failed unexpectedly");
+        result.FailedResources.Should().Be(1);
+        result.ApplyPlan.Should().NotBeNull();
+        result.ApplyExecution.Should().NotBeNull();
+        result.ApplyExecution!.Summary.FailedStepCount.Should().Be(1);
+        result.ApplyExecution.StepResults.Should().Contain(result =>
+            result.SourceId == "layer:demo:roads" &&
+            result.Outcome == "failed");
     }
 
     [Fact]
@@ -265,9 +331,18 @@ public sealed class GeoServerImportServiceApplyPlanTests
 
     private sealed class RecordingLayerPublishingService : ILayerPublishingService
     {
-        private readonly HashSet<string> _publishedTargets = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, PublishedLayerSummary> _publishedTargets = new(StringComparer.OrdinalIgnoreCase);
 
         public List<LayerPublishRequest> Requests { get; } = [];
+
+        public List<LayerAttachRequest> AttachRequests { get; } = [];
+
+        public bool FailNextPublish { get; init; }
+
+        public void SeedExistingLayer(string schema, string table, int layerId)
+        {
+            _publishedTargets[$"default:{schema}.{table}"] = CreateSummary(layerId, schema, table, "default");
+        }
 
         public Task<IReadOnlyList<PublishedLayerSummary>> ListPublishedLayersAsync(
             string connectionString,
@@ -280,29 +355,68 @@ public sealed class GeoServerImportServiceApplyPlanTests
             LayerPublishRequest request,
             CancellationToken cancellationToken = default)
         {
+            if (FailNextPublish)
+            {
+                throw new LayerPublishingException(
+                    LayerPublishingErrorKind.Unknown,
+                    "Publisher failed unexpectedly.");
+            }
+
             var key = $"{request.ServiceName}:{request.Schema}.{request.Table}";
-            if (!_publishedTargets.Add(key))
+            var existingLayer = _publishedTargets.Values.FirstOrDefault(layer =>
+                string.Equals(layer.Schema, request.Schema, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(layer.Table, request.Table, StringComparison.OrdinalIgnoreCase));
+            if (existingLayer != null)
             {
                 throw new LayerPublishingException(
                     LayerPublishingErrorKind.Conflict,
-                    $"Layer already exists for table '{request.Schema}.{request.Table}'.");
+                    $"Layer already exists for table '{request.Schema}.{request.Table}'.",
+                    existingLayer.LayerId);
             }
 
             Requests.Add(request);
-            return Task.FromResult(new PublishedLayerSummary
+            var published = CreateSummary(
+                100 + Requests.Count - 1,
+                request.Schema,
+                request.Table,
+                request.ServiceName ?? "default",
+                request.LayerName,
+                request.Description,
+                request.Enabled,
+                request.GeometryType,
+                request.Srid,
+                request.PrimaryKey);
+            _publishedTargets[key] = published;
+            return Task.FromResult(published);
+        }
+
+        public Task<PublishedLayerSummary?> LinkExistingLayerToServiceAsync(
+            string connectionString,
+            int layerId,
+            string serviceName,
+            bool enabled,
+            CancellationToken cancellationToken = default)
+        {
+            var existing = _publishedTargets.Values.FirstOrDefault(layer => layer.LayerId == layerId);
+            if (existing == null)
             {
-                LayerId = 100 + Requests.Count - 1,
-                LayerName = request.LayerName,
-                Schema = request.Schema,
-                Table = request.Table,
-                Description = request.Description,
-                GeometryType = request.GeometryType ?? "LineString",
-                Srid = request.Srid ?? 4326,
-                PrimaryKey = request.PrimaryKey,
-                FieldCount = 3,
-                Enabled = request.Enabled,
-                ServiceName = request.ServiceName ?? "default"
-            });
+                return Task.FromResult<PublishedLayerSummary?>(null);
+            }
+
+            AttachRequests.Add(new LayerAttachRequest(layerId, serviceName, enabled));
+            var linked = CreateSummary(
+                existing.LayerId,
+                existing.Schema,
+                existing.Table,
+                serviceName,
+                existing.LayerName,
+                existing.Description,
+                enabled,
+                existing.GeometryType,
+                existing.Srid,
+                existing.PrimaryKey);
+            _publishedTargets[$"{serviceName}:{existing.Schema}.{existing.Table}"] = linked;
+            return Task.FromResult<PublishedLayerSummary?>(linked);
         }
 
         public Task<TablePublishValidationResult> ValidateTableForPublishAsync(
@@ -338,5 +452,33 @@ public sealed class GeoServerImportServiceApplyPlanTests
             string serviceName,
             CancellationToken cancellationToken = default)
             => Task.FromResult<LayerExtentRefreshResult?>(null);
+
+        private static PublishedLayerSummary CreateSummary(
+            int layerId,
+            string schema,
+            string table,
+            string serviceName,
+            string? layerName = null,
+            string? description = null,
+            bool enabled = true,
+            string? geometryType = null,
+            int? srid = null,
+            string? primaryKey = null)
+            => new()
+            {
+                LayerId = layerId,
+                LayerName = layerName ?? table,
+                Schema = schema,
+                Table = table,
+                Description = description,
+                GeometryType = geometryType ?? "LineString",
+                Srid = srid ?? 4326,
+                PrimaryKey = primaryKey,
+                FieldCount = 3,
+                Enabled = enabled,
+                ServiceName = serviceName
+            };
     }
+
+    private sealed record LayerAttachRequest(int LayerId, string ServiceName, bool Enabled);
 }

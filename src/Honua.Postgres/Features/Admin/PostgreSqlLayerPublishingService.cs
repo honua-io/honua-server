@@ -245,7 +245,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         {
             throw new LayerPublishingException(
                 LayerPublishingErrorKind.Conflict,
-                $"Layer already exists for table '{schema}.{table}'.");
+                $"Layer already exists for table '{schema}.{table}'.",
+                existingLayerId);
         }
 
         await EnsureLayerSequenceAsync(connection, transaction, cancellationToken);
@@ -301,6 +302,48 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             Enabled = request.Enabled,
             ServiceName = serviceName
         };
+    }
+
+    public async Task<PublishedLayerSummary?> LinkExistingLayerToServiceAsync(
+        string connectionString,
+        int layerId,
+        string serviceName,
+        bool enabled,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        if (layerId < 0)
+        {
+            return null;
+        }
+
+        var normalizedService = NormalizeServiceName(serviceName);
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var layer = await GetLayerSummaryByIdAsync(connection, transaction, layerId, cancellationToken)
+            .ConfigureAwait(false);
+        if (layer == null)
+        {
+            return null;
+        }
+
+        await EnsureServiceAsync(connection, transaction, normalizedService, layer.Srid, null, cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureServiceLayerAsync(connection, transaction, normalizedService, layerId, cancellationToken)
+            .ConfigureAwait(false);
+        await SetLayerEnabledCoreAsync(connection, transaction, layerId, enabled, cancellationToken)
+            .ConfigureAwait(false);
+        await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken)
+            .ConfigureAwait(false);
+
+        var linkedLayer = await GetLayerSummaryAsync(connection, transaction, layerId, normalizedService, cancellationToken)
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken);
+        return linkedLayer;
     }
 
     public async Task<TablePublishValidationResult> ValidateTableForPublishAsync(
@@ -417,15 +460,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             return null;
         }
 
-        const string updateSql = """
-            UPDATE honua.layers
-            SET enabled = @enabled
-            WHERE layer_id = @layerId;
-            """;
-        await using var updateCommand = new NpgsqlCommand(updateSql, connection, transaction);
-        updateCommand.Parameters.AddWithValue("@enabled", enabled);
-        updateCommand.Parameters.AddWithValue("@layerId", layerId);
-        await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+        await SetLayerEnabledCoreAsync(connection, transaction, layerId, enabled, cancellationToken)
+            .ConfigureAwait(false);
         layer = CloneWithEnabled(layer, enabled);
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
@@ -1141,9 +1177,18 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 BuildPublishValidationFailureMessage(blockingError));
         }
 
+        var conflictLayerId = errors
+            .Where(static check => check.Code == LayerConflictCheckCode)
+            .Select(static check =>
+                int.TryParse(check.Actual, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                    ? parsed
+                    : (int?)null)
+            .FirstOrDefault(static layerId => layerId.HasValue);
+
         throw new LayerPublishingException(
             LayerPublishingErrorKind.Conflict,
-            $"Layer already exists for table '{validation.Schema}.{validation.Table}'.");
+            $"Layer already exists for table '{validation.Schema}.{validation.Table}'.",
+            conflictLayerId);
     }
 
     private static string BuildPublishValidationFailureMessage(TablePublishValidationCheck check)
@@ -2103,6 +2148,84 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             FieldCount = reader.GetInt32(9),
             ServiceName = serviceName
         };
+    }
+
+    private static async Task<PublishedLayerSummary?> GetLayerSummaryByIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                l.layer_id,
+                l.layer_name,
+                l.description,
+                l.table_schema,
+                l.table_name,
+                l.primary_key_column,
+                l.geometry_type,
+                l.srid,
+                l.enabled,
+                COUNT(f.field_name)::int AS field_count
+            FROM honua.layers l
+            LEFT JOIN honua.layer_fields f
+                ON f.layer_id = l.layer_id
+            WHERE l.layer_id = @layerId
+            GROUP BY
+                l.layer_id,
+                l.layer_name,
+                l.description,
+                l.table_schema,
+                l.table_name,
+                l.primary_key_column,
+                l.geometry_type,
+                l.srid,
+                l.enabled;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@layerId", layerId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new PublishedLayerSummary
+        {
+            LayerId = reader.GetInt32(0),
+            LayerName = reader.GetString(1),
+            Description = reader.IsDBNull(2) ? null : reader.GetString(2),
+            Schema = reader.GetString(3),
+            Table = reader.GetString(4),
+            PrimaryKey = reader.IsDBNull(5) ? null : reader.GetString(5),
+            GeometryType = reader.GetString(6),
+            Srid = reader.GetInt32(7),
+            Enabled = reader.GetBoolean(8),
+            FieldCount = reader.GetInt32(9),
+            ServiceName = DefaultServiceName
+        };
+    }
+
+    private static async Task SetLayerEnabledCoreAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int layerId,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE honua.layers
+            SET enabled = @enabled
+            WHERE layer_id = @layerId;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@enabled", enabled);
+        command.Parameters.AddWithValue("@layerId", layerId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static PublishedLayerSummary CloneWithEnabled(PublishedLayerSummary layer, bool enabled)

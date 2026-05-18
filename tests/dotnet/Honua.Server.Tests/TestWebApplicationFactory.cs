@@ -286,6 +286,16 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             throw new NotSupportedException("Layer publishing is not available in this test fixture.");
         }
 
+        public Task<PublishedLayerSummary?> LinkExistingLayerToServiceAsync(
+            string connectionString,
+            int layerId,
+            string serviceName,
+            bool enabled,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<PublishedLayerSummary?>(null);
+        }
+
         public Task<TablePublishValidationResult> ValidateTableForPublishAsync(
             string connectionString,
             TablePublishValidationRequest request,

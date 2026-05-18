@@ -33,6 +33,21 @@ public interface ILayerPublishingService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Link an existing layer into a service.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="layerId">Existing layer identifier.</param>
+    /// <param name="serviceName">Service name.</param>
+    /// <param name="enabled">Whether the layer should be enabled after linking.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<PublishedLayerSummary?> LinkExistingLayerToServiceAsync(
+        string connectionString,
+        int layerId,
+        string serviceName,
+        bool enabled,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Validate a PostGIS table before publishing it as a layer.
     /// </summary>
     /// <param name="connectionString">PostgreSQL connection string.</param>
