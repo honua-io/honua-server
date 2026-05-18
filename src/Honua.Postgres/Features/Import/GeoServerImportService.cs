@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Services;
@@ -23,6 +26,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsRegistry _crsRegistry;
     private readonly ISldStyleConverter? _sldConverter;
+    private readonly ILayerPublishingService? _layerPublishingService;
     private readonly ILogger<GeoServerImportService> _logger;
 
     public GeoServerImportService(
@@ -30,13 +34,15 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         IDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
         ILogger<GeoServerImportService> logger,
-        ISldStyleConverter? sldConverter = null)
+        ISldStyleConverter? sldConverter = null,
+        ILayerPublishingService? layerPublishingService = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _sldConverter = sldConverter;
+        _layerPublishingService = layerPublishingService;
     }
 
     /// <inheritdoc />
@@ -856,22 +862,63 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
             var applyPlan = await CreateApplyPlanAsync(serviceInfo, filteredResources, request, cancellationToken)
                 .ConfigureAwait(false);
-            var applyPlanWarnings = BuildApplyPlanWarnings(applyPlan);
+            var applyExecution = await ExecuteApplyPlanAsync(
+                    filteredResources,
+                    request,
+                    applyPlan,
+                    currentProgress,
+                    progress,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var applyPlanWarnings = BuildApplyPlanWarnings(applyPlan, applyExecution);
+
+            if (applyExecution.Summary.FailedStepCount > 0)
+            {
+                var failureMessage = BuildApplyFailureMessage(applyExecution);
+                currentProgress = currentProgress with
+                {
+                    Status = GeoServerImportStatus.Failed,
+                    ResourcesProcessed = applyPlan.Summary.TotalStepCount,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Apply plan failed",
+                    ErrorMessage = failureMessage,
+                    Warnings = applyPlanWarnings,
+                    ApplyPlan = applyPlan,
+                    ApplyExecution = applyExecution
+                };
+                progress?.Report(currentProgress);
+
+                return CreateFailedApplyPlanResult(
+                    serviceInfo,
+                    applyPlan,
+                    applyExecution,
+                    request,
+                    stopwatch.Elapsed,
+                    applyPlanWarnings,
+                    failureMessage);
+            }
 
             currentProgress = currentProgress with
             {
                 Status = GeoServerImportStatus.Completed,
                 ResourcesProcessed = applyPlan.Summary.TotalStepCount,
                 CompletedAt = DateTimeOffset.UtcNow,
-                CurrentPhase = "Apply plan generated",
+                CurrentPhase = "Apply plan executed",
                 Warnings = applyPlanWarnings,
-                ApplyPlan = applyPlan
+                ApplyPlan = applyPlan,
+                ApplyExecution = applyExecution
             };
             progress?.Report(currentProgress);
 
-            Log.ApplyPlanGenerated(_logger, applyPlan.Summary.TotalStepCount, applyPlan.Summary.ManualReviewStepCount, applyPlan.Summary.UnsupportedItemCount);
+            Log.ApplyPlanExecuted(
+                _logger,
+                applyPlan.Summary.TotalStepCount,
+                applyExecution.Summary.AppliedStepCount,
+                applyExecution.Summary.AlreadyAppliedStepCount,
+                applyExecution.Summary.ManualReviewStepCount,
+                applyExecution.Summary.UnsupportedStepCount);
 
-            return CreateApplyPlanResult(serviceInfo, applyPlan, request, stopwatch.Elapsed, applyPlanWarnings);
+            return CreateApplyPlanResult(serviceInfo, applyPlan, applyExecution, request, stopwatch.Elapsed, applyPlanWarnings);
         }
         catch (OperationCanceledException)
         {
@@ -1185,29 +1232,419 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         };
     }
 
-    private static List<string> BuildApplyPlanWarnings(MigrationApplyPlanArtifact applyPlan)
+    private async Task<MigrationApplyExecutionArtifact> ExecuteApplyPlanAsync(
+        FilteredResources filteredResources,
+        GeoServerImportRequest request,
+        MigrationApplyPlanArtifact applyPlan,
+        GeoServerImportProgress currentProgress,
+        IProgress<GeoServerImportProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var startedAt = DateTimeOffset.UtcNow;
+        var stepResults = new List<MigrationApplyExecutionStepResult>(applyPlan.Steps.Length);
+        var layersById = filteredResources.Layers.ToDictionary(GetLayerId, StringComparer.Ordinal);
+        var dataStoresByKey = filteredResources.DataStores.ToDictionary(
+            static store => GetStoreKey(store.WorkspaceName, store.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var step in applyPlan.Steps.OrderBy(static item => item.Sequence))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var stepResult = await ExecuteApplyStepAsync(
+                    step,
+                    layersById,
+                    dataStoresByKey,
+                    request,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            stepResults.Add(stepResult);
+
+            progress?.Report(currentProgress with
+            {
+                Status = GeoServerImportStatus.Validating,
+                ResourcesProcessed = stepResults.Count,
+                CurrentPhase = $"Processed GeoServer migration step {stepResults.Count} of {applyPlan.Summary.TotalStepCount}"
+            });
+        }
+
+        var summary = new MigrationApplyExecutionSummary
+        {
+            TotalStepCount = stepResults.Count,
+            AppliedStepCount = stepResults.Count(static result => result.Outcome == "applied"),
+            AlreadyAppliedStepCount = stepResults.Count(static result => result.Outcome == "already-applied"),
+            ManualReviewStepCount = stepResults.Count(static result => result.Outcome == "manual-review"),
+            UnsupportedStepCount = stepResults.Count(static result => result.Outcome == "unsupported"),
+            FailedStepCount = stepResults.Count(static result => result.Outcome == "failed")
+        };
+
+        return new MigrationApplyExecutionArtifact
+        {
+            SourceKind = applyPlan.SourceKind,
+            Source = applyPlan.Source,
+            PlanFingerprint = applyPlan.PlanFingerprint,
+            ReplayToken = applyPlan.ReplayToken,
+            StartedAt = startedAt,
+            CompletedAt = DateTimeOffset.UtcNow,
+            Summary = summary,
+            StepResults = stepResults.ToArray()
+        };
+    }
+
+    private async Task<MigrationApplyExecutionStepResult> ExecuteApplyStepAsync(
+        MigrationApplyPlanStep step,
+        Dictionary<string, GeoServerLayerInfo> layersById,
+        Dictionary<string, GeoServerDataStoreInfo> dataStoresByKey,
+        GeoServerImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (step.Disposition == "unsupported")
+        {
+            return CreateExecutionStepResult(
+                step,
+                "unsupported",
+                "The source item is unsupported by the reviewed GeoServer migration plan.");
+        }
+
+        if (step.Disposition == "manual-review")
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "The reviewed GeoServer migration plan requires operator review before this item can be applied.");
+        }
+
+        if (!string.Equals(step.Kind, "layer", StringComparison.Ordinal))
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "This apply slice only publishes PostGIS-backed GeoServer feature layers; other item kinds are retained as review records.");
+        }
+
+        if (!layersById.TryGetValue(step.SourceId, out var layer))
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "The source layer was not present in the filtered GeoServer discovery result.");
+        }
+
+        if (string.IsNullOrWhiteSpace(layer.DataStoreName))
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "The source layer is not backed by a GeoServer feature datastore; raster and virtual layers are not applied by this slice.");
+        }
+
+        if (!dataStoresByKey.TryGetValue(GetStoreKey(layer.WorkspaceName, layer.DataStoreName), out var dataStore))
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "The source layer references a datastore that was not present in the filtered GeoServer discovery result.");
+        }
+
+        if (!IsPostGisDataStore(dataStore))
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "Only PostGIS-backed GeoServer layers can be published directly to the Honua catalog by this apply slice.");
+        }
+
+        if (_layerPublishingService == null)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "The target catalog publishing service is unavailable, so the layer remains a replayable apply-plan step.");
+        }
+
+        if (!TryResolveCatalogTarget(layer, dataStore, out var target, out var targetError))
+        {
+            return CreateExecutionStepResult(step, "manual-review", targetError);
+        }
+
+        var publishRequest = new LayerPublishRequest
+        {
+            Schema = target.Schema,
+            Table = target.Table,
+            LayerName = step.TargetResourceName ?? layer.Name,
+            Description = layer.Abstract,
+            GeometryColumn = null,
+            GeometryType = null,
+            Srid = request.TargetSrid ?? ResolveSrid(layer.SRS),
+            PrimaryKey = null,
+            Fields = [],
+            ServiceName = step.TargetServiceName,
+            Enabled = request.AutoPublishLayers && layer.Enabled
+        };
+
+        try
+        {
+            var publishedLayer = await _layerPublishingService.PublishLayerAsync(
+                    _connectionProvider.GetConnectionString(),
+                    publishRequest,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return CreateExecutionStepResult(
+                step,
+                "applied",
+                $"Published catalog layer {publishedLayer.LayerId} from target table {target.Schema}.{target.Table}.",
+                publishedLayer.LayerId);
+        }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.Conflict)
+        {
+            return await HandleLayerPublishingConflictAsync(
+                    step,
+                    publishRequest,
+                    ex,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "The source table was not found in the target Honua database; data-copy apply is not implemented by this slice.");
+        }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.Validation)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "The target table failed catalog publication validation and requires operator review.");
+        }
+        catch (LayerPublishingException)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "failed",
+                "The catalog apply step failed in the target catalog publisher and requires operator review.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "failed",
+                "The catalog apply step failed unexpectedly and requires operator review.");
+        }
+    }
+
+    private async Task<MigrationApplyExecutionStepResult> HandleLayerPublishingConflictAsync(
+        MigrationApplyPlanStep step,
+        LayerPublishRequest publishRequest,
+        LayerPublishingException exception,
+        CancellationToken cancellationToken)
+    {
+        if (_layerPublishingService == null || !exception.LayerId.HasValue)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "A catalog layer for the target table already exists, but the publisher did not return the existing layer id needed to link it to the target service.");
+        }
+
+        try
+        {
+            var linkedLayer = await _layerPublishingService.LinkExistingLayerToServiceAsync(
+                    _connectionProvider.GetConnectionString(),
+                    exception.LayerId.Value,
+                    publishRequest.ServiceName ?? "default",
+                    publishRequest.Enabled,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (linkedLayer == null)
+            {
+                return CreateExecutionStepResult(
+                    step,
+                    "manual-review",
+                    "A catalog layer for the target table already exists, but it could not be linked to the target service automatically.");
+            }
+
+            return CreateExecutionStepResult(
+                step,
+                "already-applied",
+                $"Catalog layer {linkedLayer.LayerId} already exists for target table {publishRequest.Schema}.{publishRequest.Table} and is linked to target service {linkedLayer.ServiceName}.",
+                linkedLayer.LayerId);
+        }
+        catch (LayerPublishingException)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "failed",
+                "The catalog apply conflict recovery failed in the target catalog publisher and requires operator review.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "failed",
+                "The catalog apply conflict recovery failed unexpectedly and requires operator review.");
+        }
+    }
+
+    private static MigrationApplyExecutionStepResult CreateExecutionStepResult(
+        MigrationApplyPlanStep step,
+        string outcome,
+        string message,
+        int? honuaLayerId = null)
+        => new()
+        {
+            StepId = step.StepId,
+            SourceId = step.SourceId,
+            Kind = step.Kind,
+            Action = step.Action,
+            Disposition = step.Disposition,
+            Outcome = outcome,
+            Message = message,
+            TargetServiceName = step.TargetServiceName,
+            TargetResourceName = step.TargetResourceName,
+            HonuaLayerId = honuaLayerId,
+            ReviewCodes = step.ReviewCodes
+        };
+
+    private static bool IsPostGisDataStore(GeoServerDataStoreInfo dataStore)
+        => string.Equals(dataStore.Type, "PostGIS", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(dataStore.Type, "PostgreSQL", StringComparison.OrdinalIgnoreCase) ||
+           (dataStore.ConnectionParameters.TryGetValue("dbtype", out var dbTypeValue) &&
+            dbTypeValue is string dbType &&
+            (string.Equals(dbType, "postgis", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(dbType, "postgres", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(dbType, "postgresql", StringComparison.OrdinalIgnoreCase)));
+
+    private static string GetStoreKey(string workspaceName, string storeName)
+        => $"{workspaceName}:{storeName}";
+
+    private static bool TryResolveCatalogTarget(
+        GeoServerLayerInfo layer,
+        GeoServerDataStoreInfo dataStore,
+        out LayerCatalogTarget target,
+        out string error)
+    {
+        var schema = TryGetStringParameter(dataStore.ConnectionParameters, "schema") ?? "public";
+        var table = string.IsNullOrWhiteSpace(layer.NativeName) ? layer.Name : layer.NativeName.Trim();
+
+        if (TrySplitQualifiedTable(table, out var qualifiedSchema, out var qualifiedTable))
+        {
+            schema = qualifiedSchema;
+            table = qualifiedTable;
+        }
+
+        if (!IsSafeIdentifier(schema) || !IsSafeIdentifier(table))
+        {
+            target = default;
+            error = "The GeoServer native table name cannot be safely mapped to a target Honua catalog table.";
+            return false;
+        }
+
+        target = new LayerCatalogTarget(schema, table);
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool TrySplitQualifiedTable(string table, out string schema, out string tableName)
+    {
+        schema = string.Empty;
+        tableName = string.Empty;
+
+        var separatorIndex = table.IndexOf('.', StringComparison.Ordinal);
+        if (separatorIndex <= 0 || separatorIndex >= table.Length - 1)
+        {
+            return false;
+        }
+
+        if (table.IndexOf('.', separatorIndex + 1) >= 0)
+        {
+            return false;
+        }
+
+        schema = table[..separatorIndex].Trim('"');
+        tableName = table[(separatorIndex + 1)..].Trim('"');
+        return true;
+    }
+
+    private static string? TryGetStringParameter(IReadOnlyDictionary<string, object> parameters, string key)
+        => parameters.TryGetValue(key, out var value) && value is string text && !string.IsNullOrWhiteSpace(text)
+            ? text.Trim()
+            : null;
+
+    private static bool IsSafeIdentifier(string identifier)
+    {
+        if (string.IsNullOrWhiteSpace(identifier))
+        {
+            return false;
+        }
+
+        foreach (var ch in identifier)
+        {
+            if (!(char.IsAsciiLetterOrDigit(ch) || ch == '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static int? ResolveSrid(string? srs)
+    {
+        if (string.IsNullOrWhiteSpace(srs))
+        {
+            return null;
+        }
+
+        var separatorIndex = srs.LastIndexOf(':');
+        var candidate = separatorIndex >= 0 ? srs[(separatorIndex + 1)..] : srs;
+        return int.TryParse(candidate, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) && srid > 0
+            ? srid
+            : null;
+    }
+
+    private static List<string> BuildApplyPlanWarnings(
+        MigrationApplyPlanArtifact applyPlan,
+        MigrationApplyExecutionArtifact applyExecution)
     {
         var warnings = new List<string>
         {
-            "Non-dry-run GeoServer import generated a deterministic apply plan only; catalog mutation and data copy were not executed by this slice."
+            "Non-dry-run GeoServer import generated a deterministic apply plan. Catalog mutation is limited to idempotent publication of PostGIS-backed layers whose source tables already exist in the target Honua database; data copy, layer groups, service exposure changes, and bulk style persistence remain explicit review records."
         };
 
-        if (applyPlan.Summary.ManualReviewStepCount > 0)
+        if (applyExecution.Summary.ManualReviewStepCount > 0)
         {
-            warnings.Add($"{applyPlan.Summary.ManualReviewStepCount} apply-plan steps require manual review before catalog apply.");
+            warnings.Add($"{applyExecution.Summary.ManualReviewStepCount} apply execution steps require manual review before they can be considered applied.");
         }
 
-        if (applyPlan.Summary.UnsupportedItemCount > 0)
+        if (applyExecution.Summary.UnsupportedStepCount > 0 || applyPlan.Summary.UnsupportedItemCount > 0)
         {
-            warnings.Add($"{applyPlan.Summary.UnsupportedItemCount} source items are unsupported by the current GeoServer apply path.");
+            warnings.Add($"{Math.Max(applyExecution.Summary.UnsupportedStepCount, applyPlan.Summary.UnsupportedItemCount)} source items are unsupported by the current GeoServer apply path.");
+        }
+
+        if (applyExecution.Summary.AlreadyAppliedStepCount > 0)
+        {
+            warnings.Add($"{applyExecution.Summary.AlreadyAppliedStepCount} apply execution steps were already present in the target catalog and were treated as idempotent replays.");
+        }
+
+        if (applyExecution.Summary.FailedStepCount > 0)
+        {
+            warnings.Add($"{applyExecution.Summary.FailedStepCount} apply execution steps failed unexpectedly and require operator review.");
         }
 
         return warnings;
     }
 
+    private static string BuildApplyFailureMessage(MigrationApplyExecutionArtifact applyExecution)
+        => $"{applyExecution.Summary.FailedStepCount} GeoServer apply execution step(s) failed unexpectedly; inspect apply execution evidence before retrying.";
+
     private static GeoServerImportResult CreateApplyPlanResult(
         GeoServerServiceInfo serviceInfo,
         MigrationApplyPlanArtifact applyPlan,
+        MigrationApplyExecutionArtifact applyExecution,
         GeoServerImportRequest request,
         TimeSpan duration,
         List<string> warnings)
@@ -1220,8 +1657,42 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             with
         {
             ResourcesPlanned = applyPlan.Summary.TotalStepCount,
-            ApplyPlan = applyPlan
+            ResourcesApplied = applyExecution.Summary.AppliedStepCount,
+            ResourcesAlreadyApplied = applyExecution.Summary.AlreadyAppliedStepCount,
+            ResourcesManualReview = applyExecution.Summary.ManualReviewStepCount,
+            ResourcesUnsupported = applyExecution.Summary.UnsupportedStepCount,
+            ApplyPlan = applyPlan,
+            ApplyExecution = applyExecution
         };
+
+    private static GeoServerImportResult CreateFailedApplyPlanResult(
+        GeoServerServiceInfo serviceInfo,
+        MigrationApplyPlanArtifact applyPlan,
+        MigrationApplyExecutionArtifact applyExecution,
+        GeoServerImportRequest request,
+        TimeSpan duration,
+        List<string> warnings,
+        string failureMessage)
+        => GeoServerImportResult.CreateFailure(
+                request.GeoServerRestUrl,
+                request.TargetHonuaUrl,
+                failureMessage,
+                duration)
+            with
+        {
+            SourceGeoServerVersion = serviceInfo.Version,
+            FailedResources = applyExecution.Summary.FailedStepCount,
+            ResourcesPlanned = applyPlan.Summary.TotalStepCount,
+            ResourcesApplied = applyExecution.Summary.AppliedStepCount,
+            ResourcesAlreadyApplied = applyExecution.Summary.AlreadyAppliedStepCount,
+            ResourcesManualReview = applyExecution.Summary.ManualReviewStepCount,
+            ResourcesUnsupported = applyExecution.Summary.UnsupportedStepCount,
+            Warnings = warnings,
+            ApplyPlan = applyPlan,
+            ApplyExecution = applyExecution
+        };
+
+    private readonly record struct LayerCatalogTarget(string Schema, string Table);
 
     private async Task<ImportStepResult> ImportWorkspacesAsync(GeoServerWorkspaceInfo[] workspaces, GeoServerImportRequest request, GeoServerImportProgress currentProgress, IProgress<GeoServerImportProgress>? progress, CancellationToken cancellationToken)
     {
@@ -1848,12 +2319,14 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         [LoggerMessage(79945, LogLevel.Warning, "GeoServer inventory scan failed for {GeoServerUrl}")]
         public static partial void InventoryScanFailed(ILogger logger, string geoServerUrl, Exception exception);
 
-        [LoggerMessage(79946, LogLevel.Information, "GeoServer apply plan generated with {StepCount} steps, {ManualReviewStepCount} manual-review steps, and {UnsupportedItemCount} unsupported items")]
-        public static partial void ApplyPlanGenerated(
+        [LoggerMessage(79946, LogLevel.Information, "GeoServer apply plan executed with {StepCount} steps, {AppliedStepCount} applied steps, {AlreadyAppliedStepCount} idempotent replays, {ManualReviewStepCount} manual-review steps, and {UnsupportedStepCount} unsupported steps")]
+        public static partial void ApplyPlanExecuted(
             ILogger logger,
             int stepCount,
+            int appliedStepCount,
+            int alreadyAppliedStepCount,
             int manualReviewStepCount,
-            int unsupportedItemCount);
+            int unsupportedStepCount);
 
         [LoggerMessage(7995, LogLevel.Information, "Importing {Count} workspaces")]
         public static partial void ImportingWorkspaces(ILogger logger, int count);

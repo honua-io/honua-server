@@ -255,9 +255,29 @@ public sealed record GeoServerImportResult
     public int FailedResources { get; init; }
 
     /// <summary>
-    /// Number of deterministic apply-plan steps generated without mutating the target catalog.
+    /// Number of deterministic apply-plan steps generated for non-dry-run execution.
     /// </summary>
     public int ResourcesPlanned { get; init; }
+
+    /// <summary>
+    /// Number of apply-plan steps applied to the target catalog during this run.
+    /// </summary>
+    public int ResourcesApplied { get; init; }
+
+    /// <summary>
+    /// Number of apply-plan steps that were already present in the target catalog.
+    /// </summary>
+    public int ResourcesAlreadyApplied { get; init; }
+
+    /// <summary>
+    /// Number of apply-plan steps left as explicit manual-review work.
+    /// </summary>
+    public int ResourcesManualReview { get; init; }
+
+    /// <summary>
+    /// Number of apply-plan steps unsupported by this apply path.
+    /// </summary>
+    public int ResourcesUnsupported { get; init; }
 
     /// <summary>
     /// The source GeoServer URL that was imported from.
@@ -303,6 +323,11 @@ public sealed record GeoServerImportResult
     /// Deterministic apply plan generated for non-dry-run migration requests.
     /// </summary>
     public MigrationApplyPlanArtifact? ApplyPlan { get; init; }
+
+    /// <summary>
+    /// Deterministic execution evidence for a non-dry-run apply-plan run.
+    /// </summary>
+    public MigrationApplyExecutionArtifact? ApplyExecution { get; init; }
 
     /// <summary>
     /// Whether this was a dry run (no actual changes made).

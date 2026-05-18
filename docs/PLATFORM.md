@@ -119,7 +119,7 @@ Import from 10+ file formats and live services:
 - Automatic CRS detection and PostGIS-based reprojection
 - Streaming import for large datasets
 - Public ArcGIS GeoServices REST layer import into PostGIS, with migration inventory for structure, metadata, renderers, attachments, and manual follow-up
-- GeoServer REST migration inventory and dry-run catalog validation
+- GeoServer REST migration inventory, dry-run catalog validation, and bounded PostGIS-backed catalog apply
 
 ### Admin Control Plane
 REST API and GitOps-ready management:

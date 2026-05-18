@@ -55,13 +55,12 @@ public sealed record MigrationApplyPlanArtifact
     public required MigrationApplyPlanSummary Summary { get; init; }
 
     /// <summary>
-    /// Ordered apply-plan steps. This slice only stages deterministic intent; it
-    /// does not copy source data or mutate the target catalog.
+    /// Ordered apply-plan steps.
     /// </summary>
     public MigrationApplyPlanStep[] Steps { get; init; } = [];
 
     /// <summary>
-    /// Items that require operator review before a future catalog apply can run.
+    /// Items that require operator review before catalog apply can run.
     /// </summary>
     public MigrationManifestReviewItem[] ManualReviewItems { get; init; } = [];
 
@@ -82,7 +81,7 @@ public sealed record MigrationApplyPlanSummary
     public int TotalStepCount { get; init; }
 
     /// <summary>
-    /// Number of steps that are ready for a future catalog apply.
+    /// Number of steps that are ready for catalog apply.
     /// </summary>
     public int ReadyStepCount { get; init; }
 

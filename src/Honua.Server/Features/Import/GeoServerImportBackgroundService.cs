@@ -165,8 +165,9 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
                 ErrorMessage = result.ErrorMessage,
                 Warnings = result.Warnings,
                 ApplyPlan = result.ApplyPlan ?? currentProgress.ApplyPlan,
+                ApplyExecution = result.ApplyExecution ?? currentProgress.ApplyExecution,
                 CurrentPhase = result.Success
-                    ? (result.WasDryRun ? "Dry run completed" : result.ApplyPlan != null ? "Apply plan generated" : "Import completed successfully")
+                    ? (result.WasDryRun ? "Dry run completed" : result.ApplyExecution != null ? "Apply plan executed" : result.ApplyPlan != null ? "Apply plan generated" : "Import completed successfully")
                     : "Import failed"
             };
 

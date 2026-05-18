@@ -94,11 +94,14 @@ public sealed record GeoServerImportProgress : IOperationProgress, ICancellableO
     public GeoServerImportResourceBreakdown? ResourceBreakdown { get; init; }
 
     /// <summary>
-    /// Deterministic apply plan generated for non-dry-run imports. This first
-    /// apply slice records replayable intent and does not copy data or mutate
-    /// the target catalog.
+    /// Deterministic apply plan generated for non-dry-run imports.
     /// </summary>
     public MigrationApplyPlanArtifact? ApplyPlan { get; init; }
+
+    /// <summary>
+    /// Deterministic execution evidence for non-dry-run apply-plan processing.
+    /// </summary>
+    public MigrationApplyExecutionArtifact? ApplyExecution { get; init; }
 
     // IOperationProgress implementation
     string IOperationProgress.OperationId => JobId;
