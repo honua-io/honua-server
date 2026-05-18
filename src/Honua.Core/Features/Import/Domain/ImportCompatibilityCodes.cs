@@ -84,4 +84,19 @@ public static class ImportCompatibilityCodes
 
     /// <summary>GeoServer inventory scan could not complete.</summary>
     public const string GeoServerScanFailed = "GEOSERVER_SCAN_FAILED";
+
+    /// <summary>OGC WFS feature type metadata is supported by the migration inventory path.</summary>
+    public const string OgcWfsFeatureSource = "OGC_WFS_FEATURE_SOURCE";
+
+    /// <summary>OGC feature schema metadata was unavailable or incomplete.</summary>
+    public const string OgcFeatureSchemaManualReview = "OGC_FEATURE_SCHEMA_MANUAL_REVIEW";
+
+    /// <summary>OGC WMS exposes rendered maps but not an automated feature data-copy source.</summary>
+    public const string OgcWmsRenderOnlySource = "OGC_WMS_RENDER_ONLY_SOURCE";
+
+    /// <summary>OGC WMTS exposes rendered tiles but not an automated feature data-copy source.</summary>
+    public const string OgcWmtsTileOnlySource = "OGC_WMTS_TILE_ONLY_SOURCE";
+
+    /// <summary>OGC service inventory scan could not complete.</summary>
+    public const string OgcScanFailed = "OGC_SCAN_FAILED";
 }
