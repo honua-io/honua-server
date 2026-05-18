@@ -1,0 +1,50 @@
+# End-to-end test: spin up a reference Honua server, install the plugin
+# zip into a headless ``qgis/qgis:ltr`` image, and run pytest against it.
+#
+# Usage (from the clients/qgis/ directory):
+#
+#   make zip
+#   make e2e
+#
+# The honua-server image tag below tracks the CI image published from
+# trunk. Override with ``HONUA_IMAGE=...`` if you need a specific build.
+
+services:
+  honua-server:
+    image: ${HONUA_IMAGE:-ghcr.io/honua-io/honua-server:ci}
+    environment:
+      HONUA_ADMIN_PASSWORD: testkey
+      HONUA_API_KEY: testkey
+      ASPNETCORE_URLS: "http://+:8080"
+    ports:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-s", "-o", "/dev/null", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  qgis-test:
+    image: qgis/qgis:ltr
+    depends_on:
+      honua-server:
+        condition: service_healthy
+    environment:
+      HONUA_BASE_URL: "http://honua-server:8080"
+      HONUA_API_KEY: "testkey"
+      QT_QPA_PLATFORM: "offscreen"
+    working_dir: /plugin
+    volumes:
+      - ../:/plugin:ro
+      - ../dist:/dist:ro
+    entrypoint: ["bash", "-lc"]
+    command:
+      - |
+        set -eux
+        # install the packaged zip into the in-container QGIS profile
+        PROFILE_DIR="/root/.local/share/QGIS/QGIS3/profiles/default/python/plugins"
+        mkdir -p "$$PROFILE_DIR"
+        rm -rf "$$PROFILE_DIR/honua_qgis"
+        unzip -q /dist/honua_qgis.zip -d "$$PROFILE_DIR"
+        # run the e2e suite via QGIS's bundled Python so PyQGIS is importable
+        python3 -m pytest /plugin/tests/test_e2e.py -v --tb=short

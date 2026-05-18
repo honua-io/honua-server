@@ -1,0 +1,88 @@
+name: QGIS Plugin Build
+
+# Builds and tests the staged Honua QGIS plugin (clients/qgis/) on every
+# PR or push that touches it, and uploads the packaged zip as a workflow
+# artifact so testers can download and install it via QGIS Plugin Manager
+# without waiting for plugins.qgis.org moderation.
+#
+# The plugin moves to its own repository (honua-qgis) once that exists;
+# this workflow then moves with it. Until then, this is the canonical
+# build for the plugin.
+
+on:
+  pull_request:
+    paths:
+      - 'clients/qgis/**'
+      - '.github/workflows/qgis-plugin-build.yml'
+  push:
+    branches:
+      - trunk
+    paths:
+      - 'clients/qgis/**'
+      - '.github/workflows/qgis-plugin-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: qgis-plugin-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Test and package plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: clients/qgis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-ci
+        with:
+          python-version: '3.11'
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run unit tests
+        run: python -m pytest tests -q --ignore=tests/test_e2e.py
+
+      - name: Build plugin zip
+        run: make zip
+
+      - name: Verify plugin zip layout
+        run: |
+          test -f dist/honua_qgis.zip
+          python - <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile("dist/honua_qgis.zip") as zf:
+              names = set(zf.namelist())
+          required = {
+              "honua_qgis/metadata.txt",
+              "honua_qgis/__init__.py",
+              "honua_qgis/plugin.py",
+              "honua_qgis/dialog_add_server.py",
+              "honua_qgis/layer_browser.py",
+              "honua_qgis/client.py",
+              "honua_qgis/auth.py",
+              "honua_qgis/layers.py",
+          }
+          missing = required - names
+          if missing:
+              print("missing files in zip:", sorted(missing), file=sys.stderr)
+              sys.exit(1)
+          print(f"plugin zip OK ({len(names)} files)")
+          PY
+
+      - name: Upload plugin zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: honua_qgis-zip
+          path: clients/qgis/dist/honua_qgis.zip
+          if-no-files-found: error
+          retention-days: 30
