@@ -95,6 +95,12 @@ required source kinds, per-source automation classification, stage state, and
 blocking gaps. Use required source kinds for website or release claims so the
 suite fails when ArcGIS, GeoServer, or OGC evidence is absent.
 
+WCS and OGC API Coverages migration planning is tracked separately from WFS,
+WMS, and WMTS. The first coverage slice is documented in
+[OGC Coverage Migration](ogc-coverage-migration.md); it captures coverage
+metadata, output formats, CRS/subset metadata, bands/ranges, and temporal
+dimensions without claiming end-to-end coverage import or parity.
+
 ## State Values
 
 Every parity and readiness item uses one of these state values:
