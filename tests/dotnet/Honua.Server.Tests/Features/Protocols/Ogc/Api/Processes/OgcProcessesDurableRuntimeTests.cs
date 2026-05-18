@@ -101,7 +101,7 @@ public sealed class OgcProcessesDurableRuntimeTests(RedisFixture redis)
             request.Headers.Add("Prefer", "respond-async");
             request.Content = new StringContent(
                 "{\"response\":\"document\",\"inputs\":{" +
-                $"\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}",
+                $"\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}",
                 Encoding.UTF8,
                 "application/json");
 
