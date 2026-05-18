@@ -22,6 +22,7 @@ This section is for people **building or extending** Honua (core contributors, a
   - [Roadmap](architecture/metadata-v2-roadmap.md) — milestone grouping derived from the GitHub issues
   - [Release Readiness](architecture/metadata-v2-release-readiness.md) — non-authoritative release gates derived from the GitHub issues
   - [Admin UI Information Model](architecture/metadata-v2-admin-ui-information-model.md) — Claude Design handoff for `#1046`
+  - [Admin Operator Workflows](architecture/admin-operator-workflows.md) — Claude Design handoff for server management workflows tracked by `#1057`
 
 ## Design Patterns
 

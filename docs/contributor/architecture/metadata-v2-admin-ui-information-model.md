@@ -6,6 +6,9 @@ the Metadata v2 epic,
 [honua-server#1035](https://github.com/honua-io/honua-server/issues/1035).
 GitHub remains authoritative for scope and acceptance. This file translates the
 issue intent into a design brief for workflow, navigation, labels, and UI state.
+Use [Honua Admin Operator Workflows](admin-operator-workflows.md) for the wider
+server management workflow map, including imports, jobs, service management,
+connections, security, CORS, settings, and BlueSpatial workflow references.
 
 ## Design Intent
 
@@ -269,6 +272,8 @@ and publish target.
 - Data Resource detail page with tabs
 - Create Resource wizard
 - Publish Resource flow
+- Server operator workflow map from
+  [Honua Admin Operator Workflows](admin-operator-workflows.md)
 - Publishing matrix
 - Access preset and policy UI
 - Validation Center

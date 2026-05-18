@@ -20,6 +20,8 @@ When this file disagrees with GitHub, update this file or ignore it.
    treating the Metadata v2 surface as shippable.
 5. Use the [admin UI information model](metadata-v2-admin-ui-information-model.md)
    when handing workflow design to Claude Design or another UI agent.
+6. Use the [admin operator workflow map](admin-operator-workflows.md) for
+   server management flows that surround Metadata v2 authoring.
 
 ## Issue Map
 
@@ -82,3 +84,4 @@ same release gates as new v2 authoring.
 - [Metadata v2 roadmap](metadata-v2-roadmap.md)
 - [Metadata v2 release-readiness gates](metadata-v2-release-readiness.md)
 - [Metadata v2 admin UI information model](metadata-v2-admin-ui-information-model.md)
+- [Honua admin operator workflows](admin-operator-workflows.md)
