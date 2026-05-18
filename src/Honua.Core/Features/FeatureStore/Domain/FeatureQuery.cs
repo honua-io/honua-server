@@ -25,6 +25,11 @@ public readonly record struct FeatureQuery
     public SqlFragment? SqlFilter { get; init; }
 
     /// <summary>
+    /// Provider-enforced SQL filter applied before caller-supplied filters.
+    /// </summary>
+    public SqlFragment? EnforcedSqlFilter { get; init; }
+
+    /// <summary>
     /// Optional list of object IDs to filter by
     /// </summary>
     public ImmutableArray<long>? ObjectIds { get; init; }

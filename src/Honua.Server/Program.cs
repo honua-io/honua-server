@@ -1156,6 +1156,7 @@ app.MapDeployControlEndpoints();
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();
 app.MapAdminLayerFieldConfigurationEndpoints();
+app.MapAdminLayerFilterConfigurationEndpoints();
 app.MapAdminLayerValidationEndpoints();
 app.MapAdminStyleSuggestionEndpoints();
 app.MapAdminSldStyleEndpoints();

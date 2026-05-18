@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Honua.Postgres.Features.SpatialAnalytics;
@@ -91,7 +92,8 @@ internal static class ServiceCollectionExtensions
                 provider.GetService<ILayerCatalog>(),
                 provider.GetRequiredService<IDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>(),
-                provider.GetService<IConnectionEncryptionService>()));
+                provider.GetService<IConnectionEncryptionService>(),
+                provider.GetService<IFilterExpressionService>()));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());

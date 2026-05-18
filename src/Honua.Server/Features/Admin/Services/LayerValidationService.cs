@@ -6,6 +6,7 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin.Services;
@@ -13,7 +14,8 @@ namespace Honua.Server.Features.Admin.Services;
 internal sealed class LayerValidationService(
     ILayerCatalog catalog,
     ITableDiscoveryService tableDiscoveryService,
-    IDatabaseConnectionProvider connectionProvider) : ILayerValidationService
+    IDatabaseConnectionProvider connectionProvider,
+    IFilterExpressionService filterExpressionService) : ILayerValidationService
 {
     private const string SeverityPass = "pass";
     private const string SeverityWarning = "warning";
@@ -38,6 +40,7 @@ internal sealed class LayerValidationService(
         {
             Pass("catalog-layer", $"Layer {layerId} exists in the catalog.")
         };
+        ValidatePermanentFilter(layer, checks);
 
         var storageMapping = layer.StorageMapping;
         if (storageMapping == null)
@@ -246,9 +249,76 @@ internal sealed class LayerValidationService(
         }
     }
 
+    private void ValidatePermanentFilter(
+        LayerDefinition layer,
+        List<LayerValidationCheck> checks)
+    {
+        var permanentFilter = layer.Metadata?.PermanentFilter;
+        if (permanentFilter == null || string.IsNullOrWhiteSpace(permanentFilter.Expression))
+        {
+            checks.Add(Pass(
+                "permanent-filter",
+                "No permanent layer filter is configured."));
+            return;
+        }
+
+        if (!TryResolveFilterLanguage(permanentFilter.Language, out var filterLanguage))
+        {
+            checks.Add(Error(
+                "permanent-filter",
+                "Saved permanent filter uses an unsupported language.",
+                "arcgis-sql, cql2-text, cql2-json",
+                permanentFilter.Language));
+            return;
+        }
+
+        var translation = filterExpressionService.Translate(filterLanguage, permanentFilter.Expression, layer);
+        if (!translation.IsSuccess)
+        {
+            checks.Add(Error(
+                "permanent-filter",
+                "Saved permanent filter is invalid.",
+                permanentFilter.Expression,
+                translation.ErrorMessage ?? "Invalid filter."));
+            return;
+        }
+
+        checks.Add(Pass(
+            "permanent-filter",
+            "Saved permanent layer filter is valid.",
+            permanentFilter.Expression,
+            permanentFilter.Language));
+    }
+
     private static ColumnInfo? FindColumn(TableInfo table, string columnName)
         => table.Columns.FirstOrDefault(column =>
             column.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+
+    private static bool TryResolveFilterLanguage(string? language, out FilterLanguage filterLanguage)
+    {
+        filterLanguage = FilterLanguage.ArcGisSql;
+        var normalized = (language ?? LayerPermanentFilterLanguages.ArcGisSql)
+            .Trim()
+            .ToLowerInvariant();
+
+        switch (normalized)
+        {
+            case LayerPermanentFilterLanguages.ArcGisSql:
+            case "arcgis":
+            case "geoservices-sql":
+                filterLanguage = FilterLanguage.ArcGisSql;
+                return true;
+            case LayerPermanentFilterLanguages.Cql2Text:
+            case "cql2":
+                filterLanguage = FilterLanguage.Cql2Text;
+                return true;
+            case LayerPermanentFilterLanguages.Cql2Json:
+                filterLanguage = FilterLanguage.Cql2Json;
+                return true;
+            default:
+                return false;
+        }
+    }
 
     private static LayerValidationResponse BuildResponse(
         LayerDefinition layer,

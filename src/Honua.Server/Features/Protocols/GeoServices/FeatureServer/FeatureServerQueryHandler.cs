@@ -1082,6 +1082,11 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             filterExpression = parseResult.Expression;
+            if (filterExpression != null && IsNoOpFilterExpression(filterExpression))
+            {
+                filterExpression = null;
+            }
+
             if (filterExpression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(filterExpression))
             {
                 return (null, null, StandardErrorHelpers.CreateBadRequest(context,
@@ -1203,6 +1208,40 @@ internal sealed class FeatureServerQueryHandler(
                 .Select(static objectId => new Literal(objectId, LiteralType.Number))
                 .ToArray()));
         return true;
+    }
+
+    private static bool IsNoOpFilterExpression(FilterExpression expression)
+        => expression switch
+        {
+            Literal { Type: LiteralType.Boolean, Value: true } => true,
+            BinaryExpression
+            {
+                Operator: BinaryOperator.Equal,
+                Left: Literal left,
+                Right: Literal right
+            } => AreEquivalentLiteralValues(left, right),
+            BinaryExpression
+            {
+                Operator: BinaryOperator.And,
+                Left: var left,
+                Right: var right
+            } => IsNoOpFilterExpression(left) && IsNoOpFilterExpression(right),
+            _ => false
+        };
+
+    private static bool AreEquivalentLiteralValues(Literal left, Literal right)
+    {
+        if (left.Type != right.Type)
+        {
+            return false;
+        }
+
+        return left.Type == LiteralType.Number
+            ? string.Equals(
+                Convert.ToString(left.Value, CultureInfo.InvariantCulture),
+                Convert.ToString(right.Value, CultureInfo.InvariantCulture),
+                StringComparison.Ordinal)
+            : Equals(left.Value, right.Value);
     }
 
     private async Task<QueryResponse> ExecuteJsonQueryResponseAsync(
