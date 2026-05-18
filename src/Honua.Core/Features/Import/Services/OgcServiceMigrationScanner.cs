@@ -708,13 +708,12 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             var document = XDocument.Parse(coverageXml, LoadOptions.None);
             return BuildCoverageDescription(coverageId, document, serviceFormats);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Xml.XmlException)
+        catch (Exception ex) when (IsRecoverableDescribeCoverageException(ex))
         {
             return new OgcCoverageDescription
             {
                 CoverageId = coverageId,
-                OutputFormats = serviceFormats,
-                AccessConstraints = [ToSafeDescribeCoverageFailureReason(ex)]
+                OutputFormats = []
             };
         }
     }
@@ -850,14 +849,8 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         return formats.Length == 0 ? serviceFormats : formats;
     }
 
-    private static string ToSafeDescribeCoverageFailureReason(Exception exception)
-        => exception switch
-        {
-            TaskCanceledException => "DescribeCoverage request timed out.",
-            HttpRequestException => "DescribeCoverage metadata could not be retrieved.",
-            System.Xml.XmlException => "DescribeCoverage metadata could not be parsed.",
-            _ => "DescribeCoverage metadata was unavailable."
-        };
+    private static bool IsRecoverableDescribeCoverageException(Exception exception)
+        => exception is HttpRequestException or TaskCanceledException or System.Xml.XmlException;
 
     private static string ToSafeScanFailureReason(Exception exception)
         => exception switch
@@ -1581,6 +1574,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         }
 
         return links.EnumerateArray()
+            .Where(static link => IsOgcApiCoverageOutputLink(link))
             .Select(link => ReadJsonString(link, "type"))
             .Where(static type => !string.IsNullOrWhiteSpace(type))
             .Select(static type => BuildCoverageFormat(type!, isNative: null))
@@ -1588,6 +1582,18 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             .Select(static group => group.First())
             .OrderBy(static format => format.Format, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static bool IsOgcApiCoverageOutputLink(JsonElement link)
+    {
+        var rel = ReadJsonString(link, "rel");
+        if (string.IsNullOrWhiteSpace(rel))
+        {
+            return false;
+        }
+
+        return rel.Equals("coverage", StringComparison.OrdinalIgnoreCase) ||
+               rel.EndsWith("/coverage", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? TryReadNestedString(JsonElement element, params string[] path)

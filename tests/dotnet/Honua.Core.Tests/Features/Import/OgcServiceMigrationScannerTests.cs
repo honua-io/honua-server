@@ -253,7 +253,35 @@ public sealed class OgcServiceMigrationScannerTests
     }
 
     [Fact]
-    public async Task ScanSourceAsync_OgcApiCoveragesCollections_ProducesCoverageInventory()
+    public async Task ScanSourceAsync_WcsDescribeCoverageFailure_LeavesAccessConstraintsEmptyAndFlagsManualReview()
+    {
+        using var httpClient = new HttpClient(new DescribeCoverageFailureHandler());
+        var scanner = CreateScanner(httpClient, CreateCrsRegistry());
+
+        var artifact = await scanner.ScanSourceAsync(new OgcServiceScanRequest
+        {
+            ServiceType = "WCS",
+            ServiceUrl = "https://example.com/geoserver/wcs",
+            Version = "2.0.1",
+            TimeoutSeconds = 10
+        });
+
+        artifact.ScanCompleteness.Status.Should().Be("partial");
+        artifact.ScanCompleteness.Warnings.Should().ContainSingle()
+            .Which.Should().Be("Coverage nurc:temperature did not advertise output formats.");
+        artifact.ExternalDependencies.Should().Contain(dependency =>
+            dependency.Kind == "coverage-service-metadata" &&
+            !dependency.Metadata.ContainsKey("accessConstraints"));
+        artifact.ExternalDependencies.Should().NotContain(dependency =>
+            dependency.Kind == "coverage-service-metadata" &&
+            dependency.Compatibility.Warnings.Any(warning =>
+                warning.Contains("DescribeCoverage", StringComparison.OrdinalIgnoreCase)));
+        artifact.Resources.Should().ContainSingle().Which.Compatibility.Code
+            .Should().Be(OgcCoverageMigrationCompatibilityCodes.OutputFormatMissing);
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_OgcApiCoveragesCollections_UsesOnlyCoverageOutputLinksForFormats()
     {
         using var httpClient = new HttpClient(new OgcFixtureHandler());
         var scanner = CreateScanner(httpClient, CreateCrsRegistry());
@@ -271,6 +299,10 @@ public sealed class OgcServiceMigrationScannerTests
         artifact.ExternalDependencies.Should().Contain(dependency =>
             dependency.Kind == "coverage-output-format" &&
             dependency.Compatibility.Code == OgcCoverageMigrationCompatibilityCodes.NetCdfUnsupported);
+        artifact.ExternalDependencies
+            .Where(static dependency => dependency.Kind == "coverage-output-format")
+            .Should().ContainSingle()
+            .Which.Name.Should().Be("application/x-netcdf");
     }
 
     private static OgcServiceMigrationScanner CreateScanner(HttpClient httpClient, Mock<ICrsRegistry> crsRegistry)
@@ -339,6 +371,23 @@ public sealed class OgcServiceMigrationScannerTests
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(WfsCapabilities)
+            });
+        }
+    }
+
+    private sealed class DescribeCoverageFailureHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var query = request.RequestUri?.Query ?? string.Empty;
+            if (query.Contains("DescribeCoverage", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromException<HttpResponseMessage>(new HttpRequestException("secret=/var/private/provider-token"));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(WcsCapabilities)
             });
         }
     }
@@ -486,6 +535,9 @@ public sealed class OgcServiceMigrationScannerTests
                 }
               },
               "links": [
+                { "rel": "self", "href": "https://coverages.example.com/collections/ocean-forecast", "type": "application/json" },
+                { "rel": "alternate", "href": "https://coverages.example.com/collections/ocean-forecast?f=html", "type": "text/html" },
+                { "rel": "items", "href": "https://coverages.example.com/collections/ocean-forecast/items", "type": "application/geo+json" },
                 { "rel": "coverage", "href": "https://coverages.example.com/collections/ocean-forecast/coverage", "type": "application/x-netcdf" }
               ]
             }
