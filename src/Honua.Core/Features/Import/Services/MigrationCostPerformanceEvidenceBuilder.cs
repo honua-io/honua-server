@@ -414,14 +414,17 @@ public static class MigrationCostPerformanceEvidenceBuilder
     {
         var grouped = measurements
             .GroupBy(static measurement => SafeIdentifier(measurement.Scenario, "unknown"), StringComparer.Ordinal)
-            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.ToArray(),
+                StringComparer.Ordinal);
         var orderedScenarios = RequiredRecoveryScenarios
             .Concat(grouped.Keys.Except(RequiredRecoveryScenarios, StringComparer.Ordinal).Order(StringComparer.Ordinal))
             .ToArray();
 
         return orderedScenarios
-            .Select(scenario => grouped.TryGetValue(scenario, out var measurement)
-                ? BuildRecoveryEvidence(scenario, measurement)
+            .Select(scenario => grouped.TryGetValue(scenario, out var scenarioMeasurements)
+                ? BuildRecoveryEvidence(scenario, scenarioMeasurements)
                 : new MigrationCostPerformanceRecoveryEvidence
                 {
                     Scenario = scenario,
@@ -433,18 +436,18 @@ public static class MigrationCostPerformanceEvidenceBuilder
 
     private static MigrationCostPerformanceRecoveryEvidence BuildRecoveryEvidence(
         string scenario,
-        MigrationCostPerformanceRecoveryMeasurement measurement)
+        MigrationCostPerformanceRecoveryMeasurement[] measurements)
     {
-        var classification = ClassifyRecovery(scenario, measurement);
+        var classification = AggregateClassification(measurements.Select(measurement => ClassifyRecovery(scenario, measurement)));
         return new MigrationCostPerformanceRecoveryEvidence
         {
             Scenario = scenario,
             Classification = classification,
-            Recovered = measurement.Recovered,
-            ResumeObserved = measurement.ResumeObserved,
-            IdempotentReplay = measurement.IdempotentReplay,
-            AttemptCount = measurement.AttemptCount,
-            Summary = BuildRecoverySummary(scenario, classification)
+            Recovered = AggregateBool(measurements.Select(static measurement => measurement.Recovered)),
+            ResumeObserved = AggregateBool(measurements.Select(static measurement => measurement.ResumeObserved)),
+            IdempotentReplay = AggregateBool(measurements.Select(static measurement => measurement.IdempotentReplay)),
+            AttemptCount = AggregateAttemptCount(measurements.Select(static measurement => measurement.AttemptCount)),
+            Summary = BuildRecoverySummary(scenario, classification, measurements.Length)
         };
     }
 
@@ -452,6 +455,18 @@ public static class MigrationCostPerformanceEvidenceBuilder
         string scenario,
         MigrationCostPerformanceRecoveryMeasurement measurement)
     {
+        if (scenario == MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt)
+        {
+            if (measurement.AttemptCount < 0 || measurement.IdempotentReplay == false)
+            {
+                return MigrationCostPerformanceClassifications.Fail;
+            }
+
+            return measurement.IdempotentReplay == true
+                ? MigrationCostPerformanceClassifications.Pass
+                : MigrationCostPerformanceClassifications.Warn;
+        }
+
         if (measurement.AttemptCount < 0 ||
             measurement.Recovered == false ||
             measurement.ResumeObserved == false ||
@@ -465,25 +480,54 @@ public static class MigrationCostPerformanceEvidenceBuilder
             return MigrationCostPerformanceClassifications.Warn;
         }
 
-        if (scenario == MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt)
-        {
-            return measurement.IdempotentReplay == true
-                ? MigrationCostPerformanceClassifications.Pass
-                : MigrationCostPerformanceClassifications.Warn;
-        }
-
         return measurement.ResumeObserved == true
             ? MigrationCostPerformanceClassifications.Pass
             : MigrationCostPerformanceClassifications.Warn;
     }
 
-    private static string BuildRecoverySummary(string scenario, string classification)
-        => classification switch
+    private static bool? AggregateBool(IEnumerable<bool?> values)
+    {
+        var materialized = values.ToArray();
+        if (materialized.Any(static value => value == false))
+        {
+            return false;
+        }
+
+        if (materialized.Any(static value => value == true))
+        {
+            return true;
+        }
+
+        return null;
+    }
+
+    private static int? AggregateAttemptCount(IEnumerable<int?> values)
+    {
+        var materialized = values.Where(static value => value.HasValue).Select(static value => value.GetValueOrDefault()).ToArray();
+        if (materialized.Length == 0)
+        {
+            return null;
+        }
+
+        var negativeAttemptCount = materialized.Where(static value => value < 0).Order().FirstOrDefault();
+        return negativeAttemptCount < 0
+            ? negativeAttemptCount
+            : materialized.Sum();
+    }
+
+    private static string BuildRecoverySummary(string scenario, string classification, int measurementCount)
+    {
+        var summary = classification switch
         {
             MigrationCostPerformanceClassifications.Fail => $"{scenario} recovery evidence failed.",
             MigrationCostPerformanceClassifications.Warn => $"{scenario} recovery evidence is incomplete.",
             _ => $"{scenario} recovery evidence passed."
         };
+
+        return measurementCount > 1
+            ? $"{summary} {measurementCount} recovery measurements were aggregated."
+            : summary;
+    }
 
     private static string NormalizePhase(string phase)
     {

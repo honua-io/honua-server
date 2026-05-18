@@ -225,6 +225,97 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
     }
 
     [Fact]
+    public void Build_WithIdempotentRepeatedApplyWithoutRecoveryOrResume_ReturnsPassRecoveryEvidence()
+    {
+        var recovery = PassingRecovery();
+        recovery[^1] = new MigrationCostPerformanceRecoveryMeasurement
+        {
+            Scenario = MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt,
+            Recovered = null,
+            ResumeObserved = false,
+            IdempotentReplay = true,
+            AttemptCount = 2
+        };
+        var input = new MigrationCostPerformanceEvidenceInput
+        {
+            MeasurementScope = "small fixture",
+            FixtureProfile = MediumGeoServerFixture(),
+            PhaseMeasurements = RequiredPhaseMeasurements(),
+            RecoveryMeasurements = recovery
+        };
+
+        var artifact = MigrationCostPerformanceEvidenceBuilder.Build(CreateInventory(), input, PassingThresholds());
+
+        artifact.OverallClassification.Should().Be(MigrationCostPerformanceClassifications.Pass);
+        artifact.Recovery.Should().ContainSingle(recoveryEvidence =>
+                recoveryEvidence.Scenario == MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt)
+            .Which.Should().Match<MigrationCostPerformanceRecoveryEvidence>(recoveryEvidence =>
+                recoveryEvidence.Classification == MigrationCostPerformanceClassifications.Pass &&
+                recoveryEvidence.ResumeObserved == false &&
+                recoveryEvidence.IdempotentReplay == true);
+    }
+
+    [Fact]
+    public void Build_WithDuplicateRecoveryMeasurements_AggregatesWorstEvidenceAndAttemptCounts()
+    {
+        var input = new MigrationCostPerformanceEvidenceInput
+        {
+            MeasurementScope = "small fixture",
+            FixtureProfile = MediumGeoServerFixture(),
+            PhaseMeasurements = RequiredPhaseMeasurements(),
+            RecoveryMeasurements =
+            [
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.SourceFailure,
+                    Recovered = true,
+                    ResumeObserved = true,
+                    AttemptCount = 2
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.SourceFailure,
+                    Recovered = true,
+                    ResumeObserved = false,
+                    AttemptCount = 3
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.JobCancellation,
+                    Recovered = true,
+                    ResumeObserved = true,
+                    AttemptCount = 2
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.TransientNetworkError,
+                    Recovered = true,
+                    ResumeObserved = true,
+                    AttemptCount = 2
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt,
+                    IdempotentReplay = true,
+                    AttemptCount = 2
+                }
+            ]
+        };
+
+        var artifact = MigrationCostPerformanceEvidenceBuilder.Build(CreateInventory(), input, PassingThresholds());
+
+        artifact.OverallClassification.Should().Be(MigrationCostPerformanceClassifications.Fail);
+        artifact.Recovery.Should().ContainSingle(recovery =>
+                recovery.Scenario == MigrationCostPerformanceRecoveryScenarios.SourceFailure)
+            .Which.Should().Match<MigrationCostPerformanceRecoveryEvidence>(recovery =>
+                recovery.Classification == MigrationCostPerformanceClassifications.Fail &&
+                recovery.Recovered == true &&
+                recovery.ResumeObserved == false &&
+                recovery.AttemptCount == 5 &&
+                recovery.Summary.Contains("2 recovery measurements were aggregated.", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Build_WithMissingRequiredPhases_ReturnsWarnForIncompleteEvidence()
     {
         var input = new MigrationCostPerformanceEvidenceInput
