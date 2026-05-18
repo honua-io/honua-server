@@ -5,6 +5,9 @@
   "parentEpic": "honua-io/honua-server#954",
   "relatedIssues": [
     "honua-io/honua-server#952",
+    "honua-io/honua-server#1035",
+    "honua-io/honua-server#1040",
+    "honua-io/honua-server#1043",
     "honua-io/honua-sdk-dotnet#146",
     "honua-io/honua-sdk-js#139",
     "honua-io/honua-sdk-python#54"
@@ -15,12 +18,116 @@
     "external-source-inventory-read",
     "protocol-native-metadata-read"
   ],
+  "projectionTargetSlugs": [
+    "ogc-records",
+    "dcat-3",
+    "stac-collection",
+    "stac-item",
+    "iso-19115-19139",
+    "esri-portal-item",
+    "geoservices-rest",
+    "ogc-api-features-collection",
+    "odata-edm"
+  ],
+  "surfaceAlignment": [
+    {
+      "surface": "ogc-records",
+      "primaryEntryIds": [
+        "ogc-records-catalog"
+      ],
+      "catalogRole": "Public standards catalog and cross-protocol discovery surface once honua-io/honua-server#952 lands.",
+      "sourceOfTruth": "Metadata v2 canonical resource metadata plus safe service, layer, source-descriptor, STAC, and protocol projections.",
+      "projectionTargets": [
+        "ogc-records"
+      ],
+      "sdkParityGate": "SDK Records clients wait for honua-io/honua-server#952 to finalize route, query, pagination, auth, error, and raw-payload behavior."
+    },
+    {
+      "surface": "honua-admin-catalog",
+      "primaryEntryIds": [
+        "admin-sdk-capabilities",
+        "admin-service-catalog",
+        "admin-connection-layer-inventory",
+        "admin-metadata-resources",
+        "admin-metadata-manifests",
+        "admin-manifest-lifecycle",
+        "admin-style-metadata",
+        "admin-scene-dataset-registry"
+      ],
+      "catalogRole": "Operator control-plane discovery, Metadata v2 authoring, manifest workflows, source descriptors, and SDK compatibility handshakes.",
+      "sourceOfTruth": "Admin metadata resources and catalog tables remain the control-plane source; protocol and public catalog surfaces are projections or read models.",
+      "projectionTargets": [
+        "ogc-records",
+        "stac-collection",
+        "stac-item",
+        "geoservices-rest",
+        "ogc-api-features-collection",
+        "odata-edm"
+      ],
+      "sdkParityGate": "SDKs must call /api/v1/admin/capabilities before constructing admin paths and must preserve envelopes, ETags, feature flags, and precondition errors."
+    },
+    {
+      "surface": "stac",
+      "primaryEntryIds": [
+        "stac-catalog"
+      ],
+      "catalogRole": "Asset and spatiotemporal catalog/search surface for STAC clients.",
+      "sourceOfTruth": "STAC is a standards projection of cataloged resources and assets; it is not the operator control plane.",
+      "projectionTargets": [
+        "stac-collection",
+        "stac-item"
+      ],
+      "sdkParityGate": "SDK STAC clients must preserve STAC-native links, item paging, filter/search semantics, ETags, and raw item payload access."
+    },
+    {
+      "surface": "migration-inventory",
+      "primaryEntryIds": [
+        "migration-source-inventory",
+        "legacy-external-discovery"
+      ],
+      "catalogRole": "External source assessment and planning artifact chain before import, pilot, or cutover.",
+      "sourceOfTruth": "Migration artifacts capture what ArcGIS, GeoServer, or OGC sources advertised; they become Honua catalog truth only after reviewed import or publication.",
+      "projectionTargets": [],
+      "sdkParityGate": "SDK migration clients must keep source inventory, manifest, parity evidence, readiness states, and stable compatibility codes intact."
+    },
+    {
+      "surface": "protocol-native-metadata",
+      "primaryEntryIds": [
+        "geoservices-service-directory",
+        "geoservices-featureserver-metadata",
+        "geoservices-mapserver-metadata",
+        "geoservices-imageserver-metadata",
+        "ogc-api-features-metadata",
+        "ogc-api-maps-metadata",
+        "ogc-api-tiles-metadata",
+        "ogc-api-coverages-metadata",
+        "wfs-capabilities-and-schema",
+        "wms-wmts-wcs-capabilities",
+        "odata-service-metadata",
+        "scene-sdk-metadata"
+      ],
+      "catalogRole": "Exact client-facing capability, schema, service, layer, collection, scene, or CSDL metadata for one protocol family.",
+      "sourceOfTruth": "Protocol documents are generated from catalog resources, service settings, layer metadata, and runtime capabilities; they should not replace the canonical admin catalog.",
+      "projectionTargets": [
+        "geoservices-rest",
+        "ogc-api-features-collection",
+        "odata-edm"
+      ],
+      "sdkParityGate": "SDK protocol clients must preserve native payload access while mapping common service/layer identifiers, auth behavior, errors, and paging consistently."
+    }
+  ],
   "entries": [
     {
       "id": "ogc-records-catalog",
       "title": "OGC API Records public catalog",
       "status": "planned",
       "category": "public-catalog-read",
+      "capabilities": [
+        "public-catalog-discovery",
+        "record-search",
+        "record-detail",
+        "raw-payload-access"
+      ],
       "endpointPatterns": [
         "GET /ogc/records",
         "GET /ogc/records/conformance",
@@ -46,6 +153,11 @@
       "title": "GeoServices REST service directory",
       "status": "implemented",
       "category": "public-catalog-read",
+      "capabilities": [
+        "service-directory",
+        "service-type-discovery",
+        "public-catalog-discovery"
+      ],
       "endpointPatterns": [
         "GET /rest/info",
         "GET /rest/services"
@@ -62,10 +174,42 @@
       "testExpectation": "GeoServices catalog endpoint tests and SDK service-list tests verify visible service filtering and FeatureServer/MapServer/ImageServer entries."
     },
     {
+      "id": "admin-sdk-capabilities",
+      "title": "Admin SDK compatibility and capability handshake",
+      "status": "implemented",
+      "category": "admin-control-plane-metadata-read",
+      "capabilities": [
+        "sdk-compatibility-handshake",
+        "server-version-read",
+        "resource-kind-discovery",
+        "metadata-schema-discovery",
+        "control-plane-feature-flags"
+      ],
+      "endpointPatterns": [
+        "GET /api/v1/admin/version",
+        "GET /api/v1/admin/capabilities"
+      ],
+      "audience": "Admin SDKs, automation, and operators that need to determine compatible control-plane behavior before using metadata/catalog endpoints.",
+      "authPosture": "Admin authorization required.",
+      "sdkTargets": {
+        "dotnet": "HonuaAdminClient compatibility handshake before admin catalog calls",
+        "javascript": "Admin client compatibility handshake before constructing admin paths",
+        "python": "Admin client compatibility handshake before constructing admin paths"
+      },
+      "responseKind": "Admin ApiResponse envelope with server version, current metadata API version, resource kinds, metadata schema compatibility, and coarse feature flags.",
+      "paginationFiltering": "No paging. Capabilities are a single runtime snapshot; SDKs should branch on data.compatibility.controlPlaneApi.major and feature flags rather than probing endpoints.",
+      "testExpectation": "Admin endpoint tests cover version/capabilities and 401 behavior; SDK parity tests use capabilities before admin metadata, manifest, GitOps, or migration inventory calls."
+    },
+    {
       "id": "admin-service-catalog",
       "title": "Admin service catalog and settings",
       "status": "implemented",
       "category": "admin-control-plane-metadata-read",
+      "capabilities": [
+        "admin-service-list",
+        "service-settings-read",
+        "protocol-toggle-discovery"
+      ],
       "endpointPatterns": [
         "GET /api/v1/admin/services",
         "GET /api/v1/admin/services/{serviceName}/settings"
@@ -86,6 +230,11 @@
       "title": "Admin connection table and published layer inventory",
       "status": "implemented",
       "category": "admin-control-plane-metadata-read",
+      "capabilities": [
+        "connection-table-discovery",
+        "published-layer-inventory",
+        "publishing-source-discovery"
+      ],
       "endpointPatterns": [
         "GET /api/v1/admin/connections/{id}/tables",
         "GET /api/v1/admin/connections/{id}/layers"
@@ -106,6 +255,13 @@
       "title": "Admin metadata resources, groups, and source descriptors",
       "status": "implemented",
       "category": "admin-control-plane-metadata-read",
+      "capabilities": [
+        "metadata-resource-list",
+        "metadata-resource-detail",
+        "etag-read",
+        "group-read",
+        "source-descriptor-read"
+      ],
       "endpointPatterns": [
         "GET /api/v1/admin/metadata/resources",
         "GET /api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"
@@ -126,6 +282,13 @@
       "title": "Admin metadata manifest export and apply",
       "status": "implemented",
       "category": "admin-control-plane-metadata-read",
+      "capabilities": [
+        "manifest-export",
+        "manifest-apply",
+        "dry-run",
+        "prune",
+        "approval-handoff"
+      ],
       "endpointPatterns": [
         "GET /api/v1/admin/manifest",
         "POST /api/v1/admin/manifest/apply"
@@ -142,10 +305,52 @@
       "testExpectation": "Manifest tests cover export, apply, dry-run, prune, and SDK compatibility feature flags."
     },
     {
+      "id": "admin-manifest-lifecycle",
+      "title": "Admin manifest drift, version, approval, and GitOps reads",
+      "status": "implemented",
+      "category": "admin-control-plane-metadata-read",
+      "capabilities": [
+        "manifest-drift-read",
+        "manifest-version-history",
+        "approval-queue-read",
+        "approval-history-read",
+        "gitops-watch-read",
+        "gitops-change-read"
+      ],
+      "endpointPatterns": [
+        "GET /api/v1/admin/manifest/drift",
+        "GET /api/v1/admin/manifest/versions",
+        "GET /api/v1/admin/manifest/versions/{versionId}",
+        "GET /api/v1/admin/manifest/pending/",
+        "GET /api/v1/admin/manifest/pending/{id}",
+        "GET /api/v1/admin/manifest/pending/history",
+        "GET /api/v1/admin/gitops/watch",
+        "GET /api/v1/admin/gitops/changes",
+        "GET /api/v1/admin/gitops/changes/{id}",
+        "GET /api/v1/admin/gitops/changes/{id}/diff"
+      ],
+      "audience": "Operators, GitOps automation, and admin SDKs that need manifest lifecycle state without applying changes.",
+      "authPosture": "Admin authorization required. Approval and GitOps reads can be edition-gated by runtime capabilities.",
+      "sdkTargets": {
+        "dotnet": "HonuaAdminClient manifest drift/version/approval/GitOps read methods where enabled",
+        "javascript": "Admin manifest lifecycle and GitOps read methods where enabled",
+        "python": "Admin manifest lifecycle and GitOps read methods where enabled"
+      },
+      "responseKind": "Admin ApiResponse envelope with drift reports, manifest version summaries/details, pending change summaries, approval history, GitOps watch configuration, change records, or diffs.",
+      "paginationFiltering": "Manifest versions use limit and offset. Pending changes filter by status. GitOps changes use limit/offset where exposed. Drift supports verbose=true.",
+      "testExpectation": "Manifest drift, approval, and GitOps watch endpoint tests cover happy paths, gating, paging/filter behavior, and SDKs must first check admin capabilities before calling edition-gated lifecycle reads."
+    },
+    {
       "id": "admin-style-metadata",
       "title": "Admin layer style metadata",
       "status": "implemented",
       "category": "admin-control-plane-metadata-read",
+      "capabilities": [
+        "style-read",
+        "sld-export",
+        "sld-import",
+        "style-suggestion"
+      ],
       "endpointPatterns": [
         "GET /api/v1/admin/metadata/layers/{layerId}/style",
         "GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld",
@@ -168,6 +373,11 @@
       "title": "SDK scene metadata and endpoint resolution",
       "status": "implemented",
       "category": "public-catalog-read",
+      "capabilities": [
+        "scene-list",
+        "scene-detail",
+        "scene-resolve"
+      ],
       "endpointPatterns": [
         "GET /api/scenes",
         "GET /api/scenes/{sceneId}",
@@ -189,6 +399,11 @@
       "title": "Admin scene dataset registry",
       "status": "implemented",
       "category": "admin-control-plane-metadata-read",
+      "capabilities": [
+        "scene-registry-list",
+        "scene-registry-detail",
+        "scene-resolve"
+      ],
       "endpointPatterns": [
         "GET /api/v1/admin/scenes",
         "GET /api/v1/admin/scenes/{id}",
@@ -210,6 +425,14 @@
       "title": "GeoServices FeatureServer metadata",
       "status": "implemented",
       "category": "protocol-native-metadata-read",
+      "capabilities": [
+        "service-metadata",
+        "layer-metadata",
+        "domains",
+        "relationships",
+        "temporal-extent",
+        "estimates"
+      ],
       "endpointPatterns": [
         "GET /rest/services/{serviceId}/FeatureServer",
         "GET /rest/services/{serviceId}/FeatureServer/{layerId}",
@@ -234,6 +457,11 @@
       "title": "GeoServices MapServer metadata",
       "status": "implemented",
       "category": "protocol-native-metadata-read",
+      "capabilities": [
+        "service-metadata",
+        "layer-metadata",
+        "legend"
+      ],
       "endpointPatterns": [
         "GET /rest/services/{serviceId}/MapServer",
         "GET /rest/services/{serviceId}/MapServer/{layerId}",
@@ -255,6 +483,12 @@
       "title": "GeoServices ImageServer metadata and raster catalog",
       "status": "implemented",
       "category": "protocol-native-metadata-read",
+      "capabilities": [
+        "service-metadata",
+        "raster-catalog-query",
+        "legend",
+        "statistics-histograms"
+      ],
       "endpointPatterns": [
         "GET /rest/services/{id}/ImageServer",
         "GET /rest/services/{serviceId}/ImageServer",
@@ -279,6 +513,13 @@
       "title": "OGC API Features metadata",
       "status": "implemented",
       "category": "protocol-native-metadata-read",
+      "capabilities": [
+        "landing",
+        "conformance",
+        "openapi",
+        "collections",
+        "queryables"
+      ],
       "endpointPatterns": [
         "GET /ogc/features",
         "GET /ogc/features/conformance",
@@ -304,6 +545,12 @@
       "title": "OGC API Maps metadata",
       "status": "implemented",
       "category": "protocol-native-metadata-read",
+      "capabilities": [
+        "landing",
+        "conformance",
+        "openapi",
+        "tileset-metadata"
+      ],
       "endpointPatterns": [
         "GET /ogc/maps",
         "GET /ogc/maps/conformance",
@@ -327,6 +574,14 @@
       "title": "OGC API Tiles metadata",
       "status": "implemented",
       "category": "protocol-native-metadata-read",
+      "capabilities": [
+        "landing",
+        "conformance",
+        "openapi",
+        "collections",
+        "tilesets",
+        "tile-matrix-sets"
+      ],
       "endpointPatterns": [
         "GET /ogc/tiles",
         "GET /ogc/tiles/conformance",
@@ -356,6 +611,13 @@
       "title": "OGC API Coverages metadata",
       "status": "implemented",
       "category": "protocol-native-metadata-read",
+      "capabilities": [
+        "landing",
+        "conformance",
+        "openapi",
+        "collections",
+        "coverage-schema"
+      ],
       "endpointPatterns": [
         "GET /ogc/coverages",
         "GET /ogc/coverages/conformance",
@@ -381,6 +643,14 @@
       "title": "STAC catalog, collections, items, and search",
       "status": "implemented",
       "category": "public-catalog-read",
+      "capabilities": [
+        "catalog",
+        "collections",
+        "items",
+        "search",
+        "paging",
+        "filtering"
+      ],
       "endpointPatterns": [
         "GET /stac",
         "GET /stac/collections",
@@ -406,6 +676,12 @@
       "title": "WFS capabilities and feature type schema",
       "status": "implemented",
       "category": "protocol-native-metadata-read",
+      "capabilities": [
+        "capabilities",
+        "describe-feature-type",
+        "stored-query-metadata",
+        "xml-exceptions"
+      ],
       "endpointPatterns": [
         "GET /wfs?service=WFS&request=GetCapabilities",
         "GET /wfs?service=WFS&request=DescribeFeatureType",
@@ -429,6 +705,12 @@
       "title": "Classic OGC WMS, WMTS, and WCS capabilities",
       "status": "implemented",
       "category": "protocol-native-metadata-read",
+      "capabilities": [
+        "wms-capabilities",
+        "wmts-capabilities",
+        "wcs-capabilities",
+        "restful-wmts-metadata"
+      ],
       "endpointPatterns": [
         "GET /rest/services/{serviceId}/MapServer/WMS",
         "GET /ogc/services/{serviceId}/wms",
@@ -454,6 +736,12 @@
       "title": "OData service document and EDM metadata",
       "status": "implemented",
       "category": "protocol-native-metadata-read",
+      "capabilities": [
+        "service-document",
+        "csdl-metadata",
+        "layer-entity-metadata",
+        "odata-query-options"
+      ],
       "endpointPatterns": [
         "GET /odata",
         "GET /odata/$metadata",
@@ -476,26 +764,39 @@
       "title": "Unified external source inventory scanner",
       "status": "implemented",
       "category": "external-source-inventory-read",
+      "capabilities": [
+        "source-inventory",
+        "artifact-export",
+        "artifact-set",
+        "compatibility-codes",
+        "manifest-generation",
+        "parity-evidence-generation"
+      ],
       "endpointPatterns": [
         "POST /api/v1/admin/import/scan",
         "POST /api/v1/admin/import/scan?export=json"
       ],
-      "audience": "Operators and SDK migration tooling that inventory external ArcGIS GeoServices REST or GeoServer REST sources.",
+      "audience": "Operators and SDK migration tooling that inventory external ArcGIS GeoServices REST, GeoServer REST, WFS, WMS, or WMTS sources.",
       "authPosture": "Admin authorization required. Source auth posture is recorded in the artifact rather than treated as Honua endpoint auth.",
       "sdkTargets": {
         "dotnet": "HonuaAdminClient.ScanMigrationSourceAsync and migration inventory models",
         "javascript": "Admin migration toolkit client methods",
         "python": "Admin migration toolkit client methods"
       },
-      "responseKind": "honua.migration.source-inventory v1.0 artifact, optionally as indented JSON attachment.",
-      "paginationFiltering": "Request body uses sourceKind, sourceUrl, timeoutSeconds, credentials where supported, and scanner-specific validation. No response paging.",
-      "testExpectation": "Migration scanner tests cover sourceKind normalization, ArcGIS/GeoServer inventory artifacts, compatibility codes, failed-artifact behavior, export=json, and SDK model round trips."
+      "responseKind": "honua.migration.source-inventory v1.0 artifact, optionally as indented JSON attachment. artifactSet=all returns inventory, honua.migration.manifest v1.0, and honua.migration.parity-evidence-pack v1.0.",
+      "paginationFiltering": "Request body uses sourceKind, sourceUrl, timeoutSeconds, credentials where supported, includeStyleContent for GeoServer, serviceVersion for OGC sources, artifactSet=all, optional targetServiceName, and scanner-specific validation. No response paging.",
+      "testExpectation": "Migration scanner tests cover sourceKind normalization, ArcGIS/GeoServer/OGC inventory artifacts, compatibility codes, failed-artifact behavior, artifactSet=all, export=json, and SDK model round trips."
     },
     {
       "id": "legacy-external-discovery",
       "title": "Legacy external source discovery endpoints",
       "status": "implemented",
       "category": "external-source-inventory-read",
+      "capabilities": [
+        "legacy-arcgis-discovery",
+        "legacy-geoserver-discovery",
+        "compatibility-bridge"
+      ],
       "endpointPatterns": [
         "POST /api/v1/admin/import/geoservices/discover",
         "POST /api/v1/admin/import/geoserver/discover"

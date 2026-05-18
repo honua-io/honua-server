@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Projections;
 using Xunit;
 
 namespace Honua.Architecture.Tests;
@@ -28,14 +29,29 @@ public sealed class MetadataCatalogParityMatrixTests
         "planned"
     };
 
+    private static readonly HashSet<string> AllowedProjectionTargetSlugs = MetadataProjectionTargets.All
+        .Select(static target => target.Slug)
+        .ToHashSet(StringComparer.Ordinal);
+
+    private static readonly string[] RequiredSurfaceIds =
+    [
+        "ogc-records",
+        "honua-admin-catalog",
+        "stac",
+        "migration-inventory",
+        "protocol-native-metadata"
+    ];
+
     private static readonly string[] RequiredEntryIds =
     [
         "ogc-records-catalog",
         "geoservices-service-directory",
+        "admin-sdk-capabilities",
         "admin-service-catalog",
         "admin-connection-layer-inventory",
         "admin-metadata-resources",
         "admin-metadata-manifests",
+        "admin-manifest-lifecycle",
         "admin-style-metadata",
         "admin-scene-dataset-registry",
         "geoservices-featureserver-metadata",
@@ -67,7 +83,13 @@ public sealed class MetadataCatalogParityMatrixTests
             .EnumerateArray()
             .Select(static issue => issue.GetString())
             .Should()
-            .Contain("honua-io/honua-server#952");
+            .Contain(["honua-io/honua-server#952", "honua-io/honua-server#1035", "honua-io/honua-server#1043"]);
+
+        root.GetProperty("projectionTargetSlugs")
+            .EnumerateArray()
+            .Select(static target => target.GetString())
+            .Should()
+            .BeEquivalentTo(AllowedProjectionTargetSlugs);
 
         var entries = root.GetProperty("entries").EnumerateArray().ToArray();
         entries.Should().NotBeEmpty();
@@ -97,11 +119,70 @@ public sealed class MetadataCatalogParityMatrixTests
                 pattern => !string.IsNullOrWhiteSpace(pattern),
                 $"{id} must list endpoint path patterns");
 
+            var capabilities = entry.GetProperty("capabilities")
+                .EnumerateArray()
+                .Select(static capability => capability.GetString())
+                .ToArray();
+            capabilities.Should().NotBeEmpty($"{id} must list machine-readable capabilities");
+            capabilities.Should().OnlyHaveUniqueItems($"{id} capabilities are SDK implementation keys");
+            capabilities.Should().OnlyContain(
+                capability => !string.IsNullOrWhiteSpace(capability) && capability.All(static ch => char.IsLower(ch) || char.IsDigit(ch) || ch == '-'),
+                $"{id} capabilities should stay lowercase slug strings");
+
             var sdkTargets = entry.GetProperty("sdkTargets");
             RequiredString(sdkTargets, "dotnet").Should().NotBeNullOrWhiteSpace(id);
             RequiredString(sdkTargets, "javascript").Should().NotBeNullOrWhiteSpace(id);
             RequiredString(sdkTargets, "python").Should().NotBeNullOrWhiteSpace(id);
         }
+    }
+
+    [ArchitectureTest]
+    public void MetadataCatalogSurfaceAlignment_ShouldConnectInventoryToPrimaryCatalogRoles()
+    {
+        using var document = LoadInventory();
+        var root = document.RootElement;
+
+        var entryIds = root.GetProperty("entries")
+            .EnumerateArray()
+            .Select(static entry => RequiredString(entry, "id"))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var surfaces = root.GetProperty("surfaceAlignment").EnumerateArray().ToArray();
+        surfaces.Should().HaveCount(RequiredSurfaceIds.Length);
+
+        var surfaceIds = surfaces.Select(static surface => RequiredString(surface, "surface")).ToArray();
+        surfaceIds.Should().BeEquivalentTo(RequiredSurfaceIds);
+        surfaceIds.Should().OnlyHaveUniqueItems("surface ids are stable documentation anchors");
+
+        var alignedEntryIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var surface in surfaces)
+        {
+            var surfaceId = RequiredString(surface, "surface");
+            RequiredString(surface, "catalogRole").Should().NotBeNullOrWhiteSpace(surfaceId);
+            RequiredString(surface, "sourceOfTruth").Should().NotBeNullOrWhiteSpace(surfaceId);
+            RequiredString(surface, "sdkParityGate").Should().NotBeNullOrWhiteSpace(surfaceId);
+
+            var primaryEntryIds = surface.GetProperty("primaryEntryIds")
+                .EnumerateArray()
+                .Select(static entry => entry.GetString() ?? string.Empty)
+                .ToArray();
+            primaryEntryIds.Should().NotBeEmpty($"{surfaceId} must point at inventory entries");
+            primaryEntryIds.Should().OnlyContain(entryId => entryIds.Contains(entryId), $"{surfaceId} must not reference missing entries");
+            alignedEntryIds.UnionWith(primaryEntryIds);
+
+            var projectionTargets = surface.GetProperty("projectionTargets")
+                .EnumerateArray()
+                .Select(static target => target.GetString() ?? string.Empty)
+                .ToArray();
+            if (projectionTargets.Length > 0)
+            {
+                projectionTargets.Should().OnlyContain(
+                    target => AllowedProjectionTargetSlugs.Contains(target),
+                    $"{surfaceId} projection targets must match Metadata v2 projection target slugs");
+            }
+        }
+
+        alignedEntryIds.Should().Contain(entryIds, "every endpoint inventory row should belong to a primary catalog role");
     }
 
     [ArchitectureTest]
@@ -115,6 +196,7 @@ public sealed class MetadataCatalogParityMatrixTests
         markdown.Should().Contain("honua-server#955");
         markdown.Should().Contain("honua-server#954");
         markdown.Should().Contain("honua-server#952");
+        markdown.Should().Contain("Metadata v2 Projection Alignment");
         markdown.Should().Contain("metadata-catalog-endpoints.v1.json");
 
         foreach (var entry in document.RootElement.GetProperty("entries").EnumerateArray())

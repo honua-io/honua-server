@@ -109,4 +109,10 @@ Example `SourceDescriptor` metadata resource:
 ## Notes
 
 - `/api/v1/admin/version` remains available for legacy callers, but SDK compatibility decisions should use `/api/v1/admin/capabilities`.
+- Metadata/catalog SDK parity should use
+  [`metadata-catalog-endpoints.v1.json`](metadata-catalog-endpoints.v1.json)
+  after the compatibility handshake. That inventory classifies public catalog
+  reads, admin metadata reads, external migration inventory reads, and
+  protocol-native metadata reads, and links the server-side OGC Records and SDK
+  child issues.
 - Adding new fields under `data.compatibility` is a backward-compatible `v1` change per the control-plane versioning policy.
