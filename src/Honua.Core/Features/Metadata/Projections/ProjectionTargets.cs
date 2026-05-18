@@ -78,7 +78,7 @@ public sealed record MetadataProjectionTargetDefinition(
 /// </summary>
 public static class MetadataProjectionTargets
 {
-    private static readonly MetadataProjectionTargetDefinition[] Definitions =
+    private static readonly IReadOnlyList<MetadataProjectionTargetDefinition> Definitions = Array.AsReadOnly(
     [
         Define(
             MetadataProjectionTarget.OgcRecords,
@@ -187,7 +187,7 @@ public static class MetadataProjectionTargets
             Recommended(ProjectionMetadataSemantic.CreatedDate, "created timestamp"),
             Recommended(ProjectionMetadataSemantic.ModifiedDate, "modified timestamp"),
             Recommended(ProjectionMetadataSemantic.LifecycleStatusField, "lifecycle status field"))
-    ];
+    ]);
 
     public static IReadOnlyList<MetadataProjectionTargetDefinition> All => Definitions;
 
@@ -201,7 +201,7 @@ public static class MetadataProjectionTargets
         string label,
         string slug,
         params ProjectionRequirement[] requirements) =>
-        new(target, label, slug, requirements);
+        new(target, label, slug, Array.AsReadOnly(requirements.ToArray()));
 
     private static ProjectionRequirement Required(ProjectionMetadataSemantic semantic, string label) =>
         new(semantic, label, ProjectionRequirementImportance.Required);

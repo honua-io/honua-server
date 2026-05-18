@@ -64,8 +64,7 @@ public static class ProjectionReadinessEvaluator
                 || HasRole(metadata, FieldSemanticRoleVocabulary.MetadataCreated),
             ProjectionMetadataSemantic.ModifiedDate => HasDate(metadata, CatalogDateRole.Modified)
                 || HasRole(metadata, FieldSemanticRoleVocabulary.MetadataModified),
-            ProjectionMetadataSemantic.SpatialExtent => metadata.Extents?.Spatial is not null
-                || HasRole(metadata, FieldSemanticRoleVocabulary.GeometryPrimary),
+            ProjectionMetadataSemantic.SpatialExtent => metadata.Extents?.Spatial is not null,
             ProjectionMetadataSemantic.TemporalExtent => HasTemporalExtent(metadata),
             ProjectionMetadataSemantic.Lineage => HasText(metadata.Lineage?.Statement),
             ProjectionMetadataSemantic.Quality => metadata.Quality.Any()
@@ -101,12 +100,7 @@ public static class ProjectionReadinessEvaluator
             && (temporal.Instant.HasValue || temporal.Start.HasValue || temporal.End.HasValue)
         || HasDate(metadata, CatalogDateRole.TemporalInstant)
         || HasDate(metadata, CatalogDateRole.TemporalStart)
-        || HasDate(metadata, CatalogDateRole.TemporalEnd)
-        || HasAnyRole(
-            metadata,
-            FieldSemanticRoleVocabulary.TemporalInstant,
-            FieldSemanticRoleVocabulary.TemporalStart,
-            FieldSemanticRoleVocabulary.TemporalEnd);
+        || HasDate(metadata, CatalogDateRole.TemporalEnd);
 
     private static bool HasDate(CatalogMetadataSemantics metadata, CatalogDateRole role) =>
         metadata.Dates.Any(date => date.Role == role);

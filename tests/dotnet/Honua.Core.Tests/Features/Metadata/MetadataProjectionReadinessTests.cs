@@ -31,6 +31,15 @@ public sealed class MetadataProjectionReadinessTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void TargetDefinitions_ReturnReadOnlyCollections()
+    {
+        MetadataProjectionTargets.All.GetType().IsArray.Should().BeFalse();
+        MetadataProjectionTargets.Get(MetadataProjectionTarget.StacCollection)
+            .Requirements.GetType().IsArray.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void FieldSemanticRole_Parse_PreservesKnownRoleAndRejectsBlank()
     {
         var role = FieldSemanticRole.Parse("geometry.primary");
@@ -88,6 +97,39 @@ public sealed class MetadataProjectionReadinessTests
 
         result.IsReady.Should().BeTrue();
         result.MissingRequired.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Evaluate_StacCollection_RequiresExplicitSpatialAndTemporalExtents()
+    {
+        var metadata = new CatalogMetadataSemantics
+        {
+            Title = "Buildings",
+            Description = "Building footprints.",
+            Identifiers =
+            [
+                new CatalogIdentifierSemantic("buildings", CatalogIdentifierKind.Local, IsPrimary: true)
+            ],
+            Fields =
+            [
+                new FieldSemanticBinding("shape", FieldSemanticRole.Parse(FieldSemanticRoleVocabulary.GeometryPrimary)),
+                new FieldSemanticBinding("observed_at", FieldSemanticRole.Parse(FieldSemanticRoleVocabulary.TemporalInstant))
+            ]
+        };
+
+        var result = ProjectionReadinessEvaluator.Evaluate(metadata, MetadataProjectionTarget.StacCollection);
+
+        result.IsReady.Should().BeFalse();
+        result.MissingRequired.Select(requirement => requirement.Semantic).Should().Contain(
+            [
+                ProjectionMetadataSemantic.SpatialExtent,
+                ProjectionMetadataSemantic.TemporalExtent
+            ]);
+        result.Satisfied.Select(requirement => requirement.Semantic)
+            .Should().NotContain(ProjectionMetadataSemantic.SpatialExtent);
+        result.Satisfied.Select(requirement => requirement.Semantic)
+            .Should().NotContain(ProjectionMetadataSemantic.TemporalExtent);
     }
 
     [UnitTest]
