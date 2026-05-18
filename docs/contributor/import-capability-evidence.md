@@ -1,6 +1,6 @@
 # Import and Migration Capability Evidence
 
-Last reviewed: 2026-05-17
+Last reviewed: 2026-05-18
 
 This page is the website-linkable evidence summary for Honua Server import and
 migration claims. It distinguishes production data import from migration
@@ -34,6 +34,7 @@ is passing and linked from the compatibility evidence page.
 | Raster import | Production path | `POST /api/v1/admin/import/raster`; GeoTIFF/COG and PNG/JPEG world-file paths | Raster import is separate from coverage-service import. |
 | ArcGIS GeoServices REST discovery | Production path | `POST /api/v1/admin/import/geoservices/discover` | Requires an HTTPS service-root URL ending in `FeatureServer` or `MapServer`; layer URLs and embedded credentials are rejected. |
 | ArcGIS GeoServices REST layer import | Production path | `POST /api/v1/admin/import/geoservices/start`; background job uses paged `/query` reads, creates a PostGIS table, inserts attributes/geometries, builds a spatial index, and can auto-publish | Baseline path targets queryable public feature/map-service layers. Attachments and renderers are inventoried or flagged for manual follow-up, not imported as first-class data. |
+| ArcGIS Server service-fidelity migration | Partial / gap | Current layer import and GeoServices parity evidence | Stable layer identity, domains/subtypes, relationships, attachments, renderers/styles, time metadata, service metadata, route parity, and post-migration parity evidence are tracked in [honua-server#1025](https://github.com/honua-io/honua-server/issues/1025). |
 | Unified migration scanner | Production path | `POST /api/v1/admin/import/scan` with `sourceKind=geoserver-rest` or `sourceKind=arcgis-geoservices-rest` | The scanner returns deterministic planning artifacts. It does not mutate catalog or data tables. |
 | GeoServer REST discovery | Production path | `POST /api/v1/admin/import/geoserver/discover` and scanner support | HTTPS public URL required outside test mode. Basic auth is supported when both username and password are supplied. |
 | GeoServer REST import job | Dry-run only at public endpoint | `POST /api/v1/admin/import/geoserver/start` rejects requests unless `dryRun=true` | Treat this as compatibility review and cutover planning, not applied catalog migration. |
@@ -41,6 +42,7 @@ is passing and linked from the compatibility evidence page.
 | OGC WFS/WMS/WMTS service import | Not implemented | No production import endpoint exists for arbitrary OGC services | Current evidence is consume/read interoperability, not import. |
 | Cross-server OGC consume | Test/nightly evidence | Test-only `/__test/cross-server-consume/proxy`; nightly `cross-server-consume-nightly.yml`; gap report at `docs/compatibility/cross-server-consume-gap-report.md` | The probe exists only in the Test environment and should not be presented as an operator API. |
 | End-to-end migration acceptance suite | Not implemented as one release gate | Existing evidence is split across source-specific tests, SDK compatibility, and artifact unit tests | Track the full scan/manifest/apply/parity/readiness suite in [honua-server#1024](https://github.com/honua-io/honua-server/issues/1024). |
+| Operator review and cutover workbench | Not complete | Stable artifact contracts can be displayed by downstream UI | Track review, approvals, parity evidence, redaction, retries, exports, and cutover readiness in [honua-server-admin#94](https://github.com/honua-io/honua-server-admin/issues/94). |
 
 ## Implementation Evidence
 
