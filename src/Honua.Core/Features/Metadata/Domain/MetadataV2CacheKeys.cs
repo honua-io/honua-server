@@ -33,11 +33,6 @@ public sealed record MetadataV2CacheKeyRequest
     public string KeyPrefix { get; init; } = MetadataV2CacheKeyBuilder.DefaultKeyPrefix;
 
     /// <summary>
-    /// Tenant dimension.
-    /// </summary>
-    public string? TenantId { get; init; }
-
-    /// <summary>
     /// Environment dimension, for example <c>dev</c>, <c>staging</c>, or <c>prod</c>.
     /// </summary>
     public string? Environment { get; init; }
@@ -110,8 +105,6 @@ public static class MetadataV2CacheKeyBuilder
         {
             NormalizePrefix(request.KeyPrefix),
             NormalizeComponent(kind.ToString(), "unknown"),
-            "tenant",
-            NormalizeScopedComponent(request.TenantId),
             "environment",
             NormalizeScopedComponent(request.Environment),
             "catalog",

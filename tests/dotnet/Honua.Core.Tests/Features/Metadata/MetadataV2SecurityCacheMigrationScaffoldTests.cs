@@ -88,7 +88,6 @@ public sealed class MetadataV2SecurityCacheMigrationScaffoldTests
     {
         var first = new MetadataV2CacheKeyRequest
         {
-            TenantId = " Tenant A ",
             Environment = "Prod",
             CatalogId = "Main/Catalog",
             SchemaVersion = "honua.io/v2",
@@ -99,7 +98,6 @@ public sealed class MetadataV2SecurityCacheMigrationScaffoldTests
 
         var second = first with
         {
-            TenantId = "tenant-a",
             Environment = "prod",
             CatalogId = "main catalog",
             Revision = "rev-42",
@@ -113,9 +111,9 @@ public sealed class MetadataV2SecurityCacheMigrationScaffoldTests
         MetadataV2CacheKeyBuilder.BuildSnapshot(second).Value.Should().Be(snapshot.Value);
         MetadataV2CacheKeyBuilder.BuildProjection(second).Value.Should().Be(projection.Value);
         snapshot.Value.Should().Be(
-            "honua:metadata:v2:snapshot:tenant:id-tenant-a:environment:id-prod:catalog:id-main-catalog:schema:id-honua.io-v2:revision:id-rev-42");
+            "honua:metadata:v2:snapshot:environment:id-prod:catalog:id-main-catalog:schema:id-honua.io-v2:revision:id-rev-42");
         projection.Value.Should().Be(
-            "honua:metadata:v2:projection:tenant:id-tenant-a:environment:id-prod:catalog:id-main-catalog:schema:id-honua.io-v2:revision:id-rev-42:target:id-ogc-api-features:profile:id-profile-1");
+            "honua:metadata:v2:projection:environment:id-prod:catalog:id-main-catalog:schema:id-honua.io-v2:revision:id-rev-42:target:id-ogc-api-features:profile:id-profile-1");
     }
 
     [UnitTest]
@@ -125,24 +123,23 @@ public sealed class MetadataV2SecurityCacheMigrationScaffoldTests
         var sharedPrefix = new string('a', 96);
         var first = new MetadataV2CacheKeyRequest
         {
-            TenantId = sharedPrefix + "-first",
             Environment = "prod",
-            CatalogId = "main",
+            CatalogId = sharedPrefix + "-first",
             SchemaVersion = "v2",
             Revision = "current"
         };
 
         var second = first with
         {
-            TenantId = sharedPrefix + "-second"
+            CatalogId = sharedPrefix + "-second"
         };
 
         var firstKey = MetadataV2CacheKeyBuilder.BuildSnapshot(first).Value;
         var secondKey = MetadataV2CacheKeyBuilder.BuildSnapshot(second).Value;
 
         firstKey.Should().NotBe(secondKey);
-        firstKey.Should().MatchRegex("tenant:id-a{79}-[0-9a-f]{16}:environment");
-        secondKey.Should().MatchRegex("tenant:id-a{79}-[0-9a-f]{16}:environment");
+        firstKey.Should().MatchRegex("catalog:id-a{79}-[0-9a-f]{16}:schema");
+        secondKey.Should().MatchRegex("catalog:id-a{79}-[0-9a-f]{16}:schema");
     }
 
     [UnitTest]
