@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-05-12T00:00:00Z",
+  "updatedUtc": "2026-05-18T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -201,6 +201,307 @@
           "status": "implemented",
           "linkedTicket": "#31",
           "versionCaptureRule": "The sdk-server-compatibility workflow records Honua.Sdk.Admin, Honua.Sdk.GeoServices, and Honua.Sdk.OgcFeatures package versions where present, SDK ref, Honua Server commit, seed profile, protocol surface list, and failure diagnostics in compat-result.json."
+        }
+      ]
+    },
+    {
+      "surfaceId": "migration-scan",
+      "displayName": "Migration source inventory scan",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "POST /api/v1/admin/import/scan",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/api/v1/admin/import/scan"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus migration scanner integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Import/MigrationScannerEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "JavaScript SDK migration scan automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises the wrapper against a real seeded server.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-js/issues/105"
+          ],
+          "ownerRepo": "honua-sdk-js",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#105",
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the migration-scan surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "Python SDK migration scan automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises the wrapper against a real seeded server.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-python/issues/49"
+          ],
+          "ownerRepo": "honua-sdk-python",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#49",
+          "versionCaptureRule": "The SDK compatibility evidence records honua-sdk package version, Honua Server commit, seed profile, the migration-scan surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": ".NET SDK migration scan automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises the wrapper against a real seeded server.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-dotnet/issues/134"
+          ],
+          "ownerRepo": "honua-sdk-dotnet",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#134",
+          "versionCaptureRule": "The SDK compatibility evidence records Honua.Sdk.* package versions, Honua Server commit, seed profile, the migration-scan surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        }
+      ]
+    },
+    {
+      "surfaceId": "arcgis-import",
+      "displayName": "ArcGIS GeoServices import automation",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/import/geoservices/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/import/geoservices/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus ArcGIS GeoServices import endpoint tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "JavaScript SDK ArcGIS import automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel where supported.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-js/issues/105"
+          ],
+          "ownerRepo": "honua-sdk-js",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#105",
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the arcgis-import surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "Python SDK ArcGIS import automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel where supported.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-python/issues/49"
+          ],
+          "ownerRepo": "honua-sdk-python",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#49",
+          "versionCaptureRule": "The SDK compatibility evidence records honua-sdk package version, Honua Server commit, seed profile, the arcgis-import surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": ".NET SDK ArcGIS import automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel where supported.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-dotnet/issues/134"
+          ],
+          "ownerRepo": "honua-sdk-dotnet",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#134",
+          "versionCaptureRule": "The SDK compatibility evidence records Honua.Sdk.* package versions, Honua Server commit, seed profile, the arcgis-import surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        }
+      ]
+    },
+    {
+      "surfaceId": "geoserver-dry-run",
+      "displayName": "GeoServer dry-run import automation",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/import/geoserver/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/import/geoserver/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus GeoServer dry-run import endpoint tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Import/GeoServerImportEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "JavaScript SDK GeoServer dry-run automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel against a dry-run fixture.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-js/issues/105"
+          ],
+          "ownerRepo": "honua-sdk-js",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#105",
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the geoserver-dry-run surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "Python SDK GeoServer dry-run automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel against a dry-run fixture.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-python/issues/49"
+          ],
+          "ownerRepo": "honua-sdk-python",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#49",
+          "versionCaptureRule": "The SDK compatibility evidence records honua-sdk package version, Honua Server commit, seed profile, the geoserver-dry-run surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": ".NET SDK GeoServer dry-run automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel against a dry-run fixture.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-dotnet/issues/134"
+          ],
+          "ownerRepo": "honua-sdk-dotnet",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#134",
+          "versionCaptureRule": "The SDK compatibility evidence records Honua.Sdk.* package versions, Honua Server commit, seed profile, the geoserver-dry-run surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        }
+      ]
+    },
+    {
+      "surfaceId": "migration-evidence",
+      "displayName": "Migration manifest and evidence artifacts",
+      "surfaceKind": "artifact-contract",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "honua.migration.* artifacts",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/api/v1/admin/import/scan"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Core migration artifact translator and parity evidence generator tests",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Core/Features/Import/Domain/MigrationManifestArtifact.cs",
+            "src/Honua.Core/Features/Import/Domain/MigrationParityEvidenceArtifact.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Import/MigrationManifestTranslatorTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Import/MigrationParityEvidenceGeneratorTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "JavaScript SDK typed migration artifact models are tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane parses the inventory, manifest, parity evidence, and readiness models.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-js/issues/105"
+          ],
+          "ownerRepo": "honua-sdk-js",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#105",
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the migration-evidence surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "Python SDK typed migration artifact models are tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane parses the inventory, manifest, parity evidence, and readiness models.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-python/issues/49"
+          ],
+          "ownerRepo": "honua-sdk-python",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#49",
+          "versionCaptureRule": "The SDK compatibility evidence records honua-sdk package version, Honua Server commit, seed profile, the migration-evidence surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": ".NET SDK typed migration artifact models are tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane parses the inventory, manifest, parity evidence, and readiness models.",
+          "executionLane": "nightly:sdk-server-compatibility",
+          "evidenceLocations": [
+            ".github/workflows/sdk-server-compatibility.yml",
+            "scripts/ci/run-sdk-server-compatibility.sh",
+            "docs/developer/SDK_COMPATIBILITY_MATRIX.md",
+            "https://github.com/honua-io/honua-sdk-dotnet/issues/134"
+          ],
+          "ownerRepo": "honua-sdk-dotnet",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#134",
+          "versionCaptureRule": "The SDK compatibility evidence records Honua.Sdk.* package versions, Honua Server commit, seed profile, the migration-evidence surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
         }
       ]
     },

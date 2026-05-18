@@ -40,14 +40,64 @@ public sealed partial class PublicInterfaceProofLedgerTests
     {
         "control-plane-admin",
         "feature-server",
-        "ogc-api-features"
+        "ogc-api-features",
+        "migration-scan",
+        "arcgis-import",
+        "geoserver-dry-run",
+        "migration-evidence"
     };
 
-    private static readonly Dictionary<string, string> SdkIntegrationTicketsByOwnerRepo = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> SdkCompatibilityOwnerRepos = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["honua-sdk-js"] = "#39",
-        ["honua-sdk-dotnet"] = "#31",
-        ["honua-sdk-python"] = "#21"
+        "honua-sdk-js",
+        "honua-sdk-dotnet",
+        "honua-sdk-python"
+    };
+
+    private static readonly Dictionary<string, Dictionary<string, string>> SdkIntegrationTicketsBySurfaceAndOwnerRepo = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["control-plane-admin"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["honua-sdk-js"] = "#39",
+            ["honua-sdk-dotnet"] = "#31",
+            ["honua-sdk-python"] = "#21"
+        },
+        ["feature-server"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["honua-sdk-js"] = "#39",
+            ["honua-sdk-dotnet"] = "#31",
+            ["honua-sdk-python"] = "#21"
+        },
+        ["ogc-api-features"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["honua-sdk-js"] = "#39",
+            ["honua-sdk-dotnet"] = "#31",
+            ["honua-sdk-python"] = "#21"
+        },
+        ["migration-scan"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["honua-sdk-js"] = "#105",
+            ["honua-sdk-dotnet"] = "#134",
+            ["honua-sdk-python"] = "#49"
+        },
+        ["arcgis-import"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["honua-sdk-js"] = "#105",
+            ["honua-sdk-dotnet"] = "#134",
+            ["honua-sdk-python"] = "#49"
+        },
+        ["geoserver-dry-run"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["honua-sdk-js"] = "#105",
+            ["honua-sdk-dotnet"] = "#134",
+            ["honua-sdk-python"] = "#49"
+        },
+        ["migration-evidence"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["honua-sdk-js"] = "#105",
+            ["honua-sdk-dotnet"] = "#134",
+            ["honua-sdk-python"] = "#49"
+        }
     };
 
     private static readonly Dictionary<string, HashSet<string>> ImplementedSdkCompatibilitySurfaceIdsByOwnerRepo = new(StringComparer.OrdinalIgnoreCase)
@@ -260,11 +310,11 @@ public sealed partial class PublicInterfaceProofLedgerTests
         var sdkProofs = ledger.Surfaces
             .Where(surface => SdkCompatibilitySurfaceIds.Contains(surface.SurfaceId))
             .SelectMany(surface => surface.Proofs
-                .Where(proof => SdkIntegrationTicketsByOwnerRepo.ContainsKey(proof.OwnerRepo))
+                .Where(proof => SdkCompatibilityOwnerRepos.Contains(proof.OwnerRepo))
                 .Select(proof => new { surface.SurfaceId, Proof = proof }))
             .ToArray();
 
-        var expectedPairs = SdkIntegrationTicketsByOwnerRepo.Keys
+        var expectedPairs = SdkCompatibilityOwnerRepos
             .SelectMany(ownerRepo => SdkCompatibilitySurfaceIds.Select(surfaceId => $"{ownerRepo}:{surfaceId}"))
             .ToArray();
 
@@ -355,7 +405,11 @@ public sealed partial class PublicInterfaceProofLedgerTests
             "platform-http",
             "geoservices-catalog",
             "feature-server",
-            "ogc-api-features"
+            "ogc-api-features",
+            "migration-scan",
+            "arcgis-import",
+            "geoserver-dry-run",
+            "migration-evidence"
         ]);
         protocolSurfacesBySdk.Keys.Should().BeEquivalentTo(["js", "python", "dotnet"],
             "compat-result.json should preserve per-SDK protocol-surface diagnostics");
@@ -384,6 +438,32 @@ public sealed partial class PublicInterfaceProofLedgerTests
 
         unknownSurfaceIds.Should().BeEmpty(
             "compat-result.json protocol surfaces should align with public-interface-proof.json surface ids");
+    }
+
+    [ArchitectureTest]
+    public void SdkCompatibilityWorkflow_ShouldRecordMigrationAutomationSurfaceStatusBySdk()
+    {
+        var workflow = LoadSdkCompatibilityWorkflow();
+
+        workflow.Should().Contain("migration_automation: {");
+        workflow.Should().Contain("migration_automation_by_sdk: {");
+        workflow.Should().Contain("required: false");
+
+        foreach (var surfaceId in new[]
+                 {
+                     "migration-scan",
+                     "arcgis-import",
+                     "geoserver-dry-run",
+                     "migration-evidence"
+                 })
+        {
+            workflow.Should().Contain($"surface: \"{surfaceId}\", status: \"unsupported\", passed: false",
+                $"{surfaceId} must be visible in compat-result.json without claiming SDK support before the SDK lanes exercise it");
+        }
+
+        workflow.Should().Contain("honua-sdk-js#105");
+        workflow.Should().Contain("honua-sdk-python#49");
+        workflow.Should().Contain("honua-sdk-dotnet#134");
     }
 
     private static PublicInterfaceProofLedger LoadLedger()
@@ -430,7 +510,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
             throw new InvalidOperationException($"Unable to find '{PropertyName}' in sdk-server-compatibility.yml.");
         }
 
-        var blockEndIndex = workflow.IndexOf("cell_status:", propertyIndex, StringComparison.Ordinal);
+        var blockEndIndex = workflow.IndexOf("migration_automation:", propertyIndex, StringComparison.Ordinal);
         if (blockEndIndex < 0)
         {
             throw new InvalidOperationException($"Unable to parse '{PropertyName}' in sdk-server-compatibility.yml.");
@@ -487,12 +567,23 @@ public sealed partial class PublicInterfaceProofLedgerTests
         {
             return string.Equals(proof.ProofClass, "tool-interoperability", StringComparison.OrdinalIgnoreCase) &&
                    string.Equals(proof.ExecutionLane, "nightly:sdk-server-compatibility", StringComparison.OrdinalIgnoreCase) &&
-                   SdkIntegrationTicketsByOwnerRepo.TryGetValue(proof.OwnerRepo, out var linkedTicket) &&
+                   TryGetSdkIntegrationTicket(surfaceId, proof.OwnerRepo, out var linkedTicket) &&
                    string.Equals(proof.LinkedTicket, linkedTicket, StringComparison.Ordinal) &&
                    proof.EvidenceLocations.Any(location => IsSdkIntegrationIssueUrl(location, proof.OwnerRepo, linkedTicket));
         }
 
         return false;
+    }
+
+    private static bool TryGetSdkIntegrationTicket(string surfaceId, string ownerRepo, out string linkedTicket)
+    {
+        linkedTicket = string.Empty;
+        if (!SdkIntegrationTicketsBySurfaceAndOwnerRepo.TryGetValue(surfaceId, out var ticketsByOwnerRepo))
+        {
+            return false;
+        }
+
+        return ticketsByOwnerRepo.TryGetValue(ownerRepo, out linkedTicket!);
     }
 
     private static bool IsExternalEvidenceLocation(string evidenceLocation)
