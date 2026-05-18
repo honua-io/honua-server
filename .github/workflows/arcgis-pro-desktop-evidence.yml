@@ -72,13 +72,13 @@ jobs:
           VAR_ENABLED: ${{ vars.ARCGIS_PRO_EVIDENCE_ENABLED || 'false' }}
           INPUT_BASE_URL: ${{ github.event.inputs.honua_base_url || '' }}
           VAR_BASE_URL: ${{ vars.ARCGIS_PRO_EVIDENCE_BASE_URL || '' }}
-          INPUT_SERVICE_ID: ${{ github.event.inputs.service_id || 'browser_compat' }}
+          INPUT_SERVICE_ID: ${{ github.event.inputs.service_id || '' }}
           VAR_SERVICE_ID: ${{ vars.ARCGIS_PRO_EVIDENCE_SERVICE_ID || '' }}
-          INPUT_LAYER_ID: ${{ github.event.inputs.layer_id || '2000' }}
+          INPUT_LAYER_ID: ${{ github.event.inputs.layer_id || '' }}
           VAR_LAYER_ID: ${{ vars.ARCGIS_PRO_EVIDENCE_LAYER_ID || '' }}
-          INPUT_LINE_LAYER_ID: ${{ github.event.inputs.line_layer_id || '2001' }}
+          INPUT_LINE_LAYER_ID: ${{ github.event.inputs.line_layer_id || '' }}
           VAR_LINE_LAYER_ID: ${{ vars.ARCGIS_PRO_EVIDENCE_LINE_LAYER_ID || '' }}
-          INPUT_POLYGON_LAYER_ID: ${{ github.event.inputs.polygon_layer_id || '2002' }}
+          INPUT_POLYGON_LAYER_ID: ${{ github.event.inputs.polygon_layer_id || '' }}
           VAR_POLYGON_LAYER_ID: ${{ vars.ARCGIS_PRO_EVIDENCE_POLYGON_LAYER_ID || '' }}
           INPUT_PROJECT_TEMPLATE: ${{ github.event.inputs.project_template_path || '' }}
           VAR_PROJECT_TEMPLATE: ${{ vars.ARCGIS_PRO_PROJECT_TEMPLATE || '' }}
@@ -93,10 +93,10 @@ jobs:
           fi
 
           base_url="${INPUT_BASE_URL:-$VAR_BASE_URL}"
-          service_id="${VAR_SERVICE_ID:-$INPUT_SERVICE_ID}"
-          layer_id="${VAR_LAYER_ID:-$INPUT_LAYER_ID}"
-          line_layer_id="${VAR_LINE_LAYER_ID:-$INPUT_LINE_LAYER_ID}"
-          polygon_layer_id="${VAR_POLYGON_LAYER_ID:-$INPUT_POLYGON_LAYER_ID}"
+          service_id="${INPUT_SERVICE_ID:-${VAR_SERVICE_ID:-browser_compat}}"
+          layer_id="${INPUT_LAYER_ID:-${VAR_LAYER_ID:-2000}}"
+          line_layer_id="${INPUT_LINE_LAYER_ID:-${VAR_LINE_LAYER_ID:-2001}}"
+          polygon_layer_id="${INPUT_POLYGON_LAYER_ID:-${VAR_POLYGON_LAYER_ID:-2002}}"
           project_template_path="${INPUT_PROJECT_TEMPLATE:-$VAR_PROJECT_TEMPLATE}"
 
           if [[ "$enabled" == "true" ]]; then
