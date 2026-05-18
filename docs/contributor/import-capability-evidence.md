@@ -6,6 +6,9 @@ This page is the website-linkable evidence summary for Honua Server import and
 migration claims. It distinguishes production data import from migration
 inventory, dry-run planning, and test-only interoperability probes.
 
+For the website-level compatibility and automated migration claims, start with
+[Compatibility and Automated Migration Evidence](compatibility-and-migration-evidence.md).
+
 ## Public Claim Wording
 
 Use this wording for public material:
