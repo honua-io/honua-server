@@ -18,6 +18,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
 {
     private const string SourceKind = "ogc-api-features";
     private const string DisallowedNetworkAddressMessage = "OGC API Features URL resolves to a disallowed network address.";
+    private const int MaxJsonDocumentRedirects = 5;
 
     private static readonly AsyncLocal<bool> UnsafeLocalUrlsAllowed = new();
 
@@ -334,22 +335,93 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
 
     private async Task<JsonDocument> GetJsonDocumentAsync(Uri uri, CancellationToken cancellationToken)
     {
-        using var message = new HttpRequestMessage(HttpMethod.Get, uri);
-        message.Headers.Accept.ParseAdd("application/json");
-        message.Headers.Accept.ParseAdd("application/geo+json");
+        var requestUri = uri;
 
-        using var response = await _httpClient
-            .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-
-        if ((int)response.StatusCode is >= 300 and < 400)
+        for (var redirectCount = 0;; redirectCount++)
         {
-            throw new HttpRequestException("OGC API Features endpoint returned a redirect.");
+            using var message = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            message.Headers.Accept.ParseAdd("application/json");
+            message.Headers.Accept.ParseAdd("application/geo+json");
+
+            using var response = await _httpClient
+                .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+
+            if ((int)response.StatusCode is >= 300 and < 400)
+            {
+                if (redirectCount >= MaxJsonDocumentRedirects)
+                {
+                    throw new HttpRequestException("OGC API Features endpoint returned too many redirects.");
+                }
+
+                var redirectUri = ResolveRedirectUri(requestUri, response.Headers.Location);
+                if (redirectUri == null || !IsSafeRedirectUri(requestUri, redirectUri))
+                {
+                    throw new HttpRequestException("OGC API Features endpoint returned an unsafe redirect.");
+                }
+
+                requestUri = redirectUri;
+                continue;
+            }
+
+            response.EnsureSuccessStatusCode();
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static Uri? ResolveRedirectUri(Uri requestUri, Uri? location)
+    {
+        if (location == null)
+        {
+            return null;
         }
 
-        response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return location.IsAbsoluteUri
+            ? location
+            : Uri.TryCreate(requestUri, location, out var redirectUri)
+                ? redirectUri
+                : null;
+    }
+
+    private static bool IsSafeRedirectUri(Uri requestUri, Uri redirectUri)
+    {
+        if (redirectUri.Scheme != Uri.UriSchemeHttp &&
+            redirectUri.Scheme != Uri.UriSchemeHttps)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(redirectUri.UserInfo) ||
+            !string.Equals(requestUri.DnsSafeHost, redirectUri.DnsSafeHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (requestUri.Scheme == Uri.UriSchemeHttps && redirectUri.Scheme != Uri.UriSchemeHttps)
+        {
+            return false;
+        }
+
+        if (requestUri.Scheme == redirectUri.Scheme)
+        {
+            return requestUri.Port == redirectUri.Port;
+        }
+
+        return requestUri.Scheme == Uri.UriSchemeHttp &&
+               redirectUri.Scheme == Uri.UriSchemeHttps &&
+               IsDefaultPort(requestUri) &&
+               IsDefaultPort(redirectUri);
+    }
+
+    private static bool IsDefaultPort(Uri uri)
+    {
+        if (uri.Scheme == Uri.UriSchemeHttp)
+        {
+            return uri.Port == 80;
+        }
+
+        return uri.Scheme == Uri.UriSchemeHttps && uri.Port == 443;
     }
 
     private static IEnumerable<MigrationInventoryField> ReadFields(JsonElement root)

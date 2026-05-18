@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Services;
@@ -321,6 +322,53 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
     }
 
     [Fact]
+    public async Task ScanSourceAsync_WithSameHostRedirect_FollowsRedirectAndScans()
+    {
+        using var httpClient = new HttpClient(new FixtureOgcApiFeaturesHandler())
+        {
+            BaseAddress = new Uri("https://demo.example")
+        };
+        var scanner = new OgcApiFeaturesMigrationScanner(
+            httpClient,
+            NullLogger<OgcApiFeaturesMigrationScanner>.Instance,
+            static (_, _) => Task.FromResult<IPAddress[]>([IPAddress.Parse("8.8.8.8")]));
+
+        var artifact = await scanner.ScanSourceAsync(new OgcApiFeaturesScanRequest
+        {
+            ServiceUrl = "https://demo.example/redirect",
+            TimeoutSeconds = 5
+        });
+
+        artifact.ScanCompleteness.Status.Should().Be("complete");
+        artifact.Resources.Should().ContainSingle(resource => resource.Name == "roads");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_WithCrossHostRedirect_BlocksRedirectWithoutForwardingAuthorization()
+    {
+        var handler = new FixtureOgcApiFeaturesHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://demo.example")
+        };
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "secret");
+        var scanner = new OgcApiFeaturesMigrationScanner(
+            httpClient,
+            NullLogger<OgcApiFeaturesMigrationScanner>.Instance,
+            static (_, _) => Task.FromResult<IPAddress[]>([IPAddress.Parse("8.8.8.8")]));
+
+        var artifact = await scanner.ScanSourceAsync(new OgcApiFeaturesScanRequest
+        {
+            ServiceUrl = "https://demo.example/external-redirect",
+            TimeoutSeconds = 5
+        });
+
+        artifact.ScanCompleteness.Status.Should().Be("failed");
+        handler.RequestUris.Should().ContainSingle(uri => uri.Host == "demo.example");
+        handler.RequestUris.Should().NotContain(uri => uri.Host == "other.example");
+    }
+
+    [Fact]
     public void Translate_WithOgcApiFeaturesInventory_EmitsFeatureImportTarget()
     {
         var inventory = OgcApiFeaturesMigrationInventoryScanner.BuildInventory(new OgcApiFeaturesMigrationSourceSnapshot
@@ -380,9 +428,12 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
 
     private sealed class FixtureOgcApiFeaturesHandler : HttpMessageHandler
     {
+        public List<Uri> RequestUris { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             request.RequestUri.Should().NotBeNull();
+            RequestUris.Add(request.RequestUri!);
             var pathAndQuery = request.RequestUri!.PathAndQuery;
             var json = pathAndQuery switch
             {
@@ -463,6 +514,22 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
                     """,
                 _ => null
             };
+
+            if (pathAndQuery == "/redirect")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found)
+                {
+                    Headers = { Location = new Uri("/ogcapi/", UriKind.Relative) }
+                });
+            }
+
+            if (pathAndQuery == "/external-redirect")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found)
+                {
+                    Headers = { Location = new Uri("https://other.example/ogcapi/") }
+                });
+            }
 
             return Task.FromResult(json == null
                 ? new HttpResponseMessage(HttpStatusCode.NotFound)
