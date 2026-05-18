@@ -34,11 +34,13 @@ public static class MigrationAcceptanceEvidenceBuilder
             .ToArray();
         var gaps = BuildBlockingGaps(entries, options).ToArray();
         var summary = BuildSummary(entries, gaps, options);
+        var costEvidence = BuildCostEvidenceSummary(entries, options);
 
         return new MigrationAcceptanceEvidenceArtifact
         {
             RunId = runId.Trim(),
             Summary = summary,
+            CostEvidence = costEvidence,
             Entries = entries,
             BlockingGaps = gaps
         };
@@ -57,6 +59,8 @@ public static class MigrationAcceptanceEvidenceBuilder
             manifest,
             input.ReadinessAttestation,
             input.PerformanceCost);
+        ValidateEvidenceIdentity(input.Inventory, manifest, parityEvidence);
+
         var stages = BuildStages(
             input,
             manifest,
@@ -66,6 +70,11 @@ public static class MigrationAcceptanceEvidenceBuilder
         var manualReviewCount = manifest.ManualReviewItems.Length + manifest.StyleActions.Count(static action =>
             string.Equals(action.Action, "manual-review", StringComparison.OrdinalIgnoreCase));
         var unsupportedCount = manifest.UnsupportedItems.Length;
+        var costEvidence = BuildCostEvidenceEntry(
+            parityEvidence.PerformanceCost,
+            manifest,
+            manualReviewCount,
+            options);
 
         return new MigrationAcceptanceEvidenceEntry
         {
@@ -77,14 +86,48 @@ public static class MigrationAcceptanceEvidenceBuilder
             Stages = stages,
             ManualReviewCount = manualReviewCount,
             UnsupportedCount = unsupportedCount,
-            ManifestAvailable = parityEvidence.ManifestAvailable,
+            ManifestAvailable = true,
             InventoryArtifactKind = input.Inventory.ArtifactKind,
             ManifestArtifactKind = manifest.ArtifactKind,
             ParityEvidenceArtifactKind = parityEvidence.ArtifactKind,
             EvidenceReferences = SanitizeEvidenceReferences(input.EvidenceReferences),
+            CostEvidence = costEvidence,
             Notes = BuildEntryNotes(manifest, parityEvidence, options)
         };
     }
+
+    private static void ValidateEvidenceIdentity(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationManifestArtifact manifest,
+        MigrationParityEvidenceArtifact parityEvidence)
+    {
+        if (!StringEquals(inventory.SourceKind, manifest.SourceKind))
+        {
+            throw new ArgumentException("Migration manifest source kind must match inventory source kind.");
+        }
+
+        if (!SourceIdentityMatches(inventory.Source, manifest.Source))
+        {
+            throw new ArgumentException("Migration manifest source identity must match inventory source identity.");
+        }
+
+        if (!StringEquals(inventory.SourceKind, parityEvidence.SourceKind))
+        {
+            throw new ArgumentException("Migration parity evidence source kind must match inventory source kind.");
+        }
+
+        if (!SourceIdentityMatches(inventory.Source, parityEvidence.Source))
+        {
+            throw new ArgumentException("Migration parity evidence source identity must match inventory source identity.");
+        }
+    }
+
+    private static bool SourceIdentityMatches(MigrationSourceIdentity left, MigrationSourceIdentity right)
+        => StringEquals(left.DisplayName, right.DisplayName) &&
+           StringEquals(left.BaseUrl, right.BaseUrl);
+
+    private static bool StringEquals(string? left, string? right)
+        => string.Equals(left?.Trim(), right?.Trim(), StringComparison.Ordinal);
 
     private static IEnumerable<MigrationAcceptanceEvidenceGap> BuildBlockingGaps(
         IReadOnlyCollection<MigrationAcceptanceEvidenceEntry> entries,
@@ -129,6 +172,30 @@ public static class MigrationAcceptanceEvidenceBuilder
 
         foreach (var entry in entries)
         {
+            if (options.RequireCostEvidence)
+            {
+                var costState = entry.CostEvidence?.State ?? MigrationCostEvidenceStates.Fail;
+                if (costState != MigrationCostEvidenceStates.Pass)
+                {
+                    yield return new MigrationAcceptanceEvidenceGap
+                    {
+                        Id = $"cost-evidence:{entry.Id}",
+                        SourceKind = entry.SourceKind,
+                        State = costState == MigrationCostEvidenceStates.Fail
+                            ? MigrationEvidenceStates.Fail
+                            : MigrationEvidenceStates.Unknown,
+                        Summary = costState == MigrationCostEvidenceStates.Fail
+                            ? $"{entry.Id} cost evidence failed the configured release contract."
+                            : $"{entry.Id} cost evidence is {costState}.",
+                        Remediation = entry.CostEvidence?.Findings
+                            .SelectMany(static finding => finding.Remediation)
+                            .DefaultIfEmpty("Attach passing performance and cost evidence before using migration cost claims.")
+                            .ToArray() ??
+                            ["Attach passing performance and cost evidence before using migration cost claims."]
+                    };
+                }
+            }
+
             foreach (var stage in entry.Stages.Where(static stage =>
                          stage.State is MigrationEvidenceStates.Fail or MigrationEvidenceStates.Unknown))
             {
@@ -179,6 +246,485 @@ public static class MigrationAcceptanceEvidenceBuilder
                 .OrderBy(static sourceKind => sourceKind, StringComparer.Ordinal)
                 .ToArray()
         };
+    }
+
+    private static MigrationAcceptanceCostEvidenceSummary BuildCostEvidenceSummary(
+        MigrationAcceptanceEvidenceEntry[] entries,
+        MigrationAcceptanceEvidenceOptions options)
+    {
+        var measured = entries
+            .Select(static entry => entry.CostEvidence)
+            .OfType<MigrationAcceptanceCostEvidenceEntry>()
+            .ToArray();
+        var missingSourceCount = entries.Length - measured.Length;
+        var states = measured.Select(static entry => entry.State);
+        if (missingSourceCount > 0)
+        {
+            states = states.Append(options.RequireCostEvidence
+                ? MigrationCostEvidenceStates.Fail
+                : MigrationCostEvidenceStates.Unknown);
+        }
+
+        return new MigrationAcceptanceCostEvidenceSummary
+        {
+            State = AggregateCostState(states),
+            MeasuredSourceCount = measured.Length,
+            MissingSourceCount = missingSourceCount,
+            DurationMilliseconds = SumNullable(measured.Select(static entry => entry.DurationMilliseconds)),
+            ScanDurationMilliseconds = SumNullable(measured.Select(static entry => entry.ScanDurationMilliseconds)),
+            ApplyDurationMilliseconds = SumNullable(measured.Select(static entry => entry.ApplyDurationMilliseconds)),
+            FeatureThroughputPerSecond = AverageNullable(measured.Select(static entry => entry.FeatureThroughputPerSecond)),
+            SourceRequestCount = SumNullable(measured.Select(static entry => entry.SourceRequestCount)),
+            RetryCount = SumNullable(measured.Select(static entry => entry.RetryCount)),
+            BytesRead = SumNullable(measured.Select(static entry => entry.BytesRead)),
+            BytesWritten = SumNullable(measured.Select(static entry => entry.BytesWritten)),
+            ArtifactSizeBytes = SumNullable(measured.Select(static entry => entry.ArtifactSizeBytes)),
+            ManualReviewRatio = AverageNullable(measured.Select(static entry => entry.ManualReviewRatio)),
+            Findings = measured
+                .SelectMany(static entry => entry.Findings)
+                .OrderBy(static finding => finding.Id, StringComparer.Ordinal)
+                .ToArray()
+        };
+    }
+
+    private static MigrationAcceptanceCostEvidenceEntry? BuildCostEvidenceEntry(
+        MigrationPerformanceCostEvidence? performanceCost,
+        MigrationManifestArtifact manifest,
+        int manifestManualReviewCount,
+        MigrationAcceptanceEvidenceOptions options)
+    {
+        var normalized = MigrationParityEvidenceGenerator.NormalizePerformanceCost(performanceCost);
+        if (normalized == null)
+        {
+            return null;
+        }
+
+        var operations = normalized.Operations
+            .Select(static operation => new MigrationAcceptanceCostOperationEvidence
+            {
+                Id = operation.Id,
+                Stage = operation.Stage,
+                State = operation.State,
+                DurationMilliseconds = operation.DurationMilliseconds,
+                FeatureThroughputPerSecond = CalculateThroughput(
+                    operation.FeatureCount,
+                    operation.DurationMilliseconds),
+                SourceRequestCount = operation.SourceRequestCount,
+                RetryCount = operation.RetryCount,
+                BytesRead = operation.BytesRead,
+                BytesWritten = operation.BytesWritten,
+                ArtifactSizeBytes = operation.ArtifactSizeBytes,
+                EvidenceReferences = SanitizeEvidenceReferences(operation.EvidenceReferences)
+            })
+            .OrderBy(static operation => operation.Id, StringComparer.Ordinal)
+            .ThenBy(static operation => operation.Stage, StringComparer.Ordinal)
+            .ToArray();
+        var totals = normalized.Totals;
+        var durationMilliseconds = totals.DurationMilliseconds ??
+            SumNullable(operations.Select(static operation => operation.DurationMilliseconds));
+        var scanDurationMilliseconds = SumNullable(operations
+            .Where(static operation => IsScanStage(operation.Stage))
+            .Select(static operation => operation.DurationMilliseconds));
+        var applyDurationMilliseconds = SumNullable(operations
+            .Where(static operation => IsApplyStage(operation.Stage))
+            .Select(static operation => operation.DurationMilliseconds));
+        var sourceRequestCount = totals.SourceRequestCount ??
+            SumNullable(operations.Select(static operation => operation.SourceRequestCount));
+        var retryCount = totals.RetryCount ??
+            SumNullable(operations.Select(static operation => operation.RetryCount));
+        var bytesRead = totals.BytesRead ??
+            SumNullable(operations.Select(static operation => operation.BytesRead));
+        var bytesWritten = totals.BytesWritten ??
+            SumNullable(operations.Select(static operation => operation.BytesWritten));
+        var artifactSizeBytes = totals.ArtifactSizeBytes ??
+            SumNullable(operations.Select(static operation => operation.ArtifactSizeBytes));
+        var manualReviewCount = totals.ManualReviewCount ?? manifestManualReviewCount;
+        var resourceCount = totals.ResourceCount ??
+            manifest.TargetResources.Length + manifest.ManualReviewItems.Length + manifest.UnsupportedItems.Length;
+        var manualReviewRatio = CalculateRatio(manualReviewCount, resourceCount);
+        var featureThroughput = CalculateThroughput(totals.FeatureCount, durationMilliseconds) ??
+            AverageNullable(operations.Select(static operation => operation.FeatureThroughputPerSecond));
+        var resourceThroughput = CalculateThroughput(resourceCount, durationMilliseconds);
+
+        var findings = BuildCostEvidenceFindings(
+                normalized,
+                options.CostEvidenceThresholds,
+                durationMilliseconds,
+                scanDurationMilliseconds,
+                applyDurationMilliseconds,
+                featureThroughput,
+                sourceRequestCount,
+                retryCount,
+                bytesRead,
+                bytesWritten,
+                artifactSizeBytes,
+                manualReviewRatio,
+                operations)
+            .OrderBy(static finding => finding.Id, StringComparer.Ordinal)
+            .ToArray();
+        var state = AggregateCostState(
+            [NormalizeCostState(normalized.State), .. findings.Select(static finding => finding.State)]);
+
+        return new MigrationAcceptanceCostEvidenceEntry
+        {
+            State = state,
+            Summary = normalized.Summary,
+            MeasurementScope = normalized.MeasurementScope,
+            DurationMilliseconds = durationMilliseconds,
+            ScanDurationMilliseconds = scanDurationMilliseconds,
+            ApplyDurationMilliseconds = applyDurationMilliseconds,
+            FeatureThroughputPerSecond = featureThroughput,
+            ResourceThroughputPerSecond = resourceThroughput,
+            SourceRequestCount = sourceRequestCount,
+            RetryCount = retryCount,
+            BytesRead = bytesRead,
+            BytesWritten = bytesWritten,
+            ArtifactSizeBytes = artifactSizeBytes,
+            ManualReviewRatio = manualReviewRatio,
+            Operations = operations,
+            EvidenceReferences = SanitizeEvidenceReferences(normalized.EvidenceReferences),
+            Findings = findings
+        };
+    }
+
+    private static IEnumerable<MigrationAcceptanceCostEvidenceFinding> BuildCostEvidenceFindings(
+        MigrationPerformanceCostEvidence performanceCost,
+        MigrationAcceptanceCostEvidenceThresholds thresholds,
+        long? durationMilliseconds,
+        long? scanDurationMilliseconds,
+        long? applyDurationMilliseconds,
+        double? featureThroughput,
+        int? sourceRequestCount,
+        int? retryCount,
+        long? bytesRead,
+        long? bytesWritten,
+        long? artifactSizeBytes,
+        double? manualReviewRatio,
+        IReadOnlyCollection<MigrationAcceptanceCostOperationEvidence> operations)
+    {
+        foreach (var operation in performanceCost.Operations.Where(static operation =>
+                     NormalizeCostState(operation.State) == MigrationCostEvidenceStates.Fail))
+        {
+            yield return new MigrationAcceptanceCostEvidenceFinding
+            {
+                Id = $"operation-failed:{operation.Id}",
+                State = MigrationCostEvidenceStates.Fail,
+                Summary = $"{operation.Id} cost operation reported failed evidence.",
+                Remediation = ["Inspect the source operation evidence and rerun the measured migration lane."]
+            };
+        }
+
+        if (thresholds.RequireMetricContract)
+        {
+            if (durationMilliseconds == null)
+            {
+                yield return MissingMetric("duration-milliseconds", "Total measured duration is required.");
+            }
+
+            if (scanDurationMilliseconds == null)
+            {
+                yield return MissingMetric("scan-duration-milliseconds", "Measured scan duration is required.");
+            }
+
+            if (applyDurationMilliseconds == null)
+            {
+                yield return MissingMetric("apply-duration-milliseconds", "Measured apply or dry-run duration is required.");
+            }
+
+            if (featureThroughput == null)
+            {
+                yield return MissingMetric("feature-throughput-per-second", "Feature throughput is required.");
+            }
+
+            if (sourceRequestCount == null)
+            {
+                yield return MissingMetric("source-request-count", "Source request count is required.");
+            }
+
+            if (retryCount == null)
+            {
+                yield return MissingMetric("retry-count", "Retry count is required.");
+            }
+
+            if (bytesRead == null || bytesWritten == null)
+            {
+                yield return MissingMetric("bytes", "Bytes read and written are required.");
+            }
+
+            if (artifactSizeBytes == null)
+            {
+                yield return MissingMetric("artifact-size-bytes", "Cost evidence artifact size is required.");
+            }
+
+            if (manualReviewRatio == null)
+            {
+                yield return MissingMetric("manual-review-ratio", "Manual-review ratio is required.");
+            }
+        }
+
+        foreach (var requiredStage in Order(thresholds.RequiredDurationStages))
+        {
+            if (!operations.Any(operation =>
+                    StageMatches(operation.Stage, requiredStage) &&
+                    operation.DurationMilliseconds is > 0))
+            {
+                yield return MissingMetric(
+                    $"stage-duration:{requiredStage}",
+                    $"Measured {requiredStage} duration is required.");
+            }
+        }
+
+        foreach (var finding in EvaluateUpperLimit(
+                     "duration-milliseconds",
+                     durationMilliseconds,
+                     thresholds.MaxDurationMillisecondsWarn,
+                     thresholds.MaxDurationMillisecondsFail,
+                     "Total measured duration exceeded the configured threshold."))
+        {
+            yield return finding;
+        }
+
+        foreach (var finding in EvaluateLowerLimit(
+                     "feature-throughput-per-second",
+                     featureThroughput,
+                     thresholds.MinFeatureThroughputPerSecondWarn,
+                     thresholds.MinFeatureThroughputPerSecondFail,
+                     "Feature throughput fell below the configured threshold."))
+        {
+            yield return finding;
+        }
+
+        foreach (var finding in EvaluateUpperLimit(
+                     "source-request-count",
+                     sourceRequestCount,
+                     thresholds.MaxSourceRequestCountWarn,
+                     thresholds.MaxSourceRequestCountFail,
+                     "Source request count exceeded the configured threshold."))
+        {
+            yield return finding;
+        }
+
+        foreach (var finding in EvaluateUpperLimit(
+                     "retry-count",
+                     retryCount,
+                     thresholds.MaxRetryCountWarn,
+                     thresholds.MaxRetryCountFail,
+                     "Retry count exceeded the configured threshold."))
+        {
+            yield return finding;
+        }
+
+        foreach (var finding in EvaluateUpperLimit(
+                     "artifact-size-bytes",
+                     artifactSizeBytes,
+                     thresholds.MaxArtifactSizeBytesWarn,
+                     thresholds.MaxArtifactSizeBytesFail,
+                     "Evidence artifact size exceeded the configured threshold."))
+        {
+            yield return finding;
+        }
+
+        foreach (var finding in EvaluateUpperLimit(
+                     "manual-review-ratio",
+                     manualReviewRatio,
+                     thresholds.MaxManualReviewRatioWarn,
+                     thresholds.MaxManualReviewRatioFail,
+                     "Manual-review ratio exceeded the configured threshold."))
+        {
+            yield return finding;
+        }
+    }
+
+    private static MigrationAcceptanceCostEvidenceFinding MissingMetric(string id, string summary)
+        => new()
+        {
+            Id = $"missing-metric:{id}",
+            State = MigrationCostEvidenceStates.Fail,
+            Summary = summary,
+            Remediation = ["Update the migration evidence collector to emit this metric before accepting cost claims."]
+        };
+
+    private static IEnumerable<MigrationAcceptanceCostEvidenceFinding> EvaluateUpperLimit(
+        string id,
+        long? value,
+        long? warnThreshold,
+        long? failThreshold,
+        string summary)
+    {
+        if (value == null)
+        {
+            yield break;
+        }
+
+        foreach (var finding in EvaluateUpperLimit(id, (double)value.Value, warnThreshold, failThreshold, summary))
+        {
+            yield return finding;
+        }
+    }
+
+    private static IEnumerable<MigrationAcceptanceCostEvidenceFinding> EvaluateUpperLimit(
+        string id,
+        int? value,
+        int? warnThreshold,
+        int? failThreshold,
+        string summary)
+    {
+        if (value == null)
+        {
+            yield break;
+        }
+
+        foreach (var finding in EvaluateUpperLimit(id, (double)value.Value, warnThreshold, failThreshold, summary))
+        {
+            yield return finding;
+        }
+    }
+
+    private static IEnumerable<MigrationAcceptanceCostEvidenceFinding> EvaluateUpperLimit(
+        string id,
+        double? value,
+        double? warnThreshold,
+        double? failThreshold,
+        string summary)
+    {
+        if (value == null)
+        {
+            yield break;
+        }
+
+        if (failThreshold != null && value.Value > failThreshold.Value)
+        {
+            yield return ThresholdFinding(id, MigrationCostEvidenceStates.Fail, summary, value.Value, failThreshold.Value);
+            yield break;
+        }
+
+        if (warnThreshold != null && value.Value > warnThreshold.Value)
+        {
+            yield return ThresholdFinding(id, MigrationCostEvidenceStates.Warn, summary, value.Value, warnThreshold.Value);
+        }
+    }
+
+    private static IEnumerable<MigrationAcceptanceCostEvidenceFinding> EvaluateLowerLimit(
+        string id,
+        double? value,
+        double? warnThreshold,
+        double? failThreshold,
+        string summary)
+    {
+        if (value == null)
+        {
+            yield break;
+        }
+
+        if (failThreshold != null && value.Value < failThreshold.Value)
+        {
+            yield return ThresholdFinding(id, MigrationCostEvidenceStates.Fail, summary, value.Value, failThreshold.Value);
+            yield break;
+        }
+
+        if (warnThreshold != null && value.Value < warnThreshold.Value)
+        {
+            yield return ThresholdFinding(id, MigrationCostEvidenceStates.Warn, summary, value.Value, warnThreshold.Value);
+        }
+    }
+
+    private static MigrationAcceptanceCostEvidenceFinding ThresholdFinding(
+        string id,
+        string state,
+        string summary,
+        double value,
+        double threshold)
+        => new()
+        {
+            Id = $"threshold:{id}",
+            State = state,
+            Summary = $"{summary} value={value:0.###}, threshold={threshold:0.###}.",
+            Remediation = ["Review the fixture, collector, and threshold before publishing migration cost evidence."]
+        };
+
+    private static string AggregateCostState(IEnumerable<string> states)
+    {
+        var materialized = states.Select(NormalizeCostState).ToArray();
+        if (materialized.Any(static state => state == MigrationCostEvidenceStates.Fail))
+        {
+            return MigrationCostEvidenceStates.Fail;
+        }
+
+        if (materialized.Any(static state => state == MigrationCostEvidenceStates.Warn))
+        {
+            return MigrationCostEvidenceStates.Warn;
+        }
+
+        if (materialized.Length == 0 || materialized.Any(static state => state == MigrationCostEvidenceStates.Unknown))
+        {
+            return MigrationCostEvidenceStates.Unknown;
+        }
+
+        return MigrationCostEvidenceStates.Pass;
+    }
+
+    private static string NormalizeCostState(string state)
+        => state switch
+        {
+            MigrationCostEvidenceStates.Pass => MigrationCostEvidenceStates.Pass,
+            MigrationCostEvidenceStates.Warn => MigrationCostEvidenceStates.Warn,
+            MigrationCostEvidenceStates.Fail => MigrationCostEvidenceStates.Fail,
+            MigrationCostEvidenceStates.Unknown => MigrationCostEvidenceStates.Unknown,
+            _ => MigrationCostEvidenceStates.Unknown
+        };
+
+    private static double? CalculateThroughput(long? count, long? durationMilliseconds)
+    {
+        if (count is null || durationMilliseconds is null or <= 0)
+        {
+            return null;
+        }
+
+        return count.Value / (durationMilliseconds.Value / 1000d);
+    }
+
+    private static double? CalculateRatio(long? numerator, long? denominator)
+    {
+        if (numerator is null || denominator is null or <= 0)
+        {
+            return null;
+        }
+
+        return numerator.Value / (double)denominator.Value;
+    }
+
+    private static bool StageMatches(string actualStage, string requiredStage)
+        => string.Equals(actualStage, requiredStage, StringComparison.Ordinal) ||
+            (string.Equals(requiredStage, MigrationAcceptanceStageIds.ApplyOrDryRun, StringComparison.Ordinal) &&
+                IsApplyStage(actualStage)) ||
+            (string.Equals(requiredStage, MigrationAcceptanceStageIds.Scan, StringComparison.Ordinal) &&
+                IsScanStage(actualStage));
+
+    private static bool IsScanStage(string stage)
+        => string.Equals(stage, MigrationAcceptanceStageIds.Scan, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsApplyStage(string stage)
+        => string.Equals(stage, MigrationAcceptanceStageIds.ApplyOrDryRun, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(stage, "apply", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(stage, "import", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(stage, "dry-run", StringComparison.OrdinalIgnoreCase);
+
+    private static long? SumNullable(IEnumerable<long?> values)
+    {
+        var materialized = values.Where(static value => value.HasValue).Select(static value => value!.Value).ToArray();
+        return materialized.Length == 0 ? null : materialized.Sum();
+    }
+
+    private static int? SumNullable(IEnumerable<int?> values)
+    {
+        var materialized = values.Where(static value => value.HasValue).Select(static value => value!.Value).ToArray();
+        return materialized.Length == 0 ? null : materialized.Sum();
+    }
+
+    private static double? AverageNullable(IEnumerable<double?> values)
+    {
+        var materialized = values.Where(static value => value.HasValue).Select(static value => value!.Value).ToArray();
+        return materialized.Length == 0 ? null : materialized.Average();
     }
 
     private static string ClassifyAutomation(
@@ -490,4 +1036,90 @@ public sealed record MigrationAcceptanceEvidenceOptions
     /// Whether non-passing readiness should be surfaced in entry notes.
     /// </summary>
     public bool RequireReadinessPass { get; init; } = true;
+
+    /// <summary>
+    /// Whether each entry must include passing cost evidence for the suite to pass.
+    /// </summary>
+    public bool RequireCostEvidence { get; init; }
+
+    /// <summary>
+    /// Cost evidence metric coverage and warning/failure thresholds.
+    /// </summary>
+    public MigrationAcceptanceCostEvidenceThresholds CostEvidenceThresholds { get; init; } = new();
+}
+
+/// <summary>
+/// Thresholds and required metric coverage for migration cost evidence.
+/// </summary>
+public sealed record MigrationAcceptanceCostEvidenceThresholds
+{
+    /// <summary>
+    /// Whether core cost metrics must be present: duration, scan/apply durations, throughput, source requests, retries, bytes, artifact size, and manual-review ratio.
+    /// </summary>
+    public bool RequireMetricContract { get; init; }
+
+    /// <summary>
+    /// Operation stages that must include measured durations.
+    /// </summary>
+    public string[] RequiredDurationStages { get; init; } = [];
+
+    /// <summary>
+    /// Total duration warning threshold in milliseconds.
+    /// </summary>
+    public long? MaxDurationMillisecondsWarn { get; init; }
+
+    /// <summary>
+    /// Total duration failure threshold in milliseconds.
+    /// </summary>
+    public long? MaxDurationMillisecondsFail { get; init; }
+
+    /// <summary>
+    /// Feature throughput warning threshold in features per second.
+    /// </summary>
+    public double? MinFeatureThroughputPerSecondWarn { get; init; }
+
+    /// <summary>
+    /// Feature throughput failure threshold in features per second.
+    /// </summary>
+    public double? MinFeatureThroughputPerSecondFail { get; init; }
+
+    /// <summary>
+    /// Source request warning threshold.
+    /// </summary>
+    public int? MaxSourceRequestCountWarn { get; init; }
+
+    /// <summary>
+    /// Source request failure threshold.
+    /// </summary>
+    public int? MaxSourceRequestCountFail { get; init; }
+
+    /// <summary>
+    /// Retry warning threshold.
+    /// </summary>
+    public int? MaxRetryCountWarn { get; init; }
+
+    /// <summary>
+    /// Retry failure threshold.
+    /// </summary>
+    public int? MaxRetryCountFail { get; init; }
+
+    /// <summary>
+    /// Cost evidence artifact-size warning threshold in bytes.
+    /// </summary>
+    public long? MaxArtifactSizeBytesWarn { get; init; }
+
+    /// <summary>
+    /// Cost evidence artifact-size failure threshold in bytes.
+    /// </summary>
+    public long? MaxArtifactSizeBytesFail { get; init; }
+
+    /// <summary>
+    /// Manual-review ratio warning threshold.
+    /// </summary>
+    public double? MaxManualReviewRatioWarn { get; init; }
+
+    /// <summary>
+    /// Manual-review ratio failure threshold.
+    /// </summary>
+    public double? MaxManualReviewRatioFail { get; init; }
 }
