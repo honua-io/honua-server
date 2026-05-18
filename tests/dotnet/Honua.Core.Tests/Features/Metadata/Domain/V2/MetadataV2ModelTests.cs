@@ -157,6 +157,131 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void EsriServiceLayers_AreServiceLocalPublicationSlots()
+    {
+        var parcels = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "resource.parcels",
+                Name = "Parcels"
+            },
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "parcel_id",
+                    Type = "string",
+                    SemanticRoles =
+                    [
+                        "identifier.primary"
+                    ]
+                }
+            ]
+        };
+
+        var hydrants = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "resource.hydrants",
+                Name = "Hydrants"
+            },
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "hydrant_id",
+                    Type = "string",
+                    SemanticRoles =
+                    [
+                        "identifier.primary"
+                    ]
+                }
+            ]
+        };
+
+        var parcelsPublication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "publication.public-works.0",
+                Name = "Parcels"
+            },
+            ResourceId = parcels.Metadata.Id,
+            ServiceId = "service.public-works-feature-server",
+            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            LayerIndex = 0,
+            Path = "/PublicWorks/FeatureServer/0",
+            ServiceLocalId = "0"
+        };
+
+        var hydrantsPublication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "publication.public-works.1",
+                Name = "Hydrants"
+            },
+            ResourceId = hydrants.Metadata.Id,
+            ServiceId = "service.public-works-feature-server",
+            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            LayerIndex = 1,
+            Path = "/PublicWorks/FeatureServer/1",
+            ServiceLocalId = "1"
+        };
+
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "service.public-works-feature-server",
+                Name = "Public Works FeatureServer"
+            },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Route = "/PublicWorks/FeatureServer",
+            PublicationIds =
+            [
+                parcelsPublication.Metadata.Id,
+                hydrantsPublication.Metadata.Id
+            ]
+        };
+
+        var graph = new MetadataV2Graph
+        {
+            Resources =
+            [
+                parcels,
+                hydrants
+            ],
+            Services = [service],
+            Publications =
+            [
+                parcelsPublication,
+                hydrantsPublication
+            ]
+        };
+
+        graph.Services.Single().PublicationIds.Should().BeEquivalentTo(
+            "publication.public-works.0",
+            "publication.public-works.1");
+        graph.Services.Single().ServiceType.Should().Be(MetadataV2ServiceType.EsriFeatureService);
+        graph.Publications.Should().OnlyContain(publication =>
+            publication.ServiceId == "service.public-works-feature-server" &&
+            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+        graph.Publications.Select(publication => publication.LayerIndex).Should().BeEquivalentTo(
+            new int?[] { 0, 1 });
+        graph.Publications.Select(publication => publication.ResourceId).Should().BeEquivalentTo(
+            "resource.parcels",
+            "resource.hydrants");
+        graph.Resources.Select(resource => resource.Metadata.Id).Should().BeEquivalentTo(
+            "resource.parcels",
+            "resource.hydrants");
+        graph.Resources.Should().OnlyContain(resource => resource.SchemaFields.Count == 1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void StorageBinding_Supports_ReturnsDeclaredCapabilityState()
     {
         var binding = new MetadataV2StorageBinding
