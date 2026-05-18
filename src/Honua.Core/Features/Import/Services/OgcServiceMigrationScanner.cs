@@ -880,7 +880,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         var builder = new UriBuilder(serviceUri)
         {
             Query = BuildQuery(
-                string.Empty,
+                serviceUri.Query,
                 new Dictionary<string, string?>
                 {
                     ["service"] = "WFS",
@@ -986,7 +986,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         {
             var separator = part.IndexOf('=', StringComparison.Ordinal);
             var key = separator < 0 ? Uri.UnescapeDataString(part) : Uri.UnescapeDataString(part[..separator]);
-            if (!IsSafeCapabilitiesQueryParameter(key))
+            if (IsSensitiveCapabilitiesQueryParameter(key))
             {
                 continue;
             }
@@ -1000,10 +1000,27 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             .Select(static pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
     }
 
-    private static bool IsSafeCapabilitiesQueryParameter(string key)
-        => key.Equals("service", StringComparison.OrdinalIgnoreCase) ||
-           key.Equals("request", StringComparison.OrdinalIgnoreCase) ||
-           key.Equals("version", StringComparison.OrdinalIgnoreCase);
+    private static bool IsSensitiveCapabilitiesQueryParameter(string key)
+    {
+        var normalized = key
+            .Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
+
+        return normalized.Contains("token", StringComparison.Ordinal) ||
+               normalized.Contains("secret", StringComparison.Ordinal) ||
+               normalized.Contains("credential", StringComparison.Ordinal) ||
+               normalized.Contains("signature", StringComparison.Ordinal) ||
+               normalized.Contains("apikey", StringComparison.Ordinal) ||
+               normalized.Contains("password", StringComparison.Ordinal) ||
+               normalized.Contains("passwd", StringComparison.Ordinal) ||
+               normalized.Equals("auth", StringComparison.Ordinal) ||
+               normalized.Equals("authorization", StringComparison.Ordinal) ||
+               normalized.Equals("key", StringComparison.Ordinal) ||
+               normalized.Equals("pwd", StringComparison.Ordinal) ||
+               normalized.Equals("session", StringComparison.Ordinal) ||
+               normalized.Equals("sig", StringComparison.Ordinal);
+    }
 
     private static string? GetRootVersion(XDocument document)
         => document.Root?.Attribute("version")?.Value;

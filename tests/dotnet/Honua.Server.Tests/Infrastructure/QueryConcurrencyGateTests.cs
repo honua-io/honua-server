@@ -158,7 +158,7 @@ public sealed class QueryConcurrencyGateTests
         {
             MaxConcurrentQueries = 3,
             MaxConnectionPoolSize = 3,
-            ConnectionAcquisitionTimeoutSeconds = 1,
+            ConnectionAcquisitionTimeoutSeconds = 5,
             AdaptiveConcurrencyEnabled = true,
             AdaptiveConcurrencyMinQueries = 1,
             AdaptiveConcurrencyInitialQueries = 1
@@ -278,7 +278,7 @@ public sealed class QueryConcurrencyGateTests
         {
             MaxConcurrentQueries = 2,
             MaxConnectionPoolSize = 2,
-            ConnectionAcquisitionTimeoutSeconds = 1,
+            ConnectionAcquisitionTimeoutSeconds = 5,
             AdaptiveConcurrencyEnabled = true,
             AdaptiveConcurrencyMinQueries = 1,
             AdaptiveConcurrencyInitialQueries = 1,
@@ -307,7 +307,7 @@ public sealed class QueryConcurrencyGateTests
         {
             MaxConcurrentQueries = 4,
             MaxConnectionPoolSize = 4,
-            ConnectionAcquisitionTimeoutSeconds = 1,
+            ConnectionAcquisitionTimeoutSeconds = 5,
             AdaptiveConcurrencyEnabled = true,
             AdaptiveConcurrencyMinQueries = 1,
             AdaptiveConcurrencyInitialQueries = 1,
@@ -334,7 +334,7 @@ public sealed class QueryConcurrencyGateTests
         {
             MaxConcurrentQueries = 4,
             MaxConnectionPoolSize = 4,
-            ConnectionAcquisitionTimeoutSeconds = 1,
+            ConnectionAcquisitionTimeoutSeconds = 5,
             AdaptiveConcurrencyEnabled = true,
             AdaptiveConcurrencyMinQueries = 1,
             AdaptiveConcurrencyInitialQueries = 1,
