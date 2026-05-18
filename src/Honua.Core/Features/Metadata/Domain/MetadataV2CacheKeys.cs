@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Honua.Core.Features.Metadata.Domain;
@@ -87,6 +88,7 @@ public static class MetadataV2CacheKeyBuilder
     public const string DefaultKeyPrefix = "honua:metadata:v2";
 
     private const int MaxComponentLength = 96;
+    private const int ComponentFingerprintLength = 16;
 
     /// <summary>
     /// Builds a metadata v2 snapshot cache key.
@@ -192,7 +194,22 @@ public static class MetadataV2CacheKeyBuilder
             return fallback;
         }
 
-        return component.Length <= MaxComponentLength ? component : component[..MaxComponentLength].TrimEnd('-');
+        if (component.Length <= MaxComponentLength)
+        {
+            return component;
+        }
+
+        var prefixLength = MaxComponentLength - ComponentFingerprintLength - 1;
+        return string.Concat(
+            component.AsSpan(0, prefixLength).TrimEnd('-'),
+            "-",
+            Fingerprint(component).AsSpan(0, ComponentFingerprintLength));
+    }
+
+    private static string Fingerprint(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     private static string CollapseSeparators(string value, char separator)

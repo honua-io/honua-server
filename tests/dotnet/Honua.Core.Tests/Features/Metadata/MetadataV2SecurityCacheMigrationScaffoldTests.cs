@@ -120,6 +120,33 @@ public sealed class MetadataV2SecurityCacheMigrationScaffoldTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void CacheKeyBuilder_PreservesUniquenessWhenComponentsAreTruncated()
+    {
+        var sharedPrefix = new string('a', 96);
+        var first = new MetadataV2CacheKeyRequest
+        {
+            TenantId = sharedPrefix + "-first",
+            Environment = "prod",
+            CatalogId = "main",
+            SchemaVersion = "v2",
+            Revision = "current"
+        };
+
+        var second = first with
+        {
+            TenantId = sharedPrefix + "-second"
+        };
+
+        var firstKey = MetadataV2CacheKeyBuilder.BuildSnapshot(first).Value;
+        var secondKey = MetadataV2CacheKeyBuilder.BuildSnapshot(second).Value;
+
+        firstKey.Should().NotBe(secondKey);
+        firstKey.Should().MatchRegex("tenant:id-a{79}-[0-9a-f]{16}:environment");
+        secondKey.Should().MatchRegex("tenant:id-a{79}-[0-9a-f]{16}:environment");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void MigrationDiagnosticReport_AggregatesSeverityAndDiagnosticGroups()
     {
         var report = MetadataV2MigrationDiagnosticReport.Create(
