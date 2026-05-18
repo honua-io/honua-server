@@ -37,7 +37,7 @@ is passing and linked from the compatibility evidence page.
 | ArcGIS Server service-fidelity migration | Partial / gap | Current layer import and GeoServices parity evidence | Stable layer identity, domains/subtypes, relationships, attachments, renderers/styles, time metadata, service metadata, route parity, and post-migration parity evidence are tracked in [honua-server#1025](https://github.com/honua-io/honua-server/issues/1025). |
 | Unified migration scanner | Production path | `POST /api/v1/admin/import/scan` with `sourceKind=geoserver-rest` or `sourceKind=arcgis-geoservices-rest` | The scanner returns deterministic planning artifacts. It does not mutate catalog or data tables. |
 | GeoServer REST discovery | Production path | `POST /api/v1/admin/import/geoserver/discover` and scanner support | HTTPS public URL required outside test mode. Basic auth is supported when both username and password are supplied. |
-| GeoServer REST import job | Dry-run only at public endpoint | `POST /api/v1/admin/import/geoserver/start` rejects requests unless `dryRun=true` | Treat this as compatibility review and cutover planning, not applied catalog migration. |
+| GeoServer REST import job | Dry-run validation plus apply-plan generation | `POST /api/v1/admin/import/geoserver/start` supports `dryRun=true` validation and `dryRun=false` deterministic apply-plan jobs | Non-dry-run jobs emit replayable intent only. They do not yet mutate the Honua catalog, copy data, or persist migrated styles. |
 | GeoServer SLD migration | Partial supporting path | Admin SLD import/export endpoints and `ISldStyleConverter` integration | Bulk GeoServer import validates/converts SLD content for diagnostics, but per-layer style persistence is handled by the admin SLD endpoint. |
 | Classic OGC WFS/WMS/WMTS service import | Not implemented | No production import endpoint exists for arbitrary classic OGC services | Current evidence is consume/read interoperability, not import. Track WFS/WMS/WMTS migration in [honua-server#1016](https://github.com/honua-io/honua-server/issues/1016). |
 | OGC API Features service import | Not implemented | Honua serves OGC API Features but does not yet import external OGC API Features sources | Track source scan/import/parity evidence in [honua-server#1029](https://github.com/honua-io/honua-server/issues/1029). |
@@ -88,8 +88,11 @@ Honua layer.
 The scanner discovers GeoServer version/global settings, workspaces, data
 stores, coverage stores, layers, layer groups, styles, advertised service
 endpoints, spatial references, style dependencies, and compatibility status.
-The public `start` endpoint currently enforces `dryRun=true`; non-dry-run
-application is intentionally not part of the public claim.
+The public `start` endpoint supports `dryRun=true` validation and
+`dryRun=false` deterministic apply-plan generation. Non-dry-run jobs surface a
+`honua.migration.apply-plan` artifact with a replay token, ordered steps,
+manual-review items, and unsupported items; they do not yet mutate the Honua
+catalog, copy source data, or persist migrated styles.
 
 ### OGC Cross-Server Consume
 
@@ -109,14 +112,15 @@ Before using import language in marketing, sales, or website copy:
 
 - Use "ArcGIS GeoServices REST layer import" for the production live-service
   import path.
-- Use "GeoServer REST migration inventory and dry-run validation" for
-  GeoServer.
+- Use "GeoServer REST migration inventory, dry-run validation, and apply-plan
+  generation" for GeoServer.
 - Use "cross-server WMS/WFS/WMTS consume testing" for OGC reference-service
   evidence.
 - Do not say "OGC service import" unless a production WFS/WMS/WMTS import path
   has been implemented and tested.
-- Do not say "GeoServer catalog import applies changes" until the public
-  endpoint accepts non-dry-run requests and writes real catalog state.
+- Do not say "GeoServer catalog import applies changes" until non-dry-run jobs
+  write real catalog, data, and style state rather than emitting apply-plan
+  evidence only.
 
 ## Last Local Verification
 

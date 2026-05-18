@@ -1,10 +1,10 @@
 # GeoServer to Honua Migration Guide
 
-Migrate from GeoServer to Honua Server, covering endpoint equivalence, inventory scanning, dry-run import, and key configuration differences.
+Migrate from GeoServer to Honua Server, covering endpoint equivalence, inventory scanning, dry-run validation, apply-plan generation, and key configuration differences.
 
 ## Overview
 
-Honua provides GeoServer migration tooling for discovery, compatibility classification, and dry-run import validation. The migration scanner is discovery-only: it returns a deterministic planning artifact before any connection, service, layer, or style changes are applied. GeoServer import remains a separate dry-run workflow, and style conversion still requires manual follow-up. Use the shared [Migration Toolkit](../../operator/migration-toolkit.md) workflow for manifest translation, parity evidence, and cutover readiness after discovery. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
+Honua provides GeoServer migration tooling for discovery, compatibility classification, dry-run import validation, and deterministic apply-plan generation. The migration scanner is discovery-only: it returns a deterministic planning artifact before any connection, service, layer, or style changes are applied. GeoServer import jobs can run in dry-run mode or non-dry-run apply-plan mode. The apply-plan slice records replayable intent and review blockers; it does not yet mutate the Honua catalog, copy data, or persist migrated styles. Use the shared [Migration Toolkit](../../operator/migration-toolkit.md) workflow for manifest translation, parity evidence, and cutover readiness after discovery. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
 
 ## Endpoint Equivalence Mapping
 
@@ -39,9 +39,9 @@ Honua provides GeoServer migration tooling for discovery, compatibility classifi
 | `GET /geoserver/rest/layers` | `GET /ogc/features/collections` | Layer discovery |
 | `GET /geoserver/rest/styles` | `GET /api/v1/admin/metadata/layers/{id}/style` | Layer styles (MapLibre JSON) |
 
-## Discovery And Dry-Run Import
+## Discovery And Apply Planning
 
-Honua provides admin API endpoints for GeoServer discovery and a dry-run import workflow. Use the scanner artifact as the review contract for migration planning; the import endpoint currently validates and previews the work without applying configuration changes.
+Honua provides admin API endpoints for GeoServer discovery, dry-run validation, and apply-plan generation. Use the scanner artifact as the review contract for migration planning; the import endpoint currently validates or plans the work without applying catalog, data, or style changes.
 
 ### Step 1: Scan And Classify Your GeoServer
 
@@ -81,9 +81,9 @@ The response includes:
 
 Review the inventory artifact before proceeding. Start with `summary`, `scanCompleteness`, and `overallCompatibility`, then drill into per-item blockers using the stable IDs shared across `resources`, `styles`, and `externalDependencies`. Compatibility assessments include stable GeoServer codes such as `GEOSERVER_SUPPORTED`, `GEOSERVER_MANUAL_REVIEW`, `GEOSERVER_UNSUPPORTED_STORE`, `GEOSERVER_UNSUPPORTED_COVERAGE_STORE`, `GEOSERVER_DISABLED_LAYER`, `GEOSERVER_EMPTY_LAYER_GROUP`, `GEOSERVER_STYLE_CONVERSION_REQUIRED`, `GEOSERVER_UNSUPPORTED_STYLE_FORMAT`, `GEOSERVER_EXTERNAL_GRAPHIC`, and `GEOSERVER_SERVICE_ENDPOINT`. Arrays are deterministically ordered for repeatable diffs, sensitive datastore values are redacted before serialization, and nullable scalar fields are omitted when the scanner has no value to emit. Layers backed by PostGIS data stores have the highest migration fidelity.
 
-### Step 2: Start a Dry-Run Import
+### Step 2: Start a Dry-Run Or Apply-Plan Job
 
-> **Note:** The GeoServer import endpoint currently supports **dry-run mode only**. A dry run validates connectivity, discovers resources, and reports what would be imported without making changes.
+Use `dryRun: true` to validate connectivity and report what would be imported without making changes. Use `dryRun: false` to emit a deterministic `honua.migration.apply-plan` artifact with ordered steps, a replay token, manual-review items, and unsupported items. The non-dry-run apply-plan path still does not mutate the Honua catalog, copy data, or persist migrated styles.
 
 ```bash
 export GEOSERVER_PASSWORD='geoserver'
@@ -94,13 +94,13 @@ curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/start \
     "geoServerRestUrl": "https://geoserver-host/geoserver/rest",
     "username": "admin",
     "passwordSecretReference": "env:GEOSERVER_PASSWORD",
-    "dryRun": true
+    "dryRun": false
   }'
 ```
 
 Queued GeoServer imports no longer accept plaintext credentials because the request is persisted in distributed job state before the worker runs. Use a secret reference such as `env:GEOSERVER_PASSWORD` for the GeoServer password and `honuaApiKeySecretReference` when a future non-dry-run workflow needs a Honua API key.
 
-This returns a job ID for tracking progress.
+This returns a job ID for tracking progress. When the job completes, the status payload includes `progress.applyPlan` for non-dry-run apply-plan jobs.
 
 > **Unified scanner note:** the same `POST /api/v1/admin/import/scan` endpoint also accepts `sourceKind: "geoservices"` or `sourceKind: "arcgis-geoservices-rest"` for ArcGIS GeoServices REST inventory scans. Use an HTTPS ArcGIS service root ending in `FeatureServer` or `MapServer`, not a layer or table URL. GeoServices discovery currently uses anonymous access only, normalizes `sourceKind` to `arcgis-geoservices-rest`, and emits the same top-level artifact sections, with renderers surfacing in `styles[]`, source schema entries surfacing in `resources[*].fields[]`, and external symbol URLs surfacing as sanitized `externalDependencies[]` entries. Compatibility assessments include a stable `code` (for example `COMPATIBLE`, `MANUAL_REVIEW`, `ARCGIS_UNSUPPORTED_RENDERER`, `ARCGIS_TOKEN_REQUIRED`) for deterministic branching, and the scan endpoint accepts `?export=json` to return the artifact as an indented JSON attachment. Failed GeoServices artifacts can report `authPosture.mode = "auth-required"` or `"unknown"` when discovery is blocked or the ArcGIS API reports an error; transport failures and request timeouts still surface as `502` or `504`. See [ArcGIS Inventory Discovery](../../operator/arcgis-inventory-discovery.md) for the full code namespace, field schema, and remediation table.
 

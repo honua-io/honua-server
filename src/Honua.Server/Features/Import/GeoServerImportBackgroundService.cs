@@ -157,14 +157,16 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
             var finalProgress = currentProgress with
             {
                 Status = result.Success ? GeoServerImportStatus.Completed : GeoServerImportStatus.Failed,
-                ResourcesProcessed = result.WorkspacesImported + result.DataStoresImported + result.LayersImported + result.StylesImported,
+                ResourcesProcessed = result.ApplyPlan?.Summary.TotalStepCount ??
+                    result.WorkspacesImported + result.DataStoresImported + result.LayersImported + result.StylesImported,
                 FailedResources = result.FailedResources,
                 SourceGeoServerVersion = result.SourceGeoServerVersion ?? currentProgress.SourceGeoServerVersion,
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = result.ErrorMessage,
                 Warnings = result.Warnings,
+                ApplyPlan = result.ApplyPlan ?? currentProgress.ApplyPlan,
                 CurrentPhase = result.Success
-                    ? (result.WasDryRun ? "Dry run completed" : "Import completed successfully")
+                    ? (result.WasDryRun ? "Dry run completed" : result.ApplyPlan != null ? "Apply plan generated" : "Import completed successfully")
                     : "Import failed"
             };
 

@@ -255,6 +255,11 @@ public sealed record GeoServerImportResult
     public int FailedResources { get; init; }
 
     /// <summary>
+    /// Number of deterministic apply-plan steps generated without mutating the target catalog.
+    /// </summary>
+    public int ResourcesPlanned { get; init; }
+
+    /// <summary>
     /// The source GeoServer URL that was imported from.
     /// </summary>
     public required string SourceGeoServerUrl { get; init; }
@@ -293,6 +298,11 @@ public sealed record GeoServerImportResult
     /// Resources that failed to import.
     /// </summary>
     public IReadOnlyList<GeoServerFailedResource> FailedResourceDetails { get; init; } = [];
+
+    /// <summary>
+    /// Deterministic apply plan generated for non-dry-run migration requests.
+    /// </summary>
+    public MigrationApplyPlanArtifact? ApplyPlan { get; init; }
 
     /// <summary>
     /// Whether this was a dry run (no actual changes made).
