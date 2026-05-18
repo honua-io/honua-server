@@ -880,7 +880,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         var builder = new UriBuilder(serviceUri)
         {
             Query = BuildQuery(
-                string.Empty,
+                serviceUri.Query,
                 new Dictionary<string, string?>
                 {
                     ["service"] = "WFS",
@@ -986,7 +986,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         {
             var separator = part.IndexOf('=', StringComparison.Ordinal);
             var key = separator < 0 ? Uri.UnescapeDataString(part) : Uri.UnescapeDataString(part[..separator]);
-            if (!IsSafeCapabilitiesQueryParameter(key))
+            if (IsSensitiveCapabilitiesQueryParameter(key))
             {
                 continue;
             }
@@ -1000,10 +1000,24 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             .Select(static pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
     }
 
-    private static bool IsSafeCapabilitiesQueryParameter(string key)
-        => key.Equals("service", StringComparison.OrdinalIgnoreCase) ||
-           key.Equals("request", StringComparison.OrdinalIgnoreCase) ||
-           key.Equals("version", StringComparison.OrdinalIgnoreCase);
+    private static bool IsSensitiveCapabilitiesQueryParameter(string key)
+        => key.Equals("access_token", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("apikey", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("api_key", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("auth", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("authorization", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("client_secret", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("credential", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("credentials", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("key", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("password", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("passwd", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("pwd", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("secret", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("session", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("signature", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("sig", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("token", StringComparison.OrdinalIgnoreCase);
 
     private static string? GetRootVersion(XDocument document)
         => document.Root?.Attribute("version")?.Value;
