@@ -13,8 +13,8 @@ For the website-level compatibility and automated migration claims, start with
 
 Use this wording for public material:
 
-> Honua imports common GIS file formats and public, queryable ArcGIS GeoServices
-> REST feature/map-service layers into PostGIS. It also inventories ArcGIS
+> Honua imports common GIS file formats and public or credentialed queryable
+> ArcGIS GeoServices REST feature/map-service layers into PostGIS. It also inventories ArcGIS
 > GeoServices REST and GeoServer REST sources for migration planning, supports
 > GeoServer dry-run validation, and runs cross-server WMS/WFS/WMTS consume tests
 > against reference GeoServer and MapServer services.
@@ -61,6 +61,7 @@ is passing and linked from the compatibility evidence page.
   and `tests/dotnet/Honua.Postgres.Tests/Features/Import/Baselines/ArcGis/`
 - Integration coverage:
   `tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs`,
+  `tests/dotnet/Honua.Postgres.Tests/Features/Import/GeoservicesImportServiceAuthenticatedImportTests.cs`,
   `GeoservicesParityIntegrationTests.cs`, and
   `GeoservicesGeoportalImportIntegrationTests.cs`
 
@@ -70,6 +71,13 @@ metadata, queues a distributed import job, pages source features with
 converts Esri JSON geometries to GeoJSON/PostGIS geometry, creates a spatial
 index, analyzes the table, and optionally publishes the imported table as a
 Honua layer.
+
+Credentialed import uses the GeoServices `credentials` descriptor. Discovery
+and scan requests may use inline token/password values for immediate use, but
+queued import jobs require secret references; the worker resolves the secret
+inside job execution before calling ArcGIS. Local integration coverage includes
+a token-protected ArcGIS-compatible fixture that pages a private layer into
+PostGIS and verifies request/job artifacts do not persist token material.
 
 ### GeoServer REST
 
@@ -131,6 +139,13 @@ The focused baseline checks were refreshed on 2026-05-17:
 | Server endpoints and migration scanner slice | 47 passed, 0 failed, 0 skipped |
 | Postgres service inventory and baseline slice | 23 passed, 0 failed, 0 skipped |
 
+Additional authenticated GeoServices checks were refreshed on 2026-05-18:
+
+| Check | Result |
+|---|---:|
+| ArcGIS REST client auth and secret-redaction slice | 10 passed, 0 failed, 0 skipped |
+| Token-protected private GeoServices import fixture | 1 passed, 0 failed, 0 skipped |
+
 ## Suggested Verification Commands
 
 Run these focused checks when refreshing this evidence:
@@ -141,6 +156,12 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
 
 dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
   --filter "FullyQualifiedName~GeoservicesImportServiceScanTests|FullyQualifiedName~GeoServerImportServiceScanTests|FullyQualifiedName~GeoservicesArcGisInventoryBaselineTests|FullyQualifiedName~GeoServerInventoryBaselineTests"
+
+dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
+  --filter "FullyQualifiedName~ArcGisRestClientSecurityTests"
+
+dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+  --filter "FullyQualifiedName~GeoservicesImportServiceAuthenticatedImportTests"
 ```
 
 External/live tests such as `GeoservicesGeoportalImportIntegrationTests` and

@@ -4,7 +4,9 @@
 using System.Net;
 using System.Reflection;
 using System.Text;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
@@ -79,6 +81,58 @@ public sealed class ArcGisRestClientSecurityTests
 
         result.ServiceName.Should().Be("Test Service");
         handler.RequestCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetJsonDocumentAsync_WithBasicCredentials_SendsAuthorizationHeaderWithoutQuerySecret()
+    {
+        var handler = new RecordingHandler("{}");
+        var client = CreateClient(handler, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+
+        using var document = await client.GetJsonDocumentAsync(
+            "https://example.com/arcgis/rest/services/Test/FeatureServer?f=json",
+            maxRetries: 0,
+            timeoutSeconds: 5,
+            new GeoservicesCredentialDescriptor
+            {
+                Mode = GeoservicesAuthenticationModes.Basic,
+                Username = "scanner",
+                Password = "private-password"
+            },
+            CancellationToken.None);
+
+        handler.RequestCount.Should().Be(1);
+        handler.LastRequestUri.Should().NotBeNull();
+        handler.LastRequestUri!.Query.Should().NotContain("private-password");
+        handler.LastAuthorizationHeader.Should().Be("Basic c2Nhbm5lcjpwcml2YXRlLXBhc3N3b3Jk");
+    }
+
+    [Fact]
+    public async Task DiscoverServiceAsync_WhenRetryLogsTokenRequest_RedactsTokenValue()
+    {
+        const string accessToken = "retry-secret-token";
+        var logger = new RecordingLogger<ArcGisRestClient>();
+        var handler = new TransientFailureHandler();
+        var client = CreateClient(
+            handler,
+            (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }),
+            logger);
+
+        var result = await client.DiscoverServiceAsync(
+            "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            timeoutSeconds: 5,
+            maxRetries: 1,
+            CancellationToken.None,
+            new GeoservicesCredentialDescriptor
+            {
+                Mode = GeoservicesAuthenticationModes.Token,
+                AccessToken = accessToken
+            });
+
+        result.ServiceName.Should().Be("Retry Test");
+        handler.RequestCount.Should().Be(2);
+        logger.Messages.Should().Contain(message => message.Contains("token=<redacted>", StringComparison.Ordinal));
+        logger.Messages.Should().NotContain(message => message.Contains(accessToken, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -158,10 +212,11 @@ public sealed class ArcGisRestClientSecurityTests
 
     private static ArcGisRestClient CreateClient(
         HttpMessageHandler handler,
-        Func<string, CancellationToken, Task<IPAddress[]>> resolver)
+        Func<string, CancellationToken, Task<IPAddress[]>> resolver,
+        ILogger<ArcGisRestClient>? logger = null)
     {
         var httpClient = new HttpClient(handler);
-        return new ArcGisRestClient(httpClient, NullLogger<ArcGisRestClient>.Instance, resolver);
+        return new ArcGisRestClient(httpClient, logger ?? NullLogger<ArcGisRestClient>.Instance, resolver);
     }
 
     private static SocketsHttpConnectionContext CreateConnectionContext(DnsEndPoint dnsEndPoint, HttpRequestMessage request)
@@ -221,6 +276,96 @@ public sealed class ArcGisRestClientSecurityTests
             {
                 Content = new StringContent(_jsonResponse, Encoding.UTF8, "application/json")
             });
+        }
+    }
+
+    private sealed class RecordingHandler : HttpMessageHandler
+    {
+        private readonly string _jsonResponse;
+        private int _requestCount;
+
+        public RecordingHandler(string jsonResponse)
+        {
+            _jsonResponse = jsonResponse;
+        }
+
+        public int RequestCount => _requestCount;
+
+        public Uri? LastRequestUri { get; private set; }
+
+        public string? LastAuthorizationHeader { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _requestCount);
+            LastRequestUri = request.RequestUri;
+            LastAuthorizationHeader = request.Headers.Authorization?.ToString();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_jsonResponse, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class TransientFailureHandler : HttpMessageHandler
+    {
+        private int _requestCount;
+
+        public int RequestCount => _requestCount;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _requestCount) == 1)
+            {
+                throw new HttpRequestException($"Transient ArcGIS failure for {request.RequestUri}");
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "serviceDescription": "Retry Test",
+                      "layers": []
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        }
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add(formatter(state, exception));
+            if (exception != null)
+            {
+                Messages.Add(exception.ToString());
+            }
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose()
+            {
+            }
         }
     }
 }

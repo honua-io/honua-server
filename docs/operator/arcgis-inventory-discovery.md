@@ -97,6 +97,34 @@ with HTTP 200 but flagged:
 Operators should add credentials and rerun. The discovery slice does **not**
 attempt token acquisition itself.
 
+### Credentialed scans
+
+Credentialed scans use the `credentials` object on the scan or GeoServices
+discovery request. Supported modes are `token`, `basic`, and `oauth`; OAuth is
+treated as an operator-supplied access token rather than a server-side token
+mint flow. Tokens are sent to ArcGIS REST as request token parameters, while
+Basic credentials are sent with an `Authorization: Basic` header. Queued import
+jobs must use secret references so plaintext token and password values are not
+persisted in job state.
+
+`authPosture.mode` is deterministic:
+
+| Mode | Meaning |
+|---|---|
+| `anonymous` | No credential descriptor was supplied and access was confirmed. |
+| `token` | A token credential was supplied and access was confirmed. |
+| `basic` | Basic credentials were supplied and access was confirmed. |
+| `oauth` | An OAuth access-token credential was supplied and access was confirmed. |
+| `auth-required` | ArcGIS returned 401/499 before access could be confirmed. |
+| `denied` | ArcGIS returned 403 or rejected a supplied identity. |
+| `expired-token` | ArcGIS returned 498 for an invalid or expired token. |
+| `unknown` | The scanner could not classify the source response. |
+
+Honua does not refresh ArcGIS tokens. Expired token handling is deterministic:
+the artifact uses `authPosture.mode = "expired-token"` with
+`overallCompatibility.code = "ARCGIS_TOKEN_EXPIRED"`. Operators should rotate
+the referenced secret or provide a fresh token, then rerun discovery or import.
+
 ## Artifact shape
 
 The artifact is a `MigrationSourceInventoryArtifact`. The top-level fields

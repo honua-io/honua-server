@@ -261,6 +261,7 @@ Request body:
 | `sourceUrl` | Yes | Canonical source URL to scan. GeoServices requires an HTTPS ArcGIS service root ending in `FeatureServer` or `MapServer`; layer or table URLs are rejected. GeoServer and GeoServices reject embedded credentials. GeoServices also rejects private, loopback, or unresolvable addresses. GeoServer follows the same HTTPS and address-safety rules in normal environments; test-only unsafe local URLs can be enabled separately. |
 | `username` | No | GeoServer basic-auth username. Both `username` and `password` are required before the scan sends Basic auth; if only one is supplied the scan proceeds anonymously and records a note. Ignored for GeoServices scans. |
 | `password` | No | GeoServer basic-auth password. Both `username` and `password` are required before the scan sends Basic auth; if only one is supplied the scan proceeds anonymously and records a note. Ignored for GeoServices scans. |
+| `credentials` | No | GeoServices-only credential descriptor. Supported modes are `token`, `oauth`, and `basic`. Discovery and scan requests may use inline `accessToken`/`password` values or secret references; queued imports must use `accessTokenSecretReference` or `passwordSecretReference`. Secret values and references are not echoed into inventory artifacts. |
 | `timeoutSeconds` | No | Defaults to `120` for GeoServer scans and `30` for GeoServices scans. |
 | `includeStyleContent` | No | GeoServer-only. Fetches SLD documents for deeper classification and external graphic detection. Raw style documents are not returned in the artifact. |
 
@@ -286,6 +287,19 @@ GeoServices example:
 }
 ```
 
+Credentialed GeoServices scan example:
+
+```json
+{
+  "sourceKind": "geoservices",
+  "sourceUrl": "https://example.com/arcgis/rest/services/Private/FeatureServer",
+  "credentials": {
+    "mode": "token",
+    "accessTokenSecretReference": "env:ARCGIS_PRIVATE_TOKEN"
+  }
+}
+```
+
 Successful response contract:
 
 | Field | Notes |
@@ -294,7 +308,7 @@ Successful response contract:
 | `artifactVersion` | Current schema version: `1.0`. |
 | `sourceKind` | Canonical source kind: `geoserver-rest` or `arcgis-geoservices-rest`. |
 | `source` | Source identity, product, version, build, and service type metadata. |
-| `authPosture` | Observed authentication mode (`anonymous`, `basic`, `auth-required`, `anonymous-or-auth-required`, or `unknown`), whether usable credentials were supplied, whether access was confirmed, and any auth notes. |
+| `authPosture` | Observed authentication mode (`anonymous`, `token`, `basic`, `oauth`, `auth-required`, `denied`, `expired-token`, `anonymous-or-auth-required`, or `unknown`), whether usable credentials were supplied, whether access was confirmed, and any auth notes. |
 | `scanCompleteness` | Scan status (`complete`, `partial`, or `failed`) plus warnings and missing artifact categories. |
 | `summary` | Aggregate counts for containers, resources, styles, dependencies, and compatibility tallies. |
 | `overallCompatibility` | Roll-up compatibility level (`compatible`, `partial`, `incompatible`) with warnings and manual follow-up steps. |
@@ -326,7 +340,7 @@ Behavior notes:
 - Sensitive connection metadata is redacted before serialization. Password-, token-, API-key-, and secret-like values are returned as `[redacted]`.
 - External URL dependencies strip embedded credentials, query strings, and fragments before serialization, and the corresponding dependency IDs use stable hashed fingerprints instead of raw URLs.
 - GeoServer `includeStyleContent=true` deepens classification and dependency discovery only. The artifact still returns metadata, compatibility, and external dependency references rather than raw SLD payloads.
-- GeoServices scans run anonymously: `username` and `password` are accepted by the request model for contract stability but are not used by the GeoServices scanner. Successful GeoServices artifacts therefore report `authPosture.mode = "anonymous"`, while failed artifacts can report `auth-required` or `unknown`. The ArcGIS scanner classifies supported, partial, unsupported, and manual-review cases using the codes documented in [ArcGIS Inventory Discovery](arcgis-inventory-discovery.md).
+- GeoServices scans ignore the top-level GeoServer `username`/`password` fields and use the GeoServices `credentials` descriptor instead. Successful credentialed scans report `authPosture.mode` as `token`, `basic`, or `oauth`; anonymous scans report `anonymous`. ArcGIS auth failures are deterministic: missing credentials report `auth-required`, invalid or expired ArcGIS tokens report `expired-token`, and forbidden identities report `denied`. The scanner does not refresh tokens; rotate the referenced secret and rerun the scan or queued import.
 - The `?export=json` query parameter on the scan endpoint returns the artifact as an indented JSON attachment with `Content-Disposition: attachment; filename="<service-slug>-inventory.json"` and `X-Content-Type-Options: nosniff`. The slug is derived from the source `displayName`, sanitized to alphanumeric, dash, and underscore characters, and capped at 64 characters; credentials supplied in the request body are never echoed into the artifact.
 - GeoServer can emit a synthetic `workspace:global` container when global styles or layer groups are discovered.
 - Stable artifact IDs are keyed from canonical source names rather than display text, so changing a source description does not churn container, resource, style, or dependency identifiers. Arrays and compatibility note collections are normalized for repeatable output so unchanged sources produce materially stable planning artifacts. Nullable scalar properties are omitted when the scanner has no value to emit.
