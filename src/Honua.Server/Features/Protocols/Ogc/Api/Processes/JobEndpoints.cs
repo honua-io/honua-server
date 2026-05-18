@@ -3,12 +3,14 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -194,6 +196,7 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
+        [FromServices] IGeoprocessingJobService jobService,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobResults");
@@ -253,10 +256,8 @@ internal static class JobEndpoints
                 StatusCodes.Status404NotFound);
         }
 
-        // V1: document-mode, by-value results only.
-        // Result storage will be populated when the execution engine is available.
-        // For now return an empty results document for successful jobs,
-        // or an error for failed/dismissed jobs.
+        // V1 publishes document-mode results by adapting the canonical
+        // geoprocessing result package into OGC output members.
         if (job.Status == ExecutionJobStatus.Failed)
         {
             return Results.Json(
@@ -287,13 +288,16 @@ internal static class JobEndpoints
                 StatusCodes.Status410Gone);
         }
 
-        // OGC API Processes — Part 1 §7.11.1: a successful job must return a results
-        // document, not a 404. The canonical process declares no value-typed outputs in
-        // V1, so the spec-conformant body is an empty object. Clients walking the job
-        // lifecycle now see 200 OK + `{}` instead of "not available".
-        // When the artifact store is wired up the dictionary will be populated from the
-        // job's ArtifactRefs; until then the endpoint stays spec-legal.
-        return Results.Text("{}", MediaTypes.Json, statusCode: StatusCodes.Status200OK);
+        var resultPackage = await jobService
+            .GetJobResultsAsync(jobId, context.User, context.RequestAborted)
+            .ConfigureAwait(false);
+
+        var resultsDocument = ToOgcResultsDocument(resultPackage);
+        return Results.Json(
+            resultsDocument.Outputs ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
+            OgcProcessesJsonContext.Default.DictionaryStringJsonElement,
+            MediaTypes.Json,
+            StatusCodes.Status200OK);
     }
 
     private static async Task<IResult> DismissJob(
@@ -736,6 +740,61 @@ internal static class JobEndpoints
 
     private static IResult JobNotFoundResult(string jobId) => OgcProcessesResults.NoSuchJob(jobId);
 
+    private static OgcResultsDocument ToOgcResultsDocument(AnalysisResultPackage resultPackage)
+    {
+        var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var artifact in resultPackage.Artifacts)
+        {
+            var outputName = ResolveUniqueOutputName(ResolveOutputName(artifact, outputs.Count), outputs);
+            outputs[outputName] = JsonSerializer.SerializeToElement(
+                new OgcArtifactResult
+                {
+                    Id = artifact.ArtifactId,
+                    Kind = artifact.Kind.ToString(),
+                    Title = artifact.Label,
+                    Href = artifact.Uri,
+                    Type = artifact.ContentType
+                },
+                OgcProcessesJsonContext.Default.OgcArtifactResult);
+        }
+
+        return new OgcResultsDocument { Outputs = outputs };
+    }
+
+    private static string ResolveOutputName(ArtifactRef artifact, int index)
+    {
+        if (artifact.Metadata.TryGetValue(
+                GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey,
+                out var outputName) &&
+            !string.IsNullOrWhiteSpace(outputName))
+        {
+            return outputName;
+        }
+
+        return string.IsNullOrWhiteSpace(artifact.Label)
+            ? $"output{index + 1}"
+            : artifact.Label;
+    }
+
+    private static string ResolveUniqueOutputName(
+        string outputName,
+        Dictionary<string, JsonElement> existingOutputs)
+    {
+        if (!existingOutputs.ContainsKey(outputName))
+        {
+            return outputName;
+        }
+
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{outputName}_{suffix}";
+            if (!existingOutputs.ContainsKey(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
     private static IResult BuildDismissOutcomeResult(
         string baseUrl,
         string jobId,
@@ -758,4 +817,17 @@ internal static class JobEndpoints
         activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
     }
 
+}
+
+internal sealed record OgcArtifactResult
+{
+    public required string Id { get; init; }
+
+    public required string Kind { get; init; }
+
+    public string? Title { get; init; }
+
+    public string? Href { get; init; }
+
+    public string? Type { get; init; }
 }
