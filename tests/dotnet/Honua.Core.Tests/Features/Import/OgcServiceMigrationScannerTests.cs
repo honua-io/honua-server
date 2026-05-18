@@ -98,7 +98,7 @@ public sealed class OgcServiceMigrationScannerTests
         var artifact = await scanner.ScanSourceAsync(new OgcServiceScanRequest
         {
             ServiceType = "WFS",
-            ServiceUrl = "https://example.com/geoserver/wfs?workspace=topp&map=city&token=super-secret",
+            ServiceUrl = "https://example.com/geoserver/wfs?workspace=topp&map=city&token=super-secret&accessToken=super-secret&id_token_hint=super-secret&x-amz-security-token=super-secret",
             Version = "2.0.0",
             TimeoutSeconds = 10
         });
