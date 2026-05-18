@@ -70,6 +70,11 @@ public sealed record MigrationParityEvidenceArtifact
     /// Cutover-readiness checklist and aggregate state.
     /// </summary>
     public required MigrationCutoverReadinessSummary CutoverReadiness { get; init; }
+
+    /// <summary>
+    /// Optional bounded performance and migration-cost evidence captured for this run.
+    /// </summary>
+    public MigrationPerformanceCostEvidence? PerformanceCost { get; init; }
 }
 
 /// <summary>
@@ -221,4 +226,152 @@ public sealed record MigrationReadinessAttestationItem
     /// Optional owner responsible for the item.
     /// </summary>
     public string? Owner { get; init; }
+}
+
+/// <summary>
+/// Bounded migration performance and cost evidence that can be attached to parity review artifacts.
+/// </summary>
+public sealed record MigrationPerformanceCostEvidence
+{
+    /// <summary>
+    /// Stable artifact kind identifier for embedded performance and cost evidence.
+    /// </summary>
+    public string ArtifactKind { get; init; } = "honua.migration.performance-cost-evidence";
+
+    /// <summary>
+    /// Artifact schema version.
+    /// </summary>
+    public string ArtifactVersion { get; init; } = "1.0";
+
+    /// <summary>
+    /// Evidence state: <c>pass</c>, <c>fail</c>, <c>unknown</c>, or <c>not-applicable</c>.
+    /// </summary>
+    public required string State { get; init; }
+
+    /// <summary>
+    /// Short reviewer-facing summary of the collected measurements.
+    /// </summary>
+    public required string Summary { get; init; }
+
+    /// <summary>
+    /// Human-readable scope for the measurement, such as <c>fixture scan</c> or <c>pilot import dry run</c>.
+    /// </summary>
+    public required string MeasurementScope { get; init; }
+
+    /// <summary>
+    /// Aggregate duration, volume, retry, and review counters.
+    /// </summary>
+    public required MigrationPerformanceCostTotals Totals { get; init; }
+
+    /// <summary>
+    /// Operation-level measurements in deterministic order.
+    /// </summary>
+    public MigrationPerformanceCostOperation[] Operations { get; init; } = [];
+
+    /// <summary>
+    /// Secret-safe evidence artifact references. Query strings, fragments, and URL credentials are removed by the generator.
+    /// </summary>
+    public string[] EvidenceReferences { get; init; } = [];
+}
+
+/// <summary>
+/// Aggregate migration performance and cost counters for a measured run.
+/// </summary>
+public sealed record MigrationPerformanceCostTotals
+{
+    /// <summary>
+    /// Total measured duration in milliseconds.
+    /// </summary>
+    public long? DurationMilliseconds { get; init; }
+
+    /// <summary>
+    /// Total resources processed by the measured run.
+    /// </summary>
+    public long? ResourceCount { get; init; }
+
+    /// <summary>
+    /// Total features processed by the measured run.
+    /// </summary>
+    public long? FeatureCount { get; init; }
+
+    /// <summary>
+    /// Total bytes read from source systems or staged artifacts.
+    /// </summary>
+    public long? BytesRead { get; init; }
+
+    /// <summary>
+    /// Total bytes written to Honua-owned stores or output artifacts.
+    /// </summary>
+    public long? BytesWritten { get; init; }
+
+    /// <summary>
+    /// Total retry attempts observed across measured operations.
+    /// </summary>
+    public int? RetryCount { get; init; }
+
+    /// <summary>
+    /// Total items requiring manual review after the measured run.
+    /// </summary>
+    public int? ManualReviewCount { get; init; }
+}
+
+/// <summary>
+/// Operation-level performance and migration-cost measurement.
+/// </summary>
+public sealed record MigrationPerformanceCostOperation
+{
+    /// <summary>
+    /// Stable operation identifier.
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// Migration stage, such as <c>scan</c>, <c>manifest</c>, <c>import</c>, or <c>parity</c>.
+    /// </summary>
+    public required string Stage { get; init; }
+
+    /// <summary>
+    /// Evidence state for this measurement.
+    /// </summary>
+    public required string State { get; init; }
+
+    /// <summary>
+    /// Measured duration in milliseconds for this operation.
+    /// </summary>
+    public long? DurationMilliseconds { get; init; }
+
+    /// <summary>
+    /// Number of resources processed by this operation.
+    /// </summary>
+    public long? ResourceCount { get; init; }
+
+    /// <summary>
+    /// Number of features processed by this operation.
+    /// </summary>
+    public long? FeatureCount { get; init; }
+
+    /// <summary>
+    /// Number of bytes read by this operation.
+    /// </summary>
+    public long? BytesRead { get; init; }
+
+    /// <summary>
+    /// Number of bytes written by this operation.
+    /// </summary>
+    public long? BytesWritten { get; init; }
+
+    /// <summary>
+    /// Retry attempts observed for this operation.
+    /// </summary>
+    public int? RetryCount { get; init; }
+
+    /// <summary>
+    /// Items from this operation that require manual review.
+    /// </summary>
+    public int? ManualReviewCount { get; init; }
+
+    /// <summary>
+    /// Secret-safe evidence artifact references. Query strings, fragments, and URL credentials are removed by the generator.
+    /// </summary>
+    public string[] EvidenceReferences { get; init; } = [];
 }

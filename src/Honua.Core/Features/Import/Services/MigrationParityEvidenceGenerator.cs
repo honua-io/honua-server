@@ -27,11 +27,13 @@ public static class MigrationParityEvidenceGenerator
     /// <param name="inventory">Source inventory artifact.</param>
     /// <param name="manifest">Optional migration manifest artifact.</param>
     /// <param name="attestation">Optional operator-supplied readiness evidence.</param>
+    /// <param name="performanceCost">Optional performance and migration-cost measurements.</param>
     /// <returns>Deterministic parity evidence artifact.</returns>
     public static MigrationParityEvidenceArtifact Generate(
         MigrationSourceInventoryArtifact inventory,
         MigrationManifestArtifact? manifest = null,
-        MigrationReadinessAttestation? attestation = null)
+        MigrationReadinessAttestation? attestation = null,
+        MigrationPerformanceCostEvidence? performanceCost = null)
     {
         ArgumentNullException.ThrowIfNull(inventory);
 
@@ -52,7 +54,37 @@ public static class MigrationParityEvidenceGenerator
             Summary = BuildSummary(overallState, sections, readiness),
             ManifestAvailable = manifest != null,
             Sections = sections,
-            CutoverReadiness = readiness
+            CutoverReadiness = readiness,
+            PerformanceCost = NormalizePerformanceCost(performanceCost)
+        };
+    }
+
+    /// <summary>
+    /// Returns a deterministic, secret-safe performance/cost evidence block.
+    /// </summary>
+    /// <param name="performanceCost">Performance and cost evidence supplied by a scanner, importer, or test harness.</param>
+    /// <returns>Normalized evidence, or <c>null</c> when no evidence was supplied.</returns>
+    public static MigrationPerformanceCostEvidence? NormalizePerformanceCost(
+        MigrationPerformanceCostEvidence? performanceCost)
+    {
+        if (performanceCost == null)
+        {
+            return null;
+        }
+
+        return performanceCost with
+        {
+            State = NormalizeState(performanceCost.State),
+            EvidenceReferences = SanitizeEvidenceReferences(performanceCost.EvidenceReferences),
+            Operations = performanceCost.Operations
+                .OrderBy(static operation => operation.Id, StringComparer.Ordinal)
+                .ThenBy(static operation => operation.Stage, StringComparer.Ordinal)
+                .Select(static operation => operation with
+                {
+                    State = NormalizeState(operation.State),
+                    EvidenceReferences = SanitizeEvidenceReferences(operation.EvidenceReferences)
+                })
+                .ToArray()
         };
     }
 
@@ -378,6 +410,35 @@ public static class MigrationParityEvidenceGenerator
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static value => value, StringComparer.Ordinal)
             .ToArray();
+
+    private static string[] SanitizeEvidenceReferences(IEnumerable<string> values)
+        => values
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => SanitizeEvidenceReference(value.Trim()))
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static value => value, StringComparer.Ordinal)
+            .ToArray();
+
+    private static string SanitizeEvidenceReference(string value)
+    {
+        var sensitiveTailIndex = value.IndexOfAny(['?', '#']);
+        var withoutQueryOrFragment = sensitiveTailIndex >= 0 ? value[..sensitiveTailIndex] : value;
+
+        if (!Uri.TryCreate(withoutQueryOrFragment, UriKind.Absolute, out var uri) ||
+            string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return withoutQueryOrFragment;
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            UserName = string.Empty,
+            Password = string.Empty
+        };
+
+        return builder.Uri.AbsoluteUri;
+    }
 
     private static bool IsPartial(string? level)
         => string.Equals(level, "partial", StringComparison.OrdinalIgnoreCase);
