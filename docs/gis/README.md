@@ -19,6 +19,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 - [Data Modeling Guide](DATA_MODELING_GUIDE.md) — Spatial data modeling best practices
 - [FileGDB Import](FILEGDB_IMPORT_WORKFLOW.md) — File Geodatabase packaging and upload
 - [Raster Overview](raster-overview.md) — Raster import, COG registration/direct serving, and remaining mosaic/catalog roadmap status
+- [Cloud-Optimized HDF5 / NetCDF4 Support](cloud-optimized-hdf-netcdf-support.md) — MVP registration / validation surface for multidimensional coverage sources
 - [Terrain-RGB Tiles](terrain-tiles.md) — DEM/raster elevation tiles for MapLibre/Mapbox `raster-dem` clients
 - [Hosted 3D Tiles Scenes](scenes-3dtiles.md) — Already-hosted OGC 3D Tiles tilesets for CesiumJS and other 3D Tiles clients
 - [OpenUSD and Omniverse Export Path](openusd-omniverse-export-path.md) — Spike recommendation for a conservative USDA stage-manifest path for Honua scenes

@@ -32,6 +32,7 @@
 - [Data Modeling Guide](gis/DATA_MODELING_GUIDE.md)
 - [FileGDB Import](gis/FILEGDB_IMPORT_WORKFLOW.md)
 - [Raster Overview](gis/raster-overview.md)
+- [Cloud-Optimized HDF5 / NetCDF4 Support](gis/cloud-optimized-hdf-netcdf-support.md)
 - [Terrain-RGB Tiles](gis/terrain-tiles.md)
 - [Hosted 3D Tiles Scenes](gis/scenes-3dtiles.md)
 - [OpenUSD and Omniverse Export Path](gis/openusd-omniverse-export-path.md)
