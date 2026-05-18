@@ -142,6 +142,10 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
 
             // Create a scope for the import service
             using var scope = _scopeFactory.CreateScope();
+            request = await GeoservicesCredentialResolution.ResolveSecretReferencesAsync(
+                request,
+                scope.ServiceProvider,
+                jobCancellation.Token).ConfigureAwait(false);
             var importService = scope.ServiceProvider.GetRequiredService<IGeoservicesImportService>();
 
             monitorCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);

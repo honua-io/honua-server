@@ -62,6 +62,11 @@ public sealed record MigrationManifestArtifact
     public MigrationManifestServicePlan[] ServicePlans { get; init; } = [];
 
     /// <summary>
+    /// Stable source-to-target identity remaps emitted by manifest translation.
+    /// </summary>
+    public MigrationManifestIdentityRemap[] IdentityRemaps { get; init; } = [];
+
+    /// <summary>
     /// Items that require operator review before migration can proceed.
     /// </summary>
     public MigrationManifestReviewItem[] ManualReviewItems { get; init; } = [];
@@ -127,6 +132,11 @@ public sealed record MigrationManifestTargetResource
     /// Target migration action such as <c>publish</c> or <c>manual-review</c>.
     /// </summary>
     public required string Action { get; init; }
+
+    /// <summary>
+    /// Stable target resource identifier derived from the manifest target service and resource names.
+    /// </summary>
+    public required string TargetResourceId { get; init; }
 
     /// <summary>
     /// Target service name suggested for this resource.
@@ -247,6 +257,11 @@ public sealed record MigrationManifestStyleAction
     public required string SourceStyleId { get; init; }
 
     /// <summary>
+    /// Stable target style identifier reserved for this source style or renderer.
+    /// </summary>
+    public required string TargetStyleId { get; init; }
+
+    /// <summary>
     /// Target action such as <c>import</c> or <c>manual-review</c>.
     /// </summary>
     public required string Action { get; init; }
@@ -270,6 +285,42 @@ public sealed record MigrationManifestStyleAction
     /// Compatibility assessment that justified the target action.
     /// </summary>
     public required MigrationCompatibilityAssessment Compatibility { get; init; }
+}
+
+/// <summary>
+/// Stable source-to-target identity mapping emitted by manifest translation.
+/// </summary>
+public sealed record MigrationManifestIdentityRemap
+{
+    /// <summary>
+    /// Source inventory identifier.
+    /// </summary>
+    public required string SourceId { get; init; }
+
+    /// <summary>
+    /// Source inventory kind.
+    /// </summary>
+    public required string SourceKind { get; init; }
+
+    /// <summary>
+    /// Stable target identifier.
+    /// </summary>
+    public required string TargetId { get; init; }
+
+    /// <summary>
+    /// Target item kind.
+    /// </summary>
+    public required string TargetKind { get; init; }
+
+    /// <summary>
+    /// Target item name.
+    /// </summary>
+    public required string TargetName { get; init; }
+
+    /// <summary>
+    /// Manifest action associated with the mapping.
+    /// </summary>
+    public required string Action { get; init; }
 }
 
 /// <summary>

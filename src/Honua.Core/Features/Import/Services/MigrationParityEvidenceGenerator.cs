@@ -41,7 +41,8 @@ public static class MigrationParityEvidenceGenerator
         {
             BuildCapabilitySection(inventory),
             BuildStyleSection(inventory),
-            BuildDataSection(inventory, manifest)
+            BuildDataSection(inventory, manifest),
+            BuildFidelitySection(inventory)
         };
         var readiness = BuildReadiness(inventory, manifest, sections, attestation);
         var overallState = AggregateState(sections.Select(section => section.State).Append(readiness.State));
@@ -253,6 +254,55 @@ public static class MigrationParityEvidenceGenerator
         }
 
         return CreateSection("data", "Data parity", items);
+    }
+
+    private static MigrationParityEvidenceSection BuildFidelitySection(MigrationSourceInventoryArtifact inventory)
+    {
+        if (inventory.FidelityClassifications.Length == 0)
+        {
+            return CreateSection(
+                "fidelity",
+                "Migration fidelity classification",
+                [
+                    CreateItem(
+                        "fidelity:none",
+                        MigrationEvidenceStates.NotApplicable,
+                        "No source fidelity classifications were emitted.",
+                        ["The inventory artifact does not include fidelity classification records."],
+                        [],
+                        [])
+                ]);
+        }
+
+        var items = inventory.FidelityClassifications
+            .OrderBy(static record => record.Id, StringComparer.Ordinal)
+            .Select(record =>
+            {
+                var state = record.AutomationStatus switch
+                {
+                    MigrationFidelityAutomationStatuses.Unsupported => MigrationEvidenceStates.Fail,
+                    MigrationFidelityAutomationStatuses.ManualReview => MigrationEvidenceStates.Unknown,
+                    MigrationFidelityAutomationStatuses.Assisted => MigrationEvidenceStates.Unknown,
+                    MigrationFidelityAutomationStatuses.Automated => MigrationEvidenceStates.Pass,
+                    _ => MigrationEvidenceStates.Unknown
+                };
+                var remediation = state == MigrationEvidenceStates.Pass
+                    ? []
+                    : record.ManualSteps.Length > 0
+                        ? record.ManualSteps
+                        : ["Review the source construct and document the target migration disposition."];
+
+                return CreateItem(
+                    $"fidelity:{record.Id}",
+                    state,
+                    $"{record.SourceId} {record.Category} is {record.AutomationStatus}.",
+                    [$"{record.Code}: {record.Reason}"],
+                    remediation,
+                    [record.SourceId, .. record.RelatedIds]);
+            })
+            .ToArray();
+
+        return CreateSection("fidelity", "Migration fidelity classification", items);
     }
 
     private static MigrationCutoverReadinessSummary BuildReadiness(

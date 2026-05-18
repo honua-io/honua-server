@@ -8,10 +8,10 @@ using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
+using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Import;
@@ -1192,7 +1192,10 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
 /// </summary>
 [JsonSerializable(typeof(GeoservicesImportProgress))]
 [JsonSerializable(typeof(GeoservicesImportRequest))]
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(GeoservicesCredentialDescriptor))]
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 internal sealed partial class GeoservicesImportJsonContext : JsonSerializerContext
 {
 }

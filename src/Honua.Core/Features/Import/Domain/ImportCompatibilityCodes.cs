@@ -43,6 +43,9 @@ public static class ImportCompatibilityCodes
     /// <summary>ArcGIS service requires a token before scanning may proceed.</summary>
     public const string ArcGisTokenRequired = "ARCGIS_TOKEN_REQUIRED";
 
+    /// <summary>ArcGIS service rejected the supplied token as invalid or expired.</summary>
+    public const string ArcGisTokenExpired = "ARCGIS_TOKEN_EXPIRED";
+
     /// <summary>ArcGIS service rejected the scan with an access-denied response.</summary>
     public const string ArcGisAccessDenied = "ARCGIS_ACCESS_DENIED";
 
@@ -51,6 +54,15 @@ public static class ImportCompatibilityCodes
 
     /// <summary>ArcGIS coded-value domain exceeded the deterministic capture cap.</summary>
     public const string ArcGisDomainTruncated = "ARCGIS_DOMAIN_TRUNCATED";
+
+    /// <summary>ArcGIS subtype metadata is captured but not automatically migrated by this slice.</summary>
+    public const string ArcGisSubtypesManualReview = "ARCGIS_SUBTYPES_MANUAL_REVIEW";
+
+    /// <summary>ArcGIS relationship metadata is captured but not automatically migrated by this slice.</summary>
+    public const string ArcGisRelationshipsManualReview = "ARCGIS_RELATIONSHIPS_MANUAL_REVIEW";
+
+    /// <summary>ArcGIS time metadata is captured but not automatically migrated by this slice.</summary>
+    public const string ArcGisTimeMetadataManualReview = "ARCGIS_TIME_METADATA_MANUAL_REVIEW";
 
     /// <summary>GeoServer resource or endpoint is supported by the scanner's migration path.</summary>
     public const string GeoServerSupported = "GEOSERVER_SUPPORTED";

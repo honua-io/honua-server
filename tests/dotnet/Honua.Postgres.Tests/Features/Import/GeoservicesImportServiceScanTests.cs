@@ -6,9 +6,9 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Core.Features.Import.Services;
 using Honua.Postgres.Features.Import;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -121,6 +121,90 @@ public sealed class GeoservicesImportServiceScanTests
     }
 
     [Fact]
+    public async Task ScanSourceAsync_WithResolvedToken_AppendsTokenAndReportsTokenPosture()
+    {
+        const string accessToken = "resolved-arcgis-token";
+        var handler = new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            expectedToken: accessToken);
+        var service = CreateService(handler);
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5,
+            Credentials = new GeoservicesCredentialDescriptor
+            {
+                Mode = GeoservicesAuthenticationModes.Token,
+                AccessToken = accessToken,
+                AccessTokenSecretReference = "env:ARCGIS_TOKEN"
+            }
+        });
+
+        handler.RequestCount.Should().Be(3);
+        artifact.AuthPosture.Mode.Should().Be(GeoservicesAuthenticationModes.Token);
+        artifact.AuthPosture.CredentialsSupplied.Should().BeTrue();
+        artifact.AuthPosture.AccessConfirmed.Should().BeTrue();
+
+        var artifactJson = JsonSerializer.Serialize(artifact);
+        artifactJson.Should().NotContain(accessToken);
+        artifactJson.Should().NotContain("env:ARCGIS_TOKEN");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_WithExpiredTokenError_ReportsExpiredTokenPostureWithoutSecretValues()
+    {
+        const string accessToken = "expired-arcgis-token";
+        var service = CreateService(new ArcGisErrorHandler(498, "Invalid token."));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5,
+            Credentials = new GeoservicesCredentialDescriptor
+            {
+                Mode = GeoservicesAuthenticationModes.Token,
+                AccessToken = accessToken,
+                AccessTokenSecretReference = "env:ARCGIS_TOKEN"
+            }
+        });
+
+        artifact.AuthPosture.Mode.Should().Be(GeoservicesAuthenticationModes.ExpiredToken);
+        artifact.AuthPosture.CredentialsSupplied.Should().BeTrue();
+        artifact.AuthPosture.AccessConfirmed.Should().BeFalse();
+        artifact.OverallCompatibility.Code.Should().Be(ImportCompatibilityCodes.ArcGisTokenExpired);
+
+        var artifactJson = JsonSerializer.Serialize(artifact);
+        artifactJson.Should().NotContain(accessToken);
+        artifactJson.Should().NotContain("env:ARCGIS_TOKEN");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_WithForbiddenError_ReportsDeniedPosture()
+    {
+        var service = CreateService(new ArcGisErrorHandler(403, "Forbidden."));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5,
+            Credentials = new GeoservicesCredentialDescriptor
+            {
+                Mode = GeoservicesAuthenticationModes.Basic,
+                Username = "scanner",
+                Password = "resolved-basic-secret",
+                PasswordSecretReference = "env:ARCGIS_PASSWORD"
+            }
+        });
+
+        artifact.AuthPosture.Mode.Should().Be(GeoservicesAuthenticationModes.Denied);
+        artifact.AuthPosture.CredentialsSupplied.Should().BeTrue();
+        artifact.AuthPosture.AccessConfirmed.Should().BeFalse();
+        artifact.OverallCompatibility.Code.Should().Be(ImportCompatibilityCodes.ArcGisAccessDenied);
+    }
+
+    [Fact]
     public async Task ScanSourceAsync_MissingAttachmentMetadata_PreservesUnknownState()
     {
         var service = CreateService(
@@ -191,18 +275,33 @@ public sealed class GeoservicesImportServiceScanTests
     {
         private readonly string _serviceDescription;
         private readonly string? _rendererUrl;
+        private readonly string? _expectedToken;
         private readonly JsonElement _spatialReference;
 
-        public GeoservicesScanHandler(string serviceDescription, string spatialReferenceJson, string? rendererUrl = null)
+        public GeoservicesScanHandler(
+            string serviceDescription,
+            string spatialReferenceJson,
+            string? rendererUrl = null,
+            string? expectedToken = null)
         {
             _serviceDescription = serviceDescription;
             _rendererUrl = rendererUrl;
+            _expectedToken = expectedToken;
             _spatialReference = JsonDocument.Parse(spatialReferenceJson).RootElement.Clone();
         }
 
+        public int RequestCount { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            RequestCount++;
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(_expectedToken))
+            {
+                pathAndQuery.Should().Contain($"token={Uri.EscapeDataString(_expectedToken)}");
+                pathAndQuery = pathAndQuery.Replace($"&token={Uri.EscapeDataString(_expectedToken)}", string.Empty, StringComparison.Ordinal);
+            }
+
             var rendererJson = _rendererUrl == null
                 ? JsonSerializer.Serialize(new { type = "simple" })
                 : JsonSerializer.Serialize(new
@@ -246,6 +345,26 @@ public sealed class GeoservicesImportServiceScanTests
                 "/arcgis/rest/services/Parcels/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json" => """{"count":42}""",
                 _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}")
             };
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class ArcGisErrorHandler(int code, string message) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                error = new
+                {
+                    code,
+                    message
+                }
+            });
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {

@@ -31,6 +31,8 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(GeoservicesFieldInfo))]
 [JsonSerializable(typeof(GeoservicesFieldInfo[]))]
 [JsonSerializable(typeof(EsriExtent))]
+[JsonSerializable(typeof(GeoservicesCredentialRequest))]
+[JsonSerializable(typeof(GeoservicesCredentialDescriptor))]
 [JsonSerializable(typeof(GeoservicesImportRequest))]
 [JsonSerializable(typeof(GeoservicesImportResult))]
 // Add unified progress support

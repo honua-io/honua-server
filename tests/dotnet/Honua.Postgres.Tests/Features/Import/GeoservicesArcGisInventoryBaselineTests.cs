@@ -106,6 +106,11 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
         serviceContainer.Compatibility.Code.Should().Be(
             ImportCompatibilityCodes.ArcGisMixedRenderers,
             "service container with multiple distinct renderer codes is the canonical mixed-renderer surface");
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == heatmap.Id &&
+            record.Category == "renderers" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Unsupported &&
+            record.Code == ImportCompatibilityCodes.ArcGisUnsupportedRenderer);
     }
 
     [Fact]
@@ -127,6 +132,65 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
         artifact.ScanCompleteness.Status.Should().Be("failed");
         artifact.Resources.Should().BeEmpty();
         artifact.Containers.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_FeatureServerHighFidelityMetadata_ClassifiesExplicitMigrationDisposition()
+    {
+        const string serviceUrl = "https://example.com/arcgis/rest/services/Fidelity/FeatureServer";
+        var service = CreateService(new FixtureHttpHandler(BuildHighFidelityFixtureResponses()));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = serviceUrl,
+            TimeoutSeconds = 5
+        });
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        resource.HasAttachments.Should().BeTrue();
+        resource.Fields.Should().Contain(field => field.Name == "STATUS" &&
+            field.DomainType == "codedValue" &&
+            field.DomainValues!.Length == 2);
+
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == resource.Id &&
+            record.Category == "identity" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == resource.Id &&
+            record.Category == "capabilities" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == resource.Id &&
+            record.Category == "fields" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == resource.Id &&
+            record.Category == "domains" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Assisted);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == resource.Id &&
+            record.Category == "subtypes" &&
+            record.Code == ImportCompatibilityCodes.ArcGisSubtypesManualReview &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == resource.Id &&
+            record.Category == "relationships" &&
+            record.Code == ImportCompatibilityCodes.ArcGisRelationshipsManualReview &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == resource.Id &&
+            record.Category == "attachments" &&
+            record.Code == ImportCompatibilityCodes.ArcGisAttachments &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.Category == "renderers" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == resource.Id &&
+            record.Category == "time-metadata" &&
+            record.Code == ImportCompatibilityCodes.ArcGisTimeMetadataManualReview &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
     }
 
     [Fact]
@@ -207,6 +271,44 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             ["/arcgis/rest/services/Truncation/FeatureServer?f=json"] = rootJson,
             ["/arcgis/rest/services/Truncation/FeatureServer/0?f=json"] = layerJson,
             ["/arcgis/rest/services/Truncation/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json"] = countJson
+        };
+    }
+
+    private static Dictionary<string, string> BuildHighFidelityFixtureResponses()
+    {
+        var rootJson = "{" +
+            "\"currentVersion\":11.2," +
+            "\"serviceDescription\":\"Fidelity Test\"," +
+            "\"capabilities\":\"Query,Extract\"," +
+            "\"layers\":[{\"id\":0,\"name\":\"Inspections\"}]" +
+            "}";
+
+        var layerJson = "{" +
+            "\"id\":0,\"name\":\"Inspections\"," +
+            "\"description\":\"Inspection points\"," +
+            "\"geometryType\":\"esriGeometryPoint\"," +
+            "\"capabilities\":\"Query,Extract\"," +
+            "\"hasAttachments\":true," +
+            "\"spatialReference\":{\"wkid\":3857}," +
+            "\"timeInfo\":{\"startTimeField\":\"INSPECTED_AT\",\"timeIntervalUnits\":\"esriTimeUnitsDays\"}," +
+            "\"relationships\":[{\"id\":2,\"name\":\"InspectionPhotos\",\"relatedTableId\":3}]," +
+            "\"types\":[{\"id\":1,\"name\":\"Routine\"}]," +
+            "\"drawingInfo\":{\"renderer\":{\"type\":\"simple\"}}," +
+            "\"fields\":[" +
+                "{\"name\":\"OBJECTID\",\"type\":\"esriFieldTypeOID\"}," +
+                "{\"name\":\"STATUS\",\"type\":\"esriFieldTypeString\",\"nullable\":false," +
+                    "\"domain\":{\"type\":\"codedValue\",\"name\":\"InspectionStatus\",\"codedValues\":[" +
+                        "{\"code\":\"open\",\"name\":\"Open\"}," +
+                        "{\"code\":\"closed\",\"name\":\"Closed\"}" +
+                    "]}}," +
+                "{\"name\":\"INSPECTED_AT\",\"type\":\"esriFieldTypeDate\",\"nullable\":true}" +
+            "]}";
+
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["/arcgis/rest/services/Fidelity/FeatureServer?f=json"] = rootJson,
+            ["/arcgis/rest/services/Fidelity/FeatureServer/0?f=json"] = layerJson,
+            ["/arcgis/rest/services/Fidelity/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json"] = "{\"count\":3}"
         };
     }
 

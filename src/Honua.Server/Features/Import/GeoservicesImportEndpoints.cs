@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -89,11 +90,25 @@ internal static partial class GeoservicesImportEndpoints
         try
         {
             var importService = context.RequestServices.GetRequiredService<IGeoservicesImportService>();
-            var discoveryRequest = new GeoservicesDiscoveryRequest
+            var credentials = request.Credentials?.ToDescriptor();
+            var credentialValidationError = GeoservicesCredentialResolution.ValidateDiscoveryCredentialRequest(
+                credentials,
+                context.RequestServices);
+            if (credentialValidationError != null)
             {
-                ServiceUrl = request.ServiceUrl,
-                TimeoutSeconds = request.TimeoutSeconds ?? 30
-            };
+                await AdminResponseWriter.WriteErrorAsync(context, credentialValidationError, StatusCodes.Status400BadRequest);
+                return;
+            }
+
+            var discoveryRequest = await GeoservicesCredentialResolution.ResolveSecretReferencesAsync(
+                new GeoservicesDiscoveryRequest
+                {
+                    ServiceUrl = request.ServiceUrl,
+                    TimeoutSeconds = request.TimeoutSeconds ?? 30,
+                    Credentials = credentials
+                },
+                context.RequestServices,
+                cancellationToken).ConfigureAwait(false);
 
             var serviceInfo = await importService.DiscoverServiceAsync(discoveryRequest, cancellationToken);
 
@@ -124,6 +139,20 @@ internal static partial class GeoservicesImportEndpoints
             await AdminResponseWriter.WriteErrorAsync(context,
                 "Failed to connect to ArcGIS service.",
                 StatusCodes.Status502BadGateway);
+        }
+        catch (SecretNotFoundException ex)
+        {
+            Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
+            await AdminResponseWriter.WriteErrorAsync(context,
+                "Failed to resolve GeoServices credential secret reference.",
+                StatusCodes.Status400BadRequest);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("secret reference", StringComparison.OrdinalIgnoreCase))
+        {
+            Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
+            await AdminResponseWriter.WriteErrorAsync(context,
+                "Failed to resolve GeoServices credential secret reference.",
+                StatusCodes.Status400BadRequest);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -207,6 +236,16 @@ internal static partial class GeoservicesImportEndpoints
             return;
         }
 
+        var credentials = request.Credentials?.ToDescriptor();
+        var queuedCredentialValidationError = GeoservicesCredentialResolution.ValidateQueuedCredentialRequest(
+            credentials,
+            context.RequestServices);
+        if (queuedCredentialValidationError != null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, queuedCredentialValidationError, StatusCodes.Status400BadRequest);
+            return;
+        }
+
         string? jobId = null;
         IDistributedImportJobManager? jobManager = null;
         var jobQueued = false;
@@ -242,7 +281,8 @@ internal static partial class GeoservicesImportEndpoints
                 RequestTimeoutSeconds = request.RequestTimeoutSeconds ?? 120,
                 MaxRetries = request.MaxRetries ?? 3,
                 AutoPublish = request.AutoPublish ?? true,
-                ServiceName = request.ServiceName
+                ServiceName = request.ServiceName,
+                Credentials = credentials
             };
 
             var progress = GeoservicesImportProgress.CreateInitial(
@@ -476,6 +516,11 @@ internal sealed record GeoservicesDiscoverRequest
     /// Timeout in seconds for the discovery request.
     /// </summary>
     public int? TimeoutSeconds { get; init; }
+
+    /// <summary>
+    /// Optional ArcGIS credential descriptor for discovery.
+    /// </summary>
+    public GeoservicesCredentialRequest? Credentials { get; init; }
 }
 
 /// <summary>
@@ -619,6 +664,73 @@ internal sealed record GeoservicesStartImportRequest
     /// Optional target Honua service name for auto-publishing.
     /// </summary>
     public string? ServiceName { get; init; }
+
+    /// <summary>
+    /// Optional ArcGIS credential descriptor. Queued imports must use secret references.
+    /// </summary>
+    public GeoservicesCredentialRequest? Credentials { get; init; }
+}
+
+/// <summary>
+/// Inbound ArcGIS credential descriptor for API requests.
+/// </summary>
+internal sealed record GeoservicesCredentialRequest
+{
+    /// <summary>
+    /// Authentication mode label.
+    /// </summary>
+    public string? Mode { get; init; }
+
+    /// <summary>
+    /// Secret reference for an ArcGIS token or OAuth access token.
+    /// </summary>
+    public string? AccessTokenSecretReference { get; init; }
+
+    /// <summary>
+    /// Inline ArcGIS token or OAuth access token for immediate discovery-only use.
+    /// </summary>
+    public string? AccessToken { get; init; }
+
+    /// <summary>
+    /// Username for HTTP Basic authentication.
+    /// </summary>
+    public string? Username { get; init; }
+
+    /// <summary>
+    /// Secret reference for the HTTP Basic password.
+    /// </summary>
+    public string? PasswordSecretReference { get; init; }
+
+    /// <summary>
+    /// Inline HTTP Basic password for immediate discovery-only use.
+    /// </summary>
+    public string? Password { get; init; }
+
+    /// <summary>
+    /// Optional OAuth client identifier associated with the token reference.
+    /// </summary>
+    public string? OAuthClientId { get; init; }
+
+    /// <summary>
+    /// Optional OAuth token endpoint used to identify the token issuer.
+    /// </summary>
+    public string? OAuthTokenEndpoint { get; init; }
+
+    /// <summary>
+    /// Converts this inbound API model to the secret-redacting domain descriptor.
+    /// </summary>
+    public GeoservicesCredentialDescriptor ToDescriptor()
+        => new()
+        {
+            Mode = Mode,
+            AccessTokenSecretReference = AccessTokenSecretReference,
+            AccessToken = AccessToken,
+            Username = Username,
+            PasswordSecretReference = PasswordSecretReference,
+            Password = Password,
+            OAuthClientId = OAuthClientId,
+            OAuthTokenEndpoint = OAuthTokenEndpoint
+        };
 }
 
 /// <summary>

@@ -106,6 +106,38 @@ public sealed class MigrationParityEvidenceGeneratorTests
     }
 
     [Fact]
+    public void Generate_WithFidelityClassifications_ReportsAutomationDisposition()
+    {
+        var inventory = CreateInventory(
+            resources:
+            [
+                CreateResource("workspace:roads", "Roads", "compatible", "Schema can be mapped.")
+            ],
+            fidelityClassifications:
+            [
+                CreateFidelity("workspace:roads:identity", "workspace:roads", "identity", MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible),
+                CreateFidelity("workspace:roads:domains", "workspace:roads", "domains", MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview),
+                CreateFidelity("workspace:roads:relationships", "workspace:roads", "relationships", MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisRelationshipsManualReview),
+                CreateFidelity("renderer:roads:heatmap", "renderer:roads", "renderers", MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ArcGisUnsupportedRenderer)
+            ]);
+
+        var evidence = MigrationParityEvidenceGenerator.Generate(inventory, MigrationManifestTranslator.Translate(inventory));
+
+        var fidelity = evidence.Sections.Should().ContainSingle(section => section.Id == "fidelity").Subject;
+        fidelity.State.Should().Be(MigrationEvidenceStates.Fail);
+        fidelity.Items.Should().Contain(item =>
+            item.Id == "fidelity:classification:workspace:roads:identity" &&
+            item.State == MigrationEvidenceStates.Pass);
+        fidelity.Items.Should().Contain(item =>
+            item.Id == "fidelity:classification:workspace:roads:domains" &&
+            item.State == MigrationEvidenceStates.Unknown);
+        fidelity.Items.Should().Contain(item =>
+            item.Id == "fidelity:classification:renderer:roads:heatmap" &&
+            item.State == MigrationEvidenceStates.Fail);
+        evidence.OverallState.Should().Be(MigrationEvidenceStates.Fail);
+    }
+
+    [Fact]
     public void Generate_WithoutManifest_DoesNotInferDataSuccess()
     {
         var inventory = CreateInventory(
@@ -249,7 +281,8 @@ public sealed class MigrationParityEvidenceGeneratorTests
 
     private static MigrationSourceInventoryArtifact CreateInventory(
         MigrationInventoryResource[] resources,
-        MigrationInventoryStyle[]? styles = null)
+        MigrationInventoryStyle[]? styles = null,
+        MigrationFidelityClassificationRecord[]? fidelityClassifications = null)
     {
         var containers = new[]
         {
@@ -299,7 +332,8 @@ public sealed class MigrationParityEvidenceGeneratorTests
             OverallCompatibility = Compatible("Fixture compatibility is computed per item."),
             Containers = containers,
             Resources = resources,
-            Styles = styleItems
+            Styles = styleItems,
+            FidelityClassifications = fidelityClassifications ?? []
         };
     }
 
@@ -339,6 +373,26 @@ public sealed class MigrationParityEvidenceGeneratorTests
             Format = "sld",
             ResourceIds = ["workspace:roads"],
             Compatibility = Assessment(level, reason)
+        };
+
+    private static MigrationFidelityClassificationRecord CreateFidelity(
+        string id,
+        string sourceId,
+        string category,
+        string automationStatus,
+        string code)
+        => new()
+        {
+            Id = $"classification:{id}",
+            SourceId = sourceId,
+            Kind = category,
+            Category = category,
+            AutomationStatus = automationStatus,
+            Code = code,
+            Reason = $"{category} disposition captured.",
+            ManualSteps = automationStatus == MigrationFidelityAutomationStatuses.Automated
+                ? []
+                : [$"Review {category} migration."]
         };
 
     private static MigrationCompatibilityAssessment Compatible(string reason)

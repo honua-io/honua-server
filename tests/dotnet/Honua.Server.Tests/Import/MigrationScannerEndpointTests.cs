@@ -161,6 +161,40 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/scan")]
+    public async Task Scan_GeoservicesSourceWithPlaintextToken_UsesCredentialsAndRedactsResponse()
+    {
+        const string accessToken = "plaintext-scan-token";
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", new
+        {
+            SourceKind = "geoservices",
+            SourceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 10,
+            Credentials = new
+            {
+                Mode = GeoservicesAuthenticationModes.Token,
+                AccessToken = accessToken
+            }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain(accessToken);
+
+        using var payload = JsonDocument.Parse(body);
+        payload.RootElement.GetProperty("authPosture").GetProperty("mode").GetString()
+            .Should().Be(GeoservicesAuthenticationModes.Token);
+        payload.RootElement.GetProperty("authPosture").GetProperty("credentialsSupplied").GetBoolean()
+            .Should().BeTrue();
+
+        _geoservicesService.ScanRequests.Should().ContainSingle();
+        _geoservicesService.ScanRequests.Single().Credentials.Should().NotBeNull();
+        _geoservicesService.ScanRequests.Single().Credentials!.AccessToken.Should().Be(accessToken);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/scan")]
     public async Task Scan_WithInvalidGeoservicesUrl_ReturnsBadRequest()
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", new
@@ -412,6 +446,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
     private sealed class FakeGeoservicesScanService : IGeoservicesImportService
     {
         public int ScanRequestCount { get; private set; }
+        public List<GeoservicesDiscoveryRequest> ScanRequests { get; } = [];
 
         public Task<GeoservicesServiceInfo> DiscoverServiceAsync(
             GeoservicesDiscoveryRequest request,
@@ -427,6 +462,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
         {
             ScanRequestCount++;
+            ScanRequests.Add(request);
             return Task.FromResult(new MigrationSourceInventoryArtifact
             {
                 SourceKind = "arcgis-geoservices-rest",
@@ -440,8 +476,8 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
                 },
                 AuthPosture = new MigrationInventoryAuthPosture
                 {
-                    Mode = "anonymous",
-                    CredentialsSupplied = false,
+                    Mode = request.Credentials?.GetNormalizedMode() ?? GeoservicesAuthenticationModes.Anonymous,
+                    CredentialsSupplied = request.Credentials?.HasCredentialMaterial == true,
                     AccessConfirmed = true
                 },
                 ScanCompleteness = new MigrationInventoryCompleteness

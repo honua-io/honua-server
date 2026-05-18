@@ -40,6 +40,7 @@ public sealed class MigrationManifestTranslatorTests
         manifest.TargetResources.Should().ContainSingle(resource => resource.SourceResourceId == "workspace:roads")
             .Which.Should().Match<MigrationManifestTargetResource>(resource =>
                 resource.Action == "publish" &&
+                resource.TargetResourceId == "target:resource:pilot-migration:roads-layer" &&
                 resource.TargetServiceName == "pilot-migration" &&
                 resource.TargetResourceName == "roads-layer");
         manifest.TargetResources.Should().NotContain(resource => resource.SourceResourceId == "workspace:coverage");
@@ -60,6 +61,12 @@ public sealed class MigrationManifestTranslatorTests
             ManualReviewCount = 1,
             UnsupportedCount = 1
         });
+        manifest.IdentityRemaps.Should().Contain(remap => remap.SourceId == "workspace:roads" &&
+            remap.TargetId == "target:resource:pilot-migration:roads-layer" &&
+            remap.Action == "publish");
+        manifest.IdentityRemaps.Should().Contain(remap => remap.SourceId == "workspace:roads-style" &&
+            remap.TargetId == "target:style:pilot-migration:workspace-roads-style" &&
+            remap.Action == "manual-review");
     }
 
     [Fact]
@@ -82,8 +89,14 @@ public sealed class MigrationManifestTranslatorTests
             .Which.Should().Match<MigrationManifestTargetResource>(resource =>
                 resource.SourceResourceId == "service:parcels" &&
                 resource.Action == "manual-review" &&
+                resource.TargetResourceId == "target:resource:migration-source:parcels" &&
                 resource.TargetServiceName == "migration-source" &&
                 resource.TargetResourceName == "parcels");
+        manifest.IdentityRemaps.Should().ContainSingle()
+            .Which.Should().Match<MigrationManifestIdentityRemap>(remap =>
+                remap.SourceId == "service:parcels" &&
+                remap.TargetId == "target:resource:migration-source:parcels" &&
+                remap.Action == "manual-review");
         manifest.ManualReviewItems.Should().ContainSingle()
             .Which.Should().Match<MigrationManifestReviewItem>(item =>
                 item.SourceId == "service:parcels" &&
