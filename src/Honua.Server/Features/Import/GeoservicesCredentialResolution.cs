@@ -28,7 +28,18 @@ internal static class GeoservicesCredentialResolution
     {
         ArgumentNullException.ThrowIfNull(serviceProvider);
 
-        if (credentials == null || !credentials.HasCredentialMaterial)
+        if (credentials == null)
+        {
+            return null;
+        }
+
+        var mode = credentials.GetNormalizedMode();
+        if (!IsKnownExplicitMode(credentials.Mode, mode))
+        {
+            return "GeoServices credential mode must be token, oauth, or basic.";
+        }
+
+        if (!credentials.HasCredentialMaterial && mode == GeoservicesAuthenticationModes.Anonymous)
         {
             return null;
         }
@@ -41,7 +52,6 @@ internal static class GeoservicesCredentialResolution
             }
         }
 
-        var mode = credentials.GetNormalizedMode();
         switch (mode)
         {
             case GeoservicesAuthenticationModes.Token:
@@ -99,6 +109,17 @@ internal static class GeoservicesCredentialResolution
         }
 
         return null;
+    }
+
+    private static bool IsKnownExplicitMode(string? requestedMode, string normalizedMode)
+    {
+        if (string.IsNullOrWhiteSpace(requestedMode))
+        {
+            return true;
+        }
+
+        return normalizedMode != GeoservicesAuthenticationModes.Anonymous ||
+               string.Equals(requestedMode.Trim(), GeoservicesAuthenticationModes.Anonymous, StringComparison.OrdinalIgnoreCase);
     }
 
     public static async Task<GeoservicesDiscoveryRequest> ResolveSecretReferencesAsync(
