@@ -342,6 +342,29 @@ The artifact includes:
 - CRS, datum, and unit details needed for migration planning
 - per-resource and overall compatibility assessments, warnings, and manual follow-up steps
 
+### **GeoServer Import Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/import/geoserver/discover` | POST | Discover GeoServer REST configuration and migration compatibility |
+| `/api/v1/admin/import/geoserver/start` | POST | Queue a GeoServer dry-run validation or deterministic apply-plan job |
+| `/api/v1/admin/import/geoserver/jobs` | GET | List active GeoServer import jobs |
+| `/api/v1/admin/import/geoserver/jobs/{jobId}` | GET | Get GeoServer import job status |
+| `/api/v1/admin/import/geoserver/jobs/{jobId}/cancel` | POST | Cancel a GeoServer import job |
+
+`POST /api/v1/admin/import/geoserver/start` accepts `dryRun=true` for validation
+and `dryRun=false` for the first non-dry-run planning slice. Non-dry-run jobs
+emit a `honua.migration.apply-plan` artifact in the completed progress/result
+payload. The artifact contains a stable `replayToken`/`planFingerprint`, ordered
+`steps`, `manualReviewItems`, and `unsupportedItems`. It records replayable
+intent only; it does not yet mutate the Honua catalog, copy source data, or
+persist migrated styles.
+
+Queued GeoServer jobs persist request state before a worker runs, so secret
+values must use secret references such as
+`"passwordSecretReference": "env:GEOSERVER_PASSWORD"`. Plaintext passwords and
+Honua API keys are rejected for queued jobs.
+
 ### **GeoServices Import Endpoints**
 
 | Endpoint | Method | Purpose |

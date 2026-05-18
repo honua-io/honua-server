@@ -8,8 +8,9 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Import;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -107,16 +108,23 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/geoserver/start")]
-    public async Task Start_WithoutDryRun_ReturnsBadRequest()
+    public async Task Start_WithoutDryRun_QueuesApplyPlanJob()
     {
-        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
+        var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
         {
             GeoServerRestUrl = "https://example.com/geoserver/rest",
             DryRun = false
         });
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("Only dry-run imports are currently supported");
+        startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var jobId = await GetJobIdAsync(startResponse);
+
+        using var completed = await WaitForJobStatusAsync(jobId, "Completed", TimeSpan.FromSeconds(20));
+        completed.RootElement.GetProperty("progress").GetProperty("currentPhase").GetString().Should().Be("Apply plan generated");
+        completed.RootElement.GetProperty("progress").GetProperty("applyPlan").GetProperty("replayToken").GetString()
+            .Should().MatchRegex("^sha256:[0-9a-f]{64}$");
+        _importService.ImportRequests.Should().ContainSingle()
+            .Which.DryRun.Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -169,7 +177,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
                 GeoServerRestUrl = "https://example.com/geoserver/rest",
                 Username = "admin",
                 PasswordSecretReference = $"env:{envKey}",
-                DryRun = true
+                DryRun = false
             });
 
             startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
@@ -183,6 +191,10 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             using var completed = await WaitForJobStatusAsync(isolatedFixture.Client, jobId, "Completed", TimeSpan.FromSeconds(20));
             completed.RootElement.GetProperty("jobId").GetString().Should().Be(jobId);
             completed.RootElement.GetProperty("status").GetString().Should().Be("Completed");
+            var completedPayload = completed.RootElement.GetRawText();
+            completedPayload.Should().Contain("\"applyPlan\"");
+            completedPayload.Should().NotContain(envValue);
+            completedPayload.Should().NotContain("passwordSecretReference");
 
             isolatedImportService.ImportRequests.Should().ContainSingle();
             isolatedImportService.ImportRequests.Single().Password.Should().Be(envValue);
@@ -491,12 +503,20 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
         {
             ImportRequests.Enqueue(request);
+            var applyPlan = request.DryRun
+                ? null
+                : MigrationApplyPlanBuilder.Build(MigrationManifestTranslator.Translate(
+                    await ScanSourceAsync(new GeoServerDiscoveryRequest
+                    {
+                        GeoServerRestUrl = request.GeoServerRestUrl
+                    }, cancellationToken)));
+            var resourceCount = applyPlan?.Summary.TotalStepCount ?? 3;
 
             var current = GeoServerImportProgress.CreateInitial(
                 request.JobId ?? Guid.NewGuid().ToString("N"),
                 request.GeoServerRestUrl,
                 request.TargetHonuaUrl,
-                estimatedTotalResources: 3,
+                estimatedTotalResources: resourceCount,
                 sourceGeoServerVersion: "2.28.0");
             progress?.Report(current);
 
@@ -513,23 +533,26 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             current = current with
             {
                 Status = GeoServerImportStatus.Completed,
-                ResourcesProcessed = 3,
+                ResourcesProcessed = resourceCount,
                 CompletedAt = DateTimeOffset.UtcNow,
-                CurrentPhase = request.DryRun ? "Dry run completed" : "Import completed successfully"
+                CurrentPhase = request.DryRun ? "Dry run completed" : "Apply plan generated",
+                ApplyPlan = applyPlan
             };
             progress?.Report(current);
 
             return GeoServerImportResult.CreateSuccess(
                     request.GeoServerRestUrl,
                     request.TargetHonuaUrl,
-                    workspacesImported: 1,
-                    dataStoresImported: 1,
-                    layersImported: 1,
+                    workspacesImported: request.DryRun ? 1 : 0,
+                    dataStoresImported: request.DryRun ? 1 : 0,
+                    layersImported: request.DryRun ? 1 : 0,
                     sourceGeoServerVersion: "2.28.0",
                     wasDryRun: request.DryRun)
                 with
             {
-                FailedResources = 0
+                FailedResources = 0,
+                ResourcesPlanned = applyPlan?.Summary.TotalStepCount ?? 0,
+                ApplyPlan = applyPlan
             };
         }
     }

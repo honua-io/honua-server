@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Features.Import.Abstractions;
@@ -91,6 +92,13 @@ public sealed record GeoServerImportProgress : IOperationProgress, ICancellableO
     /// Detailed breakdown of processed resources by type.
     /// </summary>
     public GeoServerImportResourceBreakdown? ResourceBreakdown { get; init; }
+
+    /// <summary>
+    /// Deterministic apply plan generated for non-dry-run imports. This first
+    /// apply slice records replayable intent and does not copy data or mutate
+    /// the target catalog.
+    /// </summary>
+    public MigrationApplyPlanArtifact? ApplyPlan { get; init; }
 
     // IOperationProgress implementation
     string IOperationProgress.OperationId => JobId;

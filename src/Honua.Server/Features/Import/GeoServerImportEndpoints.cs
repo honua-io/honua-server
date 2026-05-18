@@ -179,13 +179,6 @@ internal static partial class GeoServerImportEndpoints
             return;
         }
 
-        // For now, only dry-run is supported until we have full Honua API integration
-        if (request.DryRun != true)
-        {
-            await AdminResponseWriter.WriteErrorAsync(context, "Only dry-run imports are currently supported. Set 'dryRun' to true.", StatusCodes.Status400BadRequest);
-            return;
-        }
-
         var queuedCredentialValidationError = ValidateQueuedCredentialRequest(context, request);
         if (queuedCredentialValidationError != null)
         {

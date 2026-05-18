@@ -68,71 +68,13 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         try
         {
             var serviceInfo = await DiscoverServiceAsync(request, cancellationToken).ConfigureAwait(false);
-
-            var styleResourceIds = BuildStyleResourceMap(serviceInfo);
-            var dependencies = BuildExternalDependencies(serviceInfo, request.IncludeStyleContent);
-            var resources = await BuildResourcesAsync(serviceInfo, styleResourceIds, dependencies, cancellationToken).ConfigureAwait(false);
-            var styles = BuildStyles(serviceInfo, styleResourceIds, dependencies);
-            var containers = BuildContainers(serviceInfo, resources, dependencies, styles);
-
-            var summary = MigrationInventoryHelpers.BuildSummary(containers, resources, styles, dependencies);
-            var overallCompatibility = MigrationInventoryHelpers.Aggregate(
-                containers.Select(c => c.Compatibility)
-                    .Concat(resources.Select(r => r.Compatibility))
-                    .Concat(styles.Select(s => s.Compatibility))
-                    .Concat(dependencies.Select(d => d.Compatibility)),
-                "No inventory items were discovered.");
-
-            var completenessWarnings = new List<string>();
-            var missingArtifacts = new List<string>();
-
-            if (string.IsNullOrWhiteSpace(serviceInfo.Version))
-            {
-                completenessWarnings.Add("GeoServer version metadata was unavailable.");
-                missingArtifacts.Add("source-version");
-            }
-
-            if (serviceInfo.GlobalSettings == null)
-            {
-                completenessWarnings.Add("GeoServer global settings were unavailable.");
-                missingArtifacts.Add("global-settings");
-            }
-
-            if (request.IncludeStyleContent &&
-                serviceInfo.Styles.Any(style =>
-                    style.Format.Equals("sld", StringComparison.OrdinalIgnoreCase) &&
-                    string.IsNullOrWhiteSpace(style.SldContent)))
-            {
-                completenessWarnings.Add("One or more SLD style documents could not be fetched.");
-                missingArtifacts.Add("style-content");
-            }
-
-            var completeness = MigrationInventoryHelpers.BuildCompleteness(
-                completenessWarnings.Count == 0 ? "complete" : "partial",
-                completenessWarnings,
-                missingArtifacts);
-
-            return new MigrationSourceInventoryArtifact
-            {
-                SourceKind = "geoserver-rest",
-                Source = new MigrationSourceIdentity
-                {
-                    DisplayName = serviceInfo.GlobalSettings?.Title ?? "GeoServer",
-                    BaseUrl = serviceInfo.GeoServerRestUrl,
-                    Product = "GeoServer",
-                    Version = serviceInfo.Version,
-                    Build = serviceInfo.GitRevision ?? serviceInfo.BuildTimestamp,
-                    ServiceType = "REST"
-                },
-                AuthPosture = BuildAuthPosture(request.Username, request.Password, accessConfirmed: true, anonymousMode: "anonymous"),
-                ScanCompleteness = completeness,
-                Summary = summary,
-                OverallCompatibility = overallCompatibility,
-                Containers = containers,
-                Resources = resources,
-                Styles = styles,
-                ExternalDependencies = dependencies
-            };
+            return await BuildInventoryArtifactAsync(
+                    serviceInfo,
+                    request.Username,
+                    request.Password,
+                    request.IncludeStyleContent,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (InvalidOperationException ex)
         {
@@ -178,6 +120,79 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         CancellationToken cancellationToken = default)
     {
         return ImportConfigurationAsync(request, null, cancellationToken);
+    }
+
+    private async Task<MigrationSourceInventoryArtifact> BuildInventoryArtifactAsync(
+        GeoServerServiceInfo serviceInfo,
+        string? username,
+        string? password,
+        bool includeStyleContent,
+        CancellationToken cancellationToken)
+    {
+        var styleResourceIds = BuildStyleResourceMap(serviceInfo);
+        var dependencies = BuildExternalDependencies(serviceInfo, includeStyleContent);
+        var resources = await BuildResourcesAsync(serviceInfo, styleResourceIds, dependencies, cancellationToken).ConfigureAwait(false);
+        var styles = BuildStyles(serviceInfo, styleResourceIds, dependencies);
+        var containers = BuildContainers(serviceInfo, resources, dependencies, styles);
+
+        var summary = MigrationInventoryHelpers.BuildSummary(containers, resources, styles, dependencies);
+        var overallCompatibility = MigrationInventoryHelpers.Aggregate(
+            containers.Select(c => c.Compatibility)
+                .Concat(resources.Select(r => r.Compatibility))
+                .Concat(styles.Select(s => s.Compatibility))
+                .Concat(dependencies.Select(d => d.Compatibility)),
+            "No inventory items were discovered.");
+
+        var completenessWarnings = new List<string>();
+        var missingArtifacts = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(serviceInfo.Version))
+        {
+            completenessWarnings.Add("GeoServer version metadata was unavailable.");
+            missingArtifacts.Add("source-version");
+        }
+
+        if (serviceInfo.GlobalSettings == null)
+        {
+            completenessWarnings.Add("GeoServer global settings were unavailable.");
+            missingArtifacts.Add("global-settings");
+        }
+
+        if (includeStyleContent &&
+            serviceInfo.Styles.Any(style =>
+                style.Format.Equals("sld", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(style.SldContent)))
+        {
+            completenessWarnings.Add("One or more SLD style documents could not be fetched.");
+            missingArtifacts.Add("style-content");
+        }
+
+        var completeness = MigrationInventoryHelpers.BuildCompleteness(
+            completenessWarnings.Count == 0 ? "complete" : "partial",
+            completenessWarnings,
+            missingArtifacts);
+
+        return new MigrationSourceInventoryArtifact
+        {
+            SourceKind = "geoserver-rest",
+            Source = new MigrationSourceIdentity
+            {
+                DisplayName = serviceInfo.GlobalSettings?.Title ?? "GeoServer",
+                BaseUrl = serviceInfo.GeoServerRestUrl,
+                Product = "GeoServer",
+                Version = serviceInfo.Version,
+                Build = serviceInfo.GitRevision ?? serviceInfo.BuildTimestamp,
+                ServiceType = "REST"
+            },
+            AuthPosture = BuildAuthPosture(username, password, accessConfirmed: true, anonymousMode: "anonymous"),
+            ScanCompleteness = completeness,
+            Summary = summary,
+            OverallCompatibility = overallCompatibility,
+            Containers = containers,
+            Resources = resources,
+            Styles = styles,
+            ExternalDependencies = dependencies
+        };
     }
 
     private async Task<MigrationInventoryResource[]> BuildResourcesAsync(
@@ -832,61 +847,31 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 return CreateDryRunResult(serviceInfo, filteredResources, request, stopwatch.Elapsed);
             }
 
-            var aggregateResult = new ImportStepResult();
-
-            // Step 2: Import workspaces
-            var stepResult = await ImportWorkspacesAsync(filteredResources.Workspaces, request, currentProgress, progress, cancellationToken);
-            currentProgress = UpdateProgressWithWorkspaces(currentProgress, stepResult);
-            AggregateStepResult(aggregateResult, stepResult);
-
-            // Step 3: Import datastores
-            stepResult = await ImportDataStoresAsync(filteredResources.DataStores, request, currentProgress, progress, cancellationToken);
-            currentProgress = UpdateProgressWithDataStores(currentProgress, stepResult);
-            AggregateStepResult(aggregateResult, stepResult);
-
-            // Step 4: Import layers
-            stepResult = await ImportLayersAsync(filteredResources.Layers, request, currentProgress, progress, cancellationToken);
-            currentProgress = UpdateProgressWithLayers(currentProgress, stepResult);
-            AggregateStepResult(aggregateResult, stepResult);
-
-            // Step 5: Import styles (if requested and supported)
-            if (request.ImportStyles)
-            {
-                stepResult = await ImportStylesAsync(filteredResources.Styles, request, currentProgress, progress, cancellationToken);
-                currentProgress = UpdateProgressWithStyles(currentProgress, stepResult);
-                AggregateStepResult(aggregateResult, stepResult);
-            }
-
-            // Step 6: Validation
             currentProgress = currentProgress with
             {
                 Status = GeoServerImportStatus.Validating,
-                CurrentPhase = "Validating imported configuration"
+                CurrentPhase = "Generating deterministic apply plan"
             };
             progress?.Report(currentProgress);
 
-            await ValidateImportedResourcesAsync(request, cancellationToken);
+            var applyPlan = await CreateApplyPlanAsync(serviceInfo, filteredResources, request, cancellationToken)
+                .ConfigureAwait(false);
+            var applyPlanWarnings = BuildApplyPlanWarnings(applyPlan);
 
-            // Complete
             currentProgress = currentProgress with
             {
                 Status = GeoServerImportStatus.Completed,
+                ResourcesProcessed = applyPlan.Summary.TotalStepCount,
                 CompletedAt = DateTimeOffset.UtcNow,
-                CurrentPhase = "Import completed successfully"
+                CurrentPhase = "Apply plan generated",
+                Warnings = applyPlanWarnings,
+                ApplyPlan = applyPlan
             };
             progress?.Report(currentProgress);
 
-            var finalResult = CreateSuccessResult(serviceInfo, aggregateResult, request, stopwatch.Elapsed);
+            Log.ApplyPlanGenerated(_logger, applyPlan.Summary.TotalStepCount, applyPlan.Summary.ManualReviewStepCount, applyPlan.Summary.UnsupportedItemCount);
 
-            Log.ImportCompleted(
-                _logger,
-                stopwatch.Elapsed,
-                finalResult.WorkspacesImported,
-                finalResult.DataStoresImported,
-                finalResult.LayersImported,
-                finalResult.StylesImported);
-
-            return finalResult;
+            return CreateApplyPlanResult(serviceInfo, applyPlan, request, stopwatch.Elapsed, applyPlanWarnings);
         }
         catch (OperationCanceledException)
         {
@@ -1147,6 +1132,96 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             importedResources,
             wasDryRun: true);
     }
+
+    private async Task<MigrationApplyPlanArtifact> CreateApplyPlanAsync(
+        GeoServerServiceInfo serviceInfo,
+        FilteredResources filteredResources,
+        GeoServerImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        var filteredServiceInfo = CreateFilteredServiceInfoForPlan(serviceInfo, filteredResources, request);
+        var inventory = await BuildInventoryArtifactAsync(
+                filteredServiceInfo,
+                request.Username,
+                request.Password,
+                request.ImportStyles,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var manifest = MigrationManifestTranslator.Translate(
+            inventory,
+            new MigrationManifestTranslationOptions
+            {
+                TargetServiceName = serviceInfo.GlobalSettings?.Title ?? "geoserver-import"
+            });
+
+        return MigrationApplyPlanBuilder.Build(manifest);
+    }
+
+    private static GeoServerServiceInfo CreateFilteredServiceInfoForPlan(
+        GeoServerServiceInfo serviceInfo,
+        FilteredResources filteredResources,
+        GeoServerImportRequest request)
+    {
+        var coverageStores = serviceInfo.CoverageStores
+            .Where(store => filteredResources.Layers.Any(layer =>
+                string.Equals(layer.WorkspaceName, store.WorkspaceName, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(layer.CoverageStoreName, store.Name, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        var layerGroups = request.LayerNames == null
+            ? serviceInfo.LayerGroups
+                .Where(group => request.WorkspaceNames == null ||
+                    request.WorkspaceNames.Contains(group.WorkspaceName, StringComparer.OrdinalIgnoreCase))
+                .ToArray()
+            : Array.Empty<GeoServerLayerGroupInfo>();
+
+        return serviceInfo with
+        {
+            Workspaces = filteredResources.Workspaces,
+            DataStores = filteredResources.DataStores,
+            CoverageStores = coverageStores,
+            Layers = filteredResources.Layers,
+            LayerGroups = layerGroups,
+            Styles = filteredResources.Styles
+        };
+    }
+
+    private static List<string> BuildApplyPlanWarnings(MigrationApplyPlanArtifact applyPlan)
+    {
+        var warnings = new List<string>
+        {
+            "Non-dry-run GeoServer import generated a deterministic apply plan only; catalog mutation and data copy were not executed by this slice."
+        };
+
+        if (applyPlan.Summary.ManualReviewStepCount > 0)
+        {
+            warnings.Add($"{applyPlan.Summary.ManualReviewStepCount} apply-plan steps require manual review before catalog apply.");
+        }
+
+        if (applyPlan.Summary.UnsupportedItemCount > 0)
+        {
+            warnings.Add($"{applyPlan.Summary.UnsupportedItemCount} source items are unsupported by the current GeoServer apply path.");
+        }
+
+        return warnings;
+    }
+
+    private static GeoServerImportResult CreateApplyPlanResult(
+        GeoServerServiceInfo serviceInfo,
+        MigrationApplyPlanArtifact applyPlan,
+        GeoServerImportRequest request,
+        TimeSpan duration,
+        List<string> warnings)
+        => GeoServerImportResult.CreateSuccess(
+                request.GeoServerRestUrl,
+                request.TargetHonuaUrl,
+                sourceGeoServerVersion: serviceInfo.Version,
+                duration: duration,
+                warnings: warnings)
+            with
+        {
+            ResourcesPlanned = applyPlan.Summary.TotalStepCount,
+            ApplyPlan = applyPlan
+        };
 
     private async Task<ImportStepResult> ImportWorkspacesAsync(GeoServerWorkspaceInfo[] workspaces, GeoServerImportRequest request, GeoServerImportProgress currentProgress, IProgress<GeoServerImportProgress>? progress, CancellationToken cancellationToken)
     {
@@ -1772,6 +1847,13 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
         [LoggerMessage(79945, LogLevel.Warning, "GeoServer inventory scan failed for {GeoServerUrl}")]
         public static partial void InventoryScanFailed(ILogger logger, string geoServerUrl, Exception exception);
+
+        [LoggerMessage(79946, LogLevel.Information, "GeoServer apply plan generated with {StepCount} steps, {ManualReviewStepCount} manual-review steps, and {UnsupportedItemCount} unsupported items")]
+        public static partial void ApplyPlanGenerated(
+            ILogger logger,
+            int stepCount,
+            int manualReviewStepCount,
+            int unsupportedItemCount);
 
         [LoggerMessage(7995, LogLevel.Information, "Importing {Count} workspaces")]
         public static partial void ImportingWorkspaces(ILogger logger, int count);
