@@ -8,6 +8,7 @@ using Honua.Server.Features.Alerts;
 using Honua.Server.Features.CloudDemo;
 using Honua.Server.Features.Protocols.Cog;
 using Honua.Server.Features.Protocols.Coverages.Multidimensional;
+using Honua.Server.Features.Protocols.Zarr;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.Grounding.Spec;
@@ -66,6 +67,7 @@ internal static class FeatureRegistrationExtensions
         services.AddGeocoding(configuration);
         services.AddCogServices(configuration);
         services.AddMultidimensionalCoverageServices();
+        services.AddZarrServices();
         services.AddImageServer();
         services.AddMapServer();
         services.AddOgcCoverages();
@@ -119,6 +121,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapGeocodingEndpoints();
         endpoints.MapCogEndpoints();
         endpoints.MapMultidimensionalCoverageEndpoints();
+        endpoints.MapZarrEndpoints();
         endpoints.MapGeoservicesCatalogEndpoints();
         endpoints.MapImageServerEndpoints();
         endpoints.MapMapServerEndpoints();

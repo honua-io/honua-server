@@ -157,6 +157,9 @@ public static class Operations
     // COG Operations
     public const string CogAdmin = "CogAdmin";
 
+    // Zarr Operations
+    public const string ZarrAdmin = "ZarrAdmin";
+
     // STAC Operations
     public const string StacCatalog = "StacCatalog";
     public const string StacSearch = "StacSearch";

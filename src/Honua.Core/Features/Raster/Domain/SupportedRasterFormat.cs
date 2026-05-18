@@ -29,5 +29,10 @@ public enum SupportedRasterFormat
     /// <summary>
     /// Cloud-Optimized GeoTIFF (.tif, .tiff) with internal tiling and overview IFDs.
     /// </summary>
-    CloudOptimizedGeoTiff
+    CloudOptimizedGeoTiff,
+
+    /// <summary>
+    /// Zarr v2 store hosted locally or in object storage. Read-only.
+    /// </summary>
+    Zarr
 }

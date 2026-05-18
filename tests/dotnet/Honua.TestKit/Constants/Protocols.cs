@@ -95,6 +95,11 @@ public static class Protocols
     public const string Cog = "Cog";
 
     /// <summary>
+    /// Zarr coverage registration and metadata endpoints.
+    /// </summary>
+    public const string Zarr = "Zarr";
+
+    /// <summary>
     /// Infrastructure and cross-cutting concerns.
     /// </summary>
     public const string Infrastructure = "Infrastructure";
