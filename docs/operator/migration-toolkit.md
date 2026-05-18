@@ -101,6 +101,13 @@ WMS, and WMTS. The first coverage slice is documented in
 metadata, output formats, CRS/subset metadata, bands/ranges, and temporal
 dimensions without claiming end-to-end coverage import or parity.
 
+Build an acceptance evidence suite only after each representative source has
+inventory, manifest, and parity evidence. The suite is an index and gate, not a
+replacement for the source-specific artifacts. It records covered source kinds,
+required source kinds, per-source automation classification, stage state, and
+blocking gaps. Use required source kinds for website or release claims so the
+suite fails when ArcGIS, GeoServer, or OGC evidence is absent.
+
 ## State Values
 
 Every parity and readiness item uses one of these state values:
