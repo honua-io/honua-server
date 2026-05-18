@@ -475,8 +475,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var domains = FilterAccessibleLayers(context, service, selectedLayers)
-            .SelectMany(static layer => layer.Fields
-                .Where(static field => !field.IsGeometry)
+            .SelectMany(static layer => layer.VisibleAttributeFields
                 .Select(field => MapQueryDomainInfo(layer, field))
                 .Where(static domain => domain != null)!
                 .Cast<DomainInfo>())

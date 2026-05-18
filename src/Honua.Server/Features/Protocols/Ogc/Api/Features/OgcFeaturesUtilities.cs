@@ -210,7 +210,7 @@ internal static class OgcFeaturesUtilities
     {
         var allowed = new HashSet<string>(AllowedQueryParameters.Items, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var field in layer.AttributeFields)
+        foreach (var field in layer.VisibleAttributeFields)
         {
             if (IsSimpleQueryableField(field))
             {

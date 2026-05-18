@@ -72,6 +72,7 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
                 default_value text,
                 description text,
                 domain jsonb,
+                hidden boolean NOT NULL DEFAULT false,
                 PRIMARY KEY (layer_id, field_name)
             );
 

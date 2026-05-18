@@ -404,6 +404,7 @@ class PostGISFixture:
                         default_value TEXT,
                         description TEXT,
                         domain JSONB,
+                        hidden BOOLEAN NOT NULL DEFAULT FALSE,
                         PRIMARY KEY (layer_id, field_name)
                     );
                     """
@@ -411,6 +412,10 @@ class PostGISFixture:
                 conn.execute(
                     "ALTER TABLE IF EXISTS honua.layer_fields "
                     "ADD COLUMN IF NOT EXISTS domain JSONB;"
+                )
+                conn.execute(
+                    "ALTER TABLE IF EXISTS honua.layer_fields "
+                    "ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;"
                 )
 
                 conn.execute(

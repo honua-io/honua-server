@@ -32,10 +32,11 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/fields")]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/fields")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
-    public async Task UpdateLayerFields_WithAliasAndCodedValueDomain_PersistsAndHydratesCatalog()
+    public async Task UpdateLayerFields_WithAliasDomainAndHiddenField_PersistsAndHydratesCatalog()
     {
         var adminClient = _fixture.CreateAdminClient();
         var anonymousClient = _fixture.CreateClient();
+        var resetComplete = false;
         var request = new LayerFieldConfigurationUpdateRequest
         {
             Fields =
@@ -51,45 +52,15 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
                             new DomainCodedValueDefinition("active", "Active"),
                             new DomainCodedValueDefinition("retired", "Retired")
                         ])
+                },
+                new LayerFieldConfigurationUpdateItem
+                {
+                    Name = "description",
+                    Alias = "Description",
+                    Hidden = true
                 }
             ]
         };
-
-        var updateResponse = await adminClient.PutAsync(
-            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields",
-            JsonContent.Create(request, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest));
-
-        updateResponse.Be200Ok();
-        var update = await ReadFieldConfigurationResponseAsync(updateResponse);
-        var category = update.Data!.Fields.Single(field => field.Name == "category");
-        category.Alias.Should().Be("Lifecycle category");
-        category.Domain.Should().NotBeNull();
-        category.Domain!.Name.Should().Be("category-domain");
-        category.Domain.CodedValues.Should().HaveCount(2);
-
-        var getResponse = await adminClient.GetAsync(
-            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields");
-
-        getResponse.Be200Ok();
-        var get = await ReadFieldConfigurationResponseAsync(getResponse);
-        get.Data!.Fields.Single(field => field.Name == "category").Alias.Should().Be("Lifecycle category");
-        get.Data!.Fields.Single(field => field.Name == "category").Domain!.CodedValues![0].Name.Should().Be("Active");
-
-        var featureLayerResponse = await anonymousClient.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
-
-        featureLayerResponse.Be200Ok();
-        using var document = JsonDocument.Parse(await featureLayerResponse.Content.ReadAsStringAsync());
-        var fields = document.RootElement.GetProperty("fields").EnumerateArray();
-        var categoryField = fields.Single(field => field.GetProperty("name").GetString() == "category");
-        categoryField.GetProperty("alias").GetString().Should().Be("Lifecycle category");
-        var domain = categoryField.GetProperty("domain");
-        domain.GetProperty("name").GetString().Should().Be("category-domain");
-        domain.GetProperty("type").GetString().Should().Be("codedValue");
-        domain.GetProperty("codedValues").EnumerateArray()
-            .Select(value => value.GetProperty("name").GetString())
-            .Should()
-            .BeEquivalentTo("Active", "Retired");
 
         var clearRequest = new LayerFieldConfigurationUpdateRequest
         {
@@ -99,19 +70,89 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
                 {
                     Name = "category",
                     Alias = " "
+                },
+                new LayerFieldConfigurationUpdateItem
+                {
+                    Name = "description",
+                    Alias = "Description",
+                    Hidden = false
                 }
             ]
         };
 
-        var clearResponse = await adminClient.PutAsync(
-            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields",
-            JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest));
+        try
+        {
+            var updateResponse = await adminClient.PutAsync(
+                $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields",
+                JsonContent.Create(request, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest));
 
-        clearResponse.Be200Ok();
-        var clear = await ReadFieldConfigurationResponseAsync(clearResponse);
-        var clearedCategory = clear.Data!.Fields.Single(field => field.Name == "category");
-        clearedCategory.Alias.Should().BeNull();
-        clearedCategory.Domain.Should().BeNull();
+            updateResponse.Be200Ok();
+            var update = await ReadFieldConfigurationResponseAsync(updateResponse);
+            var category = update.Data!.Fields.Single(field => field.Name == "category");
+            category.Alias.Should().Be("Lifecycle category");
+            category.Domain.Should().NotBeNull();
+            category.Domain!.Name.Should().Be("category-domain");
+            category.Domain.CodedValues.Should().HaveCount(2);
+            update.Data!.Fields.Single(field => field.Name == "description").Hidden.Should().BeTrue();
+
+            var getResponse = await adminClient.GetAsync(
+                $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields");
+
+            getResponse.Be200Ok();
+            var get = await ReadFieldConfigurationResponseAsync(getResponse);
+            get.Data!.Fields.Single(field => field.Name == "category").Alias.Should().Be("Lifecycle category");
+            get.Data!.Fields.Single(field => field.Name == "category").Domain!.CodedValues![0].Name.Should().Be("Active");
+            get.Data!.Fields.Single(field => field.Name == "description").Hidden.Should().BeTrue();
+
+            var featureLayerResponse = await anonymousClient.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
+
+            featureLayerResponse.Be200Ok();
+            using var document = JsonDocument.Parse(await featureLayerResponse.Content.ReadAsStringAsync());
+            var fields = document.RootElement.GetProperty("fields").EnumerateArray().ToArray();
+            fields.Should().NotContain(field => field.GetProperty("name").GetString() == "description");
+            var categoryField = fields.Single(field => field.GetProperty("name").GetString() == "category");
+            categoryField.GetProperty("alias").GetString().Should().Be("Lifecycle category");
+            var domain = categoryField.GetProperty("domain");
+            domain.GetProperty("name").GetString().Should().Be("category-domain");
+            domain.GetProperty("type").GetString().Should().Be("codedValue");
+            domain.GetProperty("codedValues").EnumerateArray()
+                .Select(value => value.GetProperty("name").GetString())
+                .Should()
+                .BeEquivalentTo("Active", "Retired");
+
+            var queryResponse = await anonymousClient.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&outFields=*&returnGeometry=false&f=json");
+
+            queryResponse.Be200Ok();
+            using var queryDocument = JsonDocument.Parse(await queryResponse.Content.ReadAsStringAsync());
+            queryDocument.RootElement.GetProperty("fields").EnumerateArray()
+                .Should()
+                .NotContain(field => field.GetProperty("name").GetString() == "description");
+            var firstAttributes = queryDocument.RootElement.GetProperty("features")[0].GetProperty("attributes");
+            firstAttributes.TryGetProperty("description", out _).Should().BeFalse();
+
+            var clearResponse = await adminClient.PutAsync(
+                $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields",
+                JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest));
+
+            clearResponse.Be200Ok();
+            var clear = await ReadFieldConfigurationResponseAsync(clearResponse);
+            var clearedCategory = clear.Data!.Fields.Single(field => field.Name == "category");
+            clearedCategory.Alias.Should().BeNull();
+            clearedCategory.Domain.Should().BeNull();
+            clear.Data!.Fields.Single(field => field.Name == "description").Hidden.Should().BeFalse();
+            resetComplete = true;
+        }
+        finally
+        {
+            if (!resetComplete)
+            {
+                _ = await adminClient.PutAsync(
+                    $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields",
+                    JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest));
+            }
+        }
     }
 
     [IntegrationTest]

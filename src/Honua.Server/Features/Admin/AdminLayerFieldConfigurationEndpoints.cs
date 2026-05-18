@@ -4,6 +4,7 @@
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -41,7 +42,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
 
         _ = group.MapPut("/{layerId:int}/fields", HandleUpdateLayerFields)
             .WithName("UpdateAdminLayerFields")
-            .WithSummary("Update persisted layer field aliases and coded-value domains")
+            .WithSummary("Update persisted layer field aliases, coded-value domains, and visibility")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
@@ -91,7 +92,8 @@ internal static class AdminLayerFieldConfigurationEndpoints
             .Select(field => new LayerFieldConfigurationUpdate(
                 field.Name.Trim(),
                 NormalizeAlias(field.Alias),
-                field.Domain))
+                field.Domain,
+                field.Hidden))
             .ToArray();
 
         var configurations = await fieldConfigurationStore.UpdateFieldConfigurationsAsync(
@@ -147,7 +149,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
             }
 
             var fieldName = field.Name.Trim();
-            if (!knownFields.ContainsKey(fieldName))
+            if (!knownFields.TryGetValue(fieldName, out var layerField))
             {
                 return $"Field '{fieldName}' does not exist on layer {layer.Id}.";
             }
@@ -162,6 +164,11 @@ internal static class AdminLayerFieldConfigurationEndpoints
                 return $"Alias for field '{fieldName}' must be {MaxFieldAliasLength} characters or fewer.";
             }
 
+            if (field.Hidden == true && IsRequiredProtocolField(layer, layerField))
+            {
+                return $"Field '{fieldName}' cannot be hidden because it is required by public protocol contracts.";
+            }
+
             var domainError = ValidateDomain(fieldName, field.Domain);
             if (domainError != null)
             {
@@ -171,6 +178,11 @@ internal static class AdminLayerFieldConfigurationEndpoints
 
         return null;
     }
+
+    private static bool IsRequiredProtocolField(LayerDefinition layer, FieldDefinition field)
+        => field.IsGeometry
+           || field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase)
+           || field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
 
     private static string? ValidateDomain(string fieldName, FieldDomainDefinition? domain)
     {
@@ -235,7 +247,8 @@ internal static class AdminLayerFieldConfigurationEndpoints
                     Name = field.Name,
                     Type = field.Type.ToString(),
                     Alias = configuration is null ? field.Description : configuration.Alias,
-                    Domain = configuration is null ? field.Domain : configuration.Domain
+                    Domain = configuration is null ? field.Domain : configuration.Domain,
+                    Hidden = configuration is null ? field.IsHidden : configuration.Hidden
                 };
             })
             .ToArray();

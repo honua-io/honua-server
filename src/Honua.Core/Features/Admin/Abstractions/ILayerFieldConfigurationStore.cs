@@ -21,7 +21,7 @@ public interface ILayerFieldConfigurationStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates aliases and domains for the supplied fields and returns the full layer configuration.
+    /// Updates aliases, domains, and visibility for the supplied fields and returns the full layer configuration.
     /// </summary>
     /// <param name="layerId">Layer identifier.</param>
     /// <param name="updates">Field configuration updates to apply.</param>

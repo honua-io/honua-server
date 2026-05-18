@@ -71,8 +71,10 @@ sql:
           default_value TEXT,
           description TEXT,
           domain JSONB,
+          hidden BOOLEAN NOT NULL DEFAULT FALSE,
           PRIMARY KEY (layer_id, field_name)
       );
+  - "ALTER TABLE IF EXISTS honua.layer_fields ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;"
   - |
       CREATE TABLE IF NOT EXISTS honua.relationships (
           id SERIAL PRIMARY KEY,

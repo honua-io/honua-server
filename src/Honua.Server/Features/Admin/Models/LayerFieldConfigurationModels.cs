@@ -35,6 +35,11 @@ public sealed class LayerFieldConfigurationUpdateItem
     /// Optional coded-value domain for the field. Null clears the domain.
     /// </summary>
     public FieldDomainDefinition? Domain { get; init; }
+
+    /// <summary>
+    /// Optional hidden-field flag. Null preserves the current value.
+    /// </summary>
+    public bool? Hidden { get; init; }
 }
 
 /// <summary>
@@ -77,4 +82,9 @@ public sealed class LayerFieldConfigurationItem
     /// Optional coded-value domain for the field.
     /// </summary>
     public FieldDomainDefinition? Domain { get; init; }
+
+    /// <summary>
+    /// Whether public protocol output should omit the field.
+    /// </summary>
+    public bool Hidden { get; init; }
 }

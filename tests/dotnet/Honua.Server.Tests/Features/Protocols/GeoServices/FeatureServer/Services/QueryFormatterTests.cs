@@ -169,6 +169,60 @@ public sealed class QueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatQueryResultAsync_WithHiddenDeclaredField_ExcludesFromJsonAndGeoJson()
+    {
+        var limitsOptions = Options.Create(new LimitsOptions());
+        var formatter = new QueryFormatter(
+            limitsOptions,
+            new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+
+        var feature = Feature.Create(
+            42,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 42L,
+                ["name"] = "alpha",
+                ["secret"] = "hidden"
+            }.ToImmutableDictionary());
+        var layer = CreatePointLayerWithHiddenField();
+
+        var (jsonResponse, jsonContentType) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            format: "json",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null);
+
+        jsonContentType.Should().Be("application/json");
+        var queryResponse = jsonResponse.Should().BeOfType<QueryResponse>().Subject;
+        queryResponse.Fields.Should().NotContain(field => field.Name == "secret");
+        queryResponse.Features.Should().ContainSingle();
+        queryResponse.Features[0].Attributes.Should().NotContainKey("secret");
+
+        var (geoJsonResponse, geoJsonContentType) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            format: "geojson",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null);
+
+        geoJsonContentType.Should().Be("application/geo+json");
+        var geoJson = geoJsonResponse.Should().BeOfType<GeoJsonFeatureSet>().Subject;
+        geoJson.Features.Should().ContainSingle();
+        geoJson.Features[0].Properties.Should().NotContainKey("secret");
+    }
+
+    [Fact]
     public async Task FormatQueryResultAsync_WithGeoJsonAndMeasuredGeometry_DropsMOrdinate()
     {
         var limitsOptions = Options.Create(new LimitsOptions());
@@ -459,6 +513,19 @@ public sealed class QueryFormatterTests
             [
                 new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
                 new FieldDefinition("name", FieldType.String, Length: 128)
+            ]);
+
+    private static LayerDefinition CreatePointLayerWithHiddenField()
+        => new(
+            10,
+            "hidden-field-test-layer",
+            null,
+            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
+            SpatialReference.WGS84,
+            [
+                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
+                new FieldDefinition("name", FieldType.String, Length: 128),
+                new FieldDefinition("secret", FieldType.String, Length: 128, IsHidden: true)
             ]);
 
     private static LayerDefinition CreateIdBackedPointLayer()

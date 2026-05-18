@@ -11,10 +11,12 @@ namespace Honua.Core.Features.Admin.Domain;
 /// <param name="Name">Field name.</param>
 /// <param name="Alias">Optional field alias displayed by protocol metadata surfaces.</param>
 /// <param name="Domain">Optional coded-value domain for the field.</param>
+/// <param name="Hidden">Whether public protocol output should omit the field.</param>
 public sealed record LayerFieldConfiguration(
     string Name,
     string? Alias,
-    FieldDomainDefinition? Domain);
+    FieldDomainDefinition? Domain,
+    bool Hidden);
 
 /// <summary>
 /// Operator-managed display metadata update for a layer field.
@@ -22,7 +24,9 @@ public sealed record LayerFieldConfiguration(
 /// <param name="Name">Field name.</param>
 /// <param name="Alias">Optional field alias displayed by protocol metadata surfaces.</param>
 /// <param name="Domain">Optional coded-value domain for the field.</param>
+/// <param name="Hidden">Optional hidden-field update. Null preserves the current value.</param>
 public sealed record LayerFieldConfigurationUpdate(
     string Name,
     string? Alias,
-    FieldDomainDefinition? Domain);
+    FieldDomainDefinition? Domain,
+    bool? Hidden);

@@ -886,7 +886,7 @@ internal sealed partial class Wfs20Handler
                 schema.AppendLine($"""          <xsd:element name="{XmlConvert.EncodeLocalName(featureType.Layer.GeometryField.Name)}" type="gml:GeometryPropertyType" minOccurs="0" nillable="true"/>""");
             }
 
-            foreach (var field in featureType.Layer.AttributeFields)
+            foreach (var field in featureType.Layer.VisibleAttributeFields)
             {
                 var minOccurs = field.Nullable ? " minOccurs=\"0\"" : string.Empty;
                 var nillable = field.Nullable ? " nillable=\"true\"" : string.Empty;

@@ -67,8 +67,14 @@ internal static class GeoJsonFeatureBaseBuilder
         var projectedProperties = options.ProjectedProperties;
         var shouldProjectAll = projectedProperties is null;
         var shouldIncludeObjectId = options.IncludeObjectIdProperty;
+        var declaredAttributeFields = layer.AttributeFields
+            .Select(static field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleAttributeFields = layer.VisibleAttributeFields
+            .Select(static field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var field in layer.AttributeFields)
+        foreach (var field in layer.VisibleAttributeFields)
         {
             var fieldName = field.Name;
             var isObjectIdField = fieldName.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
@@ -108,6 +114,11 @@ internal static class GeoJsonFeatureBaseBuilder
                 }
 
                 if (ContainsKeyIgnoreCase(properties, fieldName))
+                {
+                    continue;
+                }
+
+                if (declaredAttributeFields.Contains(fieldName) && !visibleAttributeFields.Contains(fieldName))
                 {
                     continue;
                 }

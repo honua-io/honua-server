@@ -581,7 +581,7 @@ internal static class CollectionsEndpoints
         var requiredFields = new List<string>();
 
         // Add properties for all non-geometry fields
-        foreach (var field in layer.AttributeFields.Where(OgcFeaturesUtilities.IsSimpleQueryableField))
+        foreach (var field in layer.VisibleAttributeFields.Where(OgcFeaturesUtilities.IsSimpleQueryableField))
         {
             var jsonSchemaProperty = ConvertFieldToJsonSchemaProperty(field);
             properties[field.Name] = jsonSchemaProperty;

@@ -259,7 +259,7 @@ internal static partial class FeatureServerEndpoints
             MaxRecordCount = queryLimits.MaxRecordCount,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats, supportsGeobufOutput),
             Capabilities = BuildServiceCapabilities(service, supportsAttachmentUploads),
-            Fields = [.. service.AllFields.Select(MapFieldInfo)],
+            Fields = [.. service.Layers.SelectMany(static layer => layer.VisibleFields).Select(MapFieldInfo)],
             ObjectIdField = objectIdField,
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
@@ -274,14 +274,14 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     private static string ResolveDisplayFieldFromLayer(LayerDefinition layer, string objectIdField)
     {
-        var preferredNameField = layer.Fields.FirstOrDefault(
+        var preferredNameField = layer.VisibleAttributeFields.FirstOrDefault(
             field => field.Name.Equals("name", StringComparison.OrdinalIgnoreCase));
         if (preferredNameField != null)
         {
             return preferredNameField.Name;
         }
 
-        var firstStringField = layer.Fields.FirstOrDefault(
+        var firstStringField = layer.VisibleAttributeFields.FirstOrDefault(
             field => field.GeoServicesType.Equals("esriFieldTypeString", StringComparison.OrdinalIgnoreCase));
         return firstStringField?.Name ?? objectIdField;
     }
@@ -328,7 +328,7 @@ internal static partial class FeatureServerEndpoints
             Extent = layer.Extent.HasValue ? layer.Extent.Value.ToExtentInfo() : null,
             TimeInfo = timeInfo,
             ExtrusionInfo = extrusionInfo,
-            Fields = [.. layer.Fields.Select(MapFieldInfo)],
+            Fields = [.. layer.VisibleFields.Select(MapFieldInfo)],
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
             DisplayField = displayField,
