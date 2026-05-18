@@ -27,6 +27,7 @@ using Honua.Server.Features.Protocols.Ogc.Api.Coverages;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Protocols.Ogc.Api.Maps;
 using Honua.Server.Features.Protocols.Ogc.Api.Processes;
+using Honua.Server.Features.Protocols.Ogc.Api.Records;
 using Honua.Server.Features.Protocols.Ogc.Api.Tiles;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.PrintingTools;
@@ -133,6 +134,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcMapsEndpoints();
         endpoints.MapOgcProcessesEndpoints();
+        endpoints.MapOgcRecordsEndpoints();
         endpoints.MapOgcTilesEndpoints();
         endpoints.MapWfs20Endpoints();
         endpoints.MapWcs20Endpoints();

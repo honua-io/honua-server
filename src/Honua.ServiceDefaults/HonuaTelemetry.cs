@@ -264,6 +264,9 @@ public static class HonuaTelemetry
         /// <summary>OGC API Processes.</summary>
         public const string OgcProcesses = "OGC-Processes";
 
+        /// <summary>OGC API Records.</summary>
+        public const string OgcRecords = "OGC-Records";
+
         /// <summary>GeoServices MapServer REST API.</summary>
         public const string MapServer = "MapServer";
 

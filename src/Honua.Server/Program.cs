@@ -809,6 +809,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Protocols.Ogc.Api.Coverages.Models.OgcCoveragesJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Features.OgcJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Maps.Models.OgcMapsJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Records.OgcRecordsJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Tiles.OgcTilesJsonContext.Default,
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,

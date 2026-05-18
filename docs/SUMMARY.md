@@ -52,6 +52,7 @@
   - [OGC API Features](gis/specifications/ogc-api-features-coverage.md)
   - [OGC API Tiles](gis/specifications/ogc-api-tiles-coverage.md)
   - [OGC API Processes](gis/specifications/ogc-api-processes-coverage.md)
+  - [OGC API Records](gis/specifications/ogc-api-records-coverage.md)
   - [WCS 2.0.1](gis/specifications/wcs-2.0.1-coverage.md)
   - [OData v4](gis/specifications/odata-v4-coverage.md)
   - [Geometry Service](gis/geometry-service-matrix.md)
