@@ -37,6 +37,60 @@ public static class MigrationCostPerformancePhases
 }
 
 /// <summary>
+/// Stable source-family identifiers used by migration fixture evidence.
+/// </summary>
+public static class MigrationCostPerformanceSourceFamilies
+{
+    /// <summary>ArcGIS GeoServices REST source family.</summary>
+    public const string ArcGisGeoServicesRest = "arcgis-geoservices-rest";
+
+    /// <summary>GeoServer REST source family.</summary>
+    public const string GeoServerRest = "geoserver-rest";
+
+    /// <summary>OGC Features or WFS source family.</summary>
+    public const string OgcFeature = "ogc-feature";
+
+    /// <summary>OGC map or tile metadata source family.</summary>
+    public const string OgcMapTileMetadata = "ogc-map-tile-metadata";
+
+    /// <summary>Coverage or raster source family.</summary>
+    public const string Coverage = "coverage";
+}
+
+/// <summary>
+/// Stable fixture-size identifiers used by migration cost and performance evidence.
+/// </summary>
+public static class MigrationCostPerformanceFixtureSizes
+{
+    /// <summary>Small deterministic migration fixture.</summary>
+    public const string Small = "small";
+
+    /// <summary>Medium deterministic migration fixture.</summary>
+    public const string Medium = "medium";
+
+    /// <summary>Large deterministic migration fixture.</summary>
+    public const string Large = "large";
+}
+
+/// <summary>
+/// Stable recovery scenario identifiers used by migration cost and performance evidence.
+/// </summary>
+public static class MigrationCostPerformanceRecoveryScenarios
+{
+    /// <summary>Recovery after a simulated source failure.</summary>
+    public const string SourceFailure = "source-failure";
+
+    /// <summary>Recovery after job cancellation.</summary>
+    public const string JobCancellation = "job-cancellation";
+
+    /// <summary>Recovery after a transient network failure.</summary>
+    public const string TransientNetworkError = "transient-network-error";
+
+    /// <summary>Idempotent replay of a repeated apply attempt.</summary>
+    public const string RepeatedApplyAttempt = "repeated-apply-attempt";
+}
+
+/// <summary>
 /// Website-linkable artifact containing release-safe migration cost and performance evidence.
 /// </summary>
 public sealed record MigrationCostPerformanceEvidenceArtifact
@@ -72,6 +126,11 @@ public sealed record MigrationCostPerformanceEvidenceArtifact
     public string? RunId { get; init; }
 
     /// <summary>
+    /// Representative deterministic fixture profile used by the measured run.
+    /// </summary>
+    public required MigrationCostPerformanceFixtureProfile FixtureProfile { get; init; }
+
+    /// <summary>
     /// Aggregate classification across all measured phases.
     /// </summary>
     public required string OverallClassification { get; init; }
@@ -95,6 +154,11 @@ public sealed record MigrationCostPerformanceEvidenceArtifact
     /// Phase-level measurements in deterministic phase order.
     /// </summary>
     public MigrationCostPerformancePhaseEvidence[] Phases { get; init; } = [];
+
+    /// <summary>
+    /// Recovery and idempotency evidence for simulated migration failure modes.
+    /// </summary>
+    public MigrationCostPerformanceRecoveryEvidence[] Recovery { get; init; } = [];
 
     /// <summary>
     /// Privacy posture proving the artifact intentionally excludes source URLs, credentials, and source data.
@@ -157,6 +221,42 @@ public sealed record MigrationCostPerformancePhaseEvidence
     /// Metric-level threshold signals in deterministic order.
     /// </summary>
     public MigrationCostPerformanceSignal[] Signals { get; init; } = [];
+}
+
+/// <summary>
+/// Deterministic fixture profile for a measured migration run.
+/// </summary>
+public sealed record MigrationCostPerformanceFixtureProfile
+{
+    /// <summary>
+    /// Source family represented by the fixture.
+    /// </summary>
+    public required string SourceFamily { get; init; }
+
+    /// <summary>
+    /// Fixture size classification: <c>small</c>, <c>medium</c>, or <c>large</c>.
+    /// </summary>
+    public required string Size { get; init; }
+
+    /// <summary>
+    /// Expected source resources represented by the fixture.
+    /// </summary>
+    public int? ExpectedResourceCount { get; init; }
+
+    /// <summary>
+    /// Expected features represented by the fixture.
+    /// </summary>
+    public long? ExpectedFeatureCount { get; init; }
+
+    /// <summary>
+    /// Expected coverages or raster assets represented by the fixture.
+    /// </summary>
+    public long? ExpectedCoverageCount { get; init; }
+
+    /// <summary>
+    /// Secret-safe fixture description.
+    /// </summary>
+    public string? Description { get; init; }
 }
 
 /// <summary>
@@ -230,6 +330,21 @@ public sealed record MigrationCostPerformanceMetrics
     public long? CoverageCount { get; init; }
 
     /// <summary>
+    /// Resources processed per second, computed from resource count and duration when omitted.
+    /// </summary>
+    public double? ResourceThroughputPerSecond { get; init; }
+
+    /// <summary>
+    /// Features processed per second, computed from feature count and duration when omitted.
+    /// </summary>
+    public double? FeatureThroughputPerSecond { get; init; }
+
+    /// <summary>
+    /// Coverages processed per second, computed from coverage count and duration when omitted.
+    /// </summary>
+    public double? CoverageThroughputPerSecond { get; init; }
+
+    /// <summary>
     /// Items requiring manual review.
     /// </summary>
     public int? ManualReviewCount { get; init; }
@@ -277,9 +392,91 @@ public sealed record MigrationCostPerformanceEvidenceInput
     public string? RunId { get; init; }
 
     /// <summary>
+    /// Representative deterministic fixture profile for the measured run.
+    /// </summary>
+    public MigrationCostPerformanceFixtureProfile? FixtureProfile { get; init; }
+
+    /// <summary>
     /// Phase measurements to aggregate into the artifact.
     /// </summary>
     public MigrationCostPerformancePhaseMeasurement[] PhaseMeasurements { get; init; } = [];
+
+    /// <summary>
+    /// Recovery and idempotency measurements for simulated failure scenarios.
+    /// </summary>
+    public MigrationCostPerformanceRecoveryMeasurement[] RecoveryMeasurements { get; init; } = [];
+}
+
+/// <summary>
+/// Raw recovery measurement supplied by a migration acceptance harness.
+/// </summary>
+public sealed record MigrationCostPerformanceRecoveryMeasurement
+{
+    /// <summary>
+    /// Recovery scenario identifier.
+    /// </summary>
+    public required string Scenario { get; init; }
+
+    /// <summary>
+    /// Whether the migration recovered successfully.
+    /// </summary>
+    public bool? Recovered { get; init; }
+
+    /// <summary>
+    /// Whether resume behavior was observed.
+    /// </summary>
+    public bool? ResumeObserved { get; init; }
+
+    /// <summary>
+    /// Whether repeated replay was idempotent.
+    /// </summary>
+    public bool? IdempotentReplay { get; init; }
+
+    /// <summary>
+    /// Attempts observed while proving the scenario.
+    /// </summary>
+    public int? AttemptCount { get; init; }
+}
+
+/// <summary>
+/// Recovery and idempotency evidence for one simulated migration failure mode.
+/// </summary>
+public sealed record MigrationCostPerformanceRecoveryEvidence
+{
+    /// <summary>
+    /// Recovery scenario identifier.
+    /// </summary>
+    public required string Scenario { get; init; }
+
+    /// <summary>
+    /// Scenario classification.
+    /// </summary>
+    public required string Classification { get; init; }
+
+    /// <summary>
+    /// Whether the migration recovered successfully.
+    /// </summary>
+    public bool? Recovered { get; init; }
+
+    /// <summary>
+    /// Whether resume behavior was observed.
+    /// </summary>
+    public bool? ResumeObserved { get; init; }
+
+    /// <summary>
+    /// Whether repeated replay was idempotent.
+    /// </summary>
+    public bool? IdempotentReplay { get; init; }
+
+    /// <summary>
+    /// Attempts observed while proving the scenario.
+    /// </summary>
+    public int? AttemptCount { get; init; }
+
+    /// <summary>
+    /// Short deterministic explanation.
+    /// </summary>
+    public required string Summary { get; init; }
 }
 
 /// <summary>
@@ -313,6 +510,12 @@ public sealed record MigrationCostPerformanceThresholds
         DatabaseGrowthFailBytes = 5_368_709_120,
         ArtifactBytesWarn = 1_048_576,
         ArtifactBytesFail = 5_242_880,
+        ResourceThroughputWarnPerSecond = 1,
+        ResourceThroughputFailPerSecond = 0.1,
+        FeatureThroughputWarnPerSecond = 50,
+        FeatureThroughputFailPerSecond = 10,
+        CoverageThroughputWarnPerSecond = 0.1,
+        CoverageThroughputFailPerSecond = 0.01,
         ManualReviewRatioWarn = 0.10,
         ManualReviewRatioFail = 0.25
     };
@@ -421,6 +624,36 @@ public sealed record MigrationCostPerformanceThresholds
     /// Failure threshold for evidence artifact size in bytes.
     /// </summary>
     public long? ArtifactBytesFail { get; init; }
+
+    /// <summary>
+    /// Warning lower bound for resource throughput per second.
+    /// </summary>
+    public double? ResourceThroughputWarnPerSecond { get; init; }
+
+    /// <summary>
+    /// Failure lower bound for resource throughput per second.
+    /// </summary>
+    public double? ResourceThroughputFailPerSecond { get; init; }
+
+    /// <summary>
+    /// Warning lower bound for feature throughput per second.
+    /// </summary>
+    public double? FeatureThroughputWarnPerSecond { get; init; }
+
+    /// <summary>
+    /// Failure lower bound for feature throughput per second.
+    /// </summary>
+    public double? FeatureThroughputFailPerSecond { get; init; }
+
+    /// <summary>
+    /// Warning lower bound for coverage throughput per second.
+    /// </summary>
+    public double? CoverageThroughputWarnPerSecond { get; init; }
+
+    /// <summary>
+    /// Failure lower bound for coverage throughput per second.
+    /// </summary>
+    public double? CoverageThroughputFailPerSecond { get; init; }
 
     /// <summary>
     /// Warning threshold for manual-review ratio.

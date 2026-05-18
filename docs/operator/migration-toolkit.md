@@ -9,7 +9,11 @@ deterministic artifact chain:
    intent and explicit manual-review or unsupported items.
 3. `MigrationParityEvidenceArtifact` summarizes capability, style, data, and
    cutover-readiness evidence.
-4. `MigrationAcceptanceEvidenceArtifact` indexes the per-source artifacts for
+4. `MigrationCostPerformanceEvidenceArtifact` captures fixture size,
+   throughput, source request volume, retries, resume behavior, resource use,
+   artifact size, manual-review ratio, and recovery/idempotency outcomes
+   without embedding private source URLs, credentials, or source data.
+5. `MigrationAcceptanceEvidenceArtifact` indexes the per-source artifacts for
    a release or nightly acceptance suite and fails the suite when required
    source families are missing.
 
@@ -28,6 +32,7 @@ surface tracked by honua-server#880:
 | Migration manifest | `honua.migration.manifest` v1.0 | `src/Honua.Core/Features/Import/Domain/MigrationManifestArtifact.cs` |
 | Parity evidence pack | `honua.migration.parity-evidence-pack` v1.0 | `src/Honua.Core/Features/Import/Domain/MigrationParityEvidenceArtifact.cs` |
 | Cutover readiness summary | embedded in `honua.migration.parity-evidence-pack` v1.0 as `cutoverReadiness` | `src/Honua.Core/Features/Import/Domain/MigrationParityEvidenceArtifact.cs` |
+| Cost/performance evidence | `honua.migration.cost-performance-evidence` v1.0 | `src/Honua.Core/Features/Import/Domain/MigrationCostPerformanceEvidenceArtifact.cs` |
 | Acceptance evidence suite | `honua.migration.acceptance-evidence-suite` v1.0 | `src/Honua.Core/Features/Import/Domain/MigrationAcceptanceEvidenceArtifact.cs` |
 
 The admin HTTP surface currently exposed for this artifact chain is
@@ -66,6 +71,36 @@ and captured endpoints without claiming a data-copy target.
 
 Generate parity evidence after the manifest has been produced. A missing
 manifest leaves data parity `unknown`; it is never treated as a pass.
+
+Generate cost/performance evidence from the same deterministic source family
+fixture used by the acceptance suite. The fixture profile must declare the
+source family and size (`small`, `medium`, or `large`) plus expected resource,
+feature, or coverage counts where they apply. Current server-owned source
+families are:
+
+| Source family | Fixture expectation |
+|---|---|
+| `arcgis-geoservices-rest` | Feature service and map service fixtures with representative layer metadata, query volume, and renderer complexity. |
+| `geoserver-rest` | Workspace/layer/style fixtures that exercise REST inventory, manifest generation, and dry-run/apply paths. |
+| `ogc-feature` | OGC API Features or WFS fixtures with feature counts, schemas, CRS metadata, and paging behavior. |
+| `ogc-map-tile-metadata` | WMS/WMTS metadata fixtures for service, style, layer, CRS, and tile matrix planning. |
+| `coverage` | Coverage/raster fixtures where coverage inventory or import planning is supported. |
+
+Each run classifies scan, manifest, apply, and import phases against the
+configured threshold profile. The artifact records duration, source request
+count, bytes read/written, retry and resume counts, CPU, peak memory, database
+growth, evidence artifact size, resource/feature/coverage counts, derived
+throughput, and manual-review ratio. Missing required phases or recovery
+scenarios classify as `warn`; invalid negative metrics or failed recovery
+classify as `fail`.
+
+Recovery evidence is explicit because "minimal risk" claims depend on it. The
+required recovery scenarios are `source-failure`, `job-cancellation`,
+`transient-network-error`, and `repeated-apply-attempt`. Source failure,
+cancel, and transient network scenarios must show successful recovery and
+observed resume behavior. Repeated apply must show idempotent replay. Keep live
+external-source runs supplemental; release evidence should prefer deterministic
+fixtures so thresholds remain stable.
 
 ## OGC Service Migration Scope
 
@@ -178,6 +213,12 @@ prevents an automated-migration claim from accidentally relying on assisted,
 manual-review, or unsupported evidence. Use required source kinds for website
 or release claims so the suite fails when ArcGIS, GeoServer, or OGC evidence is
 absent.
+
+Cost/performance evidence should be linked from `EvidenceReferences` next to
+the source inventory, manifest, parity, apply/dry-run, publish, and readiness
+artifacts. Do not use "minimal cost", "minimal risk", or equivalent wording in
+release or website copy unless the linked acceptance suite includes passing or
+explicitly reviewed cost/performance artifacts for the claimed source families.
 
 Each entry also carries the canonical acceptance stages:
 

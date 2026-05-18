@@ -19,6 +19,14 @@ public static class MigrationCostPerformanceEvidenceBuilder
         MigrationCostPerformancePhases.Import
     ];
 
+    private static readonly string[] RequiredRecoveryScenarios =
+    [
+        MigrationCostPerformanceRecoveryScenarios.SourceFailure,
+        MigrationCostPerformanceRecoveryScenarios.JobCancellation,
+        MigrationCostPerformanceRecoveryScenarios.TransientNetworkError,
+        MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt
+    ];
+
     /// <summary>
     /// Builds a cost and performance evidence artifact from source inventory and phase measurements.
     /// </summary>
@@ -36,8 +44,11 @@ public static class MigrationCostPerformanceEvidenceBuilder
 
         var activeThresholds = thresholds ?? MigrationCostPerformanceThresholds.ReleaseEvidenceBaseline;
         var phases = BuildPhases(input.PhaseMeasurements, activeThresholds);
+        var recovery = BuildRecovery(input.RecoveryMeasurements);
         var totals = AggregateMetrics(phases.Select(static phase => phase.Metrics));
-        var overallClassification = AggregateClassification(phases.Select(static phase => phase.Classification));
+        var overallClassification = AggregateClassification(
+            phases.Select(static phase => phase.Classification)
+                .Concat(recovery.Select(static scenario => scenario.Classification)));
 
         return new MigrationCostPerformanceEvidenceArtifact
         {
@@ -45,14 +56,16 @@ public static class MigrationCostPerformanceEvidenceBuilder
             Source = BuildSourceSummary(inventory.Source),
             MeasurementScope = SafeText(input.MeasurementScope, "migration evidence run"),
             RunId = string.IsNullOrWhiteSpace(input.RunId) ? null : SafeIdentifier(input.RunId, "run"),
+            FixtureProfile = BuildFixtureProfile(input.FixtureProfile, inventory),
             OverallClassification = overallClassification,
-            Summary = BuildSummary(overallClassification, phases),
+            Summary = BuildSummary(overallClassification, phases, recovery),
             Thresholds = activeThresholds with
             {
                 ProfileName = SafeIdentifier(activeThresholds.ProfileName, "custom")
             },
             Totals = totals,
             Phases = phases,
+            Recovery = recovery,
             Privacy = new MigrationCostPerformancePrivacySummary
             {
                 SourceUrlsIncluded = false,
@@ -77,6 +90,19 @@ public static class MigrationCostPerformanceEvidenceBuilder
             Product = SafeNullableText(source.Product),
             Version = SafeNullableText(source.Version),
             ServiceType = SafeNullableText(source.ServiceType)
+        };
+
+    private static MigrationCostPerformanceFixtureProfile BuildFixtureProfile(
+        MigrationCostPerformanceFixtureProfile? fixture,
+        MigrationSourceInventoryArtifact inventory)
+        => new()
+        {
+            SourceFamily = SafeIdentifier(fixture?.SourceFamily ?? inventory.SourceKind, "unknown-source"),
+            Size = SafeIdentifier(fixture?.Size, "unspecified"),
+            ExpectedResourceCount = fixture?.ExpectedResourceCount,
+            ExpectedFeatureCount = fixture?.ExpectedFeatureCount,
+            ExpectedCoverageCount = fixture?.ExpectedCoverageCount,
+            Description = SafeNullableText(fixture?.Description)
         };
 
     private static MigrationCostPerformancePhaseEvidence[] BuildPhases(
@@ -115,6 +141,10 @@ public static class MigrationCostPerformanceEvidenceBuilder
     private static MigrationCostPerformanceMetrics AggregateMetrics(IEnumerable<MigrationCostPerformanceMetrics> metrics)
     {
         var materialized = metrics.Select(NormalizeMetrics).ToArray();
+        var durationMilliseconds = SumLong(materialized, static metric => metric.DurationMilliseconds);
+        var resourceCount = SumLong(materialized, static metric => metric.ResourceCount);
+        var featureCount = SumLong(materialized, static metric => metric.FeatureCount);
+        var coverageCount = SumLong(materialized, static metric => metric.CoverageCount);
         var manualReviewCount = SumInt(materialized, static metric => metric.ManualReviewCount);
         var candidateItemCount = SumInt(materialized, static metric => metric.CandidateItemCount);
         var manualReviewRatio = ComputeManualReviewRatio(manualReviewCount, candidateItemCount) ??
@@ -122,7 +152,7 @@ public static class MigrationCostPerformanceEvidenceBuilder
 
         return new MigrationCostPerformanceMetrics
         {
-            DurationMilliseconds = SumLong(materialized, static metric => metric.DurationMilliseconds),
+            DurationMilliseconds = durationMilliseconds,
             SourceRequestCount = SumLong(materialized, static metric => metric.SourceRequestCount),
             BytesRead = SumLong(materialized, static metric => metric.BytesRead),
             BytesWritten = SumLong(materialized, static metric => metric.BytesWritten),
@@ -132,9 +162,15 @@ public static class MigrationCostPerformanceEvidenceBuilder
             PeakMemoryBytes = MaxLong(materialized, static metric => metric.PeakMemoryBytes),
             DatabaseGrowthBytes = SumLong(materialized, static metric => metric.DatabaseGrowthBytes),
             ArtifactBytes = SumLong(materialized, static metric => metric.ArtifactBytes),
-            ResourceCount = SumLong(materialized, static metric => metric.ResourceCount),
-            FeatureCount = SumLong(materialized, static metric => metric.FeatureCount),
-            CoverageCount = SumLong(materialized, static metric => metric.CoverageCount),
+            ResourceCount = resourceCount,
+            FeatureCount = featureCount,
+            CoverageCount = coverageCount,
+            ResourceThroughputPerSecond = ComputeThroughput(resourceCount, durationMilliseconds) ??
+                SumDouble(materialized, static metric => metric.ResourceThroughputPerSecond),
+            FeatureThroughputPerSecond = ComputeThroughput(featureCount, durationMilliseconds) ??
+                SumDouble(materialized, static metric => metric.FeatureThroughputPerSecond),
+            CoverageThroughputPerSecond = ComputeThroughput(coverageCount, durationMilliseconds) ??
+                SumDouble(materialized, static metric => metric.CoverageThroughputPerSecond),
             ManualReviewCount = manualReviewCount,
             CandidateItemCount = candidateItemCount,
             ManualReviewRatio = manualReviewRatio
@@ -148,6 +184,12 @@ public static class MigrationCostPerformanceEvidenceBuilder
 
         return metrics with
         {
+            ResourceThroughputPerSecond = metrics.ResourceThroughputPerSecond ??
+                ComputeThroughput(metrics.ResourceCount, metrics.DurationMilliseconds),
+            FeatureThroughputPerSecond = metrics.FeatureThroughputPerSecond ??
+                ComputeThroughput(metrics.FeatureCount, metrics.DurationMilliseconds),
+            CoverageThroughputPerSecond = metrics.CoverageThroughputPerSecond ??
+                ComputeThroughput(metrics.CoverageCount, metrics.DurationMilliseconds),
             ManualReviewRatio = manualReviewRatio
         };
     }
@@ -184,6 +226,9 @@ public static class MigrationCostPerformanceEvidenceBuilder
         AddMetricSignals(signals, "peakMemoryBytes", metrics.PeakMemoryBytes, "bytes", thresholds.PeakMemoryWarnBytes, thresholds.PeakMemoryFailBytes);
         AddMetricSignals(signals, "databaseGrowthBytes", metrics.DatabaseGrowthBytes, "bytes", thresholds.DatabaseGrowthWarnBytes, thresholds.DatabaseGrowthFailBytes);
         AddMetricSignals(signals, "artifactBytes", metrics.ArtifactBytes, "bytes", thresholds.ArtifactBytesWarn, thresholds.ArtifactBytesFail);
+        AddLowerBoundMetricSignals(signals, "resourceThroughputPerSecond", metrics.ResourceThroughputPerSecond, "resources/second", thresholds.ResourceThroughputWarnPerSecond, thresholds.ResourceThroughputFailPerSecond);
+        AddLowerBoundMetricSignals(signals, "featureThroughputPerSecond", metrics.FeatureThroughputPerSecond, "features/second", thresholds.FeatureThroughputWarnPerSecond, thresholds.FeatureThroughputFailPerSecond);
+        AddLowerBoundMetricSignals(signals, "coverageThroughputPerSecond", metrics.CoverageThroughputPerSecond, "coverages/second", thresholds.CoverageThroughputWarnPerSecond, thresholds.CoverageThroughputFailPerSecond);
         AddMetricSignals(signals, "manualReviewRatio", metrics.ManualReviewRatio, "ratio", thresholds.ManualReviewRatioWarn, thresholds.ManualReviewRatioFail);
 
         if (signals.Count == 0)
@@ -243,6 +288,47 @@ public static class MigrationCostPerformanceEvidenceBuilder
         });
     }
 
+    private static void AddLowerBoundMetricSignals(
+        List<MigrationCostPerformanceSignal> signals,
+        string metric,
+        double? observed,
+        string unit,
+        double? warnThreshold,
+        double? failThreshold)
+    {
+        if (observed == null)
+        {
+            return;
+        }
+
+        if (observed < 0)
+        {
+            signals.Add(new MigrationCostPerformanceSignal
+            {
+                Metric = metric,
+                Classification = MigrationCostPerformanceClassifications.Fail,
+                Observed = observed,
+                Unit = unit,
+                WarnThreshold = warnThreshold,
+                FailThreshold = failThreshold,
+                Summary = $"{metric} must not be negative."
+            });
+            return;
+        }
+
+        var classification = ClassifyLowerBound(observed.Value, warnThreshold, failThreshold);
+        signals.Add(new MigrationCostPerformanceSignal
+        {
+            Metric = metric,
+            Classification = classification,
+            Observed = observed,
+            Unit = unit,
+            WarnThreshold = warnThreshold,
+            FailThreshold = failThreshold,
+            Summary = BuildLowerBoundSignalSummary(metric, classification)
+        });
+    }
+
     private static string ClassifyUpperBound(double observed, double? warnThreshold, double? failThreshold)
     {
         if (failThreshold != null && observed >= failThreshold.Value)
@@ -258,11 +344,34 @@ public static class MigrationCostPerformanceEvidenceBuilder
         return MigrationCostPerformanceClassifications.Pass;
     }
 
+    private static string ClassifyLowerBound(double observed, double? warnThreshold, double? failThreshold)
+    {
+        if (failThreshold != null && observed <= failThreshold.Value)
+        {
+            return MigrationCostPerformanceClassifications.Fail;
+        }
+
+        if (warnThreshold != null && observed <= warnThreshold.Value)
+        {
+            return MigrationCostPerformanceClassifications.Warn;
+        }
+
+        return MigrationCostPerformanceClassifications.Pass;
+    }
+
     private static string BuildSignalSummary(string metric, string classification)
         => classification switch
         {
             MigrationCostPerformanceClassifications.Fail => $"{metric} reached the failure threshold.",
             MigrationCostPerformanceClassifications.Warn => $"{metric} reached the warning threshold.",
+            _ => $"{metric} is within baseline."
+        };
+
+    private static string BuildLowerBoundSignalSummary(string metric, string classification)
+        => classification switch
+        {
+            MigrationCostPerformanceClassifications.Fail => $"{metric} is below the failure threshold.",
+            MigrationCostPerformanceClassifications.Warn => $"{metric} is below the warning threshold.",
             _ => $"{metric} is within baseline."
         };
 
@@ -284,18 +393,97 @@ public static class MigrationCostPerformanceEvidenceBuilder
 
     private static string BuildSummary(
         string overallClassification,
-        IReadOnlyCollection<MigrationCostPerformancePhaseEvidence> phases)
+        IReadOnlyCollection<MigrationCostPerformancePhaseEvidence> phases,
+        IReadOnlyCollection<MigrationCostPerformanceRecoveryEvidence> recovery)
     {
         var failCount = phases.Count(static phase => phase.Classification == MigrationCostPerformanceClassifications.Fail);
         var warnCount = phases.Count(static phase => phase.Classification == MigrationCostPerformanceClassifications.Warn);
+        var failedRecoveryCount = recovery.Count(static scenario => scenario.Classification == MigrationCostPerformanceClassifications.Fail);
+        var warningRecoveryCount = recovery.Count(static scenario => scenario.Classification == MigrationCostPerformanceClassifications.Warn);
 
         return overallClassification switch
         {
-            MigrationCostPerformanceClassifications.Fail => $"Migration cost/performance evidence has {failCount} failed phase(s) and {warnCount} warning phase(s).",
-            MigrationCostPerformanceClassifications.Warn => $"Migration cost/performance evidence has {warnCount} phase(s) requiring review.",
+            MigrationCostPerformanceClassifications.Fail => $"Migration cost/performance evidence has {failCount} failed phase(s), {warnCount} warning phase(s), {failedRecoveryCount} failed recovery scenario(s), and {warningRecoveryCount} recovery warning(s).",
+            MigrationCostPerformanceClassifications.Warn => $"Migration cost/performance evidence has {warnCount} phase(s) and {warningRecoveryCount} recovery scenario(s) requiring review.",
             _ => "Migration cost/performance evidence is within the configured baseline."
         };
     }
+
+    private static MigrationCostPerformanceRecoveryEvidence[] BuildRecovery(
+        IReadOnlyList<MigrationCostPerformanceRecoveryMeasurement> measurements)
+    {
+        var grouped = measurements
+            .GroupBy(static measurement => SafeIdentifier(measurement.Scenario, "unknown"), StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+        var orderedScenarios = RequiredRecoveryScenarios
+            .Concat(grouped.Keys.Except(RequiredRecoveryScenarios, StringComparer.Ordinal).Order(StringComparer.Ordinal))
+            .ToArray();
+
+        return orderedScenarios
+            .Select(scenario => grouped.TryGetValue(scenario, out var measurement)
+                ? BuildRecoveryEvidence(scenario, measurement)
+                : new MigrationCostPerformanceRecoveryEvidence
+                {
+                    Scenario = scenario,
+                    Classification = MigrationCostPerformanceClassifications.Warn,
+                    Summary = $"{scenario} recovery evidence was not submitted."
+                })
+            .ToArray();
+    }
+
+    private static MigrationCostPerformanceRecoveryEvidence BuildRecoveryEvidence(
+        string scenario,
+        MigrationCostPerformanceRecoveryMeasurement measurement)
+    {
+        var classification = ClassifyRecovery(scenario, measurement);
+        return new MigrationCostPerformanceRecoveryEvidence
+        {
+            Scenario = scenario,
+            Classification = classification,
+            Recovered = measurement.Recovered,
+            ResumeObserved = measurement.ResumeObserved,
+            IdempotentReplay = measurement.IdempotentReplay,
+            AttemptCount = measurement.AttemptCount,
+            Summary = BuildRecoverySummary(scenario, classification)
+        };
+    }
+
+    private static string ClassifyRecovery(
+        string scenario,
+        MigrationCostPerformanceRecoveryMeasurement measurement)
+    {
+        if (measurement.AttemptCount < 0 ||
+            measurement.Recovered == false ||
+            measurement.ResumeObserved == false ||
+            measurement.IdempotentReplay == false)
+        {
+            return MigrationCostPerformanceClassifications.Fail;
+        }
+
+        if (measurement.Recovered != true)
+        {
+            return MigrationCostPerformanceClassifications.Warn;
+        }
+
+        if (scenario == MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt)
+        {
+            return measurement.IdempotentReplay == true
+                ? MigrationCostPerformanceClassifications.Pass
+                : MigrationCostPerformanceClassifications.Warn;
+        }
+
+        return measurement.ResumeObserved == true
+            ? MigrationCostPerformanceClassifications.Pass
+            : MigrationCostPerformanceClassifications.Warn;
+    }
+
+    private static string BuildRecoverySummary(string scenario, string classification)
+        => classification switch
+        {
+            MigrationCostPerformanceClassifications.Fail => $"{scenario} recovery evidence failed.",
+            MigrationCostPerformanceClassifications.Warn => $"{scenario} recovery evidence is incomplete.",
+            _ => $"{scenario} recovery evidence passed."
+        };
 
     private static string NormalizePhase(string phase)
     {
@@ -449,6 +637,25 @@ public static class MigrationCostPerformanceEvidenceBuilder
         return max;
     }
 
+    private static double? SumDouble(IEnumerable<MigrationCostPerformanceMetrics> metrics, Func<MigrationCostPerformanceMetrics, double?> selector)
+    {
+        double sum = 0;
+        var hasValue = false;
+        foreach (var metric in metrics)
+        {
+            var value = selector(metric);
+            if (value == null)
+            {
+                continue;
+            }
+
+            sum += value.Value;
+            hasValue = true;
+        }
+
+        return hasValue ? sum : null;
+    }
+
     private static double? ComputeManualReviewRatio(int? manualReviewCount, int? candidateItemCount)
     {
         if (manualReviewCount == null || candidateItemCount == null)
@@ -462,5 +669,15 @@ public static class MigrationCostPerformanceEvidenceBuilder
         }
 
         return (double)manualReviewCount.Value / candidateItemCount.Value;
+    }
+
+    private static double? ComputeThroughput(long? count, long? durationMilliseconds)
+    {
+        if (count == null || durationMilliseconds == null || durationMilliseconds <= 0)
+        {
+            return null;
+        }
+
+        return count.Value / (durationMilliseconds.Value / 1000d);
     }
 }
