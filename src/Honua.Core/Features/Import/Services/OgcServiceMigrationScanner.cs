@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json;
 using System.Xml.Linq;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -70,7 +71,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         ArgumentNullException.ThrowIfNull(request);
 
         var normalizedServiceType = NormalizeServiceType(request.ServiceType);
-        var sourceKind = $"ogc-{normalizedServiceType.ToLowerInvariant()}";
+        var sourceKind = GetSourceKind(normalizedServiceType);
         var serviceUri = ValidateServiceUri(request.ServiceUrl, request.AllowUnsafeLocalUrls);
 
         try
@@ -91,14 +92,20 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(TimeSpan.FromSeconds(request.TimeoutSeconds <= 0 ? 60 : request.TimeoutSeconds));
 
-                var capabilitiesXml = await _httpClient.GetStringAsync(capabilitiesUrl, timeout.Token).ConfigureAwait(false);
-                var capabilities = XDocument.Parse(capabilitiesXml, LoadOptions.None);
                 return normalizedServiceType switch
                 {
-                    "WFS" => await BuildWfsInventoryAsync(request, serviceUri, capabilitiesUrl, capabilities, timeout.Token).ConfigureAwait(false),
-                    "WMS" => BuildWmsInventory(request, serviceUri, capabilitiesUrl, capabilities),
-                    "WMTS" => BuildWmtsInventory(request, serviceUri, capabilitiesUrl, capabilities),
-                    _ => throw new InvalidOperationException("Unsupported OGC service type.")
+                    "OGC API Coverages" => await BuildOgcApiCoveragesInventoryAsync(
+                            request,
+                            serviceUri,
+                            timeout.Token)
+                        .ConfigureAwait(false),
+                    _ => await BuildXmlBackedInventoryAsync(
+                            request,
+                            normalizedServiceType,
+                            serviceUri,
+                            capabilitiesUrl,
+                            timeout.Token)
+                        .ConfigureAwait(false)
                 };
             }
             finally
@@ -107,11 +114,137 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or System.Xml.XmlException ||
+                                   ex is JsonException ||
                                    ex is TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
             Log.ScanFailed(_logger, sourceKind, ToSafeSourceUrl(serviceUri), ex);
             return CreateFailedArtifact(sourceKind, serviceUri, normalizedServiceType, ToSafeScanFailureReason(ex));
         }
+    }
+
+    private async Task<MigrationSourceInventoryArtifact> BuildXmlBackedInventoryAsync(
+        OgcServiceScanRequest request,
+        string normalizedServiceType,
+        Uri serviceUri,
+        Uri capabilitiesUrl,
+        CancellationToken cancellationToken)
+    {
+        var capabilitiesXml = await _httpClient.GetStringAsync(capabilitiesUrl, cancellationToken).ConfigureAwait(false);
+        var capabilities = XDocument.Parse(capabilitiesXml, LoadOptions.None);
+        return normalizedServiceType switch
+        {
+            "WFS" => await BuildWfsInventoryAsync(request, serviceUri, capabilitiesUrl, capabilities, cancellationToken).ConfigureAwait(false),
+            "WMS" => BuildWmsInventory(request, serviceUri, capabilitiesUrl, capabilities),
+            "WMTS" => BuildWmtsInventory(request, serviceUri, capabilitiesUrl, capabilities),
+            "WCS" => await BuildWcsInventoryAsync(request, serviceUri, capabilities, cancellationToken).ConfigureAwait(false),
+            _ => throw new InvalidOperationException("Unsupported OGC service type.")
+        };
+    }
+
+    private async Task<MigrationSourceInventoryArtifact> BuildWcsInventoryAsync(
+        OgcServiceScanRequest request,
+        Uri serviceUri,
+        XDocument capabilities,
+        CancellationToken cancellationToken)
+    {
+        var version = GetRootVersion(capabilities) ?? request.Version ?? "unknown";
+        var serviceMetadata = new OgcCoverageServiceMetadata
+        {
+            Title = GetServiceTitle(capabilities),
+            Description = Descendants(capabilities, "ServiceIdentification")
+                .Select(static element => ChildValue(element, "Abstract"))
+                .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value)),
+            Product = "OGC Web Coverage Service",
+            ProviderName = Descendants(capabilities, "ProviderName")
+                .Select(static element => element.Value.Trim())
+                .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value)),
+            Fees = ReadServiceConstraintValues(capabilities, "Fees"),
+            AccessConstraints = ReadServiceConstraintValues(capabilities, "AccessConstraints")
+        };
+        var serviceFormats = ReadWcsServiceFormats(capabilities);
+        var coverageIds = ReadWcsCoverageIds(capabilities);
+        var coverages = new List<OgcCoverageDescription>(coverageIds.Length);
+
+        foreach (var coverageId in coverageIds)
+        {
+            var description = await TryDescribeCoverageAsync(
+                    serviceUri,
+                    version,
+                    coverageId,
+                    serviceFormats,
+                    request.TimeoutSeconds,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            coverages.Add(description);
+        }
+
+        var scanner = new OgcCoverageMigrationInventoryScanner(_crsRegistry);
+        return await scanner.ScanAsync(
+                new OgcCoverageServiceScanRequest
+                {
+                    ServiceType = "WCS",
+                    ServiceUrl = serviceUri.ToString(),
+                    Version = version,
+                    ServiceMetadata = serviceMetadata,
+                    Coverages = coverages.ToArray()
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<MigrationSourceInventoryArtifact> BuildOgcApiCoveragesInventoryAsync(
+        OgcServiceScanRequest request,
+        Uri serviceUri,
+        CancellationToken cancellationToken)
+    {
+        var collectionsUri = BuildOgcApiCoveragesCollectionsUrl(serviceUri);
+        var payload = await _httpClient.GetStringAsync(collectionsUri, cancellationToken).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(payload);
+        var root = document.RootElement;
+        var serviceMetadata = new OgcCoverageServiceMetadata
+        {
+            Title = ReadJsonString(root, "title") ?? serviceUri.Host,
+            Description = ReadJsonString(root, "description"),
+            Product = "OGC API Coverages"
+        };
+
+        var coverages = new List<OgcCoverageDescription>();
+        if (root.TryGetProperty("collections", out var collections) &&
+            collections.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var collection in collections.EnumerateArray())
+            {
+                var id = ReadJsonString(collection, "id");
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    continue;
+                }
+
+                coverages.Add(new OgcCoverageDescription
+                {
+                    CoverageId = id,
+                    Title = ReadJsonString(collection, "title"),
+                    Description = ReadJsonString(collection, "description"),
+                    CoverageType = ReadJsonString(collection, "itemType") ?? "Coverage",
+                    Crs = ReadOgcApiCoverageCrs(collection),
+                    Axes = ReadOgcApiCoverageAxes(collection),
+                    OutputFormats = ReadOgcApiCoverageFormats(collection)
+                });
+            }
+        }
+
+        var scanner = new OgcCoverageMigrationInventoryScanner(_crsRegistry);
+        return await scanner.ScanAsync(
+                new OgcCoverageServiceScanRequest
+                {
+                    ServiceType = "OGC API Coverages",
+                    ServiceUrl = serviceUri.ToString(),
+                    Version = request.Version,
+                    ServiceMetadata = serviceMetadata,
+                    Coverages = coverages.ToArray()
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task<MigrationSourceInventoryArtifact> BuildWfsInventoryAsync(
@@ -558,12 +691,181 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         }
     }
 
+    private async Task<OgcCoverageDescription> TryDescribeCoverageAsync(
+        Uri serviceUri,
+        string version,
+        string coverageId,
+        OgcCoverageFormatMetadata[] serviceFormats,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var url = BuildDescribeCoverageUrl(serviceUri, version, coverageId);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds <= 0 ? 60 : timeoutSeconds));
+            var coverageXml = await _httpClient.GetStringAsync(url, timeout.Token).ConfigureAwait(false);
+            var document = XDocument.Parse(coverageXml, LoadOptions.None);
+            return BuildCoverageDescription(coverageId, document, serviceFormats);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Xml.XmlException)
+        {
+            return new OgcCoverageDescription
+            {
+                CoverageId = coverageId,
+                OutputFormats = serviceFormats,
+                AccessConstraints = [ToSafeDescribeCoverageFailureReason(ex)]
+            };
+        }
+    }
+
+    private static OgcCoverageDescription BuildCoverageDescription(
+        string fallbackCoverageId,
+        XDocument document,
+        OgcCoverageFormatMetadata[] serviceFormats)
+    {
+        var coverageElement = Descendants(document, "CoverageDescription").FirstOrDefault() ??
+                              Descendants(document, "CoverageOffering").FirstOrDefault() ??
+                              document.Root;
+        var coverageId = coverageElement == null
+            ? fallbackCoverageId
+            : FirstNonBlank(
+                ChildValue(coverageElement, "CoverageId"),
+                ChildValue(coverageElement, "Identifier"),
+                ChildValue(coverageElement, "name"),
+                fallbackCoverageId)!;
+        var axes = coverageElement == null ? Array.Empty<OgcCoverageAxisMetadata>() : ReadWcsAxes(coverageElement);
+        var ranges = coverageElement == null ? Array.Empty<OgcCoverageRangeMetadata>() : ReadWcsRanges(coverageElement);
+        var formats = coverageElement == null ? serviceFormats : ReadWcsCoverageFormats(coverageElement, serviceFormats);
+        var crs = coverageElement == null ? Array.Empty<OgcCoverageCrsMetadata>() : ReadWcsCoverageCrs(coverageElement);
+
+        return new OgcCoverageDescription
+        {
+            CoverageId = coverageId,
+            Title = coverageElement == null ? null : ChildValue(coverageElement, "Title"),
+            Description = coverageElement == null ? null : ChildValue(coverageElement, "Abstract") ?? ChildValue(coverageElement, "description"),
+            CoverageType = coverageElement?.Name.LocalName,
+            NativeFormat = formats.FirstOrDefault(static format => format.IsNative == true)?.Format,
+            Crs = crs,
+            Axes = axes,
+            Ranges = ranges,
+            OutputFormats = formats
+        };
+    }
+
+    private static OgcCoverageCrsMetadata[] ReadWcsCoverageCrs(XElement coverageElement)
+    {
+        var values = new List<OgcCoverageCrsMetadata>();
+        var envelope = Descendants(coverageElement, "Envelope").FirstOrDefault();
+        var envelopeCrs = envelope?.Attribute("srsName")?.Value;
+        if (!string.IsNullOrWhiteSpace(envelopeCrs))
+        {
+            values.Add(new OgcCoverageCrsMetadata
+            {
+                Role = "native",
+                Crs = envelopeCrs.Trim(),
+                AxisLabels = SplitTokens(envelope?.Attribute("axisLabels")?.Value)
+            });
+        }
+
+        foreach (var crsElement in Descendants(coverageElement, "SupportedCRS")
+                     .Concat(Descendants(coverageElement, "supportedCRS"))
+                     .Concat(Descendants(coverageElement, "nativeCRS")))
+        {
+            var value = crsElement.Value.Trim();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                values.Add(new OgcCoverageCrsMetadata
+                {
+                    Role = crsElement.Name.LocalName.Contains("native", StringComparison.OrdinalIgnoreCase) ? "native" : "supported",
+                    Crs = value
+                });
+            }
+        }
+
+        return values
+            .GroupBy(static item => $"{item.Role}\u001f{item.Crs}", StringComparer.Ordinal)
+            .Select(static group => group.First())
+            .OrderBy(static item => item.Role, StringComparer.Ordinal)
+            .ThenBy(static item => item.Crs, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static OgcCoverageAxisMetadata[] ReadWcsAxes(XElement coverageElement)
+    {
+        var axisLabels = Descendants(coverageElement, "axisLabels")
+            .SelectMany(static element => SplitTokens(element.Value))
+            .Concat(Descendants(coverageElement, "Envelope")
+                .SelectMany(static element => SplitTokens(element.Attribute("axisLabels")?.Value)))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var lower = Descendants(coverageElement, "lowerCorner")
+            .SelectMany(static element => SplitTokens(element.Value))
+            .ToArray();
+        var upper = Descendants(coverageElement, "upperCorner")
+            .SelectMany(static element => SplitTokens(element.Value))
+            .ToArray();
+
+        return axisLabels
+            .Select((axis, index) => new OgcCoverageAxisMetadata
+            {
+                Name = axis,
+                AxisType = NormalizeAxisType(axis),
+                LowerBound = index < lower.Length ? lower[index] : null,
+                UpperBound = index < upper.Length ? upper[index] : null,
+                Subsettable = true
+            })
+            .OrderBy(static axis => axis.Name, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static OgcCoverageRangeMetadata[] ReadWcsRanges(XElement coverageElement)
+        => Descendants(coverageElement, "field")
+            .Select(field => new OgcCoverageRangeMetadata
+            {
+                Name = field.Attribute("name")?.Value ?? ChildValue(field, "name") ?? "range",
+                Label = ChildValue(field, "label"),
+                DataType = Descendants(field, "DataType").Select(static item => item.Value.Trim()).FirstOrDefault(static value => value.Length > 0) ??
+                           Descendants(field, "dataType").Select(static item => item.Value.Trim()).FirstOrDefault(static value => value.Length > 0),
+                Unit = Descendants(field, "uom").Select(static item => item.Attribute("code")?.Value ?? item.Value.Trim()).FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value)),
+                NoDataValue = Descendants(field, "nilValue").Select(static item => item.Value.Trim()).FirstOrDefault(static value => value.Length > 0),
+                Interpretation = ChildValue(field, "definition")
+            })
+            .OrderBy(static range => range.Name, StringComparer.Ordinal)
+            .ToArray();
+
+    private static OgcCoverageFormatMetadata[] ReadWcsCoverageFormats(
+        XElement coverageElement,
+        OgcCoverageFormatMetadata[] serviceFormats)
+    {
+        var formats = Descendants(coverageElement, "format")
+            .Concat(Descendants(coverageElement, "SupportedFormat"))
+            .Select(element => BuildCoverageFormat(element.Value, isNative: null))
+            .Concat(serviceFormats)
+            .Where(static format => !string.IsNullOrWhiteSpace(format.Format))
+            .GroupBy(static format => NormalizeFormatKey(format.Format), StringComparer.Ordinal)
+            .Select(static group => group.First())
+            .OrderBy(static format => format.Format, StringComparer.Ordinal)
+            .ToArray();
+        return formats.Length == 0 ? serviceFormats : formats;
+    }
+
+    private static string ToSafeDescribeCoverageFailureReason(Exception exception)
+        => exception switch
+        {
+            TaskCanceledException => "DescribeCoverage request timed out.",
+            HttpRequestException => "DescribeCoverage metadata could not be retrieved.",
+            System.Xml.XmlException => "DescribeCoverage metadata could not be parsed.",
+            _ => "DescribeCoverage metadata was unavailable."
+        };
+
     private static string ToSafeScanFailureReason(Exception exception)
         => exception switch
         {
             TaskCanceledException => "OGC service scan timed out.",
             HttpRequestException => "OGC service endpoint could not be reached or returned an unsupported response.",
             System.Xml.XmlException => "OGC service capabilities metadata could not be parsed.",
+            JsonException => "OGC API Coverages metadata could not be parsed.",
             _ => "OGC service metadata could not be scanned."
         };
 
@@ -1131,13 +1433,234 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         return values;
     }
 
+    private static string[] ReadWcsCoverageIds(XDocument capabilities)
+        => Descendants(capabilities, "CoverageSummary")
+            .Select(static element => ChildValue(element, "CoverageId") ?? ChildValue(element, "Identifier") ?? ChildValue(element, "Name"))
+            .Concat(Descendants(capabilities, "CoverageOfferingBrief").Select(static element => ChildValue(element, "name")))
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => value!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static value => value, StringComparer.Ordinal)
+            .ToArray();
+
+    private static OgcCoverageFormatMetadata[] ReadWcsServiceFormats(XDocument capabilities)
+        => Descendants(capabilities, "formatSupported")
+            .Concat(Descendants(capabilities, "FormatSupported"))
+            .Concat(Descendants(capabilities, "formats"))
+            .Select(static element => BuildCoverageFormat(element.Value, isNative: null))
+            .Where(static format => !string.IsNullOrWhiteSpace(format.Format))
+            .GroupBy(static format => NormalizeFormatKey(format.Format), StringComparer.Ordinal)
+            .Select(static group => group.First())
+            .OrderBy(static format => format.Format, StringComparer.Ordinal)
+            .ToArray();
+
+    private static string[] ReadServiceConstraintValues(XDocument document, string name)
+        => Descendants(document, name)
+            .Select(static element => element.Value.Trim())
+            .Concat(Descendants(document, "Fees").Where(_ => string.Equals(name, "Fees", StringComparison.Ordinal)).Select(static element => element.Value.Trim()))
+            .Where(static value => !string.IsNullOrWhiteSpace(value) &&
+                                   !string.Equals(value, "none", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static value => value, StringComparer.Ordinal)
+            .ToArray();
+
+    private static Uri BuildDescribeCoverageUrl(Uri serviceUri, string version, string coverageId)
+    {
+        var isWcs2 = version.StartsWith("2.", StringComparison.Ordinal);
+        var builder = new UriBuilder(serviceUri)
+        {
+            Query = BuildQuery(
+                serviceUri.Query,
+                new Dictionary<string, string?>
+                {
+                    ["service"] = "WCS",
+                    ["version"] = version.Equals("unknown", StringComparison.OrdinalIgnoreCase) ? null : version,
+                    ["request"] = "DescribeCoverage",
+                    [isWcs2 ? "coverageId" : "coverage"] = coverageId
+                })
+        };
+        return builder.Uri;
+    }
+
+    private static Uri BuildOgcApiCoveragesCollectionsUrl(Uri serviceUri)
+    {
+        if (serviceUri.AbsolutePath.EndsWith("/collections", StringComparison.OrdinalIgnoreCase))
+        {
+            return serviceUri;
+        }
+
+        var builder = new UriBuilder(serviceUri);
+        builder.Path = $"{builder.Path.TrimEnd('/')}/collections";
+        return builder.Uri;
+    }
+
+    private static string? ReadJsonString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+    }
+
+    private static OgcCoverageCrsMetadata[] ReadOgcApiCoverageCrs(JsonElement collection)
+    {
+        var values = new List<OgcCoverageCrsMetadata>();
+        if (collection.TryGetProperty("crs", out var crs) && crs.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in crs.EnumerateArray())
+            {
+                var value = item.ValueKind == JsonValueKind.String ? item.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    values.Add(new OgcCoverageCrsMetadata { Role = "supported", Crs = value });
+                }
+            }
+        }
+
+        var extentCrs = TryReadNestedString(collection, "extent", "spatial", "crs");
+        if (!string.IsNullOrWhiteSpace(extentCrs))
+        {
+            values.Add(new OgcCoverageCrsMetadata { Role = "native", Crs = extentCrs });
+        }
+
+        return values
+            .GroupBy(static value => $"{value.Role}\u001f{value.Crs}", StringComparer.Ordinal)
+            .Select(static group => group.First())
+            .OrderBy(static value => value.Role, StringComparer.Ordinal)
+            .ThenBy(static value => value.Crs, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static OgcCoverageAxisMetadata[] ReadOgcApiCoverageAxes(JsonElement collection)
+    {
+        if (!collection.TryGetProperty("extent", out var extent) ||
+            !extent.TryGetProperty("spatial", out var spatial) ||
+            !spatial.TryGetProperty("bbox", out var bbox) ||
+            bbox.ValueKind != JsonValueKind.Array ||
+            bbox.GetArrayLength() == 0)
+        {
+            return [];
+        }
+
+        var firstBbox = bbox[0];
+        if (firstBbox.ValueKind != JsonValueKind.Array || firstBbox.GetArrayLength() < 4)
+        {
+            return [];
+        }
+
+        return
+        [
+            new OgcCoverageAxisMetadata
+            {
+                Name = "x",
+                AxisType = "x",
+                LowerBound = firstBbox[0].ToString(),
+                UpperBound = firstBbox[2].ToString(),
+                Subsettable = true
+            },
+            new OgcCoverageAxisMetadata
+            {
+                Name = "y",
+                AxisType = "y",
+                LowerBound = firstBbox[1].ToString(),
+                UpperBound = firstBbox[3].ToString(),
+                Subsettable = true
+            }
+        ];
+    }
+
+    private static OgcCoverageFormatMetadata[] ReadOgcApiCoverageFormats(JsonElement collection)
+    {
+        if (!collection.TryGetProperty("links", out var links) || links.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return links.EnumerateArray()
+            .Select(link => ReadJsonString(link, "type"))
+            .Where(static type => !string.IsNullOrWhiteSpace(type))
+            .Select(static type => BuildCoverageFormat(type!, isNative: null))
+            .GroupBy(static format => NormalizeFormatKey(format.Format), StringComparer.Ordinal)
+            .Select(static group => group.First())
+            .OrderBy(static format => format.Format, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string? TryReadNestedString(JsonElement element, params string[] path)
+    {
+        var current = element;
+        foreach (var segment in path)
+        {
+            if (!current.TryGetProperty(segment, out current))
+            {
+                return null;
+            }
+        }
+
+        return current.ValueKind == JsonValueKind.String ? current.GetString() : null;
+    }
+
+    private static OgcCoverageFormatMetadata BuildCoverageFormat(string format, bool? isNative)
+        => new()
+        {
+            Format = format.Trim(),
+            MediaType = LooksLikeMediaType(format) ? format.Trim() : null,
+            Profile = IsCogFormat(format) ? "cloud-optimized-geotiff" : null,
+            IsNative = isNative
+        };
+
+    private static string NormalizeFormatKey(string value)
+        => value.Trim().ToUpperInvariant();
+
+    private static bool LooksLikeMediaType(string value)
+        => value.Contains('/', StringComparison.Ordinal);
+
+    private static bool IsCogFormat(string value)
+        => value.Contains("cog", StringComparison.OrdinalIgnoreCase) ||
+           value.Contains("cloud-optimized", StringComparison.OrdinalIgnoreCase);
+
+    private static string[] SplitTokens(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string? FirstNonBlank(params string?[] values)
+        => values.FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private static string NormalizeAxisType(string axis)
+    {
+        var normalized = axis.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "long" or "lon" or "longitude" or "x" => "x",
+            "lat" or "latitude" or "y" => "y",
+            "time" or "ansi" => "time",
+            "elev" or "elevation" or "height" => "elevation",
+            _ => normalized
+        };
+    }
+
     private static string NormalizeServiceType(string serviceType)
     {
         var normalized = serviceType.Trim().ToUpperInvariant();
-        return normalized is "WFS" or "WMS" or "WMTS"
-            ? normalized
-            : throw new InvalidOperationException("Unsupported OGC service type.");
+        return normalized switch
+        {
+            "WFS" or "WMS" or "WMTS" or "WCS" => normalized,
+            "OGC API COVERAGES" or "OGC-API-COVERAGES" or "OGC_API_COVERAGES" or "COVERAGES" => "OGC API Coverages",
+            _ => throw new InvalidOperationException("Unsupported OGC service type.")
+        };
     }
+
+    private static string GetSourceKind(string normalizedServiceType)
+        => normalizedServiceType switch
+        {
+            "OGC API Coverages" => "ogc-api-coverages",
+            _ => $"ogc-{normalizedServiceType.ToLowerInvariant()}"
+        };
 
     private static Uri ValidateServiceUri(string serviceUrl, bool allowUnsafeLocalUrls)
     {
@@ -1307,6 +1830,11 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
 
     private static Uri BuildCapabilitiesUrl(Uri serviceUri, string serviceType, string? version)
     {
+        if (string.Equals(serviceType, "OGC API Coverages", StringComparison.Ordinal))
+        {
+            return serviceUri;
+        }
+
         if (HasQueryParameter(serviceUri, "request", "GetCapabilities"))
         {
             return serviceUri;

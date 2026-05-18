@@ -221,6 +221,58 @@ public sealed class OgcServiceMigrationScannerTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
     }
 
+    [Fact]
+    public async Task ScanSourceAsync_WcsCapabilitiesAndDescribeCoverage_ProducesCoverageInventory()
+    {
+        using var httpClient = new HttpClient(new OgcFixtureHandler());
+        var scanner = CreateScanner(httpClient, CreateCrsRegistry());
+
+        var artifact = await scanner.ScanSourceAsync(new OgcServiceScanRequest
+        {
+            ServiceType = "WCS",
+            ServiceUrl = "https://example.com/geoserver/wcs",
+            Version = "2.0.1",
+            TimeoutSeconds = 10
+        });
+
+        artifact.SourceKind.Should().Be("ogc-wcs");
+        artifact.Resources.Should().ContainSingle(resource => resource.Kind == "coverage" && resource.Name == "nurc:temperature");
+        var resource = artifact.Resources.Single();
+        resource.Fields.Should().ContainSingle(field => field.Name == "temperature" && field.FieldType == "Float32");
+        resource.SpatialReferences.Should().ContainSingle(reference => reference.Srid == 4326);
+        resource.Compatibility.Code.Should().Be(OgcCoverageMigrationCompatibilityCodes.CogSupported);
+        artifact.ExternalDependencies.Should().Contain(dependency =>
+            dependency.Kind == "coverage-output-format" &&
+            dependency.DependencyType == "cog");
+        artifact.ExternalDependencies.Should().Contain(dependency =>
+            dependency.Kind == "coverage-axis" &&
+            dependency.Name == "Lat");
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.Category == "coverage-metadata" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Assisted);
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_OgcApiCoveragesCollections_ProducesCoverageInventory()
+    {
+        using var httpClient = new HttpClient(new OgcFixtureHandler());
+        var scanner = CreateScanner(httpClient, CreateCrsRegistry());
+
+        var artifact = await scanner.ScanSourceAsync(new OgcServiceScanRequest
+        {
+            ServiceType = "OGC API Coverages",
+            ServiceUrl = "https://coverages.example.com",
+            TimeoutSeconds = 10
+        });
+
+        artifact.SourceKind.Should().Be("ogc-api-coverages");
+        artifact.Resources.Should().ContainSingle(resource => resource.Kind == "coverage" && resource.Name == "ocean-forecast");
+        artifact.Resources.Single().Compatibility.Code.Should().Be(OgcCoverageMigrationCompatibilityCodes.ScientificFormatUnsupported);
+        artifact.ExternalDependencies.Should().Contain(dependency =>
+            dependency.Kind == "coverage-output-format" &&
+            dependency.Compatibility.Code == OgcCoverageMigrationCompatibilityCodes.NetCdfUnsupported);
+    }
+
     private static OgcServiceMigrationScanner CreateScanner(HttpClient httpClient, Mock<ICrsRegistry> crsRegistry)
         => new(
             httpClient,
@@ -248,6 +300,9 @@ public sealed class OgcServiceMigrationScannerTests
                 ("/geoserver/wfs", _) => WfsCapabilities,
                 ("/geoserver/wms", _) => WmsCapabilities,
                 ("/geoserver/gwc/service/wmts", _) => WmtsCapabilities,
+                ("/geoserver/wcs", var q) when q.Contains("DescribeCoverage", StringComparison.OrdinalIgnoreCase) => WcsDescribeCoverage,
+                ("/geoserver/wcs", _) => WcsCapabilities,
+                ("/collections", _) => OgcApiCoveragesCollections,
                 _ => throw new HttpRequestException("Unexpected test URL.")
             };
 
@@ -365,5 +420,76 @@ public sealed class OgcServiceMigrationScannerTests
             <TileMatrixSet><ows:Identifier>EPSG:3857</ows:Identifier></TileMatrixSet>
           </Contents>
         </Capabilities>
+        """;
+
+    private const string WcsCapabilities = """
+        <wcs:Capabilities xmlns:wcs="http://www.opengis.net/wcs/2.0" xmlns:ows="http://www.opengis.net/ows/2.0" version="2.0.1">
+          <ows:ServiceIdentification>
+            <ows:Title>Reference WCS</ows:Title>
+            <ows:Abstract>Coverage migration fixture</ows:Abstract>
+          </ows:ServiceIdentification>
+          <wcs:ServiceMetadata>
+            <wcs:formatSupported>image/tiff; application=geotiff; profile=cloud-optimized-geotiff</wcs:formatSupported>
+          </wcs:ServiceMetadata>
+          <wcs:Contents>
+            <wcs:CoverageSummary>
+              <wcs:CoverageId>nurc:temperature</wcs:CoverageId>
+            </wcs:CoverageSummary>
+          </wcs:Contents>
+        </wcs:Capabilities>
+        """;
+
+    private const string WcsDescribeCoverage = """
+        <wcs:CoverageDescriptions xmlns:wcs="http://www.opengis.net/wcs/2.0" xmlns:gml="http://www.opengis.net/gml/3.2" xmlns:swe="http://www.opengis.net/swe/2.0">
+          <wcs:CoverageDescription gml:id="nurc_temperature">
+            <wcs:CoverageId>nurc:temperature</wcs:CoverageId>
+            <gml:boundedBy>
+              <gml:Envelope srsName="EPSG:4326" axisLabels="Lat Long">
+                <gml:lowerCorner>-90 -180</gml:lowerCorner>
+                <gml:upperCorner>90 180</gml:upperCorner>
+              </gml:Envelope>
+            </gml:boundedBy>
+            <gml:domainSet>
+              <gml:RectifiedGrid dimension="2">
+                <gml:axisLabels>Lat Long</gml:axisLabels>
+              </gml:RectifiedGrid>
+            </gml:domainSet>
+            <gml:rangeType>
+              <swe:DataRecord>
+                <swe:field name="temperature">
+                  <swe:Quantity definition="temperature">
+                    <swe:dataType>Float32</swe:dataType>
+                    <swe:uom code="K" />
+                    <swe:nilValues><swe:nilValue>-9999</swe:nilValue></swe:nilValues>
+                    <swe:constraint><swe:AllowedValues><swe:interval>200 330</swe:interval></swe:AllowedValues></swe:constraint>
+                  </swe:Quantity>
+                </swe:field>
+              </swe:DataRecord>
+            </gml:rangeType>
+            <wcs:format>image/tiff; application=geotiff; profile=cloud-optimized-geotiff</wcs:format>
+          </wcs:CoverageDescription>
+        </wcs:CoverageDescriptions>
+        """;
+
+    private const string OgcApiCoveragesCollections = """
+        {
+          "title": "Reference Coverages",
+          "collections": [
+            {
+              "id": "ocean-forecast",
+              "title": "Ocean forecast",
+              "itemType": "coverage",
+              "extent": {
+                "spatial": {
+                  "bbox": [[-180, -90, 180, 90]],
+                  "crs": "EPSG:4326"
+                }
+              },
+              "links": [
+                { "rel": "coverage", "href": "https://coverages.example.com/collections/ocean-forecast/coverage", "type": "application/x-netcdf" }
+              ]
+            }
+          ]
+        }
         """;
 }
