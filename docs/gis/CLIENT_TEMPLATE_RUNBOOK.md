@@ -126,6 +126,13 @@ Connection target:
 - Feature data: `${HONUA_BASE_URL}/rest/services/${HONUA_SERVICE_ID}/FeatureServer`
 - Map rendering: `${HONUA_BASE_URL}/rest/services/${HONUA_SERVICE_ID}/MapServer`
 
+Licensed automation scaffold:
+- When a licensed self-hosted Windows runner is available, prefer
+  [Licensed ArcGIS Pro Desktop Evidence](ARCGIS_PRO_LICENSED_EVIDENCE.md) to
+  produce `desktop-arcgis` `.cert.json` envelopes, screenshots, logs, and a
+  project artifact. This lane is distinct from the REST-only `arcgis-stub`
+  evidence and does not run in ordinary PR gates.
+
 Checklist:
 - [ ] Connect/auth: Add the FeatureServer and MapServer URLs in ArcGIS Pro, then authenticate with API key/OIDC/Basic as required. Verify that an unauthenticated request is rejected.
 - [ ] Discovery: Confirm layers and tables appear in Catalog and can be added to a map. Open layer properties and verify field names, types, and geometry type are reported correctly.

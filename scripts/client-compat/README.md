@@ -9,6 +9,11 @@ Validates that desktop GIS and BI clients can connect to and work with Honua Ser
 > The helper script below still references the older
 > `docker/client-compat-compose.yml` and `docker/client-compat-seed.sql` names;
 > update that script before using it for release evidence.
+>
+> Licensed ArcGIS Pro automation now has a separate scaffold:
+> `scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py`, documented in
+> `docs/gis/ARCGIS_PRO_LICENSED_EVIDENCE.md`. It is a manual/scheduled
+> self-hosted Windows lane and is not part of ordinary PR gates.
 
 ## Prerequisites
 

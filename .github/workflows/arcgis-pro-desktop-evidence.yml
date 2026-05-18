@@ -1,0 +1,242 @@
+name: Licensed ArcGIS Pro Desktop Evidence
+
+# Tier: nightly/manual evidence. This workflow never runs on pull_request.
+# It only schedules the self-hosted Windows job when explicitly enabled, so
+# ordinary PR gates do not require ArcGIS Pro or Esri licensing.
+
+on:
+  schedule:
+    - cron: '35 8 * * 1'
+  workflow_dispatch:
+    inputs:
+      run_licensed_lane:
+        description: 'Run the self-hosted ArcGIS Pro lane now'
+        required: true
+        type: choice
+        default: 'false'
+        options:
+          - 'false'
+          - 'true'
+      honua_base_url:
+        description: 'Seeded Honua base URL reachable from the Windows runner'
+        required: false
+        default: ''
+      service_id:
+        description: 'Seeded GeoServices service id'
+        required: false
+        default: 'browser_compat'
+      layer_id:
+        description: 'Point layer id'
+        required: false
+        default: '2000'
+      line_layer_id:
+        description: 'Line layer id'
+        required: false
+        default: '2001'
+      polygon_layer_id:
+        description: 'Polygon layer id'
+        required: false
+        default: '2002'
+      project_template_path:
+        description: 'Runner-local blank .aprx template path for standalone ProPy'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arcgis-pro-desktop-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Resolve licensed-lane inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      enabled: ${{ steps.resolve.outputs.enabled }}
+      base_url: ${{ steps.resolve.outputs.base_url }}
+      service_id: ${{ steps.resolve.outputs.service_id }}
+      layer_id: ${{ steps.resolve.outputs.layer_id }}
+      line_layer_id: ${{ steps.resolve.outputs.line_layer_id }}
+      polygon_layer_id: ${{ steps.resolve.outputs.polygon_layer_id }}
+      project_template_path: ${{ steps.resolve.outputs.project_template_path }}
+    steps:
+      - name: Resolve inputs
+        id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_ENABLED: ${{ github.event.inputs.run_licensed_lane || 'false' }}
+          VAR_ENABLED: ${{ vars.ARCGIS_PRO_EVIDENCE_ENABLED || 'false' }}
+          INPUT_BASE_URL: ${{ github.event.inputs.honua_base_url || '' }}
+          VAR_BASE_URL: ${{ vars.ARCGIS_PRO_EVIDENCE_BASE_URL || '' }}
+          INPUT_SERVICE_ID: ${{ github.event.inputs.service_id || '' }}
+          VAR_SERVICE_ID: ${{ vars.ARCGIS_PRO_EVIDENCE_SERVICE_ID || '' }}
+          INPUT_LAYER_ID: ${{ github.event.inputs.layer_id || '' }}
+          VAR_LAYER_ID: ${{ vars.ARCGIS_PRO_EVIDENCE_LAYER_ID || '' }}
+          INPUT_LINE_LAYER_ID: ${{ github.event.inputs.line_layer_id || '' }}
+          VAR_LINE_LAYER_ID: ${{ vars.ARCGIS_PRO_EVIDENCE_LINE_LAYER_ID || '' }}
+          INPUT_POLYGON_LAYER_ID: ${{ github.event.inputs.polygon_layer_id || '' }}
+          VAR_POLYGON_LAYER_ID: ${{ vars.ARCGIS_PRO_EVIDENCE_POLYGON_LAYER_ID || '' }}
+          INPUT_PROJECT_TEMPLATE: ${{ github.event.inputs.project_template_path || '' }}
+          VAR_PROJECT_TEMPLATE: ${{ vars.ARCGIS_PRO_PROJECT_TEMPLATE || '' }}
+        run: |
+          set -euo pipefail
+
+          enabled=false
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$DISPATCH_ENABLED" == "true" ]]; then
+            enabled=true
+          elif [[ "$EVENT_NAME" == "schedule" && "$VAR_ENABLED" == "true" ]]; then
+            enabled=true
+          fi
+
+          base_url="${INPUT_BASE_URL:-$VAR_BASE_URL}"
+          service_id="${INPUT_SERVICE_ID:-${VAR_SERVICE_ID:-browser_compat}}"
+          layer_id="${INPUT_LAYER_ID:-${VAR_LAYER_ID:-2000}}"
+          line_layer_id="${INPUT_LINE_LAYER_ID:-${VAR_LINE_LAYER_ID:-2001}}"
+          polygon_layer_id="${INPUT_POLYGON_LAYER_ID:-${VAR_POLYGON_LAYER_ID:-2002}}"
+          project_template_path="${INPUT_PROJECT_TEMPLATE:-$VAR_PROJECT_TEMPLATE}"
+
+          if [[ "$enabled" == "true" ]]; then
+            if [[ -z "$base_url" ]]; then
+              echo "::error::ArcGIS Pro evidence is enabled but no Honua base URL was provided."
+              exit 1
+            fi
+            if [[ -z "$project_template_path" ]]; then
+              echo "::error::ArcGIS Pro evidence is enabled but no runner-local .aprx project template path was provided."
+              exit 1
+            fi
+          else
+            echo "Licensed ArcGIS Pro lane is disabled. Set workflow_dispatch run_licensed_lane=true or ARCGIS_PRO_EVIDENCE_ENABLED=true."
+          fi
+
+          {
+            echo "enabled=$enabled"
+            echo "base_url=$base_url"
+            echo "service_id=$service_id"
+            echo "layer_id=$layer_id"
+            echo "line_layer_id=$line_layer_id"
+            echo "polygon_layer_id=$polygon_layer_id"
+            echo "project_template_path=$project_template_path"
+          } >> "$GITHUB_OUTPUT"
+
+  arcgis-pro-evidence:
+    name: Licensed ArcGIS Pro desktop run
+    needs: preflight
+    if: needs.preflight.outputs.enabled == 'true'
+    runs-on: [self-hosted, Windows, arcgis-pro]
+    timeout-minutes: 75
+    env:
+      HONUA_BASE_URL: ${{ needs.preflight.outputs.base_url }}
+      HONUA_SERVICE_ID: ${{ needs.preflight.outputs.service_id }}
+      HONUA_LAYER_ID: ${{ needs.preflight.outputs.layer_id }}
+      HONUA_LINE_LAYER_ID: ${{ needs.preflight.outputs.line_layer_id }}
+      HONUA_POLYGON_LAYER_ID: ${{ needs.preflight.outputs.polygon_layer_id }}
+      ARCGIS_PRO_PROJECT_TEMPLATE: ${{ needs.preflight.outputs.project_template_path }}
+      HONUA_API_KEY: ${{ secrets.HONUA_ARCGIS_PRO_API_KEY }}
+      HONUA_AUTHORIZATION: ${{ secrets.HONUA_ARCGIS_PRO_AUTHORIZATION }}
+      CERT_RUN_ID: ${{ github.run_id }}
+      HONUA_ARCGIS_PRO_OUTPUT_DIR: artifacts/arcgis-pro-desktop/${{ github.run_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Locate ArcGIS Pro Python
+        id: propy
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "$env:ProgramFiles\ArcGIS\Pro\bin\Python\Scripts\propy.bat",
+            "$env:ProgramFiles\ArcGIS\Pro\bin\Python\envs\arcgispro-py3\python.exe"
+          )
+          $propy = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $propy) {
+            throw "ArcGIS Pro Python was not found. Install ArcGIS Pro on this self-hosted runner."
+          }
+          "propy=$propy" >> $env:GITHUB_OUTPUT
+
+      - name: Validate runner-local project template
+        shell: pwsh
+        run: |
+          if (-not (Test-Path $env:ARCGIS_PRO_PROJECT_TEMPLATE)) {
+            throw "Project template path does not exist on this runner: $env:ARCGIS_PRO_PROJECT_TEMPLATE"
+          }
+
+      - name: Run licensed ArcGIS Pro evidence
+        id: evidence
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:HONUA_ARCGIS_PRO_OUTPUT_DIR | Out-Null
+          & "${{ steps.propy.outputs.propy }}" `
+            scripts/client-compat/arcgis-pro/run-arcgis-pro-evidence.py `
+            --base-url "$env:HONUA_BASE_URL" `
+            --service-id "$env:HONUA_SERVICE_ID" `
+            --layer-id "$env:HONUA_LAYER_ID" `
+            --line-layer-id "$env:HONUA_LINE_LAYER_ID" `
+            --polygon-layer-id "$env:HONUA_POLYGON_LAYER_ID" `
+            --project-template "$env:ARCGIS_PRO_PROJECT_TEMPLATE" `
+            --output-dir "$env:HONUA_ARCGIS_PRO_OUTPUT_DIR" `
+            --run-id "$env:CERT_RUN_ID" `
+            --environment ci
+
+      - name: Guard against credential leakage
+        if: always()
+        shell: pwsh
+        run: |
+          $root = $env:HONUA_ARCGIS_PRO_OUTPUT_DIR
+          if (-not (Test-Path $root)) {
+            Write-Host "No evidence directory to scan."
+            exit 0
+          }
+
+          $secretValues = @(
+            $env:HONUA_API_KEY,
+            $env:HONUA_AUTHORIZATION
+          ) | Where-Object { $_ -and $_.Length -ge 4 }
+
+          foreach ($secret in $secretValues) {
+            $matches = Get-ChildItem -Path $root -Recurse -File |
+              Where-Object { $_.Extension -in @('.json', '.log', '.md', '.txt') } |
+              Select-String -SimpleMatch -Pattern $secret -List
+            if ($matches) {
+              $paths = ($matches | ForEach-Object { $_.Path }) -join ', '
+              throw "Evidence artifact contains an unredacted secret in: $paths"
+            }
+          }
+
+      - name: Validate cert envelopes
+        if: always()
+        shell: pwsh
+        run: |
+          $certDir = Join-Path $env:HONUA_ARCGIS_PRO_OUTPUT_DIR "certification"
+          if (-not (Test-Path $certDir)) {
+            throw "No certification directory was produced."
+          }
+          $certs = Get-ChildItem -Path $certDir -Filter "*.cert.json"
+          if ($certs.Count -ne 2) {
+            throw "Expected 2 ArcGIS Pro cert envelopes, found $($certs.Count)."
+          }
+
+          $failures = 0
+          foreach ($cert in $certs) {
+            $payload = Get-Content -Raw -Path $cert.FullName | ConvertFrom-Json
+            if ($payload.client_lane -ne "desktop-arcgis") {
+              throw "$($cert.Name) has client_lane=$($payload.client_lane); expected desktop-arcgis."
+            }
+            $failures += [int]$payload.summary.failed
+          }
+          if ($failures -gt 0) {
+            throw "Licensed ArcGIS Pro evidence reported $failures failed CERT result(s)."
+          }
+
+      - name: Upload licensed ArcGIS Pro evidence
+        if: always()
+        uses: ./.github/actions/upload-ci-evidence
+        with:
+          kind: evidence
+          suffix: arcgis-pro-desktop
+          path: ${{ env.HONUA_ARCGIS_PRO_OUTPUT_DIR }}
+          tier: nightly
+          summary-file: ${{ env.HONUA_ARCGIS_PRO_OUTPUT_DIR }}/summary.md
