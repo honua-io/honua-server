@@ -21,7 +21,10 @@ Use this wording for public material:
 
 Do not currently claim general production import from OGC WFS/WMS/WMTS services
 or non-dry-run GeoServer catalog migration. Those are not implemented as
-operator-facing import paths in `honua-server`.
+operator-facing import paths in `honua-server`. Do not use broad low-risk/cost
+automated migration language until the release-gated acceptance evidence suite
+in [honua-server#1024](https://github.com/honua-io/honua-server/issues/1024)
+is passing and linked from the compatibility evidence page.
 
 ## Current Capability Matrix
 
@@ -37,6 +40,7 @@ operator-facing import paths in `honua-server`.
 | GeoServer SLD migration | Partial supporting path | Admin SLD import/export endpoints and `ISldStyleConverter` integration | Bulk GeoServer import validates/converts SLD content for diagnostics, but per-layer style persistence is handled by the admin SLD endpoint. |
 | OGC WFS/WMS/WMTS service import | Not implemented | No production import endpoint exists for arbitrary OGC services | Current evidence is consume/read interoperability, not import. |
 | Cross-server OGC consume | Test/nightly evidence | Test-only `/__test/cross-server-consume/proxy`; nightly `cross-server-consume-nightly.yml`; gap report at `docs/compatibility/cross-server-consume-gap-report.md` | The probe exists only in the Test environment and should not be presented as an operator API. |
+| End-to-end migration acceptance suite | Not implemented as one release gate | Existing evidence is split across source-specific tests, SDK compatibility, and artifact unit tests | Track the full scan/manifest/apply/parity/readiness suite in [honua-server#1024](https://github.com/honua-io/honua-server/issues/1024). |
 
 ## Implementation Evidence
 

@@ -27,7 +27,11 @@ Use this wording until the open backlog items below are complete:
 
 Do not yet claim full automated production migration from all GeoServer catalog
 items, arbitrary OGC WFS/WMS/WMTS services, private ArcGIS services, or licensed
-ArcGIS Pro desktop workflows. Those gaps are tracked below.
+ArcGIS Pro desktop workflows. Do not claim broad "minimal-risk automated
+migration from existing ArcGIS Server, GeoServer, and OGC estates" until the
+release-gated migration acceptance evidence suite in
+[honua-server#1024](https://github.com/honua-io/honua-server/issues/1024) is
+passing and linked from this page. Those gaps are tracked below.
 
 ## Claim 1: Compatibility
 
@@ -43,13 +47,16 @@ ArcGIS Pro desktop workflows. Those gaps are tracked below.
 
 | Source family | Current status | Evidence | Gap/backlog |
 |---|---|---|---|
+| End-to-end migration acceptance evidence | Not yet release-gated as a single proof suite | Current evidence is slice-level: ArcGIS import tests, GeoServer inventory/dry-run tests, OGC consume tests, SDK compatibility, and migration artifact unit coverage | Add a release-gated scan -> manifest -> apply/dry-run -> publish -> parity -> readiness suite for ArcGIS Server, GeoServer, and OGC sources: [honua-server#1024](https://github.com/honua-io/honua-server/issues/1024). |
 | ArcGIS GeoServices REST, public queryable layers | Production import path | [Import and Migration Capability Evidence](import-capability-evidence.md); `POST /api/v1/admin/import/geoservices/start`; focused endpoint/scanner tests 47 passed; Postgres inventory/baseline tests 23 passed | Current external parity nightly is failing and must be restored before linking as fresh parity proof: [honua-server#1013](https://github.com/honua-io/honua-server/issues/1013). |
 | ArcGIS GeoServices REST, private/authenticated services | Inventory can report auth-required posture, but import is public-source only today | [ArcGIS Migration Inventory Discovery](../operator/arcgis-inventory-discovery.md) documents auth-required artifacts | Add authenticated ArcGIS discovery/import: [honua-server#1017](https://github.com/honua-io/honua-server/issues/1017). |
 | GeoServer REST | Automated inventory and dry-run validation only | [Import and Migration Capability Evidence](import-capability-evidence.md); [GeoServer to Honua Migration Guide](../gis/tutorials/geoserver-migration-guide.md); `POST /api/v1/admin/import/geoserver/start` requires `dryRun=true` | Add applied/non-dry-run GeoServer migration: [honua-server#1015](https://github.com/honua-io/honua-server/issues/1015). |
 | OGC WFS/WMS/WMTS services | Compatibility and consume evidence exist; production service import is not implemented | [Cross-Server Consume Gap Report](../compatibility/cross-server-consume-gap-report.md); OGC CITE evidence above | Add OGC service migration importers: [honua-server#1016](https://github.com/honua-io/honua-server/issues/1016). |
 | Migration artifact chain | Core artifact contracts exist for inventory, manifest, parity evidence, and cutover readiness | [Migration Toolkit](../operator/migration-toolkit.md); Core tests cover manifest translation and parity evidence generation | Managed admin persistence/orchestration and broader UI/SDK workflows remain downstream work; SDK evidence gap is tracked by [honua-server#1018](https://github.com/honua-io/honua-server/issues/1018). |
 | SDK-driven migration automation | SDK migration toolkit issues are closed in SDK repos, but the central SDK compatibility run does not yet exercise migration flows | [SDK Compatibility Matrix](../developer/SDK_COMPATIBILITY_MATRIX.md); closed SDK tickets: [JS#105](https://github.com/honua-io/honua-sdk-js/issues/105), [.NET#134](https://github.com/honua-io/honua-sdk-dotnet/issues/134), [Python#49](https://github.com/honua-io/honua-sdk-python/issues/49) | Add live migration flows to SDK compatibility evidence: [honua-server#1018](https://github.com/honua-io/honua-server/issues/1018). |
-| Esri app migration automation | REST-stub and Esri Leaflet automation exist; licensed ArcGIS Pro desktop automation is not current proof | [Cross-Client Certification Evidence](../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) documents `arcgis-stub` and pending licensed-runner render/style checks | Add licensed ArcGIS Pro automation evidence: [honua-server#1019](https://github.com/honua-io/honua-server/issues/1019). |
+| ArcGIS JS app migration | Extensive `honua-sdk-js` migration tooling exists: scanner, codemod, migration report, parity matrices, WebMap/content conversion, reconciliation, browser smoke, the default Honua Esri-compat target, and an `esri-leaflet` fallback target | Closed tracking issues: [honua-server#324](https://github.com/honua-io/honua-server/issues/324), [#325](https://github.com/honua-io/honua-server/issues/325), [#326](https://github.com/honua-io/honua-server/issues/326), [#384](https://github.com/honua-io/honua-server/issues/384); current SDK source lives in `honua-sdk-js` | The website-preferred target is Honua JS + MapLibre, not only Esri-compat wrappers or Esri Leaflet. Add explicit `honua-maplibre` migration target and evidence: [honua-sdk-js#205](https://github.com/honua-io/honua-sdk-js/issues/205), then surface it through [honua-server#1018](https://github.com/honua-io/honua-server/issues/1018). |
+| ArcGIS Pro / desktop app automation | REST-stub and Esri Leaflet/browser automation exist; licensed ArcGIS Pro desktop automation is not current proof | [Cross-Client Certification Evidence](../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) documents `arcgis-stub` and pending licensed-runner render/style checks | Add licensed ArcGIS Pro automation evidence: [honua-server#1019](https://github.com/honua-io/honua-server/issues/1019). |
+| Python GP / ArcPy process migration | Honua can expose GPServer and OGC API Processes surfaces, and the Python SDK can execute/poll OGC Processes jobs; existing ArcPy script/toolbox migration is not automated or proven | [MVP Compatibility and Limitations](../gis/MVP_COMPATIBILITY_CONTRACT.md); [Geoprocess Framework Analysis](../gis/geoprocess-framework-analysis.md); Python SDK OGC Processes client and migration artifact models | Add ArcPy/Python GP scan, translate, execute, parity, and readiness evidence: [honua-sdk-python#59](https://github.com/honua-io/honua-sdk-python/issues/59). Include the resulting evidence in [honua-server#1024](https://github.com/honua-io/honua-server/issues/1024) and [honua-server#1018](https://github.com/honua-io/honua-server/issues/1018). |
 
 ## Public Evidence Bar
 
@@ -62,6 +69,8 @@ Use these rules when deciding whether a claim is ready for website copy:
 - A migration claim needs an operator-facing path that either imports/applies
   changes or explicitly generates a migration artifact showing what is not
   automated.
+- A broad low-risk/cost migration claim needs a passing end-to-end acceptance
+  suite, not only protocol conformance or per-endpoint import tests.
 - A source-specific migration claim must name the supported source family:
   public ArcGIS GeoServices REST, authenticated ArcGIS, GeoServer REST, OGC
   WFS/WMS/WMTS, or Esri desktop app workflows.
@@ -78,4 +87,7 @@ Use these rules when deciding whether a claim is ready for website copy:
 | [#1016 Add OGC service migration importers](https://github.com/honua-io/honua-server/issues/1016) | Needed before claiming automated migration from arbitrary OGC WFS/WMS/WMTS services. |
 | [#1017 Support authenticated ArcGIS GeoServices import](https://github.com/honua-io/honua-server/issues/1017) | Needed before claiming enterprise/private ArcGIS source migration. |
 | [#1018 Add SDK migration automation evidence](https://github.com/honua-io/honua-server/issues/1018) | Needed before claiming SDK-driven migration automation as release evidence. |
+| [honua-sdk-js#205 Add Honua JS MapLibre migration target for ArcGIS JS apps](https://github.com/honua-io/honua-sdk-js/issues/205) | Needed before claiming ArcGIS JS apps can be quickly ported to Honua-native MapLibre applications instead of compatibility/fallback targets. |
 | [#1019 Add licensed ArcGIS Pro automation evidence](https://github.com/honua-io/honua-server/issues/1019) | Needed before claiming automated migration proof for Esri desktop apps, beyond REST stubs. |
+| [#1024 Add automated migration acceptance evidence suite](https://github.com/honua-io/honua-server/issues/1024) | Needed before claiming broad low-risk/cost automated migration from existing ArcGIS Server, GeoServer, and OGC estates. |
+| [honua-sdk-python#59 Add ArcPy/Python GP migration scanner and Honua process runner](https://github.com/honua-io/honua-sdk-python/issues/59) | Needed before claiming existing ArcPy/Python geoprocessing jobs can be ported with automation and parity evidence. |
