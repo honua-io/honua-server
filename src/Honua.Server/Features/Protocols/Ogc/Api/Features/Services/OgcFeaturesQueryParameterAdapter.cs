@@ -209,7 +209,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
             return false;
         }
 
-        var fieldsByName = layer.AttributeFields
+        var fieldsByName = layer.VisibleAttributeFields
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
         var selected = ImmutableArray.CreateBuilder<string>(tokens.Length);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

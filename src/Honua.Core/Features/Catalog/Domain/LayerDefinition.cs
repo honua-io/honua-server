@@ -46,6 +46,16 @@ public record LayerDefinition(
     public FieldDefinition? GeometryField => Fields.FirstOrDefault(f => f.IsGeometry);
 
     /// <summary>
+    /// Fields visible in public protocol metadata and feature output.
+    /// </summary>
+    public FieldDefinition[] VisibleFields => Fields.Where(f => f.IsVisible).ToArray();
+
+    /// <summary>
+    /// Visible non-geometry attribute fields.
+    /// </summary>
+    public FieldDefinition[] VisibleAttributeFields => Fields.Where(f => !f.IsGeometry && f.IsVisible).ToArray();
+
+    /// <summary>
     /// Non-geometry attribute fields
     /// </summary>
     public FieldDefinition[] AttributeFields => Fields.Where(f => !f.IsGeometry).ToArray();

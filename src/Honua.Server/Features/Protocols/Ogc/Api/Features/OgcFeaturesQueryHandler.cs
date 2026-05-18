@@ -784,7 +784,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         LayerDefinition layer,
         ImmutableHashSet<string>? projectedProperties)
     {
-        IEnumerable<string> fieldNames = layer.AttributeFields.Select(field => field.Name);
+        IEnumerable<string> fieldNames = layer.VisibleAttributeFields.Select(field => field.Name);
         if (projectedProperties != null)
         {
             fieldNames = fieldNames.Where(projectedProperties.Contains);
@@ -913,7 +913,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         ImmutableArray<Link> links,
         long? numberMatched)
     {
-        var propertyFields = layer.AttributeFields
+        var propertyFields = layer.VisibleAttributeFields
             .Where(field => !field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase))
             .Select(field => field.Name)
             .ToArray();
@@ -966,7 +966,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         ImmutableArray<Link> links,
         long? numberMatched)
     {
-        var propertyFields = layer.AttributeFields
+        var propertyFields = layer.VisibleAttributeFields
             .Where(field => !field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase))
             .Select(field => field.Name)
             .ToArray();
@@ -1015,7 +1015,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static string? ResolveRawPublicIdPropertyName(LayerDefinition layer)
     {
-        var configuredField = layer.AttributeFields.FirstOrDefault(
+        var configuredField = layer.VisibleAttributeFields.FirstOrDefault(
             field => field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase));
         if (configuredField?.Name is { Length: > 0 })
         {
@@ -1024,7 +1024,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         if (!layer.ObjectIdFieldName.Equals("id", StringComparison.OrdinalIgnoreCase))
         {
-            var idField = layer.AttributeFields.FirstOrDefault(
+            var idField = layer.VisibleAttributeFields.FirstOrDefault(
                 field => field.Name.Equals("id", StringComparison.OrdinalIgnoreCase));
             if (idField?.Name is { Length: > 0 })
             {

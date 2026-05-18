@@ -2174,7 +2174,7 @@ internal sealed partial class Wfs20Handler
     {
         if (query.OutFields is not { } outFields)
         {
-            return layer.AttributeFields;
+            return layer.VisibleAttributeFields;
         }
 
         if (outFields.IsDefaultOrEmpty)
@@ -2182,7 +2182,7 @@ internal sealed partial class Wfs20Handler
             return Array.Empty<FieldDefinition>();
         }
 
-        return layer.AttributeFields.Where(field =>
+        return layer.VisibleAttributeFields.Where(field =>
             outFields.Any(candidate => candidate.Equals(field.Name, StringComparison.OrdinalIgnoreCase)));
     }
 

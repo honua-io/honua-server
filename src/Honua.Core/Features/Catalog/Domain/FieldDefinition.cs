@@ -13,6 +13,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="DefaultValue">Default value for the field (optional)</param>
 /// <param name="Description">Human-readable description of the field (optional)</param>
 /// <param name="Domain">Optional schema-defined domain for the field.</param>
+/// <param name="IsHidden">Whether public protocol output should omit the field.</param>
 public record FieldDefinition(
     string Name,
     FieldType Type,
@@ -20,7 +21,8 @@ public record FieldDefinition(
     bool Nullable = true,
     object? DefaultValue = null,
     string? Description = null,
-    FieldDomainDefinition? Domain = null)
+    FieldDomainDefinition? Domain = null,
+    bool IsHidden = false)
 {
     /// <summary>
     /// Display name for the field (uses Name if not specified)
@@ -31,6 +33,11 @@ public record FieldDefinition(
     /// Whether this field is a geometry field
     /// </summary>
     public bool IsGeometry => Type == FieldType.Geometry;
+
+    /// <summary>
+    /// Whether this field is visible in public protocol metadata and feature output.
+    /// </summary>
+    public bool IsVisible => !IsHidden;
 
     /// <summary>
     /// Type name suitable for GeoServices REST API responses

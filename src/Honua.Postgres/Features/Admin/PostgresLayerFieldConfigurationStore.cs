@@ -47,12 +47,14 @@ internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigur
         const string fieldNameParameter = "fieldName";
         const string aliasParameter = "alias";
         const string domainParameter = "domain";
+        const string hiddenParameter = "hidden";
 
         string sql = $"""
             UPDATE {_fieldsTable}
             SET
                 description = @{aliasParameter},
-                domain = @{domainParameter}
+                domain = @{domainParameter},
+                hidden = COALESCE(@{hiddenParameter}, hidden)
             WHERE layer_id = @layerId
               AND field_name = @{fieldNameParameter}
             """;
@@ -67,6 +69,8 @@ internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigur
             domain.Value = update.Domain is null
                 ? DBNull.Value
                 : JsonSerializer.Serialize(update.Domain, CatalogJsonContext.Default.FieldDomainDefinition);
+            var hidden = command.Parameters.Add(hiddenParameter, NpgsqlDbType.Boolean);
+            hidden.Value = update.Hidden.HasValue ? update.Hidden.Value : DBNull.Value;
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -91,7 +95,7 @@ internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigur
         CancellationToken cancellationToken)
     {
         string sql = $"""
-            SELECT field_name, description, domain
+            SELECT field_name, description, domain, hidden
             FROM {_fieldsTable}
             WHERE layer_id = @layerId
             ORDER BY field_order
@@ -114,8 +118,9 @@ internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigur
                 : JsonSerializer.Deserialize(
                     reader.GetString(domainOrdinal),
                     CatalogJsonContext.Default.FieldDomainDefinition);
+            bool hidden = reader.GetBoolean(reader.GetOrdinal("hidden"));
 
-            fields.Add(new LayerFieldConfiguration(name, alias, domain));
+            fields.Add(new LayerFieldConfiguration(name, alias, domain, hidden));
         }
 
         return fields;

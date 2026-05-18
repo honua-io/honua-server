@@ -334,7 +334,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 f.nullable,
                 f.default_value,
                 f.description,
-                f.domain
+                f.domain,
+                f.hidden
             FROM {_fieldsTable} f
             WHERE f.layer_id = @layerId
             ORDER BY f.field_order
@@ -369,7 +370,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 f.nullable,
                 f.default_value,
                 f.description,
-                f.domain
+                f.domain,
+                f.hidden
             FROM {_fieldsTable} f
             WHERE f.layer_id = ANY(@layerIds)
             ORDER BY f.layer_id, f.field_order
@@ -674,8 +676,9 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             : JsonSerializer.Deserialize(
                 reader.GetString(domainOrdinal),
                 CatalogJsonContext.Default.FieldDomainDefinition);
+        bool hidden = reader.GetBoolean(reader.GetOrdinal("hidden"));
 
-        return new FieldDefinition(fieldName, fieldType, maxLength, nullable, defaultValue, description, domain);
+        return new FieldDefinition(fieldName, fieldType, maxLength, nullable, defaultValue, description, domain, hidden);
     }
 
     private static LayerDefinition PopulateLayerDetails(

@@ -378,7 +378,7 @@ internal sealed partial class OgcFilterProcessor
                 continue;
             }
 
-            var field = layer.AttributeFields.FirstOrDefault(f => f.Name.Equals(key, StringComparison.OrdinalIgnoreCase));
+            var field = layer.VisibleAttributeFields.FirstOrDefault(f => f.Name.Equals(key, StringComparison.OrdinalIgnoreCase));
             if (field == null)
             {
                 return CombinedFilterResult.Failure($"Unknown query parameter: {key}");

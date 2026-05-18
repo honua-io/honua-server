@@ -173,11 +173,14 @@ internal sealed class QueryFormatter : IQueryFormatter
         string[]? outFields)
     {
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
-        var declaredAttributeFields = layer.Fields
+        var allDeclaredAttributeFields = layer.Fields
             .Where(field => !field.IsGeometry)
             .Select(field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var runtimeFields = DetectRuntimeFields(result.Items, declaredAttributeFields, objectIdFieldName);
+        var visibleDeclaredAttributeFields = layer.VisibleAttributeFields
+            .Select(field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var runtimeFields = DetectRuntimeFields(result.Items, allDeclaredAttributeFields, objectIdFieldName);
         var runtimeFieldNames = runtimeFields
             .Select(field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -187,7 +190,7 @@ internal sealed class QueryFormatter : IQueryFormatter
                 returnGeometry,
                 outputSrid,
                 outFields,
-                declaredAttributeFields,
+                visibleDeclaredAttributeFields,
                 runtimeFieldNames,
                 objectIdFieldName,
                 returnZ,
@@ -445,7 +448,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             };
         }
 
-        var mappedFields = layer.Fields
+        var mappedFields = layer.VisibleFields
             .Where(field => !field.IsGeometry)
             .Where(field => includeAllFields || requestedFields!.Contains(field.Name))
             .Select(MapFieldInfo)
@@ -836,6 +839,13 @@ internal sealed class StreamingQueryFormatter
         var outFieldLookup = CreateFieldLookup(outFields);
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
         var queryFields = QueryFormatter.BuildQueryFields(layer, outFields, objectIdFieldName);
+        var allDeclaredAttributeFields = layer.Fields
+            .Where(field => !field.IsGeometry)
+            .Select(field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visibleDeclaredAttributeFields = layer.VisibleAttributeFields
+            .Select(field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var displayFieldName = QueryFormatter.ResolveDisplayFieldName(queryFields, objectIdFieldName);
 
         // Start object
@@ -881,6 +891,8 @@ internal sealed class StreamingQueryFormatter
                 returnGeometry,
                 outputSrid,
                 outFieldLookup,
+                allDeclaredAttributeFields,
+                visibleDeclaredAttributeFields,
                 objectIdFieldName,
                 returnZ,
                 returnM,
@@ -994,6 +1006,8 @@ internal sealed class StreamingQueryFormatter
         bool returnGeometry,
         int? outputSrid,
         HashSet<string>? outFieldLookup,
+        IReadOnlySet<string> allDeclaredAttributeFields,
+        IReadOnlySet<string> visibleDeclaredAttributeFields,
         string objectIdFieldName,
         bool returnZ,
         bool returnM,
@@ -1015,6 +1029,11 @@ internal sealed class StreamingQueryFormatter
 
                 // Skip fields not in outFields if specified
                 if (outFieldLookup != null && !outFieldLookup.Contains(fieldName))
+                {
+                    continue;
+                }
+
+                if (!ShouldWriteStreamingAttribute(fieldName, allDeclaredAttributeFields, visibleDeclaredAttributeFields))
                 {
                     continue;
                 }
@@ -1062,6 +1081,24 @@ internal sealed class StreamingQueryFormatter
         }
 
         writer.WriteEndObject(); // End feature
+    }
+
+    private static bool ShouldWriteStreamingAttribute(
+        string fieldName,
+        IReadOnlySet<string> allDeclaredAttributeFields,
+        IReadOnlySet<string> visibleDeclaredAttributeFields)
+    {
+        if (fieldName.StartsWith("__", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (visibleDeclaredAttributeFields.Contains(fieldName))
+        {
+            return true;
+        }
+
+        return !allDeclaredAttributeFields.Contains(fieldName);
     }
 
     /// <summary>

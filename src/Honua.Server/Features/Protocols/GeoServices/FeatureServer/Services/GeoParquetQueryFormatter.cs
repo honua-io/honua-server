@@ -140,7 +140,7 @@ internal sealed class GeoParquetQueryFormatter
             };
         }
 
-        var selectedFields = layer.Fields
+        var selectedFields = layer.VisibleFields
             .Where(field => !field.IsGeometry)
             .Where(field => includeAllFields || requestedFields!.Contains(field.Name))
             .ToList();
