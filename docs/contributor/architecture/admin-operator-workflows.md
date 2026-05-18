@@ -94,15 +94,20 @@ landing page.
 | Field | A source attribute with display, query, edit, sensitivity, and semantic role controls | Field name/type, alias, role, domain, exposure, target-specific bindings in advanced view |
 | Metadata | Human and standards meaning for the resource | Description, contacts, rights, license, dates, extents, quality, lineage, links, distributions |
 | Service or Catalog | Runtime endpoint or catalog surface that can expose one or more resources | GeoServices, OGC API, WMS, WMTS, WFS, OData, STAC, DCAT, OGC Records, Esri catalog |
-| Publication | A resource exposed to a target endpoint or catalog item | Target, path or item identity, field exposure, metadata projection, readiness state |
+| Service Layer Slot | A service-local publication position for one resource, especially useful for Esri MapServer/FeatureServer ergonomics | Service id, layer index or route, display name, linked data resource, readiness state |
+| Publication | A resource exposed to a target endpoint, service layer slot, or catalog item | Target, path or item identity, field exposure, metadata projection, readiness state |
 | Projection Preview | Read-only preview of target output before publish | Derived standard output for OGC, DCAT, STAC, ISO, GeoServices, OData, or Esri catalog |
 | Access Preset | Human-readable security choice | Roles, grants, anonymous access, service/resource/field restrictions, advanced policy diagnostics |
 | Job | Long-running import, publish, tile, validation, or migration operation | Job type, status, progress, logs, result links, retry/cancel support |
 | Validation Result | Readiness issue tied to a fix location | Severity, target, resource, workflow area, blocker or warning, deep link |
 
-The semantic center is the Data Resource, not the service. A resource can publish
-to many service and catalog formats. A service or catalog is a target surface,
-not the owner of the resource meaning.
+The semantic center is the Data Resource, not the service. Canonical source
+binding, field roles, descriptive metadata, lineage, rights, and access policy
+remain owned by the Data Resource. A resource can publish to many service and
+catalog formats. A service or catalog is a target surface, not the owner of the
+resource meaning. For multi-layer Esri services, the service can have many
+layer slots or publication entries under it; each slot is a publication
+representation linked back to one Data Resource.
 
 ## Storage, Service, And Catalog Mapping Rules
 
@@ -111,9 +116,12 @@ The admin UI should reinforce these rules:
 - Connection explains how Honua reaches storage or an external API.
 - Source explains which concrete table, file, raster, tile set, remote layer, or
   API asset the resource comes from.
-- Data Resource explains what the thing means.
+- Data Resource explains what the thing means and owns the canonical source,
+  fields, metadata, lineage, rights, and access controls.
 - Field roles explain field semantics once.
-- Publication explains where the resource is exposed.
+- Publication explains where the resource is exposed. In an Esri service this
+  may be a service layer slot with a service-local layer id, route, display
+  name, renderer, popup, or field exposure override.
 - Projection Preview explains how that one resource will look in a specific
   service, catalog, or standard output.
 - Runtime snapshots and Redis caches are derived outputs. They should never be
@@ -129,6 +137,12 @@ Target-specific differences belong in the publication or projection preview,
 not in duplicated resource metadata. A target may need a collection id, item id,
 layer index, route, output format, thumbnail, or field exposure override, but
 those choices should not fork the canonical resource meaning.
+
+Service detail pages should still show layers underneath a service for Esri
+admin ergonomics. This is a navigation and publication-management view, not a
+change in ownership: service layers are slots/publication entries, and edits to
+source, fields, metadata, lineage, rights, or canonical access deep-link back to
+the linked Data Resource.
 
 ## Workflow Matrix
 
@@ -355,6 +369,55 @@ Outputs:
 - Publication record.
 - Target-specific projection output.
 - Runtime cache/projection invalidation job when needed.
+
+### Service Detail Layer Slots
+
+Service and catalog detail pages should include a concise table of the
+publication entries under that service. For Esri MapServer and FeatureServer
+targets, label these entries as layers so administrators can scan the service in
+the same shape as ArcGIS REST.
+
+Recommended columns:
+
+| Column | Purpose |
+|---|---|
+| Layer | Service-local layer index, route, or display name |
+| Data Resource | Linked canonical resource; opens the resource detail |
+| Kind | Feature, table, raster, tile, catalog item, or other target-specific type |
+| Source | Read-only connection/source summary from the resource |
+| Fields | Readiness or exposure summary, with edit link to Resource -> Fields |
+| Metadata | Projection readiness, with edit link to Resource -> Metadata |
+| Access | Effective access summary, with canonical edit link to Resource -> Access |
+| Status | Draft, warning, blocked, published, stale, or failed |
+| Actions | Preview, reorder where supported, validate, unpublish, or open resource |
+
+Do not make the service layer table the canonical authoring surface for the
+resource. It can manage service-local choices such as layer order, layer route,
+published display name, renderer override, popup override, target field
+exposure, cache settings, and unpublish/reorder actions. It should deep-link to
+the Data Resource for source, field role, metadata, rights, lineage, and access
+ownership.
+
+### Data Resource Publish View
+
+The Data Resource Publish tab should provide the inverse view: all places where
+one canonical resource is published or drafted for publication.
+
+Recommended columns:
+
+| Column | Purpose |
+|---|---|
+| Target | Service, catalog, or standard output name |
+| Entry | Layer index, collection id, route, entity set, record id, or portal item |
+| Type | GeoServices, OGC API, WMS, WFS, OData, STAC, DCAT, OGC Records, or Esri catalog |
+| Projection | Ready, warning, blocked, or stale projection state |
+| Access | Effective access compared with the resource policy |
+| Last publish | Timestamp, author, and job link |
+| Actions | Preview, validate, publish, republish, unpublish, or open service |
+
+This inverse view makes it clear that the resource owns meaning once, while
+each row is a publication representation of that resource in a specific service
+or catalog target.
 
 ## Resource Authoring Flows
 

@@ -25,6 +25,13 @@ Metadata, Publish, Access, Validation -> Services and Catalogs.
 Supporting schema objects can exist behind these workflows, but the main UI
 should keep users focused on what they are trying to manage.
 
+The ownership rule is explicit: Data Resources own canonical source binding,
+fields, metadata, lineage, rights, and access. Services and catalogs own
+publication shape. A service can have many layer slots or publication entries,
+and each slot is a service-local representation linked to a Data Resource. This
+lets Esri administrators see layers under a MapServer or FeatureServer without
+turning the service into the owner of source, field, metadata, or access truth.
+
 ## UI Vocabulary
 
 Use these as primary interface terms:
@@ -91,6 +98,27 @@ Primary actions:
 - Filter by type, source, validation, access, and publish target
 - Open validation blockers
 - Open projection preview
+
+## Services List
+
+Recommended columns:
+
+| Column | Purpose |
+|---|---|
+| Name | Service or catalog display name and stable route |
+| Type | GeoServices, OGC API, WMS, WMTS, WFS, OData, STAC, DCAT, OGC Records, or Esri catalog |
+| Entries | Count of layer slots, collections, entity sets, records, or items |
+| Status | Draft, running, degraded, stopped, warning, or blocked |
+| Access | Service-level access and anonymous availability summary |
+| Validation | Highest severity across publication entries |
+| Modified | Last publish or runtime configuration change |
+
+Primary actions:
+
+- Create service or catalog
+- Filter by type, status, access, and validation
+- Open validation blockers
+- Add or import publication entries
 
 ## Resource Detail Tabs
 
@@ -171,6 +199,54 @@ Show publication targets and compatibility:
 | DCAT dataset/distribution | Warning | Missing publisher identifier |
 | OGC Records record | Ready | None |
 | Esri catalog/portal item | Warning | Missing thumbnail or owner details |
+
+The Publish tab is the inverse of service detail: it shows every publication
+entry for this one Data Resource across services and catalogs.
+
+Recommended publication columns:
+
+| Column | Purpose |
+|---|---|
+| Target | Service or catalog name |
+| Entry | Layer index, route, collection id, entity set, record id, or portal item |
+| Type | Target protocol or catalog type |
+| Projection | Ready, warning, blocked, or stale |
+| Access | Effective access compared with canonical resource access |
+| Last publish | Timestamp and job link |
+| Actions | Preview, validate, publish, republish, unpublish, or open target |
+
+The table should make it clear that source, fields, metadata, lineage, rights,
+and canonical access are edited on the Data Resource, while each row stores only
+target-specific publication representation such as layer id, route, display
+name, renderer or popup override, field exposure override, cache settings, and
+readiness state.
+
+## Service Detail
+
+Service detail pages should show entries underneath the service. For Esri
+MapServer and FeatureServer targets, label these entries as layers and preserve
+service-local layer ordering/indexes for admin ergonomics. For non-Esri targets,
+the same pattern can be labeled as collections, entity sets, records, items, or
+layers according to the target.
+
+Recommended entry columns:
+
+| Column | Purpose |
+|---|---|
+| Entry | Layer index, route, collection id, entity set, record id, or item name |
+| Data Resource | Linked canonical resource |
+| Kind | Feature, table, raster, tile, catalog item, or other supported kind |
+| Source | Read-only source summary from the Data Resource |
+| Fields | Exposure/readiness summary with edit link to Resource -> Fields |
+| Metadata | Projection readiness with edit link to Resource -> Metadata |
+| Access | Effective access with edit link to Resource -> Access |
+| Status | Draft, warning, blocked, published, stale, or failed |
+| Actions | Preview, validate, reorder where supported, unpublish, or open resource |
+
+Service-local controls can edit publication concerns such as order, route,
+published display name, service capability toggles, cache settings, renderer
+override, popup override, and unpublish actions. They should not duplicate
+canonical source, fields, metadata, lineage, rights, or access authoring.
 
 ### Access
 
