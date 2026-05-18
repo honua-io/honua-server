@@ -321,6 +321,121 @@ public sealed class GitOpsWatchEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/gitops/watch")]
+    public async Task GitOpsWatchStore_CommitProcessingLease_AllowsOneActiveProcessor()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IGitOpsWatchStore>();
+        var config = await store.UpsertConfigAsync(new GitOpsWatchConfig
+        {
+            ConfigId = Guid.NewGuid(),
+            RepositoryUrl = "https://github.com/example/lease-test.git",
+            Branch = "main",
+            ManifestPath = "manifests/",
+            PollIntervalSeconds = 60,
+            Enabled = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+
+        const string commitSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        var now = DateTimeOffset.UtcNow;
+        var firstLeaseId = Guid.NewGuid();
+        var secondLeaseId = Guid.NewGuid();
+
+        var firstAcquired = await store.TryAcquireCommitProcessingLeaseAsync(
+            config.ConfigId,
+            commitSha,
+            firstLeaseId,
+            now,
+            now.AddMinutes(5));
+        var secondAcquired = await store.TryAcquireCommitProcessingLeaseAsync(
+            config.ConfigId,
+            commitSha,
+            secondLeaseId,
+            now.AddSeconds(1),
+            now.AddMinutes(5));
+
+        firstAcquired.Should().BeTrue();
+        secondAcquired.Should().BeFalse();
+
+        var completed = await store.CompleteCommitProcessingAsync(
+            config.ConfigId,
+            commitSha,
+            firstLeaseId,
+            now.AddSeconds(2));
+
+        completed.Should().BeTrue();
+        var currentConfig = await store.GetConfigAsync();
+        currentConfig!.LastKnownCommitSha.Should().Be(commitSha);
+
+        var alreadyObservedAcquire = await store.TryAcquireCommitProcessingLeaseAsync(
+            config.ConfigId,
+            commitSha,
+            Guid.NewGuid(),
+            now.AddSeconds(3),
+            now.AddMinutes(6));
+
+        alreadyObservedAcquire.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/gitops/watch")]
+    public async Task GitOpsWatchStore_ExpiredCommitProcessingLease_CanBeReplacedByNewOwner()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IGitOpsWatchStore>();
+        var config = await store.UpsertConfigAsync(new GitOpsWatchConfig
+        {
+            ConfigId = Guid.NewGuid(),
+            RepositoryUrl = "https://github.com/example/expired-lease-test.git",
+            Branch = "main",
+            ManifestPath = "manifests/",
+            PollIntervalSeconds = 60,
+            Enabled = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+
+        const string commitSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        var now = DateTimeOffset.UtcNow;
+        var expiredLeaseId = Guid.NewGuid();
+        var replacementLeaseId = Guid.NewGuid();
+
+        var expiredAcquired = await store.TryAcquireCommitProcessingLeaseAsync(
+            config.ConfigId,
+            commitSha,
+            expiredLeaseId,
+            now.AddMinutes(-10),
+            now.AddMinutes(-5));
+        var replacementAcquired = await store.TryAcquireCommitProcessingLeaseAsync(
+            config.ConfigId,
+            commitSha,
+            replacementLeaseId,
+            now,
+            now.AddMinutes(5));
+
+        expiredAcquired.Should().BeTrue();
+        replacementAcquired.Should().BeTrue();
+
+        var expiredComplete = await store.CompleteCommitProcessingAsync(
+            config.ConfigId,
+            commitSha,
+            expiredLeaseId,
+            now.AddSeconds(1));
+        var replacementComplete = await store.CompleteCommitProcessingAsync(
+            config.ConfigId,
+            commitSha,
+            replacementLeaseId,
+            now.AddSeconds(2));
+
+        expiredComplete.Should().BeFalse();
+        replacementComplete.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [Endpoint("GET /api/v1/admin/gitops/changes/{id}")]
     public async Task GetChange_ReturnsSingleChange()
     {

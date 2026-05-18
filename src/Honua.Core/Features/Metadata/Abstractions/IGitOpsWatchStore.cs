@@ -31,6 +31,36 @@ public interface IGitOpsWatchStore
     Task<bool> UpdatePollStateAsync(Guid configId, string commitSha, DateTimeOffset polledAt, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Attempts to acquire the processing lease for a specific configuration commit.
+    /// </summary>
+    Task<bool> TryAcquireCommitProcessingLeaseAsync(
+        Guid configId,
+        string commitSha,
+        Guid leaseId,
+        DateTimeOffset acquiredAt,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks a leased commit as observed and releases the processing lease atomically.
+    /// </summary>
+    Task<bool> CompleteCommitProcessingAsync(
+        Guid configId,
+        string commitSha,
+        Guid leaseId,
+        DateTimeOffset polledAt,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Releases the processing lease for a commit that should be retried later.
+    /// </summary>
+    Task<bool> ReleaseCommitProcessingLeaseAsync(
+        Guid configId,
+        string commitSha,
+        Guid leaseId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Records a detected change from the watched repository.
     /// </summary>
     Task<GitOpsChangeRecord> CreateChangeRecordAsync(GitOpsChangeRecord record, CancellationToken cancellationToken = default);
