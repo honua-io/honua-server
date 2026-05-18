@@ -28,6 +28,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 {
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported for source-backed PostGIS layers.";
+    private const int MaxJsonbBuildObjectPairs = 50;
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;
@@ -190,7 +191,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("Statistics are not supported for source-backed PostGIS layers yet.");
+    {
+        if (!query.OutStatistics.HasValue || query.OutStatistics.Value.IsDefaultOrEmpty)
+        {
+            throw new ArgumentException("OutStatistics must be specified for a statistics query.", nameof(query));
+        }
+
+        return ExecuteStatisticsQueryAsync(query, cancellationToken);
+    }
 
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId,
@@ -382,14 +390,28 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return "'{}'::jsonb::text";
         }
 
-        var parts = new List<string>(fields.Length * 2);
+        return BuildAttributesExpressionText(fields);
+    }
+
+    private static string BuildAttributesExpressionText(FieldDefinition[] fields)
+    {
+        var chunks = fields
+            .Chunk(MaxJsonbBuildObjectPairs)
+            .Select(BuildAttributesExpressionChunk);
+
+        return $"({string.Join(" || ", chunks)})::text";
+    }
+
+    private static string BuildAttributesExpressionChunk(IEnumerable<FieldDefinition> fields)
+    {
+        var parts = new List<string>();
         foreach (var field in fields)
         {
             parts.Add($"'{EscapeSqlLiteral(field.Name)}'");
             parts.Add(ValidateAndQuoteIdentifier(field.Name));
         }
 
-        return $"jsonb_build_object({string.Join(", ", parts)})::text";
+        return $"jsonb_build_object({string.Join(", ", parts)})";
     }
 
     private FieldDefinition[] ResolveAttributeFields(FeatureQuery query)
@@ -451,6 +473,96 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private static string BuildWhereJoiner(SqlBuilder sql)
         => sql.TextContainsWhere ? "AND" : "WHERE";
 
+    private async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsQueryAsync(
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var sql = new SqlBuilder();
+        var groupByExpressions = new List<string>();
+        var selectParts = new List<string>();
+
+        if (query.GroupByFields.HasValue && !query.GroupByFields.Value.IsDefaultOrEmpty)
+        {
+            foreach (var groupByField in query.GroupByFields.Value)
+            {
+                var groupByExpression = ResolveColumnExpression(groupByField);
+                selectParts.Add($"{groupByExpression} AS {ValidateAndQuoteIdentifier(groupByField)}");
+                groupByExpressions.Add(groupByExpression);
+            }
+        }
+
+        foreach (var statistic in query.OutStatistics!.Value)
+        {
+            var field = ResolveFieldDefinition(statistic.OnStatisticField);
+            var fieldExpression = ResolveColumnExpression(statistic.OnStatisticField);
+            var aggregateExpression = BuildStatisticsAggregateExpression(
+                statistic.StatisticType,
+                fieldExpression,
+                field.Type);
+            selectParts.Add($"{aggregateExpression} AS {ValidateAndQuoteIdentifier(statistic.OutStatisticFieldName)}");
+        }
+
+        sql.Append(CultureInfo.InvariantCulture, $"SELECT {string.Join(", ", selectParts)} FROM {_qualifiedTableName}");
+        AppendFilter(sql, query);
+
+        if (groupByExpressions.Count > 0)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $" GROUP BY {string.Join(", ", groupByExpressions)}");
+        }
+
+        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = CreateReadCommand(connection, sql);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        var rows = ImmutableArray.CreateBuilder<IReadOnlyDictionary<string, object?>>();
+        string[]? fieldNames = null;
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            fieldNames ??= Enumerable.Range(0, reader.FieldCount)
+                .Select(reader.GetName)
+                .ToArray();
+            var row = new Dictionary<string, object?>(fieldNames.Length, StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < fieldNames.Length; i++)
+            {
+                row[fieldNames[i]] = reader.IsDBNull(i)
+                    ? null
+                    : ConvertStatisticsValue(reader.GetValue(i));
+            }
+
+            rows.Add(row);
+        }
+
+        return rows.ToImmutable();
+    }
+
+    internal static string BuildStatisticsAggregateExpression(
+        StatisticType statisticType,
+        string fieldExpression,
+        FieldType fieldType)
+    {
+        var numericExpression = BuildNullableNumericExpression(fieldExpression);
+        var orderedExpression = IsNumericFieldType(fieldType) ? numericExpression : fieldExpression;
+        return statisticType switch
+        {
+            StatisticType.Count => IsNumericFieldType(fieldType)
+                ? $"COUNT({numericExpression})"
+                : $"COUNT({fieldExpression})",
+            StatisticType.Sum => $"SUM({numericExpression})",
+            StatisticType.Min => $"MIN({orderedExpression})",
+            StatisticType.Max => $"MAX({orderedExpression})",
+            StatisticType.Avg => $"AVG({numericExpression})",
+            StatisticType.Stddev => $"STDDEV_SAMP({numericExpression})",
+            StatisticType.Var => $"VAR_SAMP({numericExpression})",
+            _ => throw new ArgumentOutOfRangeException(nameof(statisticType), statisticType, "Unsupported statistic type")
+        };
+    }
+
+    private static string BuildNullableNumericExpression(string fieldExpression)
+        => $"NULLIF(({fieldExpression})::text, '')::numeric";
+
+    private static bool IsNumericFieldType(FieldType fieldType)
+        => fieldType is FieldType.Integer or FieldType.BigInteger or FieldType.Double or FieldType.Float;
+
     private string ConvertSqlFilter(SqlFragment sqlFilter, SqlBuilder sql)
     {
         var converted = SqlFilterParameterRegex().Replace(
@@ -466,6 +578,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 return sql.AddParameter(sqlFilter.Parameters[index]);
             });
 
+        converted = RewriteAttributeTextAccessExpressions(converted, ResolveColumnExpression);
+
         return QuotedIdentifierRegex().Replace(
             converted,
             match =>
@@ -474,6 +588,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 return ResolveColumnExpression(identifier);
             });
     }
+
+    internal static string RewriteAttributeTextAccessExpressions(
+        string sql,
+        Func<string, string> resolveColumnExpression)
+        => AttributeTextAccessRegex().Replace(
+            sql,
+            match =>
+            {
+                var fieldName = match.Groups["field"].Value.Replace("''", "'", StringComparison.Ordinal);
+                return $"NULLIF(({resolveColumnExpression(fieldName)})::text, '')";
+            });
 
     private string BuildSpatialFilter(SpatialFilter filter, SqlBuilder sql)
     {
@@ -676,6 +801,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return ValidateAndQuoteIdentifier(field.Name);
     }
 
+    private FieldDefinition ResolveFieldDefinition(string fieldName)
+    {
+        if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase))
+        {
+            return new FieldDefinition(fieldName, FieldType.BigInteger);
+        }
+
+        return _layer.Fields.FirstOrDefault(candidate =>
+                candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new ArgumentException($"Field '{fieldName}' was not found on layer '{_layer.Name}'.");
+    }
+
     private Feature ReadFeature(NpgsqlDataReader reader)
     {
         var id = reader.GetInt64(0);
@@ -775,6 +913,25 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             null => DBNull.Value,
             DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
             _ => value
+        };
+    }
+
+    private static object? ConvertStatisticsValue(object value)
+    {
+        return value switch
+        {
+            decimal decimalValue => Convert.ToDouble(decimalValue, CultureInfo.InvariantCulture),
+            long longValue => longValue,
+            int intValue => (long)intValue,
+            double doubleValue => doubleValue,
+            float floatValue => (double)floatValue,
+            string stringValue => stringValue,
+            DateTime dateTime => new DateTimeOffset(DateTime.SpecifyKind(
+                dateTime,
+                dateTime.Kind == DateTimeKind.Unspecified ? DateTimeKind.Utc : dateTime.Kind)),
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            Array array => array,
+            _ => value.ToString()
         };
     }
 
@@ -985,6 +1142,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         @"@p(?<index>\d+)",
         RegexOptions.CultureInvariant)]
     private static partial Regex SqlFilterParameterRegex();
+
+    [GeneratedRegex(
+        @"(?:""attributes""|attributes)\s*->>\s*'(?<field>(?:''|[^'])+)'",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AttributeTextAccessRegex();
 
     [GeneratedRegex(
         @"""(?<identifier>(?:[^""]|"""")+)""",

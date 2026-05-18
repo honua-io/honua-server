@@ -1321,8 +1321,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 continue; // We use the canonical objectid primary key instead
 
             var pgType = MapEsriTypeToPgType(field.Type, field.Length);
-            var nullable = field.Nullable ? "" : " NOT NULL";
-            columns.Add($"\"{field.Name.SanitizeFieldName()}\" {pgType}{nullable}");
+            columns.Add($"\"{field.Name.SanitizeFieldName()}\" {pgType}");
         }
 
         // Add geometry column if the layer has geometry
@@ -1395,7 +1394,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         var parameterPlaceholders = string.Join(", ", fields.Select((_, i) => $"@p{i}"));
         if (hasGeometry)
         {
-            parameterPlaceholders += $", ST_SetSRID(ST_GeomFromGeoJSON(@geom), {targetSrid})";
+            parameterPlaceholders += $", {BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid)}";
         }
 
         var insertSql = $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders})";
@@ -1477,6 +1476,17 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         }
 
         return (inserted, failed);
+    }
+
+    private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid)
+    {
+        var geometry = $"ST_SetSRID(ST_GeomFromGeoJSON(@geom), {targetSrid})";
+        return geometryType?.ToUpperInvariant() switch
+        {
+            "ESRIGEOMETRYPOLYGON" => $"ST_Multi(ST_CollectionExtract(ST_MakeValid({geometry}), 3))",
+            "ESRIGEOMETRYPOLYLINE" => $"ST_Multi(ST_CollectionExtract(ST_MakeValid({geometry}), 2))",
+            _ => geometry
+        };
     }
 
     private static object? ConvertJsonValue(JsonElement element, string esriType)

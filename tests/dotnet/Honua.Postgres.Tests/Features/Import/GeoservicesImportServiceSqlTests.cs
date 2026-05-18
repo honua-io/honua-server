@@ -56,6 +56,60 @@ public sealed class GeoservicesImportServiceSqlTests
     }
 
     [Fact]
+    public void BuildCreateTableSql_AllowsNullsForSourceFieldsWithStaleEsriNullableMetadata()
+    {
+        var layerInfo = new GeoservicesLayerInfo
+        {
+            Id = 5,
+            Name = "C2 Military Operations Area",
+            GeometryType = "esriGeometryPolygon",
+            Fields =
+            [
+                new GeoservicesFieldInfo
+                {
+                    Name = "objectid",
+                    Type = "esriFieldTypeOID",
+                    Nullable = false
+                },
+                new GeoservicesFieldInfo
+                {
+                    Name = "Shape__Area",
+                    Type = "esriFieldTypeDouble",
+                    Nullable = false
+                }
+            ]
+        };
+
+        var method = typeof(GeoservicesImportService).GetMethod(
+            "BuildCreateTableSql",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        method.Should().NotBeNull();
+
+        var sql = (string)method!.Invoke(null, new object[] { "honua_data", "military_area", layerInfo, 4326 })!;
+
+        sql.Should().Contain("\"shape__area\" DOUBLE PRECISION");
+        sql.Should().NotContain("\"shape__area\" DOUBLE PRECISION NOT NULL");
+    }
+
+    [Fact]
+    public void BuildGeometryInsertExpression_ForPolygon_RepairsInvalidSourceRings()
+    {
+        var method = typeof(GeoservicesImportService).GetMethod(
+            "BuildGeometryInsertExpression",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        method.Should().NotBeNull();
+
+        var expression = (string)method!.Invoke(null, ["esriGeometryPolygon", 4326])!;
+
+        expression.Should().Contain("ST_MakeValid");
+        expression.Should().Contain("ST_CollectionExtract");
+        expression.Should().Contain(", 3)");
+        expression.Should().StartWith("ST_Multi(");
+    }
+
+    [Fact]
     public void ConvertEsriGeometryToGeoJson_ClassifiesPolygonRingsIntoShellsAndHoles()
     {
         using var geometry = JsonDocument.Parse("""

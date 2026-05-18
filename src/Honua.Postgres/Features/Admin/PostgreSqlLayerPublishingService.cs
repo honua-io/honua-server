@@ -29,6 +29,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private const string SourceIntegerPrimaryKeyObjectIdStrategy = "source-integer-primary-key";
     private const string UnsupportedSourcePrimaryKeyObjectIdStrategy = "unsupported-source-primary-key";
     private const string UnresolvedObjectIdStrategy = "unresolved";
+    private const int MaxJsonbBuildObjectPairs = 50;
     private static readonly string[] _defaultFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _defaultCapabilities = ["Query", "Extract"];
 
@@ -1668,6 +1669,19 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             return "'{}'::jsonb";
         }
 
+        if (attributeColumns.Count <= MaxJsonbBuildObjectPairs)
+        {
+            return BuildAttributesExpressionChunk(attributeColumns);
+        }
+
+        var chunks = attributeColumns
+            .Chunk(MaxJsonbBuildObjectPairs)
+            .Select(BuildAttributesExpressionChunk);
+        return string.Join(" || ", chunks);
+    }
+
+    private static string BuildAttributesExpressionChunk(IReadOnlyList<ColumnInfo> attributeColumns)
+    {
         var parts = new List<string>(attributeColumns.Count * 2);
         foreach (var column in attributeColumns)
         {
