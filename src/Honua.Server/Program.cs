@@ -44,6 +44,7 @@ using Honua.Server.Features.Infrastructure.Hosting;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.RateLimiting;
+using Honua.Server.Features.Infrastructure.Redis;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -111,6 +112,10 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
 var redisCacheEntitled = await IsRedisCacheEntitledAsync(builder.Configuration);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
+var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
+    redisConnectionString,
+    redisCacheEntitled,
+    requiresDurableDistributedEvents);
 ConnectionMultiplexer? connectedRedis = null;
 
 if (useAspire)
@@ -156,12 +161,12 @@ else
     }
 }
 
-if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
+if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
 {
     var requireRedisAtStartup = requiresDurableDistributedEvents;
     try
     {
-        var redisOptions = ConfigurationOptions.Parse(redisCacheConnectionString, ignoreUnknown: true);
+        var redisOptions = ConfigurationOptions.Parse(redisInfrastructureConnectionString, ignoreUnknown: true);
         redisOptions.AbortOnConnectFail = false;
         redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
         redisOptions.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
@@ -384,7 +389,7 @@ if (connectedRedis != null)
 ConfigureTileOptions(builder.Services, builder.Configuration);
 
 // Configure caching options and register cache services
-ConfigureCaching(builder.Services, builder.Configuration);
+ConfigureCaching(builder.Services, builder.Configuration, redisCacheEntitled);
 
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
@@ -1624,7 +1629,7 @@ static async Task<bool> IsRedisCacheEntitledAsync(IConfiguration configuration)
 }
 
 // Configure caching services with Redis and in-memory fallback
-static void ConfigureCaching(IServiceCollection services, IConfiguration configuration)
+static void ConfigureCaching(IServiceCollection services, IConfiguration configuration, bool redisCacheEntitled)
 {
     // Bind cache configuration with validation
     services.AddOptions<CacheOptions>()
@@ -1642,7 +1647,7 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
         var options = sp.GetRequiredService<IOptions<CacheOptions>>();
         var logger = sp.GetRequiredService<ILogger<RedisCacheService>>();
         var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
-        var redis = sp.GetService<IConnectionMultiplexer>();
+        var redis = redisCacheEntitled ? sp.GetService<IConnectionMultiplexer>() : null;
 
         // StackExchangeRedisCache prepends its InstanceName to all keys internally.
         // Raw multiplexer operations (e.g., TTL lookup) must use the same prefix.
@@ -1673,7 +1678,7 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
             sp.GetRequiredService<IOptions<CacheOptions>>(),
             sp.GetRequiredService<IPerformanceMonitor>(),
             sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>>(),
-            sp.GetService<IConnectionMultiplexer>()));
+            redisCacheEntitled ? sp.GetService<IConnectionMultiplexer>() : null));
 
     services.AddSingleton<ICacheRefreshCoordinator>(sp =>
         sp.GetRequiredService<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>());
