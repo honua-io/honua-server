@@ -227,5 +227,180 @@
       }
     }
   ],
-  "externalDependencies": []
+  "externalDependencies": [],
+  "fidelityClassifications": [
+    {
+      "id": "classification:renderer:Parcels:0:renderer",
+      "sourceId": "renderer:Parcels:0",
+      "kind": "renderer",
+      "category": "renderers",
+      "name": "Parcels",
+      "automationStatus": "manual-review",
+      "code": "MANUAL_REVIEW",
+      "reason": "Renderer type \u0027simple\u0027 can be recreated in Honua with manual follow-up.",
+      "manualSteps": [
+        "Recreate the renderer via the Honua style endpoints after data import."
+      ],
+      "relatedIds": [
+        "resource:Parcels:layer:0"
+      ],
+      "metadata": {
+        "rendererType": "simple"
+      }
+    },
+    {
+      "id": "classification:renderer:Parcels:1:renderer",
+      "sourceId": "renderer:Parcels:1",
+      "kind": "renderer",
+      "category": "renderers",
+      "name": "Permits",
+      "automationStatus": "manual-review",
+      "code": "MANUAL_REVIEW",
+      "reason": "Renderer type \u0027uniqueValue\u0027 can be recreated in Honua with manual follow-up.",
+      "manualSteps": [
+        "Recreate the renderer via the Honua style endpoints after data import."
+      ],
+      "relatedIds": [
+        "resource:Parcels:layer:1"
+      ],
+      "metadata": {
+        "field1": "STATUS",
+        "rendererType": "uniqueValue"
+      }
+    },
+    {
+      "id": "classification:resource:Parcels:layer:0:capabilities",
+      "sourceId": "resource:Parcels:layer:0",
+      "kind": "layer",
+      "category": "capabilities",
+      "name": "Parcels",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Queryable resource capabilities were captured for import planning.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "capabilities": "Query"
+      }
+    },
+    {
+      "id": "classification:resource:Parcels:layer:0:domains",
+      "sourceId": "resource:Parcels:layer:0",
+      "kind": "field-domain",
+      "category": "domains",
+      "name": "Parcels",
+      "automationStatus": "assisted",
+      "code": "MANUAL_REVIEW",
+      "reason": "Domain metadata was captured for review; target domain enforcement is not automated by this import slice.",
+      "manualSteps": [
+        "Review coded-value and range domains before publishing target field configuration."
+      ],
+      "relatedIds": [],
+      "metadata": {
+        "domainFieldCount": "1"
+      }
+    },
+    {
+      "id": "classification:resource:Parcels:layer:0:fields",
+      "sourceId": "resource:Parcels:layer:0",
+      "kind": "field",
+      "category": "fields",
+      "name": "Parcels",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Field names, aliases, source types, nullability, and compact domain metadata were captured.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "fieldCount": "4"
+      }
+    },
+    {
+      "id": "classification:resource:Parcels:layer:0:identity",
+      "sourceId": "resource:Parcels:layer:0",
+      "kind": "layer",
+      "category": "identity",
+      "name": "Parcels",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Layer or table identity was captured with a stable source identifier.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {}
+    },
+    {
+      "id": "classification:resource:Parcels:layer:1:capabilities",
+      "sourceId": "resource:Parcels:layer:1",
+      "kind": "layer",
+      "category": "capabilities",
+      "name": "Permits",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Queryable resource capabilities were captured for import planning.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "capabilities": "Query"
+      }
+    },
+    {
+      "id": "classification:resource:Parcels:layer:1:fields",
+      "sourceId": "resource:Parcels:layer:1",
+      "kind": "field",
+      "category": "fields",
+      "name": "Permits",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Field names, aliases, source types, nullability, and compact domain metadata were captured.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "fieldCount": "3"
+      }
+    },
+    {
+      "id": "classification:resource:Parcels:layer:1:identity",
+      "sourceId": "resource:Parcels:layer:1",
+      "kind": "layer",
+      "category": "identity",
+      "name": "Permits",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Layer or table identity was captured with a stable source identifier.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {}
+    },
+    {
+      "id": "classification:service:Parcels:capabilities",
+      "sourceId": "service:Parcels",
+      "kind": "service",
+      "category": "capabilities",
+      "name": "Parcel Viewer",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Service capabilities were captured from the ArcGIS service root.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "capabilities": "Query"
+      }
+    },
+    {
+      "id": "classification:service:Parcels:identity",
+      "sourceId": "service:Parcels",
+      "kind": "service",
+      "category": "identity",
+      "name": "Parcel Viewer",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Service identity and source URL were captured for deterministic migration planning.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "serviceKey": "Parcels",
+        "serviceType": "FeatureServer"
+      }
+    }
+  ]
 }

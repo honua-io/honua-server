@@ -245,5 +245,164 @@
         ]
       }
     }
+  ],
+  "fidelityClassifications": [
+    {
+      "id": "classification:renderer:Public:0:renderer",
+      "sourceId": "renderer:Public:0",
+      "kind": "renderer",
+      "category": "renderers",
+      "name": "BlockGroups",
+      "automationStatus": "manual-review",
+      "code": "ARCGIS_EXTERNAL_SYMBOL",
+      "reason": "Renderer type \u0027classBreaks\u0027 can be recreated in Honua with manual follow-up.",
+      "manualSteps": [
+        "Mirror or replace external symbol assets in the target deployment.",
+        "Recreate the renderer via the Honua style endpoints after data import."
+      ],
+      "relatedIds": [
+        "renderer:Public:0:external:d17760187e25b243",
+        "resource:Public:layer:0"
+      ],
+      "metadata": {
+        "rendererType": "classBreaks"
+      }
+    },
+    {
+      "id": "classification:renderer:Public:1:renderer",
+      "sourceId": "renderer:Public:1",
+      "kind": "renderer",
+      "category": "renderers",
+      "name": "PopulationDensity",
+      "automationStatus": "unsupported",
+      "code": "ARCGIS_UNSUPPORTED_RENDERER",
+      "reason": "Renderer type \u0027heatmap\u0027 is not currently classified as portable to Honua.",
+      "manualSteps": [
+        "Review the renderer manually and rebuild an equivalent target style."
+      ],
+      "relatedIds": [
+        "resource:Public:layer:1"
+      ],
+      "metadata": {
+        "rendererType": "heatmap"
+      }
+    },
+    {
+      "id": "classification:resource:Public:layer:0:capabilities",
+      "sourceId": "resource:Public:layer:0",
+      "kind": "layer",
+      "category": "capabilities",
+      "name": "BlockGroups",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Queryable resource capabilities were captured for import planning.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "capabilities": "Map,Query"
+      }
+    },
+    {
+      "id": "classification:resource:Public:layer:0:fields",
+      "sourceId": "resource:Public:layer:0",
+      "kind": "field",
+      "category": "fields",
+      "name": "BlockGroups",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Field names, aliases, source types, nullability, and compact domain metadata were captured.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "fieldCount": "3"
+      }
+    },
+    {
+      "id": "classification:resource:Public:layer:0:identity",
+      "sourceId": "resource:Public:layer:0",
+      "kind": "layer",
+      "category": "identity",
+      "name": "BlockGroups",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Layer or table identity was captured with a stable source identifier.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {}
+    },
+    {
+      "id": "classification:resource:Public:layer:1:capabilities",
+      "sourceId": "resource:Public:layer:1",
+      "kind": "layer",
+      "category": "capabilities",
+      "name": "PopulationDensity",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Queryable resource capabilities were captured for import planning.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "capabilities": "Map,Query"
+      }
+    },
+    {
+      "id": "classification:resource:Public:layer:1:fields",
+      "sourceId": "resource:Public:layer:1",
+      "kind": "field",
+      "category": "fields",
+      "name": "PopulationDensity",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Field names, aliases, source types, nullability, and compact domain metadata were captured.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "fieldCount": "2"
+      }
+    },
+    {
+      "id": "classification:resource:Public:layer:1:identity",
+      "sourceId": "resource:Public:layer:1",
+      "kind": "layer",
+      "category": "identity",
+      "name": "PopulationDensity",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Layer or table identity was captured with a stable source identifier.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {}
+    },
+    {
+      "id": "classification:service:Public:capabilities",
+      "sourceId": "service:Public",
+      "kind": "service",
+      "category": "capabilities",
+      "name": "Public Mapping",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Service capabilities were captured from the ArcGIS service root.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "capabilities": "Data,Map,Query"
+      }
+    },
+    {
+      "id": "classification:service:Public:identity",
+      "sourceId": "service:Public",
+      "kind": "service",
+      "category": "identity",
+      "name": "Public Mapping",
+      "automationStatus": "automated",
+      "code": "COMPATIBLE",
+      "reason": "Service identity and source URL were captured for deterministic migration planning.",
+      "manualSteps": [],
+      "relatedIds": [],
+      "metadata": {
+        "serviceKey": "Public",
+        "serviceType": "MapServer"
+      }
+    }
   ]
 }

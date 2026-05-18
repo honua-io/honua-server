@@ -67,6 +67,106 @@ public sealed record MigrationSourceInventoryArtifact
     /// External dependencies referenced by the source inventory.
     /// </summary>
     public MigrationExternalDependency[] ExternalDependencies { get; init; } = [];
+
+    /// <summary>
+    /// Per-area fidelity classifications that state what was captured automatically,
+    /// what needs assisted migration, what requires manual review, and what is unsupported.
+    /// </summary>
+    public MigrationFidelityClassificationRecord[] FidelityClassifications { get; init; } = [];
+}
+
+/// <summary>
+/// Stable automation states used by migration fidelity classification records.
+/// </summary>
+public static class MigrationFidelityAutomationStatuses
+{
+    /// <summary>Metadata or data can be carried by the current automated import path.</summary>
+    public const string Automated = "automated";
+
+    /// <summary>Metadata was captured for a supported follow-up workflow, but needs operator input.</summary>
+    public const string Assisted = "assisted";
+
+    /// <summary>Metadata was captured only for explicit operator review.</summary>
+    public const string ManualReview = "manual-review";
+
+    /// <summary>The source construct is not supported by this migration slice.</summary>
+    public const string Unsupported = "unsupported";
+}
+
+/// <summary>
+/// One source-fidelity classification row for migration planning and parity review.
+/// </summary>
+public sealed record MigrationFidelityClassificationRecord
+{
+    /// <summary>
+    /// Stable artifact-local classification identifier.
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// Source inventory identifier this classification describes.
+    /// </summary>
+    public required string SourceId { get; init; }
+
+    /// <summary>
+    /// Source item kind, such as <c>service</c>, <c>layer</c>, <c>field</c>, <c>renderer</c>, or <c>attachment</c>.
+    /// </summary>
+    public required string Kind { get; init; }
+
+    /// <summary>
+    /// Fidelity category, such as <c>identity</c>, <c>capabilities</c>, <c>fields</c>, or <c>time-metadata</c>.
+    /// </summary>
+    public required string Category { get; init; }
+
+    /// <summary>
+    /// Optional source display name for the classified item.
+    /// </summary>
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// Automation status: <c>automated</c>, <c>assisted</c>, <c>manual-review</c>, or <c>unsupported</c>.
+    /// </summary>
+    public required string AutomationStatus { get; init; }
+
+    /// <summary>
+    /// Stable machine-readable compatibility or fidelity code.
+    /// </summary>
+    public required string Code { get; init; }
+
+    /// <summary>
+    /// Human-readable classification reason.
+    /// </summary>
+    public required string Reason { get; init; }
+
+    /// <summary>
+    /// Optional target item kind when a target identity is known at classification time.
+    /// </summary>
+    public string? TargetKind { get; init; }
+
+    /// <summary>
+    /// Optional stable target identifier when a target identity is known at classification time.
+    /// </summary>
+    public string? TargetId { get; init; }
+
+    /// <summary>
+    /// Optional target display or resource name when a target identity is known at classification time.
+    /// </summary>
+    public string? TargetName { get; init; }
+
+    /// <summary>
+    /// Operator remediation guidance for assisted, manual-review, or unsupported classifications.
+    /// </summary>
+    public string[] ManualSteps { get; init; } = [];
+
+    /// <summary>
+    /// Related source, style, dependency, or manifest identifiers.
+    /// </summary>
+    public string[] RelatedIds { get; init; } = [];
+
+    /// <summary>
+    /// Deterministic metadata for review. Raw source documents and secrets are not echoed here.
+    /// </summary>
+    public Dictionary<string, string> Metadata { get; init; } = [];
 }
 
 /// <summary>

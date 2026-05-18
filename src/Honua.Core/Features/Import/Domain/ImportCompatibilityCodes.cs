@@ -55,6 +55,15 @@ public static class ImportCompatibilityCodes
     /// <summary>ArcGIS coded-value domain exceeded the deterministic capture cap.</summary>
     public const string ArcGisDomainTruncated = "ARCGIS_DOMAIN_TRUNCATED";
 
+    /// <summary>ArcGIS subtype metadata is captured but not automatically migrated by this slice.</summary>
+    public const string ArcGisSubtypesManualReview = "ARCGIS_SUBTYPES_MANUAL_REVIEW";
+
+    /// <summary>ArcGIS relationship metadata is captured but not automatically migrated by this slice.</summary>
+    public const string ArcGisRelationshipsManualReview = "ARCGIS_RELATIONSHIPS_MANUAL_REVIEW";
+
+    /// <summary>ArcGIS time metadata is captured but not automatically migrated by this slice.</summary>
+    public const string ArcGisTimeMetadataManualReview = "ARCGIS_TIME_METADATA_MANUAL_REVIEW";
+
     /// <summary>GeoServer resource or endpoint is supported by the scanner's migration path.</summary>
     public const string GeoServerSupported = "GEOSERVER_SUPPORTED";
 

@@ -29,6 +29,7 @@ public static partial class MigrationManifestTranslator
         var targetResources = new List<MigrationManifestTargetResource>();
         var styleActions = new List<MigrationManifestStyleAction>();
         var servicePlans = new List<MigrationManifestServicePlan>();
+        var identityRemaps = new List<MigrationManifestIdentityRemap>();
         var manualReviewItems = new List<MigrationManifestReviewItem>();
         var unsupportedItems = new List<MigrationManifestReviewItem>();
         var sourceProtocol = GetSourceProtocol(inventory);
@@ -48,13 +49,18 @@ public static partial class MigrationManifestTranslator
                 continue;
             }
 
+            var action = IsPartial(resource.Compatibility.Level) ? "manual-review" : "publish";
+            var targetResourceName = NormalizeName(resource.Name, fallback: resource.Id);
+            var targetResourceId = BuildTargetId("resource", targetServiceName, targetResourceName);
+
             targetResources.Add(new MigrationManifestTargetResource
             {
                 SourceResourceId = resource.Id,
                 SourceKind = resource.Kind,
-                Action = IsPartial(resource.Compatibility.Level) ? "manual-review" : "publish",
+                Action = action,
+                TargetResourceId = targetResourceId,
                 TargetServiceName = targetServiceName,
-                TargetResourceName = NormalizeName(resource.Name, fallback: resource.Id),
+                TargetResourceName = targetResourceName,
                 GeometryType = resource.GeometryType,
                 MigrationMode = GetResourceMigrationMode(inventory.SourceKind, resource),
                 SourceProtocol = sourceProtocol,
@@ -68,6 +74,15 @@ public static partial class MigrationManifestTranslator
                 ExternalDependencyIds = BuildResourceExternalDependencyIds(inventory, resource),
                 Compatibility = resource.Compatibility
             });
+            identityRemaps.Add(new MigrationManifestIdentityRemap
+            {
+                SourceId = resource.Id,
+                SourceKind = resource.Kind,
+                TargetId = targetResourceId,
+                TargetKind = "resource",
+                TargetName = targetResourceName,
+                Action = action
+            });
         }
 
         foreach (var style in inventory.Styles.OrderBy(static item => item.Id, StringComparer.Ordinal))
@@ -80,14 +95,28 @@ public static partial class MigrationManifestTranslator
                 manualReviewItems,
                 unsupportedItems);
 
+            var action = IsCompatible(style.Compatibility.Level) ? "import" : "manual-review";
+            var targetStyleName = NormalizeName(style.Name, fallback: style.Id);
+            var targetStyleId = BuildTargetId("style", targetServiceName, targetStyleName);
+
             styleActions.Add(new MigrationManifestStyleAction
             {
                 SourceStyleId = style.Id,
-                Action = IsCompatible(style.Compatibility.Level) ? "import" : "manual-review",
+                TargetStyleId = targetStyleId,
+                Action = action,
                 Format = style.Format,
                 ResourceIds = Order(style.ResourceIds),
                 ExternalDependencyIds = Order(style.ExternalDependencyIds),
                 Compatibility = style.Compatibility
+            });
+            identityRemaps.Add(new MigrationManifestIdentityRemap
+            {
+                SourceId = style.Id,
+                SourceKind = style.Kind,
+                TargetId = targetStyleId,
+                TargetKind = "style",
+                TargetName = targetStyleName,
+                Action = action
             });
         }
 
@@ -123,6 +152,10 @@ public static partial class MigrationManifestTranslator
             StyleActions = styleActions.ToArray(),
             ServicePlans = servicePlans
                 .OrderBy(static item => item.SourceContainerId, StringComparer.Ordinal)
+                .ToArray(),
+            IdentityRemaps = identityRemaps
+                .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
+                .ThenBy(static item => item.TargetId, StringComparer.Ordinal)
                 .ToArray(),
             ManualReviewItems = manualReviewItems
                 .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
@@ -254,6 +287,9 @@ public static partial class MigrationManifestTranslator
 
     private static string BuildFallbackCode(string sourceKind, string kind, string level)
         => $"{ToCodePart(sourceKind)}_{ToCodePart(kind)}_{ToCodePart(level)}";
+
+    private static string BuildTargetId(string targetKind, string targetServiceName, string targetName)
+        => $"target:{targetKind}:{targetServiceName}:{targetName}";
 
     private static string ToCodePart(string value)
         => CodeUnsafeCharacters().Replace(value.Trim(), "_").Trim('_').ToUpperInvariant();
