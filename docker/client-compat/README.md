@@ -63,10 +63,11 @@ cesium gdal`).
 
 The previous `--profile matrix up --abort-on-container-exit` shortcut is
 **not** safe for refresh use: `--abort-on-container-exit` terminates every
-container the moment any one of them exits, so the first lane to finish
-kills the rest before they can write evidence. Use a single
-`--profile <lane>` invocation per lane (with `--exit-code-from <lane>`)
-when you need to drive compose by hand.
+container the moment any one of them exits. In this stack, the one-shot
+`seed` dependency exits before `honua` and the client lane run, so `up` can
+tear the stack down before any `.cert.json` evidence is written. Use
+`docker compose --profile <lane> run --rm <lane>` when you need to drive
+compose by hand.
 
 ## Output layout
 
@@ -125,7 +126,7 @@ database.
 1. Add `docker/client-compat/<lane>/Dockerfile`.
 2. Add a service block to `compose.yml`:
    - `profiles: ["matrix", "<lane>"]` — the per-lane profile is what the
-     CI workflow targets via `docker compose --profile <lane> ... <lane>`,
+     CI workflow targets via `docker compose --profile <lane> run --rm <lane>`,
      and the `matrix` profile is what `--profile matrix up` selects to run
      the full set.
    - `depends_on: { honua: { condition: service_healthy } }`

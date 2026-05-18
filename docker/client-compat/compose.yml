@@ -3,15 +3,13 @@
 # `honua` and `postgres` always start (depends_on healthy). Each client lane
 # is a separate service tagged with both a per-lane profile and the shared
 # `matrix` profile:
-#   - `docker compose --profile <lane> up --abort-on-container-exit
-#     --exit-code-from <lane> <lane>` runs one lane (the shape CI uses).
-#   - `docker compose run --rm <lane>` works locally for an ad-hoc single
-#     lane invocation.
+#   - `docker compose --profile <lane> run --rm <lane>` runs one lane (the
+#     shape CI uses).
 #   - The `matrix` profile is **not** suitable for parallel execution under
-#     `--abort-on-container-exit`: the first lane to exit terminates every
-#     other container before it can write evidence. Use
-#     scripts/client-compat/refresh-baselines.sh, which iterates the lanes
-#     sequentially, when you need every envelope captured.
+#     `--abort-on-container-exit`: the first container to exit, including the
+#     one-shot seed container, terminates the stack before every lane can write
+#     evidence. Use scripts/client-compat/refresh-baselines.sh, which iterates
+#     the lanes sequentially, when you need every envelope captured.
 #
 # Output `.cert.json` envelopes are written to ./output/<lane>/ on the host so
 # the baseline-diff step can compare them against tests/baselines/client-compat.
