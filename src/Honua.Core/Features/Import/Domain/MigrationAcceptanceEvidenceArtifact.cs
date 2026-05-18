@@ -29,6 +29,11 @@ public sealed record MigrationAcceptanceEvidenceArtifact
     public required MigrationAcceptanceEvidenceSummary Summary { get; init; }
 
     /// <summary>
+    /// Aggregate cost and performance evidence across measured source entries.
+    /// </summary>
+    public required MigrationAcceptanceCostEvidenceSummary CostEvidence { get; init; }
+
+    /// <summary>
     /// Per-source evidence entries in deterministic order.
     /// </summary>
     public MigrationAcceptanceEvidenceEntry[] Entries { get; init; } = [];
@@ -93,6 +98,82 @@ public sealed record MigrationAcceptanceEvidenceSummary
     /// Source kinds covered by this evidence suite.
     /// </summary>
     public string[] CoveredSourceKinds { get; init; } = [];
+}
+
+/// <summary>
+/// Aggregate cost and performance evidence for a migration acceptance suite.
+/// </summary>
+public sealed record MigrationAcceptanceCostEvidenceSummary
+{
+    /// <summary>
+    /// Cost evidence classification: <c>pass</c>, <c>warn</c>, <c>fail</c>, or <c>unknown</c>.
+    /// </summary>
+    public required string State { get; init; }
+
+    /// <summary>
+    /// Number of source entries with cost evidence attached.
+    /// </summary>
+    public int MeasuredSourceCount { get; init; }
+
+    /// <summary>
+    /// Number of source entries missing cost evidence.
+    /// </summary>
+    public int MissingSourceCount { get; init; }
+
+    /// <summary>
+    /// Total measured duration across entries in milliseconds.
+    /// </summary>
+    public long? DurationMilliseconds { get; init; }
+
+    /// <summary>
+    /// Total scan duration across entries in milliseconds.
+    /// </summary>
+    public long? ScanDurationMilliseconds { get; init; }
+
+    /// <summary>
+    /// Total apply, import, or dry-run duration across entries in milliseconds.
+    /// </summary>
+    public long? ApplyDurationMilliseconds { get; init; }
+
+    /// <summary>
+    /// Aggregate feature throughput across entries in features per second.
+    /// </summary>
+    public double? FeatureThroughputPerSecond { get; init; }
+
+    /// <summary>
+    /// Total source-system requests observed across entries.
+    /// </summary>
+    public int? SourceRequestCount { get; init; }
+
+    /// <summary>
+    /// Total retry attempts observed across entries.
+    /// </summary>
+    public int? RetryCount { get; init; }
+
+    /// <summary>
+    /// Total bytes read from source systems or staged inputs.
+    /// </summary>
+    public long? BytesRead { get; init; }
+
+    /// <summary>
+    /// Total bytes written to Honua-owned stores or output artifacts.
+    /// </summary>
+    public long? BytesWritten { get; init; }
+
+    /// <summary>
+    /// Total emitted evidence artifact size in bytes.
+    /// </summary>
+    public long? ArtifactSizeBytes { get; init; }
+
+    /// <summary>
+    /// Aggregate manual-review ratio across measured entries.
+    /// </summary>
+    public double? ManualReviewRatio { get; init; }
+
+    /// <summary>
+    /// Findings that explain warning, failure, or unknown classifications.
+    /// </summary>
+    public MigrationAcceptanceCostEvidenceFinding[] Findings { get; init; } = [];
 }
 
 /// <summary>
@@ -166,9 +247,192 @@ public sealed record MigrationAcceptanceEvidenceEntry
     public string[] EvidenceReferences { get; init; } = [];
 
     /// <summary>
+    /// Optional cost and performance evidence derived from the parity evidence pack.
+    /// </summary>
+    public MigrationAcceptanceCostEvidenceEntry? CostEvidence { get; init; }
+
+    /// <summary>
     /// Deterministic notes explaining important evidence gaps.
     /// </summary>
     public string[] Notes { get; init; } = [];
+}
+
+/// <summary>
+/// Per-source cost and performance evidence summary.
+/// </summary>
+public sealed record MigrationAcceptanceCostEvidenceEntry
+{
+    /// <summary>
+    /// Cost evidence classification: <c>pass</c>, <c>warn</c>, <c>fail</c>, or <c>unknown</c>.
+    /// </summary>
+    public required string State { get; init; }
+
+    /// <summary>
+    /// Short reviewer-facing summary of the measured cost evidence.
+    /// </summary>
+    public required string Summary { get; init; }
+
+    /// <summary>
+    /// Measurement scope supplied by the source collector or test harness.
+    /// </summary>
+    public required string MeasurementScope { get; init; }
+
+    /// <summary>
+    /// Total measured duration in milliseconds.
+    /// </summary>
+    public long? DurationMilliseconds { get; init; }
+
+    /// <summary>
+    /// Measured scan duration in milliseconds.
+    /// </summary>
+    public long? ScanDurationMilliseconds { get; init; }
+
+    /// <summary>
+    /// Measured apply, import, or dry-run duration in milliseconds.
+    /// </summary>
+    public long? ApplyDurationMilliseconds { get; init; }
+
+    /// <summary>
+    /// Feature throughput in features per second.
+    /// </summary>
+    public double? FeatureThroughputPerSecond { get; init; }
+
+    /// <summary>
+    /// Resource throughput in resources per second.
+    /// </summary>
+    public double? ResourceThroughputPerSecond { get; init; }
+
+    /// <summary>
+    /// Total source-system requests issued by the run.
+    /// </summary>
+    public int? SourceRequestCount { get; init; }
+
+    /// <summary>
+    /// Total retry attempts observed by the run.
+    /// </summary>
+    public int? RetryCount { get; init; }
+
+    /// <summary>
+    /// Total bytes read from sources or staged inputs.
+    /// </summary>
+    public long? BytesRead { get; init; }
+
+    /// <summary>
+    /// Total bytes written to Honua-owned stores or artifacts.
+    /// </summary>
+    public long? BytesWritten { get; init; }
+
+    /// <summary>
+    /// Size in bytes of the emitted cost evidence artifact.
+    /// </summary>
+    public long? ArtifactSizeBytes { get; init; }
+
+    /// <summary>
+    /// Ratio of manual-review items to measured resources.
+    /// </summary>
+    public double? ManualReviewRatio { get; init; }
+
+    /// <summary>
+    /// Normalized operation-level cost measurements.
+    /// </summary>
+    public MigrationAcceptanceCostOperationEvidence[] Operations { get; init; } = [];
+
+    /// <summary>
+    /// Secret-safe cost evidence artifact references.
+    /// </summary>
+    public string[] EvidenceReferences { get; init; } = [];
+
+    /// <summary>
+    /// Findings that explain warning, failure, or unknown classifications.
+    /// </summary>
+    public MigrationAcceptanceCostEvidenceFinding[] Findings { get; init; } = [];
+}
+
+/// <summary>
+/// Operation-level cost and performance evidence normalized for the acceptance suite.
+/// </summary>
+public sealed record MigrationAcceptanceCostOperationEvidence
+{
+    /// <summary>
+    /// Stable operation identifier.
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// Migration stage measured by this operation.
+    /// </summary>
+    public required string Stage { get; init; }
+
+    /// <summary>
+    /// Operation evidence state.
+    /// </summary>
+    public required string State { get; init; }
+
+    /// <summary>
+    /// Measured operation duration in milliseconds.
+    /// </summary>
+    public long? DurationMilliseconds { get; init; }
+
+    /// <summary>
+    /// Operation feature throughput in features per second.
+    /// </summary>
+    public double? FeatureThroughputPerSecond { get; init; }
+
+    /// <summary>
+    /// Source-system requests issued by this operation.
+    /// </summary>
+    public int? SourceRequestCount { get; init; }
+
+    /// <summary>
+    /// Retry attempts observed for this operation.
+    /// </summary>
+    public int? RetryCount { get; init; }
+
+    /// <summary>
+    /// Bytes read by this operation.
+    /// </summary>
+    public long? BytesRead { get; init; }
+
+    /// <summary>
+    /// Bytes written by this operation.
+    /// </summary>
+    public long? BytesWritten { get; init; }
+
+    /// <summary>
+    /// Operation evidence artifact size in bytes.
+    /// </summary>
+    public long? ArtifactSizeBytes { get; init; }
+
+    /// <summary>
+    /// Secret-safe operation evidence references.
+    /// </summary>
+    public string[] EvidenceReferences { get; init; } = [];
+}
+
+/// <summary>
+/// Finding that explains a cost evidence classification.
+/// </summary>
+public sealed record MigrationAcceptanceCostEvidenceFinding
+{
+    /// <summary>
+    /// Stable finding identifier.
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// Finding state: <c>warn</c>, <c>fail</c>, or <c>unknown</c>.
+    /// </summary>
+    public required string State { get; init; }
+
+    /// <summary>
+    /// Human-readable finding summary.
+    /// </summary>
+    public required string Summary { get; init; }
+
+    /// <summary>
+    /// Remediation guidance for reviewers or follow-up work.
+    /// </summary>
+    public string[] Remediation { get; init; } = [];
 }
 
 /// <summary>
@@ -278,4 +542,22 @@ public static class MigrationAcceptanceStageIds
 
     /// <summary>Cutover readiness stage.</summary>
     public const string Readiness = "readiness";
+}
+
+/// <summary>
+/// Stable cost evidence classifications.
+/// </summary>
+public static class MigrationCostEvidenceStates
+{
+    /// <summary>Cost evidence satisfies configured thresholds.</summary>
+    public const string Pass = "pass";
+
+    /// <summary>Cost evidence is present but exceeds warning thresholds.</summary>
+    public const string Warn = "warn";
+
+    /// <summary>Cost evidence is missing required measurements or exceeds failure thresholds.</summary>
+    public const string Fail = "fail";
+
+    /// <summary>Cost evidence is not available or not yet reviewed.</summary>
+    public const string Unknown = "unknown";
 }

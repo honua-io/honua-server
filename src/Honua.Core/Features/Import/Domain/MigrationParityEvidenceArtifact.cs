@@ -310,9 +310,19 @@ public sealed record MigrationPerformanceCostTotals
     public int? RetryCount { get; init; }
 
     /// <summary>
+    /// Total source-system requests issued by the measured run.
+    /// </summary>
+    public int? SourceRequestCount { get; init; }
+
+    /// <summary>
     /// Total items requiring manual review after the measured run.
     /// </summary>
     public int? ManualReviewCount { get; init; }
+
+    /// <summary>
+    /// Size in bytes of the emitted cost or performance evidence artifact.
+    /// </summary>
+    public long? ArtifactSizeBytes { get; init; }
 }
 
 /// <summary>
@@ -366,9 +376,19 @@ public sealed record MigrationPerformanceCostOperation
     public int? RetryCount { get; init; }
 
     /// <summary>
+    /// Source-system requests issued by this operation.
+    /// </summary>
+    public int? SourceRequestCount { get; init; }
+
+    /// <summary>
     /// Items from this operation that require manual review.
     /// </summary>
     public int? ManualReviewCount { get; init; }
+
+    /// <summary>
+    /// Size in bytes of the operation-specific evidence artifact.
+    /// </summary>
+    public long? ArtifactSizeBytes { get; init; }
 
     /// <summary>
     /// Secret-safe evidence artifact references. Query strings, fragments, and URL credentials are removed by the generator.
