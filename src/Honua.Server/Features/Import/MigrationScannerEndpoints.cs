@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Services;
@@ -160,12 +161,30 @@ internal static class MigrationScannerEndpoints
                         }
 
                         var importService = context.RequestServices.GetRequiredService<IGeoservicesImportService>();
-                        artifact = await importService.ScanSourceAsync(
+                        var credentialValidationError = GeoservicesCredentialResolution.ValidateDiscoveryCredentialRequest(
+                            request.Credentials,
+                            context.RequestServices);
+                        if (credentialValidationError != null)
+                        {
+                            await AdminResponseWriter.WriteErrorAsync(
+                                context,
+                                credentialValidationError,
+                                StatusCodes.Status400BadRequest);
+                            return;
+                        }
+
+                        var scanRequest = await GeoservicesCredentialResolution.ResolveSecretReferencesAsync(
                             new GeoservicesDiscoveryRequest
                             {
                                 ServiceUrl = request.SourceUrl,
-                                TimeoutSeconds = request.TimeoutSeconds ?? 30
+                                TimeoutSeconds = request.TimeoutSeconds ?? 30,
+                                Credentials = request.Credentials
                             },
+                            context.RequestServices,
+                            cancellationToken).ConfigureAwait(false);
+
+                        artifact = await importService.ScanSourceAsync(
+                            scanRequest,
                             cancellationToken).ConfigureAwait(false);
                         break;
                     }
@@ -201,6 +220,20 @@ internal static class MigrationScannerEndpoints
                 context,
                 "Failed to connect to source service.",
                 StatusCodes.Status502BadGateway);
+        }
+        catch (SecretNotFoundException)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Failed to resolve GeoServices credential secret reference.",
+                StatusCodes.Status400BadRequest);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("secret reference", StringComparison.OrdinalIgnoreCase))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Failed to resolve GeoServices credential secret reference.",
+                StatusCodes.Status400BadRequest);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -391,6 +424,11 @@ internal sealed record MigrationInventoryScanRequest
     /// Optional password for source authentication.
     /// </summary>
     public string? Password { get; init; }
+
+    /// <summary>
+    /// Optional ArcGIS credential descriptor for GeoServices source scans.
+    /// </summary>
+    public GeoservicesCredentialDescriptor? Credentials { get; init; }
 
     /// <summary>
     /// Optional scan timeout in seconds.

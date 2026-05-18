@@ -63,7 +63,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             request.ServiceUrl,
             request.TimeoutSeconds,
             ResiliencePolicyOptions.Default.MaxRetryAttempts,
-            cancellationToken);
+            cancellationToken,
+            request.Credentials);
     }
 
     /// <inheritdoc />
@@ -81,17 +82,19 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 $"{normalizedUrl}?f=json",
                 ResiliencePolicyOptions.Default.MaxRetryAttempts,
                 request.TimeoutSeconds,
+                request.Credentials,
                 cancellationToken).ConfigureAwait(false);
 
             if (TryReadArcGisError(serviceDocument.RootElement, out var errorCode, out var errorMessage))
             {
-                var (authMode, code) = ClassifyArcGisError(errorCode);
+                var (authMode, code) = ClassifyArcGisError(errorCode, request.Credentials);
                 return CreateFailedScanArtifact(
                     normalizedUrl,
                     authMode,
                     code,
                     errorMessage,
-                    serviceType: ExtractServiceType(normalizedUrl));
+                    serviceType: ExtractServiceType(normalizedUrl),
+                    credentialsSupplied: HasCredentialMaterial(request.Credentials));
             }
 
             var serviceKey = GetServiceKey(normalizedUrl);
@@ -115,6 +118,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                         resourceReference,
                         serviceCapabilities,
                         request.TimeoutSeconds,
+                        request.Credentials,
                         cancellationToken).ConfigureAwait(false);
 
                     resources.Add(resourceResult.Resource);
@@ -199,12 +203,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                     Version = FormatVersion(serviceDocument.RootElement.TryGetProperty("currentVersion", out var versionElement) ? versionElement : default),
                     ServiceType = ExtractServiceType(normalizedUrl)
                 },
-                AuthPosture = new MigrationInventoryAuthPosture
-                {
-                    Mode = "anonymous",
-                    CredentialsSupplied = false,
-                    AccessConfirmed = true
-                },
+                AuthPosture = BuildAuthPosture(request.Credentials, accessConfirmed: true),
                 ScanCompleteness = completeness,
                 Summary = summary,
                 OverallCompatibility = overallCompatibility,
@@ -219,12 +218,15 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             Log.InventoryScanFailed(_logger, normalizedUrl, ex);
             return CreateFailedScanArtifact(
                 normalizedUrl,
-                "auth-required",
+                ex.StatusCode == HttpStatusCode.Forbidden || HasCredentialMaterial(request.Credentials)
+                    ? GeoservicesAuthenticationModes.Denied
+                    : GeoservicesAuthenticationModes.AuthRequired,
                 ex.StatusCode == HttpStatusCode.Forbidden
                     ? ImportCompatibilityCodes.ArcGisAccessDenied
                     : ImportCompatibilityCodes.ArcGisTokenRequired,
                 "The ArcGIS service requires authentication for discovery.",
-                ExtractServiceType(normalizedUrl));
+                ExtractServiceType(normalizedUrl),
+                HasCredentialMaterial(request.Credentials));
         }
         catch (InvalidOperationException ex)
         {
@@ -234,7 +236,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 "unknown",
                 ImportCompatibilityCodes.ArcGisServiceError,
                 ex.Message,
-                ExtractServiceType(normalizedUrl));
+                ExtractServiceType(normalizedUrl),
+                HasCredentialMaterial(request.Credentials));
         }
     }
 
@@ -253,12 +256,14 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         GeoservicesResourceReference resourceReference,
         string[] serviceCapabilities,
         int timeoutSeconds,
+        GeoservicesCredentialDescriptor? credentials,
         CancellationToken cancellationToken)
     {
         using var resourceDocument = await _restClient.GetJsonDocumentAsync(
             $"{normalizedUrl}/{resourceReference.Id}?f=json",
             ResiliencePolicyOptions.Default.MaxRetryAttempts,
             timeoutSeconds,
+            credentials,
             cancellationToken).ConfigureAwait(false);
 
         if (TryReadArcGisError(resourceDocument.RootElement, out _, out var resourceError))
@@ -278,6 +283,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 normalizedUrl,
                 resourceReference.Id,
                 timeoutSeconds,
+                credentials,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -436,12 +442,14 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         string normalizedUrl,
         int resourceId,
         int timeoutSeconds,
+        GeoservicesCredentialDescriptor? credentials,
         CancellationToken cancellationToken)
     {
         using var countDocument = await _restClient.GetJsonDocumentAsync(
             $"{normalizedUrl}/{resourceId}/query?where=1%3D1&returnCountOnly=true&f=json",
             ResiliencePolicyOptions.Default.MaxRetryAttempts,
             timeoutSeconds,
+            credentials,
             cancellationToken).ConfigureAwait(false);
 
         if (TryReadArcGisError(countDocument.RootElement, out _, out _))
@@ -1047,9 +1055,10 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         string authMode,
         string compatibilityCode,
         string message,
-        string serviceType)
+        string serviceType,
+        bool credentialsSupplied)
     {
-        var manualSteps = compatibilityCode == ImportCompatibilityCodes.ArcGisTokenRequired
+        var manualSteps = compatibilityCode is ImportCompatibilityCodes.ArcGisTokenRequired or ImportCompatibilityCodes.ArcGisTokenExpired
             ? new[] { "Provide a valid ArcGIS token or credentials and rerun the scan." }
             : compatibilityCode == ImportCompatibilityCodes.ArcGisAccessDenied
                 ? ["Confirm the supplied identity has read access to the service and rerun the scan."]
@@ -1068,7 +1077,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             AuthPosture = new MigrationInventoryAuthPosture
             {
                 Mode = authMode,
-                CredentialsSupplied = false,
+                CredentialsSupplied = credentialsSupplied,
                 AccessConfirmed = false,
                 Notes = MigrationInventoryHelpers.NormalizeStrings([message])
             },
@@ -1089,13 +1098,37 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         };
     }
 
-    private static (string AuthMode, string CompatibilityCode) ClassifyArcGisError(int? errorCode)
+    private static MigrationInventoryAuthPosture BuildAuthPosture(
+        GeoservicesCredentialDescriptor? credentials,
+        bool accessConfirmed,
+        string[]? notes = null)
+    {
+        var mode = credentials?.GetNormalizedMode() ?? GeoservicesAuthenticationModes.Anonymous;
+        return new MigrationInventoryAuthPosture
+        {
+            Mode = mode,
+            CredentialsSupplied = HasCredentialMaterial(credentials),
+            AccessConfirmed = accessConfirmed,
+            Notes = MigrationInventoryHelpers.NormalizeStrings(notes ?? [])
+        };
+    }
+
+    private static bool HasCredentialMaterial(GeoservicesCredentialDescriptor? credentials)
+        => credentials?.HasCredentialMaterial == true &&
+            credentials.GetNormalizedMode() != GeoservicesAuthenticationModes.Anonymous;
+
+    private static (string AuthMode, string CompatibilityCode) ClassifyArcGisError(
+        int? errorCode,
+        GeoservicesCredentialDescriptor? credentials)
         => errorCode switch
         {
-            498 or 499 => ("auth-required", ImportCompatibilityCodes.ArcGisTokenRequired),
-            401 => ("auth-required", ImportCompatibilityCodes.ArcGisTokenRequired),
-            403 => ("auth-required", ImportCompatibilityCodes.ArcGisAccessDenied),
-            _ => ("unknown", ImportCompatibilityCodes.ArcGisServiceError)
+            498 => (GeoservicesAuthenticationModes.ExpiredToken, ImportCompatibilityCodes.ArcGisTokenExpired),
+            499 => (GeoservicesAuthenticationModes.AuthRequired, ImportCompatibilityCodes.ArcGisTokenRequired),
+            401 => (HasCredentialMaterial(credentials)
+                ? GeoservicesAuthenticationModes.Denied
+                : GeoservicesAuthenticationModes.AuthRequired, ImportCompatibilityCodes.ArcGisTokenRequired),
+            403 => (GeoservicesAuthenticationModes.Denied, ImportCompatibilityCodes.ArcGisAccessDenied),
+            _ => (GeoservicesAuthenticationModes.Unknown, ImportCompatibilityCodes.ArcGisServiceError)
         };
 
     private sealed record GeoservicesResourceReference(int Id, string Name, string Kind);
@@ -1139,7 +1172,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 request.LayerId,
                 request.RequestTimeoutSeconds,
                 request.MaxRetries,
-                cancellationToken);
+                cancellationToken,
+                request.Credentials);
 
             Log.LayerDiscovered(_logger, layerInfo.Name, layerInfo.Fields.Length, layerInfo.FeatureCount);
 
@@ -1177,7 +1211,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                     request.TargetSrid,
                     request.RequestTimeoutSeconds,
                     request.MaxRetries,
-                    cancellationToken);
+                    cancellationToken,
+                    request.Credentials);
 
                 if (queryResult.Features.Length == 0)
                 {

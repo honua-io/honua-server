@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
@@ -108,6 +110,63 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("embedded credentials");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/discover")]
+    public async Task Discover_WithCredentialQueryParameter_ReturnsBadRequest()
+    {
+        var request = new
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer?token=plaintext-secret",
+            TimeoutSeconds = 5
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/discover", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("credential query parameters");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/discover")]
+    public async Task Discover_WithPlaintextToken_UsesCredentialWithoutPersistingJobState()
+    {
+        const string accessToken = "plaintext-discovery-token";
+        var isolatedImportService = new TestGeoservicesImportService(TimeSpan.Zero);
+        var isolatedFixture = new WebAppFixture()
+            .ReplaceService<IGeoservicesImportService>(isolatedImportService);
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            var response = await isolatedFixture.Client.PostAsJsonAsync(
+                "/api/v1/admin/import/geoservices/discover",
+                new
+                {
+                    ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+                    TimeoutSeconds = 5,
+                    Credentials = new
+                    {
+                        Mode = GeoservicesAuthenticationModes.Token,
+                        AccessToken = accessToken
+                    }
+                });
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().NotContain(accessToken);
+
+            isolatedImportService.DiscoveryRequests.Should().ContainSingle();
+            isolatedImportService.DiscoveryRequests.Single().Credentials.Should().NotBeNull();
+            isolatedImportService.DiscoveryRequests.Single().Credentials!.AccessToken.Should().Be(accessToken);
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -252,6 +311,125 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         content.Should().Contain("jobId");
         content.Should().Contain("statusUrl");
         content.Should().Contain("cancelUrl");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task Start_WithPlaintextToken_ReturnsBadRequest()
+    {
+        var request = new
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 0,
+            TableName = "test_plaintext_token",
+            Credentials = new
+            {
+                Mode = GeoservicesAuthenticationModes.Token,
+                AccessToken = "plaintext-token"
+            }
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("secret references");
+        content.Should().NotContain("plaintext-token");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task Start_WithCredentialQueryParameter_ReturnsBadRequest()
+    {
+        var request = new
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer?token=plaintext-token",
+            LayerId = 0,
+            TableName = "test_query_token"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("credential query parameters");
+        content.Should().NotContain("plaintext-token");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task Start_WithSecretReferenceToken_DoesNotPersistPlaintextSecrets_AndWorkerReceivesResolvedValue()
+    {
+        const string envKey = "HONUA_TEST_ARCGIS_IMPORT_TOKEN";
+        const string envValue = "resolved-arcgis-token-secret";
+        var previousValue = Environment.GetEnvironmentVariable(envKey);
+        var distributedCache = new TrackingDistributedCache();
+        var isolatedImportService = new TestGeoservicesImportService(TimeSpan.FromMilliseconds(25));
+        var isolatedFixture = new WebAppFixture()
+            .ReplaceService<IGeoservicesImportService>(isolatedImportService)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDistributedCache>();
+                services.AddSingleton<IDistributedCache>(distributedCache);
+                services.RemoveAll<IDistributedImportJobManager>();
+                services.AddSingleton<IDistributedImportJobManager>(sp => new RedisImportJobManager(
+                    sp.GetRequiredService<IUniversalProgressStore>(),
+                    distributedCache,
+                    sp.GetRequiredService<ILogger<RedisImportJobManager>>(),
+                    new StaticHostEnvironment("Test")));
+            });
+
+        Environment.SetEnvironmentVariable(envKey, envValue);
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            var startResponse = await isolatedFixture.Client.PostAsJsonAsync(
+                "/api/v1/admin/import/geoservices/start",
+                new
+                {
+                    ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+                    LayerId = 0,
+                    TableName = "test_geoservices_secret_token",
+                    AutoPublish = false,
+                    Credentials = new
+                    {
+                        Mode = GeoservicesAuthenticationModes.Token,
+                        AccessTokenSecretReference = $"env:{envKey}"
+                    }
+                });
+
+            startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            using var startContent = await JsonDocument.ParseAsync(await startResponse.Content.ReadAsStreamAsync());
+            var jobId = startContent.RootElement.GetProperty("jobId").GetString();
+            jobId.Should().NotBeNullOrWhiteSpace();
+
+            var requestPayload = Encoding.UTF8.GetString(distributedCache.Get($"geoservices:import:request:{jobId}")!);
+            requestPayload.Should().Contain($"\"accessTokenSecretReference\":\"env:{envKey}\"");
+            requestPayload.Should().NotContain(envValue);
+            requestPayload.Should().NotContain("\"accessToken\":");
+
+            using var completed = await WaitForJobStatusAsync(
+                isolatedFixture.Client,
+                jobId!,
+                GeoservicesImportStatus.Completed,
+                TimeSpan.FromSeconds(20));
+            completed.RootElement.GetProperty("jobId").GetString().Should().Be(jobId);
+            JobStatusMatches(completed.RootElement.GetProperty("status"), GeoservicesImportStatus.Completed)
+                .Should().BeTrue();
+
+            isolatedImportService.ImportRequests.Should().ContainSingle();
+            var importRequest = isolatedImportService.ImportRequests.Single();
+            importRequest.Credentials.Should().NotBeNull();
+            importRequest.Credentials!.AccessToken.Should().Be(envValue);
+            importRequest.Credentials.AccessTokenSecretReference.Should().Be($"env:{envKey}");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(envKey, previousValue);
+            await isolatedFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -532,6 +710,138 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
     }
 
     #endregion
+
+    private static async Task<JsonDocument> WaitForJobStatusAsync(
+        HttpClient client,
+        string jobId,
+        GeoservicesImportStatus expectedStatus,
+        TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var response = await client.GetAsync($"/api/v1/admin/import/geoservices/jobs/{jobId}");
+            if (response.StatusCode == HttpStatusCode.OK)
+            {
+                var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+                var status = document.RootElement.GetProperty("status");
+                if (JobStatusMatches(status, expectedStatus))
+                {
+                    return document;
+                }
+
+                document.Dispose();
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+        }
+
+        throw new TimeoutException($"Job {jobId} did not reach {expectedStatus} within {timeout}.");
+    }
+
+    private static bool JobStatusMatches(JsonElement status, GeoservicesImportStatus expectedStatus)
+        => status.ValueKind switch
+        {
+            JsonValueKind.String => string.Equals(status.GetString(), expectedStatus.ToString(), StringComparison.Ordinal),
+            JsonValueKind.Number => status.TryGetInt32(out var numericStatus) && numericStatus == (int)expectedStatus,
+            _ => false
+        };
+}
+
+internal sealed class TestGeoservicesImportService(TimeSpan delay) : IGeoservicesImportService
+{
+    public ConcurrentQueue<GeoservicesDiscoveryRequest> DiscoveryRequests { get; } = new();
+    public ConcurrentQueue<GeoservicesImportRequest> ImportRequests { get; } = new();
+
+    public Task<GeoservicesServiceInfo> DiscoverServiceAsync(
+        GeoservicesDiscoveryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        DiscoveryRequests.Enqueue(request);
+        return Task.FromResult(new GeoservicesServiceInfo
+        {
+            ServiceUrl = request.ServiceUrl,
+            ServiceName = "Test",
+            Layers =
+            [
+                new GeoservicesLayerInfo
+                {
+                    Id = 0,
+                    Name = "Test Layer"
+                }
+            ]
+        });
+    }
+
+    public Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+        GeoservicesDiscoveryRequest request,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new MigrationSourceInventoryArtifact
+        {
+            SourceKind = "arcgis-geoservices-rest",
+            Source = new MigrationSourceIdentity
+            {
+                DisplayName = "Test",
+                BaseUrl = request.ServiceUrl,
+                Product = "ArcGIS GeoServices REST"
+            },
+            AuthPosture = new MigrationInventoryAuthPosture
+            {
+                Mode = request.Credentials?.GetNormalizedMode() ?? GeoservicesAuthenticationModes.Anonymous,
+                CredentialsSupplied = request.Credentials?.HasCredentialMaterial == true,
+                AccessConfirmed = true
+            },
+            ScanCompleteness = new MigrationInventoryCompleteness
+            {
+                Status = "complete"
+            },
+            Summary = new MigrationInventorySummary(),
+            OverallCompatibility = new MigrationCompatibilityAssessment
+            {
+                Level = "compatible",
+                Reason = "Test scan artifact."
+            }
+        });
+
+    public Task<GeoservicesImportResult> ImportLayerAsync(
+        GeoservicesImportRequest request,
+        CancellationToken cancellationToken = default)
+        => ImportLayerAsync(request, progress: null, cancellationToken);
+
+    public async Task<GeoservicesImportResult> ImportLayerAsync(
+        GeoservicesImportRequest request,
+        IProgress<GeoservicesImportProgress>? progress,
+        CancellationToken cancellationToken = default)
+    {
+        ImportRequests.Enqueue(request);
+
+        var current = GeoservicesImportProgress.CreateInitial(
+            request.JobId ?? Guid.NewGuid().ToString("N"),
+            request.ServiceUrl,
+            request.LayerId,
+            request.TableName,
+            sourceLayerName: "Test Layer",
+            estimatedTotalFeatures: 1);
+        progress?.Report(current);
+
+        await Task.Delay(delay, cancellationToken);
+
+        progress?.Report(current with
+        {
+            Status = GeoservicesImportStatus.Completed,
+            FeaturesProcessed = 1,
+            CompletedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Import completed"
+        });
+
+        return GeoservicesImportResult.CreateSuccess(
+            request.TableName,
+            request.ServiceUrl,
+            request.LayerId,
+            featureCount: 1,
+            sourceLayerName: "Test Layer",
+            serviceName: request.ServiceName);
+    }
 }
 
 internal sealed class DegradedImportJobManager : IDistributedImportJobManager, IImportCoordinationHealth

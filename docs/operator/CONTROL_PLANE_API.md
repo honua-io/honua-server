@@ -222,6 +222,8 @@ For GeoParquet files, upload a `.parquet` or `.geoparquet` file directly. The se
 
 For source-system migration planning, use the unified scan endpoint before starting any GeoServer or GeoServices import job. The scan response is a deterministic inventory artifact that records source identity and version, authentication posture, scan completeness, containers, resources, styles or renderers, external dependencies, spatial reference details, and compatibility classifications.
 
+For ArcGIS GeoServices sources that require authentication, send credentials in the request `credentials` object rather than in the service URL. Synchronous discovery and scan requests may carry a plaintext token/password or a secret reference. Queued GeoServices import jobs must use `accessTokenSecretReference` or `passwordSecretReference`; plaintext `accessToken` and `password` values are rejected so job state does not persist secrets.
+
 ### **Import Endpoints**
 
 | Endpoint | Method | Purpose |

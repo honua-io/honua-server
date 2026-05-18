@@ -15,6 +15,7 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(FileFormatsResponse))]
 [JsonSerializable(typeof(MigrationInventoryScanRequest))]
 [JsonSerializable(typeof(MigrationScanArtifactSet))]
+[JsonSerializable(typeof(GeoservicesCredentialDescriptor))]
 [JsonSerializable(typeof(MigrationSourceInventoryArtifact))]
 [JsonSerializable(typeof(MigrationManifestArtifact))]
 [JsonSerializable(typeof(MigrationManifestTargetResource))]

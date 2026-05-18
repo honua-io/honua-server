@@ -43,6 +43,9 @@ public static class ImportCompatibilityCodes
     /// <summary>ArcGIS service requires a token before scanning may proceed.</summary>
     public const string ArcGisTokenRequired = "ARCGIS_TOKEN_REQUIRED";
 
+    /// <summary>ArcGIS service rejected the supplied token as invalid or expired.</summary>
+    public const string ArcGisTokenExpired = "ARCGIS_TOKEN_EXPIRED";
+
     /// <summary>ArcGIS service rejected the scan with an access-denied response.</summary>
     public const string ArcGisAccessDenied = "ARCGIS_ACCESS_DENIED";
 

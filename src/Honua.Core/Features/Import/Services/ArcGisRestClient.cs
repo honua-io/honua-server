@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -61,7 +63,8 @@ internal sealed partial class ArcGisRestClient
         string serviceUrl,
         int timeoutSeconds,
         int maxRetries,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GeoservicesCredentialDescriptor? credentials = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         Log.DiscoveringService(_logger, normalizedUrl);
@@ -71,6 +74,7 @@ internal sealed partial class ArcGisRestClient
             ArcGisJsonContext.Default.ArcGisServiceResponse,
             maxRetries,
             timeoutSeconds,
+            credentials,
             cancellationToken);
 
         var layers = new List<GeoservicesLayerInfo>();
@@ -81,7 +85,13 @@ internal sealed partial class ArcGisRestClient
             {
                 try
                 {
-                    var layerInfo = await GetLayerInfoAsync(normalizedUrl, layer.Id, timeoutSeconds, maxRetries, cancellationToken);
+                    var layerInfo = await GetLayerInfoAsync(
+                        normalizedUrl,
+                        layer.Id,
+                        timeoutSeconds,
+                        maxRetries,
+                        cancellationToken,
+                        credentials);
                     layers.Add(layerInfo);
                 }
                 catch (Exception ex)
@@ -113,7 +123,8 @@ internal sealed partial class ArcGisRestClient
         int layerId,
         int timeoutSeconds,
         int maxRetries,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GeoservicesCredentialDescriptor? credentials = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         var layerUrl = $"{normalizedUrl}/{layerId}?f=json";
@@ -123,6 +134,7 @@ internal sealed partial class ArcGisRestClient
             ArcGisJsonContext.Default.ArcGisLayerResponse,
             maxRetries,
             timeoutSeconds,
+            credentials,
             cancellationToken);
 
         // Try to get feature count
@@ -135,6 +147,7 @@ internal sealed partial class ArcGisRestClient
                 ArcGisJsonContext.Default.ArcGisCountResponse,
                 maxRetries,
                 timeoutSeconds,
+                credentials,
                 cancellationToken);
             featureCount = countResponse.Count;
         }
@@ -174,7 +187,8 @@ internal sealed partial class ArcGisRestClient
         int? outSrid,
         int timeoutSeconds,
         int maxRetries,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GeoservicesCredentialDescriptor? credentials = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         var queryUrl = BuildQueryUrl(normalizedUrl, layerId, offset, batchSize, whereClause, outFields, outSrid);
@@ -186,6 +200,7 @@ internal sealed partial class ArcGisRestClient
             ArcGisJsonContext.Default.ArcGisFeatureResponse,
             maxRetries,
             timeoutSeconds,
+            credentials,
             cancellationToken);
 
         if (response.Error != null)
@@ -234,6 +249,7 @@ internal sealed partial class ArcGisRestClient
         JsonTypeInfo<T> jsonTypeInfo,
         int maxRetries,
         int timeoutSeconds,
+        GeoservicesCredentialDescriptor? credentials,
         CancellationToken cancellationToken)
     {
         await EnsureSafeOutboundUriAsync(url, cancellationToken).ConfigureAwait(false);
@@ -245,7 +261,8 @@ internal sealed partial class ArcGisRestClient
             {
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-                return await _httpClient.GetAsync(url, timeoutCts.Token);
+                using var request = CreateGetRequest(url, credentials);
+                return await _httpClient.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
             },
             cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -259,6 +276,7 @@ internal sealed partial class ArcGisRestClient
         string url,
         int maxRetries,
         int timeoutSeconds,
+        GeoservicesCredentialDescriptor? credentials,
         CancellationToken cancellationToken)
     {
         await EnsureSafeOutboundUriAsync(url, cancellationToken).ConfigureAwait(false);
@@ -270,7 +288,8 @@ internal sealed partial class ArcGisRestClient
             {
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-                return await _httpClient.GetAsync(url, timeoutCts.Token).ConfigureAwait(false);
+                using var request = CreateGetRequest(url, credentials);
+                return await _httpClient.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
             },
             cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
@@ -283,8 +302,45 @@ internal sealed partial class ArcGisRestClient
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException($"Failed to parse ArcGIS JSON from '{url}'.", ex);
+            throw new InvalidOperationException($"Failed to parse ArcGIS JSON from '{RedactArcGisTokenParameters(url)}'.", ex);
         }
+    }
+
+    private static HttpRequestMessage CreateGetRequest(
+        string url,
+        GeoservicesCredentialDescriptor? credentials)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, BuildAuthenticatedUrl(url, credentials));
+        ApplyAuthorizationHeader(request, credentials);
+        return request;
+    }
+
+    private static string BuildAuthenticatedUrl(
+        string url,
+        GeoservicesCredentialDescriptor? credentials)
+    {
+        if (string.IsNullOrWhiteSpace(credentials?.AccessToken))
+        {
+            return url;
+        }
+
+        var separator = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return $"{url}{separator}token={Uri.EscapeDataString(credentials.AccessToken)}";
+    }
+
+    private static void ApplyAuthorizationHeader(
+        HttpRequestMessage request,
+        GeoservicesCredentialDescriptor? credentials)
+    {
+        if (credentials?.GetNormalizedMode() != GeoservicesAuthenticationModes.Basic ||
+            string.IsNullOrWhiteSpace(credentials.Username) ||
+            string.IsNullOrWhiteSpace(credentials.Password))
+        {
+            return;
+        }
+
+        var encoded = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{credentials.Username}:{credentials.Password}"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", encoded);
     }
 
     private static ResiliencePolicyOptions BuildHttpOptions(int maxRetries)
@@ -321,12 +377,38 @@ internal sealed partial class ArcGisRestClient
     {
         if (result.Exception != null)
         {
-            return result.Exception.Message;
+            return RedactArcGisTokenParameters(result.Exception.Message);
         }
 
         return result.Result != null
             ? $"HTTP {(int)result.Result.StatusCode}"
             : "Unknown failure";
+    }
+
+    private static string RedactArcGisTokenParameters(string value)
+    {
+        const string TokenParameter = "token=";
+        const string Redacted = "<redacted>";
+
+        var searchStart = 0;
+        while (true)
+        {
+            var tokenIndex = value.IndexOf(TokenParameter, searchStart, StringComparison.OrdinalIgnoreCase);
+            if (tokenIndex < 0)
+            {
+                return value;
+            }
+
+            var valueStart = tokenIndex + TokenParameter.Length;
+            var valueEnd = valueStart;
+            while (valueEnd < value.Length && value[valueEnd] is not '&' and not ' ' and not '\'' and not '"')
+            {
+                valueEnd++;
+            }
+
+            value = string.Concat(value.AsSpan(0, valueStart), Redacted, value.AsSpan(valueEnd));
+            searchStart = valueStart + Redacted.Length;
+        }
     }
 
     internal static string NormalizeServiceUrl(string url)

@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Core.Features.Import.Domain;
 
 /// <summary>
@@ -20,6 +22,157 @@ public sealed record GeoservicesDiscoveryRequest
     /// Optional timeout for the discovery request in seconds.
     /// </summary>
     public int TimeoutSeconds { get; init; } = 30;
+
+    /// <summary>
+    /// Optional ArcGIS authentication descriptor for discovery requests.
+    /// </summary>
+    public GeoservicesCredentialDescriptor? Credentials { get; init; }
+}
+
+/// <summary>
+/// Stable authentication mode labels for ArcGIS GeoServices import requests and inventory artifacts.
+/// </summary>
+public static class GeoservicesAuthenticationModes
+{
+    /// <summary>Anonymous access with no supplied credentials.</summary>
+    public const string Anonymous = "anonymous";
+
+    /// <summary>ArcGIS token authentication.</summary>
+    public const string Token = "token";
+
+    /// <summary>HTTP Basic authentication.</summary>
+    public const string Basic = "basic";
+
+    /// <summary>OAuth access-token authentication.</summary>
+    public const string OAuth = "oauth";
+
+    /// <summary>The source rejected the supplied identity or forbids access.</summary>
+    public const string Denied = "denied";
+
+    /// <summary>The supplied token was rejected as invalid or expired.</summary>
+    public const string ExpiredToken = "expired-token";
+
+    /// <summary>The source requires authentication before scanning can proceed.</summary>
+    public const string AuthRequired = "auth-required";
+
+    /// <summary>The authentication posture could not be determined.</summary>
+    public const string Unknown = "unknown";
+}
+
+/// <summary>
+/// Secret-safe ArcGIS GeoServices credential descriptor.
+/// </summary>
+public sealed record GeoservicesCredentialDescriptor
+{
+    /// <summary>
+    /// Authentication mode label. Known values are defined in <see cref="GeoservicesAuthenticationModes"/>.
+    /// </summary>
+    public string? Mode { get; init; }
+
+    /// <summary>
+    /// Optional secret reference that resolves to an ArcGIS token or OAuth access token at execution time.
+    /// </summary>
+    public string? AccessTokenSecretReference { get; init; }
+
+    /// <summary>
+    /// Resolved ArcGIS token or OAuth access token. Queued imports reject this field before persistence.
+    /// </summary>
+    public string? AccessToken { get; init; }
+
+    /// <summary>
+    /// Username for HTTP Basic authentication.
+    /// </summary>
+    public string? Username { get; init; }
+
+    /// <summary>
+    /// Optional secret reference that resolves to the HTTP Basic password at execution time.
+    /// </summary>
+    public string? PasswordSecretReference { get; init; }
+
+    /// <summary>
+    /// Resolved HTTP Basic password. Queued imports reject this field before persistence.
+    /// </summary>
+    public string? Password { get; init; }
+
+    /// <summary>
+    /// Optional OAuth client identifier associated with the token reference.
+    /// </summary>
+    public string? OAuthClientId { get; init; }
+
+    /// <summary>
+    /// Optional OAuth token endpoint used by operators to identify the token issuer.
+    /// </summary>
+    public string? OAuthTokenEndpoint { get; init; }
+
+    /// <summary>
+    /// Gets whether any credential descriptor or resolved credential value is present.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasCredentialMaterial =>
+        !string.IsNullOrWhiteSpace(AccessToken) ||
+        !string.IsNullOrWhiteSpace(AccessTokenSecretReference) ||
+        !string.IsNullOrWhiteSpace(Username) ||
+        !string.IsNullOrWhiteSpace(Password) ||
+        !string.IsNullOrWhiteSpace(PasswordSecretReference) ||
+        !string.IsNullOrWhiteSpace(OAuthClientId);
+
+    /// <summary>
+    /// Gets whether this descriptor carries plaintext secret values in memory.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasPlaintextSecret =>
+        !string.IsNullOrWhiteSpace(AccessToken) ||
+        !string.IsNullOrWhiteSpace(Password);
+
+    /// <summary>
+    /// Gets the normalized authentication mode implied by the descriptor.
+    /// </summary>
+    /// <returns>A stable authentication posture label.</returns>
+    public string GetNormalizedMode()
+    {
+        if (!string.IsNullOrWhiteSpace(Mode))
+        {
+            var normalizedMode = NormalizeMode(Mode);
+            if (normalizedMode != GeoservicesAuthenticationModes.Anonymous ||
+                string.Equals(Mode.Trim(), GeoservicesAuthenticationModes.Anonymous, StringComparison.OrdinalIgnoreCase))
+            {
+                return normalizedMode;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(OAuthClientId))
+        {
+            return GeoservicesAuthenticationModes.OAuth;
+        }
+
+        if (!string.IsNullOrWhiteSpace(AccessToken) ||
+            !string.IsNullOrWhiteSpace(AccessTokenSecretReference))
+        {
+            return GeoservicesAuthenticationModes.Token;
+        }
+
+        if (!string.IsNullOrWhiteSpace(Username) ||
+            !string.IsNullOrWhiteSpace(Password) ||
+            !string.IsNullOrWhiteSpace(PasswordSecretReference))
+        {
+            return GeoservicesAuthenticationModes.Basic;
+        }
+
+        return GeoservicesAuthenticationModes.Anonymous;
+    }
+
+    private static string NormalizeMode(string mode)
+        => mode.Trim().ToLowerInvariant() switch
+        {
+            GeoservicesAuthenticationModes.Token => GeoservicesAuthenticationModes.Token,
+            GeoservicesAuthenticationModes.Basic => GeoservicesAuthenticationModes.Basic,
+            GeoservicesAuthenticationModes.OAuth => GeoservicesAuthenticationModes.OAuth,
+            GeoservicesAuthenticationModes.Denied => GeoservicesAuthenticationModes.Denied,
+            GeoservicesAuthenticationModes.ExpiredToken => GeoservicesAuthenticationModes.ExpiredToken,
+            GeoservicesAuthenticationModes.AuthRequired => GeoservicesAuthenticationModes.AuthRequired,
+            GeoservicesAuthenticationModes.Unknown => GeoservicesAuthenticationModes.Unknown,
+            _ => GeoservicesAuthenticationModes.Anonymous
+        };
 }
 
 /// <summary>
@@ -100,6 +253,12 @@ public sealed record GeoservicesImportRequest
     /// Optional target Honua service name for auto-publishing.
     /// </summary>
     public string? ServiceName { get; init; }
+
+    /// <summary>
+    /// Optional ArcGIS authentication descriptor. Queued imports must use secret references,
+    /// not plaintext token or password values.
+    /// </summary>
+    public GeoservicesCredentialDescriptor? Credentials { get; init; }
 }
 
 /// <summary>
