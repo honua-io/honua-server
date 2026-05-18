@@ -73,6 +73,40 @@ public sealed class GitOpsWatchServiceTests : IDisposable
     }
 
     [UnitTest]
+    public async Task PollOnceAsync_ConcurrentPolls_ProcessCommitOnce()
+    {
+        var repoDir = await CreateLocalRepositoryAsync(("manifests/group.json", ValidGroupManifest));
+        var latestCommit = await RunGitForOutputAsync(repoDir, "rev-parse", "HEAD");
+        var watchStore = new TestGitOpsWatchStore(CreateConfig(repoDir, manifestPath: "manifests/group.json"));
+        var pendingStore = new TestManifestPendingChangeStore
+        {
+            PauseOnCreate = true
+        };
+
+        using var services = CreateServices(watchStore, pendingStore);
+        var service = CreateService(services);
+
+        var firstPoll = service.PollOnceAsync(CancellationToken.None);
+        await pendingStore.WaitForCreateStartedAsync().ConfigureAwait(false);
+
+        var secondPoll = service.PollOnceAsync(CancellationToken.None);
+        await secondPoll.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+        pendingStore.AllowCreate();
+        await firstPoll.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+        watchStore.PollStateUpdateCount.Should().Be(1);
+        watchStore.CurrentConfig.LastKnownCommitSha.Should().Be(latestCommit);
+        watchStore.ChangeRecords.Should().ContainSingle();
+        pendingStore.Changes.Should().ContainSingle();
+        watchStore.LeaseAcquireAttemptCount.Should().Be(2);
+        watchStore.LeaseAcquireSuccessCount.Should().Be(1);
+        watchStore.LeaseCompleteCount.Should().Be(1);
+        watchStore.LeaseReleaseCount.Should().Be(0);
+        watchStore.HasActiveLease.Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task PollOnceAsync_DirectoryManifestPath_UsesHonuaManifest()
     {
         var repoDir = await CreateLocalRepositoryAsync(("manifests/honua-manifest.json", ValidGroupManifest));
@@ -201,6 +235,9 @@ public sealed class GitOpsWatchServiceTests : IDisposable
         watchStore.ChangeRecords[0].ErrorMessage.Should().StartWith("Manifest parse failed:");
         watchStore.ChangeRecords[0].ErrorMessage.Should().NotContain(repoDir);
         watchStore.ChangeRecords[0].ManifestAfter.GetProperty("resources").ValueKind.Should().Be(JsonValueKind.Object);
+        watchStore.LeaseAcquireSuccessCount.Should().Be(2);
+        watchStore.LeaseReleaseCount.Should().Be(2);
+        watchStore.HasActiveLease.Should().BeFalse();
     }
 
     public void Dispose()
@@ -365,18 +402,51 @@ public sealed class GitOpsWatchServiceTests : IDisposable
 
     private sealed class TestGitOpsWatchStore(GitOpsWatchConfig config) : IGitOpsWatchStore
     {
+        private readonly object _gate = new();
         private GitOpsWatchConfig? _config = config;
         private readonly List<GitOpsChangeRecord> _changeRecords = [];
+        private string? _processingCommitSha;
+        private Guid? _processingLeaseId;
+        private DateTimeOffset? _processingLeaseExpiresAt;
 
-        public GitOpsWatchConfig CurrentConfig => _config ?? throw new InvalidOperationException("No config is stored.");
+        public GitOpsWatchConfig CurrentConfig
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _config ?? throw new InvalidOperationException("No config is stored.");
+                }
+            }
+        }
+
         public List<GitOpsChangeRecord> ChangeRecords => _changeRecords;
         public int PollStateUpdateCount { get; private set; }
+        public int LeaseAcquireAttemptCount { get; private set; }
+        public int LeaseAcquireSuccessCount { get; private set; }
+        public int LeaseCompleteCount { get; private set; }
+        public int LeaseReleaseCount { get; private set; }
+        public bool HasActiveLease
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _processingCommitSha != null;
+                }
+            }
+        }
 
         public Task<GitOpsWatchConfig> UpsertConfigAsync(GitOpsWatchConfig config, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task<GitOpsWatchConfig?> GetConfigAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(_config);
+        public Task<GitOpsWatchConfig?> GetConfigAsync(CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                return Task.FromResult(_config);
+            }
+        }
 
         public Task<bool> DeleteConfigAsync(Guid configId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -387,21 +457,105 @@ public sealed class GitOpsWatchServiceTests : IDisposable
             DateTimeOffset polledAt,
             CancellationToken cancellationToken = default)
         {
-            if (_config?.ConfigId != configId)
+            lock (_gate)
             {
-                return Task.FromResult(false);
-            }
+                if (_config?.ConfigId != configId)
+                {
+                    return Task.FromResult(false);
+                }
 
-            PollStateUpdateCount++;
-            _config = CopyConfigWithPollState(_config, commitSha, polledAt);
-            return Task.FromResult(true);
+                PollStateUpdateCount++;
+                _config = CopyConfigWithPollState(_config, commitSha, polledAt);
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> TryAcquireCommitProcessingLeaseAsync(
+            Guid configId,
+            string commitSha,
+            Guid leaseId,
+            DateTimeOffset acquiredAt,
+            DateTimeOffset leaseExpiresAt,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                LeaseAcquireAttemptCount++;
+                if (_config?.ConfigId != configId || !_config.Enabled ||
+                    string.Equals(_config.LastKnownCommitSha, commitSha, StringComparison.Ordinal))
+                {
+                    return Task.FromResult(false);
+                }
+
+                if (_processingCommitSha != null &&
+                    _processingLeaseExpiresAt.HasValue &&
+                    _processingLeaseExpiresAt.Value > acquiredAt)
+                {
+                    return Task.FromResult(false);
+                }
+
+                _processingCommitSha = commitSha;
+                _processingLeaseId = leaseId;
+                _processingLeaseExpiresAt = leaseExpiresAt;
+                LeaseAcquireSuccessCount++;
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> CompleteCommitProcessingAsync(
+            Guid configId,
+            string commitSha,
+            Guid leaseId,
+            DateTimeOffset polledAt,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                if (_config?.ConfigId != configId ||
+                    !string.Equals(_processingCommitSha, commitSha, StringComparison.Ordinal) ||
+                    _processingLeaseId != leaseId)
+                {
+                    return Task.FromResult(false);
+                }
+
+                PollStateUpdateCount++;
+                LeaseCompleteCount++;
+                _config = CopyConfigWithPollState(_config, commitSha, polledAt);
+                ClearLease();
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> ReleaseCommitProcessingLeaseAsync(
+            Guid configId,
+            string commitSha,
+            Guid leaseId,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                if (_config?.ConfigId != configId ||
+                    !string.Equals(_processingCommitSha, commitSha, StringComparison.Ordinal) ||
+                    _processingLeaseId != leaseId)
+                {
+                    return Task.FromResult(false);
+                }
+
+                LeaseReleaseCount++;
+                ClearLease();
+                return Task.FromResult(true);
+            }
         }
 
         public Task<GitOpsChangeRecord> CreateChangeRecordAsync(
             GitOpsChangeRecord record,
             CancellationToken cancellationToken = default)
         {
-            _changeRecords.Add(record);
+            lock (_gate)
+            {
+                _changeRecords.Add(record);
+            }
+
             return Task.FromResult(record);
         }
 
@@ -413,11 +567,15 @@ public sealed class GitOpsWatchServiceTests : IDisposable
             int offset = 0,
             CancellationToken cancellationToken = default)
         {
-            var records = _changeRecords
-                .OrderByDescending(record => record.DetectedAt)
-                .Skip(offset)
-                .Take(limit)
-                .ToArray();
+            GitOpsChangeRecord[] records;
+            lock (_gate)
+            {
+                records = _changeRecords
+                    .OrderByDescending(record => record.DetectedAt)
+                    .Skip(offset)
+                    .Take(limit)
+                    .ToArray();
+            }
 
             return Task.FromResult<IReadOnlyList<GitOpsChangeRecord>>(records);
         }
@@ -430,20 +588,39 @@ public sealed class GitOpsWatchServiceTests : IDisposable
             DateTimeOffset? appliedAt,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        private void ClearLease()
+        {
+            _processingCommitSha = null;
+            _processingLeaseId = null;
+            _processingLeaseExpiresAt = null;
+        }
     }
 
     private sealed class TestManifestPendingChangeStore : IManifestPendingChangeStore
     {
         private readonly List<ManifestPendingChange> _changes = [];
+        private readonly TaskCompletionSource<bool> _createStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _allowCreate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public List<ManifestPendingChange> Changes => _changes;
+        public bool PauseOnCreate { get; init; }
 
-        public Task<ManifestPendingChange> CreateAsync(
+        public Task<bool> WaitForCreateStartedAsync() => _createStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        public void AllowCreate() => _allowCreate.TrySetResult(true);
+
+        public async Task<ManifestPendingChange> CreateAsync(
             ManifestPendingChange pendingChange,
             CancellationToken cancellationToken = default)
         {
+            if (PauseOnCreate)
+            {
+                _createStarted.TrySetResult(true);
+                await _allowCreate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             _changes.Add(pendingChange);
-            return Task.FromResult(pendingChange);
+            return pendingChange;
         }
 
         public Task<ManifestPendingChange?> GetAsync(Guid pendingId, CancellationToken cancellationToken = default) =>

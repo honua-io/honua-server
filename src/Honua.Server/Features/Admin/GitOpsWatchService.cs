@@ -19,6 +19,9 @@ internal sealed partial class GitOpsWatchService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly GitOpsWatchOptions _options;
     private readonly ILogger<GitOpsWatchService> _logger;
+    private const string ManifestApplyFailedErrorMessage = "Manifest apply failed.";
+    private static readonly TimeSpan MinimumCommitProcessingLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan MaximumCommitProcessingLeaseDuration = TimeSpan.FromMinutes(15);
 
     public GitOpsWatchService(
         IServiceScopeFactory scopeFactory,
@@ -94,64 +97,133 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
         LogPollNewCommit(_logger, config.RepositoryUrl, latestCommit.Sha);
 
-        if (!GitOpsWatchManifestPath.TryNormalize(config.ManifestPath, out var manifestPath, out var manifestPathError))
+        var leaseId = Guid.NewGuid();
+        var leaseAcquiredAt = DateTimeOffset.UtcNow;
+        var leaseExpiresAt = leaseAcquiredAt.Add(GetCommitProcessingLeaseDuration(pollInterval));
+        var leaseAcquired = await watchStore.TryAcquireCommitProcessingLeaseAsync(
+            config.ConfigId,
+            latestCommit.Sha,
+            leaseId,
+            leaseAcquiredAt,
+            leaseExpiresAt,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!leaseAcquired)
         {
-            var errorMessage = manifestPathError ?? GitOpsWatchManifestPath.RelativePathErrorMessage;
-            await RecordManifestPathFailureAsync(watchStore, config, latestCommit, errorMessage, cancellationToken)
-                .ConfigureAwait(false);
-            LogManifestPathRejected(_logger, config.RepositoryUrl, errorMessage);
+            LogCommitProcessingLeaseSkipped(_logger, latestCommit.Sha);
             return pollInterval;
         }
 
-        var fetchResult = await FetchManifestContentAsync(config, manifestPath, latestCommit.Sha, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (fetchResult == null)
+        var leaseCompleted = false;
+        try
         {
-            // Leave the commit unobserved so transient fetch, path, or parse failures retry on the next poll.
-            LogManifestFetchFailed(_logger, config.RepositoryUrl, manifestPath);
-            return pollInterval;
-        }
-
-        // Populate commit metadata from the fetched commit
-        latestCommit = new GitCommitInfo
-        {
-            Sha = latestCommit.Sha,
-            Author = fetchResult.CommitAuthor,
-            Message = fetchResult.CommitMessage,
-            Timestamp = fetchResult.CommitTimestamp
-        };
-
-        // Get previous manifest for diff
-        JsonElement? previousManifest = null;
-        if (!string.IsNullOrEmpty(config.LastKnownCommitSha))
-        {
-            var lastChanges = await watchStore.ListChangeRecordsAsync(1, 0, cancellationToken).ConfigureAwait(false);
-            if (lastChanges.Count > 0)
+            if (!GitOpsWatchManifestPath.TryNormalize(config.ManifestPath, out var manifestPath, out var manifestPathError))
             {
-                previousManifest = lastChanges[0].ManifestAfter;
+                var errorMessage = manifestPathError ?? GitOpsWatchManifestPath.RelativePathErrorMessage;
+                await RecordManifestPathFailureAsync(watchStore, config, latestCommit, errorMessage, cancellationToken)
+                    .ConfigureAwait(false);
+                LogManifestPathRejected(_logger, config.RepositoryUrl, errorMessage);
+                return pollInterval;
+            }
+
+            var fetchResult = await FetchManifestContentAsync(config, manifestPath, latestCommit.Sha, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (fetchResult == null)
+            {
+                // Leave the commit unobserved so transient fetch, path, or parse failures retry on the next poll.
+                LogManifestFetchFailed(_logger, config.RepositoryUrl, manifestPath);
+                return pollInterval;
+            }
+
+            // Populate commit metadata from the fetched commit
+            latestCommit = new GitCommitInfo
+            {
+                Sha = latestCommit.Sha,
+                Author = fetchResult.CommitAuthor,
+                Message = fetchResult.CommitMessage,
+                Timestamp = fetchResult.CommitTimestamp
+            };
+
+            // Get previous manifest for diff
+            JsonElement? previousManifest = null;
+            if (!string.IsNullOrEmpty(config.LastKnownCommitSha))
+            {
+                var lastChanges = await watchStore.ListChangeRecordsAsync(1, 0, cancellationToken).ConfigureAwait(false);
+                if (lastChanges.Count > 0)
+                {
+                    previousManifest = lastChanges[0].ManifestAfter;
+                }
+            }
+
+            var now = DateTimeOffset.UtcNow;
+
+            var manifest = fetchResult.ManifestContent;
+
+            var commitObserved = config.ApprovalRequired
+                ? await HandleApprovalRequiredAsync(scope, watchStore, config, latestCommit, manifest, previousManifest, now, cancellationToken)
+                    .ConfigureAwait(false)
+                : await HandleAutoApplyAsync(scope, watchStore, config, latestCommit, manifest, previousManifest, now, cancellationToken)
+                    .ConfigureAwait(false);
+
+            if (!commitObserved)
+            {
+                return pollInterval;
+            }
+
+            leaseCompleted = await watchStore.CompleteCommitProcessingAsync(
+                config.ConfigId,
+                latestCommit.Sha,
+                leaseId,
+                now,
+                cancellationToken).ConfigureAwait(false);
+            if (!leaseCompleted)
+            {
+                LogCommitProcessingLeaseLost(_logger, latestCommit.Sha);
+            }
+
+            return pollInterval;
+        }
+        finally
+        {
+            if (!leaseCompleted)
+            {
+                try
+                {
+                    await watchStore.ReleaseCommitProcessingLeaseAsync(
+                        config.ConfigId,
+                        latestCommit.Sha,
+                        leaseId,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Cancellation can leave the lease for another node to reclaim after expiry.
+                }
+                catch (Exception ex)
+                {
+                    LogCommitProcessingLeaseReleaseFailed(_logger, latestCommit.Sha, ex);
+                }
             }
         }
+    }
 
-        var now = DateTimeOffset.UtcNow;
-
-        var manifest = fetchResult.ManifestContent;
-
-        var commitObserved = config.ApprovalRequired
-            ? await HandleApprovalRequiredAsync(scope, watchStore, config, latestCommit, manifest, previousManifest, now, cancellationToken)
-                .ConfigureAwait(false)
-            : await HandleAutoApplyAsync(scope, watchStore, config, latestCommit, manifest, previousManifest, now, cancellationToken)
-                .ConfigureAwait(false);
-
-        if (!commitObserved)
+    private static TimeSpan GetCommitProcessingLeaseDuration(TimeSpan pollInterval)
+    {
+        if (pollInterval <= TimeSpan.Zero)
         {
-            return pollInterval;
+            return MinimumCommitProcessingLeaseDuration;
         }
 
-        await watchStore.UpdatePollStateAsync(config.ConfigId, latestCommit.Sha, now, cancellationToken)
-            .ConfigureAwait(false);
+        var leaseDuration = pollInterval + pollInterval;
+        if (leaseDuration < MinimumCommitProcessingLeaseDuration)
+        {
+            return MinimumCommitProcessingLeaseDuration;
+        }
 
-        return pollInterval;
+        return leaseDuration > MaximumCommitProcessingLeaseDuration
+            ? MaximumCommitProcessingLeaseDuration
+            : leaseDuration;
     }
 
     private async Task<bool> HandleApprovalRequiredAsync(
@@ -334,7 +406,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
                 ManifestBefore = previousManifest,
                 ManifestAfter = manifestContent,
                 Status = GitOpsChangeStatus.Failed,
-                ErrorMessage = ex.Message,
+                ErrorMessage = ManifestApplyFailedErrorMessage,
                 DetectedAt = now
             };
             await watchStore.CreateChangeRecordAsync(failedRecord, cancellationToken).ConfigureAwait(false);
@@ -828,4 +900,13 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
     [LoggerMessage(EventId = 9411, Level = LogLevel.Error, Message = "GitOps auto-apply failed for commit {CommitSha}.")]
     private static partial void LogApplyFailed(ILogger logger, string commitSha, Exception exception);
+
+    [LoggerMessage(EventId = 9414, Level = LogLevel.Debug, Message = "GitOps commit processing lease was not acquired for commit {CommitSha}.")]
+    private static partial void LogCommitProcessingLeaseSkipped(ILogger logger, string commitSha);
+
+    [LoggerMessage(EventId = 9415, Level = LogLevel.Warning, Message = "GitOps commit processing lease was lost before commit {CommitSha} could be marked observed.")]
+    private static partial void LogCommitProcessingLeaseLost(ILogger logger, string commitSha);
+
+    [LoggerMessage(EventId = 9416, Level = LogLevel.Warning, Message = "GitOps commit processing lease release failed for commit {CommitSha}.")]
+    private static partial void LogCommitProcessingLeaseReleaseFailed(ILogger logger, string commitSha, Exception exception);
 }

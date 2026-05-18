@@ -442,11 +442,16 @@ sql:
           enabled BOOLEAN NOT NULL DEFAULT TRUE,
           last_known_commit_sha TEXT,
           last_polled_at TIMESTAMPTZ,
+          processing_commit_sha TEXT,
+          processing_lease_id UUID,
+          processing_started_at TIMESTAMPTZ,
+          processing_lease_expires_at TIMESTAMPTZ,
           configured_by TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
   - "CREATE UNIQUE INDEX IF NOT EXISTS idx_gitops_watch_configs_singleton ON honua.gitops_watch_configs ((TRUE));"
+  - "CREATE INDEX IF NOT EXISTS idx_gitops_watch_configs_processing_lease ON honua.gitops_watch_configs(processing_lease_expires_at) WHERE processing_commit_sha IS NOT NULL;"
   - |
       CREATE TABLE IF NOT EXISTS honua.gitops_change_records (
           change_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

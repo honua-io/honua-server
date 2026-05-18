@@ -49,7 +49,11 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
                 prune_enabled = EXCLUDED.prune_enabled,
                 enabled = EXCLUDED.enabled,
                 configured_by = EXCLUDED.configured_by,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                processing_commit_sha = NULL,
+                processing_lease_id = NULL,
+                processing_started_at = NULL,
+                processing_lease_expires_at = NULL
             RETURNING config_id
             """;
 
@@ -120,6 +124,100 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
         command.Parameters.AddWithValue("@configId", configId);
         command.Parameters.AddWithValue("@commitSha", commitSha);
         command.Parameters.AddWithValue("@polledAt", polledAt);
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
+    }
+
+    public async Task<bool> TryAcquireCommitProcessingLeaseAsync(
+        Guid configId,
+        string commitSha,
+        Guid leaseId,
+        DateTimeOffset acquiredAt,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            UPDATE {_configTable}
+            SET processing_commit_sha = @commitSha,
+                processing_lease_id = @leaseId,
+                processing_started_at = @acquiredAt,
+                processing_lease_expires_at = @leaseExpiresAt
+            WHERE config_id = @configId
+              AND enabled = TRUE
+              AND last_known_commit_sha IS DISTINCT FROM @commitSha
+              AND (
+                  processing_commit_sha IS NULL
+                  OR processing_lease_expires_at IS NULL
+                  OR processing_lease_expires_at <= @acquiredAt
+              )
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@configId", configId);
+        command.Parameters.AddWithValue("@commitSha", commitSha);
+        command.Parameters.AddWithValue("@leaseId", leaseId);
+        command.Parameters.AddWithValue("@acquiredAt", acquiredAt);
+        command.Parameters.AddWithValue("@leaseExpiresAt", leaseExpiresAt);
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
+    }
+
+    public async Task<bool> CompleteCommitProcessingAsync(
+        Guid configId,
+        string commitSha,
+        Guid leaseId,
+        DateTimeOffset polledAt,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            UPDATE {_configTable}
+            SET last_known_commit_sha = @commitSha,
+                last_polled_at = @polledAt,
+                processing_commit_sha = NULL,
+                processing_lease_id = NULL,
+                processing_started_at = NULL,
+                processing_lease_expires_at = NULL
+            WHERE config_id = @configId
+              AND processing_commit_sha = @commitSha
+              AND processing_lease_id = @leaseId
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@configId", configId);
+        command.Parameters.AddWithValue("@commitSha", commitSha);
+        command.Parameters.AddWithValue("@leaseId", leaseId);
+        command.Parameters.AddWithValue("@polledAt", polledAt);
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
+    }
+
+    public async Task<bool> ReleaseCommitProcessingLeaseAsync(
+        Guid configId,
+        string commitSha,
+        Guid leaseId,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            UPDATE {_configTable}
+            SET processing_commit_sha = NULL,
+                processing_lease_id = NULL,
+                processing_started_at = NULL,
+                processing_lease_expires_at = NULL
+            WHERE config_id = @configId
+              AND processing_commit_sha = @commitSha
+              AND processing_lease_id = @leaseId
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@configId", configId);
+        command.Parameters.AddWithValue("@commitSha", commitSha);
+        command.Parameters.AddWithValue("@leaseId", leaseId);
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         return affected > 0;
