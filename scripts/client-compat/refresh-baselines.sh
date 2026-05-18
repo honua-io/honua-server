@@ -46,21 +46,20 @@ echo "  Lanes: ${LANES[*]}"
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
-# Run lanes one at a time. The matrix-profile shortcut (--profile matrix
-# --abort-on-container-exit) brings every lane up in parallel, but
-# --abort-on-container-exit terminates *all* containers when any one of them
-# exits — so the first lane to finish kills the rest before they can write
-# their evidence. Mirroring the CI matrix shape (one --profile <lane>
-# --exit-code-from <lane> per loop iteration) is the only pattern that
-# reliably captures every lane's evidence even when one of them fails.
+# Run lanes one at a time. Avoid `up --abort-on-container-exit` here: the
+# one-shot seed dependency exits before honua and the lane start, and Compose
+# treats that as a reason to stop the stack. `run` starts dependencies without
+# using seed completion as an abort signal, so evidence written to /output is
+# preserved for every lane.
 for lane in "${LANES[@]}"; do
     echo
     echo "===> Refreshing lane: $lane"
+    docker compose -f "$COMPOSE_FILE" \
+        --profile "$lane" \
+        build seed honua "$lane"
     if docker compose -f "$COMPOSE_FILE" \
             --profile "$lane" \
-            up --build \
-            --abort-on-container-exit \
-            --exit-code-from "$lane" \
+            run --no-build --rm \
             "$lane"; then
         echo "lane $lane: ok"
     else

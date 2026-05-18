@@ -144,12 +144,15 @@ jobs:
           if [[ "$build_exit" -ne 0 ]]; then
             exit_code="$build_exit"
           else
+            lane_log="docker/client-compat/output/${{ matrix.lane }}/lane.log"
             docker compose -f docker/client-compat/compose.yml \
               --profile ${{ matrix.lane }} \
-              up --no-build --abort-on-container-exit \
-              --exit-code-from ${{ matrix.lane }} \
-              ${{ matrix.lane }}
-            exit_code=$?
+              run --no-build --rm \
+              ${{ matrix.lane }} 2>&1 | tee "$lane_log"
+            exit_code=${PIPESTATUS[0]}
+            if [[ "$exit_code" -eq 0 ]]; then
+              rm -f "$lane_log"
+            fi
           fi
 
           if [[ "$exit_code" -ne 0 ]]; then
