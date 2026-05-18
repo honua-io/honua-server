@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 
@@ -59,7 +60,7 @@ internal static class MigrationScannerEndpoints
         {
             await AdminResponseWriter.WriteErrorAsync(
                 context,
-                "SourceKind must be one of: geoserver, geoserver-rest, geoservices, arcgis-geoservices-rest.",
+                "SourceKind must be one of: geoserver, geoserver-rest, geoservices, arcgis-geoservices-rest, ogc-wfs, ogc-wms, ogc-wmts.",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -113,6 +114,37 @@ internal static class MigrationScannerEndpoints
                             cancellationToken).ConfigureAwait(false);
                         break;
                     }
+                case "ogc-wfs":
+                case "ogc-wms":
+                case "ogc-wmts":
+                    {
+                        var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
+                        var validation = await OgcServiceUrlValidation.ValidateAsync(
+                            request.SourceUrl,
+                            allowUnsafeLocalUrls,
+                            cancellationToken).ConfigureAwait(false);
+                        if (!validation.IsValid)
+                        {
+                            await AdminResponseWriter.WriteErrorAsync(
+                                context,
+                                validation.ErrorMessage!,
+                                StatusCodes.Status400BadRequest);
+                            return;
+                        }
+
+                        var scanner = context.RequestServices.GetRequiredService<IOgcServiceMigrationScanner>();
+                        artifact = await scanner.ScanSourceAsync(
+                            new OgcServiceScanRequest
+                            {
+                                ServiceType = sourceKind["ogc-".Length..],
+                                ServiceUrl = request.SourceUrl,
+                                Version = request.ServiceVersion,
+                                TimeoutSeconds = request.TimeoutSeconds ?? 60,
+                                AllowUnsafeLocalUrls = allowUnsafeLocalUrls
+                            },
+                            cancellationToken).ConfigureAwait(false);
+                        break;
+                    }
                 default:
                     {
                         var validation = await GeoservicesServiceUrlValidation.ValidateAsync(
@@ -141,12 +173,26 @@ internal static class MigrationScannerEndpoints
 
             if (IsJsonExportRequested(context.Request.Query))
             {
-                await WriteIndentedJsonAttachmentAsync(context, artifact, cancellationToken).ConfigureAwait(false);
+                await WriteIndentedJsonAttachmentAsync(
+                    context,
+                    CreateScanResponse(artifact, request),
+                    artifact.Source.DisplayName,
+                    request,
+                    cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                await Results.Json(artifact, ImportJsonContext.Default.MigrationSourceInventoryArtifact)
-                    .ExecuteAsync(context).ConfigureAwait(false);
+                var response = CreateScanResponse(artifact, request);
+                if (response is MigrationScanArtifactSet artifactSet)
+                {
+                    await Results.Json(artifactSet, ImportJsonContext.Default.MigrationScanArtifactSet)
+                        .ExecuteAsync(context).ConfigureAwait(false);
+                }
+                else
+                {
+                    await Results.Json(artifact, ImportJsonContext.Default.MigrationSourceInventoryArtifact)
+                        .ExecuteAsync(context).ConfigureAwait(false);
+                }
             }
         }
         catch (HttpRequestException)
@@ -178,10 +224,35 @@ internal static class MigrationScannerEndpoints
         {
             "geoserver" or "geoserver-rest" => "geoserver-rest",
             "geoservices" or "arcgis-geoservices-rest" => "arcgis-geoservices-rest",
+            "wfs" or "ogc-wfs" => "ogc-wfs",
+            "wms" or "ogc-wms" => "ogc-wms",
+            "wmts" or "ogc-wmts" => "ogc-wmts",
             _ => string.Empty
         };
 
         return normalized.Length > 0;
+    }
+
+    private static object CreateScanResponse(
+        MigrationSourceInventoryArtifact artifact,
+        MigrationInventoryScanRequest request)
+    {
+        if (!string.Equals(request.ArtifactSet, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            return artifact;
+        }
+
+        var manifest = MigrationManifestTranslator.Translate(artifact, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = request.TargetServiceName
+        });
+        var parityEvidence = MigrationParityEvidenceGenerator.Generate(artifact, manifest);
+        return new MigrationScanArtifactSet
+        {
+            Inventory = artifact,
+            Manifest = manifest,
+            ParityEvidence = parityEvidence
+        };
     }
 
     private static bool IsJsonExportRequested(IQueryCollection query)
@@ -204,11 +275,15 @@ internal static class MigrationScannerEndpoints
 
     private static async Task WriteIndentedJsonAttachmentAsync(
         HttpContext context,
-        MigrationSourceInventoryArtifact artifact,
+        object response,
+        string? displayName,
+        MigrationInventoryScanRequest request,
         CancellationToken cancellationToken)
     {
-        var fileSlug = SanitizeFilenameSlug(artifact.Source.DisplayName);
-        var filename = $"{fileSlug}-inventory.json";
+        var fileSlug = SanitizeFilenameSlug(displayName);
+        var filename = string.Equals(request.ArtifactSet, "all", StringComparison.OrdinalIgnoreCase)
+            ? $"{fileSlug}-migration-artifacts.json"
+            : $"{fileSlug}-inventory.json";
 
         context.Response.StatusCode = StatusCodes.Status200OK;
         context.Response.ContentType = "application/json; charset=utf-8";
@@ -223,8 +298,10 @@ internal static class MigrationScannerEndpoints
         {
             JsonSerializer.Serialize(
                 writer,
-                artifact,
-                ImportJsonContext.Default.MigrationSourceInventoryArtifact);
+                response,
+                response is MigrationScanArtifactSet
+                    ? ImportJsonContext.Default.MigrationScanArtifactSet
+                    : ImportJsonContext.Default.MigrationSourceInventoryArtifact);
         }
 
         await context.Response.Body.WriteAsync(buffer.WrittenMemory, cancellationToken).ConfigureAwait(false);
@@ -324,4 +401,40 @@ internal sealed record MigrationInventoryScanRequest
     /// Whether to include GeoServer style content when available.
     /// </summary>
     public bool? IncludeStyleContent { get; init; }
+
+    /// <summary>
+    /// Optional OGC service version to request during discovery.
+    /// </summary>
+    public string? ServiceVersion { get; init; }
+
+    /// <summary>
+    /// Artifact response mode. Use <c>all</c> to include inventory, manifest, and parity evidence.
+    /// </summary>
+    public string? ArtifactSet { get; init; }
+
+    /// <summary>
+    /// Optional target service name used when generating a migration manifest.
+    /// </summary>
+    public string? TargetServiceName { get; init; }
+}
+
+/// <summary>
+/// Response envelope for callers that request all migration scan artifacts.
+/// </summary>
+internal sealed record MigrationScanArtifactSet
+{
+    /// <summary>
+    /// Source inventory artifact.
+    /// </summary>
+    public required MigrationSourceInventoryArtifact Inventory { get; init; }
+
+    /// <summary>
+    /// Generated migration manifest artifact.
+    /// </summary>
+    public required MigrationManifestArtifact Manifest { get; init; }
+
+    /// <summary>
+    /// Generated parity evidence artifact.
+    /// </summary>
+    public required MigrationParityEvidenceArtifact ParityEvidence { get; init; }
 }

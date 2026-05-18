@@ -350,6 +350,19 @@ internal static class ServiceCollectionExtensions
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();
 
+        // Register OGC service migration scanner for WFS inventory and WMS/WMTS manual-review planning.
+        services.AddResilientHttpClient<OgcServiceMigrationScanner>(
+            "ogc-service-migration",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(2);
+            },
+            configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
+        services.AddScoped<IOgcServiceMigrationScanner>(serviceProvider =>
+            serviceProvider.GetRequiredService<OgcServiceMigrationScanner>());
+
         // Register secure connection management services
         services.AddSecureConnectionServices(configuration);
         services.UseSecureConnectionProvider(configuration);

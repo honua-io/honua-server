@@ -25,13 +25,15 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
     private readonly WebAppFixture _fixture;
     private readonly FakeGeoServerScanService _geoServerService = new();
     private readonly FakeGeoservicesScanService _geoservicesService = new();
+    private readonly FakeOgcScanService _ogcService = new();
     private HttpClient _client = null!;
 
     public MigrationScannerEndpointTests()
     {
         _fixture = new WebAppFixture()
             .ReplaceService<IGeoServerImportService>(_geoServerService)
-            .ReplaceService<IGeoservicesImportService>(_geoservicesService);
+            .ReplaceService<IGeoservicesImportService>(_geoservicesService)
+            .ReplaceService<IOgcServiceMigrationScanner>(_ogcService);
     }
 
     public async Task InitializeAsync()
@@ -107,6 +109,54 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         root.GetProperty("containers")[0].GetProperty("kind").GetString().Should().Be("service");
         root.GetProperty("resources")[0].GetProperty("kind").GetString().Should().Be("layer");
         root.GetProperty("styles")[0].GetProperty("kind").GetString().Should().Be("renderer");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/scan")]
+    public async Task Scan_OgcWfsSourceWithAllArtifacts_ReturnsInventoryManifestAndEvidence()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", new
+        {
+            SourceKind = "ogc-wfs",
+            SourceUrl = "https://example.com/geoserver/wfs",
+            ServiceVersion = "2.0.0",
+            ArtifactSet = "all",
+            TargetServiceName = "Migrated OGC"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = await response.Content.ReadFromJsonAsync<JsonDocument>();
+        payload.Should().NotBeNull();
+
+        var root = payload!.RootElement;
+        root.GetProperty("inventory").GetProperty("sourceKind").GetString().Should().Be("ogc-wfs");
+        root.GetProperty("manifest").GetProperty("artifactKind").GetString().Should().Be("honua.migration.manifest");
+        root.GetProperty("manifest").GetProperty("targetResources").GetArrayLength().Should().Be(1);
+        root.GetProperty("parityEvidence").GetProperty("artifactKind").GetString().Should().Be("honua.migration.parity-evidence-pack");
+        root.GetProperty("parityEvidence").GetProperty("manifestAvailable").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/scan")]
+    public async Task Scan_OgcWmsSource_ReturnsUnsupportedRenderOnlyInventory()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", new
+        {
+            SourceKind = "ogc-wms",
+            SourceUrl = "https://example.com/geoserver/wms",
+            ServiceVersion = "1.3.0"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = await response.Content.ReadFromJsonAsync<JsonDocument>();
+        payload.Should().NotBeNull();
+
+        var resource = payload!.RootElement.GetProperty("resources")[0];
+        resource.GetProperty("kind").GetString().Should().Be("render-layer");
+        resource.GetProperty("compatibility").GetProperty("level").GetString().Should().Be("incompatible");
+        resource.GetProperty("compatibility").GetProperty("code").GetString().Should().Be(ImportCompatibilityCodes.OgcWmsRenderOnlySource);
     }
 
     [IntegrationTest]
@@ -504,5 +554,147 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
                 request.ServiceUrl,
                 request.LayerId,
                 featureCount: 0));
+    }
+
+    private sealed class FakeOgcScanService : IOgcServiceMigrationScanner
+    {
+        public Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+            OgcServiceScanRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (request.ServiceType.Equals("WMS", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(new MigrationSourceInventoryArtifact
+                {
+                    SourceKind = "ogc-wms",
+                    Source = new MigrationSourceIdentity
+                    {
+                        DisplayName = "Reference WMS",
+                        BaseUrl = request.ServiceUrl,
+                        Product = "OGC Web Map Service",
+                        Version = request.Version,
+                        ServiceType = "WMS"
+                    },
+                    AuthPosture = new MigrationInventoryAuthPosture
+                    {
+                        Mode = "anonymous",
+                        AccessConfirmed = true
+                    },
+                    ScanCompleteness = new MigrationInventoryCompleteness
+                    {
+                        Status = "complete"
+                    },
+                    Summary = new MigrationInventorySummary
+                    {
+                        ContainerCount = 1,
+                        ResourceCount = 1,
+                        IncompatibleCount = 1
+                    },
+                    OverallCompatibility = new MigrationCompatibilityAssessment
+                    {
+                        Level = "incompatible",
+                        Code = ImportCompatibilityCodes.OgcWmsRenderOnlySource,
+                        Reason = "WMS exposes rendered map images and cannot supply automated feature data-copy by itself."
+                    },
+                    Containers =
+                    [
+                        new MigrationInventoryContainer
+                        {
+                            Id = "service:wms",
+                            Kind = "ogc-service",
+                            Name = "WMS",
+                            Compatibility = new MigrationCompatibilityAssessment
+                            {
+                                Level = "incompatible",
+                                Code = ImportCompatibilityCodes.OgcWmsRenderOnlySource,
+                                Reason = "Render-only service."
+                            }
+                        }
+                    ],
+                    Resources =
+                    [
+                        new MigrationInventoryResource
+                        {
+                            Id = "wms-layer:topp-states",
+                            ContainerId = "service:wms",
+                            Kind = "render-layer",
+                            Name = "topp:states",
+                            Compatibility = new MigrationCompatibilityAssessment
+                            {
+                                Level = "incompatible",
+                                Code = ImportCompatibilityCodes.OgcWmsRenderOnlySource,
+                                Reason = "WMS exposes rendered map images and cannot supply automated feature data-copy by itself."
+                            }
+                        }
+                    ]
+                });
+            }
+
+            return Task.FromResult(new MigrationSourceInventoryArtifact
+            {
+                SourceKind = "ogc-wfs",
+                Source = new MigrationSourceIdentity
+                {
+                    DisplayName = "Reference WFS",
+                    BaseUrl = request.ServiceUrl,
+                    Product = "OGC Web Feature Service",
+                    Version = request.Version,
+                    ServiceType = "WFS"
+                },
+                AuthPosture = new MigrationInventoryAuthPosture
+                {
+                    Mode = "anonymous",
+                    AccessConfirmed = true
+                },
+                ScanCompleteness = new MigrationInventoryCompleteness
+                {
+                    Status = "complete"
+                },
+                Summary = new MigrationInventorySummary
+                {
+                    ContainerCount = 1,
+                    ResourceCount = 1,
+                    CompatibleCount = 1
+                },
+                OverallCompatibility = new MigrationCompatibilityAssessment
+                {
+                    Level = "compatible",
+                    Code = ImportCompatibilityCodes.OgcWfsFeatureSource,
+                    Reason = "WFS feature type metadata can be represented in the migration inventory."
+                },
+                Containers =
+                [
+                    new MigrationInventoryContainer
+                    {
+                        Id = "service:wfs",
+                        Kind = "ogc-service",
+                        Name = "WFS",
+                        Compatibility = new MigrationCompatibilityAssessment
+                        {
+                            Level = "compatible",
+                            Reason = "WFS service is compatible."
+                        }
+                    }
+                ],
+                Resources =
+                [
+                    new MigrationInventoryResource
+                    {
+                        Id = "feature-type:topp-states",
+                        ContainerId = "service:wfs",
+                        Kind = "feature-type",
+                        Name = "topp:states",
+                        GeometryType = "Point",
+                        Capabilities = ["wfs:GetFeature"],
+                        Compatibility = new MigrationCompatibilityAssessment
+                        {
+                            Level = "compatible",
+                            Code = ImportCompatibilityCodes.OgcWfsFeatureSource,
+                            Reason = "WFS feature type metadata can be represented in the migration inventory."
+                        }
+                    }
+                ]
+            });
+        }
     }
 }
