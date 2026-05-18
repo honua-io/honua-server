@@ -89,6 +89,30 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
             check.Actual == null);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/validation")]
+    public async Task GetLayerValidation_WithInvalidSavedPermanentFilter_ReturnsInvalid()
+    {
+        await SetLayerPermanentFilterMetadataAsync("missing_field = 'test'", "arcgis-sql");
+
+        var response = await _client.GetAsync($"/api/v1/admin/metadata/layers/{_layerId}/validation");
+
+        response.Be200Ok();
+        var apiResponse = await ReadValidationResponseAsync(response);
+
+        apiResponse.Success.Should().BeTrue();
+        apiResponse.Data.Should().NotBeNull();
+        apiResponse.Data!.IsValid.Should().BeFalse();
+        apiResponse.Data.Status.Should().Be("invalid");
+        apiResponse.Data.Checks.Should().Contain(check =>
+            check.Code == "permanent-filter" &&
+            check.Severity == "error" &&
+            check.Expected == "missing_field = 'test'" &&
+            check.Actual != null &&
+            check.Actual.Contains("missing_field", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static async Task<ApiResponse<LayerValidationResponse>> ReadValidationResponseAsync(
         HttpResponseMessage response)
     {
@@ -225,6 +249,26 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.GetConnectionAsync(_schema);
         await using var command = connection.CreateCommand();
         command.CommandText = $"ALTER TABLE {QuoteIdentifier(_tableName)} DROP COLUMN population;";
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task SetLayerPermanentFilterMetadataAsync(string expression, string language)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE honua.layers
+            SET metadata = jsonb_build_object(
+                'permanentFilter',
+                jsonb_build_object(
+                    'expression', @expression,
+                    'language', @language))
+            WHERE layer_id = @layerId;
+            """;
+        command.Parameters.AddWithValue("expression", expression);
+        command.Parameters.AddWithValue("language", language);
+        command.Parameters.AddWithValue("layerId", _layerId!.Value);
 
         await command.ExecuteNonQueryAsync();
     }

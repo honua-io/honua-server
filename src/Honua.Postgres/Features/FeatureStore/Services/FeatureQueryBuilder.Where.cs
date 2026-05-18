@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Infrastructure;
 
 namespace Honua.Postgres.Features.FeatureStore.Services;
@@ -31,21 +32,15 @@ internal sealed partial class FeatureQueryBuilder
 
     private static void AppendWhereClause(StringBuilder sql, FeatureQuery query, ref int paramIndex, List<object> parameters)
     {
+        if (query.EnforcedSqlFilter != null)
+        {
+            AppendSqlFragment(sql, query.EnforcedSqlFilter, ref paramIndex, parameters);
+        }
+
         // Prefer SqlFragment if available (CQL2 filters with proper parameterization)
         if (query.SqlFilter != null)
         {
-            var sqlFragment = query.SqlFilter;
-
-            // Convert @p0, @p1, etc. to positional $N, $N+1, etc. parameters
-            var convertedSql = ConvertNamedParametersToPositional(sqlFragment.Sql, ref paramIndex);
-
-            // Append the converted SQL
-            sql.Append(CultureInfo.InvariantCulture, $" AND ({convertedSql})");
-
-            foreach (var param in sqlFragment.Parameters)
-            {
-                parameters.Add(param ?? DBNull.Value);
-            }
+            AppendSqlFragment(sql, query.SqlFilter, ref paramIndex, parameters);
         }
         // Fall back to legacy string WHERE clause for backward compatibility
         else if (!string.IsNullOrWhiteSpace(query.Where))
@@ -77,6 +72,23 @@ internal sealed partial class FeatureQueryBuilder
             }
 
             paramIndex += objectIds.Length;
+        }
+    }
+
+    private static void AppendSqlFragment(
+        StringBuilder sql,
+        SqlFragment sqlFragment,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        // Convert @p0, @p1, etc. to positional $N, $N+1, etc. parameters
+        var convertedSql = ConvertNamedParametersToPositional(sqlFragment.Sql, ref paramIndex);
+
+        sql.Append(CultureInfo.InvariantCulture, $" AND ({convertedSql})");
+
+        foreach (var param in sqlFragment.Parameters)
+        {
+            parameters.Add(param ?? DBNull.Value);
         }
     }
 

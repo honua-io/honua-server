@@ -48,6 +48,48 @@ public sealed record CatalogMetadata
     /// this is null.
     /// </summary>
     public LayerExtrusionInfo? Extrusion { get; init; }
+
+    /// <summary>
+    /// Optional operator-managed filter that is always applied to public feature output.
+    /// </summary>
+    public LayerPermanentFilter? PermanentFilter { get; init; }
+}
+
+/// <summary>
+/// Operator-managed layer filter persisted with layer metadata.
+/// </summary>
+public sealed record LayerPermanentFilter
+{
+    /// <summary>
+    /// Filter expression text in the declared language.
+    /// </summary>
+    public required string Expression { get; init; }
+
+    /// <summary>
+    /// Filter language token. Supported values are <c>arcgis-sql</c>, <c>cql2-text</c>, and <c>cql2-json</c>.
+    /// </summary>
+    public string Language { get; init; } = LayerPermanentFilterLanguages.ArcGisSql;
+}
+
+/// <summary>
+/// Stable layer permanent filter language tokens used by admin contracts.
+/// </summary>
+public static class LayerPermanentFilterLanguages
+{
+    /// <summary>
+    /// GeoServices SQL where-clause syntax.
+    /// </summary>
+    public const string ArcGisSql = "arcgis-sql";
+
+    /// <summary>
+    /// OGC CQL2 text syntax.
+    /// </summary>
+    public const string Cql2Text = "cql2-text";
+
+    /// <summary>
+    /// OGC CQL2 JSON syntax.
+    /// </summary>
+    public const string Cql2Json = "cql2-json";
 }
 
 /// <summary>

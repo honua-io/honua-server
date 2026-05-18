@@ -14,6 +14,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
@@ -45,6 +46,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly IDatabaseConnectionProvider? _connectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>>? _dictionaryPool;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
+    private readonly IFilterExpressionService? _filterExpressionService;
 
     public PostgresFeatureStoreRefactored(
         IFeatureQueryBuilder queryBuilder,
@@ -66,7 +68,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             layerCatalog,
             connectionProvider: null,
             dictionaryPool: null,
-            connectionEncryptionService: null)
+            connectionEncryptionService: null,
+            filterExpressionService: null)
     {
     }
 
@@ -77,7 +80,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         ILayerCatalog? layerCatalog,
         IDatabaseConnectionProvider? connectionProvider,
         ObjectPool<Dictionary<string, object?>>? dictionaryPool,
-        IConnectionEncryptionService? connectionEncryptionService)
+        IConnectionEncryptionService? connectionEncryptionService,
+        IFilterExpressionService? filterExpressionService = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
@@ -86,6 +90,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         _connectionProvider = connectionProvider;
         _dictionaryPool = dictionaryPool;
         _connectionEncryptionService = connectionEncryptionService;
+        _filterExpressionService = filterExpressionService;
     }
 
     public string ProviderName => DataProviderNames.Postgis;
@@ -152,6 +157,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var objectIdsQuery = _queryBuilder.BuildObjectIdsQuery(layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteSelectObjectIdsQueryAsync(
@@ -166,6 +172,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var selectQuery = _queryBuilder.BuildProjectedPointQuery(layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteSelectProjectedPointsAsync(selectQuery, query, layerId, cancellationToken).ConfigureAwait(false);
@@ -176,6 +183,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
         {
             var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
@@ -202,6 +210,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var layer = await GetLayerDefinitionAsync(layerId, cancellationToken).ConfigureAwait(false);
         var selectQuery = _queryBuilder.BuildSelectFlatGeobufQuery(layer, layerId, query, geometryStorageType);
@@ -210,6 +219,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<byte[]?> QueryGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var layer = await GetLayerDefinitionAsync(layerId, cancellationToken).ConfigureAwait(false);
         var selectQuery = _queryBuilder.BuildSelectGeobufQuery(layer, layerId, query, geometryStorageType);
@@ -232,6 +242,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
         {
             var result = await QueryGeoJsonAsync(layerId, query, cancellationToken).ConfigureAwait(false);
@@ -261,6 +272,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         if (_queryBuilder is not FeatureQueryBuilder postgresQueryBuilder ||
             _dataAccess is not FeatureDataAccess postgresDataAccess)
         {
@@ -309,6 +321,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         if (_queryBuilder is not FeatureQueryBuilder postgresQueryBuilder ||
             _dataAccess is not FeatureDataAccess postgresDataAccess)
         {
@@ -373,6 +386,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
@@ -383,6 +397,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var statisticsQuery = _queryBuilder.BuildStatisticsQuery(layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(statisticsQuery, query, layerId, cancellationToken);
@@ -406,6 +421,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var topFeaturesQuery = _queryBuilder.BuildTopFeaturesQuery(layerId, query, geometryStorageType);
         var features = await _dataAccess.ExecuteSelectQueryAsync(topFeaturesQuery, query, layerId, cancellationToken);
@@ -421,6 +437,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         DateBinDefinition dateBin,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var dateBinsQuery = _queryBuilder.BuildDateBinsQuery(layerId, query, dateBin, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(dateBinsQuery, query, layerId, cancellationToken);
@@ -432,6 +449,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         BinDefinition binDefinition,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var binsQuery = _queryBuilder.BuildBinsQuery(layerId, query, binDefinition, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(binsQuery, query, layerId, cancellationToken);
@@ -443,6 +461,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         H3AggregationQuery h3Query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var h3SqlQuery = _queryBuilder.BuildH3AggregationQuery(layerId, query, h3Query, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(h3SqlQuery, query, layerId, cancellationToken);
@@ -455,6 +474,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
         var effectiveQuery = query ?? new FeatureQuery();
+        effectiveQuery = await ApplyPermanentFilterAsync(layerId, effectiveQuery, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var extentQuery = _queryBuilder.BuildExtentQuery(layerId, effectiveQuery, geometryStorageType);
         return await _dataAccess.GetExtentAsync(layerId, extentQuery, effectiveQuery, cancellationToken);
@@ -480,6 +500,9 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         Core.Configuration.TileLimits tileLimits,
         CancellationToken cancellationToken = default)
     {
+        query = query.HasValue
+            ? await ApplyPermanentFilterAsync(layerId, query.Value, cancellationToken).ConfigureAwait(false)
+            : await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
@@ -496,6 +519,9 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         Core.Configuration.TileLimits tileLimits,
         CancellationToken cancellationToken = default)
     {
+        query = query.HasValue
+            ? await ApplyPermanentFilterAsync(layerId, query.Value, cancellationToken).ConfigureAwait(false)
+            : await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var tileQuery = _queryBuilder.BuildH3TileQuery(layerId, x, y, z, resolution, query, tileOptions, tileLimits, geometryStorageType);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
@@ -516,6 +542,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async IAsyncEnumerable<Feature> StreamFeaturesAsync(int layerId, FeatureQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var streamQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
         await foreach (var feature in _dataAccess.StreamFeaturesAsync(layerId, streamQuery, query, cancellationToken))
@@ -547,6 +574,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async IAsyncEnumerable<GmlFeature> StreamGmlFeaturesAsync(int layerId, FeatureQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var streamQuery = _queryBuilder.BuildSelectGmlQuery(layerId, query, geometryStorageType);
         await foreach (var feature in _dataAccess.StreamGmlFeaturesAsync(layerId, streamQuery, query, cancellationToken))
@@ -589,6 +617,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         Func<int, FeatureQuery, CoreGeometryStorageType, CancellationToken, Task<QueryResult<T>>> executeOptimized,
         CancellationToken cancellationToken)
     {
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var isKnnQuery = query.SpatialFilter.HasValue &&
                          query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
@@ -811,6 +840,69 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         }
 
         return fallbackCount;
+    }
+
+    private async Task<FeatureQuery> ApplyPermanentFilterAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (query.EnforcedSqlFilter != null ||
+            _layerCatalog == null ||
+            _filterExpressionService == null)
+        {
+            return query;
+        }
+
+        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var permanentFilter = layer?.Metadata?.PermanentFilter;
+        if (permanentFilter == null || string.IsNullOrWhiteSpace(permanentFilter.Expression))
+        {
+            return query;
+        }
+
+        if (!TryResolveFilterLanguage(permanentFilter.Language, out var filterLanguage))
+        {
+            throw new InvalidOperationException(
+                $"Saved permanent filter for layer {layerId} uses unsupported language '{permanentFilter.Language}'.");
+        }
+
+        var translationResult = _filterExpressionService.Translate(filterLanguage, permanentFilter.Expression, layer!);
+        if (!translationResult.IsSuccess)
+        {
+            throw new InvalidOperationException(
+                $"Saved permanent filter for layer {layerId} is invalid: {translationResult.ErrorMessage ?? "Invalid filter."}");
+        }
+
+        return translationResult.SqlFilter == null
+            ? query
+            : query with { EnforcedSqlFilter = translationResult.SqlFilter };
+    }
+
+    private static bool TryResolveFilterLanguage(string? language, out FilterLanguage filterLanguage)
+    {
+        filterLanguage = FilterLanguage.ArcGisSql;
+        var normalized = (language ?? LayerPermanentFilterLanguages.ArcGisSql)
+            .Trim()
+            .ToLowerInvariant();
+
+        switch (normalized)
+        {
+            case LayerPermanentFilterLanguages.ArcGisSql:
+            case "arcgis":
+            case "geoservices-sql":
+                filterLanguage = FilterLanguage.ArcGisSql;
+                return true;
+            case LayerPermanentFilterLanguages.Cql2Text:
+            case "cql2":
+                filterLanguage = FilterLanguage.Cql2Text;
+                return true;
+            case LayerPermanentFilterLanguages.Cql2Json:
+                filterLanguage = FilterLanguage.Cql2Json;
+                return true;
+            default:
+                return false;
+        }
     }
 
     private async Task<LayerDefinition> GetLayerDefinitionAsync(int layerId, CancellationToken cancellationToken)

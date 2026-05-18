@@ -13,6 +13,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 [JsonSerializable(typeof(CatalogMetadata))]
 [JsonSerializable(typeof(AccessPolicy))]
 [JsonSerializable(typeof(LayerTimeInfo))]
+[JsonSerializable(typeof(LayerPermanentFilter))]
 [JsonSerializable(typeof(LayerExtrusionInfo))]
 [JsonSerializable(typeof(MapServerConfig))]
 [JsonSerializable(typeof(RasterMosaicSettings))]

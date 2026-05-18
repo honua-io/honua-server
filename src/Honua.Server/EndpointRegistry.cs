@@ -171,6 +171,8 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/fields"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/fields"),
+        new("GET", "/api/v1/admin/metadata/layers/{layerId}/filter"),
+        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/filter"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/validation"),
         new("POST", "/api/v1/admin/metadata/layers/{layerId}/style/import-sld"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style/export-sld"),

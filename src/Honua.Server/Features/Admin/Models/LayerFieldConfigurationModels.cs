@@ -88,3 +88,46 @@ public sealed class LayerFieldConfigurationItem
     /// </summary>
     public bool Hidden { get; init; }
 }
+
+/// <summary>
+/// Request payload for updating persisted layer filter configuration.
+/// </summary>
+public sealed class LayerFilterConfigurationUpdateRequest
+{
+    /// <summary>
+    /// Permanent layer filter to apply to public feature output. Null clears the saved filter.
+    /// </summary>
+    public LayerPermanentFilterConfiguration? PermanentFilter { get; init; }
+}
+
+/// <summary>
+/// Response payload for persisted layer filter configuration.
+/// </summary>
+public sealed class LayerFilterConfigurationResponse
+{
+    /// <summary>
+    /// Layer identifier.
+    /// </summary>
+    public int LayerId { get; init; }
+
+    /// <summary>
+    /// Permanent layer filter applied to public feature output.
+    /// </summary>
+    public LayerPermanentFilterConfiguration? PermanentFilter { get; init; }
+}
+
+/// <summary>
+/// Permanent filter contract for layer configuration APIs.
+/// </summary>
+public sealed class LayerPermanentFilterConfiguration
+{
+    /// <summary>
+    /// Filter expression text in the declared language.
+    /// </summary>
+    public required string Expression { get; init; }
+
+    /// <summary>
+    /// Filter language token. Supported values are arcgis-sql, cql2-text, and cql2-json.
+    /// </summary>
+    public string Language { get; init; } = LayerPermanentFilterLanguages.ArcGisSql;
+}
