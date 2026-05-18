@@ -266,10 +266,21 @@ public static partial class MigrationManifestTranslator
            string.Equals(service, "WFS", StringComparison.OrdinalIgnoreCase);
 
     private static string? GetResourceMigrationMode(string sourceKind, MigrationInventoryResource resource)
-        => string.Equals(sourceKind, "ogc-wfs", StringComparison.OrdinalIgnoreCase) &&
-           string.Equals(resource.Kind, "feature-type", StringComparison.OrdinalIgnoreCase)
-            ? "feature-import"
-            : null;
+    {
+        if (string.Equals(sourceKind, "ogc-wfs", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(resource.Kind, "feature-type", StringComparison.OrdinalIgnoreCase))
+        {
+            return "feature-import";
+        }
+
+        if (string.Equals(sourceKind, "ogc-api-features", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(resource.Kind, "ogc-api-features-collection", StringComparison.OrdinalIgnoreCase))
+        {
+            return "feature-import";
+        }
+
+        return null;
+    }
 
     private static string? GetSourceProtocol(MigrationSourceInventoryArtifact inventory)
     {
@@ -281,6 +292,7 @@ public static partial class MigrationManifestTranslator
         return inventory.SourceKind.ToLowerInvariant() switch
         {
             "ogc-wfs" => "WFS",
+            "ogc-api-features" => "OGC API Features",
             "ogc-wms" => "WMS",
             "ogc-wmts" => "WMTS",
             _ => null

@@ -1,9 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
+using System.Net.Http;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -52,7 +55,17 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
                         Crs("storage", "http://www.opengis.net/def/crs/OGC/1.3/CRS84"),
                         Crs("supported", "http://www.opengis.net/def/crs/EPSG/0/4326")
                     ],
-                    ItemEncodings = ["application/geo+json"]
+                    ItemEncodings = ["application/geo+json"],
+                    Fields =
+                    [
+                        new MigrationInventoryField
+                        {
+                            Name = "name",
+                            Alias = "Road name",
+                            FieldType = "string",
+                            Nullable = false
+                        }
+                    ]
                 }
             ]
         });
@@ -75,7 +88,13 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
             "ogcapi-features:crs");
         resource.SpatialReferences.Should().Contain(reference => reference.Role == "supported" && reference.Srid == 4326);
         resource.SpatialReferences.Should().Contain(reference => reference.Role == "storage" && reference.CrsUri == "http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+        resource.Fields.Should().ContainSingle(field => field.Name == "name" && field.Alias == "Road name");
         resource.Compatibility.Code.Should().Be(OgcApiFeaturesImportCompatibilityCodes.CollectionSource);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == resource.Id &&
+            record.Category == "target-exposure" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated &&
+            record.Metadata["targetProtocols"] == "OGC API Features,FeatureServer");
 
         var pagination = artifact.ExternalDependencies.Should()
             .ContainSingle(dependency => dependency.ResourceId == resource.Id && dependency.DependencyType == "pagination")
@@ -251,6 +270,97 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
         artifact.ExternalDependencies.Should().Contain(dependency =>
             dependency.DependencyType == "manual-review-link" &&
             dependency.Compatibility.Code == OgcApiFeaturesImportCompatibilityCodes.ManualReview);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.Category == "vendor-extension" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_WithFixtureSource_CapturesCollectionsSchemaPagingAndItems()
+    {
+        using var httpClient = new HttpClient(new FixtureOgcApiFeaturesHandler())
+        {
+            BaseAddress = new Uri("https://demo.example")
+        };
+        var scanner = new OgcApiFeaturesMigrationScanner(
+            httpClient,
+            NullLogger<OgcApiFeaturesMigrationScanner>.Instance,
+            static (_, _) => Task.FromResult<IPAddress[]>([IPAddress.Parse("8.8.8.8")]));
+
+        var artifact = await scanner.ScanSourceAsync(new OgcApiFeaturesScanRequest
+        {
+            ServiceUrl = "https://demo.example/ogcapi/",
+            TimeoutSeconds = 5
+        });
+
+        artifact.SourceKind.Should().Be("ogc-api-features");
+        artifact.AuthPosture.Mode.Should().Be("anonymous");
+        artifact.ScanCompleteness.Status.Should().Be("complete");
+        artifact.OverallCompatibility.Level.Should().Be("compatible");
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        resource.Name.Should().Be("roads");
+        resource.GeometryType.Should().Be("Point");
+        resource.FeatureCount.Should().Be(2);
+        resource.Fields.Should().Contain(field => field.Name == "name" && field.Alias == "Road name");
+        resource.Fields.Should().Contain(field => field.Name == "speed" && field.FieldType == "integer");
+        resource.Capabilities.Should().Contain(
+            "ogcapi-features:items",
+            "ogcapi-features:queryables",
+            "ogcapi-features:schema",
+            "ogcapi-features:pagination");
+        resource.ExternalDependencyIds.Should().Contain(id => id.Contains("pagination", StringComparison.Ordinal));
+
+        artifact.ExternalDependencies.Should().Contain(dependency =>
+            dependency.DependencyType == "pagination" &&
+            dependency.Metadata["queryParameters"] == "limit,offset");
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == resource.Id &&
+            record.Category == "feature-data" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated);
+    }
+
+    [Fact]
+    public void Translate_WithOgcApiFeaturesInventory_EmitsFeatureImportTarget()
+    {
+        var inventory = OgcApiFeaturesMigrationInventoryScanner.BuildInventory(new OgcApiFeaturesMigrationSourceSnapshot
+        {
+            BaseUrl = "https://demo.example/ogcapi/",
+            Title = "Demo OGC API Features",
+            Collections =
+            [
+                new OgcApiFeaturesCollectionSnapshot
+                {
+                    Id = "roads",
+                    Links =
+                    [
+                        Link("items", "https://demo.example/ogcapi/collections/roads/items", "application/geo+json"),
+                        Link("queryables", "https://demo.example/ogcapi/collections/roads/queryables", "application/schema+json"),
+                        Link("describedby", "https://demo.example/ogcapi/collections/roads/schema", "application/schema+json")
+                    ],
+                    PaginationLinks =
+                    [
+                        Link("next", "https://demo.example/ogcapi/collections/roads/items?offset=100&limit=100", "application/geo+json")
+                    ],
+                    CrsDeclarations = [Crs("storage", "http://www.opengis.net/def/crs/EPSG/0/4326")],
+                    ItemEncodings = ["application/geo+json"]
+                }
+            ]
+        });
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Migrated OAPIF"
+        });
+        var evidence = MigrationParityEvidenceGenerator.Generate(inventory, manifest);
+
+        var target = manifest.TargetResources.Should().ContainSingle().Subject;
+        target.MigrationMode.Should().Be("feature-import");
+        target.SourceProtocol.Should().Be("OGC API Features");
+        target.Capabilities.Should().Contain("ogcapi-features:geojson-items");
+        evidence.ManifestAvailable.Should().BeTrue();
+        evidence.Sections.Should().Contain(section => section.Id == "fidelity")
+            .Which.Items.Should().Contain(item => item.Id.Contains("target-exposure", StringComparison.Ordinal));
     }
 
     private static OgcApiFeaturesLink Link(string rel, string href, string? type = null)
@@ -267,4 +377,99 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
             Role = role,
             Value = value
         };
+
+    private sealed class FixtureOgcApiFeaturesHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.RequestUri.Should().NotBeNull();
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            var json = pathAndQuery switch
+            {
+                "/ogcapi/" => """
+                    {
+                      "title": "Fixture OGC API Features",
+                      "version": "1.0.0",
+                      "links": [
+                        { "rel": "self", "href": "https://demo.example/ogcapi/", "type": "application/json" },
+                        { "rel": "conformance", "href": "https://demo.example/ogcapi/conformance", "type": "application/json" },
+                        { "rel": "data", "href": "https://demo.example/ogcapi/collections", "type": "application/json" }
+                      ]
+                    }
+                    """,
+                "/ogcapi/conformance" => """
+                    {
+                      "conformsTo": [
+                        "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
+                        "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
+                        "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables"
+                      ]
+                    }
+                    """,
+                "/ogcapi/collections" => """
+                    {
+                      "collections": [
+                        {
+                          "id": "roads",
+                          "title": "Roads",
+                          "description": "Reference road centerlines",
+                          "storageCrs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+                          "crs": ["http://www.opengis.net/def/crs/EPSG/0/4326"],
+                          "links": [
+                            { "rel": "items", "href": "https://demo.example/ogcapi/collections/roads/items", "type": "application/geo+json" },
+                            { "rel": "queryables", "href": "https://demo.example/ogcapi/collections/roads/queryables", "type": "application/schema+json" },
+                            { "rel": "describedby", "href": "https://demo.example/ogcapi/collections/roads/schema", "type": "application/schema+json" }
+                          ]
+                        }
+                      ]
+                    }
+                    """,
+                "/ogcapi/collections/roads/queryables" => """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": { "type": "string", "title": "Road name", "nullable": false },
+                        "speed": { "type": "integer" }
+                      }
+                    }
+                    """,
+                "/ogcapi/collections/roads/schema" => """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": { "type": "string", "title": "Road name" },
+                        "speed": { "type": "integer" }
+                      }
+                    }
+                    """,
+                "/ogcapi/collections/roads/items?limit=1" => """
+                    {
+                      "type": "FeatureCollection",
+                      "numberMatched": 2,
+                      "numberReturned": 1,
+                      "links": [
+                        { "rel": "self", "href": "https://demo.example/ogcapi/collections/roads/items?limit=1", "type": "application/geo+json" },
+                        { "rel": "next", "href": "https://demo.example/ogcapi/collections/roads/items?offset=1&limit=1", "type": "application/geo+json" }
+                      ],
+                      "features": [
+                        {
+                          "type": "Feature",
+                          "id": "road.1",
+                          "geometry": { "type": "Point", "coordinates": [-157.8583, 21.3069] },
+                          "properties": { "name": "King", "speed": 25 }
+                        }
+                      ]
+                    }
+                    """,
+                _ => null
+            };
+
+            return Task.FromResult(json == null
+                ? new HttpResponseMessage(HttpStatusCode.NotFound)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+                });
+        }
+    }
 }

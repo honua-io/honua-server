@@ -363,6 +363,19 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IOgcServiceMigrationScanner>(serviceProvider =>
             serviceProvider.GetRequiredService<OgcServiceMigrationScanner>());
 
+        // Register OGC API Features migration scanner for landing/conformance/collections/items inventory planning.
+        services.AddResilientHttpClient<OgcApiFeaturesMigrationScanner>(
+            "ogc-api-features-migration",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(2);
+            },
+            configureHandler: static () => OgcApiFeaturesMigrationScanner.CreatePinnedDnsHttpMessageHandler());
+        services.AddScoped<IOgcApiFeaturesMigrationScanner>(serviceProvider =>
+            serviceProvider.GetRequiredService<OgcApiFeaturesMigrationScanner>());
+
         // Register secure connection management services
         services.AddSecureConnectionServices(configuration);
         services.UseSecureConnectionProvider(configuration);

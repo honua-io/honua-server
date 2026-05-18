@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.Services;
 using Honua.Server.Features.Import;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -26,6 +27,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
     private readonly FakeGeoServerScanService _geoServerService = new();
     private readonly FakeGeoservicesScanService _geoservicesService = new();
     private readonly FakeOgcScanService _ogcService = new();
+    private readonly FakeOgcApiFeaturesScanService _ogcApiFeaturesService = new();
     private HttpClient _client = null!;
 
     public MigrationScannerEndpointTests()
@@ -33,7 +35,8 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         _fixture = new WebAppFixture()
             .ReplaceService<IGeoServerImportService>(_geoServerService)
             .ReplaceService<IGeoservicesImportService>(_geoservicesService)
-            .ReplaceService<IOgcServiceMigrationScanner>(_ogcService);
+            .ReplaceService<IOgcServiceMigrationScanner>(_ogcService)
+            .ReplaceService<IOgcApiFeaturesMigrationScanner>(_ogcApiFeaturesService);
     }
 
     public async Task InitializeAsync()
@@ -160,6 +163,38 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         resource.GetProperty("kind").GetString().Should().Be("render-layer");
         resource.GetProperty("compatibility").GetProperty("level").GetString().Should().Be("incompatible");
         resource.GetProperty("compatibility").GetProperty("code").GetString().Should().Be(ImportCompatibilityCodes.OgcWmsRenderOnlySource);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/scan")]
+    public async Task Scan_OgcApiFeaturesSourceWithAllArtifacts_ReturnsInventoryManifestAndEvidence()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", new
+        {
+            SourceKind = "ogc-api-features",
+            SourceUrl = "https://example.com/ogcapi/",
+            ArtifactSet = "all",
+            TargetServiceName = "Migrated OAPIF"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = await response.Content.ReadFromJsonAsync<JsonDocument>();
+        payload.Should().NotBeNull();
+
+        var root = payload!.RootElement;
+        root.GetProperty("inventory").GetProperty("sourceKind").GetString().Should().Be("ogc-api-features");
+        root.GetProperty("inventory").GetProperty("resources")[0].GetProperty("kind").GetString()
+            .Should().Be("ogc-api-features-collection");
+        root.GetProperty("manifest").GetProperty("targetResources")[0].GetProperty("migrationMode").GetString()
+            .Should().Be("feature-import");
+        root.GetProperty("manifest").GetProperty("targetResources")[0].GetProperty("sourceProtocol").GetString()
+            .Should().Be("OGC API Features");
+        root.GetProperty("parityEvidence").GetProperty("sections").EnumerateArray()
+            .Should().Contain(section => section.GetProperty("id").GetString() == "fidelity");
+
+        _ogcApiFeaturesService.Requests.Should().ContainSingle()
+            .Which.ServiceUrl.Should().Be("https://example.com/ogcapi/");
     }
 
     [IntegrationTest]
@@ -765,6 +800,85 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
                     }
                 ]
             });
+        }
+    }
+
+    private sealed class FakeOgcApiFeaturesScanService : IOgcApiFeaturesMigrationScanner
+    {
+        public List<OgcApiFeaturesScanRequest> Requests { get; } = [];
+
+        public Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+            OgcApiFeaturesScanRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(OgcApiFeaturesMigrationInventoryScanner.BuildInventory(new OgcApiFeaturesMigrationSourceSnapshot
+            {
+                BaseUrl = request.ServiceUrl,
+                Title = "Reference OGC API Features",
+                ConformanceClasses =
+                [
+                    "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
+                    "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson"
+                ],
+                Collections =
+                [
+                    new OgcApiFeaturesCollectionSnapshot
+                    {
+                        Id = "roads",
+                        Title = "Roads",
+                        GeometryType = "Point",
+                        FeatureCount = 2,
+                        Links =
+                        [
+                            new OgcApiFeaturesLink
+                            {
+                                Rel = "items",
+                                Href = "https://example.com/ogcapi/collections/roads/items",
+                                Type = "application/geo+json"
+                            },
+                            new OgcApiFeaturesLink
+                            {
+                                Rel = "queryables",
+                                Href = "https://example.com/ogcapi/collections/roads/queryables",
+                                Type = "application/schema+json"
+                            },
+                            new OgcApiFeaturesLink
+                            {
+                                Rel = "describedby",
+                                Href = "https://example.com/ogcapi/collections/roads/schema",
+                                Type = "application/schema+json"
+                            }
+                        ],
+                        PaginationLinks =
+                        [
+                            new OgcApiFeaturesLink
+                            {
+                                Rel = "next",
+                                Href = "https://example.com/ogcapi/collections/roads/items?offset=1&limit=1",
+                                Type = "application/geo+json"
+                            }
+                        ],
+                        CrsDeclarations =
+                        [
+                            new OgcApiFeaturesCrsDeclaration
+                            {
+                                Role = "storage",
+                                Value = "http://www.opengis.net/def/crs/EPSG/0/4326"
+                            }
+                        ],
+                        ItemEncodings = ["application/geo+json"],
+                        Fields =
+                        [
+                            new MigrationInventoryField
+                            {
+                                Name = "name",
+                                FieldType = "string"
+                            }
+                        ]
+                    }
+                ]
+            }));
         }
     }
 }

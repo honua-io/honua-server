@@ -120,7 +120,8 @@ public static class OgcApiFeaturesMigrationInventoryScanner
             OverallCompatibility = overallCompatibility,
             Containers = containers,
             Resources = orderedResources,
-            ExternalDependencies = orderedDependencies
+            ExternalDependencies = orderedDependencies,
+            FidelityClassifications = BuildFidelityClassifications(orderedResources, orderedDependencies)
         };
     }
 
@@ -158,6 +159,10 @@ public static class OgcApiFeaturesMigrationInventoryScanner
                 hasTransactionalConformance,
                 collection.VendorExtensions),
             SpatialReferences = spatialReferences,
+            Fields = collection.Fields
+                .Where(static field => !string.IsNullOrWhiteSpace(field.Name))
+                .OrderBy(static field => field.Name, StringComparer.Ordinal)
+                .ToArray(),
             ExternalDependencyIds = BuildRelatedDependencyIds(collection, resourceId, baseUri),
             Compatibility = AssessCollectionCompatibility(
                 collection,
@@ -543,6 +548,188 @@ public static class OgcApiFeaturesMigrationInventoryScanner
 
         return MigrationInventoryHelpers.NormalizeStrings(capabilities);
     }
+
+    private static MigrationFidelityClassificationRecord[] BuildFidelityClassifications(
+        MigrationInventoryResource[] resources,
+        MigrationExternalDependency[] dependencies)
+    {
+        var records = new List<MigrationFidelityClassificationRecord>();
+
+        foreach (var resource in resources.OrderBy(static resource => resource.Id, StringComparer.Ordinal))
+        {
+            records.Add(BuildResourceFidelityRecord(resource));
+            records.Add(BuildSchemaFidelityRecord(resource));
+            records.Add(BuildCrsFidelityRecord(resource));
+            records.Add(BuildPaginationFidelityRecord(resource));
+            records.Add(BuildTargetExposureFidelityRecord(resource));
+        }
+
+        foreach (var dependency in dependencies
+                     .Where(static dependency => dependency.Compatibility.Level != "compatible")
+                     .OrderBy(static dependency => dependency.Id, StringComparer.Ordinal))
+        {
+            records.Add(new MigrationFidelityClassificationRecord
+            {
+                Id = $"fidelity:{dependency.Id}:dependency",
+                SourceId = dependency.Id,
+                Kind = dependency.Kind,
+                Category = dependency.DependencyType ?? "dependency",
+                Name = dependency.Name,
+                AutomationStatus = dependency.Compatibility.Level == "incompatible"
+                    ? MigrationFidelityAutomationStatuses.Unsupported
+                    : MigrationFidelityAutomationStatuses.ManualReview,
+                Code = dependency.Compatibility.Code ?? OgcApiFeaturesImportCompatibilityCodes.ManualReview,
+                Reason = dependency.Compatibility.Reason,
+                ManualSteps = dependency.Compatibility.ManualSteps,
+                RelatedIds = string.IsNullOrWhiteSpace(dependency.ResourceId) ? [] : [dependency.ResourceId],
+                Metadata = dependency.Metadata
+            });
+        }
+
+        return records
+            .OrderBy(static record => record.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static MigrationFidelityClassificationRecord BuildResourceFidelityRecord(MigrationInventoryResource resource)
+    {
+        var status = resource.Compatibility.Level switch
+        {
+            "compatible" => MigrationFidelityAutomationStatuses.Automated,
+            "partial" => MigrationFidelityAutomationStatuses.ManualReview,
+            "incompatible" => MigrationFidelityAutomationStatuses.Unsupported,
+            _ => MigrationFidelityAutomationStatuses.ManualReview
+        };
+
+        return new MigrationFidelityClassificationRecord
+        {
+            Id = $"fidelity:{resource.Id}:feature-data",
+            SourceId = resource.Id,
+            Kind = resource.Kind,
+            Category = "feature-data",
+            Name = resource.Name,
+            AutomationStatus = status,
+            Code = resource.Compatibility.Code ?? OgcApiFeaturesImportCompatibilityCodes.ManualReview,
+            Reason = resource.Compatibility.Reason,
+            TargetKind = status == MigrationFidelityAutomationStatuses.Unsupported ? null : "layer",
+            ManualSteps = status == MigrationFidelityAutomationStatuses.Automated ? [] : resource.Compatibility.ManualSteps,
+            RelatedIds = resource.ExternalDependencyIds,
+            Metadata = new Dictionary<string, string>
+            {
+                ["capabilities"] = string.Join(",", resource.Capabilities)
+            }
+        };
+    }
+
+    private static MigrationFidelityClassificationRecord BuildSchemaFidelityRecord(MigrationInventoryResource resource)
+    {
+        var hasSchema = resource.Capabilities.Contains("ogcapi-features:schema", StringComparer.Ordinal) ||
+                        resource.Capabilities.Contains("ogcapi-features:queryables", StringComparer.Ordinal) ||
+                        resource.Fields.Length > 0;
+
+        return new MigrationFidelityClassificationRecord
+        {
+            Id = $"fidelity:{resource.Id}:schema-queryables",
+            SourceId = resource.Id,
+            Kind = resource.Kind,
+            Category = "schema-queryables",
+            Name = resource.Name,
+            AutomationStatus = hasSchema
+                ? MigrationFidelityAutomationStatuses.Automated
+                : MigrationFidelityAutomationStatuses.Assisted,
+            Code = hasSchema
+                ? OgcApiFeaturesImportCompatibilityCodes.CollectionSource
+                : OgcApiFeaturesImportCompatibilityCodes.ManualReview,
+            Reason = hasSchema
+                ? "Collection schema/queryables metadata was captured for target field planning."
+                : "Collection schema/queryables metadata was not advertised and needs assisted field review.",
+            ManualSteps = hasSchema ? [] : ["Confirm field names, types, nullability, and geometry mapping before import."],
+            RelatedIds = resource.ExternalDependencyIds,
+            Metadata = new Dictionary<string, string>
+            {
+                ["fieldCount"] = resource.Fields.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            }
+        };
+    }
+
+    private static MigrationFidelityClassificationRecord BuildCrsFidelityRecord(MigrationInventoryResource resource)
+    {
+        var unusualCrs = resource.SpatialReferences
+            .Any(static reference => !IsPortableDefaultCrs(reference));
+
+        return new MigrationFidelityClassificationRecord
+        {
+            Id = $"fidelity:{resource.Id}:crs",
+            SourceId = resource.Id,
+            Kind = resource.Kind,
+            Category = "crs",
+            Name = resource.Name,
+            AutomationStatus = unusualCrs
+                ? MigrationFidelityAutomationStatuses.ManualReview
+                : MigrationFidelityAutomationStatuses.Automated,
+            Code = unusualCrs
+                ? OgcApiFeaturesImportCompatibilityCodes.ManualReview
+                : OgcApiFeaturesImportCompatibilityCodes.CollectionSource,
+            Reason = unusualCrs
+                ? "Collection advertises CRS declarations that need axis-order and transformation review."
+                : "Collection CRS declarations are compatible with the automated import baseline.",
+            ManualSteps = unusualCrs ? ["Confirm source CRS axis order and target CRS transformation behavior before cutover."] : [],
+            Metadata = new Dictionary<string, string>
+            {
+                ["spatialReferenceCount"] = resource.SpatialReferences.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            }
+        };
+    }
+
+    private static MigrationFidelityClassificationRecord BuildPaginationFidelityRecord(MigrationInventoryResource resource)
+    {
+        var hasPagination = resource.Capabilities.Contains("ogcapi-features:pagination", StringComparer.Ordinal);
+
+        return new MigrationFidelityClassificationRecord
+        {
+            Id = $"fidelity:{resource.Id}:pagination",
+            SourceId = resource.Id,
+            Kind = resource.Kind,
+            Category = "pagination",
+            Name = resource.Name,
+            AutomationStatus = hasPagination
+                ? MigrationFidelityAutomationStatuses.Automated
+                : MigrationFidelityAutomationStatuses.Assisted,
+            Code = hasPagination
+                ? OgcApiFeaturesImportCompatibilityCodes.CollectionSource
+                : OgcApiFeaturesImportCompatibilityCodes.ManualReview,
+            Reason = hasPagination
+                ? "Items pagination links were captured for deterministic page traversal."
+                : "Items pagination links were not captured and paging behavior needs assisted review.",
+            ManualSteps = hasPagination ? [] : ["Confirm source paging parameters and deterministic traversal before bulk import."],
+            RelatedIds = resource.ExternalDependencyIds
+        };
+    }
+
+    private static MigrationFidelityClassificationRecord BuildTargetExposureFidelityRecord(MigrationInventoryResource resource)
+        => new()
+        {
+            Id = $"fidelity:{resource.Id}:target-exposure",
+            SourceId = resource.Id,
+            Kind = resource.Kind,
+            Category = "target-exposure",
+            Name = resource.Name,
+            AutomationStatus = resource.Compatibility.Level == "incompatible"
+                ? MigrationFidelityAutomationStatuses.Unsupported
+                : MigrationFidelityAutomationStatuses.Automated,
+            Code = resource.Compatibility.Level == "incompatible"
+                ? resource.Compatibility.Code ?? OgcApiFeaturesImportCompatibilityCodes.MissingItemsEndpoint
+                : OgcApiFeaturesImportCompatibilityCodes.CollectionSource,
+            Reason = resource.Compatibility.Level == "incompatible"
+                ? "Unsupported source collection cannot be published as target OGC API Features or FeatureServer layers by this slice."
+                : "Imported collections are planned for target OGC API Features and FeatureServer exposure through shared feature pipelines.",
+            TargetKind = resource.Compatibility.Level == "incompatible" ? null : "feature-layer",
+            ManualSteps = resource.Compatibility.Level == "incompatible" ? resource.Compatibility.ManualSteps : [],
+            Metadata = new Dictionary<string, string>
+            {
+                ["targetProtocols"] = "OGC API Features,FeatureServer"
+            }
+        };
 
     private static string[] BuildRelatedDependencyIds(OgcApiFeaturesCollectionSnapshot collection, string resourceId, Uri baseUri)
     {
