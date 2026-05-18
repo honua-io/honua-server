@@ -402,5 +402,116 @@
         "serviceType": "FeatureServer"
       }
     }
-  ]
+  ],
+  "fidelityMatrix": {
+    "summary": {
+      "totalCount": 11,
+      "automatedCount": 8,
+      "assistedCount": 1,
+      "manualReviewCount": 2,
+      "unsupportedCount": 0
+    },
+    "cells": [
+      {
+        "category": "capabilities",
+        "automationStatus": "automated",
+        "count": 3,
+        "kinds": [
+          "layer",
+          "service"
+        ],
+        "sourceIds": [
+          "resource:Parcels:layer:0",
+          "resource:Parcels:layer:1",
+          "service:Parcels"
+        ],
+        "codes": [
+          "COMPATIBLE"
+        ],
+        "targetIds": [],
+        "relatedIds": [],
+        "manualSteps": []
+      },
+      {
+        "category": "domains",
+        "automationStatus": "assisted",
+        "count": 1,
+        "kinds": [
+          "field-domain"
+        ],
+        "sourceIds": [
+          "resource:Parcels:layer:0"
+        ],
+        "codes": [
+          "MANUAL_REVIEW"
+        ],
+        "targetIds": [],
+        "relatedIds": [],
+        "manualSteps": [
+          "Review coded-value and range domains before publishing target field configuration."
+        ]
+      },
+      {
+        "category": "fields",
+        "automationStatus": "automated",
+        "count": 2,
+        "kinds": [
+          "field"
+        ],
+        "sourceIds": [
+          "resource:Parcels:layer:0",
+          "resource:Parcels:layer:1"
+        ],
+        "codes": [
+          "COMPATIBLE"
+        ],
+        "targetIds": [],
+        "relatedIds": [],
+        "manualSteps": []
+      },
+      {
+        "category": "identity",
+        "automationStatus": "automated",
+        "count": 3,
+        "kinds": [
+          "layer",
+          "service"
+        ],
+        "sourceIds": [
+          "resource:Parcels:layer:0",
+          "resource:Parcels:layer:1",
+          "service:Parcels"
+        ],
+        "codes": [
+          "COMPATIBLE"
+        ],
+        "targetIds": [],
+        "relatedIds": [],
+        "manualSteps": []
+      },
+      {
+        "category": "renderers",
+        "automationStatus": "manual-review",
+        "count": 2,
+        "kinds": [
+          "renderer"
+        ],
+        "sourceIds": [
+          "renderer:Parcels:0",
+          "renderer:Parcels:1"
+        ],
+        "codes": [
+          "MANUAL_REVIEW"
+        ],
+        "targetIds": [],
+        "relatedIds": [
+          "resource:Parcels:layer:0",
+          "resource:Parcels:layer:1"
+        ],
+        "manualSteps": [
+          "Recreate the renderer via the Honua style endpoints after data import."
+        ]
+      }
+    ]
+  }
 }

@@ -42,6 +42,7 @@ public static class MigrationParityEvidenceGenerator
             BuildCapabilitySection(inventory),
             BuildStyleSection(inventory),
             BuildDataSection(inventory, manifest),
+            BuildFidelityMatrixSection(inventory, manifest),
             BuildFidelitySection(inventory)
         };
         var readiness = BuildReadiness(inventory, manifest, sections, attestation);
@@ -278,14 +279,7 @@ public static class MigrationParityEvidenceGenerator
             .OrderBy(static record => record.Id, StringComparer.Ordinal)
             .Select(record =>
             {
-                var state = record.AutomationStatus switch
-                {
-                    MigrationFidelityAutomationStatuses.Unsupported => MigrationEvidenceStates.Fail,
-                    MigrationFidelityAutomationStatuses.ManualReview => MigrationEvidenceStates.Unknown,
-                    MigrationFidelityAutomationStatuses.Assisted => MigrationEvidenceStates.Unknown,
-                    MigrationFidelityAutomationStatuses.Automated => MigrationEvidenceStates.Pass,
-                    _ => MigrationEvidenceStates.Unknown
-                };
+                var state = ToFidelityEvidenceState(record.AutomationStatus);
                 var remediation = state == MigrationEvidenceStates.Pass
                     ? []
                     : record.ManualSteps.Length > 0
@@ -303,6 +297,66 @@ public static class MigrationParityEvidenceGenerator
             .ToArray();
 
         return CreateSection("fidelity", "Migration fidelity classification", items);
+    }
+
+    private static MigrationParityEvidenceSection BuildFidelityMatrixSection(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationManifestArtifact? manifest)
+    {
+        var matrix = manifest?.FidelityMatrix ??
+            (manifest != null && inventory.FidelityClassifications.Length > 0
+                ? MigrationFidelityMatrixBuilder.Build(inventory.FidelityClassifications, manifest.IdentityRemaps)
+                : inventory.FidelityMatrix ?? MigrationFidelityMatrixBuilder.Build(inventory.FidelityClassifications));
+
+        if (matrix == null || matrix.Cells.Length == 0)
+        {
+            return CreateSection(
+                "fidelity-matrix",
+                "Migration fidelity matrix",
+                [
+                    CreateItem(
+                        "fidelity-matrix:none",
+                        MigrationEvidenceStates.NotApplicable,
+                        "No migration fidelity matrix was emitted.",
+                        ["The inventory artifact does not include matrix cells."],
+                        [],
+                        [])
+                ]);
+        }
+
+        var items = matrix.Cells
+            .OrderBy(static cell => cell.Category, StringComparer.Ordinal)
+            .ThenBy(static cell => cell.AutomationStatus, StringComparer.Ordinal)
+            .Select(cell =>
+            {
+                var state = ToFidelityEvidenceState(cell.AutomationStatus);
+                var remediation = state == MigrationEvidenceStates.Pass
+                    ? []
+                    : cell.ManualSteps.Length > 0
+                        ? cell.ManualSteps
+                        : ["Review the matrix cell and document the target migration disposition."];
+                var evidence = new List<string>
+                {
+                    $"count: {cell.Count}",
+                    $"codes: {string.Join(", ", cell.Codes)}"
+                };
+
+                if (cell.TargetIds.Length > 0)
+                {
+                    evidence.Add($"targets: {string.Join(", ", cell.TargetIds)}");
+                }
+
+                return CreateItem(
+                    $"fidelity-matrix:{cell.Category}:{cell.AutomationStatus}",
+                    state,
+                    $"{cell.Category} has {cell.Count} {cell.AutomationStatus} item(s).",
+                    evidence,
+                    remediation,
+                    [.. cell.SourceIds, .. cell.RelatedIds, .. cell.TargetIds]);
+            })
+            .ToArray();
+
+        return CreateSection("fidelity-matrix", "Migration fidelity matrix", items);
     }
 
     private static MigrationCutoverReadinessSummary BuildReadiness(
@@ -426,6 +480,16 @@ public static class MigrationParityEvidenceGenerator
 
         return IsPartial(level) ? MigrationEvidenceStates.Unknown : MigrationEvidenceStates.Pass;
     }
+
+    private static string ToFidelityEvidenceState(string automationStatus)
+        => automationStatus switch
+        {
+            MigrationFidelityAutomationStatuses.Unsupported => MigrationEvidenceStates.Fail,
+            MigrationFidelityAutomationStatuses.ManualReview => MigrationEvidenceStates.Unknown,
+            MigrationFidelityAutomationStatuses.Assisted => MigrationEvidenceStates.Unknown,
+            MigrationFidelityAutomationStatuses.Automated => MigrationEvidenceStates.Pass,
+            _ => MigrationEvidenceStates.Unknown
+        };
 
     private static string AggregateState(IEnumerable<string> states)
     {

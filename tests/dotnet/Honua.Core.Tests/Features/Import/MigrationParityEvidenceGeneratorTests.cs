@@ -123,6 +123,17 @@ public sealed class MigrationParityEvidenceGeneratorTests
 
         var evidence = MigrationParityEvidenceGenerator.Generate(inventory, MigrationManifestTranslator.Translate(inventory));
 
+        var matrix = evidence.Sections.Should().ContainSingle(section => section.Id == "fidelity-matrix").Subject;
+        matrix.State.Should().Be(MigrationEvidenceStates.Fail);
+        matrix.Items.Should().Contain(item =>
+            item.Id == $"fidelity-matrix:identity:{MigrationFidelityAutomationStatuses.Automated}" &&
+            item.State == MigrationEvidenceStates.Pass);
+        matrix.Items.Should().Contain(item =>
+            item.Id == $"fidelity-matrix:domains:{MigrationFidelityAutomationStatuses.Assisted}" &&
+            item.State == MigrationEvidenceStates.Unknown);
+        matrix.Items.Should().Contain(item =>
+            item.Id == $"fidelity-matrix:renderers:{MigrationFidelityAutomationStatuses.Unsupported}" &&
+            item.State == MigrationEvidenceStates.Fail);
         var fidelity = evidence.Sections.Should().ContainSingle(section => section.Id == "fidelity").Subject;
         fidelity.State.Should().Be(MigrationEvidenceStates.Fail);
         fidelity.Items.Should().Contain(item =>

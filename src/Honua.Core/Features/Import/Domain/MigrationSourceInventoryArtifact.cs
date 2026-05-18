@@ -73,6 +73,11 @@ public sealed record MigrationSourceInventoryArtifact
     /// what needs assisted migration, what requires manual review, and what is unsupported.
     /// </summary>
     public MigrationFidelityClassificationRecord[] FidelityClassifications { get; init; } = [];
+
+    /// <summary>
+    /// Optional matrix rollup of the per-area fidelity classifications for review artifacts and cutover planning.
+    /// </summary>
+    public MigrationFidelityMatrix? FidelityMatrix { get; init; }
 }
 
 /// <summary>
@@ -167,6 +172,104 @@ public sealed record MigrationFidelityClassificationRecord
     /// Deterministic metadata for review. Raw source documents and secrets are not echoed here.
     /// </summary>
     public Dictionary<string, string> Metadata { get; init; } = [];
+}
+
+/// <summary>
+/// Rollup matrix for source migration fidelity classifications.
+/// </summary>
+public sealed record MigrationFidelityMatrix
+{
+    /// <summary>
+    /// Aggregate counts by automation status.
+    /// </summary>
+    public MigrationFidelityMatrixSummary Summary { get; init; } = new();
+
+    /// <summary>
+    /// Matrix cells grouped by fidelity category and automation status.
+    /// </summary>
+    public MigrationFidelityMatrixCell[] Cells { get; init; } = [];
+}
+
+/// <summary>
+/// Aggregate counts for a migration fidelity matrix.
+/// </summary>
+public sealed record MigrationFidelityMatrixSummary
+{
+    /// <summary>
+    /// Total number of source fidelity classification records.
+    /// </summary>
+    public int TotalCount { get; init; }
+
+    /// <summary>
+    /// Number of records classified as automated.
+    /// </summary>
+    public int AutomatedCount { get; init; }
+
+    /// <summary>
+    /// Number of records classified as assisted.
+    /// </summary>
+    public int AssistedCount { get; init; }
+
+    /// <summary>
+    /// Number of records classified as requiring manual review.
+    /// </summary>
+    public int ManualReviewCount { get; init; }
+
+    /// <summary>
+    /// Number of records classified as unsupported.
+    /// </summary>
+    public int UnsupportedCount { get; init; }
+}
+
+/// <summary>
+/// One matrix cell for a fidelity category and automation status.
+/// </summary>
+public sealed record MigrationFidelityMatrixCell
+{
+    /// <summary>
+    /// Fidelity category represented by this cell.
+    /// </summary>
+    public required string Category { get; init; }
+
+    /// <summary>
+    /// Automation status represented by this cell.
+    /// </summary>
+    public required string AutomationStatus { get; init; }
+
+    /// <summary>
+    /// Number of classification records in this cell.
+    /// </summary>
+    public int Count { get; init; }
+
+    /// <summary>
+    /// Source item kinds represented by this cell.
+    /// </summary>
+    public string[] Kinds { get; init; } = [];
+
+    /// <summary>
+    /// Source item identifiers represented by this cell.
+    /// </summary>
+    public string[] SourceIds { get; init; } = [];
+
+    /// <summary>
+    /// Stable machine-readable compatibility or fidelity codes represented by this cell.
+    /// </summary>
+    public string[] Codes { get; init; } = [];
+
+    /// <summary>
+    /// Target identifiers associated with the source identifiers, when a manifest has mapped them.
+    /// </summary>
+    public string[] TargetIds { get; init; } = [];
+
+    /// <summary>
+    /// Related source, style, dependency, or manifest identifiers represented by this cell.
+    /// </summary>
+    public string[] RelatedIds { get; init; } = [];
+
+    /// <summary>
+    /// Deduplicated operator remediation guidance for this cell.
+    /// </summary>
+    public string[] ManualSteps { get; init; } = [];
 }
 
 /// <summary>

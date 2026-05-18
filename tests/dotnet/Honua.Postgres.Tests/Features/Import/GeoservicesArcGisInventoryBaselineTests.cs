@@ -191,6 +191,25 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             record.Category == "time-metadata" &&
             record.Code == ImportCompatibilityCodes.ArcGisTimeMetadataManualReview &&
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
+
+        artifact.FidelityMatrix.Should().NotBeNull();
+        artifact.FidelityMatrix!.Summary.Should().Match<MigrationFidelityMatrixSummary>(summary =>
+            summary.AutomatedCount >= 4 &&
+            summary.AssistedCount >= 1 &&
+            summary.ManualReviewCount >= 5 &&
+            summary.UnsupportedCount == 0);
+        artifact.FidelityMatrix.Cells.Should().Contain(cell =>
+            cell.Category == "domains" &&
+            cell.AutomationStatus == MigrationFidelityAutomationStatuses.Assisted &&
+            cell.SourceIds.SequenceEqual(new[] { resource.Id }));
+        artifact.FidelityMatrix.Cells.Should().Contain(cell =>
+            cell.Category == "relationships" &&
+            cell.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview &&
+            cell.Codes.SequenceEqual(new[] { ImportCompatibilityCodes.ArcGisRelationshipsManualReview }));
+        artifact.FidelityMatrix.Cells.Should().Contain(cell =>
+            cell.Category == "renderers" &&
+            cell.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview &&
+            cell.SourceIds.Single().StartsWith("renderer:Fidelity:", StringComparison.Ordinal));
     }
 
     [Fact]
