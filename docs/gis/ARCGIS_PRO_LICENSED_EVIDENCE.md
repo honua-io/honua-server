@@ -6,9 +6,11 @@ It is separate from the `arcgis-stub` REST lane: the stub proves Honua serves
 the ArcGIS REST request pattern, while this lane is reserved for licensed
 ArcGIS Pro / ArcPy automation.
 
-This first slice does not make ordinary PR gates depend on ArcGIS Pro. It adds
-the runner contract, the manual/scheduled workflow entry point, artifact
-guardrails, and an ArcPy script that emits standard `.cert.json` envelopes.
+This slice does not make ordinary PR gates depend on ArcGIS Pro. It adds the
+runner contract, the manual/scheduled workflow entry point, artifact guardrails,
+an ArcPy script that emits standard `.cert.json` envelopes, a headless
+layout/map-frame screenshot fallback for ProPy runs, and a strict artifact
+validator for licensed runs.
 A successful licensed run still needs to be executed and linked before #1019
 can be closed.
 
@@ -35,6 +37,11 @@ Required runner state:
 - A runner-local blank `.aprx` template path supplied through the workflow
   input `project_template_path` or repository variable
   `ARCGIS_PRO_PROJECT_TEMPLATE`.
+- For reliable headless render evidence, the `.aprx` template should contain a
+  layout with a map frame. Use workflow inputs or repository variables
+  `ARCGIS_PRO_LAYOUT_NAME` and `ARCGIS_PRO_MAP_FRAME_NAME` when the template has
+  multiple layouts or frames. If the script is run inside an open ArcGIS Pro UI,
+  it can still export the active view first.
 - Network access to a seeded Honua service.
 
 Required target service:
@@ -69,6 +76,8 @@ Live licensed run:
   --line-layer-id "2001" `
   --polygon-layer-id "2002" `
   --project-template "D:\arcgis-fixtures\Blank-Honua-Evidence.aprx" `
+  --layout-name "Honua Evidence" `
+  --map-frame-name "Map Frame" `
   --output-dir "artifacts/arcgis-pro-desktop/manual-run"
 ```
 
@@ -98,6 +107,7 @@ artifacts/arcgis-pro-desktop/<run-id>/
     Honua-ArcGISPro-Evidence.aprx
   screenshots/
     arcgis-pro-map.png
+  artifact-manifest.json
   summary.md
 ```
 
@@ -121,6 +131,13 @@ They must not be renamed to `arcgis-stub`; that lane remains REST-only.
   logs, or summaries.
 - The workflow scans text artifacts for unredacted Honua auth secrets before
   upload.
+- The runner also validates the licensed artifact root with
+  `--validate-output --require-live-artifacts`, requiring FeatureServer and
+  MapServer envelopes, zero failed CERT results, render/project reload evidence
+  refs that resolve inside the artifact root, and redacted text artifacts.
+- `artifact-manifest.json` lists the cert envelopes, supporting evidence refs,
+  and uploaded files so reviewers can verify screenshots, logs, and project
+  copies without needing repository credentials.
 - Use a clean blank `.aprx` template. Do not use a personal project, saved
   Esri sign-in state, license files, or project data containing customer
   credentials.
@@ -132,7 +149,7 @@ They must not be renamed to `arcgis-stub`; that lane remains REST-only.
 |---|---|
 | Licensed ArcGIS Pro lane against seeded Honua | Workflow and ArcPy runner are in place; successful run still pending runner/license availability. |
 | Connects to FeatureServer and MapServer using ArcGIS Pro automation or ArcPy | Runner uses `arcpy.mp` `addDataFromPath` against both service types. |
-| Validates discovery, schema, query/filter, geometry, pagination, rendering/style, reload | Runner records REST-backed discovery/schema/query/pagination/geometry checks and ArcPy-backed render/project reload checks. Screenshot-backed style checks are recorded when an ArcGIS Pro map export is available. |
-| Emits standard `.cert.json` envelopes with `client_lane: "desktop-arcgis"` | Implemented by the runner and validated by unit tests. |
-| Captures screenshots/logs/project artifacts without credentials | Artifact layout and redaction scan are implemented; operators must use clean templates and review artifacts. |
+| Validates discovery, schema, query/filter, geometry, pagination, rendering/style, reload | Runner records REST-backed discovery/schema/query/pagination/geometry checks and ArcPy-backed render/project reload checks. Active-view and headless layout/map-frame PNG export paths can substantiate screenshot-backed style checks. |
+| Emits standard `.cert.json` envelopes with `client_lane: "desktop-arcgis"` | Implemented by the runner and validated by unit tests plus the workflow validator. |
+| Captures screenshots/logs/project artifacts without credentials | Artifact layout, manifest generation, redaction scan, and strict evidence-ref validation are implemented; operators must use clean templates and review artifacts. |
 | Migration evidence doc links successful run and distinguishes licensed evidence from stubs | The docs distinguish the lane, but no successful licensed run is linked yet. #1019 remains open until that exists. |

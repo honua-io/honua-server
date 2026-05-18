@@ -55,6 +55,20 @@ MAPSERVER_NON_APPLICABLE = {
     "CERT-RNDR-LBL-01", "CERT-RNDR-SPR-01", "CERT-RNDR-URL-01",
 }
 DESKTOP_EXTENSION_IDS = ["DSK-EXT-01", "DSK-EXT-02"]
+LIVE_REQUIRED_IDS = {
+    "featureserver": [
+        "CERT-RNDR-01",
+        "CERT-RNDR-02",
+        "CERT-RNDR-SYM-01",
+        "CERT-RNDR-LIN-01",
+        "CERT-RNDR-FIL-01",
+    ],
+    "mapserver": [
+        "CERT-RNDR-01",
+        "CERT-RNDR-02",
+    ],
+}
+LIVE_REQUIRED_EXTENSION_IDS = ["DSK-EXT-01"]
 SENSITIVE_ENV_NAMES = [
     "HONUA_API_KEY",
     "HONUA_AUTHORIZATION",
@@ -64,6 +78,15 @@ SENSITIVE_ENV_NAMES = [
     "ESRI_PASSWORD",
     "ESRI_TOKEN",
 ]
+TEXT_ARTIFACT_SUFFIXES = {".json", ".log", ".md", ".txt", ".csv", ".tsv", ".xml"}
+SENSITIVE_PATTERN = re.compile(
+    r"(?i)(authorization\s*:\s*bearer\s+(?!\[REDACTED\])[^\s,;]+|"
+    r"x-api-key\s*:\s*(?!\[REDACTED\])[^\s,;]+|"
+    r"[?&](?:token|api[_-]?key|key|password|client[_-]?secret|access[_-]?token)="
+    r"(?!\[REDACTED\])[^&#\s]+|"
+    r"\b(?:token|api[_-]?key|password|client[_-]?secret|access[_-]?token)\s*[:=]\s*"
+    r"(?!\[REDACTED\])[^\s,;]+)"
+)
 
 
 def utc_now_compact() -> str:
@@ -258,6 +281,184 @@ def write_envelopes(observations: dict[str, Any], output_dir: Path) -> list[Path
         out_path.write_text(json.dumps(envelope, indent=2) + "\n", encoding="utf-8")
         paths.append(out_path)
     return paths
+
+
+def artifact_ref_exists(output_dir: Path, evidence_ref: str) -> bool:
+    if not evidence_ref:
+        return False
+    parsed = urllib.parse.urlparse(evidence_ref)
+    if parsed.scheme in {"http", "https"}:
+        return True
+
+    ref_path = Path(evidence_ref)
+    if ref_path.is_absolute() or any(part == ".." for part in ref_path.parts):
+        return False
+
+    return (output_dir / ref_path).exists()
+
+
+def iter_text_artifacts(output_dir: Path):
+    if not output_dir.exists():
+        return
+    for path in output_dir.rglob("*"):
+        if path.is_file() and path.suffix.lower() in TEXT_ARTIFACT_SUFFIXES:
+            yield path
+
+
+def scan_for_unredacted_secrets(output_dir: Path) -> list[str]:
+    errors: list[str] = []
+    env_values = [
+        value
+        for name in SENSITIVE_ENV_NAMES
+        if (value := os.environ.get(name)) and len(value) >= 4
+    ]
+
+    for path in iter_text_artifacts(output_dir):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            errors.append(f"{safe_relative_ref(path, output_dir)} could not be read for redaction scan: {exc}")
+            continue
+
+        for value in env_values:
+            if value in text:
+                errors.append(f"{safe_relative_ref(path, output_dir)} contains an unredacted secret value")
+                break
+        if SENSITIVE_PATTERN.search(text):
+            errors.append(f"{safe_relative_ref(path, output_dir)} contains an unredacted credential-looking token")
+
+    return errors
+
+
+def write_artifact_manifest(
+    output_dir: Path,
+    cert_paths: list[Path],
+    *,
+    require_live_artifacts: bool = False,
+) -> Path:
+    artifacts = []
+    for path in sorted(output_dir.rglob("*")):
+        if not path.is_file() or path.name == "artifact-manifest.json":
+            continue
+        artifacts.append({
+            "path": safe_relative_ref(path, output_dir),
+            "bytes": path.stat().st_size,
+            "kind": path.parent.name,
+        })
+
+    protocols = []
+    for cert_path in sorted(cert_paths):
+        envelope = json.loads(cert_path.read_text(encoding="utf-8"))
+        evidence_refs = sorted({
+            result.get("evidence_ref", "")
+            for result in [*envelope.get("results", []), *envelope.get("extensions", [])]
+            if result.get("evidence_ref")
+        })
+        protocols.append({
+            "protocol": envelope.get("protocol"),
+            "envelope": safe_relative_ref(cert_path, output_dir),
+            "summary": envelope.get("summary", {}),
+            "evidence_refs": evidence_refs,
+        })
+
+    manifest = {
+        "schema_version": "1.0",
+        "generated_at": utc_now_iso(),
+        "client_lane": "desktop-arcgis",
+        "require_live_artifacts": require_live_artifacts,
+        "protocols": protocols,
+        "artifacts": artifacts,
+    }
+
+    manifest_path = output_dir / "artifact-manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return manifest_path
+
+
+def validate_output_contract(output_dir: Path, *, require_live_artifacts: bool = False) -> list[str]:
+    errors: list[str] = []
+    cert_dir = output_dir / "certification"
+    if not cert_dir.exists():
+        return [f"{safe_relative_ref(cert_dir, output_dir)} does not exist"]
+
+    cert_paths = sorted(cert_dir.glob("*.cert.json"))
+    if len(cert_paths) != 2:
+        errors.append(f"expected 2 desktop-arcgis cert envelopes, found {len(cert_paths)}")
+
+    seen_protocols: set[str] = set()
+    for cert_path in cert_paths:
+        try:
+            envelope = json.loads(cert_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"{safe_relative_ref(cert_path, output_dir)} is not valid JSON: {exc}")
+            continue
+
+        protocol = envelope.get("protocol")
+        seen_protocols.add(str(protocol))
+        if envelope.get("client_lane") != "desktop-arcgis":
+            errors.append(f"{cert_path.name} has client_lane={envelope.get('client_lane')!r}; expected desktop-arcgis")
+        if protocol not in {"featureserver", "mapserver"}:
+            errors.append(f"{cert_path.name} has unexpected protocol={protocol!r}")
+
+        results = envelope.get("results")
+        if not isinstance(results, list):
+            errors.append(f"{cert_path.name} results must be an array")
+            continue
+
+        valid_results = [result for result in results if isinstance(result, dict) and isinstance(result.get("status"), str)]
+        if len(valid_results) != len(results):
+            errors.append(f"{cert_path.name} results must contain objects with string status values")
+
+        result_ids = [result.get("test_case_id") for result in valid_results]
+        if result_ids != CORE_IDS:
+            errors.append(f"{cert_path.name} must contain the ordered 24 common-core CERT ids")
+
+        summary = envelope.get("summary") or {}
+        calculated = summarize(valid_results)
+        if summary != calculated:
+            errors.append(f"{cert_path.name} summary does not match results")
+        if calculated["failed"] > 0:
+            errors.append(f"{cert_path.name} reports {calculated['failed']} failed CERT result(s)")
+
+        all_results = {
+            result.get("test_case_id"): result
+            for result in [*results, *(envelope.get("extensions") or [])]
+            if isinstance(result, dict)
+        }
+        if require_live_artifacts and protocol in LIVE_REQUIRED_IDS:
+            for test_case_id in LIVE_REQUIRED_IDS[protocol]:
+                result = all_results.get(test_case_id)
+                if not result or result.get("status") != "pass":
+                    errors.append(f"{cert_path.name} requires {test_case_id}=pass for live ArcGIS Pro evidence")
+                    continue
+                evidence_ref = str(result.get("evidence_ref") or "")
+                if not artifact_ref_exists(output_dir, evidence_ref):
+                    errors.append(f"{cert_path.name} {test_case_id} evidence_ref does not resolve: {evidence_ref!r}")
+            for extension_id in LIVE_REQUIRED_EXTENSION_IDS:
+                result = all_results.get(extension_id)
+                if not result or result.get("status") != "pass":
+                    errors.append(f"{cert_path.name} requires {extension_id}=pass for project reload evidence")
+                    continue
+                evidence_ref = str(result.get("evidence_ref") or "")
+                if not artifact_ref_exists(output_dir, evidence_ref):
+                    errors.append(f"{cert_path.name} {extension_id} evidence_ref does not resolve: {evidence_ref!r}")
+
+        for result in all_results.values():
+            evidence_ref = str(result.get("evidence_ref") or "")
+            if evidence_ref and not artifact_ref_exists(output_dir, evidence_ref):
+                errors.append(
+                    f"{cert_path.name} {result.get('test_case_id')} evidence_ref must be relative and in artifact root: {evidence_ref!r}"
+                )
+
+    missing_protocols = {"featureserver", "mapserver"} - seen_protocols
+    if missing_protocols:
+        errors.append(f"missing desktop-arcgis protocol envelope(s): {', '.join(sorted(missing_protocols))}")
+
+    errors.extend(scan_for_unredacted_secrets(output_dir))
+    if not errors:
+        write_artifact_manifest(output_dir, cert_paths, require_live_artifacts=require_live_artifacts)
+
+    return errors
 
 
 def make_url(base_url: str, path: str, params: dict[str, Any] | None = None) -> str:
@@ -526,6 +727,93 @@ def protocol_to_service(protocol: str) -> str:
     return "FeatureServer" if protocol == "featureserver" else "MapServer"
 
 
+def exported_png_ref(screenshot: Path, output_dir: Path, log_lines: list[str], label: str) -> str:
+    if screenshot.exists() and screenshot.stat().st_size > 0:
+        screenshot_ref = safe_relative_ref(screenshot, output_dir)
+        log_lines.append(f"Exported ArcGIS Pro {label} screenshot: {screenshot_ref}")
+        return screenshot_ref
+    return ""
+
+
+def export_active_view_png(aprx: Any, output_dir: Path, log_lines: list[str]) -> str:
+    active_view = getattr(aprx, "activeView", None)
+    if active_view is None or not hasattr(active_view, "exportToPNG"):
+        return ""
+
+    screenshot = output_dir / "screenshots" / "arcgis-pro-map.png"
+    screenshot.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        active_view.exportToPNG(str(screenshot), 1280, 720)
+        return exported_png_ref(screenshot, output_dir, log_lines, "active view")
+    except Exception as exc:  # pragma: no cover - requires ArcPy UI.
+        log_lines.append(f"Active view screenshot export failed: {redact_text(exc)}")
+        return ""
+
+
+def export_layout_png(aprx: Any, active_map: Any, args: argparse.Namespace, output_dir: Path, log_lines: list[str]) -> str:
+    try:
+        layouts = aprx.listLayouts(args.layout_name) if args.layout_name else aprx.listLayouts()
+    except Exception as exc:  # pragma: no cover - requires ArcPy.
+        log_lines.append(f"Layout lookup failed: {redact_text(exc)}")
+        return ""
+
+    if not layouts:
+        log_lines.append("No ArcGIS Pro layout was available for headless screenshot export.")
+        return ""
+
+    screenshot = output_dir / "screenshots" / "arcgis-pro-map.png"
+    screenshot.parent.mkdir(parents=True, exist_ok=True)
+    for layout in layouts:
+        layout_name = getattr(layout, "name", "<unnamed>")
+        try:
+            map_frames = (
+                layout.listElements("MAPFRAME_ELEMENT", args.map_frame_name)
+                if args.map_frame_name else
+                layout.listElements("MAPFRAME_ELEMENT")
+            )
+        except Exception as exc:  # pragma: no cover - requires ArcPy.
+            log_lines.append(f"Map frame lookup failed for layout {layout_name}: {redact_text(exc)}")
+            map_frames = []
+
+        for map_frame in map_frames:
+            frame_name = getattr(map_frame, "name", "<unnamed>")
+            try:
+                if hasattr(map_frame, "map"):
+                    map_frame.map = active_map
+                if hasattr(map_frame, "zoomToAllLayers"):
+                    map_frame.zoomToAllLayers(False)
+                map_frame.exportToPNG(str(screenshot), 144, False)
+                screenshot_ref = exported_png_ref(
+                    screenshot,
+                    output_dir,
+                    log_lines,
+                    f"layout map frame {layout_name}/{frame_name}",
+                )
+                if screenshot_ref:
+                    return screenshot_ref
+            except Exception as exc:  # pragma: no cover - requires ArcPy.
+                log_lines.append(
+                    f"Map frame screenshot export failed for {layout_name}/{frame_name}: {redact_text(exc)}"
+                )
+
+        try:
+            layout.exportToPNG(str(screenshot), 144)
+            screenshot_ref = exported_png_ref(screenshot, output_dir, log_lines, f"layout {layout_name}")
+            if screenshot_ref:
+                return screenshot_ref
+        except Exception as exc:  # pragma: no cover - requires ArcPy.
+            log_lines.append(f"Layout screenshot export failed for {layout_name}: {redact_text(exc)}")
+
+    return ""
+
+
+def export_screenshot(aprx: Any, active_map: Any, args: argparse.Namespace, output_dir: Path, log_lines: list[str]) -> str:
+    screenshot_ref = export_active_view_png(aprx, output_dir, log_lines)
+    if screenshot_ref:
+        return screenshot_ref
+    return export_layout_png(aprx, active_map, args, output_dir, log_lines)
+
+
 def add_arcpy_checks(
     observations: dict[str, Any],
     args: argparse.Namespace,
@@ -601,17 +889,7 @@ def add_arcpy_checks(
         notes="ArcPy addDataFromPath added the MapServer connection." if map_layer_added else "ArcPy could not add the MapServer connection.",
     )
 
-    screenshot_ref = ""
-    active_view = getattr(aprx, "activeView", None)
-    if active_view is not None and hasattr(active_view, "exportToPNG"):
-        screenshot = screenshot_dir / "arcgis-pro-map.png"
-        try:
-            active_view.exportToPNG(str(screenshot), 1280, 720)
-            if screenshot.exists() and screenshot.stat().st_size > 0:
-                screenshot_ref = safe_relative_ref(screenshot, output_dir)
-                log_lines.append(f"Exported ArcGIS Pro active view screenshot: {screenshot_ref}")
-        except Exception as exc:  # pragma: no cover - requires ArcPy UI.
-            log_lines.append(f"Active view screenshot export failed: {redact_text(exc)}")
+    screenshot_ref = export_screenshot(aprx, active_map, args, output_dir, log_lines)
 
     if screenshot_ref:
         for protocol_data in (feature_protocol, map_protocol):
@@ -764,23 +1042,38 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--environment", default="ci" if os.environ.get("GITHUB_ACTIONS") else "local")
     parser.add_argument("--project-template", default=os.environ.get("ARCGIS_PRO_PROJECT_TEMPLATE", ""))
     parser.add_argument("--map-name", default=os.environ.get("ARCGIS_PRO_MAP_NAME", ""))
+    parser.add_argument("--layout-name", default=os.environ.get("ARCGIS_PRO_LAYOUT_NAME", ""))
+    parser.add_argument("--map-frame-name", default=os.environ.get("ARCGIS_PRO_MAP_FRAME_NAME", ""))
     parser.add_argument("--api-key-env", default="HONUA_API_KEY")
     parser.add_argument("--authorization-env", default="HONUA_AUTHORIZATION")
     parser.add_argument("--timeout-seconds", type=int, default=30)
     parser.add_argument("--fixture-observations", default="")
     parser.add_argument("--write-fixture-template", default="")
+    parser.add_argument("--validate-output", default="")
+    parser.add_argument("--require-live-artifacts", action="store_true")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     output_dir = Path(args.output_dir).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
+        if args.validate_output:
+            target_dir = Path(args.validate_output).resolve()
+            errors = validate_output_contract(target_dir, require_live_artifacts=args.require_live_artifacts)
+            if errors:
+                for error in errors:
+                    print(f"ERROR: {error}", file=sys.stderr)
+                return 1
+            print(f"Validated ArcGIS Pro evidence under {target_dir}")
+            return 0
+
         if args.write_fixture_template:
             write_fixture_template(Path(args.write_fixture_template))
             return 0
+
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         if args.fixture_observations:
             observations = load_observations(Path(args.fixture_observations))
@@ -809,7 +1102,15 @@ def main(argv: list[str] | None = None) -> int:
                 f"{summary['failed']} failed, {summary['skipped']} skipped, "
                 f"{summary['not_applicable']} not-applicable"
             )
+        manifest_path = output_dir / "artifact-manifest.json"
+        lines.extend([
+            "",
+            "## Artifact Manifest",
+            "",
+            f"- `{safe_relative_ref(manifest_path, output_dir)}`",
+        ])
         summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        write_artifact_manifest(output_dir, paths, require_live_artifacts=False)
         print(f"Wrote {len(paths)} ArcGIS Pro evidence envelope(s) under {output_dir}")
         return 0
     except Exception as exc:

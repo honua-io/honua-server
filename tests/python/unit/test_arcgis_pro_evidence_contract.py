@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -82,6 +83,112 @@ def test_fixture_observations_emit_desktop_arcgis_envelopes(tmp_path, monkeypatc
     serialized = json.dumps(feature_envelope)
     assert "fixture-secret" not in serialized
     assert "token=[REDACTED]" in serialized
+
+
+def test_layout_export_fallback_writes_headless_screenshot(tmp_path):
+    runner = load_runner()
+
+    class FakeMapFrame:
+        name = "Evidence Frame"
+
+        def __init__(self):
+            self.map = None
+            self.zoomed = False
+
+        def zoomToAllLayers(self, selection_only):
+            self.zoomed = selection_only is False
+
+        def exportToPNG(self, out_png, resolution, world_file=False):
+            Path(out_png).write_bytes(b"png")
+
+    class FakeLayout:
+        name = "Evidence Layout"
+
+        def __init__(self, frame):
+            self.frame = frame
+
+        def listElements(self, element_type, wildcard=None):
+            assert element_type == "MAPFRAME_ELEMENT"
+            assert wildcard in (None, "Evidence Frame")
+            return [self.frame]
+
+    class FakeProject:
+        activeView = None
+
+        def __init__(self, layout):
+            self.layout = layout
+
+        def listLayouts(self, wildcard=None):
+            assert wildcard in (None, "Evidence Layout")
+            return [self.layout]
+
+    active_map = object()
+    frame = FakeMapFrame()
+    layout = FakeLayout(frame)
+    project = FakeProject(layout)
+    args = SimpleNamespace(layout_name="Evidence Layout", map_frame_name="Evidence Frame")
+    log_lines = []
+
+    screenshot_ref = runner.export_screenshot(project, active_map, args, tmp_path, log_lines)
+
+    assert screenshot_ref == "screenshots/arcgis-pro-map.png"
+    assert (tmp_path / screenshot_ref).read_bytes() == b"png"
+    assert frame.map is active_map
+    assert frame.zoomed is True
+    assert any("layout map frame Evidence Layout/Evidence Frame" in line for line in log_lines)
+
+
+def test_strict_validation_requires_live_artifact_refs(tmp_path):
+    runner = load_runner()
+    (tmp_path / "screenshots").mkdir()
+    (tmp_path / "project").mkdir()
+    screenshot = tmp_path / "screenshots" / "arcgis-pro-map.png"
+    project = tmp_path / "project" / "Honua-ArcGISPro-Evidence.aprx"
+    screenshot.write_bytes(b"png")
+    project.write_bytes(b"aprx")
+
+    observations = {
+        "run_id": "licensed-arcgis-pro",
+        "run_date": "2026-05-18T00:00:00Z",
+        "server_version": "fixture-sha",
+        "client_version": "ArcGIS Pro 3.4 fixture",
+        "environment": "ci",
+        "protocols": {
+            "featureserver": {
+                "checks": {
+                    "CERT-RNDR-01": {"status": "pass", "evidence_ref": str(screenshot)},
+                    "CERT-RNDR-02": {"status": "pass", "evidence_ref": str(project)},
+                    "CERT-RNDR-SYM-01": {"status": "pass", "evidence_ref": str(screenshot)},
+                    "CERT-RNDR-LIN-01": {"status": "pass", "evidence_ref": str(screenshot)},
+                    "CERT-RNDR-FIL-01": {"status": "pass", "evidence_ref": str(screenshot)},
+                },
+                "extensions": {
+                    "DSK-EXT-01": {"status": "pass", "evidence_ref": str(project)},
+                },
+            },
+            "mapserver": {
+                "checks": {
+                    "CERT-RNDR-01": {"status": "pass", "evidence_ref": str(screenshot)},
+                    "CERT-RNDR-02": {"status": "pass", "evidence_ref": str(project)},
+                },
+                "extensions": {
+                    "DSK-EXT-01": {"status": "pass", "evidence_ref": str(project)},
+                },
+            },
+        },
+    }
+
+    runner.write_envelopes(observations, tmp_path)
+
+    assert runner.validate_output_contract(tmp_path, require_live_artifacts=True) == []
+    manifest = json.loads((tmp_path / "artifact-manifest.json").read_text())
+    assert manifest["client_lane"] == "desktop-arcgis"
+    assert manifest["require_live_artifacts"] is True
+    assert {item["protocol"] for item in manifest["protocols"]} == {"featureserver", "mapserver"}
+
+    screenshot.unlink()
+    errors = runner.validate_output_contract(tmp_path, require_live_artifacts=True)
+    assert any("CERT-RNDR-01 evidence_ref does not resolve" in error for error in errors)
 
 
 def test_redaction_removes_headers_query_params_and_env_secrets(monkeypatch):
