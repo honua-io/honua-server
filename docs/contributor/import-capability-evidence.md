@@ -16,15 +16,20 @@ Use this wording for public material:
 > Honua imports common GIS file formats and public or credentialed queryable
 > ArcGIS GeoServices REST feature/map-service layers into PostGIS. It also inventories ArcGIS
 > GeoServices REST and GeoServer REST sources for migration planning, supports
-> GeoServer dry-run validation, and runs cross-server WMS/WFS/WMTS consume tests
-> against reference GeoServer and MapServer services.
+> GeoServer dry-run validation, emits classic OGC WFS/WMS/WMTS scan, manifest,
+> parity, and fidelity-classification artifacts for operator review, and runs
+> cross-server WMS/WFS/WMTS consume tests against reference GeoServer and
+> MapServer services.
 
-Do not currently claim general production import from OGC WFS/WMS/WMTS services
-or non-dry-run GeoServer catalog migration. Those are not implemented as
-operator-facing import paths in `honua-server`. Do not use broad low-risk/cost
-automated migration language until the release-gated acceptance evidence suite
-in [honua-server#1024](https://github.com/honua-io/honua-server/issues/1024)
-is passing and linked from the compatibility evidence page.
+Do not currently claim applied catalog/data migration from WMS/WMTS render
+services or non-dry-run GeoServer catalog migration. The classic OGC path is an
+operator-facing planning path: WFS feature types can produce feature-import
+manifest targets, while WMS/WMTS produce explicit service plans, unsupported
+data-copy items, and manual-review classifications. Do not use broad
+low-risk/cost automated migration language until the release-gated acceptance
+evidence suite in
+[honua-server#1024](https://github.com/honua-io/honua-server/issues/1024) is
+passing and linked from the compatibility evidence page.
 
 ## Current Capability Matrix
 
@@ -39,7 +44,7 @@ is passing and linked from the compatibility evidence page.
 | GeoServer REST discovery | Production path | `POST /api/v1/admin/import/geoserver/discover` and scanner support | HTTPS public URL required outside test mode. Basic auth is supported when both username and password are supplied. |
 | GeoServer REST import job | Dry-run validation plus apply-plan generation | `POST /api/v1/admin/import/geoserver/start` supports `dryRun=true` validation and `dryRun=false` deterministic apply-plan jobs | Non-dry-run jobs emit replayable intent only. They do not yet mutate the Honua catalog, copy data, or persist migrated styles. |
 | GeoServer SLD migration | Partial supporting path | Admin SLD import/export endpoints and `ISldStyleConverter` integration | Bulk GeoServer import validates/converts SLD content for diagnostics, but per-layer style persistence is handled by the admin SLD endpoint. |
-| Classic OGC WFS/WMS/WMTS service import | Not implemented | No production import endpoint exists for arbitrary classic OGC services | Current evidence is consume/read interoperability, not import. Track WFS/WMS/WMTS migration in [honua-server#1016](https://github.com/honua-io/honua-server/issues/1016). |
+| Classic OGC WFS/WMS/WMTS service migration planning | First operator-facing scanner slice | `POST /api/v1/admin/import/scan` with `sourceKind=ogc-wfs`, `ogc-wms`, or `ogc-wmts`; `artifactSet=all` returns inventory, manifest, and parity evidence; Core scanner tests cover WFS feature types plus WMS/WMTS render/tile manual-review classifications | WFS is a feature-import planning path only. WMS/WMTS are metadata/style/tile/service-plan paths and are marked unsupported for automated data copy unless paired with WFS, coverage, database, or file sources. Track further applied migration work in [honua-server#1016](https://github.com/honua-io/honua-server/issues/1016). |
 | OGC API Features service import | Not implemented | Honua serves OGC API Features but does not yet import external OGC API Features sources | Track source scan/import/parity evidence in [honua-server#1029](https://github.com/honua-io/honua-server/issues/1029). |
 | OGC coverage service import | Not implemented | Raster file import exists, but WCS/OGC API Coverages source migration is not an operator path | Track WCS/OGC API Coverages migration in [honua-server#1030](https://github.com/honua-io/honua-server/issues/1030). |
 | Cross-server OGC consume | Test/nightly evidence | Test-only `/__test/cross-server-consume/proxy`; nightly `cross-server-consume-nightly.yml`; gap report at `docs/compatibility/cross-server-consume-gap-report.md` | The probe exists only in the Test environment and should not be presented as an operator API. |
@@ -114,6 +119,25 @@ WFS 2.0, and WMTS 1.0 from reference GeoServer and MapServer containers. This
 is interoperability evidence for consuming OGC services. It is not a production
 import feature.
 
+### Classic OGC WFS/WMS/WMTS Migration Planning
+
+- Operator endpoint: `src/Honua.Server/Features/Import/MigrationScannerEndpoints.cs`
+- Scanner implementation: `src/Honua.Core/Features/Import/Services/OgcServiceMigrationScanner.cs`
+- URL validation: `src/Honua.Server/Features/Import/OgcServiceUrlValidation.cs`
+- Focused coverage:
+  `tests/dotnet/Honua.Core.Tests/Features/Import/OgcServiceMigrationScannerTests.cs`
+  and `tests/dotnet/Honua.Server.Tests/Import/MigrationScannerEndpointTests.cs`
+
+The classic OGC scanner validates a secret-safe HTTPS source URL, reads
+GetCapabilities, and emits the shared migration artifact chain. WFS scans
+enumerate feature types, attempt DescribeFeatureType, capture CRS/schema
+metadata, and generate feature-import manifest targets. WMS scans capture
+render layers, styles, GetMap/GetFeatureInfo operation metadata, and explicit
+unsupported data-copy classifications. WMTS scans capture tile layers, styles,
+GetTile operation metadata, ResourceURL templates, tile matrix sets, and
+manual-review tile-service classifications. The path does not apply catalog
+changes or copy rendered WMS/WMTS data by itself.
+
 ## Review Checklist
 
 Before using import language in marketing, sales, or website copy:
@@ -122,10 +146,12 @@ Before using import language in marketing, sales, or website copy:
   import path.
 - Use "GeoServer REST migration inventory, dry-run validation, and apply-plan
   generation" for GeoServer.
+- Use "classic OGC WFS/WMS/WMTS migration planning artifacts" for the
+  `POST /api/v1/admin/import/scan` path.
 - Use "cross-server WMS/WFS/WMTS consume testing" for OGC reference-service
   evidence.
-- Do not say "OGC service import" unless a production WFS/WMS/WMTS import path
-  has been implemented and tested.
+- Do not say "applied OGC service migration" unless a production WFS/WMS/WMTS
+  apply path has been implemented and tested.
 - Do not say "GeoServer catalog import applies changes" until non-dry-run jobs
   write real catalog, data, and style state rather than emitting apply-plan
   evidence only.
@@ -153,6 +179,9 @@ Run these focused checks when refreshing this evidence:
 ```bash
 dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
   --filter "FullyQualifiedName~GeoservicesImportEndpointTests|FullyQualifiedName~GeoServerImportEndpointTests|FullyQualifiedName~MigrationScannerEndpointTests"
+
+dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
+  --filter "FullyQualifiedName~OgcServiceMigrationScannerTests|FullyQualifiedName~MigrationManifestTranslatorTests|FullyQualifiedName~MigrationParityEvidenceGeneratorTests"
 
 dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
   --filter "FullyQualifiedName~GeoservicesImportServiceScanTests|FullyQualifiedName~GeoServerImportServiceScanTests|FullyQualifiedName~GeoservicesArcGisInventoryBaselineTests|FullyQualifiedName~GeoServerInventoryBaselineTests"

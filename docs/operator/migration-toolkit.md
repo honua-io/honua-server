@@ -80,13 +80,18 @@ DescribeFeatureType so the inventory can emit fields, geometry type, CRS
 metadata, capabilities, manifest targets, and parity evidence.
 
 WMS and WMTS scans are metadata and planning paths only. They capture layers,
-styles, tile matrix sets, and service endpoints where advertised, but render
-and tile services are marked manual-review or unsupported for automated data
-copy unless paired with a WFS, coverage, database, or file source. This keeps
-render compatibility distinct from applied migration.
+styles, WMS GetMap/GetFeatureInfo operation metadata, WMTS GetTile and
+ResourceURL metadata, tile matrix sets, and service endpoints where advertised.
+Render and tile services are marked manual-review or unsupported for automated
+data copy unless paired with a WFS, coverage, database, or file source. This
+keeps render compatibility distinct from applied migration.
 The generated manifest preserves those render-only services as
 `servicePlans`, so operators can review equivalent Honua map/tile publication
 work without confusing it with automated feature import.
+The inventory also emits `fidelityClassifications` so parity evidence can show
+which WFS schema items are automated candidates and which WMS/WMTS render,
+style, endpoint, or tile-matrix constructs require manual review or are
+unsupported for data copy.
 
 Build an acceptance evidence suite only after each representative source has
 inventory, manifest, and parity evidence. The suite is an index and gate, not a

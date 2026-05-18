@@ -261,6 +261,11 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             .SelectMany(layer => BuildWmsStyles(containerId, layer))
             .OrderBy(static style => style.Id, StringComparer.Ordinal)
             .ToArray();
+        var dependencies = BuildWmsOperationDependencies(
+            containerId,
+            capabilities,
+            version,
+            ImportCompatibilityCodes.OgcWmsRenderOnlySource);
 
         return CreateRenderOnlyArtifact(
             "ogc-wms",
@@ -273,7 +278,8 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             capabilitiesUrl,
             resources,
             styles,
-            ImportCompatibilityCodes.OgcWmsRenderOnlySource);
+            ImportCompatibilityCodes.OgcWmsRenderOnlySource,
+            dependencies);
     }
 
     private static MigrationSourceInventoryArtifact BuildWmtsInventory(
@@ -339,6 +345,15 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
                         ImportCompatibilityCodes.OgcWmtsTileOnlySource)
                 };
             })
+            .Concat(BuildWmtsOperationDependencies(
+                containerId,
+                capabilities,
+                version,
+                ImportCompatibilityCodes.OgcWmtsTileOnlySource))
+            .Concat(BuildWmtsResourceUrlDependencies(
+                containerId,
+                layers,
+                ImportCompatibilityCodes.OgcWmtsTileOnlySource))
             .OrderBy(static dependency => dependency.Id, StringComparer.Ordinal)
             .ToArray();
 
@@ -479,7 +494,13 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             Containers = containers,
             Resources = resources.OrderBy(static resource => resource.Id, StringComparer.Ordinal).ToArray(),
             Styles = styles.OrderBy(static style => style.Id, StringComparer.Ordinal).ToArray(),
-            ExternalDependencies = dependencies.OrderBy(static dependency => dependency.Id, StringComparer.Ordinal).ToArray()
+            ExternalDependencies = dependencies.OrderBy(static dependency => dependency.Id, StringComparer.Ordinal).ToArray(),
+            FidelityClassifications = BuildFidelityClassifications(
+                sourceKind,
+                serviceType,
+                resources,
+                styles,
+                dependencies)
         };
     }
 
@@ -602,6 +623,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
                     Name = styleName,
                     Format = "WMS",
                     ResourceIds = [resourceId],
+                    Metadata = BuildOptionalMetadata(("title", ChildValue(style, "Title"))),
                     Compatibility = MigrationInventoryHelpers.Partial(
                         "WMS style metadata was captured for manual render-service migration planning.",
                         [],
@@ -633,6 +655,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
                     Name = styleName,
                     Format = "WMTS",
                     ResourceIds = [resourceId],
+                    Metadata = BuildOptionalMetadata(("title", ChildValue(style, "Title"))),
                     Compatibility = MigrationInventoryHelpers.Partial(
                         "WMTS style metadata was captured for manual tile-service migration planning.",
                         [],
@@ -642,6 +665,431 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             })
             .ToArray();
     }
+
+    private static MigrationExternalDependency[] BuildWmsOperationDependencies(
+        string containerId,
+        XDocument capabilities,
+        string version,
+        string compatibilityCode)
+    {
+        var dependencies = new List<MigrationExternalDependency>();
+        AddWmsOperationDependency(
+            dependencies,
+            containerId,
+            capabilities,
+            version,
+            operationName: "GetMap",
+            dependencyType: "render",
+            compatibilityCode);
+        AddWmsOperationDependency(
+            dependencies,
+            containerId,
+            capabilities,
+            version,
+            operationName: "GetFeatureInfo",
+            dependencyType: "feature-info",
+            compatibilityCode);
+
+        return dependencies.ToArray();
+    }
+
+    private static void AddWmsOperationDependency(
+        List<MigrationExternalDependency> dependencies,
+        string containerId,
+        XDocument capabilities,
+        string version,
+        string operationName,
+        string dependencyType,
+        string compatibilityCode)
+    {
+        var operation = Descendants(capabilities, operationName)
+            .FirstOrDefault(static element => element.Parent?.Name.LocalName == "Request");
+        if (operation == null)
+        {
+            return;
+        }
+
+        var formats = Elements(operation, "Format")
+            .Select(static element => element.Value.Trim())
+            .Where(static value => value.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static value => value, StringComparer.Ordinal)
+            .ToArray();
+
+        dependencies.Add(new MigrationExternalDependency
+        {
+            Id = $"endpoint:wms:{ToOperationId(operationName)}",
+            ContainerId = containerId,
+            Kind = "ogc-endpoint",
+            Name = $"WMS {operationName}",
+            DependencyType = dependencyType,
+            Address = ToSafeExternalAddress(ReadOnlineResourceHref(operation)),
+            Metadata = BuildOperationMetadata("WMS", version, operationName, formats),
+            Compatibility = MigrationInventoryHelpers.Partial(
+                $"WMS {operationName} endpoint metadata was captured for manual render-service migration planning.",
+                [],
+                ["Review equivalent Honua map-service routing, supported formats, and client cutover URLs."],
+                compatibilityCode)
+        });
+    }
+
+    private static MigrationExternalDependency[] BuildWmtsOperationDependencies(
+        string containerId,
+        XDocument capabilities,
+        string version,
+        string compatibilityCode)
+    {
+        var dependencies = new List<MigrationExternalDependency>();
+        AddWmtsOperationDependency(
+            dependencies,
+            containerId,
+            capabilities,
+            version,
+            operationName: "GetTile",
+            dependencyType: "tile",
+            compatibilityCode);
+        AddWmtsOperationDependency(
+            dependencies,
+            containerId,
+            capabilities,
+            version,
+            operationName: "GetFeatureInfo",
+            dependencyType: "feature-info",
+            compatibilityCode);
+
+        return dependencies.ToArray();
+    }
+
+    private static void AddWmtsOperationDependency(
+        List<MigrationExternalDependency> dependencies,
+        string containerId,
+        XDocument capabilities,
+        string version,
+        string operationName,
+        string dependencyType,
+        string compatibilityCode)
+    {
+        var operation = Descendants(capabilities, "Operation")
+            .FirstOrDefault(element => string.Equals(
+                element.Attribute("name")?.Value,
+                operationName,
+                StringComparison.OrdinalIgnoreCase));
+        if (operation == null)
+        {
+            return;
+        }
+
+        dependencies.Add(new MigrationExternalDependency
+        {
+            Id = $"endpoint:wmts:{ToOperationId(operationName)}",
+            ContainerId = containerId,
+            Kind = "ogc-endpoint",
+            Name = $"WMTS {operationName}",
+            DependencyType = dependencyType,
+            Address = ToSafeExternalAddress(ReadOnlineResourceHref(operation)),
+            Metadata = BuildOperationMetadata("WMTS", version, operationName, []),
+            Compatibility = MigrationInventoryHelpers.Partial(
+                $"WMTS {operationName} endpoint metadata was captured for manual tile-service migration planning.",
+                [],
+                ["Review equivalent Honua tile-service routing, cache grid configuration, and client cutover URLs."],
+                compatibilityCode)
+        });
+    }
+
+    private static MigrationExternalDependency[] BuildWmtsResourceUrlDependencies(
+        string containerId,
+        IReadOnlyList<XElement> layers,
+        string compatibilityCode)
+    {
+        return layers
+            .SelectMany(layer =>
+            {
+                var layerId = ChildValue(layer, "Identifier");
+                if (string.IsNullOrWhiteSpace(layerId))
+                {
+                    return [];
+                }
+
+                var resourceId = $"wmts-layer:{ToStableId(layerId)}";
+                return Elements(layer, "ResourceURL")
+                    .Select(resourceUrl =>
+                    {
+                        var resourceType = AttributeValue(resourceUrl, "resourceType") ?? "resource";
+                        var format = AttributeValue(resourceUrl, "format");
+                        var template = AttributeValue(resourceUrl, "template");
+                        return new MigrationExternalDependency
+                        {
+                            Id = $"endpoint:wmts:{ToStableId(resourceType)}:{ToStableId(layerId)}:{ToStableId(format ?? "default")}",
+                            ContainerId = containerId,
+                            ResourceId = resourceId,
+                            Kind = "ogc-endpoint",
+                            Name = $"WMTS {resourceType} template {layerId}",
+                            DependencyType = $"resource-url:{resourceType}",
+                            Address = ToSafeExternalAddress(template),
+                            Metadata = BuildOptionalMetadata(
+                                ("service", "WMTS"),
+                                ("operation", "ResourceURL"),
+                                ("resourceType", resourceType),
+                                ("format", format)),
+                            Compatibility = MigrationInventoryHelpers.Partial(
+                                "WMTS ResourceURL template was captured for manual tile-service migration planning.",
+                                [],
+                                ["Review tile template compatibility with Honua cache and tile matrix configuration."],
+                                compatibilityCode)
+                        };
+                    });
+            })
+            .OrderBy(static dependency => dependency.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static MigrationFidelityClassificationRecord[] BuildFidelityClassifications(
+        string sourceKind,
+        string serviceType,
+        MigrationInventoryResource[] resources,
+        MigrationInventoryStyle[] styles,
+        MigrationExternalDependency[] dependencies)
+    {
+        var records = new List<MigrationFidelityClassificationRecord>();
+
+        foreach (var resource in resources.OrderBy(static item => item.Id, StringComparer.Ordinal))
+        {
+            records.Add(CreateFidelityRecord(
+                sourceKind,
+                serviceType,
+                resource.Id,
+                resource.Kind,
+                GetResourceFidelityCategory(sourceKind, resource),
+                resource.Name,
+                GetAutomationStatus(resource.Compatibility),
+                resource.Compatibility,
+                GetResourceTargetKind(sourceKind, resource),
+                resource.StyleIds.Concat(resource.ExternalDependencyIds)));
+        }
+
+        foreach (var style in styles.OrderBy(static item => item.Id, StringComparer.Ordinal))
+        {
+            records.Add(CreateFidelityRecord(
+                sourceKind,
+                serviceType,
+                style.Id,
+                style.Kind,
+                "style",
+                style.Name,
+                GetAutomationStatus(style.Compatibility),
+                style.Compatibility,
+                "style",
+                style.ResourceIds.Concat(style.ExternalDependencyIds)));
+        }
+
+        foreach (var dependency in dependencies.OrderBy(static item => item.Id, StringComparer.Ordinal))
+        {
+            records.Add(CreateFidelityRecord(
+                sourceKind,
+                serviceType,
+                dependency.Id,
+                dependency.Kind,
+                GetDependencyFidelityCategory(dependency),
+                dependency.Name,
+                GetAutomationStatus(dependency.Compatibility),
+                dependency.Compatibility,
+                dependency.Kind,
+                string.IsNullOrWhiteSpace(dependency.ResourceId) ? [] : [dependency.ResourceId]));
+        }
+
+        return records
+            .OrderBy(static record => record.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static MigrationFidelityClassificationRecord CreateFidelityRecord(
+        string sourceKind,
+        string serviceType,
+        string sourceId,
+        string kind,
+        string category,
+        string? name,
+        string automationStatus,
+        MigrationCompatibilityAssessment compatibility,
+        string? targetKind,
+        IEnumerable<string> relatedIds)
+        => new()
+        {
+            Id = $"classification:{sourceId}:{category}",
+            SourceId = sourceId,
+            Kind = kind,
+            Category = category,
+            Name = name,
+            AutomationStatus = automationStatus,
+            Code = compatibility.Code ?? BuildFallbackFidelityCode(sourceKind, kind, category),
+            Reason = compatibility.Reason,
+            TargetKind = targetKind,
+            ManualSteps = automationStatus == MigrationFidelityAutomationStatuses.Automated
+                ? []
+                : MigrationInventoryHelpers.NormalizeStrings(compatibility.ManualSteps),
+            RelatedIds = MigrationInventoryHelpers.NormalizeStrings(relatedIds),
+            Metadata = BuildOptionalMetadata(
+                ("sourceKind", sourceKind),
+                ("serviceType", serviceType),
+                ("compatibilityLevel", compatibility.Level))
+        };
+
+    private static string GetResourceFidelityCategory(string sourceKind, MigrationInventoryResource resource)
+    {
+        if (sourceKind.Equals("ogc-wfs", StringComparison.OrdinalIgnoreCase))
+        {
+            return "feature-schema";
+        }
+
+        return sourceKind.Equals("ogc-wmts", StringComparison.OrdinalIgnoreCase)
+            ? "tile-data-copy"
+            : "render-data-copy";
+    }
+
+    private static string? GetResourceTargetKind(string sourceKind, MigrationInventoryResource resource)
+    {
+        if (sourceKind.Equals("ogc-wfs", StringComparison.OrdinalIgnoreCase) &&
+            resource.Kind.Equals("feature-type", StringComparison.OrdinalIgnoreCase))
+        {
+            return "feature-layer";
+        }
+
+        if (sourceKind.Equals("ogc-wmts", StringComparison.OrdinalIgnoreCase))
+        {
+            return "tile-service-layer";
+        }
+
+        if (sourceKind.Equals("ogc-wms", StringComparison.OrdinalIgnoreCase))
+        {
+            return "map-service-layer";
+        }
+
+        return null;
+    }
+
+    private static string GetDependencyFidelityCategory(MigrationExternalDependency dependency)
+        => dependency.Kind.Equals("tile-matrix-set", StringComparison.OrdinalIgnoreCase)
+            ? "tile-matrix-set"
+            : "service-endpoint";
+
+    private static string GetAutomationStatus(MigrationCompatibilityAssessment compatibility)
+    {
+        if (IsCompatible(compatibility.Level))
+        {
+            return MigrationFidelityAutomationStatuses.Automated;
+        }
+
+        return IsIncompatible(compatibility.Level)
+            ? MigrationFidelityAutomationStatuses.Unsupported
+            : MigrationFidelityAutomationStatuses.ManualReview;
+    }
+
+    private static bool IsCompatible(string? level)
+        => string.Equals(level, "compatible", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsIncompatible(string? level)
+        => string.Equals(level, "incompatible", StringComparison.OrdinalIgnoreCase);
+
+    private static Dictionary<string, string> BuildOperationMetadata(
+        string serviceType,
+        string version,
+        string operationName,
+        string[] formats)
+    {
+        var metadata = BuildOptionalMetadata(
+            ("service", serviceType),
+            ("version", version),
+            ("operation", operationName));
+        if (formats.Length > 0)
+        {
+            metadata["formats"] = string.Join(",", formats);
+        }
+
+        return metadata;
+    }
+
+    private static Dictionary<string, string> BuildOptionalMetadata(params (string Key, string? Value)[] pairs)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (key, value) in pairs)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                metadata[key] = value.Trim();
+            }
+        }
+
+        return metadata;
+    }
+
+    private static string? ReadOnlineResourceHref(XElement element)
+        => Descendants(element, "OnlineResource")
+            .Concat(Descendants(element, "Get"))
+            .Select(static candidate => AttributeValue(candidate, "href"))
+            .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value));
+
+    private static string? ToSafeExternalAddress(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            return null;
+        }
+
+        var trimmed = address.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            var fragmentIndex = trimmed.IndexOf('#', StringComparison.Ordinal);
+            if (fragmentIndex >= 0)
+            {
+                trimmed = trimmed[..fragmentIndex];
+            }
+
+            var queryIndex = trimmed.IndexOf('?', StringComparison.Ordinal);
+            if (queryIndex < 0)
+            {
+                return trimmed;
+            }
+
+            var safeQuery = BuildSafeCapabilitiesQuery(trimmed[queryIndex..]);
+            return safeQuery.Length == 0
+                ? trimmed[..queryIndex]
+                : $"{trimmed[..queryIndex]}?{safeQuery}";
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            UserName = string.Empty,
+            Password = string.Empty,
+            Fragment = string.Empty,
+            Query = BuildSafeCapabilitiesQuery(uri.Query)
+        };
+
+        return builder.Uri.AbsoluteUri;
+    }
+
+    private static string? AttributeValue(XElement element, string localName)
+        => element.Attributes()
+            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, localName, StringComparison.Ordinal))?
+            .Value
+            .Trim();
+
+    private static string ToOperationId(string operationName)
+        => operationName switch
+        {
+            "GetCapabilities" => "get-capabilities",
+            "GetFeatureInfo" => "get-feature-info",
+            "GetMap" => "get-map",
+            "GetTile" => "get-tile",
+            _ => ToStableId(operationName)
+        };
+
+    private static string BuildFallbackFidelityCode(string sourceKind, string kind, string category)
+        => $"{ToCodePart(sourceKind)}_{ToCodePart(kind)}_{ToCodePart(category)}";
+
+    private static string ToCodePart(string value)
+        => ToStableId(value)
+            .Replace('-', '_')
+            .ToUpperInvariant();
 
     private async Task<MigrationSpatialReferenceInfo[]> BuildSpatialReferencesAsync(
         IReadOnlyList<(string Role, string? Value)> crsValues,

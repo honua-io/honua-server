@@ -135,6 +135,9 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         root.GetProperty("manifest").GetProperty("targetResources").GetArrayLength().Should().Be(1);
         root.GetProperty("parityEvidence").GetProperty("artifactKind").GetString().Should().Be("honua.migration.parity-evidence-pack");
         root.GetProperty("parityEvidence").GetProperty("manifestAvailable").GetBoolean().Should().BeTrue();
+        root.GetProperty("inventory").GetProperty("fidelityClassifications").GetArrayLength().Should().BeGreaterThan(0);
+        root.GetProperty("parityEvidence").GetProperty("sections").EnumerateArray()
+            .Should().Contain(section => section.GetProperty("id").GetString() == "fidelity");
     }
 
     [IntegrationTest]
@@ -662,6 +665,22 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
                                 Reason = "WMS exposes rendered map images and cannot supply automated feature data-copy by itself."
                             }
                         }
+                    ],
+                    FidelityClassifications =
+                    [
+                        new MigrationFidelityClassificationRecord
+                        {
+                            Id = "classification:wms-layer:topp-states:render-data-copy",
+                            SourceId = "wms-layer:topp-states",
+                            Kind = "render-layer",
+                            Category = "render-data-copy",
+                            Name = "topp:states",
+                            AutomationStatus = MigrationFidelityAutomationStatuses.Unsupported,
+                            Code = ImportCompatibilityCodes.OgcWmsRenderOnlySource,
+                            Reason = "WMS exposes rendered map images and cannot supply automated feature data-copy by itself.",
+                            TargetKind = "map-service-layer",
+                            ManualSteps = ["Pair this WMS layer with a WFS, coverage, database, or file source before planning data import."]
+                        }
                     ]
                 });
             }
@@ -728,6 +747,21 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
                             Code = ImportCompatibilityCodes.OgcWfsFeatureSource,
                             Reason = "WFS feature type metadata can be represented in the migration inventory."
                         }
+                    }
+                ],
+                FidelityClassifications =
+                [
+                    new MigrationFidelityClassificationRecord
+                    {
+                        Id = "classification:feature-type:topp-states:feature-schema",
+                        SourceId = "feature-type:topp-states",
+                        Kind = "feature-type",
+                        Category = "feature-schema",
+                        Name = "topp:states",
+                        AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
+                        Code = ImportCompatibilityCodes.OgcWfsFeatureSource,
+                        Reason = "WFS feature type metadata can be represented in the migration inventory.",
+                        TargetKind = "feature-layer"
                     }
                 ]
             });
