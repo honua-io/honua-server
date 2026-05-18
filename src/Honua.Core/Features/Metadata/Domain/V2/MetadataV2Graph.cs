@@ -30,12 +30,6 @@ public sealed record MetadataV2Graph
     public long Revision { get; init; }
 
     /// <summary>
-    /// Tenant identifier for multi-tenant metadata isolation.
-    /// </summary>
-    [JsonPropertyName("tenantId")]
-    public string TenantId { get; init; } = string.Empty;
-
-    /// <summary>
     /// Environment identifier, such as dev, staging, or production.
     /// </summary>
     [JsonPropertyName("environment")]

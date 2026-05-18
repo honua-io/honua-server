@@ -24,7 +24,6 @@ public sealed class MetadataV2ModelTests
         graph.SchemaVersion.Should().Be(MetadataV2Constants.SchemaVersion);
         graph.ApiVersion.Should().Be(MetadataV2Constants.ApiVersion);
         graph.Revision.Should().Be(0);
-        graph.TenantId.Should().BeEmpty();
         graph.Environment.Should().BeEmpty();
         graph.GeneratedAt.Should().Be(DateTimeOffset.UnixEpoch);
         graph.Namespaces.Should().BeEmpty();

@@ -21,7 +21,7 @@ Release evidence:
 
 - There is one canonical Metadata v2 schema source in the repo.
 - Runtime snapshots validate against that schema without patching.
-- Root metadata includes schema version, revision, tenant, environment, and
+- Root metadata includes schema version, revision, environment, and
   generated time.
 - Data Resources are the canonical unit; service-specific identity lives on
   publications or target-specific overrides.
@@ -88,7 +88,7 @@ Derived from:
 
 Release evidence:
 
-- Cache keys include tenant, environment, catalog, schema version, revision,
+- Cache keys include environment, catalog, schema version, revision,
   projection target, and projection profile version where applicable.
 - Runtime snapshots exclude secrets and runtime-only handles.
 - Projection caches can be rebuilt independently from the canonical snapshot.
