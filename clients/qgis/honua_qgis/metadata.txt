@@ -1,0 +1,21 @@
+[general]
+name=Honua
+qgisMinimumVersion=3.22
+qgisMaximumVersion=3.99
+description=Browse and consume Honua server layers (OGC API Features, WMS) from QGIS in two clicks.
+about=Adds a "Honua" entry under Web menu and toolbar. Connect to a Honua server with a URL plus API key, then browse OGC API Features collections and WMS layers in a dock panel; double-click adds the layer to the project canvas.
+version=0.1.0
+author=Honua
+email=hello@honua.io
+homepage=https://honua.io
+tracker=https://github.com/honua-io/honua-server/issues
+repository=https://github.com/honua-io/honua-server
+category=Web
+icon=resources/icon.svg
+experimental=True
+deprecated=False
+hasProcessingProvider=no
+tags=honua,ogc,ogc api features,wms,wfs,server,catalog
+changelog=0.1.0 - First slice: Add server dialog, layer browser dock, OGC API Features (WFS provider) + WMS load.
+supportsQt6=False
+plugin_dependencies=

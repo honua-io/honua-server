@@ -13,6 +13,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 - [Client Setup Runbook](CLIENT_TEMPLATE_RUNBOOK.md) — ArcGIS Pro, QGIS, Power BI, Excel
 - [Version Matrix](CLIENT_TEMPLATE_VERSION_MATRIX.md) — Tested client software versions
 - [Template Files](client-templates/) — Ready-to-use project templates
+- [Honua QGIS Plugin (staging)](../../clients/qgis/) — Two-click "Add Honua Server" plugin sources, packaging, and registry submission notes
 
 ## Data & Import
 
