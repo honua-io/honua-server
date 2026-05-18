@@ -68,6 +68,28 @@ public sealed class OgcServiceMigrationScannerTests
     }
 
     [Fact]
+    public async Task ScanSourceAsync_ServiceUrlWithSecretQuery_RedactsArtifactUrls()
+    {
+        using var httpClient = new HttpClient(new OgcFixtureHandler());
+        var scanner = CreateScanner(httpClient, CreateCrsRegistry());
+
+        var artifact = await scanner.ScanSourceAsync(new OgcServiceScanRequest
+        {
+            ServiceType = "WFS",
+            ServiceUrl = "https://example.com/geoserver/wfs?token=super-secret&request=GetCapabilities&service=WFS&version=2.0.0",
+            Version = "2.0.0",
+            TimeoutSeconds = 10
+        });
+
+        artifact.Source.BaseUrl.Should().Be("https://example.com/geoserver/wfs");
+        artifact.ExternalDependencies.Should().ContainSingle(dependency => dependency.Kind == "ogc-endpoint")
+            .Which.Address.Should().Be("https://example.com/geoserver/wfs?request=GetCapabilities&service=WFS&version=2.0.0");
+        artifact.Source.BaseUrl.Should().NotContain("super-secret");
+        artifact.ExternalDependencies.Select(dependency => dependency.Address)
+            .Should().OnlyContain(address => address == null || !address.Contains("super-secret", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ScanSourceAsync_DescribeFeatureTypeFailure_UsesSanitizedManualReviewWarning()
     {
         using var httpClient = new HttpClient(new DescribeFeatureTypeFailureHandler());

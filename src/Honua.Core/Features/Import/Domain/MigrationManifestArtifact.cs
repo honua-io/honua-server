@@ -56,6 +56,12 @@ public sealed record MigrationManifestArtifact
     public MigrationManifestStyleAction[] StyleActions { get; init; } = [];
 
     /// <summary>
+    /// Service-level migration plans for protocol surfaces that require operator
+    /// review before Honua can publish an equivalent service.
+    /// </summary>
+    public MigrationManifestServicePlan[] ServicePlans { get; init; } = [];
+
+    /// <summary>
     /// Items that require operator review before migration can proceed.
     /// </summary>
     public MigrationManifestReviewItem[] ManualReviewItems { get; init; } = [];
@@ -85,6 +91,11 @@ public sealed record MigrationManifestSummary
     /// Number of style actions emitted into the manifest.
     /// </summary>
     public int StyleActionCount { get; init; }
+
+    /// <summary>
+    /// Number of service-level migration plans emitted into the manifest.
+    /// </summary>
+    public int ServicePlanCount { get; init; }
 
     /// <summary>
     /// Number of source items requiring manual review.
@@ -133,6 +144,17 @@ public sealed record MigrationManifestTargetResource
     public string? GeometryType { get; init; }
 
     /// <summary>
+    /// Migration mode selected for the resource, such as <c>feature-import</c>
+    /// for WFS feature sources.
+    /// </summary>
+    public string? MigrationMode { get; init; }
+
+    /// <summary>
+    /// Source protocol used to stage the resource when it is protocol-specific.
+    /// </summary>
+    public string? SourceProtocol { get; init; }
+
+    /// <summary>
     /// Field schema copied from the source inventory.
     /// </summary>
     public MigrationInventoryField[] Fields { get; init; } = [];
@@ -159,6 +181,57 @@ public sealed record MigrationManifestTargetResource
 
     /// <summary>
     /// Compatibility assessment that justified the target action.
+    /// </summary>
+    public required MigrationCompatibilityAssessment Compatibility { get; init; }
+}
+
+/// <summary>
+/// Service-level migration planning item translated from a source container.
+/// </summary>
+public sealed record MigrationManifestServicePlan
+{
+    /// <summary>
+    /// Source inventory container identifier.
+    /// </summary>
+    public required string SourceContainerId { get; init; }
+
+    /// <summary>
+    /// Source inventory container kind.
+    /// </summary>
+    public required string SourceKind { get; init; }
+
+    /// <summary>
+    /// Target migration action such as <c>manual-review</c>.
+    /// </summary>
+    public required string Action { get; init; }
+
+    /// <summary>
+    /// Target service name suggested for this plan.
+    /// </summary>
+    public required string TargetServiceName { get; init; }
+
+    /// <summary>
+    /// Source service type or protocol, such as <c>WMS</c> or <c>WMTS</c>.
+    /// </summary>
+    public string? ServiceType { get; init; }
+
+    /// <summary>
+    /// Source resources covered by the plan.
+    /// </summary>
+    public string[] ResourceIds { get; init; } = [];
+
+    /// <summary>
+    /// Source styles covered by the plan.
+    /// </summary>
+    public string[] StyleIds { get; init; } = [];
+
+    /// <summary>
+    /// External dependencies covered by the plan.
+    /// </summary>
+    public string[] ExternalDependencyIds { get; init; } = [];
+
+    /// <summary>
+    /// Compatibility assessment that justified the service plan action.
     /// </summary>
     public required MigrationCompatibilityAssessment Compatibility { get; init; }
 }

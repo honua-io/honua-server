@@ -21,6 +21,8 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(MigrationManifestTargetResource[]))]
 [JsonSerializable(typeof(MigrationManifestStyleAction))]
 [JsonSerializable(typeof(MigrationManifestStyleAction[]))]
+[JsonSerializable(typeof(MigrationManifestServicePlan))]
+[JsonSerializable(typeof(MigrationManifestServicePlan[]))]
 [JsonSerializable(typeof(MigrationManifestReviewItem))]
 [JsonSerializable(typeof(MigrationManifestReviewItem[]))]
 [JsonSerializable(typeof(MigrationParityEvidenceArtifact))]

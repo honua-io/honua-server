@@ -54,6 +54,11 @@ The manifest does not claim that unsupported source items are migrated:
 incompatible resources are excluded from `targetResources` and emitted under
 `unsupportedItems`; partially compatible resources are emitted with the
 `manual-review` action and a matching `manualReviewItems` entry.
+Protocol-specific planning metadata is carried alongside those target
+resources. WFS feature targets identify `migrationMode: feature-import` and
+the WFS source protocol, while WMS/WMTS render-only inventories emit
+`servicePlans` for manual review of service metadata, styles, tile matrices,
+and captured endpoints without claiming a data-copy target.
 
 Generate parity evidence after the manifest has been produced. A missing
 manifest leaves data parity `unknown`; it is never treated as a pass.
@@ -75,6 +80,9 @@ styles, tile matrix sets, and service endpoints where advertised, but render
 and tile services are marked manual-review or unsupported for automated data
 copy unless paired with a WFS, coverage, database, or file source. This keeps
 render compatibility distinct from applied migration.
+The generated manifest preserves those render-only services as
+`servicePlans`, so operators can review equivalent Honua map/tile publication
+work without confusing it with automated feature import.
 
 ## State Values
 
@@ -97,6 +105,8 @@ recorded explicitly.
 Use the manifest as the technical planning contract before pilot migration:
 
 - Review `targetResources` for target service and resource names.
+- Review `servicePlans` for WMS/WMTS metadata, style, tile matrix, and endpoint
+  work that must be completed manually.
 - Review `styleActions` before importing or recreating styles.
 - Resolve every `manualReviewItems` entry or record a waiver.
 - Remove or route around every `unsupportedItems` entry before cutover.
