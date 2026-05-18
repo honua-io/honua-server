@@ -1,7 +1,7 @@
 {
   "schemaVersion": "2026-05-18.process-migration.evidence.v1",
   "fixtureRef": "tests/fixtures/process-migration/vector-process-parity-fixture.json",
-  "status": "scaffold",
+  "status": "implemented-first-slice",
   "runner": "honua-server-local",
   "requiredProtocols": [
     "ogc-api-processes",
@@ -29,5 +29,5 @@
       "resultShape": "per-output-parameter"
     }
   },
-  "claimCaveat": "This scaffold records the required evidence artifact shape. It does not claim full ArcPy, ModelBuilder, GeoServer WPS, OGC source-process, raster, surface, or destructive data-management parity."
+  "claimCaveat": "This first server-side evidence slice covers deterministic vector process discovery, async execution, durable result-package persistence, and OGC/GPServer result retrieval. It does not claim full ArcPy, ModelBuilder, GeoServer WPS, OGC source-process, raster, surface, or destructive data-management parity."
 }

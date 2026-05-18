@@ -102,7 +102,9 @@ internal static class GeoprocessingResultPackageFactory
             var reference = job.ArtifactReferences[index];
             var kind = index < outputKinds.Length ? outputKinds[index] : ArtifactKind.File;
             var outputName = job.Spec.Parameters.GetValueOrDefault(
-                $"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}");
+                    $"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}")
+                ?? job.Spec.Parameters.GetValueOrDefault(
+                    $"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}");
 
             Dictionary<string, string>? metadata = null;
             if (!string.IsNullOrWhiteSpace(outputName))
@@ -121,6 +123,7 @@ internal static class GeoprocessingResultPackageFactory
                     ? BuildArtifactLabel(kind, index)
                     : outputName,
                 Uri = string.IsNullOrWhiteSpace(reference) ? null : reference,
+                ContentType = InferContentType(reference, kind),
                 Metadata = metadata ?? new Dictionary<string, string>()
             };
         }
@@ -215,6 +218,41 @@ internal static class GeoprocessingResultPackageFactory
             ArtifactKind.AppBundle => $"bundle{index + 1}",
             _ => $"artifact{index + 1}"
         };
+
+    private static string? InferContentType(string? reference, ArtifactKind kind)
+    {
+        if (!string.IsNullOrWhiteSpace(reference))
+        {
+            if (reference.EndsWith(".geojson", StringComparison.OrdinalIgnoreCase) ||
+                reference.EndsWith(".json", StringComparison.OrdinalIgnoreCase) && kind == ArtifactKind.FeatureLayer)
+            {
+                return "application/geo+json";
+            }
+
+            if (reference.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                return "application/json";
+            }
+
+            if (reference.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+            {
+                return "text/csv";
+            }
+
+            if (reference.EndsWith(".tif", StringComparison.OrdinalIgnoreCase) ||
+                reference.EndsWith(".tiff", StringComparison.OrdinalIgnoreCase))
+            {
+                return "image/tiff";
+            }
+        }
+
+        return kind switch
+        {
+            ArtifactKind.FeatureLayer => "application/geo+json",
+            ArtifactKind.Table or ArtifactKind.Report or ArtifactKind.Scalar => "application/json",
+            _ => null
+        };
+    }
 
     private static string[] SplitMetadataList(string? value)
         => string.IsNullOrWhiteSpace(value)

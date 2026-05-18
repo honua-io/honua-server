@@ -254,10 +254,12 @@ The critical adapter difference is result access pattern:
   `/jobs/{jobId}/results` JSON response keyed by output identifier. Result
   evidence must be non-empty for process migration claims: successful jobs
   without artifacts are lifecycle evidence only. The first process-migration
-  slice projects selected vector process ids individually and adapts terminal
-  `ArtifactRef` entries into document outputs keyed by stable output parameter
-  names. Raw-mode responses, reference-based transmission, and multipart output
-  are deferred (see [Deliberately Excluded Behaviors](#from-ogc-api-processes))
+  slice projects selected vector process ids individually, stamps stable output
+  bindings such as `process.output.0=outputFeatureLayer` onto submitted jobs,
+  persists terminal result packages through the canonical terminal callback,
+  and adapts `ArtifactRef` entries into document outputs keyed by those stable
+  output parameter names. Raw-mode responses, reference-based transmission, and
+  multipart output are deferred (see [Deliberately Excluded Behaviors](#from-ogc-api-processes))
 
 ## Cancellation Semantics
 
@@ -360,12 +362,12 @@ API Processes Part 1 Core contract. Key mappings:
 
 | OGC Concept | Honua Source / V1 implementation |
 | --- | --- |
-| `GET /processes` | V1 static single-process projection (`honua-geoprocessing`); the internal `IProcessCatalog` now enumerates 34 built-in processes across `geometry.*`, `analytics.*`, `surface.*`, `raster.*`, `conversion.*`, `generalization.*`, and `data-management.*`, but per-process projection into the adapter surface is follow-on work |
-| `GET /processes/{processId}` | V1 static process description with JSON Schema inputs/outputs for the canonical process stub |
+| `GET /processes` | V1 exposes the canonical multi-step `honua-geoprocessing` process plus first-slice automated vector process ids from `IProcessCatalog` (`geometry.*`, selected `analytics.*`, `conversion.*`, and `generalization.*`) that are classified as executable migration evidence |
+| `GET /processes/{processId}` | Returns either the canonical process description or a concrete first-slice process description with JSON Schema inputs and stable output identifiers |
 | `POST /processes/{id}/execution` (sync) | Not implemented in V1; synchronous execution returns `501 Not Implemented` |
 | `POST /processes/{id}/execution` (async) | Adapter validates plan structure, requires `Prefer: respond-async`, and creates durable `ExecutionJobRecord` + `GeoprocessingProgress` state |
 | `GET /jobs/{jobId}` | `IExecutionJobStore` → `ExecutionJobRecord` projected to OGC `StatusInfo` |
-| `GET /jobs/{jobId}/results` | Succeeded `200` with document-mode JSON body keyed by output identifier (empty `{}` until the canonical process declares value-typed outputs); non-terminal `404`, failed `500`, dismissed `410`. Planned successful shape: output map derived from `AnalysisResultPackage.Artifacts` only (no job status, summary, or error envelope in `/results`) |
+| `GET /jobs/{jobId}/results` | Succeeded `200` with document-mode JSON body keyed by output identifier; first-slice concrete processes return non-empty artifact evidence when the executor publishes artifacts. Non-terminal jobs return `404`, failed jobs `500`, and dismissed jobs `410`. The output map is derived from `AnalysisResultPackage.Artifacts` only (no job status, summary, or error envelope in `/results`) |
 | `DELETE /jobs/{jobId}` | `IJobCancellationNotifier` → remote backend `CancelAsync` (if applicable) → `ExecutionJobCancellationHelper` + durable job store cancellation mapping to OGC `dismissed` |
 | Job status values | `ExecutionJobStatus` → OGC status string (see state matrix) |
 | `jobControlOptions` | V1 fixed capability declaration for the canonical process stub: `async-execute`, `dismiss` |
@@ -375,7 +377,7 @@ Adapter invariants:
 
 1. The adapter must not add lifecycle states beyond what `ExecutionJobStatus` provides
 2. Input/output schema translation to JSON Schema is the adapter's responsibility
-3. V1 targets document-mode, by-value successful results only: the shape is a single JSON object keyed by stable output identifiers (not `ArtifactRef.Label`), not per-parameter. The canonical process declares no value-typed outputs yet, so `/results` returns `200 OK` with an empty body (`{}`) on success until the execution engine populates result packages. Raw-mode and reference-based transmission are deferred
+3. V1 targets document-mode, by-value successful results only: the shape is a single JSON object keyed by stable output identifiers, not per-parameter. Concrete first-slice process submissions persist output-name bindings in job metadata so result packages can project artifacts as `outputFeatureLayer`, `outputTable`, and related stable names. The canonical `honua-geoprocessing` process can still return `{}` for successful lifecycle-only jobs that publish no artifacts. Raw-mode and reference-based transmission are deferred
 4. `DELETE /jobs/{jobId}` maps to cancellation, not resource deletion — the canonical job record persists
 
 ## Backlog Guidance
@@ -405,12 +407,12 @@ This ticket builds the canonical process contract. It must:
 This **protocol adapter** is implemented. The adapter:
 
 - Implements OGC API Processes Part 1 Core routes that project canonical process service operations
-- V1 exposes one static canonical process descriptor (`honua-geoprocessing`) in `/processes`; plan submissions are validated against the built-in `IProcessCatalog` (34 seeded processes: 10 `geometry.*`, 4 `analytics.*`, 6 `surface.*`, 5 `raster.*`, 4 `conversion.*`, 2 `generalization.*`, 3 `data-management.*`) so unknown process IDs and missing required parameters are rejected at the adapter boundary, but per-process projection into the OGC surface is follow-on work
+- V1 exposes the canonical process descriptor (`honua-geoprocessing`) plus first-slice concrete process descriptors in `/processes`; plan submissions are validated against the built-in `IProcessCatalog` (34 seeded processes: 10 `geometry.*`, 4 `analytics.*`, 6 `surface.*`, 5 `raster.*`, 4 `conversion.*`, 2 `generalization.*`, 3 `data-management.*`) so unknown process IDs and missing required parameters are rejected at the adapter boundary
 - Translates JSON Schema process descriptions from the canonical process stub
 - Validates canonical plan structure at the adapter boundary before durable job creation
 - Maps `ExecutionJobStatus` to OGC job status strings per the state matrix above
 - V1 is async-only: `Prefer: respond-async` is required, successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async`, and sync execution returns `501`
-- V1: `/results` returns `200 OK` with a document-mode, by-value JSON body on success (empty `{}` until the canonical process declares value-typed outputs and result storage is populated), `404` for non-terminal jobs, `500` for failed jobs, and `410` for dismissed jobs (raw-mode and reference transmission deferred)
+- V1: `/results` returns `200 OK` with a document-mode, by-value JSON body on success, `404` for non-terminal jobs, `500` for failed jobs, and `410` for dismissed jobs. First-slice concrete process jobs expose non-empty artifact outputs once the worker publishes artifacts and the terminal callback persists the result package (raw-mode and reference transmission deferred)
 - Does not add internal domain types or lifecycle states
 
 See [OGC API Processes Coverage](specifications/ogc-api-processes-coverage.md) for endpoint and conformance details.

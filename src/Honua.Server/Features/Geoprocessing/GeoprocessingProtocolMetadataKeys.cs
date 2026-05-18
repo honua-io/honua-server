@@ -24,7 +24,12 @@ internal static class GeoprocessingProtocolMetadataKeys
     public const string GPServerContext = "gpserver.context";
 
     /// <summary>
-    /// Prefix for stable GPServer output parameter names stored on the job spec.
+    /// Prefix for stable protocol output parameter names stored on the job spec.
+    /// </summary>
+    public const string OutputNamePrefix = "process.output.";
+
+    /// <summary>
+    /// Prefix for legacy GPServer output parameter names stored on the job spec.
     /// </summary>
     public const string GPServerOutputNamePrefix = "gpserver.output.";
 
