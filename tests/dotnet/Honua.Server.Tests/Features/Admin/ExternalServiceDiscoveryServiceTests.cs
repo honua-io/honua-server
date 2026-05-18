@@ -104,10 +104,59 @@ public sealed class ExternalServiceDiscoveryServiceTests
         ], options => options.WithStrictOrdering());
     }
 
+    [UnitTest]
+    public async Task DiscoverAsync_WithWfsGetCapabilitiesFixture_ReturnsFeatureTypeCandidates()
+    {
+        using var factory = new StubHttpClientFactory(WfsGetCapabilitiesResponses());
+        var service = new ExternalServiceDiscoveryService(
+            factory,
+            new AllowingNetworkGuard(),
+            NullLogger<ExternalServiceDiscoveryService>.Instance);
+
+        var response = await service.DiscoverAsync(new ExternalServiceDiscoveryRequest
+        {
+            Url = "https://wfs.example.test/geoserver/wfs?SERVICE=WFS&REQUEST=GetCapabilities",
+            TimeoutSeconds = 5
+        });
+
+        response.SourceKind.Should().Be("wfs");
+        response.ServiceType.Should().Be("WFS 2.0.0");
+        response.ServiceName.Should().Be("Honolulu WFS");
+        response.NormalizedUrl.Should().Be("https://wfs.example.test/geoserver/wfs?service=WFS&request=GetCapabilities");
+        response.Candidates.Should().ContainSingle();
+
+        var candidate = response.Candidates[0];
+        candidate.LayerId.Should().BeNull();
+        candidate.ExternalId.Should().Be("honua:parcels");
+        candidate.Name.Should().Be("honua:parcels");
+        candidate.Title.Should().Be("Parcels");
+        candidate.Description.Should().Be("Parcel polygons");
+        candidate.LayerType.Should().Be("feature-type");
+        candidate.Srid.Should().Be(4326);
+        candidate.Fields.Should().BeEmpty();
+        candidate.Extent.Should().BeEquivalentTo(new ExternalServiceExtent
+        {
+            XMin = -158.3,
+            YMin = 21.2,
+            XMax = -157.6,
+            YMax = 21.8,
+            Srid = 4326
+        });
+
+        factory.RequestedUrls.Should().BeEquivalentTo([
+            "https://wfs.example.test/geoserver/wfs?service=WFS&request=GetCapabilities"
+        ], options => options.WithStrictOrdering());
+    }
+
     internal static Dictionary<string, string> AllDiscoveryResponses()
     {
         var responses = ArcGisFeatureServerResponses();
         foreach (var (url, body) in OgcApiFeaturesResponses())
+        {
+            responses[url] = body;
+        }
+
+        foreach (var (url, body) in WfsGetCapabilitiesResponses())
         {
             responses[url] = body;
         }
@@ -204,6 +253,36 @@ public sealed class ExternalServiceDiscoveryServiceTests
                 }
               ]
             }
+            """
+        };
+
+    internal static Dictionary<string, string> WfsGetCapabilitiesResponses()
+        => new(StringComparer.Ordinal)
+        {
+            ["https://wfs.example.test/geoserver/wfs?service=WFS&request=GetCapabilities"] = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wfs:WFS_Capabilities
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:ows="http://www.opengis.net/ows/1.1"
+                version="2.0.0">
+              <ows:ServiceIdentification>
+                <ows:Title>Honolulu WFS</ows:Title>
+                <ows:Abstract>WFS discovery fixture</ows:Abstract>
+              </ows:ServiceIdentification>
+              <wfs:FeatureTypeList>
+                <wfs:FeatureType>
+                  <wfs:Name>honua:parcels</wfs:Name>
+                  <wfs:Title>Parcels</wfs:Title>
+                  <wfs:Abstract>Parcel polygons</wfs:Abstract>
+                  <wfs:DefaultCRS>urn:ogc:def:crs:EPSG::4326</wfs:DefaultCRS>
+                  <wfs:OtherCRS>urn:ogc:def:crs:EPSG::3857</wfs:OtherCRS>
+                  <ows:WGS84BoundingBox>
+                    <ows:LowerCorner>-158.3 21.2</ows:LowerCorner>
+                    <ows:UpperCorner>-157.6 21.8</ows:UpperCorner>
+                  </ows:WGS84BoundingBox>
+                </wfs:FeatureType>
+              </wfs:FeatureTypeList>
+            </wfs:WFS_Capabilities>
             """
         };
 

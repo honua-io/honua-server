@@ -114,6 +114,11 @@ internal sealed record ExternalServiceLayerCandidate
     public required string Name { get; init; }
 
     /// <summary>
+    /// Source display title when it differs from the stable source name.
+    /// </summary>
+    public string? Title { get; init; }
+
+    /// <summary>
     /// Layer or table description.
     /// </summary>
     public string? Description { get; init; }

@@ -125,6 +125,36 @@ public sealed class ExternalServiceDiscoveryEndpointsTests : IAsyncLifetime, IDi
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/external-services/discover")]
+    public async Task DiscoverExternalService_WithWfsGetCapabilitiesFixture_ReturnsFeatureTypeCandidates()
+    {
+        using var response = await _client.PostAsync(
+            "/api/v1/admin/external-services/discover",
+            JsonContent("""
+            {
+              "url": "https://wfs.example.test/geoserver/wfs?SERVICE=WFS&REQUEST=GetCapabilities"
+            }
+            """));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("sourceKind").GetString().Should().Be("wfs");
+        json.RootElement.GetProperty("serviceType").GetString().Should().Be("WFS 2.0.0");
+        json.RootElement.GetProperty("serviceName").GetString().Should().Be("Honolulu WFS");
+
+        var candidate = json.RootElement.GetProperty("candidates")[0];
+        candidate.GetProperty("externalId").GetString().Should().Be("honua:parcels");
+        candidate.GetProperty("name").GetString().Should().Be("honua:parcels");
+        candidate.GetProperty("title").GetString().Should().Be("Parcels");
+        candidate.GetProperty("layerType").GetString().Should().Be("feature-type");
+        candidate.GetProperty("srid").GetInt32().Should().Be(4326);
+        candidate.GetProperty("fields").GetArrayLength().Should().Be(0);
+        candidate.GetProperty("extent").GetProperty("xMin").GetDouble().Should().Be(-158.3);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/external-services/discover")]
     public async Task DiscoverExternalService_WithMissingUrl_ReturnsBadRequest()
     {
         using var response = await _client.PostAsync(
