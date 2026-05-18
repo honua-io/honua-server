@@ -19,6 +19,9 @@ Use this checklist for every MVP release.
 
 ## Compatibility Contract Updates (Required)
 
+- [ ] If the release includes Metadata v2 scope, review the non-authoritative
+  [Metadata v2 Release Readiness](architecture/metadata-v2-release-readiness.md)
+  gates against the authoritative GitHub issues before sign-off.
 - [ ] Update [MVP Compatibility Contract](../gis/MVP_COMPATIBILITY_CONTRACT.md)
 - [ ] Validate [Public Interface Quality Model](public-interface-quality-model.md) and [public-interface-proof.json](../gis/data/public-interface-proof.json) against the shipped runtime surface
 - [ ] Refresh [GeoServices REST Parity](../gis/geoservices-rest-parity.md), the service drill-down matrices, and [data/geoservices-rest-parity.json](../gis/data/geoservices-rest-parity.json) when GeoServices routes, parameters, or response shapes changed in the release

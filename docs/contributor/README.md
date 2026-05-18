@@ -17,6 +17,11 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Architecture Review Criteria](architecture-criteria.md) — PR review quality gates
 - [Package and Module Governance](package-and-module-governance.md) — central package versions and optional module boundaries
 - [Honua Manifesto](HONUA_MANIFESTO.md) — core principles
+- Metadata v2 architecture artifacts:
+  - [Backlog Index](architecture/metadata-v2-backlog.md) — local issue index and sequencing guide for `#1035`
+  - [Roadmap](architecture/metadata-v2-roadmap.md) — milestone grouping derived from the GitHub issues
+  - [Release Readiness](architecture/metadata-v2-release-readiness.md) — non-authoritative release gates derived from the GitHub issues
+  - [Admin UI Information Model](architecture/metadata-v2-admin-ui-information-model.md) — Claude Design handoff for `#1046`
 
 ## Design Patterns
 
@@ -51,6 +56,7 @@ This section is for people **building or extending** Honua (core contributors, a
 
 - [GeoETL Roadmap](geoetl-roadmap.md) — pipeline architecture, child-ticket decomposition, and runtime boundary for `#361`
 - [GeoETL Strategy Spike](geoetl-spike.md) — competitor evaluation and positioning from `#682`
+- [Metadata v2 Roadmap](architecture/metadata-v2-roadmap.md) — milestone grouping for `#1035` and child issues
 
 ## Project Operations
 
