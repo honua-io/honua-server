@@ -88,6 +88,11 @@
 - [Contributing](contributor/development/contributing.md)
 - [Architecture](contributor/ARCHITECTURE.md)
 - [ADRs](contributor/adr/README.md)
+- Metadata v2
+  - [Backlog Index](contributor/architecture/metadata-v2-backlog.md)
+  - [Roadmap](contributor/architecture/metadata-v2-roadmap.md)
+  - [Release Readiness](contributor/architecture/metadata-v2-release-readiness.md)
+  - [Admin UI Information Model](contributor/architecture/metadata-v2-admin-ui-information-model.md)
 - [TestKit](contributor/testkit.md)
 - [Public Interface Quality Model](contributor/public-interface-quality-model.md)
 - [Compatibility and Automated Migration Evidence](contributor/compatibility-and-migration-evidence.md)
