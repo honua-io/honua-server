@@ -23,12 +23,14 @@ Use this wording until the open backlog items below are complete:
 > Its automated migration tooling imports public, queryable ArcGIS GeoServices
 > REST layers into PostGIS, generates deterministic ArcGIS and GeoServer
 > migration inventories, validates GeoServer dry-run plans, emits deterministic
-> GeoServer apply-plan evidence, and produces migration evidence artifacts for
-> review before cutover.
+> GeoServer apply-plan evidence, emits classic OGC WFS/WMS/WMTS migration
+> planning artifacts, and produces migration evidence artifacts for review
+> before cutover.
 
 Do not yet claim full automated production migration from all GeoServer catalog
-items, arbitrary OGC services, private ArcGIS services, process workloads, or
-licensed ArcGIS Pro desktop workflows. Do not claim full ArcGIS Server
+items, applied WMS/WMTS render-service migration, private ArcGIS services,
+process workloads, or licensed ArcGIS Pro desktop workflows. Do not claim full
+ArcGIS Server
 service-fidelity migration until service topology, layer identity, domains,
 relationships, attachments, renderers/styles, time metadata, and app-facing
 parity are covered by
@@ -58,7 +60,7 @@ passing and linked from this page. Those gaps are tracked below.
 | ArcGIS Server service-fidelity migration | Partial; current strongest proof is data/layer import, not full service behavior portability | [Import and Migration Capability Evidence](import-capability-evidence.md); [GeoServices REST Parity](../gis/geoservices-rest-parity.md) | Expand migration fidelity for stable layer identity, domains/subtypes, relationships, attachments, renderers/styles, time metadata, service metadata, route parity, and post-migration parity evidence: [honua-server#1025](https://github.com/honua-io/honua-server/issues/1025). |
 | ArcGIS GeoServices REST, private/authenticated services | Focused token/OAuth/Basic credential plumbing is implemented for discovery, inventory, and queued layer import; broader private-service parity remains issue-scoped | [Import and Migration Capability Evidence](import-capability-evidence.md); [ArcGIS Migration Inventory Discovery](../operator/arcgis-inventory-discovery.md) documents auth posture artifacts | Complete full private-service parity and external evidence under [honua-server#1017](https://github.com/honua-io/honua-server/issues/1017). |
 | GeoServer REST | Automated inventory, dry-run validation, and non-dry-run apply-plan generation only | [Import and Migration Capability Evidence](import-capability-evidence.md); [GeoServer to Honua Migration Guide](../gis/tutorials/geoserver-migration-guide.md); `POST /api/v1/admin/import/geoserver/start` can emit a `honua.migration.apply-plan` artifact | Apply-plan jobs do not yet mutate catalog/data/style state. Add applied GeoServer migration: [honua-server#1015](https://github.com/honua-io/honua-server/issues/1015). |
-| Classic OGC WFS/WMS/WMTS services | Compatibility and consume evidence exist; production service import is not implemented | [Cross-Server Consume Gap Report](../compatibility/cross-server-consume-gap-report.md); OGC CITE evidence above | Add classic OGC service migration importers: [honua-server#1016](https://github.com/honua-io/honua-server/issues/1016). |
+| Classic OGC WFS/WMS/WMTS services | First operator-facing scanner and planning artifact slice | `POST /api/v1/admin/import/scan` accepts `sourceKind=ogc-wfs`, `ogc-wms`, and `ogc-wmts`; [Import and Migration Capability Evidence](import-capability-evidence.md); OGC CITE and cross-server consume evidence above remain compatibility proof, not import proof | WFS emits feature-import manifest targets after GetCapabilities/DescribeFeatureType discovery. WMS/WMTS emit service plans, style/tile metadata, and unsupported/manual-review classifications for render/tile-only sources. Applied data/catalog migration remains tracked by [honua-server#1016](https://github.com/honua-io/honua-server/issues/1016). |
 | OGC API Features services | Honua can serve OGC API Features, but external OGC API Features source migration is not yet implemented | OGC API Features CITE evidence above proves serving compatibility, not source migration | Add OGC API Features source migration importer and parity evidence: [honua-server#1029](https://github.com/honua-io/honua-server/issues/1029). |
 | OGC coverage services | Honua has raster import and WCS/OGC API Coverages serving surfaces, but external WCS/OGC API Coverages service migration is not yet implemented | [Import and Migration Capability Evidence](import-capability-evidence.md) documents raster file import, not coverage-service migration | Add WCS/OGC API Coverages source migration importers and parity evidence: [honua-server#1030](https://github.com/honua-io/honua-server/issues/1030). |
 | Migration artifact chain and review workflow | Core artifact contracts exist for inventory, manifest, parity evidence, and cutover readiness; operator review/cutover workbench is not yet complete | [Migration Toolkit](../operator/migration-toolkit.md); Core tests cover manifest translation and parity evidence generation | Managed admin persistence/orchestration and broader UI/SDK workflows remain downstream work; SDK evidence gap is tracked by [honua-server#1018](https://github.com/honua-io/honua-server/issues/1018), and low-risk operator review/cutover UI is tracked by [honua-server-admin#94](https://github.com/honua-io/honua-server-admin/issues/94). |

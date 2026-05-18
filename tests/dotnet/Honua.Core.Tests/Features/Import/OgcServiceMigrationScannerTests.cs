@@ -40,6 +40,12 @@ public sealed class OgcServiceMigrationScannerTests
         resource.Fields.Should().Contain(field => field.Name == "STATE_NAME" && field.FieldType == "xsd:string");
         resource.SpatialReferences.Should().ContainSingle(reference => reference.Srid == 4326);
         resource.Compatibility.Code.Should().Be(ImportCompatibilityCodes.OgcWfsFeatureSource);
+        artifact.FidelityClassifications.Should().ContainSingle(record =>
+                record.Id == "classification:feature-type:topp-states:feature-schema")
+            .Which.Should().Match<MigrationFidelityClassificationRecord>(record =>
+                record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated &&
+                record.Code == ImportCompatibilityCodes.OgcWfsFeatureSource &&
+                record.TargetKind == "feature-layer");
     }
 
     [Fact]
@@ -129,6 +135,10 @@ public sealed class OgcServiceMigrationScannerTests
             .Which.Should().Be("DescribeFeatureType metadata was unavailable for topp:states: DescribeFeatureType metadata could not be retrieved.");
         artifact.Resources.Should().ContainSingle().Which.Compatibility.Warnings
             .Should().ContainSingle().Which.Should().Be("DescribeFeatureType metadata could not be retrieved.");
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == "feature-type:topp-states" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview &&
+            record.Code == ImportCompatibilityCodes.OgcFeatureSchemaManualReview);
         artifact.ScanCompleteness.Warnings
             .Concat(artifact.Resources.SelectMany(resource => resource.Compatibility.Warnings))
             .Should().NotContain(value => value.Contains("secret", StringComparison.OrdinalIgnoreCase));
@@ -154,6 +164,21 @@ public sealed class OgcServiceMigrationScannerTests
                 compatibility.Level == "incompatible" &&
                 compatibility.Code == ImportCompatibilityCodes.OgcWmsRenderOnlySource);
         artifact.Styles.Should().ContainSingle(style => style.Kind == "wms-style");
+        artifact.ExternalDependencies.Should().Contain(dependency =>
+            dependency.Id == "endpoint:wms:get-map" &&
+            dependency.DependencyType == "render" &&
+            dependency.Metadata["formats"] == "image/jpeg,image/png" &&
+            dependency.Address == "https://example.com/geoserver/wms");
+        artifact.ExternalDependencies.Select(dependency => dependency.Address)
+            .Should().OnlyContain(address => address == null || !address.Contains("secret", StringComparison.OrdinalIgnoreCase));
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == "wms-layer:topp-states" &&
+            record.Category == "render-data-copy" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Unsupported);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == "style:topp-states:polygon" &&
+            record.Category == "style" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
     }
 
     [Fact]
@@ -174,6 +199,26 @@ public sealed class OgcServiceMigrationScannerTests
         artifact.Resources.Should().ContainSingle(resource => resource.Name == "topp:states")
             .Which.Compatibility.Code.Should().Be(ImportCompatibilityCodes.OgcWmtsTileOnlySource);
         artifact.ExternalDependencies.Should().Contain(dependency => dependency.Kind == "tile-matrix-set" && dependency.Name == "EPSG:3857");
+        artifact.ExternalDependencies.Should().Contain(dependency =>
+            dependency.Id == "endpoint:wmts:get-tile" &&
+            dependency.DependencyType == "tile" &&
+            dependency.Address == "https://example.com/geoserver/gwc/service/wmts");
+        artifact.ExternalDependencies.Should().Contain(dependency =>
+            dependency.Id == "endpoint:wmts:tile:topp-states:image-png" &&
+            dependency.ResourceId == "wmts-layer:topp-states" &&
+            dependency.DependencyType == "resource-url:tile" &&
+            dependency.Address != null &&
+            dependency.Address.Contains("format=image%2Fpng", StringComparison.Ordinal));
+        artifact.ExternalDependencies.Select(dependency => dependency.Address)
+            .Should().OnlyContain(address => address == null || !address.Contains("secret", StringComparison.OrdinalIgnoreCase));
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == "wmts-layer:topp-states" &&
+            record.Category == "tile-data-copy" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Unsupported);
+        artifact.FidelityClassifications.Should().Contain(record =>
+            record.SourceId == "tile-matrix-set:epsg-3857" &&
+            record.Category == "tile-matrix-set" &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
     }
 
     private static OgcServiceMigrationScanner CreateScanner(HttpClient httpClient, Mock<ICrsRegistry> crsRegistry)
@@ -275,9 +320,20 @@ public sealed class OgcServiceMigrationScannerTests
         """;
 
     private const string WmsCapabilities = """
-        <WMS_Capabilities version="1.3.0">
+        <WMS_Capabilities xmlns:xlink="http://www.w3.org/1999/xlink" version="1.3.0">
           <Service><Title>Reference WMS</Title></Service>
           <Capability>
+            <Request>
+              <GetMap>
+                <Format>image/png</Format>
+                <Format>image/jpeg</Format>
+                <DCPType><HTTP><Get><OnlineResource xlink:href="https://example.com/geoserver/wms?token=secret" /></Get></HTTP></DCPType>
+              </GetMap>
+              <GetFeatureInfo>
+                <Format>text/plain</Format>
+                <DCPType><HTTP><Get><OnlineResource xlink:href="https://example.com/geoserver/wms?token=secret" /></Get></HTTP></DCPType>
+              </GetFeatureInfo>
+            </Request>
             <Layer>
               <Title>Root</Title>
               <Layer>
@@ -291,13 +347,19 @@ public sealed class OgcServiceMigrationScannerTests
         """;
 
     private const string WmtsCapabilities = """
-        <Capabilities xmlns="http://www.opengis.net/wmts/1.0" xmlns:ows="http://www.opengis.net/ows/1.1" version="1.0.0">
+        <Capabilities xmlns="http://www.opengis.net/wmts/1.0" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.0.0">
           <ows:ServiceIdentification><ows:Title>Reference WMTS</ows:Title></ows:ServiceIdentification>
+          <ows:OperationsMetadata>
+            <ows:Operation name="GetTile">
+              <ows:DCP><ows:HTTP><ows:Get xlink:href="https://example.com/geoserver/gwc/service/wmts?token=secret" /></ows:HTTP></ows:DCP>
+            </ows:Operation>
+          </ows:OperationsMetadata>
           <Contents>
             <Layer>
               <ows:Title>States</ows:Title>
               <ows:Identifier>topp:states</ows:Identifier>
               <Style><ows:Identifier>default</ows:Identifier></Style>
+              <ResourceURL format="image/png" resourceType="tile" template="https://example.com/geoserver/gwc/service/wmts/rest/topp:states/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png?token=secret&amp;format=image/png" />
               <TileMatrixSetLink><TileMatrixSet>EPSG:3857</TileMatrixSet></TileMatrixSetLink>
             </Layer>
             <TileMatrixSet><ows:Identifier>EPSG:3857</ows:Identifier></TileMatrixSet>
