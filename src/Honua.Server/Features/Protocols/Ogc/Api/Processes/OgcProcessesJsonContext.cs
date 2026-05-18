@@ -32,10 +32,12 @@ namespace Honua.Server.Features.Protocols.Ogc.Api.Processes;
 [JsonSerializable(typeof(OgcStatusInfo))]
 [JsonSerializable(typeof(OgcProcessError))]
 [JsonSerializable(typeof(OgcResultsDocument))]
+[JsonSerializable(typeof(OgcArtifactResult))]
 [JsonSerializable(typeof(OgcJobList))]
 [JsonSerializable(typeof(ImmutableArray<OgcStatusInfo>))]
 [JsonSerializable(typeof(OgcStatusInfo[]))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(Dictionary<string, JsonElement>))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(object))]
 internal sealed partial class OgcProcessesJsonContext : JsonSerializerContext

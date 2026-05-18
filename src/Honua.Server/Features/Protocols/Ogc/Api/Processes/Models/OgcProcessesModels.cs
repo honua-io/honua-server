@@ -317,5 +317,5 @@ public sealed record OgcResultsDocument
     /// Output values keyed by stable output identifier.
     /// </summary>
     [JsonExtensionData]
-    public Dictionary<string, object?>? Outputs { get; init; }
+    public Dictionary<string, JsonElement>? Outputs { get; init; }
 }
