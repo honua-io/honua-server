@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "2026-05-18.process-migration.fixture.v1",
+  "sourceFamily": "arcgis-python-gp",
+  "claimScope": "server-first-slice-vector-process-evidence",
+  "protocols": [
+    "ogc-api-processes",
+    "geoservices-gpserver"
+  ],
+  "supportedProcessIds": [
+    "geometry.buffer",
+    "geometry.clip",
+    "geometry.intersect",
+    "geometry.project"
+  ],
+  "cases": [
+    {
+      "caseId": "buffer-point-4326",
+      "processId": "geometry.buffer",
+      "inputs": {
+        "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "srid": "4326",
+        "distance": "25.5"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Polygon",
+        "featureCount": 1,
+        "schemaFields": [
+          "OBJECTID"
+        ],
+        "metadataKeys": [
+          "geoservices.output_parameter"
+        ]
+      }
+    }
+  ],
+  "outOfScope": [
+    "arbitrary-arcpy-script-execution",
+    "modelbuilder-workflow-parity",
+    "geoserver-wps-source-migration",
+    "raster-or-surface-runtime-parity",
+    "destructive-data-management-without-approval"
+  ]
+}

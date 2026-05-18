@@ -251,11 +251,13 @@ The critical adapter difference is result access pattern:
   output parameter name and the artifact, using `ArtifactRef.Metadata`
   with a well-known key or a follow-on field addition to `ArtifactRef`
 - **OGC adapter** (#529): v1 targets document-mode, by-value results — a single
-  `/jobs/{jobId}/results` JSON response keyed by output identifier. Successful
-  jobs return `200 OK` with an empty body (`{}`) until the canonical process
-  declares value-typed outputs and the execution engine populates result storage.
-  Raw-mode responses, reference-based transmission, and multipart output are
-  deferred (see [Deliberately Excluded Behaviors](#from-ogc-api-processes))
+  `/jobs/{jobId}/results` JSON response keyed by output identifier. Result
+  evidence must be non-empty for process migration claims: successful jobs
+  without artifacts are lifecycle evidence only. The first process-migration
+  slice projects selected vector process ids individually and adapts terminal
+  `ArtifactRef` entries into document outputs keyed by stable output parameter
+  names. Raw-mode responses, reference-based transmission, and multipart output
+  are deferred (see [Deliberately Excluded Behaviors](#from-ogc-api-processes))
 
 ## Cancellation Semantics
 
