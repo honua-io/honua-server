@@ -92,8 +92,176 @@ public sealed class MigrationManifestTranslatorTests
         manifest.UnsupportedItems.Should().BeEmpty();
     }
 
+    [Fact]
+    public void Translate_WithOgcWfsFeatureType_EmitsFeatureImportPlan()
+    {
+        var inventory = CreateInventory(
+            sourceKind: "ogc-wfs",
+            serviceType: "WFS",
+            containerKind: "ogc-service",
+            resources:
+            [
+                CreateResource(
+                    "feature-type:roads",
+                    "topp:roads",
+                    "compatible",
+                    "WFS feature type metadata can be represented.",
+                    code: ImportCompatibilityCodes.OgcWfsFeatureSource,
+                    kind: "feature-type",
+                    capabilities: ["wfs:GetCapabilities", "wfs:DescribeFeatureType", "wfs:GetFeature"])
+            ],
+            dependencies:
+            [
+                CreateDependency(
+                    "endpoint:wfs:get-capabilities",
+                    "ogc-endpoint",
+                    "WFS GetCapabilities",
+                    "compatible",
+                    "Capabilities endpoint captured.",
+                    ImportCompatibilityCodes.OgcWfsFeatureSource,
+                    metadata: new Dictionary<string, string>
+                    {
+                        ["service"] = "WFS"
+                    })
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Reference WFS"
+        });
+
+        manifest.TargetResources.Should().ContainSingle()
+            .Which.Should().Match<MigrationManifestTargetResource>(resource =>
+                resource.SourceResourceId == "feature-type:roads" &&
+                resource.Action == "publish" &&
+                resource.MigrationMode == "feature-import" &&
+                resource.SourceProtocol == "WFS" &&
+                resource.TargetServiceName == "reference-wfs" &&
+                resource.TargetResourceName == "topp-roads" &&
+                resource.ExternalDependencyIds.SequenceEqual(new[] { "endpoint:wfs:get-capabilities" }));
+        manifest.ServicePlans.Should().BeEmpty();
+        manifest.Summary.ServicePlanCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void Translate_WithOgcWmsRenderOnlyInventory_EmitsManualReviewServicePlan()
+    {
+        var inventory = CreateInventory(
+            sourceKind: "ogc-wms",
+            serviceType: "WMS",
+            containerKind: "ogc-service",
+            resources:
+            [
+                CreateResource(
+                    "wms-layer:roads",
+                    "roads",
+                    "incompatible",
+                    "WMS exposes rendered map images and cannot supply automated feature data-copy by itself.",
+                    code: ImportCompatibilityCodes.OgcWmsRenderOnlySource,
+                    kind: "render-layer",
+                    capabilities: ["wms:GetCapabilities", "wms:GetMap", "wms:GetFeatureInfo"],
+                    manualSteps: ["Pair this WMS layer with a WFS, coverage, database, or file source before planning data import."])
+            ],
+            styles:
+            [
+                CreateStyle(
+                    "style:roads:default",
+                    "partial",
+                    "WMS style metadata was captured for manual render-service migration planning.",
+                    code: ImportCompatibilityCodes.OgcWmsRenderOnlySource,
+                    manualSteps: ["Review WMS style semantics and recreate equivalent Honua styles where required."])
+            ],
+            dependencies:
+            [
+                CreateDependency(
+                    "endpoint:wms:get-capabilities",
+                    "ogc-endpoint",
+                    "WMS GetCapabilities",
+                    "partial",
+                    "WMS capabilities endpoint was captured for manual service migration planning.",
+                    ImportCompatibilityCodes.OgcWmsRenderOnlySource)
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory);
+
+        manifest.TargetResources.Should().BeEmpty();
+        manifest.ServicePlans.Should().ContainSingle()
+            .Which.Should().Match<MigrationManifestServicePlan>(plan =>
+                plan.SourceContainerId == "workspace" &&
+                plan.SourceKind == "ogc-service" &&
+                plan.Action == "manual-review" &&
+                plan.ServiceType == "WMS" &&
+                plan.ResourceIds.SequenceEqual(new[] { "wms-layer:roads" }) &&
+                plan.StyleIds.SequenceEqual(new[] { "style:roads:default" }) &&
+                plan.ExternalDependencyIds.SequenceEqual(new[] { "endpoint:wms:get-capabilities" }));
+        manifest.UnsupportedItems.Should().ContainSingle(item => item.SourceId == "wms-layer:roads")
+            .Which.Severity.Should().Be("unsupported");
+        manifest.ManualReviewItems.Should().Contain(item => item.SourceId == "style:roads:default");
+        manifest.ManualReviewItems.Should().Contain(item => item.SourceId == "endpoint:wms:get-capabilities");
+        manifest.Summary.Should().BeEquivalentTo(new MigrationManifestSummary
+        {
+            SourceResourceCount = 1,
+            TargetResourceCount = 0,
+            StyleActionCount = 1,
+            ServicePlanCount = 1,
+            ManualReviewCount = 2,
+            UnsupportedCount = 1
+        });
+    }
+
+    [Fact]
+    public void Translate_WithOgcWmtsInventory_IncludesTileMatrixDependenciesInServicePlan()
+    {
+        var inventory = CreateInventory(
+            sourceKind: "ogc-wmts",
+            serviceType: "WMTS",
+            containerKind: "ogc-service",
+            resources:
+            [
+                CreateResource(
+                    "wmts-layer:roads",
+                    "roads",
+                    "incompatible",
+                    "WMTS exposes pre-rendered tiles and cannot supply automated feature data-copy by itself.",
+                    code: ImportCompatibilityCodes.OgcWmtsTileOnlySource,
+                    kind: "tile-layer",
+                    capabilities: ["wmts:GetCapabilities", "wmts:GetTile"],
+                    manualSteps: ["Pair this WMTS layer with a WFS, coverage, database, or file source before planning data import."])
+            ],
+            dependencies:
+            [
+                CreateDependency(
+                    "endpoint:wmts:get-capabilities",
+                    "ogc-endpoint",
+                    "WMTS GetCapabilities",
+                    "partial",
+                    "WMTS capabilities endpoint was captured for manual service migration planning.",
+                    ImportCompatibilityCodes.OgcWmtsTileOnlySource),
+                CreateDependency(
+                    "tile-matrix-set:webmercator",
+                    "tile-matrix-set",
+                    "WebMercatorQuad",
+                    "partial",
+                    "WMTS tile matrix set metadata was captured for manual service migration planning.",
+                    ImportCompatibilityCodes.OgcWmtsTileOnlySource)
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory);
+
+        manifest.ServicePlans.Should().ContainSingle()
+            .Which.ExternalDependencyIds.Should().Equal(
+                "endpoint:wmts:get-capabilities",
+                "tile-matrix-set:webmercator");
+        manifest.TargetResources.Should().BeEmpty();
+        manifest.UnsupportedItems.Should().ContainSingle(item => item.SourceId == "wmts-layer:roads");
+        manifest.Summary.ServicePlanCount.Should().Be(1);
+    }
+
     private static MigrationSourceInventoryArtifact CreateInventory(
         MigrationInventoryResource[] resources,
+        string sourceKind = "geoserver-rest",
+        string? serviceType = null,
+        string containerKind = "workspace",
         MigrationInventoryStyle[]? styles = null,
         MigrationExternalDependency[]? dependencies = null)
     {
@@ -102,7 +270,7 @@ public sealed class MigrationManifestTranslatorTests
             new MigrationInventoryContainer
             {
                 Id = "workspace",
-                Kind = "workspace",
+                Kind = containerKind,
                 Name = "workspace",
                 Compatibility = Compatible("Workspace can be represented.")
             }
@@ -113,13 +281,14 @@ public sealed class MigrationManifestTranslatorTests
 
         return new MigrationSourceInventoryArtifact
         {
-            SourceKind = "geoserver-rest",
+            SourceKind = sourceKind,
             Source = new MigrationSourceIdentity
             {
                 DisplayName = "Migration Source",
                 BaseUrl = "https://geoserver.example.test/geoserver",
                 Product = "GeoServer",
-                Version = "2.26.0"
+                Version = "2.26.0",
+                ServiceType = serviceType
             },
             AuthPosture = new MigrationInventoryAuthPosture
             {
@@ -162,16 +331,19 @@ public sealed class MigrationManifestTranslatorTests
         string level,
         string reason,
         string? code = null,
+        string kind = "layer",
         string[]? capabilities = null,
-        string[]? manualSteps = null)
+        string[]? manualSteps = null,
+        string[]? externalDependencyIds = null)
         => new()
         {
             Id = id,
             ContainerId = "workspace",
-            Kind = "layer",
+            Kind = kind,
             Name = name,
             GeometryType = "Point",
             Capabilities = capabilities ?? ["Query"],
+            ExternalDependencyIds = externalDependencyIds ?? [],
             Fields =
             [
                 new MigrationInventoryField
@@ -181,6 +353,25 @@ public sealed class MigrationManifestTranslatorTests
                     Nullable = true
                 }
             ],
+            Compatibility = Assessment(level, reason, code, manualSteps)
+        };
+
+    private static MigrationExternalDependency CreateDependency(
+        string id,
+        string kind,
+        string name,
+        string level,
+        string reason,
+        string? code = null,
+        string[]? manualSteps = null,
+        Dictionary<string, string>? metadata = null)
+        => new()
+        {
+            Id = id,
+            ContainerId = "workspace",
+            Kind = kind,
+            Name = name,
+            Metadata = metadata ?? [],
             Compatibility = Assessment(level, reason, code, manualSteps)
         };
 

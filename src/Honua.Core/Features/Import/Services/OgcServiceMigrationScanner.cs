@@ -109,8 +109,8 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or System.Xml.XmlException ||
                                    ex is TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
-            Log.ScanFailed(_logger, sourceKind, request.ServiceUrl, ex);
-            return CreateFailedArtifact(sourceKind, request.ServiceUrl, normalizedServiceType, ToSafeScanFailureReason(ex));
+            Log.ScanFailed(_logger, sourceKind, ToSafeSourceUrl(serviceUri), ex);
+            return CreateFailedArtifact(sourceKind, serviceUri, normalizedServiceType, ToSafeScanFailureReason(ex));
         }
     }
 
@@ -197,7 +197,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
                 Kind = "ogc-endpoint",
                 Name = "WFS GetCapabilities",
                 DependencyType = "capabilities",
-                Address = capabilitiesUrl.ToString(),
+                Address = ToSafeCapabilitiesUrl(capabilitiesUrl),
                 Metadata = new Dictionary<string, string>
                 {
                     ["service"] = "WFS",
@@ -380,7 +380,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
                 Kind = "ogc-endpoint",
                 Name = $"{serviceType} GetCapabilities",
                 DependencyType = "capabilities",
-                Address = capabilitiesUrl.ToString(),
+                Address = ToSafeCapabilitiesUrl(capabilitiesUrl),
                 Metadata = new Dictionary<string, string>
                 {
                     ["service"] = serviceType,
@@ -459,7 +459,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             Source = new MigrationSourceIdentity
             {
                 DisplayName = displayName,
-                BaseUrl = serviceUri.ToString(),
+                BaseUrl = ToSafeSourceUrl(serviceUri),
                 Product = product,
                 Version = version,
                 ServiceType = serviceType
@@ -485,7 +485,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
 
     private static MigrationSourceInventoryArtifact CreateFailedArtifact(
         string sourceKind,
-        string serviceUrl,
+        Uri serviceUri,
         string serviceType,
         string reason)
         => new()
@@ -494,7 +494,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             Source = new MigrationSourceIdentity
             {
                 DisplayName = $"OGC {serviceType}",
-                BaseUrl = serviceUrl,
+                BaseUrl = ToSafeSourceUrl(serviceUri),
                 Product = $"OGC {serviceType}",
                 ServiceType = serviceType
             },
@@ -946,6 +946,64 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
 
         return false;
     }
+
+    private static string ToSafeSourceUrl(Uri uri)
+    {
+        var builder = new UriBuilder(uri)
+        {
+            UserName = string.Empty,
+            Password = string.Empty,
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+
+        return builder.Uri.AbsoluteUri;
+    }
+
+    private static string ToSafeCapabilitiesUrl(Uri uri)
+    {
+        var builder = new UriBuilder(uri)
+        {
+            UserName = string.Empty,
+            Password = string.Empty,
+            Fragment = string.Empty,
+            Query = BuildSafeCapabilitiesQuery(uri.Query)
+        };
+
+        return builder.Uri.AbsoluteUri;
+    }
+
+    private static string BuildSafeCapabilitiesQuery(string query)
+    {
+        var pairs = new List<KeyValuePair<string, string>>();
+        var trimmed = query.TrimStart('?');
+        if (trimmed.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        foreach (var part in trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = part.IndexOf('=', StringComparison.Ordinal);
+            var key = separator < 0 ? Uri.UnescapeDataString(part) : Uri.UnescapeDataString(part[..separator]);
+            if (!IsSafeCapabilitiesQueryParameter(key))
+            {
+                continue;
+            }
+
+            var value = separator < 0 ? string.Empty : Uri.UnescapeDataString(part[(separator + 1)..]);
+            pairs.Add(new KeyValuePair<string, string>(key, value));
+        }
+
+        return string.Join("&", pairs
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(static pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
+    }
+
+    private static bool IsSafeCapabilitiesQueryParameter(string key)
+        => key.Equals("service", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("request", StringComparison.OrdinalIgnoreCase) ||
+           key.Equals("version", StringComparison.OrdinalIgnoreCase);
 
     private static string? GetRootVersion(XDocument document)
         => document.Root?.Attribute("version")?.Value;

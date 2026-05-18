@@ -28,8 +28,10 @@ public static partial class MigrationManifestTranslator
             fallback: "migration-service");
         var targetResources = new List<MigrationManifestTargetResource>();
         var styleActions = new List<MigrationManifestStyleAction>();
+        var servicePlans = new List<MigrationManifestServicePlan>();
         var manualReviewItems = new List<MigrationManifestReviewItem>();
         var unsupportedItems = new List<MigrationManifestReviewItem>();
+        var sourceProtocol = GetSourceProtocol(inventory);
 
         foreach (var resource in inventory.Resources.OrderBy(static item => item.Id, StringComparer.Ordinal))
         {
@@ -54,6 +56,8 @@ public static partial class MigrationManifestTranslator
                 TargetServiceName = targetServiceName,
                 TargetResourceName = NormalizeName(resource.Name, fallback: resource.Id),
                 GeometryType = resource.GeometryType,
+                MigrationMode = GetResourceMigrationMode(inventory.SourceKind, resource),
+                SourceProtocol = sourceProtocol,
                 Fields = resource.Fields.OrderBy(static item => item.Name, StringComparer.Ordinal).ToArray(),
                 Capabilities = Order(resource.Capabilities),
                 SpatialReferences = resource.SpatialReferences
@@ -61,7 +65,7 @@ public static partial class MigrationManifestTranslator
                     .ThenBy(static item => item.SourceValue, StringComparer.Ordinal)
                     .ToArray(),
                 StyleIds = Order(resource.StyleIds),
-                ExternalDependencyIds = Order(resource.ExternalDependencyIds),
+                ExternalDependencyIds = BuildResourceExternalDependencyIds(inventory, resource),
                 Compatibility = resource.Compatibility
             });
         }
@@ -98,6 +102,8 @@ public static partial class MigrationManifestTranslator
                 unsupportedItems);
         }
 
+        servicePlans.AddRange(BuildServicePlans(inventory, targetServiceName));
+
         return new MigrationManifestArtifact
         {
             SourceArtifactKind = inventory.ArtifactKind,
@@ -109,11 +115,15 @@ public static partial class MigrationManifestTranslator
                 SourceResourceCount = inventory.Resources.Length,
                 TargetResourceCount = targetResources.Count,
                 StyleActionCount = styleActions.Count,
+                ServicePlanCount = servicePlans.Count,
                 ManualReviewCount = manualReviewItems.Count,
                 UnsupportedCount = unsupportedItems.Count
             },
             TargetResources = targetResources.ToArray(),
             StyleActions = styleActions.ToArray(),
+            ServicePlans = servicePlans
+                .OrderBy(static item => item.SourceContainerId, StringComparer.Ordinal)
+                .ToArray(),
             ManualReviewItems = manualReviewItems
                 .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
                 .ThenBy(static item => item.Code, StringComparer.Ordinal)
@@ -158,6 +168,89 @@ public static partial class MigrationManifestTranslator
             manualReviewItems.Add(reviewItem);
         }
     }
+
+    private static MigrationManifestServicePlan[] BuildServicePlans(
+        MigrationSourceInventoryArtifact inventory,
+        string targetServiceName)
+    {
+        if (!IsOgcRenderOnlySource(inventory.SourceKind))
+        {
+            return [];
+        }
+
+        var serviceType = GetSourceProtocol(inventory);
+        return inventory.Containers
+            .OrderBy(static container => container.Id, StringComparer.Ordinal)
+            .Select(container =>
+            {
+                var resources = inventory.Resources
+                    .Where(resource => string.Equals(resource.ContainerId, container.Id, StringComparison.Ordinal));
+                var styles = inventory.Styles
+                    .Where(style => string.Equals(style.ContainerId, container.Id, StringComparison.Ordinal));
+                var dependencies = inventory.ExternalDependencies
+                    .Where(dependency => string.Equals(dependency.ContainerId, container.Id, StringComparison.Ordinal));
+
+                return new MigrationManifestServicePlan
+                {
+                    SourceContainerId = container.Id,
+                    SourceKind = container.Kind,
+                    Action = "manual-review",
+                    TargetServiceName = targetServiceName,
+                    ServiceType = serviceType,
+                    ResourceIds = Order(resources.Select(static resource => resource.Id)),
+                    StyleIds = Order(styles.Select(static style => style.Id)),
+                    ExternalDependencyIds = Order(dependencies.Select(static dependency => dependency.Id)),
+                    Compatibility = container.Compatibility
+                };
+            })
+            .ToArray();
+    }
+
+    private static string[] BuildResourceExternalDependencyIds(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationInventoryResource resource)
+    {
+        var dependencyIds = resource.ExternalDependencyIds.AsEnumerable();
+        if (string.Equals(inventory.SourceKind, "ogc-wfs", StringComparison.OrdinalIgnoreCase))
+        {
+            dependencyIds = dependencyIds.Concat(inventory.ExternalDependencies
+                .Where(static dependency => IsOgcWfsEndpointDependency(dependency))
+                .Select(static dependency => dependency.Id));
+        }
+
+        return Order(dependencyIds);
+    }
+
+    private static bool IsOgcWfsEndpointDependency(MigrationExternalDependency dependency)
+        => string.Equals(dependency.Kind, "ogc-endpoint", StringComparison.OrdinalIgnoreCase) &&
+           dependency.Metadata.TryGetValue("service", out var service) &&
+           string.Equals(service, "WFS", StringComparison.OrdinalIgnoreCase);
+
+    private static string? GetResourceMigrationMode(string sourceKind, MigrationInventoryResource resource)
+        => string.Equals(sourceKind, "ogc-wfs", StringComparison.OrdinalIgnoreCase) &&
+           string.Equals(resource.Kind, "feature-type", StringComparison.OrdinalIgnoreCase)
+            ? "feature-import"
+            : null;
+
+    private static string? GetSourceProtocol(MigrationSourceInventoryArtifact inventory)
+    {
+        if (!string.IsNullOrWhiteSpace(inventory.Source.ServiceType))
+        {
+            return inventory.Source.ServiceType.Trim();
+        }
+
+        return inventory.SourceKind.ToLowerInvariant() switch
+        {
+            "ogc-wfs" => "WFS",
+            "ogc-wms" => "WMS",
+            "ogc-wmts" => "WMTS",
+            _ => null
+        };
+    }
+
+    private static bool IsOgcRenderOnlySource(string sourceKind)
+        => sourceKind.Equals("ogc-wms", StringComparison.OrdinalIgnoreCase) ||
+           sourceKind.Equals("ogc-wmts", StringComparison.OrdinalIgnoreCase);
 
     private static string BuildFallbackCode(string sourceKind, string kind, string level)
         => $"{ToCodePart(sourceKind)}_{ToCodePart(kind)}_{ToCodePart(level)}";
