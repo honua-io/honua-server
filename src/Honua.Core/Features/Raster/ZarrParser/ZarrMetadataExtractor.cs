@@ -225,6 +225,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
                 throw new InvalidDataException($"Zarr array '{name}' uses Fortran chunk order; only C order is supported by the MVP reader.");
             }
 
+            RejectUnsupportedFilters(root, name);
+
             var compressor = ResolveCompressorId(root);
 
             object? fillValue = null;
@@ -328,6 +330,15 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             return idEl.GetString();
         }
         return null;
+    }
+
+    private static void RejectUnsupportedFilters(JsonElement root, string arrayName)
+    {
+        if (root.TryGetProperty("filters", out var filtersEl) &&
+            filtersEl.ValueKind != JsonValueKind.Null)
+        {
+            throw new InvalidDataException($"Zarr array '{arrayName}' declares filters, which are not supported by the MVP reader.");
+        }
     }
 
     private static string[]? ReadDimensionNamesFromAttrs(JsonElement root, int rank)

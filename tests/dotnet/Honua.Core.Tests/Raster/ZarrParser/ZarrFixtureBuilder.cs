@@ -109,6 +109,13 @@ internal static class ZarrFixtureBuilder
         return objects;
     }
 
+    public static Dictionary<string, byte[]> BuildFilteredArray(string root)
+    {
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        objects[root + "/.zarray"] = Encoding.UTF8.GetBytes("{\"chunks\":[1],\"shape\":[1],\"dtype\":\"<f4\",\"order\":\"C\",\"compressor\":null,\"fill_value\":0,\"filters\":[{\"id\":\"delta\",\"dtype\":\"<f4\"}],\"zarr_format\":2}");
+        return objects;
+    }
+
     private static void AppendChunksFloat32(
         string arrayRoot,
         int rows,

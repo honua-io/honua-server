@@ -104,4 +104,16 @@ public class ZarrMetadataExtractorTests
 
         (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*Fortran*");
     }
+
+    [Fact]
+    public async Task ReadMetadataAsync_NonNullFilters_Rejected()
+    {
+        var objects = ZarrFixtureBuilder.BuildFilteredArray("stores/filtered");
+        var reader = new InMemoryZarrRangeReader(objects);
+        var extractor = new ZarrMetadataExtractor();
+
+        var act = () => extractor.ReadMetadataAsync(reader, "bucket", "stores/filtered");
+
+        (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*filters*not supported*");
+    }
 }
