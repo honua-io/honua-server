@@ -108,12 +108,29 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/geoserver/start")]
+    public async Task Start_WithoutDryRunAndWithoutApplyMode_ReturnsSafetyGateError()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
+        {
+            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            DryRun = false
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync())
+            .Should().Contain("applyMode=true");
+        _importService.ImportRequests.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoserver/start")]
     public async Task Start_WithoutDryRun_QueuesApplyPlanJob()
     {
         var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
         {
             GeoServerRestUrl = "https://example.com/geoserver/rest",
-            DryRun = false
+            DryRun = false,
+            ApplyMode = true
         });
 
         startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
@@ -177,7 +194,8 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
                 GeoServerRestUrl = "https://example.com/geoserver/rest",
                 Username = "admin",
                 PasswordSecretReference = $"env:{envKey}",
-                DryRun = false
+                DryRun = false,
+                ApplyMode = true
             });
 
             startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);

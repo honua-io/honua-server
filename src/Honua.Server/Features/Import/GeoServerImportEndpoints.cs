@@ -186,6 +186,20 @@ internal static partial class GeoServerImportEndpoints
             return;
         }
 
+        // Safety gate: non-dry-run imports apply the reviewed migration manifest to the
+        // Honua catalog. Require explicit operator opt-in via applyMode=true so that an
+        // unintended request body cannot trigger catalog mutation.
+        var isDryRun = request.DryRun ?? false;
+        var isApplyMode = request.ApplyMode ?? false;
+        if (!isDryRun && !isApplyMode)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Non-dry-run GeoServer imports require applyMode=true to acknowledge that the reviewed migration manifest will be applied to the Honua catalog.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         try
         {
             jobManager = context.RequestServices.GetRequiredService<GeoServerImportJobManager>();
@@ -215,7 +229,8 @@ internal static partial class GeoServerImportEndpoints
                 LayerNames = request.LayerNames,
                 ImportStyles = request.ImportStyles ?? false,
                 OverwriteExisting = request.OverwriteExisting ?? false,
-                DryRun = request.DryRun ?? false,
+                DryRun = isDryRun,
+                ApplyMode = isApplyMode,
                 TargetSrid = request.TargetSrid,
                 RequestTimeoutSeconds = request.RequestTimeoutSeconds ?? 120,
                 MaxRetries = request.MaxRetries ?? 3,

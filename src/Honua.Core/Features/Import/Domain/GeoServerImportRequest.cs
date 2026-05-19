@@ -125,6 +125,15 @@ public sealed record GeoServerImportRequest
     public bool DryRun { get; init; }
 
     /// <summary>
+    /// Explicit operator opt-in for catalog mutation. When <c>DryRun</c> is <c>false</c>,
+    /// the import endpoint rejects the request unless <c>ApplyMode</c> is <c>true</c>.
+    /// This is a safety gate that ensures non-dry-run executions only run when the
+    /// operator has acknowledged that the reviewed GeoServer manifest will be applied
+    /// to the Honua catalog.
+    /// </summary>
+    public bool ApplyMode { get; init; }
+
+    /// <summary>
     /// Target coordinate reference system ID (for transformation).
     /// Default is null (preserve source CRS).
     /// </summary>

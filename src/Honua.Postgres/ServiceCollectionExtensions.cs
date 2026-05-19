@@ -347,6 +347,9 @@ internal static class ServiceCollectionExtensions
             },
             configureHandler: static () => GeoServerRestClient.CreatePinnedDnsHttpMessageHandler());
 
+        // Register migration catalog writer used by apply-mode imports.
+        services.AddScoped<IMigrationCatalogWriter, PostgresMigrationCatalogWriter>();
+
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();
 
