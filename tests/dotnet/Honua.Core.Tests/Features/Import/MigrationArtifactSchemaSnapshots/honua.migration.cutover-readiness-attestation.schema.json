@@ -1,0 +1,106 @@
+{
+  "TypeName": "MigrationCutoverReadinessAttestationArtifact",
+  "Properties": [
+    {
+      "JsonName": "artifactKind",
+      "ClrName": "ArtifactKind",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": false,
+      "Nullable": false
+    },
+    {
+      "JsonName": "artifactVersion",
+      "ClrName": "ArtifactVersion",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": false,
+      "Nullable": false
+    },
+    {
+      "JsonName": "classificationCounts",
+      "ClrName": "ClassificationCounts",
+      "Container": "scalar",
+      "ElementType": "MigrationCutoverReadinessClassificationCounts",
+      "Required": true,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationCutoverReadinessClassificationCounts",
+        "Properties": [
+          {
+            "JsonName": "assisted",
+            "ClrName": "Assisted",
+            "Container": "scalar",
+            "ElementType": "int",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "automated",
+            "ClrName": "Automated",
+            "Container": "scalar",
+            "ElementType": "int",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "manualReview",
+            "ClrName": "ManualReview",
+            "Container": "scalar",
+            "ElementType": "int",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "unsupported",
+            "ClrName": "Unsupported",
+            "Container": "scalar",
+            "ElementType": "int",
+            "Required": false,
+            "Nullable": false
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "fixtureName",
+      "ClrName": "FixtureName",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": true,
+      "Nullable": false
+    },
+    {
+      "JsonName": "generatedAtUtc",
+      "ClrName": "GeneratedAtUtc",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": true,
+      "Nullable": false
+    },
+    {
+      "JsonName": "runId",
+      "ClrName": "RunId",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": true,
+      "Nullable": false
+    },
+    {
+      "JsonName": "sourceId",
+      "ClrName": "SourceId",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": true,
+      "Nullable": false
+    },
+    {
+      "JsonName": "sourceKind",
+      "ClrName": "SourceKind",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": true,
+      "Nullable": false
+    }
+  ]
+}

@@ -1,0 +1,557 @@
+{
+  "TypeName": "MigrationParityEvidenceArtifact",
+  "Properties": [
+    {
+      "JsonName": "artifactKind",
+      "ClrName": "ArtifactKind",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": false,
+      "Nullable": false
+    },
+    {
+      "JsonName": "artifactVersion",
+      "ClrName": "ArtifactVersion",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": false,
+      "Nullable": false
+    },
+    {
+      "JsonName": "cutoverReadiness",
+      "ClrName": "CutoverReadiness",
+      "Container": "scalar",
+      "ElementType": "MigrationCutoverReadinessSummary",
+      "Required": true,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationCutoverReadinessSummary",
+        "Properties": [
+          {
+            "JsonName": "items",
+            "ClrName": "Items",
+            "Container": "array",
+            "ElementType": "MigrationCutoverReadinessItem",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationCutoverReadinessItem",
+              "Properties": [
+                {
+                  "JsonName": "evidence",
+                  "ClrName": "Evidence",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "id",
+                  "ClrName": "Id",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "owner",
+                  "ClrName": "Owner",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "remediation",
+                  "ClrName": "Remediation",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "state",
+                  "ClrName": "State",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "title",
+                  "ClrName": "Title",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "state",
+            "ClrName": "State",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "manifestAvailable",
+      "ClrName": "ManifestAvailable",
+      "Container": "scalar",
+      "ElementType": "bool",
+      "Required": false,
+      "Nullable": false
+    },
+    {
+      "JsonName": "overallState",
+      "ClrName": "OverallState",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": true,
+      "Nullable": false
+    },
+    {
+      "JsonName": "performanceCost",
+      "ClrName": "PerformanceCost",
+      "Container": "scalar",
+      "ElementType": "MigrationPerformanceCostEvidence",
+      "Required": false,
+      "Nullable": true,
+      "Schema": {
+        "TypeName": "MigrationPerformanceCostEvidence",
+        "Properties": [
+          {
+            "JsonName": "artifactKind",
+            "ClrName": "ArtifactKind",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "artifactVersion",
+            "ClrName": "ArtifactVersion",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "evidenceReferences",
+            "ClrName": "EvidenceReferences",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "measurementScope",
+            "ClrName": "MeasurementScope",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "operations",
+            "ClrName": "Operations",
+            "Container": "array",
+            "ElementType": "MigrationPerformanceCostOperation",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationPerformanceCostOperation",
+              "Properties": [
+                {
+                  "JsonName": "artifactSizeBytes",
+                  "ClrName": "ArtifactSizeBytes",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "bytesRead",
+                  "ClrName": "BytesRead",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "bytesWritten",
+                  "ClrName": "BytesWritten",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "durationMilliseconds",
+                  "ClrName": "DurationMilliseconds",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "evidenceReferences",
+                  "ClrName": "EvidenceReferences",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "featureCount",
+                  "ClrName": "FeatureCount",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "id",
+                  "ClrName": "Id",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "manualReviewCount",
+                  "ClrName": "ManualReviewCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "resourceCount",
+                  "ClrName": "ResourceCount",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "retryCount",
+                  "ClrName": "RetryCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceRequestCount",
+                  "ClrName": "SourceRequestCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "stage",
+                  "ClrName": "Stage",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "state",
+                  "ClrName": "State",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "state",
+            "ClrName": "State",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "summary",
+            "ClrName": "Summary",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "totals",
+            "ClrName": "Totals",
+            "Container": "scalar",
+            "ElementType": "MigrationPerformanceCostTotals",
+            "Required": true,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationPerformanceCostTotals",
+              "Properties": [
+                {
+                  "JsonName": "artifactSizeBytes",
+                  "ClrName": "ArtifactSizeBytes",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "bytesRead",
+                  "ClrName": "BytesRead",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "bytesWritten",
+                  "ClrName": "BytesWritten",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "durationMilliseconds",
+                  "ClrName": "DurationMilliseconds",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "featureCount",
+                  "ClrName": "FeatureCount",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "manualReviewCount",
+                  "ClrName": "ManualReviewCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "resourceCount",
+                  "ClrName": "ResourceCount",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "retryCount",
+                  "ClrName": "RetryCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceRequestCount",
+                  "ClrName": "SourceRequestCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": true
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "sections",
+      "ClrName": "Sections",
+      "Container": "array",
+      "ElementType": "MigrationParityEvidenceSection",
+      "Required": false,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationParityEvidenceSection",
+        "Properties": [
+          {
+            "JsonName": "id",
+            "ClrName": "Id",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "items",
+            "ClrName": "Items",
+            "Container": "array",
+            "ElementType": "MigrationParityEvidenceItem",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationParityEvidenceItem",
+              "Properties": [
+                {
+                  "JsonName": "evidence",
+                  "ClrName": "Evidence",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "id",
+                  "ClrName": "Id",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "relatedIds",
+                  "ClrName": "RelatedIds",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "remediation",
+                  "ClrName": "Remediation",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "state",
+                  "ClrName": "State",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "summary",
+                  "ClrName": "Summary",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "state",
+            "ClrName": "State",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "title",
+            "ClrName": "Title",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "source",
+      "ClrName": "Source",
+      "Container": "scalar",
+      "ElementType": "MigrationSourceIdentity",
+      "Required": true,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationSourceIdentity",
+        "Properties": [
+          {
+            "JsonName": "baseUrl",
+            "ClrName": "BaseUrl",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "build",
+            "ClrName": "Build",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "displayName",
+            "ClrName": "DisplayName",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "product",
+            "ClrName": "Product",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "serviceType",
+            "ClrName": "ServiceType",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "version",
+            "ClrName": "Version",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "sourceKind",
+      "ClrName": "SourceKind",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": true,
+      "Nullable": false
+    },
+    {
+      "JsonName": "summary",
+      "ClrName": "Summary",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": true,
+      "Nullable": false
+    }
+  ]
+}

@@ -1,0 +1,1090 @@
+{
+  "TypeName": "MigrationManifestArtifact",
+  "Properties": [
+    {
+      "JsonName": "artifactKind",
+      "ClrName": "ArtifactKind",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": false,
+      "Nullable": false
+    },
+    {
+      "JsonName": "artifactVersion",
+      "ClrName": "ArtifactVersion",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": false,
+      "Nullable": false
+    },
+    {
+      "JsonName": "fidelityMatrix",
+      "ClrName": "FidelityMatrix",
+      "Container": "scalar",
+      "ElementType": "MigrationFidelityMatrix",
+      "Required": false,
+      "Nullable": true,
+      "Schema": {
+        "TypeName": "MigrationFidelityMatrix",
+        "Properties": [
+          {
+            "JsonName": "cells",
+            "ClrName": "Cells",
+            "Container": "array",
+            "ElementType": "MigrationFidelityMatrixCell",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationFidelityMatrixCell",
+              "Properties": [
+                {
+                  "JsonName": "automationStatus",
+                  "ClrName": "AutomationStatus",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "category",
+                  "ClrName": "Category",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "codes",
+                  "ClrName": "Codes",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "count",
+                  "ClrName": "Count",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "kinds",
+                  "ClrName": "Kinds",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "manualSteps",
+                  "ClrName": "ManualSteps",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "relatedIds",
+                  "ClrName": "RelatedIds",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceIds",
+                  "ClrName": "SourceIds",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "targetIds",
+                  "ClrName": "TargetIds",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "summary",
+            "ClrName": "Summary",
+            "Container": "scalar",
+            "ElementType": "MigrationFidelityMatrixSummary",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationFidelityMatrixSummary",
+              "Properties": [
+                {
+                  "JsonName": "assistedCount",
+                  "ClrName": "AssistedCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "automatedCount",
+                  "ClrName": "AutomatedCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "manualReviewCount",
+                  "ClrName": "ManualReviewCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "totalCount",
+                  "ClrName": "TotalCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "unsupportedCount",
+                  "ClrName": "UnsupportedCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": false
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "identityRemaps",
+      "ClrName": "IdentityRemaps",
+      "Container": "array",
+      "ElementType": "MigrationManifestIdentityRemap",
+      "Required": false,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationManifestIdentityRemap",
+        "Properties": [
+          {
+            "JsonName": "action",
+            "ClrName": "Action",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "sourceId",
+            "ClrName": "SourceId",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "sourceKind",
+            "ClrName": "SourceKind",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "targetId",
+            "ClrName": "TargetId",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "targetKind",
+            "ClrName": "TargetKind",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "targetName",
+            "ClrName": "TargetName",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "manualReviewItems",
+      "ClrName": "ManualReviewItems",
+      "Container": "array",
+      "ElementType": "MigrationManifestReviewItem",
+      "Required": false,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationManifestReviewItem",
+        "Properties": [
+          {
+            "JsonName": "code",
+            "ClrName": "Code",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "kind",
+            "ClrName": "Kind",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "manualSteps",
+            "ClrName": "ManualSteps",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "reason",
+            "ClrName": "Reason",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "severity",
+            "ClrName": "Severity",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "sourceId",
+            "ClrName": "SourceId",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "warnings",
+            "ClrName": "Warnings",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "servicePlans",
+      "ClrName": "ServicePlans",
+      "Container": "array",
+      "ElementType": "MigrationManifestServicePlan",
+      "Required": false,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationManifestServicePlan",
+        "Properties": [
+          {
+            "JsonName": "action",
+            "ClrName": "Action",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "compatibility",
+            "ClrName": "Compatibility",
+            "Container": "scalar",
+            "ElementType": "MigrationCompatibilityAssessment",
+            "Required": true,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationCompatibilityAssessment",
+              "Properties": [
+                {
+                  "JsonName": "code",
+                  "ClrName": "Code",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "level",
+                  "ClrName": "Level",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "manualSteps",
+                  "ClrName": "ManualSteps",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "reason",
+                  "ClrName": "Reason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "warnings",
+                  "ClrName": "Warnings",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "externalDependencyIds",
+            "ClrName": "ExternalDependencyIds",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "resourceIds",
+            "ClrName": "ResourceIds",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "serviceType",
+            "ClrName": "ServiceType",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "sourceContainerId",
+            "ClrName": "SourceContainerId",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "sourceKind",
+            "ClrName": "SourceKind",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "styleIds",
+            "ClrName": "StyleIds",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "targetServiceName",
+            "ClrName": "TargetServiceName",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "source",
+      "ClrName": "Source",
+      "Container": "scalar",
+      "ElementType": "MigrationSourceIdentity",
+      "Required": true,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationSourceIdentity",
+        "Properties": [
+          {
+            "JsonName": "baseUrl",
+            "ClrName": "BaseUrl",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "build",
+            "ClrName": "Build",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "displayName",
+            "ClrName": "DisplayName",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "product",
+            "ClrName": "Product",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "serviceType",
+            "ClrName": "ServiceType",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "version",
+            "ClrName": "Version",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "sourceArtifactKind",
+      "ClrName": "SourceArtifactKind",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": false,
+      "Nullable": false
+    },
+    {
+      "JsonName": "sourceArtifactVersion",
+      "ClrName": "SourceArtifactVersion",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": false,
+      "Nullable": false
+    },
+    {
+      "JsonName": "sourceKind",
+      "ClrName": "SourceKind",
+      "Container": "scalar",
+      "ElementType": "string",
+      "Required": true,
+      "Nullable": false
+    },
+    {
+      "JsonName": "styleActions",
+      "ClrName": "StyleActions",
+      "Container": "array",
+      "ElementType": "MigrationManifestStyleAction",
+      "Required": false,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationManifestStyleAction",
+        "Properties": [
+          {
+            "JsonName": "action",
+            "ClrName": "Action",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "compatibility",
+            "ClrName": "Compatibility",
+            "Container": "scalar",
+            "ElementType": "MigrationCompatibilityAssessment",
+            "Required": true,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationCompatibilityAssessment",
+              "Properties": [
+                {
+                  "JsonName": "code",
+                  "ClrName": "Code",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "level",
+                  "ClrName": "Level",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "manualSteps",
+                  "ClrName": "ManualSteps",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "reason",
+                  "ClrName": "Reason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "warnings",
+                  "ClrName": "Warnings",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "externalDependencyIds",
+            "ClrName": "ExternalDependencyIds",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "format",
+            "ClrName": "Format",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "resourceIds",
+            "ClrName": "ResourceIds",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "sourceStyleId",
+            "ClrName": "SourceStyleId",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "targetStyleId",
+            "ClrName": "TargetStyleId",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "summary",
+      "ClrName": "Summary",
+      "Container": "scalar",
+      "ElementType": "MigrationManifestSummary",
+      "Required": true,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationManifestSummary",
+        "Properties": [
+          {
+            "JsonName": "manualReviewCount",
+            "ClrName": "ManualReviewCount",
+            "Container": "scalar",
+            "ElementType": "int",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "servicePlanCount",
+            "ClrName": "ServicePlanCount",
+            "Container": "scalar",
+            "ElementType": "int",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "sourceResourceCount",
+            "ClrName": "SourceResourceCount",
+            "Container": "scalar",
+            "ElementType": "int",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "styleActionCount",
+            "ClrName": "StyleActionCount",
+            "Container": "scalar",
+            "ElementType": "int",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "targetResourceCount",
+            "ClrName": "TargetResourceCount",
+            "Container": "scalar",
+            "ElementType": "int",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "unsupportedCount",
+            "ClrName": "UnsupportedCount",
+            "Container": "scalar",
+            "ElementType": "int",
+            "Required": false,
+            "Nullable": false
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "targetResources",
+      "ClrName": "TargetResources",
+      "Container": "array",
+      "ElementType": "MigrationManifestTargetResource",
+      "Required": false,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationManifestTargetResource",
+        "Properties": [
+          {
+            "JsonName": "action",
+            "ClrName": "Action",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "capabilities",
+            "ClrName": "Capabilities",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "compatibility",
+            "ClrName": "Compatibility",
+            "Container": "scalar",
+            "ElementType": "MigrationCompatibilityAssessment",
+            "Required": true,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationCompatibilityAssessment",
+              "Properties": [
+                {
+                  "JsonName": "code",
+                  "ClrName": "Code",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "level",
+                  "ClrName": "Level",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "manualSteps",
+                  "ClrName": "ManualSteps",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "reason",
+                  "ClrName": "Reason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "warnings",
+                  "ClrName": "Warnings",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "externalDependencyIds",
+            "ClrName": "ExternalDependencyIds",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "fields",
+            "ClrName": "Fields",
+            "Container": "array",
+            "ElementType": "MigrationInventoryField",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationInventoryField",
+              "Properties": [
+                {
+                  "JsonName": "alias",
+                  "ClrName": "Alias",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "domainName",
+                  "ClrName": "DomainName",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "domainType",
+                  "ClrName": "DomainType",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "domainValues",
+                  "ClrName": "DomainValues",
+                  "Container": "array",
+                  "ElementType": "MigrationInventoryCodedValue",
+                  "Required": false,
+                  "Nullable": true,
+                  "Schema": {
+                    "TypeName": "MigrationInventoryCodedValue",
+                    "Properties": [
+                      {
+                        "JsonName": "code",
+                        "ClrName": "Code",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      },
+                      {
+                        "JsonName": "name",
+                        "ClrName": "Name",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      }
+                    ]
+                  }
+                },
+                {
+                  "JsonName": "fieldType",
+                  "ClrName": "FieldType",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "name",
+                  "ClrName": "Name",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "nullable",
+                  "ClrName": "Nullable",
+                  "Container": "scalar",
+                  "ElementType": "bool",
+                  "Required": false,
+                  "Nullable": true
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "geometryType",
+            "ClrName": "GeometryType",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "migrationMode",
+            "ClrName": "MigrationMode",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "sourceKind",
+            "ClrName": "SourceKind",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "sourceProtocol",
+            "ClrName": "SourceProtocol",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "sourceResourceId",
+            "ClrName": "SourceResourceId",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "spatialReferences",
+            "ClrName": "SpatialReferences",
+            "Container": "array",
+            "ElementType": "MigrationSpatialReferenceInfo",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationSpatialReferenceInfo",
+              "Properties": [
+                {
+                  "JsonName": "axisOrder",
+                  "ClrName": "AxisOrder",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "crsUri",
+                  "ClrName": "CrsUri",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "datum",
+                  "ClrName": "Datum",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "isGeographic",
+                  "ClrName": "IsGeographic",
+                  "Container": "scalar",
+                  "ElementType": "bool",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "role",
+                  "ClrName": "Role",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceValue",
+                  "ClrName": "SourceValue",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "srid",
+                  "ClrName": "Srid",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "unit",
+                  "ClrName": "Unit",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "styleIds",
+            "ClrName": "StyleIds",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "targetResourceId",
+            "ClrName": "TargetResourceId",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "targetResourceName",
+            "ClrName": "TargetResourceName",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "targetServiceName",
+            "ClrName": "TargetServiceName",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          }
+        ]
+      }
+    },
+    {
+      "JsonName": "unsupportedItems",
+      "ClrName": "UnsupportedItems",
+      "Container": "array",
+      "ElementType": "MigrationManifestReviewItem",
+      "Required": false,
+      "Nullable": false,
+      "Schema": {
+        "TypeName": "MigrationManifestReviewItem",
+        "Properties": [
+          {
+            "JsonName": "code",
+            "ClrName": "Code",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "kind",
+            "ClrName": "Kind",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "manualSteps",
+            "ClrName": "ManualSteps",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          },
+          {
+            "JsonName": "reason",
+            "ClrName": "Reason",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "severity",
+            "ClrName": "Severity",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "sourceId",
+            "ClrName": "SourceId",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": true,
+            "Nullable": false
+          },
+          {
+            "JsonName": "warnings",
+            "ClrName": "Warnings",
+            "Container": "array",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": false
+          }
+        ]
+      }
+    }
+  ]
+}
