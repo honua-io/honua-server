@@ -371,4 +371,250 @@ public sealed class MetadataV2ModelTests
         json.Should().Contain("\"tile\"");
         json.Should().Contain("\"download\"");
     }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithConsistentResourceFirstReferences_ReturnsValid()
+    {
+        var graph = CreateValidGraph();
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithNullDeserializedResourceStorageBindingIds_ReturnsValidationError()
+    {
+        var json = JsonSerializer.Serialize(CreateValidGraph(), MetadataV2JsonContext.Default.MetadataV2Graph)
+            .Replace(
+                "\"storageBindingIds\":[\"storage.parcels.postgis\"]",
+                "\"storageBindingIds\":null",
+                StringComparison.Ordinal);
+        json.Should().Contain("\"storageBindingIds\":null");
+        var graph = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Graph);
+
+        var result = MetadataV2GraphValidator.Validate(graph!);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(
+            "resource 'resource.parcels' primary storage binding 'storage.parcels.postgis' must be listed in storageBindingIds.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithDuplicateGraphEntityId_ReturnsError()
+    {
+        var graph = CreateValidGraph() with
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "resource.parcels"
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain("metadata id 'resource.parcels' is duplicated.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithDanglingPublicationReferences_ReturnsResourceAndServiceErrors()
+    {
+        var graph = CreateValidGraph() with
+        {
+            Publications =
+            [
+                new MetadataV2Publication
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "publication.dangling"
+                    },
+                    ResourceId = "resource.missing",
+                    ServiceId = "service.missing",
+                    StorageBindingId = "storage.missing"
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(
+            "publication 'publication.dangling' references missing resource 'resource.missing'.");
+        result.Errors.Should().Contain(
+            "publication 'publication.dangling' references missing service 'service.missing'.");
+        result.Errors.Should().Contain(
+            "publication 'publication.dangling' references missing storage binding 'storage.missing'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithStorageBindingOwnedByDifferentResource_ReturnsResourceFirstError()
+    {
+        var graph = CreateValidGraph() with
+        {
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "resource.parcels"
+                    },
+                    StorageBindingIds =
+                    [
+                        "storage.hydrants.postgis"
+                    ],
+                    PrimaryStorageBindingId = "storage.parcels.postgis"
+                }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "storage.hydrants.postgis"
+                    },
+                    ResourceId = "resource.hydrants"
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(
+            "storage binding 'storage.hydrants.postgis' references missing resource 'resource.hydrants'.");
+        result.Errors.Should().Contain(
+            "resource 'resource.parcels' references storage binding 'storage.hydrants.postgis' owned by resource 'resource.hydrants'.");
+        result.Errors.Should().Contain(
+            "resource 'resource.parcels' primary storage binding 'storage.parcels.postgis' must be listed in storageBindingIds.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithServiceReferencingForeignPublication_ReturnsError()
+    {
+        var graph = CreateValidGraph() with
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "service.parcels"
+                    },
+                    PublicationIds =
+                    [
+                        "publication.parcels"
+                    ]
+                }
+            ],
+            Publications =
+            [
+                new MetadataV2Publication
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "publication.parcels"
+                    },
+                    ResourceId = "resource.parcels",
+                    ServiceId = "service.other",
+                    StorageBindingId = "storage.parcels.postgis"
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain("publication 'publication.parcels' references missing service 'service.other'.");
+        result.Errors.Should().Contain(
+            "service 'service.parcels' references publication 'publication.parcels' owned by service 'service.other'.");
+    }
+
+    private static MetadataV2Graph CreateValidGraph()
+    {
+        return new MetadataV2Graph
+        {
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "resource.parcels"
+                    },
+                    StorageBindingIds =
+                    [
+                        "storage.parcels.postgis"
+                    ],
+                    PrimaryStorageBindingId = "storage.parcels.postgis"
+                }
+            ],
+            Connections =
+            [
+                new MetadataV2Connection
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "connection.postgis"
+                    }
+                }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "storage.parcels.postgis"
+                    },
+                    ResourceId = "resource.parcels",
+                    ConnectionId = "connection.postgis"
+                }
+            ],
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "service.parcels"
+                    },
+                    PublicationIds =
+                    [
+                        "publication.parcels"
+                    ]
+                }
+            ],
+            Publications =
+            [
+                new MetadataV2Publication
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "publication.parcels"
+                    },
+                    ResourceId = "resource.parcels",
+                    ServiceId = "service.parcels",
+                    StorageBindingId = "storage.parcels.postgis"
+                }
+            ]
+        };
+    }
 }
