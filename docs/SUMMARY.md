@@ -104,7 +104,12 @@
 ## Security
 
 - [Security Policy](../SECURITY.md)
+- [Base URL and Open-Redirect Handling](security/base-url-and-open-redirect-handling.md)
 - [Code-scanning Remediation — 2026 Q2](security/code-scanning-2026-Q2-remediation.md)
+
+## Evidence
+
+- [Evidence Index](evidence/README.md) — cross-cutting map of compatibility, conformance, parity, certification, and migration evidence
 
 ## Archive
 

@@ -3,6 +3,7 @@
 Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**
 
 **New here?** Start with the [Platform Overview](PLATFORM.md) for architecture, protocols, and capabilities.
+**Need to defend a claim?** The [Evidence Index](evidence/README.md) is the cross-cutting map of compatibility, conformance, parity, certification, and migration evidence across the repo.
 Historical planning, audit, and design artifacts live under [docs/archive/](archive/README.md) and are not part of the current product contract.
 
 ## By Role
