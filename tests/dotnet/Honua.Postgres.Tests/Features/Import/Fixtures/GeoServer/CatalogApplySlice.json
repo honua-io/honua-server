@@ -26,7 +26,8 @@
     "/geoserver/rest/workspaces.json": {
       "workspaces": {
         "workspace": [
-          { "name": "ops" }
+          { "name": "ops" },
+          { "name": "team-b" }
         ]
       }
     },
@@ -34,6 +35,80 @@
       "workspace": {
         "name": "ops",
         "default": true
+      }
+    },
+    "/geoserver/rest/workspaces/team-b.json": {
+      "workspace": {
+        "name": "team-b",
+        "default": false
+      }
+    },
+    "/geoserver/rest/workspaces/team-b/datastores.json": {
+      "dataStores": {
+        "dataStore": [
+          { "name": "pg-b" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/team-b/datastores/pg-b.json": {
+      "dataStore": {
+        "name": "pg-b",
+        "type": "PostGIS",
+        "connectionParameters": {
+          "entry": [
+            { "@key": "host", "$": "db.example.com" },
+            { "@key": "database", "$": "gis" },
+            { "@key": "dbtype", "$": "postgis" }
+          ]
+        }
+      }
+    },
+    "/geoserver/rest/workspaces/team-b/coveragestores.json": {
+      "coverageStores": {
+        "coverageStore": ""
+      }
+    },
+    "/geoserver/rest/workspaces/team-b/layers.json": {
+      "layers": {
+        "layer": [
+          { "name": "soils" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/team-b/layers/soils.json": {
+      "layer": {
+        "name": "soils",
+        "title": "Soils",
+        "abstract": "Soil polygons",
+        "srs": "EPSG:4326",
+        "nativeCRS": "EPSG:3857",
+        "latLonBoundingBox": {
+          "minx": -158.2,
+          "miny": 21.1,
+          "maxx": -157.6,
+          "maxy": 21.8,
+          "crs": "EPSG:4326"
+        },
+        "nativeBoundingBox": {
+          "minx": 0,
+          "miny": 0,
+          "maxx": 100,
+          "maxy": 100,
+          "crs": "EPSG:3857"
+        },
+        "resource": {
+          "href": "https://example.com/geoserver/rest/workspaces/team-b/datastores/pg-b/featuretypes/soils.json"
+        }
+      }
+    },
+    "/geoserver/rest/workspaces/team-b/layergroups.json": {
+      "layerGroups": {
+        "layerGroup": ""
+      }
+    },
+    "/geoserver/rest/workspaces/team-b/styles.json": {
+      "styles": {
+        "style": ""
       }
     },
     "/geoserver/rest/workspaces/ops/datastores.json": {
