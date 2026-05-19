@@ -145,6 +145,54 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/scan")]
+    public async Task Scan_OgcWcsSourceWithAllArtifacts_ReturnsCoverageInventoryManifestAndEvidence()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", new
+        {
+            SourceKind = "ogc-wcs",
+            SourceUrl = "https://example.com/geoserver/wcs",
+            ServiceVersion = "2.0.1",
+            ArtifactSet = "all",
+            TargetServiceName = "Migrated Coverages"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = await response.Content.ReadFromJsonAsync<JsonDocument>();
+        payload.Should().NotBeNull();
+
+        var root = payload!.RootElement;
+        root.GetProperty("inventory").GetProperty("sourceKind").GetString().Should().Be("ogc-wcs");
+        root.GetProperty("inventory").GetProperty("resources")[0].GetProperty("kind").GetString().Should().Be("coverage");
+        root.GetProperty("manifest").GetProperty("targetResources")[0].GetProperty("migrationMode").GetString()
+            .Should().Be("raster-coverage-import");
+        root.GetProperty("parityEvidence").GetProperty("sections").EnumerateArray()
+            .Should().Contain(section => section.GetProperty("id").GetString() == "fidelity");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/scan")]
+    public async Task Scan_OgcApiCoveragesSource_ReturnsCoverageInventory()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", new
+        {
+            SourceKind = "ogc-api-coverages",
+            SourceUrl = "https://example.com/coverages",
+            ArtifactSet = "all"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = await response.Content.ReadFromJsonAsync<JsonDocument>();
+        payload.Should().NotBeNull();
+
+        var inventory = payload!.RootElement.GetProperty("inventory");
+        inventory.GetProperty("sourceKind").GetString().Should().Be("ogc-api-coverages");
+        inventory.GetProperty("resources")[0].GetProperty("name").GetString().Should().Be("ocean-forecast");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/scan")]
     public async Task Scan_OgcWmsSource_ReturnsUnsupportedRenderOnlyInventory()
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", new
@@ -715,6 +763,99 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
                             Reason = "WMS exposes rendered map images and cannot supply automated feature data-copy by itself.",
                             TargetKind = "map-service-layer",
                             ManualSteps = ["Pair this WMS layer with a WFS, coverage, database, or file source before planning data import."]
+                        }
+                    ]
+                });
+            }
+
+            if (request.ServiceType.Equals("WCS", StringComparison.OrdinalIgnoreCase) ||
+                request.ServiceType.Equals("OGC API Coverages", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(new MigrationSourceInventoryArtifact
+                {
+                    SourceKind = request.ServiceType.Equals("WCS", StringComparison.OrdinalIgnoreCase)
+                        ? "ogc-wcs"
+                        : "ogc-api-coverages",
+                    Source = new MigrationSourceIdentity
+                    {
+                        DisplayName = request.ServiceType.Equals("WCS", StringComparison.OrdinalIgnoreCase)
+                            ? "Reference WCS"
+                            : "Reference Coverages",
+                        BaseUrl = request.ServiceUrl,
+                        Product = request.ServiceType.Equals("WCS", StringComparison.OrdinalIgnoreCase)
+                            ? "OGC Web Coverage Service"
+                            : "OGC API Coverages",
+                        Version = request.Version,
+                        ServiceType = request.ServiceType
+                    },
+                    AuthPosture = new MigrationInventoryAuthPosture
+                    {
+                        Mode = "anonymous",
+                        AccessConfirmed = true
+                    },
+                    ScanCompleteness = new MigrationInventoryCompleteness
+                    {
+                        Status = "complete"
+                    },
+                    Summary = new MigrationInventorySummary
+                    {
+                        ContainerCount = 1,
+                        ResourceCount = 1,
+                        PartiallyCompatibleCount = 1
+                    },
+                    OverallCompatibility = new MigrationCompatibilityAssessment
+                    {
+                        Level = "partial",
+                        Code = OgcCoverageMigrationCompatibilityCodes.CogSupported,
+                        Reason = "Coverage advertises Cloud Optimized GeoTIFF output that can seed the automated raster migration path."
+                    },
+                    Containers =
+                    [
+                        new MigrationInventoryContainer
+                        {
+                            Id = "service:coverage",
+                            Kind = "ogc-coverage-service",
+                            Name = request.ServiceType,
+                            Compatibility = new MigrationCompatibilityAssessment
+                            {
+                                Level = "partial",
+                                Reason = "Coverage service contains migration-review items."
+                            }
+                        }
+                    ],
+                    Resources =
+                    [
+                        new MigrationInventoryResource
+                        {
+                            Id = request.ServiceType.Equals("WCS", StringComparison.OrdinalIgnoreCase)
+                                ? "coverage:nurc-temperature"
+                                : "coverage:ocean-forecast",
+                            ContainerId = "service:coverage",
+                            Kind = "coverage",
+                            Name = request.ServiceType.Equals("WCS", StringComparison.OrdinalIgnoreCase)
+                                ? "nurc:temperature"
+                                : "ocean-forecast",
+                            Capabilities = ["wcs:DescribeCoverage", "wcs:GetCoverage"],
+                            Compatibility = new MigrationCompatibilityAssessment
+                            {
+                                Level = "partial",
+                                Code = OgcCoverageMigrationCompatibilityCodes.CogSupported,
+                                Reason = "Coverage advertises Cloud Optimized GeoTIFF output that can seed the automated raster migration path.",
+                                ManualSteps = ["Run pilot coverage import and verify parity."]
+                            }
+                        }
+                    ],
+                    FidelityClassifications =
+                    [
+                        new MigrationFidelityClassificationRecord
+                        {
+                            Id = "fidelity:coverage:nurc-temperature:metadata",
+                            SourceId = "coverage:nurc-temperature",
+                            Kind = "coverage",
+                            Category = "coverage-metadata",
+                            AutomationStatus = MigrationFidelityAutomationStatuses.Assisted,
+                            Code = OgcCoverageMigrationCompatibilityCodes.CogSupported,
+                            Reason = "Coverage parity probes were scheduled for metadata, subset, CRS, format, no-data, and band review."
                         }
                     ]
                 });

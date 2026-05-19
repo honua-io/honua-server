@@ -61,7 +61,7 @@ internal static class MigrationScannerEndpoints
         {
             await AdminResponseWriter.WriteErrorAsync(
                 context,
-                "SourceKind must be one of: geoserver, geoserver-rest, geoservices, arcgis-geoservices-rest, ogc-api-features, ogc-wfs, ogc-wms, ogc-wmts.",
+                "SourceKind must be one of: geoserver, geoserver-rest, geoservices, arcgis-geoservices-rest, ogc-api-features, ogc-wfs, ogc-wms, ogc-wmts, ogc-wcs, ogc-api-coverages.",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -118,6 +118,8 @@ internal static class MigrationScannerEndpoints
                 case "ogc-wfs":
                 case "ogc-wms":
                 case "ogc-wmts":
+                case "ogc-wcs":
+                case "ogc-api-coverages":
                     {
                         var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
                         var validation = await OgcServiceUrlValidation.ValidateAsync(
@@ -137,7 +139,7 @@ internal static class MigrationScannerEndpoints
                         artifact = await scanner.ScanSourceAsync(
                             new OgcServiceScanRequest
                             {
-                                ServiceType = sourceKind["ogc-".Length..],
+                                ServiceType = ToOgcServiceType(sourceKind),
                                 ServiceUrl = request.SourceUrl,
                                 Version = request.ServiceVersion,
                                 TimeoutSeconds = request.TimeoutSeconds ?? 60,
@@ -288,11 +290,20 @@ internal static class MigrationScannerEndpoints
             "wfs" or "ogc-wfs" => "ogc-wfs",
             "wms" or "ogc-wms" => "ogc-wms",
             "wmts" or "ogc-wmts" => "ogc-wmts",
+            "wcs" or "ogc-wcs" => "ogc-wcs",
+            "coverages" or "ogc-coverages" or "ogc-api-coverages" => "ogc-api-coverages",
             _ => string.Empty
         };
 
         return normalized.Length > 0;
     }
+
+    private static string ToOgcServiceType(string sourceKind)
+        => sourceKind switch
+        {
+            "ogc-api-coverages" => "OGC API Coverages",
+            _ => sourceKind["ogc-".Length..]
+        };
 
     private static object CreateScanResponse(
         MigrationSourceInventoryArtifact artifact,

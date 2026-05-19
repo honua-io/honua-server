@@ -11,7 +11,7 @@ namespace Honua.Core.Features.Import.Abstractions;
 public interface IOgcServiceMigrationScanner
 {
     /// <summary>
-    /// Scan an OGC WFS, WMS, or WMTS endpoint into the shared source inventory contract.
+    /// Scan an OGC WFS, WMS, WMTS, WCS, or OGC API Coverages endpoint into the shared source inventory contract.
     /// </summary>
     /// <param name="request">OGC service scan request.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

@@ -105,6 +105,7 @@ public sealed partial class OgcCoverageMigrationInventoryScanner
                 .Concat(orderedResources.Select(static resource => resource.Compatibility))
                 .Concat(orderedDependencies.Select(static dependency => dependency.Compatibility)),
             "No OGC coverage inventory items were discovered.");
+        var fidelityClassifications = BuildFidelityClassifications(orderedResources, orderedDependencies);
 
         return new MigrationSourceInventoryArtifact
         {
@@ -126,9 +127,79 @@ public sealed partial class OgcCoverageMigrationInventoryScanner
             OverallCompatibility = overallCompatibility,
             Containers = containers,
             Resources = orderedResources,
-            ExternalDependencies = orderedDependencies
+            ExternalDependencies = orderedDependencies,
+            FidelityClassifications = fidelityClassifications
         };
     }
+
+    private static MigrationFidelityClassificationRecord[] BuildFidelityClassifications(
+        MigrationInventoryResource[] resources,
+        MigrationExternalDependency[] dependencies)
+    {
+        var records = new List<MigrationFidelityClassificationRecord>();
+        foreach (var resource in resources)
+        {
+            var relatedDependencies = dependencies
+                .Where(dependency => string.Equals(dependency.ResourceId, resource.Id, StringComparison.Ordinal))
+                .Select(static dependency => dependency.Id)
+                .OrderBy(static id => id, StringComparer.Ordinal)
+                .ToArray();
+            records.Add(new MigrationFidelityClassificationRecord
+            {
+                Id = $"fidelity:{resource.Id}:metadata",
+                SourceId = resource.Id,
+                Kind = resource.Kind,
+                Category = "coverage-metadata",
+                Name = resource.Name,
+                AutomationStatus = IsCoverageAutomated(resource.Compatibility)
+                    ? MigrationFidelityAutomationStatuses.Assisted
+                    : ToFidelityStatus(resource.Compatibility),
+                Code = resource.Compatibility.Code ?? OgcCoverageMigrationCompatibilityCodes.ManualReview,
+                Reason = "Coverage service metadata, CRS, output format, subset axis, range, band, no-data, and temporal facts were captured for parity review.",
+                TargetKind = "raster-coverage",
+                ManualSteps = IsCoverageAutomated(resource.Compatibility)
+                    ? ["Run pilot coverage import and compare metadata, bbox/subsets, CRS axis order, sample window pixels, no-data values, band/range metadata, output format, and target WCS/OGC API Coverages/ImageServer exposure."]
+                    : resource.Compatibility.ManualSteps,
+                RelatedIds = relatedDependencies
+            });
+        }
+
+        foreach (var dependency in dependencies.Where(static item => item.Kind == "coverage-output-format"))
+        {
+            records.Add(new MigrationFidelityClassificationRecord
+            {
+                Id = $"fidelity:{dependency.Id}:format",
+                SourceId = dependency.Id,
+                Kind = dependency.Kind,
+                Category = "coverage-output-format",
+                Name = dependency.Name,
+                AutomationStatus = IsCoverageAutomated(dependency.Compatibility)
+                    ? MigrationFidelityAutomationStatuses.Assisted
+                    : ToFidelityStatus(dependency.Compatibility),
+                Code = dependency.Compatibility.Code ?? OgcCoverageMigrationCompatibilityCodes.ManualReview,
+                Reason = dependency.Compatibility.Reason,
+                ManualSteps = dependency.Compatibility.ManualSteps,
+                RelatedIds = dependency.ResourceId == null ? [] : [dependency.ResourceId],
+                Metadata = new Dictionary<string, string>(dependency.Metadata, StringComparer.Ordinal)
+            });
+        }
+
+        return records
+            .OrderBy(static record => record.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static bool IsCoverageAutomated(MigrationCompatibilityAssessment compatibility)
+        => compatibility.Code is OgcCoverageMigrationCompatibilityCodes.GeoTiffSupported or OgcCoverageMigrationCompatibilityCodes.CogSupported;
+
+    private static string ToFidelityStatus(MigrationCompatibilityAssessment compatibility)
+        => compatibility.Level switch
+        {
+            "compatible" => MigrationFidelityAutomationStatuses.Automated,
+            "partial" => MigrationFidelityAutomationStatuses.ManualReview,
+            "incompatible" => MigrationFidelityAutomationStatuses.Unsupported,
+            _ => MigrationFidelityAutomationStatuses.ManualReview
+        };
 
     private async Task<MigrationInventoryResource> BuildCoverageResourceAsync(
         string containerId,

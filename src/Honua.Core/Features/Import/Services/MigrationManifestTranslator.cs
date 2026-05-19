@@ -279,6 +279,13 @@ public static partial class MigrationManifestTranslator
             return "feature-import";
         }
 
+        if ((string.Equals(sourceKind, "ogc-wcs", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(sourceKind, "ogc-api-coverages", StringComparison.OrdinalIgnoreCase)) &&
+            string.Equals(resource.Kind, "coverage", StringComparison.OrdinalIgnoreCase))
+        {
+            return "raster-coverage-import";
+        }
+
         return null;
     }
 
@@ -295,6 +302,8 @@ public static partial class MigrationManifestTranslator
             "ogc-api-features" => "OGC API Features",
             "ogc-wms" => "WMS",
             "ogc-wmts" => "WMTS",
+            "ogc-wcs" => "WCS",
+            "ogc-api-coverages" => "OGC API Coverages",
             _ => null
         };
     }
