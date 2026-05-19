@@ -274,6 +274,9 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/geoserver/jobs"),
 
+        // v1 admin import endpoints (OGC API Features) — #1029 slice 2
+        new("POST", "/api/v1/admin/import/ogc-api-features/collection"),
+
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),
         new("GET", "/api/v1/admin/operations/cache/statistics"),

@@ -23,7 +23,7 @@ namespace Honua.Postgres.Features.Import;
 /// Inserts use <c>ON CONFLICT (source_feature_id) DO UPDATE</c> so re-running the importer against
 /// the same source/target combination converges to the same row set.
 /// </remarks>
-public sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeaturesCollectionSink
+internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeaturesCollectionSink
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<PostgresOgcApiFeaturesCollectionSink> _logger;
