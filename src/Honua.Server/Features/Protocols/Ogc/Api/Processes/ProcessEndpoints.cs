@@ -262,6 +262,10 @@ internal static class ProcessEndpoints
                 ["submittedVia"] = "OGC-API-Processes",
                 ["protocolProcessId"] = processId
             };
+            if (definition != null)
+            {
+                AddOutputBindings(metadata, definition);
+            }
 
             var jobRecord = await jobService
                 .SubmitJobAsync(
@@ -582,6 +586,20 @@ internal static class ProcessEndpoints
         }
 
         return outputs.ToImmutable();
+    }
+
+    private static void AddOutputBindings(
+        Dictionary<string, string> metadata,
+        ProcessDefinition definition)
+    {
+        for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
+        {
+            var outputName = BuildOutputName(
+                definition.OutputArtifactKinds[index],
+                index,
+                definition.OutputArtifactKinds);
+            metadata[$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}"] = outputName;
+        }
     }
 
     private static string BuildOutputName(ArtifactKind kind, int index, IReadOnlyList<ArtifactKind> allKinds)

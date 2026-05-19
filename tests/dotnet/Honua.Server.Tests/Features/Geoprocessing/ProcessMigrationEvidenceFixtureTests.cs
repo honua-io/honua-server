@@ -57,7 +57,7 @@ public sealed class ProcessMigrationEvidenceFixtureTests
 
         artifact.RootElement.GetProperty("schemaVersion").GetString()
             .Should().Be("2026-05-18.process-migration.evidence.v1");
-        artifact.RootElement.GetProperty("status").GetString().Should().Be("scaffold");
+        artifact.RootElement.GetProperty("status").GetString().Should().Be("implemented-first-slice");
 
         var contract = artifact.RootElement.GetProperty("resultContract");
         contract.GetProperty("ogcApiProcesses").GetProperty("resultsRoute").GetString()

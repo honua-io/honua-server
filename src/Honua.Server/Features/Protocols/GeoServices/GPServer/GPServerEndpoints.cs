@@ -785,6 +785,7 @@ internal static class GPServerEndpoints
                 definition.OutputArtifactKinds[index],
                 index,
                 definition.OutputArtifactKinds);
+            metadata[$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}"] = outputName;
             metadata[$"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}"] = outputName;
         }
 
@@ -937,7 +938,13 @@ internal static class GPServerEndpoints
             return metadataName;
         }
 
-        if (job.Spec.Parameters.TryGetValue($"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}", out var storedName) &&
+        if (job.Spec.Parameters.TryGetValue($"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}", out var storedName) &&
+            !string.IsNullOrWhiteSpace(storedName))
+        {
+            return storedName;
+        }
+
+        if (job.Spec.Parameters.TryGetValue($"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}", out storedName) &&
             !string.IsNullOrWhiteSpace(storedName))
         {
             return storedName;
