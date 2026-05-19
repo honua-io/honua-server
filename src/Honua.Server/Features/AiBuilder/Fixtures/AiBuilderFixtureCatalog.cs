@@ -41,11 +41,15 @@ internal sealed class AiBuilderFixtureCatalog
 
     /// <summary>
     /// Finds the first scenario whose prompt matches the supplied utterance
-    /// after normalization (trim + lowercase). Returns null when no scenario
-    /// matches — callers should treat that as "no fixture for this prompt"
-    /// rather than an error.
+    /// after normalization (trim + lowercase). Optional scenario selectors let
+    /// fixture-replay callers reach duplicate-prompt cases such as cache hits.
+    /// Returns null when no scenario matches — callers should treat that as
+    /// "no fixture for this prompt" rather than an error.
     /// </summary>
-    public AiBuilderScenario? FindByPrompt(string? prompt)
+    public AiBuilderScenario? FindByPrompt(
+        string? prompt,
+        string? scenarioId = null,
+        string? scenarioCase = null)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
@@ -55,10 +59,25 @@ internal sealed class AiBuilderFixtureCatalog
         var key = Normalize(prompt);
         for (var i = 0; i < _scenarios.Count; i++)
         {
-            if (string.Equals(Normalize(_scenarios[i].Prompt), key, StringComparison.Ordinal))
+            var scenario = _scenarios[i];
+            if (!string.Equals(Normalize(scenario.Prompt), key, StringComparison.Ordinal))
             {
-                return _scenarios[i];
+                continue;
             }
+
+            if (!string.IsNullOrWhiteSpace(scenarioId)
+                && !string.Equals(scenario.Id, scenarioId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(scenarioCase)
+                && !string.Equals(scenario.Case, scenarioCase, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return scenario;
         }
 
         return null;

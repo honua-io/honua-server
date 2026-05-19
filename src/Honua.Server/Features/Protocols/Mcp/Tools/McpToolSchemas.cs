@@ -61,7 +61,7 @@ internal static class McpToolSchemas
             },
             "context": {
               "type": "object",
-              "description": "Optional caller context. Echoed back unchanged so traceability/correlation hints flow through fixture replay."
+              "description": "Optional caller context. Echoed back unchanged; fixture replay honors fixtureScenarioId or fixtureCase for duplicate-prompt selection."
             }
           }
         }

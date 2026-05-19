@@ -43,7 +43,11 @@ internal sealed class FixturePlanAnalysisService : IPlanAnalysisService
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("honua.planner.fixture");
 
-        var scenario = _catalog.FindByPrompt(intent);
+        var scenarioId = ReadContextString(context, "fixtureScenarioId")
+            ?? ReadContextString(context, "scenarioId");
+        var scenarioCase = ReadContextString(context, "fixtureCase");
+
+        var scenario = _catalog.FindByPrompt(intent, scenarioId, scenarioCase);
         if (scenario is null)
         {
             activity?.SetTag("planner.match", "miss");
@@ -62,5 +66,18 @@ internal sealed class FixturePlanAnalysisService : IPlanAnalysisService
         var output = AiBuilderScenarioMapper.ToPlanAnalysisOutput(scenario);
         output.Context = context;
         return Task.FromResult(output);
+    }
+
+    private static string? ReadContextString(JsonElement? context, string propertyName)
+    {
+        if (!context.HasValue || context.Value.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return context.Value.TryGetProperty(propertyName, out var property)
+               && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
     }
 }

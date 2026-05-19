@@ -9,8 +9,9 @@ namespace Honua.Server.Features.Protocols.Mcp.Models;
 /// <summary>
 /// Arguments for the <c>honua_plan_analysis</c> tool. Accepts a natural-language
 /// intent and an optional caller-supplied context blob; the planner echoes the
-/// context back unchanged so traceability/correlation hints can flow through
-/// fixture replay without the server having to interpret them.
+/// context back unchanged so traceability/correlation hints can flow through.
+/// Fixture replay also honors <c>fixtureScenarioId</c> or <c>fixtureCase</c>
+/// values inside the context when duplicate prompts need deterministic selection.
 /// </summary>
 internal sealed class McpPlanAnalysisArgument
 {

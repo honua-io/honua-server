@@ -130,7 +130,8 @@ internal static class AiBuilderScenarioMapper
                 StepId = ReadStringProperty(node, "nodeId") ?? string.Empty,
                 Kind = NormalizeStepKind(ReadStringProperty(node, "kind")),
                 ProcessId = ReadStringProperty(node, "processId"),
-                DependsOn = ReadStringArray(node, "dependsOn")
+                DependsOn = ReadStringArray(node, "dependsOn"),
+                Inputs = ReadStringMap(node, "inputs")
             };
             steps.Add(step);
         }

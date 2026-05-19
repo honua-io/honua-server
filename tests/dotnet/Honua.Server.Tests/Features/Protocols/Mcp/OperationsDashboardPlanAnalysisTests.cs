@@ -178,4 +178,29 @@ public sealed class OperationsDashboardPlanAnalysisTests
         body.GetProperty("capabilityState").GetProperty("name").GetString()
             .Should().Be("kernelDensityAggregation");
     }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_plan_analysis")]
+    public async Task PlanAnalysis_OperationsDashboardCacheHit_CanSelectDuplicatePromptScenario()
+    {
+        var tool = CreateTool();
+        var arguments = McpTestFactory.ParseJson(
+            $$"""
+            {
+              "intent": "{{DashboardPrompt}}",
+              "context": {
+                "fixtureScenarioId": "cache-hit-reused-operations-dashboard"
+              }
+            }
+            """);
+
+        var result = await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        var body = result.StructuredContent!.Value;
+        body.GetProperty("fixtureCase").GetString().Should().Be("cache-hit");
+        body.GetProperty("cache").GetProperty("hit").GetBoolean().Should().BeTrue();
+        body.GetProperty("warnings").EnumerateArray()
+            .Should().Contain(w => w.GetProperty("code").GetString() == "cache_hit");
+    }
 }

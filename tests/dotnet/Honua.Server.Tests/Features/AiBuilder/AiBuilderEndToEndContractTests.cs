@@ -45,7 +45,8 @@ public sealed class AiBuilderEndToEndContractTests
         [
             new FieldDefinition("facility_type", FieldType.String, Length: 50),
             new FieldDefinition("status", FieldType.String, Length: 20),
-            new FieldDefinition("capacity", FieldType.Integer)
+            new FieldDefinition("capacity", FieldType.Integer),
+            new FieldDefinition("shape", FieldType.Geometry)
         ]);
 
     private static (DeterministicNlQueryPlanProvider Nl, PlanAnalysisTool Planner) BuildServices()
@@ -60,7 +61,8 @@ public sealed class AiBuilderEndToEndContractTests
     }
 
     [IntegrationTest]
-    [Endpoint("AI Builder spatial-query end-to-end")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_plan_analysis")]
     public async Task SpatialQueryPrompt_FlowsFromNlPlanToAnalysisPlanWithConsistentWarnings()
     {
         var (nl, planner) = BuildServices();
@@ -74,6 +76,11 @@ public sealed class AiBuilderEndToEndContractTests
         nlResult.Plan!.Combinator.Should().Be(FilterPlanCombinator.And);
         nlResult.Plan.Clauses.Should().Contain(c =>
             c.Type == "spatial" && c.Spatial != null && c.Spatial.Operator == "dwithin");
+
+        var orchestrator = new NlQueryOrchestrator(nl, NullLogger<NlQueryOrchestrator>.Instance);
+        var compiled = await orchestrator.ExecuteAsync(
+            new NlQueryPlanRequest(SpatialQueryPrompt, FacilitiesLayer, "critical_facilities"));
+        compiled.IsSuccess.Should().BeTrue(compiled.ErrorMessage);
 
         // Stage 2: same prompt drives plan analysis through MCP. The two
         // services share the AI-builder catalog so the success scenario must
@@ -103,7 +110,8 @@ public sealed class AiBuilderEndToEndContractTests
     }
 
     [IntegrationTest]
-    [Endpoint("AI Builder operations-dashboard end-to-end")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_plan_analysis")]
     public async Task OperationsDashboardPrompt_EmitsSpecDraftPlanAndAppPackagePreview()
     {
         var (_, planner) = BuildServices();
@@ -145,7 +153,8 @@ public sealed class AiBuilderEndToEndContractTests
     }
 
     [IntegrationTest]
-    [Endpoint("AI Builder error envelopes")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_plan_analysis")]
     public async Task ClarificationAmbiguityPrompt_SurfacesStructuredCandidatesNotOpaqueFailure()
     {
         var (nl, planner) = BuildServices();
@@ -180,8 +189,9 @@ public sealed class AiBuilderEndToEndContractTests
     }
 
     [IntegrationTest]
-    [Endpoint("AI Builder cache-hit semantics")]
-    public async Task CacheHitPrompt_ReturnsSamePlanIdAsOriginatingSuccessScenario()
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_plan_analysis")]
+    public async Task CacheHitPrompt_ReturnsSameCacheKeyAsOriginatingSuccessScenario()
     {
         var (_, planner) = BuildServices();
 
@@ -193,16 +203,24 @@ public sealed class AiBuilderEndToEndContractTests
             .GetProperty("cache").GetProperty("key").GetString();
 
         // The cache-hit scenario shares the same prompt as the success
-        // scenario, so the planner reads back the same cache key. The SDK
-        // can use that to decide whether to re-render artifacts.
+        // scenario. Fixture replay uses context to select that duplicate case
+        // while preserving the cache key that SDKs use for artifact reuse.
         var secondArgs = McpTestFactory.ParseJson(
-            $$"""{"intent":"{{SpatialQueryPrompt}}"}""");
+            $$"""
+            {
+              "intent": "{{SpatialQueryPrompt}}",
+              "context": {
+                "fixtureCase": "cache-hit"
+              }
+            }
+            """);
         var secondResult = await planner.InvokeAsync(
             McpTestFactory.AuthenticatedHttpContext(), secondArgs, CancellationToken.None);
-        var secondCacheKey = secondResult.StructuredContent!.Value
-            .GetProperty("cache").GetProperty("key").GetString();
+        var secondCache = secondResult.StructuredContent!.Value.GetProperty("cache");
+        var secondCacheKey = secondCache.GetProperty("key").GetString();
 
         secondCacheKey.Should().Be(firstCacheKey);
+        secondCache.GetProperty("hit").GetBoolean().Should().BeTrue();
         firstCacheKey.Should().StartWith("sha256:");
     }
 }

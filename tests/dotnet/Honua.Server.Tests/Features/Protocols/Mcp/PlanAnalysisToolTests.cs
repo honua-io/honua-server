@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.AiBuilder.Fixtures;
 using Honua.Server.Features.AiBuilder.Planning;
@@ -54,6 +55,10 @@ public sealed class PlanAnalysisToolTests
             .Select(s => s.GetProperty("stepId").GetString())
             .ToArray();
         stepIds.Should().BeEquivalentTo(["query-open-hospitals", "distance-filter", "compose-packages"]);
+
+        var domainPlan = ToDomainPlan(plan);
+        var (violations, _) = ProcessPlanValidator.Validate(domainPlan, new BuiltInProcessCatalog());
+        violations.Should().BeEmpty();
 
         body.GetProperty("warnings").EnumerateArray()
             .Should().Contain(w => w.GetProperty("code").GetString() == "mutable_source_cache_warning");
@@ -123,14 +128,23 @@ public sealed class PlanAnalysisToolTests
     {
         var tool = CreateTool(_jobService);
         var arguments = McpTestFactory.ParseJson(
-            """{"intent":"Show open hospitals within 1 km of flood zones as a linked map, table, and chart."}""");
+            """
+            {
+              "intent": "Show open hospitals within 1 km of flood zones as a linked map, table, and chart.",
+              "context": {
+                "fixtureCase": "cache-hit"
+              }
+            }
+            """);
 
         var result = await tool.InvokeAsync(
             McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
+        body.GetProperty("fixtureCase").GetString().Should().Be("cache-hit");
         var cache = body.GetProperty("cache");
         cache.GetProperty("key").GetString().Should().StartWith("sha256:");
+        cache.GetProperty("hit").GetBoolean().Should().BeTrue();
     }
 
     [UnitTest]
@@ -175,5 +189,11 @@ public sealed class PlanAnalysisToolTests
         descriptor.InputSchema.GetProperty("required").EnumerateArray()
             .Select(p => p.GetString())
             .Should().Contain("intent");
+    }
+
+    private static AnalysisPlan ToDomainPlan(JsonElement plan)
+    {
+        var input = plan.Deserialize(McpJsonContext.Default.McpPlanInput);
+        return McpToolHelpers.ToDomainPlan(input);
     }
 }

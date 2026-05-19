@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.NlQuery.Domain;
+using Honua.Core.Features.NlQuery.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.AiBuilder.Fixtures;
 using Honua.Server.Features.NlQuery;
@@ -26,7 +27,8 @@ public sealed class DeterministicNlQueryPlanProviderTests
         [
             new FieldDefinition("facility_type", FieldType.String, Length: 50),
             new FieldDefinition("status", FieldType.String, Length: 20),
-            new FieldDefinition("capacity", FieldType.Integer)
+            new FieldDefinition("capacity", FieldType.Integer),
+            new FieldDefinition("shape", FieldType.Geometry)
         ]);
 
     private static DeterministicNlQueryPlanProvider CreateProvider()
@@ -62,6 +64,9 @@ public sealed class DeterministicNlQueryPlanProviderTests
             && clause.Comparison != null
             && clause.Comparison.Property == "facility_type"
             && clause.Comparison.Operator == "eq");
+
+        var compileResult = FilterPlanCompiler.Compile(result.Plan, TestLayer);
+        compileResult.IsSuccess.Should().BeTrue(compileResult.ErrorMessage);
     }
 
     [UnitTest]

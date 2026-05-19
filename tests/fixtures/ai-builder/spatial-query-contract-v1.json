@@ -210,6 +210,33 @@
               "type": "spatial",
               "spatial": {
                 "operator": "dwithin",
+                "geometry": {
+                  "type": "Polygon",
+                  "coordinates": [
+                    [
+                      [
+                        -122.5,
+                        37.7
+                      ],
+                      [
+                        -122.3,
+                        37.7
+                      ],
+                      [
+                        -122.3,
+                        37.9
+                      ],
+                      [
+                        -122.5,
+                        37.9
+                      ],
+                      [
+                        -122.5,
+                        37.7
+                      ]
+                    ]
+                  ]
+                },
                 "targetSource": "catalog:layer:flood_zones",
                 "distance": 1000,
                 "distanceUnit": "meters"
@@ -247,12 +274,22 @@
         "dag": [
           {
             "nodeId": "query-open-hospitals",
-            "kind": "queryFeatures"
+            "kind": "queryFeatures",
+            "inputs": {
+              "layerId": "1",
+              "where": "facility_type = 'hospital' AND status = 'open'"
+            }
           },
           {
             "nodeId": "distance-filter",
             "kind": "geoprocess",
-            "processId": "geometry.withinDistance",
+            "processId": "analytics.spatial-join",
+            "inputs": {
+              "layerId": "1",
+              "joinLayerId": "2",
+              "predicate": "dwithin",
+              "distance": "1000"
+            },
             "dependsOn": [
               "query-open-hospitals"
             ]

@@ -223,7 +223,7 @@ public sealed class NlQueryPlanProviderTests
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("Unsupported NlQuery provider 'anthropic'. Only 'openai' is supported.");
+            .WithMessage("Unsupported NlQuery provider 'anthropic'. Supported values: 'openai', 'deterministic'.");
     }
 
     [UnitTest]
