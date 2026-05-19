@@ -83,10 +83,67 @@ internal sealed class McpPlanAnalysisOutput
     public string? Reason { get; set; }
 
     /// <summary>
+    /// App-package preview emitted by app-builder workflow families (e.g.
+    /// operations-dashboard). Carries the widget composition, data bindings,
+    /// and manifest preview the SDK needs to render the draft before apply.
+    /// </summary>
+    [JsonPropertyName("appPackage")]
+    public McpPlanAnalysisAppPackage? AppPackage { get; set; }
+
+    /// <summary>
     /// Pass-through of the caller's <c>context</c> field, when supplied.
     /// </summary>
     [JsonPropertyName("context")]
     public JsonElement? Context { get; set; }
+}
+
+/// <summary>
+/// App-package preview shape returned by app-builder planners. Mirrors the
+/// honua_app_package.v1 contract so the SDK can show the planned widgets,
+/// data bindings, and runtime config before execute.
+/// </summary>
+internal sealed class McpPlanAnalysisAppPackage
+{
+    [JsonPropertyName("appPackageId")]
+    public string AppPackageId { get; set; } = string.Empty;
+
+    [JsonPropertyName("templateId")]
+    public string? TemplateId { get; set; }
+
+    [JsonPropertyName("targetSdk")]
+    public string? TargetSdk { get; set; }
+
+    [JsonPropertyName("format")]
+    public string? Format { get; set; }
+
+    [JsonPropertyName("mapPackageId")]
+    public string? MapPackageId { get; set; }
+
+    [JsonPropertyName("resourceUri")]
+    public string? ResourceUri { get; set; }
+
+    [JsonPropertyName("entryPoint")]
+    public string? EntryPoint { get; set; }
+
+    [JsonPropertyName("manifestArtifactId")]
+    public string? ManifestArtifactId { get; set; }
+
+    [JsonPropertyName("bundleArtifactId")]
+    public string? BundleArtifactId { get; set; }
+
+    [JsonPropertyName("widgets")]
+    public IReadOnlyList<string> Widgets { get; set; } = [];
+
+    [JsonPropertyName("dataBindings")]
+    public IReadOnlyDictionary<string, string> DataBindings { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("generatedFiles")]
+    public IReadOnlyList<string> GeneratedFiles { get; set; } = [];
+
+    [JsonPropertyName("deliveryHints")]
+    public IReadOnlyDictionary<string, string> DeliveryHints { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 /// <summary>

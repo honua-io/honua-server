@@ -59,6 +59,7 @@ namespace Honua.Server.Features.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpPlanAnalysisClarification))]
 [JsonSerializable(typeof(McpPlanAnalysisClarificationCandidate))]
 [JsonSerializable(typeof(McpPlanAnalysisEstimate))]
+[JsonSerializable(typeof(McpPlanAnalysisAppPackage))]
 [JsonSerializable(typeof(McpJobResource))]
 [JsonSerializable(typeof(McpJobResultsResource))]
 [JsonSerializable(typeof(McpResultSummary))]
