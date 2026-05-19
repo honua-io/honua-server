@@ -8,9 +8,10 @@
 #      {"run_all": true, "reason": "no_changed_files"} so a manual replay still
 #      exercises the full matrix.
 #   2. When the diff touches a path under `infrastructure_paths` in
-#      ci-shards.json (TestKit, Honua.Core, Honua.Postgres,
-#      Honua.ServiceDefaults, src/Honua.Server/Features/Infrastructure/,
-#      Honua.sln, .github/, scripts/ci/), emit
+#      ci-shards.json (TestKit, Core/Postgres project and shared
+#      infrastructure paths, Honua.ServiceDefaults,
+#      src/Honua.Server/Features/Infrastructure/, Honua.sln, .github/,
+#      scripts/ci/), emit
 #      {"run_all": true, "reason": "infrastructure_change"}.
 #   3. Otherwise, walk every changed file, match it against shard `paths`
 #      prefixes, and union the shard names that claim it.
