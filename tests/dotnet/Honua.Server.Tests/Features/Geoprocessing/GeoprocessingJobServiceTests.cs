@@ -141,11 +141,20 @@ public sealed class GeoprocessingJobServiceTests
         var plan = CreateValidPlan();
         var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
 
-        job.Spec.Parameters.Should().HaveCount(2);
+        // Plan-level metadata: plan id + process definitions.
         job.Spec.Parameters.Should().ContainKey(ExecutionJobParameterKeys.GeoprocessingPlanId)
             .WhoseValue.Should().Be("plan-1");
         job.Spec.Parameters.Should().ContainKey(ExecutionJobParameterKeys.GeoprocessingProcessDefinitions)
             .WhoseValue.Should().Be("geometry.buffer");
+
+        // Step-level inputs are projected under a stable prefix so worker-side
+        // executors can read parameters without re-fetching the plan (#1031).
+        job.Spec.Parameters.Should().ContainKey($"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.wkb")
+            .WhoseValue.Should().Be("AAAA");
+        job.Spec.Parameters.Should().ContainKey($"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.srid")
+            .WhoseValue.Should().Be("4326");
+        job.Spec.Parameters.Should().ContainKey($"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.distance")
+            .WhoseValue.Should().Be("100");
     }
 
     [UnitTest]

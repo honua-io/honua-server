@@ -83,6 +83,11 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
                         sp.GetRequiredService<IConnectionMultiplexer>(),
                         sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
 
+                // Replace the production geometry.buffer executor registered by
+                // AddGeoprocessing with a deterministic fixture so this test
+                // exercises the GPServer protocol projection independently of
+                // the buffer implementation.
+                services.RemoveAll<IJobExecutor>();
                 services.AddSingleton<IJobExecutor, SuccessfulGpServerJobExecutor>();
                 services.AddJobWorker();
             });
