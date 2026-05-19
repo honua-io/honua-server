@@ -25,13 +25,15 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
         {
             MeasurementScope = "nightly medium fixture",
             RunId = "Release Evidence 2026-05-18",
+            FixtureProfile = MediumGeoServerFixture(),
             PhaseMeasurements =
             [
                 Measurement(MigrationCostPerformancePhases.Import, duration: 200, sourceRequests: 6, bytesRead: 600, bytesWritten: 900, featureCount: 50, artifactBytes: 1_200),
                 Measurement(MigrationCostPerformancePhases.Scan, duration: 100, sourceRequests: 4, bytesRead: 400, bytesWritten: 100, resourceCount: 3, cpu: 700, memory: 2_048),
                 Measurement(MigrationCostPerformancePhases.Apply, duration: 30, sourceRequests: 1, bytesRead: 50, bytesWritten: 75, resumeCount: 1),
                 Measurement(MigrationCostPerformancePhases.Manifest, duration: 10, sourceRequests: 1, bytesRead: 10, bytesWritten: 20, manualReviewCount: 1, candidateItemCount: 10)
-            ]
+            ],
+            RecoveryMeasurements = PassingRecovery()
         };
 
         var artifact = MigrationCostPerformanceEvidenceBuilder.Build(inventory, input, PassingThresholds());
@@ -50,9 +52,18 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
         artifact.Totals.CpuMilliseconds.Should().Be(700);
         artifact.Totals.PeakMemoryBytes.Should().Be(2_048);
         artifact.Totals.ArtifactBytes.Should().Be(1_200);
+        artifact.Totals.ResourceThroughputPerSecond.Should().BeApproximately(8.8235, 0.0001);
+        artifact.Totals.FeatureThroughputPerSecond.Should().BeApproximately(147.0588, 0.0001);
         artifact.Totals.ManualReviewCount.Should().Be(1);
         artifact.Totals.CandidateItemCount.Should().Be(10);
         artifact.Totals.ManualReviewRatio.Should().Be(0.1);
+        artifact.FixtureProfile.Should().Match<MigrationCostPerformanceFixtureProfile>(fixture =>
+            fixture.SourceFamily == MigrationCostPerformanceSourceFamilies.GeoServerRest &&
+            fixture.Size == MigrationCostPerformanceFixtureSizes.Medium &&
+            fixture.ExpectedResourceCount == 3 &&
+            fixture.ExpectedFeatureCount == 50);
+        artifact.Recovery.Should().OnlyContain(recovery =>
+            recovery.Classification == MigrationCostPerformanceClassifications.Pass);
         artifact.RunId.Should().Be("release-evidence-2026-05-18");
         artifact.Privacy.Should().Match<MigrationCostPerformancePrivacySummary>(privacy =>
             !privacy.SourceUrlsIncluded &&
@@ -80,7 +91,9 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
             RetryWarnCount = 1,
             RetryFailCount = 3,
             BytesReadWarn = 100,
-            BytesReadFail = 500
+            BytesReadFail = 500,
+            FeatureThroughputWarnPerSecond = 1,
+            FeatureThroughputFailPerSecond = 0.1
         };
 
         var artifact = MigrationCostPerformanceEvidenceBuilder.Build(CreateInventory(), input, thresholds);
@@ -94,6 +107,212 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
             .Which.Should().Match<MigrationCostPerformancePhaseEvidence>(phase =>
                 phase.Classification == MigrationCostPerformanceClassifications.Fail &&
                 phase.Signals.Single(signal => signal.Metric == "bytesRead").Classification == MigrationCostPerformanceClassifications.Fail);
+    }
+
+    [Fact]
+    public void Build_WithLowDerivedThroughput_ClassifiesLowerBoundSignal()
+    {
+        var input = new MigrationCostPerformanceEvidenceInput
+        {
+            MeasurementScope = "large fixture",
+            FixtureProfile = new MigrationCostPerformanceFixtureProfile
+            {
+                SourceFamily = MigrationCostPerformanceSourceFamilies.ArcGisGeoServicesRest,
+                Size = MigrationCostPerformanceFixtureSizes.Large,
+                ExpectedResourceCount = 1,
+                ExpectedFeatureCount = 1
+            },
+            PhaseMeasurements =
+            [
+                Measurement(MigrationCostPerformancePhases.Scan, duration: 1, sourceRequests: 1),
+                Measurement(MigrationCostPerformancePhases.Manifest, duration: 1),
+                Measurement(MigrationCostPerformancePhases.Apply, duration: 1),
+                Measurement(MigrationCostPerformancePhases.Import, duration: 10_000, featureCount: 1)
+            ],
+            RecoveryMeasurements = PassingRecovery()
+        };
+        var thresholds = PassingThresholds() with
+        {
+            FeatureThroughputWarnPerSecond = 1,
+            FeatureThroughputFailPerSecond = 0.2
+        };
+
+        var artifact = MigrationCostPerformanceEvidenceBuilder.Build(CreateInventory(), input, thresholds);
+
+        artifact.OverallClassification.Should().Be(MigrationCostPerformanceClassifications.Fail);
+        artifact.Phases.Should().ContainSingle(phase => phase.Phase == MigrationCostPerformancePhases.Import)
+            .Which.Signals.Should().ContainSingle(signal => signal.Metric == "featureThroughputPerSecond")
+            .Which.Should().Match<MigrationCostPerformanceSignal>(signal =>
+                signal.Classification == MigrationCostPerformanceClassifications.Fail &&
+                signal.Observed == 0.1);
+    }
+
+    [Fact]
+    public void Build_WithMissingRecoveryScenario_ReturnsWarnForIncompleteRecoveryEvidence()
+    {
+        var input = new MigrationCostPerformanceEvidenceInput
+        {
+            MeasurementScope = "small fixture",
+            FixtureProfile = MediumGeoServerFixture(),
+            PhaseMeasurements = RequiredPhaseMeasurements(),
+            RecoveryMeasurements =
+            [
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.SourceFailure,
+                    Recovered = true,
+                    ResumeObserved = true,
+                    AttemptCount = 2
+                }
+            ]
+        };
+
+        var artifact = MigrationCostPerformanceEvidenceBuilder.Build(CreateInventory(), input, PassingThresholds());
+
+        artifact.OverallClassification.Should().Be(MigrationCostPerformanceClassifications.Warn);
+        artifact.Recovery.Should().Contain(recovery =>
+            recovery.Scenario == MigrationCostPerformanceRecoveryScenarios.JobCancellation &&
+            recovery.Classification == MigrationCostPerformanceClassifications.Warn);
+    }
+
+    [Fact]
+    public void Build_WithFailedRepeatedApplyAttempt_ReturnsFailRecoveryEvidence()
+    {
+        var input = new MigrationCostPerformanceEvidenceInput
+        {
+            MeasurementScope = "small fixture",
+            FixtureProfile = MediumGeoServerFixture(),
+            PhaseMeasurements = RequiredPhaseMeasurements(),
+            RecoveryMeasurements =
+            [
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.SourceFailure,
+                    Recovered = true,
+                    ResumeObserved = true,
+                    AttemptCount = 2
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.JobCancellation,
+                    Recovered = true,
+                    ResumeObserved = true,
+                    AttemptCount = 2
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.TransientNetworkError,
+                    Recovered = true,
+                    ResumeObserved = true,
+                    AttemptCount = 2
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt,
+                    Recovered = true,
+                    IdempotentReplay = false,
+                    AttemptCount = 2
+                }
+            ]
+        };
+
+        var artifact = MigrationCostPerformanceEvidenceBuilder.Build(CreateInventory(), input, PassingThresholds());
+
+        artifact.OverallClassification.Should().Be(MigrationCostPerformanceClassifications.Fail);
+        artifact.Recovery.Should().ContainSingle(recovery =>
+                recovery.Scenario == MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt)
+            .Which.Classification.Should().Be(MigrationCostPerformanceClassifications.Fail);
+    }
+
+    [Fact]
+    public void Build_WithIdempotentRepeatedApplyWithoutRecoveryOrResume_ReturnsPassRecoveryEvidence()
+    {
+        var recovery = PassingRecovery();
+        recovery[^1] = new MigrationCostPerformanceRecoveryMeasurement
+        {
+            Scenario = MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt,
+            Recovered = null,
+            ResumeObserved = false,
+            IdempotentReplay = true,
+            AttemptCount = 2
+        };
+        var input = new MigrationCostPerformanceEvidenceInput
+        {
+            MeasurementScope = "small fixture",
+            FixtureProfile = MediumGeoServerFixture(),
+            PhaseMeasurements = RequiredPhaseMeasurements(),
+            RecoveryMeasurements = recovery
+        };
+
+        var artifact = MigrationCostPerformanceEvidenceBuilder.Build(CreateInventory(), input, PassingThresholds());
+
+        artifact.OverallClassification.Should().Be(MigrationCostPerformanceClassifications.Pass);
+        artifact.Recovery.Should().ContainSingle(recoveryEvidence =>
+                recoveryEvidence.Scenario == MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt)
+            .Which.Should().Match<MigrationCostPerformanceRecoveryEvidence>(recoveryEvidence =>
+                recoveryEvidence.Classification == MigrationCostPerformanceClassifications.Pass &&
+                recoveryEvidence.ResumeObserved == false &&
+                recoveryEvidence.IdempotentReplay == true);
+    }
+
+    [Fact]
+    public void Build_WithDuplicateRecoveryMeasurements_AggregatesWorstEvidenceAndAttemptCounts()
+    {
+        var input = new MigrationCostPerformanceEvidenceInput
+        {
+            MeasurementScope = "small fixture",
+            FixtureProfile = MediumGeoServerFixture(),
+            PhaseMeasurements = RequiredPhaseMeasurements(),
+            RecoveryMeasurements =
+            [
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.SourceFailure,
+                    Recovered = true,
+                    ResumeObserved = true,
+                    AttemptCount = 2
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.SourceFailure,
+                    Recovered = true,
+                    ResumeObserved = false,
+                    AttemptCount = 3
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.JobCancellation,
+                    Recovered = true,
+                    ResumeObserved = true,
+                    AttemptCount = 2
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.TransientNetworkError,
+                    Recovered = true,
+                    ResumeObserved = true,
+                    AttemptCount = 2
+                },
+                new MigrationCostPerformanceRecoveryMeasurement
+                {
+                    Scenario = MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt,
+                    IdempotentReplay = true,
+                    AttemptCount = 2
+                }
+            ]
+        };
+
+        var artifact = MigrationCostPerformanceEvidenceBuilder.Build(CreateInventory(), input, PassingThresholds());
+
+        artifact.OverallClassification.Should().Be(MigrationCostPerformanceClassifications.Fail);
+        artifact.Recovery.Should().ContainSingle(recovery =>
+                recovery.Scenario == MigrationCostPerformanceRecoveryScenarios.SourceFailure)
+            .Which.Should().Match<MigrationCostPerformanceRecoveryEvidence>(recovery =>
+                recovery.Classification == MigrationCostPerformanceClassifications.Fail &&
+                recovery.Recovered == true &&
+                recovery.ResumeObserved == false &&
+                recovery.AttemptCount == 5 &&
+                recovery.Summary.Contains("2 recovery measurements were aggregated.", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -187,6 +406,58 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
             }
         };
 
+    private static MigrationCostPerformanceFixtureProfile MediumGeoServerFixture()
+        => new()
+        {
+            SourceFamily = MigrationCostPerformanceSourceFamilies.GeoServerRest,
+            Size = MigrationCostPerformanceFixtureSizes.Medium,
+            ExpectedResourceCount = 3,
+            ExpectedFeatureCount = 50,
+            Description = "GeoServer REST medium fixture"
+        };
+
+    private static MigrationCostPerformancePhaseMeasurement[] RequiredPhaseMeasurements()
+        =>
+        [
+            Measurement(MigrationCostPerformancePhases.Scan, duration: 10, sourceRequests: 1, resourceCount: 1),
+            Measurement(MigrationCostPerformancePhases.Manifest, duration: 10),
+            Measurement(MigrationCostPerformancePhases.Apply, duration: 10),
+            Measurement(MigrationCostPerformancePhases.Import, duration: 10, featureCount: 1)
+        ];
+
+    private static MigrationCostPerformanceRecoveryMeasurement[] PassingRecovery()
+        =>
+        [
+            new MigrationCostPerformanceRecoveryMeasurement
+            {
+                Scenario = MigrationCostPerformanceRecoveryScenarios.SourceFailure,
+                Recovered = true,
+                ResumeObserved = true,
+                AttemptCount = 2
+            },
+            new MigrationCostPerformanceRecoveryMeasurement
+            {
+                Scenario = MigrationCostPerformanceRecoveryScenarios.JobCancellation,
+                Recovered = true,
+                ResumeObserved = true,
+                AttemptCount = 2
+            },
+            new MigrationCostPerformanceRecoveryMeasurement
+            {
+                Scenario = MigrationCostPerformanceRecoveryScenarios.TransientNetworkError,
+                Recovered = true,
+                ResumeObserved = true,
+                AttemptCount = 2
+            },
+            new MigrationCostPerformanceRecoveryMeasurement
+            {
+                Scenario = MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt,
+                Recovered = true,
+                IdempotentReplay = true,
+                AttemptCount = 2
+            }
+        ];
+
     private static MigrationCostPerformanceThresholds PassingThresholds()
         => new()
         {
@@ -209,6 +480,12 @@ public sealed class MigrationCostPerformanceEvidenceBuilderTests
             PeakMemoryFailBytes = 20_000,
             ArtifactBytesWarn = 10_000,
             ArtifactBytesFail = 20_000,
+            ResourceThroughputWarnPerSecond = 0.1,
+            ResourceThroughputFailPerSecond = 0.01,
+            FeatureThroughputWarnPerSecond = 0.1,
+            FeatureThroughputFailPerSecond = 0.01,
+            CoverageThroughputWarnPerSecond = 0.1,
+            CoverageThroughputFailPerSecond = 0.01,
             ManualReviewRatioWarn = 0.5,
             ManualReviewRatioFail = 0.75
         };
