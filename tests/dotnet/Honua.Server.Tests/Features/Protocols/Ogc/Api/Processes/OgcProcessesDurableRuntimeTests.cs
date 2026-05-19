@@ -85,6 +85,11 @@ public sealed class OgcProcessesDurableRuntimeTests(RedisFixture redis)
                         sp.GetRequiredService<IConnectionMultiplexer>(),
                         sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
 
+                // The production geometry.buffer executor is registered by
+                // AddGeoprocessing; this test exercises the durable-runtime
+                // protocol projection independently of the buffer implementation,
+                // so swap in a deterministic fixture executor instead.
+                services.RemoveAll<IJobExecutor>();
                 services.AddSingleton<IJobExecutor, SuccessfulOgcVectorProcessExecutor>();
                 services.AddJobWorker();
             });

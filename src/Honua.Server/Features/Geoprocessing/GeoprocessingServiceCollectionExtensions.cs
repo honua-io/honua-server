@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
+using Honua.Server.Features.Geoprocessing.Execution;
 using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -81,6 +82,22 @@ internal static class GeoprocessingServiceCollectionExtensions
         // Workflow orchestration substrate (#724) — exposes geoprocessing as the
         // canonical job executor consumed by the orchestration engine.
         services.TryAddSingleton<IWorkflowJobExecutor, GeoprocessingWorkflowJobExecutor>();
+
+        // Executor guardrails (ticket #1031): per-job artifact size ceiling and
+        // result retention TTL. Bound from configuration with safe defaults so
+        // the production executor can run without explicit operator setup.
+        services
+            .AddOptions<GeoprocessingExecutorOptions>()
+            .Bind(configuration.GetSection(GeoprocessingExecutorOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        // Built-in production executors (ticket #1031). Registered as the single
+        // IJobExecutor for ExecutionJobKind.Geoprocessing; per-process dispatch
+        // happens inside the executor. AddJobWorker activates the host that
+        // resolves and invokes these executors.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IJobExecutor, GeometryBufferJobExecutor>());
 
         // Job orchestration substrate: queue, log store (ticket #681)
         services.AddJobOrchestration();

@@ -309,6 +309,30 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 outputKinds);
         }
 
+        // Project plan step inputs onto the durable spec under a stable prefix so
+        // worker-side executors can read their parameters without reaching back into
+        // the analysis plan. Only `Geoprocess` steps carry semantic inputs in the
+        // first-slice catalog; other kinds are ignored here.
+        for (var stepIndex = 0; stepIndex < plan.Steps.Count; stepIndex++)
+        {
+            var step = plan.Steps[stepIndex];
+            if (step.Kind != AnalysisPlanStepKind.Geoprocess || step.Inputs.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var input in step.Inputs)
+            {
+                if (string.IsNullOrWhiteSpace(input.Key))
+                {
+                    continue;
+                }
+
+                var key = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}{stepIndex}.{input.Key}";
+                specParams[key] = input.Value ?? string.Empty;
+            }
+        }
+
         if (workload == null)
         {
             return new ExecutionJobSpec
