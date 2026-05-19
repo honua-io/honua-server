@@ -1224,6 +1224,9 @@ app.MapGeoservicesImportEndpoints();
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();
 
+// Configure OGC API Features collection import endpoints (#1029 slice 2)
+app.MapOgcApiFeaturesImportEndpoints();
+
 if (isTestEnvironment)
 {
     app.MapCrossServerConsumeProbeEndpoints();
