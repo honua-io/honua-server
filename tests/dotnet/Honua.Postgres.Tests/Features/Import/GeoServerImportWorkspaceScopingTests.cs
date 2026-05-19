@@ -255,6 +255,12 @@ public sealed class GeoServerImportWorkspaceScopingTests
         {
             await using var connection = await postgresFixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
+            // NOTE: This must remain column-compatible with the canonical
+            // honua.services schema asserted by tests/seed/server.yaml — the
+            // Postgres testcontainer is shared across the suite, so a
+            // CREATE TABLE IF NOT EXISTS without metadata/connection_id would
+            // shadow the seeded schema for any test that runs after this one
+            // and break inserts that reference those columns.
             command.CommandText = """
                 CREATE SCHEMA IF NOT EXISTS honua;
                 CREATE TABLE IF NOT EXISTS honua.services (
@@ -265,9 +271,15 @@ public sealed class GeoServerImportWorkspaceScopingTests
                     supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
                     capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
                     service_extent GEOMETRY,
+                    metadata JSONB,
+                    connection_id UUID,
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 );
+                ALTER TABLE honua.services
+                    ADD COLUMN IF NOT EXISTS metadata JSONB;
+                ALTER TABLE honua.services
+                    ADD COLUMN IF NOT EXISTS connection_id UUID;
                 """;
             await command.ExecuteNonQueryAsync();
         }
