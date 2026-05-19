@@ -78,7 +78,6 @@
 - [Spec Plan/Apply Engine](developer/SPEC_ENGINE.md)
 - [Grounding & Intent Drafting](developer/GROUNDING.md)
 - [Redis Fallback Patterns](developer/REDIS_FALLBACK_PATTERNS.md)
-- [Service Registration Consolidation](developer/SERVICE_REGISTRATION_CONSOLIDATION.md)
 - [Versioning Policy](developer/CONTROL_PLANE_VERSIONING_POLICY.md)
 - [Migration Guide](developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
 
@@ -90,8 +89,6 @@
 - [Architecture](contributor/ARCHITECTURE.md)
 - [ADRs](contributor/adr/README.md)
 - Metadata v2
-  - [Backlog Index](contributor/architecture/metadata-v2-backlog.md)
-  - [Roadmap](contributor/architecture/metadata-v2-roadmap.md)
   - [Release Readiness](contributor/architecture/metadata-v2-release-readiness.md)
   - [Admin UI Information Model](contributor/architecture/metadata-v2-admin-ui-information-model.md)
   - [Admin Operator Workflows](contributor/architecture/admin-operator-workflows.md)
@@ -103,7 +100,6 @@
 - [OGC CITE Conformance Evidence](contributor/ogc-cite-conformance-evidence.md)
 - [Release Checklist](contributor/RELEASE_CHECKLIST.md)
 - [GeoETL Roadmap](contributor/geoetl-roadmap.md)
-- [GeoETL Strategy Spike](contributor/geoetl-spike.md)
 
 ## Security
 

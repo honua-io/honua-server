@@ -253,7 +253,7 @@ MAUI workload installed and add platform-specific smoke runners.
   when the SDK surface stabilises.
 - Mobile SDK semver follows the .NET SDK family. Backwards-incompatible
   mobile changes follow the migration-guide policy in
-  [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md).
+  [SDK Migration Guide Template](sdk-migration-template.md).
 
 ## Risks and mitigations
 
@@ -323,5 +323,5 @@ These are explicitly deferred and tracked separately:
   before the patterns were lifted into `Honua.Mobile.Field` and
   `Honua.Mobile.Offline`.
 - [SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md)
-- [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md)
+- [SDK Migration Guide Template](sdk-migration-template.md)
 - OGC GeoPackage Encoding Standard 1.3 (built-in EPSG:4326 / WGS-84 SRS records)

@@ -35,6 +35,6 @@ The tile renderer reads WKB geometry payloads with endian awareness. Both little
 
 ## Validation and References
 
-- [OGC API Tiles CITE Guide](../../contributor/cite-tiles-conformance-testing.md)
+- [OGC API Tiles CITE Guide](../../contributor/cite-runbook.md#ogc-api-tiles)
 - [Interactive API Specs](../../developer/api-specs/README.md)
 - [Geospatial APIs Overview](../STANDARDS_APIS.md)

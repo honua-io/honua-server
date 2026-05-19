@@ -35,7 +35,7 @@ Build applications and integrations with Honua APIs and SDKs.
 ## Internal Architecture
 
 - [Redis Fallback Patterns](REDIS_FALLBACK_PATTERNS.md) — Standardized Redis health monitoring, circuit breaker, and fallback strategies
-- [Service Registration Consolidation](SERVICE_REGISTRATION_CONSOLIDATION.md) — Reusable service registration framework for feature slices
+- [Configuration and secrets](../contributor/architecture/configuration-and-secrets.md) — secret-reference formats, validation attributes, standard TTL tiers
 
 ## Versioning & Migration
 

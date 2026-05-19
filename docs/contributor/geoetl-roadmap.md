@@ -1,7 +1,7 @@
 # GeoETL — architecture and decomposition roadmap
 
 **Ticket**: `honua-io/honua-server#361` (Epic — design and decomposition)
-**Strategy spike**: [GeoETL competitor evaluation and product strategy](geoetl-spike.md) (`#682`)
+**Strategy spike**: [GeoETL competitor evaluation and product strategy](../archive/contributor/geoetl-spike.md) (`#682`, archived as a one-time strategy artifact)
 **Substrate dependency**: [ADR-0031 Durable Job Orchestration Substrate](adr/0031-durable-job-orchestration-substrate.md) (`#681`, merged)
 **Companion ADR**: [ADR-0038 GeoETL pipeline architecture and runtime boundary](adr/0038-geoetl-pipeline-architecture-and-runtime-boundary.md)
 
@@ -392,7 +392,7 @@ Test layers:
 - **Integration (Testcontainers)**: CRUD, scheduling, execution against a
   real PostGIS, Honua-layer sink round-trip.
 - **End-to-end**: the four proof workloads from
-  [the strategy spike § 8](geoetl-spike.md) — Esri REST nightly, S3 drop
+  [the strategy spike § 8](../archive/contributor/geoetl-spike.md) — Esri REST nightly, S3 drop
   on-upload, PostGIS scheduled export, inline GeoJSON enrichment.
 
 ## Child ticket decomposition

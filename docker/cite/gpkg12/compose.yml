@@ -67,7 +67,7 @@ services:
 
   cite-engine:
     # :latest — no versioned TeamEngine-bundled tag is published for this suite yet.
-    # Pin when one becomes available. See cite-gpkg12-conformance-testing.md troubleshooting.
+    # Pin when one becomes available. See cite-runbook.md (GeoPackage 1.2 section) troubleshooting.
     image: ogccite/ets-gpkg12:latest
     ports:
       - "8087:8080"

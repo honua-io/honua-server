@@ -1,10 +1,9 @@
-# SDK Migration Guide Baseline
+# SDK migration guide template
 
-This document defines the minimum migration-guide structure that the
-JavaScript/TypeScript, Python, and .NET SDK repositories should follow for
-control-plane releases.
+Minimum migration-guide structure that the JavaScript/TypeScript, Python, and
+.NET SDK repositories follow for control-plane releases.
 
-Use this baseline whenever an SDK release changes generated admin surfaces,
+Use this template whenever an SDK release changes generated admin surfaces,
 runtime compatibility checks, auth behavior, import workflows, or long-running
 operation handling.
 
