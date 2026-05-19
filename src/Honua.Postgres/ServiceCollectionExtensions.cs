@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Net.Http;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -365,6 +366,30 @@ internal static class ServiceCollectionExtensions
             configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
         services.AddScoped<IOgcServiceMigrationScanner>(serviceProvider =>
             serviceProvider.GetRequiredService<OgcServiceMigrationScanner>());
+
+        // Register OGC WFS data import service (#1016 slice 2). Reuses the OGC service migration
+        // scanner above for inventory + manifest planning; here we add a named HttpClient used
+        // for paged GetFeature requests and the import service itself.
+        services.AddResilientHttpClient(
+            OgcWfsImportService.HttpClientName,
+            "ogc-wfs-import",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(5);
+            },
+            configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
+        services.AddScoped<IOgcWfsImportService>(serviceProvider =>
+        {
+            var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+            return new OgcWfsImportService(
+                serviceProvider.GetRequiredService<IOgcServiceMigrationScanner>(),
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                httpClientFactory.CreateClient(OgcWfsImportService.HttpClientName),
+                serviceProvider.GetRequiredService<ILogger<OgcWfsImportService>>(),
+                serviceProvider.GetService<PostgresSchemaConfiguration>());
+        });
 
         // Register secure connection management services
         services.AddSecureConnectionServices(configuration);
