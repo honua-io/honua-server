@@ -951,7 +951,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     request,
                     stopwatch.Elapsed,
                     applyPlanWarnings,
-                    failureMessage) with { RunMetrics = runMetrics };
+                    failureMessage) with
+                { RunMetrics = runMetrics };
             }
 
             currentProgress = currentProgress with
