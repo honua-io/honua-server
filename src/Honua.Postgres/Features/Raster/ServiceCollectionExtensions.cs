@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Multidimensional.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -48,6 +49,13 @@ internal static class ServiceCollectionExtensions
             new PostgresCogStore(
                 provider.GetRequiredService<IDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresCogStore>>(),
+                schemaName));
+
+        // Register multidimensional coverage catalog store (cloud-optimized HDF5 / NetCDF4)
+        services.AddScoped<IMultidimensionalCoverageStore>(provider =>
+            new PostgresMultidimensionalCoverageStore(
+                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<ILogger<PostgresMultidimensionalCoverageStore>>(),
                 schemaName));
 
         // Register surface-analysis service

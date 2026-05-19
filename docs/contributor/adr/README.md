@@ -44,6 +44,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0036](0036-mobile-sdk-language-strategy.md) | Mobile SDK Language Strategy | Accepted | 2026-04 |
 | [0037](0037-unified-ci-test-tier-strategy.md) | Unified CI Test Tier Strategy | Accepted | 2026-04 |
 | [0038](0038-geoetl-pipeline-architecture-and-runtime-boundary.md) | GeoETL Pipeline Architecture and Runtime Boundary | Accepted | 2026-05 |
+| [0039](0039-cloud-optimized-hdf-netcdf-reader-strategy.md) | Cloud-Optimized HDF5 / NetCDF4 Reader Strategy | Accepted | 2026-05 |
 
 ## Template
 
