@@ -673,6 +673,13 @@ public static class EndpointRegistry
         // Analysis report HTTP surface (#801).
         new("GET", "/api/v1/analysis/reports/{jobId}"),
         new("GET", "/api/v1/analysis/reports/{jobId}/render"),
+
+        // Cloud-optimized HDF5 / NetCDF4 multidimensional coverage admin endpoints (#1010).
+        new("POST", "/api/v1/admin/multidim-coverages"),
+        new("GET", "/api/v1/admin/multidim-coverages"),
+        new("GET", "/api/v1/admin/multidim-coverages/{id}"),
+        new("DELETE", "/api/v1/admin/multidim-coverages/{id}"),
+        new("POST", "/api/v1/admin/multidim-coverages/{id}/refresh"),
     ];
 }
 
