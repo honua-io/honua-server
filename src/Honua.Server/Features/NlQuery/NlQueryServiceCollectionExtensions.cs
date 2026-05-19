@@ -4,6 +4,8 @@
 using Honua.Core.Features.NlQuery;
 using Honua.Core.Features.NlQuery.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Server.Features.AiBuilder.Fixtures;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.NlQuery;
@@ -26,11 +28,13 @@ internal static class NlQueryServiceCollectionExtensions
         }
 
         var provider = section.GetValue<string>("Provider");
-        if (!string.IsNullOrWhiteSpace(provider) &&
-            !string.Equals(provider, "openai", StringComparison.OrdinalIgnoreCase))
+        var isDeterministic = string.Equals(provider, "deterministic", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(provider)
+            && !isDeterministic
+            && !string.Equals(provider, "openai", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"Unsupported NlQuery provider '{provider}'. Only 'openai' is supported.");
+                $"Unsupported NlQuery provider '{provider}'. Supported values: 'openai', 'deterministic'.");
         }
 
         services.AddOptions<NlQueryConfiguration>()
@@ -49,11 +53,20 @@ internal static class NlQueryServiceCollectionExtensions
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<NlQueryConfiguration>, NlQueryConfigurationValidator>();
 
-        services.AddResilientHttpClient(
-            "nl-query",
-            "nl-query",
-            HttpResiliencePolicies.FastApiDefaults);
-        services.AddScoped<INlQueryPlanProvider, OpenAiNlQueryPlanProvider>();
+        if (isDeterministic)
+        {
+            services.TryAddSingleton<AiBuilderFixtureCatalog>();
+            services.AddScoped<INlQueryPlanProvider, DeterministicNlQueryPlanProvider>();
+        }
+        else
+        {
+            services.AddResilientHttpClient(
+                "nl-query",
+                "nl-query",
+                HttpResiliencePolicies.FastApiDefaults);
+            services.AddScoped<INlQueryPlanProvider, OpenAiNlQueryPlanProvider>();
+        }
+
         services.AddScoped<INlQueryOrchestrator, NlQueryOrchestrator>();
         return services;
     }

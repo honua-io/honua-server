@@ -22,7 +22,8 @@ public sealed class NlQueryConfiguration
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// The provider type. Currently only "openai" is supported.
+    /// The provider type. Supported values: <c>"openai"</c> (live OpenAI-compatible
+    /// chat completion) and <c>"deterministic"</c> (fixture replay; no network).
     /// </summary>
     public string Provider { get; set; } = "openai";
 
@@ -64,17 +65,27 @@ public sealed class NlQueryConfigurationValidator : ConfigurationValidator<NlQue
     {
         ValidateRequiredString(options.Provider, "NlQuery:Provider", errors);
 
-        if (string.IsNullOrWhiteSpace(options.Endpoint))
-        {
-            errors.Add("NlQuery:Endpoint cannot be empty");
-        }
-        else
-        {
-            ValidateUrl(options.Endpoint, "NlQuery:Endpoint", errors, requireHttps: true);
-        }
+        // The deterministic provider has no network surface, so the endpoint,
+        // model, and timeout fields are not load-bearing. Leaving the OpenAI
+        // validations active for non-OpenAI providers would force operators
+        // running the fixture profile to supply throwaway URLs/keys.
+        var isOpenAi = string.IsNullOrWhiteSpace(options.Provider)
+            || string.Equals(options.Provider, "openai", StringComparison.OrdinalIgnoreCase);
 
-        ValidateRequiredString(options.Model, "NlQuery:Model", errors);
-        ValidateRange(options.TimeoutSeconds, 5, 120, "NlQuery:TimeoutSeconds", errors);
-        ValidateRange(options.MaxTokens, 128, 8192, "NlQuery:MaxTokens", errors);
+        if (isOpenAi)
+        {
+            if (string.IsNullOrWhiteSpace(options.Endpoint))
+            {
+                errors.Add("NlQuery:Endpoint cannot be empty");
+            }
+            else
+            {
+                ValidateUrl(options.Endpoint, "NlQuery:Endpoint", errors, requireHttps: true);
+            }
+
+            ValidateRequiredString(options.Model, "NlQuery:Model", errors);
+            ValidateRange(options.TimeoutSeconds, 5, 120, "NlQuery:TimeoutSeconds", errors);
+            ValidateRange(options.MaxTokens, 128, 8192, "NlQuery:MaxTokens", errors);
+        }
     }
 }
