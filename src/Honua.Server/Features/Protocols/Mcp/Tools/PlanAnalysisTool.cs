@@ -1,43 +1,73 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Server.Features.AiBuilder.Planning;
 using Honua.Server.Features.Geoprocessing;
+using Honua.Server.Features.Protocols.Mcp.Models;
 
 namespace Honua.Server.Features.Protocols.Mcp.Tools;
 
 /// <summary>
-/// Contract-first stub for the <c>honua_plan_analysis</c> tool. Returns
-/// structured <c>not_implemented</c> data until the planner service ships.
+/// MCP tool that compiles a natural-language intent into a structured analysis
+/// plan or canonical spec draft via <see cref="IPlanAnalysisService"/>. The
+/// service deliberately decouples the wire surface from the backing engine so
+/// fixture replay, deterministic compilation, and live planning can each plug
+/// in without the tool growing.
 /// </summary>
-internal sealed class PlanAnalysisTool : NotImplementedToolBase
+internal sealed class PlanAnalysisTool : IMcpTool
 {
     public const string ToolName = "honua_plan_analysis";
 
-    public PlanAnalysisTool(IGeoprocessingJobService jobService, ILogger<PlanAnalysisTool> logger)
-        : base(jobService, logger)
+    private static readonly JsonElement InputSchemaElement = McpToolSchemas.PlanAnalysisArgumentSchema;
+
+    private readonly IPlanAnalysisService _planAnalysisService;
+    private readonly IGeoprocessingJobService _jobService;
+    private readonly ILogger<PlanAnalysisTool> _logger;
+
+    public PlanAnalysisTool(
+        IPlanAnalysisService planAnalysisService,
+        IGeoprocessingJobService jobService,
+        ILogger<PlanAnalysisTool> logger)
     {
+        _planAnalysisService = planAnalysisService;
+        _jobService = jobService;
+        _logger = logger;
     }
 
-    public override string Name => ToolName;
+    public string Name => ToolName;
 
-    public override string WorkflowFamily => McpTelemetry.WorkflowFamily.Planning;
+    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Planning;
 
-    protected override OperatorResourceType AuthorizedResource => OperatorResourceType.Process;
-
-    protected override OperatorOperation AuthorizedOperation => OperatorOperation.Read;
-
-    protected override string Description =>
-        "Generate an analysis plan from a natural-language intent. Contract stub pending planner service.";
-
-    protected override string BlockedBy => "honua.planner.service";
-
-    protected override string Contract =>
-        "Accepts { intent: string, context?: object } and returns an AnalysisPlan suitable for validate_plan/execute_plan.";
-
-    protected override IReadOnlyList<string> NextSteps { get; } = new[]
+    public McpToolDescriptor Describe() => new()
     {
-        "Await planner service rollout (tracked by the intent-compiler epic).",
-        "Use honua_validate_plan with a precomputed plan until the stub is replaced."
+        Name = ToolName,
+        Description = "Compile a natural-language intent into an executable analysis plan or canonical spec draft.",
+        InputSchema = InputSchemaElement
     };
+
+    public async Task<McpToolsCallResult> InvokeAsync(
+        HttpContext httpContext,
+        JsonElement? arguments,
+        CancellationToken cancellationToken)
+    {
+        McpTelemetry.EnrichActivity("PlanAnalysis");
+        McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
+
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Read);
+
+        var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpPlanAnalysisArgument);
+        if (string.IsNullOrWhiteSpace(argument.Intent))
+        {
+            throw new GeoprocessingValidationException("Plan analysis requires a non-empty intent.");
+        }
+
+        var output = await _planAnalysisService
+            .PlanAsync(argument.Intent!, argument.Context, cancellationToken)
+            .ConfigureAwait(false);
+
+        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpPlanAnalysisOutput);
+    }
 }

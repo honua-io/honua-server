@@ -49,6 +49,29 @@ internal static class McpToolSchemas
         }
         """;
 
+    private const string PlanAnalysisArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["intent"],
+          "properties": {
+            "intent": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Natural-language intent to compile into an analysis plan or canonical spec draft."
+            },
+            "context": {
+              "type": "object",
+              "description": "Optional caller context. Echoed back unchanged so traceability/correlation hints flow through fixture replay."
+            }
+          }
+        }
+        """;
+
+    /// <summary>
+    /// Schema for the <c>honua_plan_analysis</c> tool input.
+    /// </summary>
+    public static readonly JsonElement PlanAnalysisArgumentSchema = Parse(PlanAnalysisArgumentSchemaJson);
+
     /// <summary>
     /// Schema for <see cref="Models.McpPlanArgument"/>, shared by validate_plan
     /// and dry_run_plan. The validator intentionally reports missing

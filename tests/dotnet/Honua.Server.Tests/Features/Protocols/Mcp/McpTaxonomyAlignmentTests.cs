@@ -284,7 +284,10 @@ public sealed class McpTaxonomyAlignmentTests
             new DryRunPlanTool(jobService, NullLogger<DryRunPlanTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
-            new PlanAnalysisTool(jobService, NullLogger<PlanAnalysisTool>.Instance),
+            new PlanAnalysisTool(
+                Substitute.For<Honua.Server.Features.AiBuilder.Planning.IPlanAnalysisService>(),
+                jobService,
+                NullLogger<PlanAnalysisTool>.Instance),
             new GroundCandidatesTool(groundingService, jobService, NullLogger<GroundCandidatesTool>.Instance),
             new ClarifyIntentTool(groundingService, jobService, NullLogger<ClarifyIntentTool>.Instance)
         ];

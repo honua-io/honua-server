@@ -100,11 +100,14 @@ public sealed class McpAuthorizationTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_plan_analysis")]
-    public async Task PlanAnalysisStub_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    public async Task PlanAnalysis_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var tool = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance);
+        var tool = new PlanAnalysisTool(
+            Substitute.For<Honua.Server.Features.AiBuilder.Planning.IPlanAnalysisService>(),
+            _jobService,
+            NullLogger<PlanAnalysisTool>.Instance);
 
-        JsonElement? arguments = McpTestFactory.ParseJson("{}");
+        JsonElement? arguments = McpTestFactory.ParseJson("""{"intent":"build a dashboard"}""");
         var act = async () => await tool.InvokeAsync(
             McpTestFactory.AnonymousHttpContext(), arguments, CancellationToken.None);
 

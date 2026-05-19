@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Server.Features.AiBuilder.Fixtures;
+using Honua.Server.Features.AiBuilder.Planning;
 using Honua.Server.Features.Grounding;
 using Honua.Server.Features.Protocols.Mcp.Resources;
 using Honua.Server.Features.Protocols.Mcp.Tools;
@@ -38,6 +40,14 @@ internal static class McpServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddGroundingServices(configuration);
+
+        // PlanAnalysisTool uses the fixture-replay implementation of
+        // IPlanAnalysisService by default. Hosts wiring a live planner should
+        // call services.Replace(...) after AddMcpOperatorSurface to swap in
+        // their implementation; the catalog itself is harmless to keep around
+        // either way because it lazily loads embedded fixtures.
+        services.TryAddSingleton<AiBuilderFixtureCatalog>();
+        services.TryAddSingleton<IPlanAnalysisService, FixturePlanAnalysisService>();
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidatePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DryRunPlanTool>());
