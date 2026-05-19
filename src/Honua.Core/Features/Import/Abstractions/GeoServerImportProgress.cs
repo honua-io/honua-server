@@ -103,6 +103,11 @@ public sealed record GeoServerImportProgress : IOperationProgress, ICancellableO
     /// </summary>
     public MigrationApplyExecutionArtifact? ApplyExecution { get; init; }
 
+    /// <summary>
+    /// Raw cost and performance metrics emitted by the migration pipeline.
+    /// </summary>
+    public MigrationRunMetricsArtifact? RunMetrics { get; init; }
+
     // IOperationProgress implementation
     string IOperationProgress.OperationId => JobId;
     OperationType IOperationProgress.Type => OperationType.ExternalImport;
