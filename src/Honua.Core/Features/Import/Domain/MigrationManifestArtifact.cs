@@ -67,6 +67,14 @@ public sealed record MigrationManifestArtifact
     public MigrationManifestIdentityRemap[] IdentityRemaps { get; init; } = [];
 
     /// <summary>
+    /// Optional source-id to target-id pairs that app migration tooling must apply when
+    /// the manifest could not preserve a source identifier verbatim. Only entries whose
+    /// identity stability is not <see cref="MigrationManifestIdentityStabilities.Preserved"/>
+    /// are included so consumers can short-circuit when the identity was kept stable.
+    /// </summary>
+    public Dictionary<string, string> IdentityRemapping { get; init; } = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Optional fidelity matrix enriched with target identity mappings from this manifest.
     /// </summary>
     public MigrationFidelityMatrix? FidelityMatrix { get; init; }
@@ -195,6 +203,12 @@ public sealed record MigrationManifestTargetResource
     public string[] ExternalDependencyIds { get; init; } = [];
 
     /// <summary>
+    /// Optional source/target identity record. App migration tooling consults this to
+    /// decide whether the source layer identifier was preserved on the target or remapped.
+    /// </summary>
+    public MigrationManifestResourceIdentity? Identity { get; init; }
+
+    /// <summary>
     /// Compatibility assessment that justified the target action.
     /// </summary>
     public required MigrationCompatibilityAssessment Compatibility { get; init; }
@@ -244,6 +258,13 @@ public sealed record MigrationManifestServicePlan
     /// External dependencies covered by the plan.
     /// </summary>
     public string[] ExternalDependencyIds { get; init; } = [];
+
+    /// <summary>
+    /// Optional source/target identity record for the planned service. Mirrors
+    /// <see cref="MigrationManifestTargetResource.Identity"/> so app migration tooling can
+    /// remap service-level identifiers consistently.
+    /// </summary>
+    public MigrationManifestServiceIdentity? Identity { get; init; }
 
     /// <summary>
     /// Compatibility assessment that justified the service plan action.
@@ -326,6 +347,142 @@ public sealed record MigrationManifestIdentityRemap
     /// Manifest action associated with the mapping.
     /// </summary>
     public required string Action { get; init; }
+
+    /// <summary>
+    /// Identity stability classification for the mapping. One of
+    /// <see cref="MigrationManifestIdentityStabilities.Preserved"/>,
+    /// <see cref="MigrationManifestIdentityStabilities.Remapped"/>, or
+    /// <see cref="MigrationManifestIdentityStabilities.Synthesized"/>.
+    /// </summary>
+    public string? IdentityStability { get; init; }
+
+    /// <summary>
+    /// Optional explanation when <see cref="IdentityStability"/> is
+    /// <see cref="MigrationManifestIdentityStabilities.Remapped"/> or
+    /// <see cref="MigrationManifestIdentityStabilities.Synthesized"/>.
+    /// </summary>
+    public string? Reason { get; init; }
+}
+
+/// <summary>
+/// Stable identity stability values emitted by manifest translation.
+/// </summary>
+public static class MigrationManifestIdentityStabilities
+{
+    /// <summary>The target identifier exactly matches the source identifier.</summary>
+    public const string Preserved = "preserved";
+
+    /// <summary>The target identifier was changed from the source identifier and the mapping is recorded.</summary>
+    public const string Remapped = "remapped";
+
+    /// <summary>The source did not advertise an identifier, so the manifest synthesized one.</summary>
+    public const string Synthesized = "synthesized";
+}
+
+/// <summary>
+/// Source and target identity record for a manifest target resource (layer or table).
+/// </summary>
+public sealed record MigrationManifestResourceIdentity
+{
+    /// <summary>
+    /// Source service identifier (e.g. ArcGIS service key such as <c>Roads</c>).
+    /// </summary>
+    public string? SourceServiceId { get; init; }
+
+    /// <summary>
+    /// Source layer or table identifier as advertised by the source (e.g. ArcGIS integer layer id).
+    /// Kept as a string so non-numeric identifiers can be carried verbatim.
+    /// </summary>
+    public string? SourceLayerId { get; init; }
+
+    /// <summary>
+    /// Fully qualified source resource name, including service or workspace prefix when applicable.
+    /// </summary>
+    public string? SourceQualifiedName { get; init; }
+
+    /// <summary>
+    /// Optional folder path the source resource lives under, when the source models a folder hierarchy.
+    /// </summary>
+    public string? SourceFolderPath { get; init; }
+
+    /// <summary>
+    /// Stable target Honua service identifier. Mirrors the source value when the source identifier was preserved.
+    /// </summary>
+    public string? TargetServiceId { get; init; }
+
+    /// <summary>
+    /// Stable target Honua layer or table identifier. Mirrors the source value when the source identifier was preserved.
+    /// </summary>
+    public string? TargetLayerId { get; init; }
+
+    /// <summary>
+    /// Target resource name on Honua.
+    /// </summary>
+    public string? TargetName { get; init; }
+
+    /// <summary>
+    /// Optional folder path the target resource will be placed under.
+    /// </summary>
+    public string? TargetFolderPath { get; init; }
+
+    /// <summary>
+    /// Identity stability classification. One of
+    /// <see cref="MigrationManifestIdentityStabilities.Preserved"/>,
+    /// <see cref="MigrationManifestIdentityStabilities.Remapped"/>, or
+    /// <see cref="MigrationManifestIdentityStabilities.Synthesized"/>.
+    /// </summary>
+    public required string IdentityStability { get; init; }
+
+    /// <summary>
+    /// Optional explanation when the identity could not be preserved verbatim.
+    /// </summary>
+    public string? IdentityRemapReason { get; init; }
+}
+
+/// <summary>
+/// Source and target identity record for a manifest service plan.
+/// </summary>
+public sealed record MigrationManifestServiceIdentity
+{
+    /// <summary>
+    /// Source service identifier.
+    /// </summary>
+    public string? SourceServiceId { get; init; }
+
+    /// <summary>
+    /// Fully qualified source service name.
+    /// </summary>
+    public string? SourceQualifiedName { get; init; }
+
+    /// <summary>
+    /// Optional folder path the source service lives under.
+    /// </summary>
+    public string? SourceFolderPath { get; init; }
+
+    /// <summary>
+    /// Stable target Honua service identifier.
+    /// </summary>
+    public string? TargetServiceId { get; init; }
+
+    /// <summary>
+    /// Target service name on Honua.
+    /// </summary>
+    public string? TargetName { get; init; }
+
+    /// <summary>
+    /// Optional folder path the target service will be placed under.
+    /// </summary>
+    public string? TargetFolderPath { get; init; }
+
+    /// <summary>
+    /// Identity stability classification.
+    /// </summary>
+    public required string IdentityStability { get; init; }
+
+    /// <summary>
+    /// Optional explanation when the identity could not be preserved verbatim.
+    /// </summary>
+    public string? IdentityRemapReason { get; init; }
 }
 
 /// <summary>
