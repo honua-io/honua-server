@@ -67,7 +67,7 @@ services:
 
   cite-engine:
     # :latest — no versioned TeamEngine-bundled tag is published for this suite yet.
-    # Pin when one becomes available. See cite-kml22-conformance-testing.md troubleshooting.
+    # Pin when one becomes available. See cite-runbook.md (KML 2.2 section) troubleshooting.
     image: ogccite/ets-kml22:latest
     ports:
       - "8085:8080"

@@ -1,5 +1,9 @@
 # Cross-Client Certification Gap Report
 
+> **Auto-generated — do not hand-edit.** Refreshed nightly by the
+> `client-interop-nightly` workflow; any manual changes will be overwritten on
+> the next run.
+
 _Generated: 2026-05-17T09:16:45.557558+00:00_
 
 This report is auto-refreshed by the `client-interop-nightly` workflow.

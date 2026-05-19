@@ -1,5 +1,7 @@
 # Honua Architecture Review Criteria
 
+> **Enforcement status:** these criteria are enforced **locally** by `scripts/ci/local-architecture-review.py`, which is invoked from `scripts/ci/pre-pr-check.sh`. A GitHub Actions workflow that runs the same checks at PR time (`scripts/ci/architecture-review.py`) exists but is **not currently shipped** — there is no `.github/workflows/pr-architecture-review.yml`. Treat this doc as the rubric for the local pre-PR script and for human reviewers; CI enforcement is a future addition.
+
 ## 🚫 BLOCKING_ISSUES (Fail PR - Must Fix Before Merge)
 
 ### Critical Violations:

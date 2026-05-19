@@ -18,11 +18,10 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Package and Module Governance](package-and-module-governance.md) — central package versions and optional module boundaries
 - [Honua Manifesto](HONUA_MANIFESTO.md) — core principles
 - Metadata v2 architecture artifacts:
-  - [Backlog Index](architecture/metadata-v2-backlog.md) — local issue index and sequencing guide for `#1035`
-  - [Roadmap](architecture/metadata-v2-roadmap.md) — milestone grouping derived from the GitHub issues
   - [Release Readiness](architecture/metadata-v2-release-readiness.md) — non-authoritative release gates derived from the GitHub issues
   - [Admin UI Information Model](architecture/metadata-v2-admin-ui-information-model.md) — Claude Design handoff for `#1046`
   - [Admin Operator Workflows](architecture/admin-operator-workflows.md) — Claude Design handoff for server management workflows tracked by `#1057`
+  - Backlog and milestone grouping live in the [Metadata v2 epic (#1035)](https://github.com/honua-io/honua-server/issues/1035) and its child issues — that is the authoritative source.
 
 ## Design Patterns
 
@@ -37,11 +36,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [JavaScript Integration Tests](testing-javascript.md) — Vitest protocol coverage plus Playwright Esri Leaflet browser compatibility tests
 - [Shared Seed Data](test-seed-data.md) — YAML seed format for cross-language tests
 - [OGC Certification Path](ogc-certification-path.md) — formal certification decision, evidence taxonomy, and current baseline results
-- [CITE OGC Features](cite-conformance-testing.md) — OGC API Features conformance
-- [CITE OGC Tiles](cite-tiles-conformance-testing.md) — OGC API Tiles conformance
-- [OGC API Maps Conformance](ogc-maps-conformance-testing.md) — OGC API Maps conformance gate
-- [CITE WMS 1.3](cite-wms-conformance-testing.md) — OGC WMS conformance
-- [CITE WMTS 1.0](cite-wmts-conformance-testing.md) — OGC WMTS conformance
+- [CITE Conformance Runbook](cite-runbook.md) — single runbook covering all CITE suites (Features, Tiles, Maps, WMS, WMTS, WFS 2.0, WCS, KML, GML, GeoPackage)
 - [MCP Certification](mcp-certification.md) — cross-repo MCP certification testing, seed data, and CI jobs
 
 ## CI/CD
@@ -56,8 +51,7 @@ This section is for people **building or extending** Honua (core contributors, a
 ## Roadmaps
 
 - [GeoETL Roadmap](geoetl-roadmap.md) — pipeline architecture, child-ticket decomposition, and runtime boundary for `#361`
-- [GeoETL Strategy Spike](geoetl-spike.md) — competitor evaluation and positioning from `#682`
-- [Metadata v2 Roadmap](architecture/metadata-v2-roadmap.md) — milestone grouping for `#1035` and child issues
+- Metadata v2: see [epic #1035](https://github.com/honua-io/honua-server/issues/1035) for backlog and milestones; [Release Readiness](architecture/metadata-v2-release-readiness.md) lists the gates.
 
 ## Project Operations
 

@@ -115,7 +115,7 @@ PUBLIC_BASE_URL=https://gis.example.com
 
 `PUBLIC_BASE_URL` and `Public__BaseUrl` are both accepted. `KnownProxies` must contain trusted proxy hops.
 
-`PUBLIC_BASE_URL` also drives absolute-URL emission for HATEOAS links and the OGC API Processes job-submission `Location` header. When unset, the server derives a safe local-origin URL from the connection's local IP and port; the request `Host` header is never reflected, so attacker-controlled hosts cannot steer redirects. Production deployments behind a proxy should set `PUBLIC_BASE_URL` so absolute links match the externally-visible hostname. See [`docs/security/code-scanning-2026-Q2-remediation.md`](../security/code-scanning-2026-Q2-remediation.md) for the open-redirect hardening rationale.
+`PUBLIC_BASE_URL` also drives absolute-URL emission for HATEOAS links and the OGC API Processes job-submission `Location` header. When unset, the server derives a safe local-origin URL from the connection's local IP and port; the request `Host` header is never reflected, so attacker-controlled hosts cannot steer redirects. Production deployments behind a proxy should set `PUBLIC_BASE_URL` so absolute links match the externally-visible hostname. See [`docs/security/base-url-and-open-redirect-handling.md`](../security/base-url-and-open-redirect-handling.md) for the resolver semantics.
 
 ---
 

@@ -1,9 +1,11 @@
 # LLM Architecture Review Setup Guide
 
+> **Current status:** only the **local** pre-PR review ships today. `scripts/ci/local-architecture-review.py` runs as part of `scripts/ci/pre-pr-check.sh` and uses the criteria in [Architecture Review Criteria](../architecture-criteria.md). The CI-side companion (`scripts/ci/architecture-review.py`) is wired to be invoked from a `.github/workflows/pr-architecture-review.yml` workflow that does **not** currently exist in this repo — adding that workflow is what would turn this into a PR-blocking gate. The instructions below describe what enabling the CI gate would look like.
+
 ## Overview
 This system provides automated architectural review using OpenAI GPT-4 for every pull request, focusing on Honua's specific architecture patterns and quality standards.
 
-## Setup Instructions
+## Setup Instructions (CI gate — not currently active)
 
 ### 1. Configure OpenAI API Key
 
@@ -15,18 +17,18 @@ Add your OpenAI API key to GitHub repository secrets:
 4. Name: `OPENAI_API_KEY`
 5. Value: Your OpenAI API key (starts with `sk-`)
 
-### 2. Enable Architecture Gate (Optional)
+### 2. Create the PR-time workflow
 
-To automatically block PRs with blocking architectural issues:
-
-Edit `.github/workflows/pr-architecture-review.yml`:
+Add a `.github/workflows/pr-architecture-review.yml` that invokes `scripts/ci/architecture-review.py` on PR events and (optionally) gates merges on its exit code:
 
 ```yaml
-# Change this line from comment to active:
-# architecture-gate:
-
-# To this:
+# To block PRs on architectural violations, define an architecture-gate job:
 architecture-gate:
+  needs: llm-architecture-review
+  if: contains(needs.llm-architecture-review.outputs.result, 'BLOCKING_ISSUES')
+  runs-on: ubuntu-latest
+  steps:
+    - run: exit 1
 ```
 
 ### 3. Test the System

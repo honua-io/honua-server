@@ -1095,7 +1095,7 @@
           "proofMechanism": "WMS 1.1.1 Basic CITE Team Engine run",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
-            "docs/contributor/cite-legacy-ogc-conformance-testing.md"
+            "docs/archive/contributor/cite-legacy-ogc-conformance-testing.md"
           ],
           "ownerRepo": "honua-server",
           "status": "planned",
@@ -2059,7 +2059,7 @@
           "proofMechanism": "WFS 1.1.0 Basic CITE Team Engine run",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
-            "docs/contributor/cite-legacy-ogc-conformance-testing.md"
+            "docs/archive/contributor/cite-legacy-ogc-conformance-testing.md"
           ],
           "ownerRepo": "honua-server",
           "status": "planned",
@@ -2105,7 +2105,7 @@
           "proofMechanism": "WFS 1.0.0 Basic CITE Team Engine run",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
-            "docs/contributor/cite-legacy-ogc-conformance-testing.md"
+            "docs/archive/contributor/cite-legacy-ogc-conformance-testing.md"
           ],
           "ownerRepo": "honua-server",
           "status": "planned",

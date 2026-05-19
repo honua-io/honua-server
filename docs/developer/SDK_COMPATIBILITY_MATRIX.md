@@ -18,7 +18,7 @@ Use it together with:
 - [Control Plane API](../operator/CONTROL_PLANE_API.md)
 - [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
 - [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
-- [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md)
+- [SDK Migration Guide Template](sdk-migration-template.md)
 
 ## Scope and Invariants
 
@@ -257,4 +257,4 @@ The baseline migration guidance for any server/SDK upgrade is:
    before production rollout.
 
 The reusable per-SDK document template lives in
-[SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md).
+[SDK Migration Guide Template](sdk-migration-template.md).

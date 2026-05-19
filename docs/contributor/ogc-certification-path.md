@@ -68,7 +68,7 @@ revision have passed the OGC Compliance Program review.
 | GML 3.2 | Format-level CITE | `ogccite/ets-gml32:latest`; suite `ets-gml32`; single validation pass; validates GML emitted by OGC API Features content negotiation | `scripts/conformance/cite/run-cite-gml32-tests.sh`; `.github/workflows/cite-gml32-conformance.yml` | Latest: [Run 24925341250](https://github.com/honua-io/honua-server/actions/runs/24925341250), 2026-04-25, `trunk`, SHA `f2503eb560992fb3e352ffe77a3817fb9eb63aa3`; artifact `cite-gml32-conformance-results-4`; retained `output.gml` only, no summary | CANCELLED/no retained CITE summary; recent history returned no passing run | Format evidence only. Pin or otherwise record the suite image used, restore a retained passing summary, and do not use it as service certification evidence. |
 | GeoPackage 1.2 | Format-level CITE | `ogccite/ets-gpkg12:latest`; suite `ets-gpkg12`; single validation pass; validates an exported GeoPackage file | `scripts/conformance/cite/run-cite-gpkg12-tests.sh`; `.github/workflows/cite-gpkg12-conformance.yml` | Latest: [Run 24923191030](https://github.com/honua-io/honua-server/actions/runs/24923191030), 2026-04-25, `trunk`, SHA `f2503eb560992fb3e352ffe77a3817fb9eb63aa3`; artifact `cite-gpkg12-conformance-results-4`; retained `export.gpkg` only, no summary | CANCELLED/no retained CITE summary; recent history returned no passing run | Format evidence only. Pin or otherwise record the suite image used, restore a retained passing summary, and do not use it as service certification evidence. |
 | OGC API - Maps | Non-CITE OGC conformance | Honua integration conformance tests for advertised OGC API - Maps classes; no official CITE artifact | `scripts/conformance/ogc/run-ogc-maps-conformance-tests.sh`; `.github/workflows/ogc-maps-conformance.yml` | [Run 24879237091](https://github.com/honua-io/honua-server/actions/runs/24879237091), 2026-04-24, `trunk`, SHA `93ada0a560272790fe4127f5a273192d17220144`; artifact `ogc-maps-conformance-results-22`; summary `ogc-maps-results/ogc-maps-summary.md` | PASS: 36 total, 36 passed, 0 failed, 0 skipped | Useful non-CITE evidence only. Do not use for OGC certification until an official accepted Maps certification path is selected and run. |
-| WMS 1.1.1, WFS 1.1.0, WFS 1.0.0 | Manual legacy CITE | Official legacy Basic profiles; no automated workflow lane | Runbook only: `docs/contributor/cite-legacy-ogc-conformance-testing.md` | No retained release evidence linked in this snapshot. Required evidence: TeamEngine session id, XML results, HTML report, capabilities document, and Honua commit SHA | MANUAL PENDING | Endpoint integration tests cover compatibility wire shapes, but the manual CITE Basic evidence is pending. Do not claim legacy CITE certification. |
+| WMS 1.1.1, WFS 1.1.0, WFS 1.0.0 | Manual legacy CITE | Official legacy Basic profiles; no automated workflow lane | Runbook only: `docs/archive/contributor/cite-legacy-ogc-conformance-testing.md` | No retained release evidence linked in this snapshot. Required evidence: TeamEngine session id, XML results, HTML report, capabilities document, and Honua commit SHA | MANUAL PENDING | Endpoint integration tests cover compatibility wire shapes, but the manual CITE Basic evidence is pending. Do not claim legacy CITE certification. |
 
 ## Submission Path If Reopened
 
@@ -117,17 +117,8 @@ specific scoped certification target:
 
 ## Related Runbooks
 
-- [CITE OGC API Features](cite-conformance-testing.md)
-- [CITE OGC API Tiles](cite-tiles-conformance-testing.md)
-- [CITE WFS 2.0](cite-wfs20-conformance-testing.md)
-- [CITE WMS 1.3](cite-wms-conformance-testing.md)
-- [CITE WMTS 1.0](cite-wmts-conformance-testing.md)
-- [CITE WCS 2.0](cite-wcs20-conformance-testing.md)
-- [CITE KML 2.2](cite-kml22-conformance-testing.md)
-- [CITE GML 3.2](cite-gml32-conformance-testing.md)
-- [CITE GeoPackage 1.2](cite-gpkg12-conformance-testing.md)
-- [OGC API - Maps Conformance](ogc-maps-conformance-testing.md)
-- [Legacy OGC CITE](cite-legacy-ogc-conformance-testing.md)
+- [CITE Conformance Runbook](cite-runbook.md) — all suites in one place (Features, Tiles, Maps, WMS, WMTS, WFS 2.0, WCS 2.0.1, KML 2.2, GML 3.2, GeoPackage 1.2)
+- [Legacy OGC CITE](../archive/contributor/cite-legacy-ogc-conformance-testing.md) — manual procedures for WMS 1.1.1, WFS 1.x
 - [OGC CITE Conformance Evidence](ogc-cite-conformance-evidence.md)
 - [CI Gate Model](../ci/gate-model.md)
 - [CI Workflow Inventory](../ci/workflow-inventory.md)

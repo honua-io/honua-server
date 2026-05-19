@@ -5,7 +5,7 @@ This guide covers migration for the Honua control-plane/admin API only.
 For SDK-specific support windows and release-channel expectations, see
 [Server + SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md). For the
 per-repository release-note and migration-guide template, see
-[SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md).
+[SDK Migration Guide Template](sdk-migration-template.md).
 
 ## Migration Baseline
 
@@ -115,5 +115,5 @@ When a server change affects generated control-plane clients or SDK runtime
 checks, update all three places in the same rollout window:
 - this migration guide
 - [Server + SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md)
-- [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md)
+- [SDK Migration Guide Template](sdk-migration-template.md)
 - the affected SDK changelog and migration notes
