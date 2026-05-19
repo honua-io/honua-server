@@ -50,7 +50,7 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
             variables = Array.Empty<string>()
         };
 
-        var response = await _client.PostAsJsonAsync(Route, request);
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/multidim-coverages", request);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -140,7 +140,7 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/multidim-coverages")]
     public async Task List_WithoutLayerId_Returns400()
     {
-        var response = await _client.GetAsync(Route);
+        var response = await _client.GetAsync("/api/v1/admin/multidim-coverages");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -149,7 +149,7 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/multidim-coverages/{id}")]
     public async Task Get_WithNonexistentId_Returns404()
     {
-        var response = await _client.GetAsync($"{Route}/99999");
+        var response = await _client.GetAsync("/api/v1/admin/multidim-coverages/99999");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -158,7 +158,7 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
     [Endpoint("DELETE /api/v1/admin/multidim-coverages/{id}")]
     public async Task Delete_WithNonexistentId_Returns404()
     {
-        var response = await _client.DeleteAsync($"{Route}/99999");
+        var response = await _client.DeleteAsync("/api/v1/admin/multidim-coverages/99999");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -251,7 +251,7 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/multidim-coverages/{id}/refresh")]
     public async Task Refresh_WithNonexistentId_Returns404()
     {
-        var response = await _client.PostAsync($"{Route}/99999/refresh", null);
+        var response = await _client.PostAsync("/api/v1/admin/multidim-coverages/99999/refresh", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
