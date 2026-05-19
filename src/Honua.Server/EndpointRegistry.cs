@@ -679,6 +679,13 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/cloud-rasters/{id}"),
         new("POST", "/api/v1/admin/cloud-rasters/{id}/refresh"),
 
+        // Zarr admin endpoints (#1009)
+        new("POST", "/api/v1/admin/zarr-stores"),
+        new("GET", "/api/v1/admin/zarr-stores"),
+        new("GET", "/api/v1/admin/zarr-stores/{id}"),
+        new("DELETE", "/api/v1/admin/zarr-stores/{id}"),
+        new("POST", "/api/v1/admin/zarr-stores/{id}/refresh"),
+
         // STAC (SpatioTemporal Asset Catalog)
         new("GET", "/stac"),
         new("GET", "/stac/conformance"),

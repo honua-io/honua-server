@@ -15,6 +15,7 @@ by issue `#381`.
 | Multi-raster mosaic and raster catalog completion | Remaining (`#522`) | MVP layer-level raster selection and simple PostGIS mosaic rendering exist, but full mosaic dataset/raster catalog behavior remains the remaining implementation child. |
 | WCS protocol adapter | Shipped (`#377`) | WCS adapts to the shared raster backend for primary-raster `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`. |
 | OGC API Coverages protocol adapter | Shipped (`#521`) | OGC API Coverages adapts to the shared raster backend for REST/JSON coverage discovery, schema metadata, and GeoTIFF/PNG coverage retrieval. |
+| Zarr coverage support | MVP (`#1009`) | Read-only Zarr v2 registration via the admin catalog. Pure-managed metadata reader and bounded chunk-aligned subset reader. Wider protocol-adapter exposure (STAC, OGC API Coverages/Maps/Tiles, ImageServer) is a deferred follow-on. |
 
 ## Raster upload and import
 
@@ -90,6 +91,51 @@ COG driver is available it can emit `COG`; otherwise it falls back to `GTiff`
 with COG-compatible options such as internal tiling and `DEFLATE` compression.
 The public ArcGIS ImageServer `exportImage` format parameter remains limited to
 the documented ImageServer formats and does not expose `format=cog`.
+
+## Zarr coverage support
+
+Honua exposes read-only Zarr coverage support through the shared raster/coverage
+pipeline. Zarr stores are registered alongside COGs and surfaced through the
+canonical admin catalog rather than a protocol-local reader.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/v1/admin/zarr-stores` | Register a Zarr store for a layer. |
+| `GET /api/v1/admin/zarr-stores?layerId={layerId}` | List Zarr registrations for a layer. |
+| `GET /api/v1/admin/zarr-stores/{id}` | Read one Zarr registration including discovered variables. |
+| `DELETE /api/v1/admin/zarr-stores/{id}` | Unregister a Zarr store. |
+| `POST /api/v1/admin/zarr-stores/{id}/refresh` | Re-scan store metadata via the shared range reader. |
+
+### MVP support matrix
+
+| Capability | Status |
+| --- | --- |
+| Zarr format version | v2 only. v3 stores are detected and rejected with a clear error. |
+| Layout | C order chunks named `0.0`, `0.1`, ... using the default `.` separator. Fortran order is rejected. |
+| Compressors | Uncompressed and `zlib`. `blosc`, `gzip`, `lz4`, `zstd`, and filter pipelines are deferred. |
+| dtypes | Little-endian numpy dtypes: `<f4`, `<f8`, `<i1`..`<i8`, `<u1`..`<u8`, and `|u1`/`|i1`. Big-endian and structured dtypes are rejected. |
+| Sources | `AwsS3` and `AzureBlob` via `ICloudRangeReader`. `Local` is permitted for registration so single-host deployments can serve filesystem stores. |
+| Variables | Single-array stores or grouped stores that list variable names in `.zattrs.variables` (max 64 variables). |
+| Georeferencing | `crs_wkid` or `crs` (`EPSG:NNNN`) and `extent` (`[xmin,ymin,xmax,ymax]`) in the root `.zattrs`. Dimension hints (`x_dimension`, `y_dimension`, `t_dimension`) are read when present. CF-style `_ARRAY_DIMENSIONS` per array is honored. |
+| Subset reads | Per-variable, per-dimension bounded `[start,stop)` reads. Capped at 4096 chunks and 256 MiB per request. |
+| Write/rechunk | Out of scope. Stores are read-only. |
+| STAC, OGC API Coverages/Maps/Tiles, ImageServer exposure | Deferred follow-on; the admin catalog records the registration so a later PR can plug Zarr variables into the shared `IRasterStore` surface. |
+
+### Object-storage layout requirements
+
+A registered root path must resolve to either a single Zarr array (so
+`<root>/.zarray` exists) or a Zarr group with a `<root>/.zgroup` document. When
+a `<root>/.zattrs` is present, the reader uses the optional `variables` array to
+discover child arrays. Each child array lives at `<root>/<variable>/.zarray`
+with chunks under the same prefix. Path traversal sequences (`..`, backslashes,
+leading `/`) are rejected by the admin validator.
+
+### Deployment dependencies
+
+The Zarr reader is pure managed and ships with the server runtime. No native
+GDAL/Zarr binaries are required. Cloud reads reuse the shared S3 and Azure Blob
+range readers configured for COG, so any environment that already serves cloud
+COGs can register Zarr stores from the same buckets.
 
 ## CRS and georeferencing assumptions
 
