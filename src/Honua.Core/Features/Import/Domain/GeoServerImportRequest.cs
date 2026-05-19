@@ -330,6 +330,11 @@ public sealed record GeoServerImportResult
     public MigrationApplyExecutionArtifact? ApplyExecution { get; init; }
 
     /// <summary>
+    /// Raw cost and performance metrics for the migration run.
+    /// </summary>
+    public MigrationRunMetricsArtifact? RunMetrics { get; init; }
+
+    /// <summary>
     /// Whether this was a dry run (no actual changes made).
     /// </summary>
     public bool WasDryRun { get; init; }
