@@ -105,6 +105,11 @@ public sealed record OgcApiFeaturesCollectionSnapshot
     public string[] ItemEncodings { get; init; } = [];
 
     /// <summary>
+    /// Field metadata captured from collection schema or queryables documents.
+    /// </summary>
+    public MigrationInventoryField[] Fields { get; init; } = [];
+
+    /// <summary>
     /// Collection-level vendor extensions or non-standard capability names observed during the scan.
     /// </summary>
     public string[] VendorExtensions { get; init; } = [];
@@ -151,4 +156,3 @@ public sealed record OgcApiFeaturesCrsDeclaration
     /// </summary>
     public required string Value { get; init; }
 }
-

@@ -61,7 +61,7 @@ internal static class MigrationScannerEndpoints
         {
             await AdminResponseWriter.WriteErrorAsync(
                 context,
-                "SourceKind must be one of: geoserver, geoserver-rest, geoservices, arcgis-geoservices-rest, ogc-wfs, ogc-wms, ogc-wmts.",
+                "SourceKind must be one of: geoserver, geoserver-rest, geoservices, arcgis-geoservices-rest, ogc-api-features, ogc-wfs, ogc-wms, ogc-wmts.",
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -140,6 +140,33 @@ internal static class MigrationScannerEndpoints
                                 ServiceType = sourceKind["ogc-".Length..],
                                 ServiceUrl = request.SourceUrl,
                                 Version = request.ServiceVersion,
+                                TimeoutSeconds = request.TimeoutSeconds ?? 60,
+                                AllowUnsafeLocalUrls = allowUnsafeLocalUrls
+                            },
+                            cancellationToken).ConfigureAwait(false);
+                        break;
+                    }
+                case "ogc-api-features":
+                    {
+                        var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
+                        var validation = await OgcServiceUrlValidation.ValidateAsync(
+                            request.SourceUrl,
+                            allowUnsafeLocalUrls,
+                            cancellationToken).ConfigureAwait(false);
+                        if (!validation.IsValid)
+                        {
+                            await AdminResponseWriter.WriteErrorAsync(
+                                context,
+                                validation.ErrorMessage!,
+                                StatusCodes.Status400BadRequest);
+                            return;
+                        }
+
+                        var scanner = context.RequestServices.GetRequiredService<IOgcApiFeaturesMigrationScanner>();
+                        artifact = await scanner.ScanSourceAsync(
+                            new OgcApiFeaturesScanRequest
+                            {
+                                ServiceUrl = request.SourceUrl,
                                 TimeoutSeconds = request.TimeoutSeconds ?? 60,
                                 AllowUnsafeLocalUrls = allowUnsafeLocalUrls
                             },
@@ -257,6 +284,7 @@ internal static class MigrationScannerEndpoints
         {
             "geoserver" or "geoserver-rest" => "geoserver-rest",
             "geoservices" or "arcgis-geoservices-rest" => "arcgis-geoservices-rest",
+            "ogc-api" or "ogc-api-features" or "oapif" => "ogc-api-features",
             "wfs" or "ogc-wfs" => "ogc-wfs",
             "wms" or "ogc-wms" => "ogc-wms",
             "wmts" or "ogc-wmts" => "ogc-wmts",

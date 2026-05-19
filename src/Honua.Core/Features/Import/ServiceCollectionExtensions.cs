@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -22,6 +23,18 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddScoped<IFileFormatDetectionService, FileFormatDetectionService>();
         services.TryAddSingleton<IImportSchemaSuggestionService, ImportSchemaSuggestionService>();
+        services.AddResilientHttpClient<OgcApiFeaturesMigrationScanner>(
+            "ogc-api-features-migration",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(2);
+            },
+            configureHandler: static () => OgcApiFeaturesMigrationScanner.CreatePinnedDnsHttpMessageHandler());
+        services.TryAddScoped<IOgcApiFeaturesMigrationScanner>(serviceProvider =>
+            serviceProvider.GetRequiredService<OgcApiFeaturesMigrationScanner>());
+
         return services;
     }
 }
