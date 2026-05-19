@@ -27,6 +27,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     private readonly ICrsRegistry _crsRegistry;
     private readonly ISldStyleConverter? _sldConverter;
     private readonly ILayerPublishingService? _layerPublishingService;
+    private readonly IMigrationCatalogWriter? _catalogWriter;
     private readonly ILogger<GeoServerImportService> _logger;
 
     public GeoServerImportService(
@@ -35,7 +36,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         ICrsRegistry crsRegistry,
         ILogger<GeoServerImportService> logger,
         ISldStyleConverter? sldConverter = null,
-        ILayerPublishingService? layerPublishingService = null)
+        ILayerPublishingService? layerPublishingService = null,
+        IMigrationCatalogWriter? catalogWriter = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
@@ -43,6 +45,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _sldConverter = sldConverter;
         _layerPublishingService = layerPublishingService;
+        _catalogWriter = catalogWriter;
     }
 
     /// <inheritdoc />
@@ -965,11 +968,19 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             ? (request.LayerNames == null ? serviceInfo.Styles : serviceInfo.Styles.Where(s => IsResourceNeededForLayers(s, layers, styleIdsByReference)).ToArray())
             : Array.Empty<GeoServerStyleInfo>();
 
+        var layerGroups = request.LayerNames == null
+            ? serviceInfo.LayerGroups
+                .Where(group => request.WorkspaceNames == null ||
+                    request.WorkspaceNames.Contains(group.WorkspaceName, StringComparer.OrdinalIgnoreCase))
+                .ToArray()
+            : Array.Empty<GeoServerLayerGroupInfo>();
+
         return new FilteredResources
         {
             Workspaces = workspaces,
             DataStores = dataStores,
             Layers = layers,
+            LayerGroups = layerGroups,
             Styles = styles,
             WorkspaceCount = workspaces.Length,
             DataStoreCount = dataStores.Length,
@@ -1186,7 +1197,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         GeoServerImportRequest request,
         CancellationToken cancellationToken)
     {
-        var filteredServiceInfo = CreateFilteredServiceInfoForPlan(serviceInfo, filteredResources, request);
+        var filteredServiceInfo = CreateFilteredServiceInfoForPlan(serviceInfo, filteredResources);
         var inventory = await BuildInventoryArtifactAsync(
                 filteredServiceInfo,
                 request.Username,
@@ -1206,20 +1217,13 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
     private static GeoServerServiceInfo CreateFilteredServiceInfoForPlan(
         GeoServerServiceInfo serviceInfo,
-        FilteredResources filteredResources,
-        GeoServerImportRequest request)
+        FilteredResources filteredResources)
     {
         var coverageStores = serviceInfo.CoverageStores
             .Where(store => filteredResources.Layers.Any(layer =>
                 string.Equals(layer.WorkspaceName, store.WorkspaceName, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(layer.CoverageStoreName, store.Name, StringComparison.OrdinalIgnoreCase)))
             .ToArray();
-        var layerGroups = request.LayerNames == null
-            ? serviceInfo.LayerGroups
-                .Where(group => request.WorkspaceNames == null ||
-                    request.WorkspaceNames.Contains(group.WorkspaceName, StringComparer.OrdinalIgnoreCase))
-                .ToArray()
-            : Array.Empty<GeoServerLayerGroupInfo>();
 
         return serviceInfo with
         {
@@ -1227,7 +1231,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             DataStores = filteredResources.DataStores,
             CoverageStores = coverageStores,
             Layers = filteredResources.Layers,
-            LayerGroups = layerGroups,
+            LayerGroups = filteredResources.LayerGroups,
             Styles = filteredResources.Styles
         };
     }
@@ -1246,6 +1250,18 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         var dataStoresByKey = filteredResources.DataStores.ToDictionary(
             static store => GetStoreKey(store.WorkspaceName, store.Name),
             StringComparer.OrdinalIgnoreCase);
+        var layerGroupsById = filteredResources.LayerGroups.ToDictionary(GetLayerGroupId, StringComparer.Ordinal);
+
+        // Slice 1: apply workspace-level catalog entries first so that any subsequent
+        // layer-group / layer apply can reference them. These records are deterministic
+        // and idempotent — re-running the same manifest does not create duplicates.
+        var workspaceStepResults = await ApplyWorkspaceCatalogStepsAsync(
+                filteredResources,
+                request,
+                applyPlan,
+                cancellationToken)
+            .ConfigureAwait(false);
+        stepResults.AddRange(workspaceStepResults);
 
         foreach (var step in applyPlan.Steps.OrderBy(static item => item.Sequence))
         {
@@ -1255,6 +1271,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     step,
                     layersById,
                     dataStoresByKey,
+                    layerGroupsById,
                     request,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -1295,6 +1312,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         MigrationApplyPlanStep step,
         Dictionary<string, GeoServerLayerInfo> layersById,
         Dictionary<string, GeoServerDataStoreInfo> dataStoresByKey,
+        Dictionary<string, GeoServerLayerGroupInfo> layerGroupsById,
         GeoServerImportRequest request,
         CancellationToken cancellationToken)
     {
@@ -1312,6 +1330,19 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 step,
                 "manual-review",
                 "The reviewed GeoServer migration plan requires operator review before this item can be applied.");
+        }
+
+        // Slice 1: persist layer-group catalog entries as Honua services. Data-copy,
+        // style migration, and per-layer membership for layer groups are deferred to
+        // follow-on slices and recorded as manual-review evidence by the manifest.
+        if (string.Equals(step.Kind, "layer-group", StringComparison.Ordinal))
+        {
+            return await ApplyLayerGroupCatalogStepAsync(
+                    step,
+                    layerGroupsById,
+                    request,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (!string.Equals(step.Kind, "layer", StringComparison.Ordinal))
@@ -1489,6 +1520,223 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         }
     }
 
+    /// <summary>
+    /// Persist a catalog service entry for each filtered GeoServer workspace.
+    /// </summary>
+    /// <remarks>
+    /// This is the slice-1 application of the migration manifest: workspaces become
+    /// idempotent <c>honua.services</c> rows so that subsequent layer-group and layer
+    /// apply steps can attach to them. Re-running the same manifest does not create
+    /// duplicates because the underlying writer uses <c>ON CONFLICT DO NOTHING</c>.
+    /// </remarks>
+    private async Task<IReadOnlyList<MigrationApplyExecutionStepResult>> ApplyWorkspaceCatalogStepsAsync(
+        FilteredResources filteredResources,
+        GeoServerImportRequest request,
+        MigrationApplyPlanArtifact applyPlan,
+        CancellationToken cancellationToken)
+    {
+        if (filteredResources.Workspaces.Length == 0)
+        {
+            return [];
+        }
+
+        var results = new List<MigrationApplyExecutionStepResult>(filteredResources.Workspaces.Length);
+        foreach (var workspace in filteredResources.Workspaces.OrderBy(static w => w.Name, StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var sourceId = GetWorkspaceId(workspace.Name);
+            var targetServiceName = NormalizeCatalogServiceName(workspace.Name);
+            var stepResult = await EnsureCatalogEntryAsync(
+                    sourceId: sourceId,
+                    kind: "workspace",
+                    targetServiceName: targetServiceName,
+                    targetResourceName: workspace.Name,
+                    description: BuildWorkspaceDescription(workspace, applyPlan),
+                    srid: request.TargetSrid ?? 4326,
+                    applyMode: request.ApplyMode,
+                    deferredMessage: "Workspace catalog persistence is deferred until applyMode=true and a catalog writer is configured.",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            results.Add(stepResult);
+        }
+
+        return results;
+    }
+
+    private async Task<MigrationApplyExecutionStepResult> ApplyLayerGroupCatalogStepAsync(
+        MigrationApplyPlanStep step,
+        Dictionary<string, GeoServerLayerGroupInfo> layerGroupsById,
+        GeoServerImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!layerGroupsById.TryGetValue(step.SourceId, out var layerGroup))
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "The source layer group was not present in the filtered GeoServer discovery result.");
+        }
+
+        // Slice 1 persists a dedicated catalog service per layer-group so each group has
+        // a stable, idempotent identity. The translator's TargetServiceName is the
+        // GeoServer-wide service identity, which is not unique per group; we synthesize
+        // a workspace-qualified name instead.
+        var targetServiceName = NormalizeCatalogServiceName(
+            string.IsNullOrWhiteSpace(layerGroup.WorkspaceName)
+                ? $"layergroup-{layerGroup.Name}"
+                : $"{layerGroup.WorkspaceName}-{layerGroup.Name}");
+        var description = BuildLayerGroupDescription(layerGroup);
+
+        return await EnsureCatalogEntryFromStepAsync(
+                step,
+                targetServiceName,
+                description,
+                srid: request.TargetSrid ?? 4326,
+                applyMode: request.ApplyMode,
+                deferredMessage: "Layer-group catalog persistence is deferred until applyMode=true and a catalog writer is configured; layer membership and rendering remain manual review.",
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<MigrationApplyExecutionStepResult> EnsureCatalogEntryAsync(
+        string sourceId,
+        string kind,
+        string targetServiceName,
+        string targetResourceName,
+        string description,
+        int srid,
+        bool applyMode,
+        string deferredMessage,
+        CancellationToken cancellationToken)
+    {
+        var syntheticStep = new MigrationApplyPlanStep
+        {
+            Sequence = 0,
+            StepId = $"catalog-{kind}:{sourceId}",
+            SourceId = sourceId,
+            Kind = kind,
+            Action = "stage-catalog-entry",
+            Disposition = "ready",
+            TargetServiceName = targetServiceName,
+            TargetResourceName = targetResourceName,
+            Compatibility = new MigrationCompatibilityAssessment
+            {
+                Level = "compatible",
+                Reason = $"GeoServer {kind} is staged as an idempotent Honua catalog service entry by the apply slice."
+            }
+        };
+
+        return await EnsureCatalogEntryFromStepAsync(
+                syntheticStep,
+                targetServiceName,
+                description,
+                srid,
+                applyMode,
+                deferredMessage,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<MigrationApplyExecutionStepResult> EnsureCatalogEntryFromStepAsync(
+        MigrationApplyPlanStep step,
+        string targetServiceName,
+        string description,
+        int srid,
+        bool applyMode,
+        string deferredMessage,
+        CancellationToken cancellationToken)
+    {
+        if (!applyMode || _catalogWriter == null)
+        {
+            return CreateExecutionStepResult(step, "manual-review", deferredMessage);
+        }
+
+        try
+        {
+            var outcome = await _catalogWriter.EnsureCatalogServiceAsync(
+                    _connectionProvider.GetConnectionString(),
+                    new MigrationCatalogServiceRequest
+                    {
+                        ServiceName = targetServiceName,
+                        Description = description,
+                        Srid = srid,
+                        EntryKind = step.Kind
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return outcome switch
+            {
+                MigrationCatalogWriteOutcome.Created => CreateExecutionStepResult(
+                    step,
+                    "applied",
+                    $"Created Honua catalog service '{targetServiceName}' for GeoServer {step.Kind} '{step.SourceId}'."),
+                MigrationCatalogWriteOutcome.AlreadyExists => CreateExecutionStepResult(
+                    step,
+                    "already-applied",
+                    $"Honua catalog service '{targetServiceName}' already exists; idempotent re-apply made no changes."),
+                _ => CreateExecutionStepResult(step, "manual-review", "Catalog writer returned an unexpected outcome.")
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "failed",
+                $"The catalog apply step for {step.Kind} '{step.SourceId}' failed unexpectedly and requires operator review.");
+        }
+    }
+
+    private static string NormalizeCatalogServiceName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "geoserver-import";
+        }
+
+        var builder = new System.Text.StringBuilder(name.Length);
+        foreach (var ch in name.Trim().ToLowerInvariant())
+        {
+            if (char.IsAsciiLetterOrDigit(ch))
+            {
+                builder.Append(ch);
+            }
+            else if (ch is ' ' or '-' or '_' or '.' or ':' or '/')
+            {
+                if (builder.Length > 0 && builder[^1] != '-')
+                {
+                    builder.Append('-');
+                }
+            }
+        }
+
+        var normalized = builder.ToString().Trim('-');
+        return normalized.Length == 0 ? "geoserver-import" : normalized;
+    }
+
+    private static string BuildWorkspaceDescription(
+        GeoServerWorkspaceInfo workspace,
+        MigrationApplyPlanArtifact applyPlan)
+    {
+        var summary = !string.IsNullOrWhiteSpace(workspace.Description)
+            ? workspace.Description
+            : $"GeoServer workspace '{workspace.Name}' staged by Honua migration apply slice 1.";
+        return $"{summary} (source: {applyPlan.SourceKind})";
+    }
+
+    private static string BuildLayerGroupDescription(GeoServerLayerGroupInfo layerGroup)
+    {
+        var title = !string.IsNullOrWhiteSpace(layerGroup.Title) ? layerGroup.Title : layerGroup.Name;
+        var workspaceQualifier = string.IsNullOrWhiteSpace(layerGroup.WorkspaceName)
+            ? "global"
+            : layerGroup.WorkspaceName;
+        var description = !string.IsNullOrWhiteSpace(layerGroup.Abstract)
+            ? layerGroup.Abstract
+            : $"GeoServer layer group '{title}' in workspace '{workspaceQualifier}' staged by Honua migration apply slice 1.";
+        return description;
+    }
+
     private static MigrationApplyExecutionStepResult CreateExecutionStepResult(
         MigrationApplyPlanStep step,
         string outcome,
@@ -1612,7 +1860,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     {
         var warnings = new List<string>
         {
-            "Non-dry-run GeoServer import generated a deterministic apply plan. Catalog mutation is limited to idempotent publication of PostGIS-backed layers whose source tables already exist in the target Honua database; data copy, layer groups, service exposure changes, and bulk style persistence remain explicit review records."
+            "Non-dry-run GeoServer import generated a deterministic apply plan. Catalog mutation in this slice is limited to idempotent persistence of workspace and layer-group catalog entries plus idempotent publication of PostGIS-backed layers whose source tables already exist in the target Honua database; data copy, bulk style persistence, and WMS/WFS/WMTS service exposure changes remain explicit review records."
         };
 
         if (applyExecution.Summary.ManualReviewStepCount > 0)
@@ -2275,6 +2523,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         public GeoServerWorkspaceInfo[] Workspaces { get; init; } = [];
         public GeoServerDataStoreInfo[] DataStores { get; init; } = [];
         public GeoServerLayerInfo[] Layers { get; init; } = [];
+        public GeoServerLayerGroupInfo[] LayerGroups { get; init; } = [];
         public GeoServerStyleInfo[] Styles { get; init; } = [];
         public int WorkspaceCount { get; init; }
         public int DataStoreCount { get; init; }

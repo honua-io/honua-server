@@ -4,7 +4,7 @@ Migrate from GeoServer to Honua Server, covering endpoint equivalence, inventory
 
 ## Overview
 
-Honua provides GeoServer migration tooling for discovery, compatibility classification, dry-run import validation, deterministic apply-plan generation, and a bounded catalog-apply slice. The migration scanner is discovery-only: it returns a deterministic planning artifact before any connection, service, layer, or style changes are applied. GeoServer import jobs can run in dry-run mode or non-dry-run apply mode. Non-dry-run jobs record replayable intent and review blockers, then idempotently publish PostGIS-backed GeoServer layers whose source tables already exist in the target Honua database. They do not yet copy data, publish layer groups/service exposure changes, or persist migrated styles in bulk. Use the shared [Migration Toolkit](../../operator/migration-toolkit.md) workflow for manifest translation, parity evidence, and cutover readiness after discovery. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
+Honua provides GeoServer migration tooling for discovery, compatibility classification, dry-run import validation, deterministic apply-plan generation, and a bounded catalog-apply slice. The migration scanner is discovery-only: it returns a deterministic planning artifact before any connection, service, layer, or style changes are applied. GeoServer import jobs can run in dry-run mode or non-dry-run apply mode (`dryRun: false` together with the explicit `applyMode: true` safety gate). Non-dry-run jobs record replayable intent and review blockers, idempotently persist Honua catalog entries for migrated workspaces and layer groups (`INSERT ... ON CONFLICT DO NOTHING` on `honua.services`, so re-applies are idempotent), and idempotently publish PostGIS-backed GeoServer layers whose source tables already exist in the target Honua database. They do not yet copy data, persist migrated styles in bulk, or change WMS/WFS/WMTS service exposure. Use the shared [Migration Toolkit](../../operator/migration-toolkit.md) workflow for manifest translation, parity evidence, and cutover readiness after discovery. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
 
 ## Endpoint Equivalence Mapping
 
@@ -83,7 +83,9 @@ Review the inventory artifact before proceeding. Start with `summary`, `scanComp
 
 ### Step 2: Start a Dry-Run Or Apply Job
 
-Use `dryRun: true` to validate connectivity and report what would be imported without making changes. Use `dryRun: false` to emit a deterministic `honua.migration.apply-plan` artifact with ordered steps, a replay token, manual-review items, and unsupported items, plus a `honua.migration.apply-execution` artifact with per-step outcomes. The current non-dry-run apply path mutates the Honua catalog only for PostGIS-backed layers whose source tables already exist in the target database. Data copy, layer groups, WMS/WFS/WMTS exposure changes, and bulk style persistence remain explicit review records.
+Use `dryRun: true` to validate connectivity and report what would be imported without making changes. Use `dryRun: false` together with `applyMode: true` to emit a deterministic `honua.migration.apply-plan` artifact with ordered steps, a replay token, manual-review items, and unsupported items, plus a `honua.migration.apply-execution` artifact with per-step outcomes. The endpoint rejects non-dry-run requests that omit `applyMode: true` with a 400 safety-gate error so operators must explicitly acknowledge that the reviewed manifest will be applied to the Honua catalog.
+
+Slice 1 of the apply path persists workspace and layer-group catalog entries idempotently (via `INSERT ... ON CONFLICT DO NOTHING` on `honua.services`) and idempotently publishes PostGIS-backed layers whose source tables already exist in the target Honua database. Re-running the same manifest emits `already-applied` outcomes and does not duplicate catalog rows. Data copy, bulk style persistence, WMS/WFS/WMTS exposure changes, and SDK/UI orchestration remain explicit review records and are scheduled for follow-on slices.
 
 ```bash
 export GEOSERVER_PASSWORD='geoserver'
@@ -94,7 +96,8 @@ curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/start \
     "geoServerRestUrl": "https://geoserver-host/geoserver/rest",
     "username": "admin",
     "passwordSecretReference": "env:GEOSERVER_PASSWORD",
-    "dryRun": false
+    "dryRun": false,
+    "applyMode": true
   }'
 ```
 

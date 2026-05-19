@@ -117,6 +117,12 @@ public sealed record GeoServerImportApiRequest
     public bool? DryRun { get; init; }
 
     /// <summary>
+    /// Explicit operator opt-in for catalog mutation. Non-dry-run imports require
+    /// <c>ApplyMode = true</c>; otherwise the endpoint returns a 400 safety-gate error.
+    /// </summary>
+    public bool? ApplyMode { get; init; }
+
+    /// <summary>
     /// Target coordinate reference system ID (for transformation).
     /// Default is null (preserve source CRS).
     /// </summary>
