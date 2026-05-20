@@ -58,6 +58,9 @@ scripts/*
 tests/
 !tests/
 tests/**
+!tests/fixtures/
+!tests/fixtures/ai-builder/
+!tests/fixtures/ai-builder/*.json
 !tests/python/
 tests/python/**
 !tests/python/requirements.txt
