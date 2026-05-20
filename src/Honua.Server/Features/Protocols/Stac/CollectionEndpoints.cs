@@ -2,16 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
+using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Stac.Models;
 using Honua.Server.Features.Protocols.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -55,7 +52,6 @@ internal static class CollectionEndpoints
 
     private static async Task<IResult> HandleGetCollections(
         HttpContext context,
-        [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICoordinateTransformService? coordinateTransformService,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
@@ -80,13 +76,15 @@ internal static class CollectionEndpoints
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var stacBase = $"{baseUrl}/stac";
 
-            var visibleLayers = await StacFilterHelpers.ResolveStacVisibleLayersAsync(
-                context, layerCatalog, cancellationToken);
+            var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, cancellationToken)
+                .ConfigureAwait(false);
 
             var collections = await CollectionsEndpoints.ProjectWithLimitedConcurrencyAsync(
-                visibleLayers,
-                (layer, ct) => StacMappingService.MapLayerToCollectionAsync(
-                    layer,
+                visible,
+                (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
+                    resolved.Resource,
+                    resolved.Publication,
+                    resolved.LayerIndex,
                     featureReader,
                     baseUrl,
                     coordinateTransformService,
@@ -147,23 +145,33 @@ internal static class CollectionEndpoints
         try
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
-                context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
-            if (!validation.IsValid)
+
+            var resolved = await StacV2Lookups.ResolveStacPublicationAsync(
+                context, collectionId, cancellationToken).ConfigureAwait(false);
+            if (resolved is null)
             {
-                StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");
+                StacTelemetry.SetFailed(activity, "collection_not_found");
                 StacLog.CollectionNotFound(logger, collectionId);
-                return validation.ErrorResult!;
+                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
-            var layer = validation.Layer!;
+            var accessError = Honua.Server.Features.Infrastructure.Authentication.AccessPolicyHelpers
+                .RequireResourceAccess(context, resolved.Value.Resource, resolved.Value.Service);
+            if (accessError != null)
+            {
+                StacTelemetry.SetFailed(activity, "collection_forbidden");
+                return accessError;
+            }
+
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var collection = await StacMappingService.MapLayerToCollectionAsync(
-                layer,
+            var collection = await StacMappingService.MapResourceToCollectionAsync(
+                resolved.Value.Resource,
+                resolved.Value.Publication,
+                resolved.Value.LayerIndex,
                 featureReader,
                 baseUrl,
                 coordinateTransformService,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             StacTelemetry.SetResultCount(activity, 1);
             return Results.Json(collection, StacJsonContext.Default.StacCollection, MediaTypes.Json);

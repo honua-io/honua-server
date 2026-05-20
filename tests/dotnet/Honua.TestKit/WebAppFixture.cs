@@ -331,6 +331,35 @@ public sealed class WebAppFixture : IAsyncLifetime
                 serviceLocalId: "test-layer",
                 publicationType: MetadataV2PublicationType.EsriImageLayer);
 
+        // FeatureServer and MapServer publications for the canonical "test" service.
+        // The GeoServices REST catalog endpoint enumerates these directly from the V2
+        // graph, so the directory only emits FeatureServer/MapServer entries when matching
+        // EsriFeatureService / EsriMapService publications exist. We publish the same
+        // layer ids that server.yaml seeds so /rest/services has services to return and
+        // downstream FeatureServer/MapServer handler ports can resolve them by layer id.
+        builder
+            .AddService("svc-test-feature", "test", MetadataV2ServiceType.EsriFeatureService)
+            .AddService("svc-test-map", "test", MetadataV2ServiceType.EsriMapService);
+        foreach (var layerIndex in seededLayerIndices)
+        {
+            var resourceId = $"res-layer-{layerIndex}";
+            builder
+                .AddPublication(
+                    id: $"pub-feature-{layerIndex}",
+                    serviceId: "svc-test-feature",
+                    resourceId: resourceId,
+                    layerIndex: layerIndex,
+                    serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                .AddPublication(
+                    id: $"pub-map-{layerIndex}",
+                    serviceId: "svc-test-map",
+                    resourceId: resourceId,
+                    layerIndex: layerIndex,
+                    serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    publicationType: MetadataV2PublicationType.EsriMapLayer);
+        }
+
         return builder.Build();
     }
 

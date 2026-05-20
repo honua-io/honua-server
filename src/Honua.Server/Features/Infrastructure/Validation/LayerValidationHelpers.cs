@@ -627,6 +627,51 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
+    /// Builds a deterministic layerIndex → <see cref="MetadataV2Service"/> map for a protocol-
+    /// specific route surface. When a publication's layer index could belong to several
+    /// services, the one matching <paramref name="requiredServiceType"/> wins; otherwise the
+    /// service with the lexicographically earliest name keeps routing deterministic.
+    /// </summary>
+    public static IReadOnlyDictionary<int, MetadataV2Service> BuildPrimaryServiceMapV2(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2ServiceType? requiredServiceType = null)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var byLayer = new Dictionary<int, MetadataV2Service>();
+        foreach (var pub in snapshot.Graph.Publications)
+        {
+            if (!pub.LayerIndex.HasValue)
+            {
+                continue;
+            }
+            if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service))
+            {
+                continue;
+            }
+            if (!byLayer.TryGetValue(pub.LayerIndex.Value, out var existing))
+            {
+                byLayer[pub.LayerIndex.Value] = service;
+                continue;
+            }
+
+            // Resolve ambiguity: prefer service-type match, then lexicographically earliest name.
+            var existingMatches = requiredServiceType.HasValue && existing.ServiceType == requiredServiceType.Value;
+            var candidateMatches = requiredServiceType.HasValue && service.ServiceType == requiredServiceType.Value;
+            if (candidateMatches && !existingMatches)
+            {
+                byLayer[pub.LayerIndex.Value] = service;
+            }
+            else if (existingMatches == candidateMatches &&
+                     string.Compare(service.Metadata.Name, existing.Metadata.Name, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                byLayer[pub.LayerIndex.Value] = service;
+            }
+        }
+        return byLayer;
+    }
+
+    /// <summary>
     /// Resolves the primary V2 service for a layer index. Preferred match is on
     /// <paramref name="requiredServiceType"/>; falls back to the lexicographically earliest
     /// service name. Returns null when no publication matches.
