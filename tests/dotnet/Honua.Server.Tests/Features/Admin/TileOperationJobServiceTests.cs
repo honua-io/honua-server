@@ -6,8 +6,9 @@ using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
@@ -363,7 +364,9 @@ public sealed class TileOperationJobServiceTests
     private static ServiceProvider CreateServiceProvider()
     {
         var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<ILayerCatalog>());
+        services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphBuilder().Build() is var graph
+            ? new TestMetadataV2GraphProvider(graph)
+            : throw new InvalidOperationException());
         services.AddSingleton(Substitute.For<ITileProvider>());
         return services.BuildServiceProvider();
     }
