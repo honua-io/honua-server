@@ -57,17 +57,19 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.ErrorMessage.Should().Contain("<none>");
     }
 
+    private static readonly string[] SliceTwoProcessIds =
+    {
+        "geometry.buffer",
+        "geometry.clip",
+        "geometry.intersect",
+        "geometry.project",
+    };
+
     [UnitTest]
     public void SupportedProcessIds_ListsSliceTwoExecutors()
     {
         var dispatcher = CreateDispatcher();
-        dispatcher.SupportedProcessIds.Should().BeEquivalentTo(new[]
-        {
-            "geometry.buffer",
-            "geometry.clip",
-            "geometry.intersect",
-            "geometry.project",
-        });
+        dispatcher.SupportedProcessIds.Should().BeEquivalentTo(SliceTwoProcessIds);
     }
 
     [UnitTest]
