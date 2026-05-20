@@ -350,6 +350,17 @@ internal static class ServiceCollectionExtensions
         // Register migration catalog writer used by apply-mode imports.
         services.AddScoped<IMigrationCatalogWriter, PostgresMigrationCatalogWriter>();
 
+        // Register migration run catalog (issue #1015 slice 5). Resolved as a
+        // scoped service so each request opens its own short-lived connection;
+        // the catalog is owned by the admin orchestration endpoints and the
+        // apply path.
+        services.AddScoped<IMigrationRunCatalog>(serviceProvider =>
+        {
+            var connectionString = ResolveConnectionString(serviceProvider, configuration);
+            var logger = serviceProvider.GetRequiredService<ILogger<PostgresMigrationRunCatalog>>();
+            return new PostgresMigrationRunCatalog(connectionString, logger);
+        });
+
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();
 

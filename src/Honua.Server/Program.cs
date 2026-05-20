@@ -1224,6 +1224,9 @@ app.MapGeoservicesImportEndpoints();
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();
 
+// Configure GeoServer migration run admin orchestration endpoints (issue #1015 slice 5)
+app.MapMigrationRunAdminEndpoints();
+
 if (isTestEnvironment)
 {
     app.MapCrossServerConsumeProbeEndpoints();
