@@ -1615,10 +1615,25 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 request.TableName,
                 request.ServiceUrl,
                 request.LayerId,
-                "Import from ArcGIS service failed.",
+                BuildImportFailureMessage(ex),
                 stopwatch.Elapsed);
         }
     }
+
+    private static string BuildImportFailureMessage(Exception exception)
+        => exception switch
+        {
+            ArcGisAuthenticationException auth => auth.Kind switch
+            {
+                ArcGisAuthenticationFailureKind.CredentialExpired =>
+                    $"{ImportCompatibilityCodes.ArcGisTokenExpired}: ArcGIS credentials are expired. Provide a refreshed token or credential reference and retry.",
+                ArcGisAuthenticationFailureKind.CredentialDenied =>
+                    $"{ImportCompatibilityCodes.ArcGisAccessDenied}: ArcGIS rejected the supplied credentials. Verify access to the layer and retry.",
+                _ =>
+                    $"{ImportCompatibilityCodes.ArcGisTokenRequired}: ArcGIS service requires authentication. Provide a token or credential reference and retry."
+            },
+            _ => "Import from ArcGIS service failed."
+        };
 
     private async Task CreateTableAsync(
         NpgsqlConnection connection,
