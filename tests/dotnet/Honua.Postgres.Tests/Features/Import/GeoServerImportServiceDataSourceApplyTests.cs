@@ -698,5 +698,14 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
                 RowCount = 0
             });
         }
+
+        // Slice 3 (#1015): the data-source apply tests do not exercise styles,
+        // but the interface now requires EnsureStyleAsync. Record-and-noop so
+        // slice 2 fixtures with style entries do not throw.
+        public Task<MigrationCatalogWriteOutcome> EnsureStyleAsync(
+            string connectionString,
+            MigrationStyleRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(MigrationCatalogWriteOutcome.Created);
     }
 }
