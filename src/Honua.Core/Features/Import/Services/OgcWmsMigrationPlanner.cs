@@ -49,12 +49,17 @@ public static class OgcWmsMigrationPlanner
         var entries = new List<MigrationManifestPlanEntry>();
         var diagnostics = new List<MigrationManifestPlanDiagnostic>();
 
+        var companionWfsCapabilitiesUrl = DeriveCompanionWfsCapabilitiesUrl(inventory.Source.BaseUrl);
+
         foreach (var resource in inventory.Resources
                      .Where(r => string.Equals(r.ContainerId, containerId, StringComparison.Ordinal))
                      .OrderBy(static r => r.Id, StringComparer.Ordinal))
         {
             // Layer metadata projects deterministically (name, title, abstract,
             // bbox, srs list). The render data path is separately unsupported.
+            // Attach a deterministic preferred-companion-source hint so operators
+            // can probe a sibling WFS GetCapabilities to pair the layer with a
+            // feature source for applied import.
             entries.Add(new MigrationManifestPlanEntry
             {
                 Id = $"plan:wms:metadata:{resource.Id}",
@@ -67,8 +72,22 @@ public static class OgcWmsMigrationPlanner
                 Reason = "WMS layer metadata (name, abstract, bounds, srs list, keywords) projects deterministically.",
                 Metadata = BuildMetadata(
                     ("capabilities", JoinOrdered(resource.Capabilities)),
-                    ("spatialReferences", JoinSpatialReferences(resource.SpatialReferences)))
+                    ("spatialReferences", JoinSpatialReferences(resource.SpatialReferences)),
+                    ("companionSourceKind", string.IsNullOrEmpty(companionWfsCapabilitiesUrl) ? null : "ogc-wfs"),
+                    ("companionCapabilitiesUrl", companionWfsCapabilitiesUrl),
+                    ("companionTypeNameHint", string.IsNullOrEmpty(companionWfsCapabilitiesUrl) ? null : resource.Name))
             });
+
+            if (!string.IsNullOrEmpty(companionWfsCapabilitiesUrl))
+            {
+                diagnostics.Add(new MigrationManifestPlanDiagnostic
+                {
+                    SourceId = resource.Id,
+                    Code = ImportCompatibilityCodes.OgcWmsCompanionSourceHint,
+                    Severity = "info",
+                    Message = $"WMS layer '{resource.Name}' offers a deterministic WFS companion-source hint at {companionWfsCapabilitiesUrl}; probe to confirm before pairing for applied import."
+                });
+            }
 
             entries.Add(new MigrationManifestPlanEntry
             {
@@ -152,6 +171,34 @@ public static class OgcWmsMigrationPlanner
                 .OrderBy(static d => d.SourceId, StringComparer.Ordinal)
                 .ThenBy(static d => d.Code, StringComparer.Ordinal)
                 .ToArray());
+    }
+
+    /// <summary>
+    /// Derive a deterministic WFS GetCapabilities URL adjacent to a WMS service base URL.
+    /// Reuses scheme, host, port, and path; replaces the query with a normalized
+    /// <c>service=WFS&amp;request=GetCapabilities</c>. Returns an empty string when the
+    /// base URL is missing or unparseable so callers can omit the hint cleanly.
+    /// </summary>
+    /// <param name="baseUrl">WMS service base URL recorded on the inventory source identity.</param>
+    /// <returns>Normalized companion WFS capabilities URL or empty string when not derivable.</returns>
+    internal static string DeriveCompanionWfsCapabilitiesUrl(string baseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            return string.Empty;
+        }
+
+        if (!Uri.TryCreate(baseUrl.Trim(), UriKind.Absolute, out var parsed))
+        {
+            return string.Empty;
+        }
+
+        var builder = new UriBuilder(parsed)
+        {
+            Query = "service=WFS&request=GetCapabilities",
+            Fragment = string.Empty
+        };
+        return builder.Uri.ToString();
     }
 
     private static bool IsRenderEndpoint(MigrationExternalDependency dependency)
