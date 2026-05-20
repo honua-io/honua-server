@@ -239,6 +239,81 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         };
     }
 
+    public async Task<MigrationCatalogWriteOutcome> EnsureStyleAsync(
+        string connectionString,
+        MigrationStyleRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceKind);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SourceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.TargetStyleId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.StyleName);
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // Idempotent upsert on (source_kind, source_id). Slice 3 deliberately
+        // does not overwrite existing rows because the source-of-truth for a
+        // migrated style is the source system being scanned; operators who
+        // need to refresh diagnostics should delete the row and re-apply.
+        const string sql = """
+            INSERT INTO honua.migration_styles (
+                source_kind,
+                source_id,
+                workspace_name,
+                style_name,
+                source_format,
+                source_language_version,
+                target_style_id,
+                source_body,
+                converted_body,
+                converted_format,
+                diagnostics,
+                review_disposition
+            )
+            VALUES (
+                @sourceKind,
+                @sourceId,
+                @workspaceName,
+                @styleName,
+                @sourceFormat,
+                @sourceLanguageVersion,
+                @targetStyleId,
+                @sourceBody,
+                @convertedBody,
+                @convertedFormat,
+                CAST(@diagnostics AS jsonb),
+                @reviewDisposition
+            )
+            ON CONFLICT (source_kind, source_id) DO NOTHING
+            RETURNING source_id;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@sourceKind", request.SourceKind);
+        command.Parameters.AddWithValue("@sourceId", request.SourceId);
+        command.Parameters.AddWithValue("@workspaceName", (object?)request.WorkspaceName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@styleName", request.StyleName);
+        command.Parameters.AddWithValue("@sourceFormat", request.SourceFormat);
+        command.Parameters.AddWithValue("@sourceLanguageVersion", (object?)request.SourceLanguageVersion ?? DBNull.Value);
+        command.Parameters.AddWithValue("@targetStyleId", request.TargetStyleId);
+        command.Parameters.AddWithValue("@sourceBody", (object?)request.SourceBody ?? DBNull.Value);
+        command.Parameters.AddWithValue("@convertedBody", (object?)request.ConvertedBody ?? DBNull.Value);
+        command.Parameters.AddWithValue("@convertedFormat", (object?)request.ConvertedFormat ?? DBNull.Value);
+        command.Parameters.AddWithValue("@diagnostics", string.IsNullOrWhiteSpace(request.DiagnosticsJson) ? "[]" : request.DiagnosticsJson);
+        command.Parameters.AddWithValue("@reviewDisposition", request.ReviewDisposition);
+
+        var inserted = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var outcome = inserted is null
+            ? MigrationCatalogWriteOutcome.AlreadyExists
+            : MigrationCatalogWriteOutcome.Created;
+
+        Log.StylePersisted(_logger, request.SourceFormat, request.SourceId, request.ReviewDisposition, outcome.ToString());
+        return outcome;
+    }
+
     private static async Task<long> CountRowsAsync(NpgsqlConnection connection, string identifier, CancellationToken cancellationToken)
     {
         await using var countCmd = new NpgsqlCommand($"SELECT COUNT(*) FROM {identifier};", connection);
@@ -285,5 +360,8 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
 
         [LoggerMessage(7964, LogLevel.Warning, "Migration feature copy source missing: {SourceSchema}.{SourceTable}")]
         public static partial void FeatureCopySourceMissing(ILogger logger, string sourceSchema, string sourceTable);
+
+        [LoggerMessage(7965, LogLevel.Information, "Migration catalog writer ensured {SourceFormat} style '{SourceId}' (disposition={Disposition}, {Outcome})")]
+        public static partial void StylePersisted(ILogger logger, string sourceFormat, string sourceId, string disposition, string outcome);
     }
 }

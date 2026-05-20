@@ -1,0 +1,109 @@
+name: Nightly Migration Evidence Pack
+
+# Tier: nightly evidence. Drives the fixture-based GeoServer migration apply
+# path (slices 1-3 of issue #1015) end-to-end and uploads the slice-4
+# deterministic evidence pack as a CI artifact so reviewers can audit catalog,
+# data, and style migration outcomes from a single artifact.
+on:
+  schedule:
+    # Stagger after other nightlies so the runner image cache is warm.
+    - cron: '15 7 * * *'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-migration-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence-pack:
+    name: GeoServer Migration Evidence Pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Build
+        run: dotnet build Honua.sln --no-restore --configuration Release
+
+      - name: Run slice 1-3 fixture-driven apply tests (Postgres harness)
+        run: |
+          mkdir -p tests/TestResults
+          dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~GeoServerImportServiceApplyPlanTests|FullyQualifiedName~GeoServerImportServiceDataSourceApplyTests|FullyQualifiedName~GeoServerImportServiceStyleApplyTests" \
+            --logger "trx;LogFileName=geoserver-apply-fixtures.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Emit slice-4 evidence pack artifact
+        env:
+          HONUA_EMIT_EVIDENCE_PACK: '1'
+          HONUA_EVIDENCE_PACK_OUTPUT: ${{ github.workspace }}/artifacts/migration-evidence/geoserver-migration-evidence-pack.json
+          HONUA_EVIDENCE_PACK_RUN_ID: nightly-${{ github.run_id }}
+        run: |
+          mkdir -p "${{ github.workspace }}/artifacts/migration-evidence"
+          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~MigrationEvidencePackBuilderTests.EmitNightlyEvidencePack_WhenEnvVarSet_WritesDeterministicArtifact" \
+            --logger "trx;LogFileName=migration-evidence-pack.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Summarize evidence pack
+        if: always()
+        run: |
+          PACK="${{ github.workspace }}/artifacts/migration-evidence/geoserver-migration-evidence-pack.json"
+          if [[ ! -f "$PACK" ]]; then
+            echo "Evidence pack was not generated; check the prior test step." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "## GeoServer Migration Evidence Pack"
+            echo
+            echo "**Artifact kind:** $(jq -r '.artifactKind' "$PACK")"
+            echo "**Run id:** $(jq -r '.runId' "$PACK")"
+            echo "**Bundle fingerprint:** \`$(jq -r '.bundleFingerprint' "$PACK")\`"
+            echo
+            echo "### Stages"
+            echo "| Stage | Steps | Applied | Already applied | Manual review | Unsupported | Failed |"
+            echo "|---|---:|---:|---:|---:|---:|---:|"
+            jq -r '
+              .bundle.stages[]
+              | "| \(.id) | \(.stepCount) | \(.appliedCount) | \(.alreadyAppliedCount) | \(.manualReviewCount) | \(.unsupportedCount) | \(.failedCount) |"
+            ' "$PACK"
+            echo
+            STYLE_REVIEW=$(jq -r '.bundle.summary.styleManualReviewCount' "$PACK")
+            echo "Style steps requiring manual review (visual parity NOT claimed): **$STYLE_REVIEW**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload migration evidence pack
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: geoserver-migration-evidence-${{ github.run_id }}
+          path: |
+            artifacts/migration-evidence/
+            tests/TestResults/geoserver-apply-fixtures.trx
+            tests/TestResults/migration-evidence-pack.trx

@@ -1312,6 +1312,11 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             static store => GetStoreKey(store.WorkspaceName, store.Name),
             StringComparer.OrdinalIgnoreCase);
         var layerGroupsById = filteredResources.LayerGroups.ToDictionary(GetLayerGroupId, StringComparer.Ordinal);
+        // Slice 3 (#1015): style steps come out of the apply-plan builder with
+        // Kind="style" and SourceId=GetStyleId(style). Build a lookup so the
+        // apply path can resolve the underlying GeoServerStyleInfo (and its
+        // SLD body) without re-running discovery.
+        var stylesById = filteredResources.Styles.ToDictionary(GetStyleId, StringComparer.Ordinal);
 
         // Slice 1: apply workspace-level catalog entries first so that any subsequent
         // layer-group / layer apply can reference them. These records are deterministic
@@ -1344,6 +1349,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     layersById,
                     dataStoresByKey,
                     layerGroupsById,
+                    stylesById,
+                    applyPlan,
                     request,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -1385,9 +1392,28 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         Dictionary<string, GeoServerLayerInfo> layersById,
         Dictionary<string, GeoServerDataStoreInfo> dataStoresByKey,
         Dictionary<string, GeoServerLayerGroupInfo> layerGroupsById,
+        Dictionary<string, GeoServerStyleInfo> stylesById,
+        MigrationApplyPlanArtifact applyPlan,
         GeoServerImportRequest request,
         CancellationToken cancellationToken)
     {
+        // Slice 3 (#1015): style steps still need to persist into the Honua
+        // style catalog even when the manifest translator marks them
+        // unsupported/manual-review, so the migration evidence pack carries
+        // explicit conversion diagnostics rather than silently dropping the
+        // source style. Dispatch to the style branch before the early
+        // unsupported/manual-review returns below.
+        if (string.Equals(step.Kind, "style", StringComparison.Ordinal))
+        {
+            return await ApplyStyleCatalogStepAsync(
+                    step,
+                    stylesById,
+                    applyPlan,
+                    request,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         if (step.Disposition == "unsupported")
         {
             return CreateExecutionStepResult(
@@ -1867,6 +1893,220 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         return string.Join(";", parts);
     }
 
+    /// <summary>
+    /// Persist a migration style row per filtered GeoServer style.
+    /// </summary>
+    /// <remarks>
+    /// Slice 3 of issue #1015. Each style apply-plan step produces an
+    /// idempotent row in <c>honua.migration_styles</c> with the original
+    /// source body, any converter output, and structured conversion
+    /// diagnostics. SLD styles are run through the registered
+    /// <see cref="ISldStyleConverter"/> when available; conversion warnings
+    /// and errors are persisted so operators can audit the deterministic
+    /// migration outcome. When the converter reports errors (or when no
+    /// converter is registered) the row is persisted with disposition
+    /// <c>manual-review</c> — we do not claim perfect SLD visual parity
+    /// when diagnostics report manual review (issue #1015 AC). Re-apply
+    /// is idempotent via PK on (source_kind, source_id). Cross-workspace
+    /// styles outside the operator's requested scope are rejected per
+    /// issue #1098.
+    /// </remarks>
+    private async Task<MigrationApplyExecutionStepResult> ApplyStyleCatalogStepAsync(
+        MigrationApplyPlanStep step,
+        Dictionary<string, GeoServerStyleInfo> stylesById,
+        MigrationApplyPlanArtifact applyPlan,
+        GeoServerImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!stylesById.TryGetValue(step.SourceId, out var style))
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "The source style was not present in the filtered GeoServer discovery result.");
+        }
+
+        // Workspace scope (#1098 / PR #1100): respect the operator's requested
+        // workspace scope so unrelated workspaces' styles are not applied.
+        if (request.WorkspaceNames is { Length: > 0 } scopedNames &&
+            !string.IsNullOrWhiteSpace(style.WorkspaceName) &&
+            !scopedNames.Contains(style.WorkspaceName, StringComparer.OrdinalIgnoreCase))
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                $"Style apply for '{step.SourceId}' rejected: source workspace '{style.WorkspaceName}' is outside the requested workspace scope (issue #1098).");
+        }
+
+        if (!request.ApplyMode || _catalogWriter == null)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                "Style catalog persistence is deferred until applyMode=true and a catalog writer is configured.");
+        }
+
+        var sourceFormat = string.IsNullOrWhiteSpace(style.Format) ? "sld" : style.Format.ToLowerInvariant();
+        string? convertedBody = null;
+        string? convertedFormat = null;
+        var diagnostics = new List<StyleDiagnostic>();
+        var disposition = string.Equals(step.Disposition, "unsupported", StringComparison.Ordinal)
+            ? "unsupported"
+            : string.Equals(step.Disposition, "manual-review", StringComparison.Ordinal)
+                ? "manual-review"
+                : "applied";
+
+        if (string.Equals(sourceFormat, "sld", StringComparison.Ordinal))
+        {
+            // Reuse the existing ISldStyleConverter; do NOT reimplement converter
+            // logic in the apply path. When the converter is not registered, the
+            // style is still persisted but tagged manual-review with a converter
+            // diagnostic so the evidence pack carries an explicit record.
+            if (_sldConverter == null)
+            {
+                diagnostics.Add(new StyleDiagnostic(
+                    "error",
+                    "No ISldStyleConverter is registered; SLD style was persisted without conversion. Apply via the per-layer admin SLD endpoint to attach a MapLibre style."));
+                disposition = "manual-review";
+            }
+            else if (string.IsNullOrWhiteSpace(style.SldContent))
+            {
+                diagnostics.Add(new StyleDiagnostic(
+                    "error",
+                    "SLD style has no embedded body; conversion was skipped."));
+                disposition = "manual-review";
+            }
+            else
+            {
+                var conversion = _sldConverter.Convert(style.SldContent!);
+                foreach (var warning in conversion.Warnings)
+                {
+                    diagnostics.Add(new StyleDiagnostic("warning", warning));
+                }
+                foreach (var error in conversion.Errors)
+                {
+                    diagnostics.Add(new StyleDiagnostic("error", error));
+                }
+
+                if (conversion.MapLibreLayersJson is { Length: > 0 } mapLibreJson)
+                {
+                    convertedBody = mapLibreJson;
+                    convertedFormat = "maplibre-layers-json";
+                }
+
+                // Conversion produced no layers (HasErrors), or converter
+                // emitted at least one error diagnostic: do not claim visual
+                // parity. Per #1015 AC, mark the row manual-review.
+                if (conversion.HasErrors)
+                {
+                    disposition = "manual-review";
+                }
+            }
+        }
+        else if (!string.Equals(sourceFormat, "mbstyle", StringComparison.Ordinal))
+        {
+            // Non-SLD/non-MapBox formats (CSS, YSLD, etc.) are persisted as
+            // manual-review because Honua does not have a deterministic
+            // converter for them.
+            diagnostics.Add(new StyleDiagnostic(
+                "error",
+                $"Source style format '{sourceFormat}' is not supported by Honua's deterministic style converter; persisted as manual-review."));
+            disposition = "manual-review";
+        }
+
+        var targetStyleId = BuildTargetStyleId(applyPlan.Source, style);
+
+        try
+        {
+            var outcome = await _catalogWriter.EnsureStyleAsync(
+                    _connectionProvider.GetConnectionString(),
+                    new MigrationStyleRequest
+                    {
+                        SourceKind = applyPlan.SourceKind,
+                        SourceId = step.SourceId,
+                        TargetStyleId = targetStyleId,
+                        StyleName = style.Name,
+                        WorkspaceName = string.IsNullOrWhiteSpace(style.WorkspaceName) ? null : style.WorkspaceName,
+                        SourceFormat = sourceFormat,
+                        SourceLanguageVersion = string.IsNullOrWhiteSpace(style.LanguageVersion) ? null : style.LanguageVersion,
+                        SourceBody = string.IsNullOrWhiteSpace(style.SldContent) ? null : style.SldContent,
+                        ConvertedBody = convertedBody,
+                        ConvertedFormat = convertedFormat,
+                        DiagnosticsJson = SerializeStyleDiagnostics(diagnostics),
+                        ReviewDisposition = disposition
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var diagnosticSummary = BuildStyleDiagnosticSummary(diagnostics);
+            return outcome switch
+            {
+                MigrationCatalogWriteOutcome.Created when disposition == "manual-review" => CreateExecutionStepResult(
+                    step,
+                    "manual-review",
+                    $"Persisted style '{step.SourceId}' with manual-review disposition. {diagnosticSummary} Do not claim visual parity until the diagnostics are resolved."),
+                MigrationCatalogWriteOutcome.Created => CreateExecutionStepResult(
+                    step,
+                    "applied",
+                    $"Applied {sourceFormat} style '{step.SourceId}' to honua.migration_styles.{(diagnosticSummary.Length > 0 ? " " + diagnosticSummary : string.Empty)}"),
+                MigrationCatalogWriteOutcome.AlreadyExists => CreateExecutionStepResult(
+                    step,
+                    "already-applied",
+                    $"Style '{step.SourceId}' already present; idempotent re-apply made no changes."),
+                _ => CreateExecutionStepResult(step, "manual-review", "Catalog writer returned an unexpected outcome.")
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return CreateExecutionStepResult(
+                step,
+                "failed",
+                $"Style apply for '{step.SourceId}' failed unexpectedly and requires operator review.");
+        }
+    }
+
+    private static string BuildTargetStyleId(MigrationSourceIdentity source, GeoServerStyleInfo style)
+    {
+        var workspace = string.IsNullOrWhiteSpace(style.WorkspaceName) ? "global" : style.WorkspaceName;
+        var service = NormalizeCatalogServiceName(source.DisplayName ?? source.BaseUrl ?? "geoserver-import");
+        var styleName = NormalizeCatalogServiceName($"{workspace}-{style.Name}");
+        return $"style:{service}:{styleName}";
+    }
+
+    private static string SerializeStyleDiagnostics(IReadOnlyList<StyleDiagnostic> diagnostics)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartArray();
+            foreach (var diagnostic in diagnostics)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("severity", diagnostic.Severity);
+                writer.WriteString("message", diagnostic.Message);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+        }
+
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static string BuildStyleDiagnosticSummary(IReadOnlyList<StyleDiagnostic> diagnostics)
+    {
+        if (diagnostics.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var warningCount = diagnostics.Count(static d => string.Equals(d.Severity, "warning", StringComparison.Ordinal));
+        var errorCount = diagnostics.Count(static d => string.Equals(d.Severity, "error", StringComparison.Ordinal));
+        return $"Recorded {errorCount} error and {warningCount} warning conversion diagnostic(s).";
+    }
+
+    private readonly record struct StyleDiagnostic(string Severity, string Message);
+
     private async Task<MigrationApplyExecutionStepResult> ApplyLayerGroupCatalogStepAsync(
         MigrationApplyPlanStep step,
         Dictionary<string, GeoServerLayerGroupInfo> layerGroupsById,
@@ -2163,7 +2403,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     {
         var warnings = new List<string>
         {
-            "Non-dry-run GeoServer import generated a deterministic apply plan. Catalog mutation in this slice is limited to idempotent persistence of workspace and layer-group catalog entries plus idempotent publication of PostGIS-backed layers whose source tables already exist in the target Honua database; data copy, bulk style persistence, and WMS/WFS/WMTS service exposure changes remain explicit review records."
+            "Non-dry-run GeoServer import generated a deterministic apply plan. Catalog mutation includes idempotent persistence of workspace and layer-group catalog entries, idempotent data-source registration and feature data copy for PostGIS sources, idempotent publication of PostGIS-backed layers, and idempotent persistence of style entries with structured SLD conversion diagnostics; WMS/WFS/WMTS service exposure changes remain explicit review records. Styles whose conversion diagnostics report errors are persisted with manual-review disposition — do not claim perfect SLD visual parity for those entries."
         };
 
         if (applyExecution.Summary.ManualReviewStepCount > 0)
