@@ -394,6 +394,51 @@
             }
           },
           {
+            "JsonName": "diagnostics",
+            "ClrName": "Diagnostics",
+            "Container": "array",
+            "ElementType": "MigrationManifestPlanDiagnostic",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationManifestPlanDiagnostic",
+              "Properties": [
+                {
+                  "JsonName": "code",
+                  "ClrName": "Code",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "message",
+                  "ClrName": "Message",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "severity",
+                  "ClrName": "Severity",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceId",
+                  "ClrName": "SourceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                }
+              ]
+            }
+          },
+          {
             "JsonName": "externalDependencyIds",
             "ClrName": "ExternalDependencyIds",
             "Container": "array",
@@ -474,6 +519,99 @@
                   "ElementType": "string",
                   "Required": false,
                   "Nullable": true
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "planEntries",
+            "ClrName": "PlanEntries",
+            "Container": "array",
+            "ElementType": "MigrationManifestPlanEntry",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationManifestPlanEntry",
+              "Properties": [
+                {
+                  "JsonName": "automationStatus",
+                  "ClrName": "AutomationStatus",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "category",
+                  "ClrName": "Category",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "code",
+                  "ClrName": "Code",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "id",
+                  "ClrName": "Id",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "manualSteps",
+                  "ClrName": "ManualSteps",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "metadata",
+                  "ClrName": "Metadata",
+                  "Container": "map",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "name",
+                  "ClrName": "Name",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "reason",
+                  "ClrName": "Reason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceId",
+                  "ClrName": "SourceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceKind",
+                  "ClrName": "SourceKind",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
                 }
               ]
             }
