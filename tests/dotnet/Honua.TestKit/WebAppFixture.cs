@@ -379,6 +379,69 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// V2-aware helper for STAC tests: looks up the test V2 graph provider, locates the
+    /// resource by the publication's layer index, and writes <c>stac</c> + <c>temporal</c>
+    /// extension JSON onto it. Mirrors the v1 <c>UpdateLayerMetadataAsync</c> call surface
+    /// the STAC tests used to seed CatalogMetadata.Stac.
+    /// </summary>
+    public void UpdateV2ResourceMetadata(
+        int layerIndex,
+        JsonElement? stacExtension = null,
+        JsonElement? temporal = null,
+        JsonElement? spatial = null)
+    {
+        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
+        if (pub is null)
+        {
+            throw new InvalidOperationException(
+                $"No publication for layer {layerIndex} in the test V2 graph.");
+        }
+
+        var resourceIndex = -1;
+        for (var i = 0; i < snapshot.Graph.Resources.Count; i++)
+        {
+            if (string.Equals(snapshot.Graph.Resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
+            {
+                resourceIndex = i;
+                break;
+            }
+        }
+        if (resourceIndex < 0)
+        {
+            throw new InvalidOperationException(
+                $"Publication {pub.Metadata.Id} references missing resource {pub.ResourceId}.");
+        }
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        var resource = resources[resourceIndex];
+
+        var extensions = new Dictionary<string, JsonElement>(resource.Extensions, StringComparer.Ordinal);
+        if (stacExtension.HasValue)
+        {
+            extensions["stac"] = stacExtension.Value;
+        }
+
+        resources[resourceIndex] = resource with
+        {
+            Extensions = extensions,
+            Temporal = temporal ?? resource.Temporal,
+            Spatial = spatial ?? resource.Spatial,
+        };
+
+        var updatedGraph = snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        provider.SetGraph(updatedGraph);
+    }
+
+    /// <summary>
     /// Creates a simple test point geometry as WKB
     /// </summary>
     private static byte[] CreateTestPointGeometry(double x, double y)
