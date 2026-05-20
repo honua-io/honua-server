@@ -92,12 +92,29 @@ internal static class GeoprocessingServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        // Built-in production executors (ticket #1031). Registered as the single
-        // IJobExecutor for ExecutionJobKind.Geoprocessing; per-process dispatch
-        // happens inside the executor. AddJobWorker activates the host that
-        // resolves and invokes these executors.
+        // Built-in production executors (ticket #1031). Slice 1 introduced the
+        // first concrete executor (geometry.buffer); slice 2 added geometry.clip,
+        // geometry.intersect, and geometry.project; slice 3 added geometry.area
+        // (per-feature measure) and geometry.union (collection aggregation);
+        // slice 4 adds geometry.centroid, geometry.length, and
+        // geometry.convex-hull — rounding out the deterministic single-feature
+        // vector set before later slices tackle simplify/dissolve and the
+        // heavyweight raster family. The worker host keys executors by
+        // ExecutionJobKind, so the per-process executors are composed behind
+        // GeoprocessingDispatchJobExecutor — the single IJobExecutor registered
+        // for ExecutionJobKind.Geoprocessing — which routes claimed jobs to
+        // the matching handler.
+        services.TryAddSingleton<GeometryBufferJobExecutor>();
+        services.TryAddSingleton<GeometryClipJobExecutor>();
+        services.TryAddSingleton<GeometryIntersectJobExecutor>();
+        services.TryAddSingleton<GeometryProjectJobExecutor>();
+        services.TryAddSingleton<GeometryAreaJobExecutor>();
+        services.TryAddSingleton<GeometryUnionJobExecutor>();
+        services.TryAddSingleton<GeometryCentroidJobExecutor>();
+        services.TryAddSingleton<GeometryLengthJobExecutor>();
+        services.TryAddSingleton<GeometryConvexHullJobExecutor>();
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IJobExecutor, GeometryBufferJobExecutor>());
+            ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 
         // Job orchestration substrate: queue, log store (ticket #681)
         services.AddJobOrchestration();

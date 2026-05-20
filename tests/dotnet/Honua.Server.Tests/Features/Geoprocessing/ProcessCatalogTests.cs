@@ -35,22 +35,22 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_ListProcesses_ReturnsExactly34BuiltIns()
+    public void Catalog_ListProcesses_ReturnsExactly36BuiltIns()
     {
         var all = _catalog.ListProcesses();
 
-        all.Should().HaveCount(34);
+        all.Should().HaveCount(36);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_GeometryCategory_Returns10Processes()
+    public void Catalog_GeometryCategory_Returns12Processes()
     {
         var geometry = _catalog.GetProcessesByCategory("geometry");
 
-        geometry.Should().HaveCount(10);
+        geometry.Should().HaveCount(12);
         geometry.Should().AllSatisfy(p => p.Category.Should().Be("geometry"));
     }
 
@@ -211,7 +211,8 @@ public sealed class ProcessCatalogTests
             "geometry.buffer", "geometry.simplify", "geometry.project",
             "geometry.make-valid", "geometry.union", "geometry.intersect",
             "geometry.clip", "geometry.difference", "geometry.area",
-            "geometry.length", "analytics.cluster", "analytics.spatial-join",
+            "geometry.length", "geometry.centroid", "geometry.convex-hull",
+            "analytics.cluster", "analytics.spatial-join",
             "analytics.buffer-aggregate", "analytics.density",
             "surface.slope", "surface.aspect", "surface.hillshade",
             "surface.rugosity-tri", "surface.rugosity-tpi", "surface.roughness",
