@@ -18,7 +18,7 @@ namespace Honua.Server.Features.Geoprocessing.Execution;
 /// process. Slice 3 of #1031 — extends the buffer / clip / intersect /
 /// project / area set with a collection-aggregation operation.
 ///
-/// The catalog declares <c>wkbs</c> as a <see cref="ProcessParameterValueType.WkbArray"/>:
+/// The catalog declares <c>wkbs</c> as <c>ProcessParameterValueType.WkbArray</c>:
 /// a JSON array of base64-encoded WKB geometries. The OGC API Processes
 /// canonical-input encoder persists that array as the raw JSON-array string
 /// onto <see cref="ExecutionJobSpec.Parameters"/>; this executor parses the
