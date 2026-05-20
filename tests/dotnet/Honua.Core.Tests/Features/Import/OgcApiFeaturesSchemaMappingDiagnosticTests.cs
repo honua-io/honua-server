@@ -322,7 +322,7 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
     [JsonSerializable(typeof(OgcApiFeaturesImportResult))]
     [JsonSerializable(typeof(OgcApiFeaturesSchemaMappingDiagnostic))]
     [JsonSerializable(typeof(OgcApiFeaturesSchemaMappingClassification))]
-    private partial class ImportJsonContextProxy : JsonSerializerContext
+    private sealed partial class ImportJsonContextProxy : JsonSerializerContext
     {
         public static System.Text.Json.Serialization.Metadata.JsonTypeInfo<OgcApiFeaturesImportResult> ResultInfo
             => Default.OgcApiFeaturesImportResult;
