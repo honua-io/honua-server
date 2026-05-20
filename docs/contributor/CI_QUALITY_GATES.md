@@ -7,7 +7,6 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 ## Core Workflows
 
 - `ci.yml`: build, formatting verification, tier-aware test dispatch (PRs run only the `targeted-shards` subset emitted by `scripts/ci/honua-server-targeted-tests.sh`; scheduled/manual full integration runs the full configured `server-tests` matrix — see [Test Tier Strategy](#test-tier-strategy) and [ADR-0037](adr/0037-unified-ci-test-tier-strategy.md)), merge-blocking Esri Leaflet browser compatibility tests, and MCP certification (see [MCP Certification](mcp-certification.md)).
-- `pr-validation.yml`: PR template compliance validation.
 - `load-soak-nightly.yml`: nightly load/soak testing.
 - `nightly-slow-tier.yml`: nightly `Tier=Slow&Category=Emulator` execution (`[EmulatorTest]` only) across `Honua.Server.Tests`, `Honua.Postgres.Tests`, and `Honua.Core.Tests`. Daily 4am UTC. Scale/Cloud/External slow subfamilies need dedicated fixtures and are tracked as separate workflows.
 - `flaky-detection.yml`: nightly flake reporting — re-runs the integration tier 3× and uploads a flake-candidate report. Daily 5am UTC. See [ADR-0037](adr/0037-unified-ci-test-tier-strategy.md) for the quarantine workflow.
@@ -22,7 +21,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 ## CI Gate (Required Status Check)
 
-The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`pr-readiness`, `changes`, `targeted-shards`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `esri-leaflet-browser-tests`, `maplibre-compat`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`). Configure it as a required status check in branch protection to gate PRs on a single job.
+The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`pr-template-check`, `pr-readiness`, `changes`, `targeted-shards`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `esri-leaflet-browser-tests`, `maplibre-compat`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`). Configure it as a required status check in branch protection to gate PRs on a single job. The `pr-template-check` job runs first and `pr-readiness` (and therefore every downstream test job) depends on it, so a malformed PR body short-circuits the rest of the pipeline before any heavy runners are provisioned.
 
 The `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` to pick the active shards for the diff, then projects the selection into a JSON `matrix_include` array drawn from `.github/ci-shards.json` (the single source of truth for both shard routing and matrix-runtime metadata). The `server-tests` job declares its matrix as `strategy.matrix.include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}`, so **unselected shards never instantiate a runner job** — there is no per-shard checkout, build, or Postgres service container cost for shards a PR did not select. On scheduled full CI and `workflow_dispatch` the descriptor is forced to `run_all: true`, so every configured shard entry appears in `matrix_include` and runs.
 
