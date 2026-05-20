@@ -17,6 +17,8 @@ namespace Honua.Server.Tests.Import;
 [Operation(Operations.Import)]
 public sealed class OgcApiFeaturesImportEndpointTests : IAsyncLifetime
 {
+    private static readonly double[] InvalidBboxThreeValues = { 1.0, 2.0, 3.0 };
+
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
 
@@ -67,7 +69,7 @@ public sealed class OgcApiFeaturesImportEndpointTests : IAsyncLifetime
             ServiceUrl = "https://example.com/ogcapi/",
             CollectionId = "buildings",
             TargetSchema = "honua_data",
-            Bbox = new[] { 1.0, 2.0, 3.0 }
+            Bbox = InvalidBboxThreeValues
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);

@@ -19,7 +19,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// unsupported, clean) plus a JSON round-trip through <see cref="ImportJsonContextProxy"/> to lock
 /// the wire shape consumed by the OGC API Features import endpoint.
 /// </summary>
-public sealed class OgcApiFeaturesSchemaMappingDiagnosticTests
+public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
 {
     [Fact]
     public async Task ImportCollectionAsync_WithCompatibleSchema_EmitsNoMappingDiagnostics()
