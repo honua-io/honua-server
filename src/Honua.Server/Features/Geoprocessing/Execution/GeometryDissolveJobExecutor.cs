@@ -196,7 +196,7 @@ internal sealed partial class GeometryDissolveJobExecutor : IJobExecutor
     }
 
     private static byte[] WriteFeatureCollection(
-        IReadOnlyList<(string Key, Geometry Geometry)> dissolved,
+        List<(string Key, Geometry Geometry)> dissolved,
         int srid,
         int inputCount)
     {
