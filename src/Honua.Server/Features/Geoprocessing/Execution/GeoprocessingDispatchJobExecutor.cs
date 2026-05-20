@@ -20,13 +20,15 @@ namespace Honua.Server.Features.Geoprocessing.Execution;
 /// added <c>geometry.clip</c>, <c>geometry.intersect</c>, and
 /// <c>geometry.project</c> as additional per-process executors. Slice 3
 /// added <c>geometry.area</c> (per-feature measure) and <c>geometry.union</c>
-/// (collection aggregation). Slice 4 adds <c>geometry.centroid</c>,
+/// (collection aggregation). Slice 4 added <c>geometry.centroid</c>,
 /// <c>geometry.length</c>, and <c>geometry.convex-hull</c> — finishing the
-/// deterministic single-feature vector set before later slices tackle
-/// simplify/dissolve and the heavyweight raster / surface ops. This
-/// dispatcher routes between them and emits a single, consistent
-/// "unsupported process id" error for everything outside the current
-/// supported set.
+/// deterministic single-feature vector set. Slice 5 rounds out the
+/// migration-priority vector ops with <c>geometry.dissolve</c>
+/// (group-aware aggregate), <c>geometry.simplify</c> (Douglas-Peucker),
+/// and <c>geometry.snap</c> (vertex conditioning to a reference
+/// geometry). This dispatcher routes between them and emits a single,
+/// consistent "unsupported process id" error for everything outside the
+/// current supported set.
 /// </summary>
 internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 {
@@ -43,6 +45,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         GeometryCentroidJobExecutor centroid,
         GeometryLengthJobExecutor length,
         GeometryConvexHullJobExecutor convexHull,
+        GeometryDissolveJobExecutor dissolve,
+        GeometrySimplifyJobExecutor simplify,
+        GeometrySnapJobExecutor snap,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -54,6 +59,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(centroid);
         ArgumentNullException.ThrowIfNull(length);
         ArgumentNullException.ThrowIfNull(convexHull);
+        ArgumentNullException.ThrowIfNull(dissolve);
+        ArgumentNullException.ThrowIfNull(simplify);
+        ArgumentNullException.ThrowIfNull(snap);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
@@ -67,6 +75,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [GeometryCentroidJobExecutor.HandledProcessId] = centroid,
             [GeometryLengthJobExecutor.HandledProcessId] = length,
             [GeometryConvexHullJobExecutor.HandledProcessId] = convexHull,
+            [GeometryDissolveJobExecutor.HandledProcessId] = dissolve,
+            [GeometrySimplifyJobExecutor.HandledProcessId] = simplify,
+            [GeometrySnapJobExecutor.HandledProcessId] = snap,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;
