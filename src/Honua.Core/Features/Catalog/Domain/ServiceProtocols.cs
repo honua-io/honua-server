@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Domain.V2;
+
 namespace Honua.Core.Features.Catalog.Domain;
 
 /// <summary>
@@ -89,4 +91,23 @@ public static class ServiceProtocols
     /// </summary>
     public static bool IsProtocolEnabled(CatalogMetadata? metadata, string protocol)
         => metadata?.EnabledProtocols is null || metadata.EnabledProtocols.Contains(protocol);
+
+    /// <summary>
+    /// Checks whether a V2 service's <see cref="MetadataV2Service.ServiceType"/> matches
+    /// the v1 protocol identifier. Returns true when the service-type maps to the
+    /// requested protocol (or when no protocol is specified).
+    /// </summary>
+    public static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
+    {
+        if (service is null)
+        {
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(protocol))
+        {
+            return true;
+        }
+        var requested = MetadataV2ServiceTypeMapping.Map(protocol);
+        return requested.HasValue && service.ServiceType == requested.Value;
+    }
 }
