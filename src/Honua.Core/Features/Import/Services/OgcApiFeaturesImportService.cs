@@ -1105,7 +1105,9 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         {
             if (_logger.IsEnabled(LogLevel.Debug))
             {
+#pragma warning disable CA1873 // safe-url helper only invoked inside the IsEnabled gate above
                 Log.SchemaDocumentUnavailable(_logger, collectionId, ToSafeSourceUrl(schemaUri), ex);
+#pragma warning restore CA1873
             }
 
             return null;
@@ -1114,7 +1116,9 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         {
             if (_logger.IsEnabled(LogLevel.Debug))
             {
+#pragma warning disable CA1873 // safe-url helper only invoked inside the IsEnabled gate above
                 Log.SchemaDocumentUnavailable(_logger, collectionId, ToSafeSourceUrl(schemaUri), ex);
+#pragma warning restore CA1873
             }
 
             return null;
