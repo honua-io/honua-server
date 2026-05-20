@@ -70,6 +70,21 @@ public sealed record OgcApiFeaturesImportResult
     /// Wall-clock duration of the import run.
     /// </summary>
     public TimeSpan Duration { get; init; }
+
+    /// <summary>
+    /// True when the importer detected a change in filter/bbox/datetime relative to the previous
+    /// run against the same target. The importer does NOT delete rows that fell out of the new
+    /// scope; instead it logs a warning and surfaces a manual-review record so operators can
+    /// reconcile the catalog explicitly. See <see cref="Warnings"/> for the operator-facing
+    /// description and <c>ManualReviewReason</c> for the structured reason.
+    /// </summary>
+    public bool ScopeDriftDetected { get; init; }
+
+    /// <summary>
+    /// Optional manual-review reason recorded when <see cref="ScopeDriftDetected"/> is <c>true</c>.
+    /// Operators can route this through the migration manifest review queue.
+    /// </summary>
+    public string? ManualReviewReason { get; init; }
 }
 
 /// <summary>
@@ -97,4 +112,13 @@ public static class OgcApiFeaturesImportErrorCodes
 
     /// <summary>The import timed out before the source emitted all pages.</summary>
     public const string Timeout = "ogc_api_features.timeout";
+
+    /// <summary>The CQL2 filter expression was empty or otherwise rejected by the importer.</summary>
+    public const string InvalidFilter = "ogc_api_features.invalid_filter";
+
+    /// <summary>The bbox tuple length, ordering, or numeric content was invalid.</summary>
+    public const string InvalidBbox = "ogc_api_features.invalid_bbox";
+
+    /// <summary>The datetime expression could not be parsed as an RFC3339 instant or interval.</summary>
+    public const string InvalidDatetime = "ogc_api_features.invalid_datetime";
 }

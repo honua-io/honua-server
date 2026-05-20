@@ -30,6 +30,31 @@ public interface IOgcApiFeaturesCollectionSink
         OgcApiFeaturesSinkTarget target,
         IReadOnlyList<OgcApiFeaturesSinkFeature> features,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads the scope signature recorded by the previous import (if any) for the same target so
+    /// the importer can detect scope drift across runs. Implementations that do not persist a scope
+    /// signature MAY return <c>null</c>; the importer will then treat the current run as the first.
+    /// </summary>
+    /// <param name="target">Sink target descriptor.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The previously recorded scope signature, or <c>null</c> when no prior run is known.</returns>
+    Task<string?> GetLastScopeSignatureAsync(OgcApiFeaturesSinkTarget target, CancellationToken cancellationToken)
+        => Task.FromResult<string?>(null);
+
+    /// <summary>
+    /// Records the scope signature applied to the current import run. Implementations SHOULD
+    /// persist this value alongside the target so subsequent runs can detect drift. Implementations
+    /// that do not support scope tracking MAY no-op.
+    /// </summary>
+    /// <param name="target">Sink target descriptor.</param>
+    /// <param name="scopeSignature">Stable signature describing the current run's filter/bbox/datetime.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task RecordScopeSignatureAsync(
+        OgcApiFeaturesSinkTarget target,
+        string scopeSignature,
+        CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }
 
 /// <summary>

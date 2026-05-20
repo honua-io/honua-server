@@ -54,4 +54,30 @@ public sealed record OgcApiFeaturesImportRequest
     /// Whether HTTP and local URLs are permitted, for test or controlled operator environments.
     /// </summary>
     public bool AllowUnsafeLocalUrls { get; init; }
+
+    /// <summary>
+    /// Optional CQL2-text filter passed through to the source items endpoint as
+    /// <c>filter=...&amp;filter-lang=cql2-text</c>. When set, the importer requests only the matching
+    /// subset of features. The filter is supplied verbatim to the source after URL escaping; the
+    /// importer does not parse, normalize, or rewrite the expression. Empty or whitespace-only
+    /// values are rejected by the importer (and by the API endpoint).
+    /// </summary>
+    public string? Filter { get; init; }
+
+    /// <summary>
+    /// Optional bounding box passed through to the source items endpoint as <c>bbox=</c>. The tuple
+    /// MUST contain four numbers (<c>minLon,minLat,maxLon,maxLat</c>) or six numbers
+    /// (<c>minLon,minLat,minElev,maxLon,maxLat,maxElev</c>). Any other length, NaN or infinite
+    /// values, or a maximum less than the minimum on the same axis is rejected.
+    /// </summary>
+    public double[]? Bbox { get; init; }
+
+    /// <summary>
+    /// Optional datetime filter passed through to the source items endpoint as <c>datetime=</c>.
+    /// Accepts an RFC3339 instant (<c>2020-01-01T00:00:00Z</c>), an interval with both endpoints
+    /// (<c>start/end</c>), or an open-ended interval (<c>start/..</c> or <c>../end</c>). Whitespace
+    /// is trimmed; otherwise the value is forwarded verbatim. Invalid syntax or an interval whose
+    /// start is later than its end is rejected.
+    /// </summary>
+    public string? Datetime { get; init; }
 }

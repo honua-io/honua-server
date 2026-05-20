@@ -78,6 +78,33 @@ internal static class OgcApiFeaturesImportEndpoints
             return;
         }
 
+        if (request.Filter != null && string.IsNullOrWhiteSpace(request.Filter))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Filter must be a non-empty CQL2-text expression when supplied.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (request.Bbox != null && request.Bbox.Length is not (4 or 6))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Bbox must contain exactly 4 (2D) or 6 (3D) ordinates.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (request.Datetime != null && string.IsNullOrWhiteSpace(request.Datetime))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Datetime must be a non-empty RFC3339 instant or interval when supplied.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
         var validation = await OgcServiceUrlValidation.ValidateAsync(
             request.ServiceUrl,
@@ -103,7 +130,10 @@ internal static class OgcApiFeaturesImportEndpoints
             MaxFeatures = request.MaxFeatures ?? 0,
             MaxPages = request.MaxPages ?? 1_000,
             TimeoutSeconds = request.TimeoutSeconds ?? 300,
-            AllowUnsafeLocalUrls = allowUnsafeLocalUrls
+            AllowUnsafeLocalUrls = allowUnsafeLocalUrls,
+            Filter = request.Filter,
+            Bbox = request.Bbox,
+            Datetime = request.Datetime
         };
 
         var result = await importService.ImportCollectionAsync(importRequest, cancellationToken).ConfigureAwait(false);
@@ -113,6 +143,9 @@ internal static class OgcApiFeaturesImportEndpoints
             : result.ErrorCode switch
             {
                 OgcApiFeaturesImportErrorCodes.InvalidServiceUrl => StatusCodes.Status400BadRequest,
+                OgcApiFeaturesImportErrorCodes.InvalidFilter => StatusCodes.Status400BadRequest,
+                OgcApiFeaturesImportErrorCodes.InvalidBbox => StatusCodes.Status400BadRequest,
+                OgcApiFeaturesImportErrorCodes.InvalidDatetime => StatusCodes.Status400BadRequest,
                 OgcApiFeaturesImportErrorCodes.UnsupportedItemsEncoding => StatusCodes.Status422UnprocessableEntity,
                 OgcApiFeaturesImportErrorCodes.InvalidItemsDocument => StatusCodes.Status422UnprocessableEntity,
                 OgcApiFeaturesImportErrorCodes.MissingItemsEndpoint => StatusCodes.Status422UnprocessableEntity,
@@ -159,4 +192,13 @@ internal sealed record OgcApiFeaturesImportApiRequest
 
     /// <summary>Optional overall import timeout in seconds.</summary>
     public int? TimeoutSeconds { get; init; }
+
+    /// <summary>Optional CQL2-text filter forwarded as <c>filter=...&amp;filter-lang=cql2-text</c>.</summary>
+    public string? Filter { get; init; }
+
+    /// <summary>Optional 4- or 6-tuple bbox forwarded as <c>bbox=</c>.</summary>
+    public double[]? Bbox { get; init; }
+
+    /// <summary>Optional RFC3339 instant or interval forwarded as <c>datetime=</c>.</summary>
+    public string? Datetime { get; init; }
 }

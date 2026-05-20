@@ -186,6 +186,30 @@ public sealed class PostgresOgcApiFeaturesCollectionSinkTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetLastScopeSignatureAsync_ReturnsRecordedSignatureAcrossRuns()
+    {
+        var sink = CreateSink();
+        var target = new OgcApiFeaturesSinkTarget
+        {
+            Schema = _schema!,
+            Table = "roads_scope",
+            CollectionId = "roads"
+        };
+
+        await sink.EnsureTargetAsync(target, CancellationToken.None);
+
+        var initial = await sink.GetLastScopeSignatureAsync(target, CancellationToken.None);
+        await sink.RecordScopeSignatureAsync(target, "f=name='alpha'|b=|d=", CancellationToken.None);
+        var afterFirstWrite = await sink.GetLastScopeSignatureAsync(target, CancellationToken.None);
+        await sink.RecordScopeSignatureAsync(target, "f=name='beta'|b=|d=", CancellationToken.None);
+        var afterSecondWrite = await sink.GetLastScopeSignatureAsync(target, CancellationToken.None);
+
+        initial.Should().BeNull();
+        afterFirstWrite.Should().Be("f=name='alpha'|b=|d=");
+        afterSecondWrite.Should().Be("f=name='beta'|b=|d=");
+    }
+
+    [Fact]
     public async Task EnsureTargetAsync_RejectsIdentifiersWithUnsafeCharacters()
     {
         var sink = CreateSink();

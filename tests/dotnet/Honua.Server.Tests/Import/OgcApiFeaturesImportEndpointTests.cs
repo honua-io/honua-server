@@ -41,4 +41,52 @@ public sealed class OgcApiFeaturesImportEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("ServiceUrl is required");
     }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/ogc-api-features/collection")]
+    public async Task Collection_WithEmptyFilter_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/ogc-api-features/collection", new
+        {
+            ServiceUrl = "https://example.com/ogcapi/",
+            CollectionId = "buildings",
+            TargetSchema = "honua_data",
+            Filter = "   "
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Filter must be a non-empty");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/ogc-api-features/collection")]
+    public async Task Collection_WithInvalidBboxLength_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/ogc-api-features/collection", new
+        {
+            ServiceUrl = "https://example.com/ogcapi/",
+            CollectionId = "buildings",
+            TargetSchema = "honua_data",
+            Bbox = new[] { 1.0, 2.0, 3.0 }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Bbox");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/ogc-api-features/collection")]
+    public async Task Collection_WithInvalidDatetime_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/ogc-api-features/collection", new
+        {
+            ServiceUrl = "https://example.com/ogcapi/",
+            CollectionId = "buildings",
+            TargetSchema = "honua_data",
+            Datetime = "   "
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Datetime");
+    }
 }

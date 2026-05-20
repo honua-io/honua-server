@@ -97,6 +97,7 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(DateTimeOffset))]
 [JsonSerializable(typeof(DateTime))]
 [JsonSerializable(typeof(string[]))]
+[JsonSerializable(typeof(double[]))]
 [JsonSerializable(typeof(TimeSpan))]
 [JsonSerializable(typeof(byte[]))]
 [JsonSerializable(typeof(TimeOnly))]
