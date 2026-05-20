@@ -539,7 +539,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
             CancellationToken cancellationToken = default)
             => Task.FromResult(new MigrationFeatureCopyOutcome
             {
-                Status = MigrationFeatureCopyStatus.Skipped,
+                Status = MigrationFeatureCopyStatus.AlreadyApplied,
                 RowCount = 0
             });
 
