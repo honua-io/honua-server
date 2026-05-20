@@ -209,9 +209,168 @@ public sealed record MigrationManifestTargetResource
     public MigrationManifestResourceIdentity? Identity { get; init; }
 
     /// <summary>
+    /// Optional attachment migration classification records derived from the source inventory.
+    /// Each record reports the source attachment posture (file size, content type) and an
+    /// automation classification so target apply can decide whether to pull, defer, or skip
+    /// per-attachment migration. Empty when the source did not advertise attachments.
+    /// </summary>
+    public MigrationManifestAttachmentRecord[] Attachments { get; init; } = [];
+
+    /// <summary>
+    /// Optional relationship migration classification records derived from the source inventory.
+    /// Each record captures the relationship cardinality, related layer ids, and an automation
+    /// classification so target apply can recreate or document the relationship. Empty when the
+    /// source did not advertise relationships.
+    /// </summary>
+    public MigrationManifestRelationshipRecord[] Relationships { get; init; } = [];
+
+    /// <summary>
     /// Compatibility assessment that justified the target action.
     /// </summary>
     public required MigrationCompatibilityAssessment Compatibility { get; init; }
+}
+
+/// <summary>
+/// Stable attachment classification values emitted by manifest translation.
+/// </summary>
+public static class MigrationManifestAttachmentClassifications
+{
+    /// <summary>Attachment is small and a supported content type; it can be migrated automatically.</summary>
+    public const string Automated = "automated";
+
+    /// <summary>Attachment is captured but requires an operator-supervised follow-up migration step.</summary>
+    public const string Assisted = "assisted";
+
+    /// <summary>Attachment metadata is captured for explicit operator review before migration.</summary>
+    public const string ManualReview = "manual-review";
+
+    /// <summary>Attachment cannot be migrated by this slice (e.g. disallowed content type).</summary>
+    public const string Unsupported = "unsupported";
+}
+
+/// <summary>
+/// Per-attachment migration classification record emitted by the manifest translator.
+/// </summary>
+public sealed record MigrationManifestAttachmentRecord
+{
+    /// <summary>
+    /// Source attachment identifier as advertised by the source service (e.g. the ArcGIS attachmentId).
+    /// </summary>
+    public required string SourceAttachmentId { get; init; }
+
+    /// <summary>
+    /// Source resource identifier the attachment belongs to.
+    /// </summary>
+    public required string SourceResourceId { get; init; }
+
+    /// <summary>
+    /// Optional attachment file name.
+    /// </summary>
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// Optional advertised content type (MIME) for the attachment.
+    /// </summary>
+    public string? ContentType { get; init; }
+
+    /// <summary>
+    /// Optional attachment size in bytes when advertised by the source.
+    /// </summary>
+    public long? Size { get; init; }
+
+    /// <summary>
+    /// Automation classification. One of
+    /// <see cref="MigrationManifestAttachmentClassifications.Automated"/>,
+    /// <see cref="MigrationManifestAttachmentClassifications.Assisted"/>,
+    /// <see cref="MigrationManifestAttachmentClassifications.ManualReview"/>, or
+    /// <see cref="MigrationManifestAttachmentClassifications.Unsupported"/>.
+    /// </summary>
+    public required string Classification { get; init; }
+
+    /// <summary>
+    /// Optional stable target attachment reference (e.g. <c>target:attachment:{service}:{resource}:{id}</c>)
+    /// that target apply will materialize when the classification is automated or assisted.
+    /// </summary>
+    public string? TargetAttachmentRef { get; init; }
+
+    /// <summary>
+    /// Optional human-readable explanation for the classification.
+    /// </summary>
+    public string? Reason { get; init; }
+}
+
+/// <summary>
+/// Stable relationship classification values emitted by manifest translation.
+/// </summary>
+public static class MigrationManifestRelationshipClassifications
+{
+    /// <summary>Relationship can be recreated automatically by target apply.</summary>
+    public const string Automated = "automated";
+
+    /// <summary>Relationship is captured but requires an operator-supervised follow-up step.</summary>
+    public const string Assisted = "assisted";
+
+    /// <summary>Relationship metadata is captured for explicit operator review.</summary>
+    public const string ManualReview = "manual-review";
+
+    /// <summary>Relationship is not supported by this slice and must be manually re-modeled.</summary>
+    public const string Unsupported = "unsupported";
+}
+
+/// <summary>
+/// Per-relationship migration classification record emitted by the manifest translator.
+/// </summary>
+public sealed record MigrationManifestRelationshipRecord
+{
+    /// <summary>
+    /// Source relationship identifier as advertised by the source service.
+    /// </summary>
+    public required string SourceRelationshipId { get; init; }
+
+    /// <summary>
+    /// Source resource identifier that owns or originates the relationship.
+    /// </summary>
+    public required string SourceResourceId { get; init; }
+
+    /// <summary>
+    /// Optional relationship display name.
+    /// </summary>
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// Optional relationship cardinality such as <c>1:1</c>, <c>1:N</c>, or <c>M:N</c>.
+    /// </summary>
+    public string? Cardinality { get; init; }
+
+    /// <summary>
+    /// Optional relationship subtype such as <c>simple</c>, <c>composite</c>, or <c>attributed</c>.
+    /// </summary>
+    public string? RelationshipType { get; init; }
+
+    /// <summary>
+    /// Related source layer or table identifiers (e.g. parent and child layer ids).
+    /// </summary>
+    public string[] RelatedLayerIds { get; init; } = [];
+
+    /// <summary>
+    /// Automation classification. One of
+    /// <see cref="MigrationManifestRelationshipClassifications.Automated"/>,
+    /// <see cref="MigrationManifestRelationshipClassifications.Assisted"/>,
+    /// <see cref="MigrationManifestRelationshipClassifications.ManualReview"/>, or
+    /// <see cref="MigrationManifestRelationshipClassifications.Unsupported"/>.
+    /// </summary>
+    public required string Classification { get; init; }
+
+    /// <summary>
+    /// Optional stable target relationship reference that target apply will materialize when the
+    /// classification is automated or assisted.
+    /// </summary>
+    public string? TargetRelationshipRef { get; init; }
+
+    /// <summary>
+    /// Optional human-readable explanation for the classification.
+    /// </summary>
+    public string? Reason { get; init; }
 }
 
 /// <summary>
