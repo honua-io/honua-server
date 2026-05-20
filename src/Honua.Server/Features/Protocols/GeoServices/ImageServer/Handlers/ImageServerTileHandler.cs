@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
@@ -21,18 +21,18 @@ namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerTileHandler
 {
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly ICogTileResolver? _cogTileResolver;
     private readonly ILogger<ImageServerTileHandler> _logger;
 
     public ImageServerTileHandler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILogger<ImageServerTileHandler> logger,
         ICogTileResolver? cogTileResolver = null)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _cogTileResolver = cogTileResolver;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -61,9 +61,9 @@ internal sealed class ImageServerTileHandler
 
         try
         {
-            // Validate layer exists
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            // Validate layer exists in the Metadata v2 graph
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -93,8 +93,8 @@ internal sealed class ImageServerTileHandler
                 return editionError;
             }
 
-            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(
-                layer.Metadata,
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
+                resolved.Resource,
                 context.Request.Query["mosaicRule"]);
 
             var tileGeometry = CreateTileEnvelope(level, row, col);

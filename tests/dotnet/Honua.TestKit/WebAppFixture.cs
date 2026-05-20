@@ -7,13 +7,13 @@ using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Queries.Filters;
@@ -317,6 +317,19 @@ public sealed class WebAppFixture : IAsyncLifetime
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
+
+        // ImageServer publications for the canonical raster test layer (TestServiceId/TestLayerId).
+        // ImageServer handler tests resolve their layer index against this snapshot.
+        builder
+            .AddResource("res-image-test", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddService("svc-image-test", TestServiceId, MetadataV2ServiceType.EsriImageService)
+            .AddPublication(
+                id: "pub-image-test",
+                serviceId: "svc-image-test",
+                resourceId: "res-image-test",
+                layerIndex: TestLayerId,
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer);
 
         return builder.Build();
     }
@@ -889,4 +902,5 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         return client;
     }
+
 }

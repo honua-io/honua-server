@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using System.Linq;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
@@ -31,18 +31,18 @@ internal sealed class ImageServerExportHandler
     private const int MinCompressionQuality = 0;
     private const int MaxCompressionQuality = 100;
 
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly ITemporaryFileService _temporaryFileService;
     private readonly ILogger<ImageServerExportHandler> _logger;
 
     public ImageServerExportHandler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ITemporaryFileService temporaryFileService,
         ILogger<ImageServerExportHandler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _temporaryFileService = temporaryFileService ?? throw new ArgumentNullException(nameof(temporaryFileService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -65,8 +65,8 @@ internal sealed class ImageServerExportHandler
 
         try
         {
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -92,7 +92,7 @@ internal sealed class ImageServerExportHandler
                 return editionError;
             }
 
-            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, request.MosaicRule);
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, request.MosaicRule);
             var selectionQuery = new RasterSelectionQuery
             {
                 Geometry = exportQuery.ClipRegion?.Geometry,

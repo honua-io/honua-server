@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
@@ -14,7 +14,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
-using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
@@ -26,13 +25,13 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerAnalyzeHandlerTests
 {
-    private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
+    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
     private readonly ImageServerAnalyzeHandler _handler;
 
     public ImageServerAnalyzeHandlerTests()
     {
         _handler = new ImageServerAnalyzeHandler(
-            _layerCatalog,
+            _graphProvider,
             new ImageServerRasterFunctionPlanner(),
             NullLogger<ImageServerAnalyzeHandler>.Instance);
     }
@@ -41,8 +40,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_LayerNotFound_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
-            .Returns((LayerDefinition?)null);
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(
@@ -59,8 +56,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_MissingRenderingRule_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(context, 1, EmptyValues(), CancellationToken.None);
@@ -73,8 +68,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_RasterFunctionParameter_IsAccepted()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(
@@ -92,8 +85,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_InvalidJson_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(
@@ -110,8 +101,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_UnsupportedFunction_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(
@@ -128,8 +117,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_StretchWithoutStretchType_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(
@@ -146,8 +133,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_StretchWithStretchType_ReturnsSuccess()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(
@@ -168,8 +153,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_ClipWithoutGeometryOrExtent_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(
@@ -186,8 +169,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_NestedChainStretchOverClip_ReportsCorrectDepth()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         const string chain = """
         {
@@ -222,8 +203,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_IdentityFunction_ReturnsF32PixelType()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(
@@ -241,8 +220,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_ExceedingMaxDepth_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         // Build an Identity-over-Identity chain deeper than the limit (8).
         var chain = "{\"rasterFunction\":\"Identity\"}";
@@ -266,8 +243,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_OutputPixelTypeOverride_HonoursDocument()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(
@@ -285,8 +260,6 @@ public class ImageServerAnalyzeHandlerTests
     [Operation(Operations.Metadata)]
     public async Task AnalyzeAsync_UnsupportedFormat_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
@@ -326,6 +299,16 @@ public class ImageServerAnalyzeHandlerTests
         return context;
     }
 
-    private static LayerDefinition CreateTestLayer()
-        => LayerDefinition.CreateBasic(1, "test-layer", GeometryType.Point);
+    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
+        => new TestMetadataV2GraphBuilder()
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", MetadataV2ServiceType.EsriImageService)
+            .AddPublication(
+                $"publication-{layerIndex}",
+                $"service-{layerIndex}",
+                $"resource-{layerIndex}",
+                layerIndex: layerIndex,
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
 }

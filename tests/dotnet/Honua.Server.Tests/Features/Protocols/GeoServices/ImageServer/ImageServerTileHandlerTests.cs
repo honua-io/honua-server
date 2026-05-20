@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
@@ -24,14 +24,14 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerTileHandlerTests
 {
-    private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
+    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly ImageServerTileHandler _handler;
 
     public ImageServerTileHandlerTests()
     {
         _handler = new ImageServerTileHandler(
-            _layerCatalog,
+            _graphProvider,
             _rasterStore,
             NullLogger<ImageServerTileHandler>.Instance);
     }
@@ -40,8 +40,6 @@ public class ImageServerTileHandlerTests
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_LayerNotFound_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
-            .Returns((LayerDefinition?)null);
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 99, 0, 0, 0, "png");
@@ -54,8 +52,6 @@ public class ImageServerTileHandlerTests
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_NegativeLevel_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, -1, 0, 0, "png");
@@ -68,8 +64,6 @@ public class ImageServerTileHandlerTests
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_LevelExceedsMax_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 29, 0, 0, "png");
@@ -82,8 +76,6 @@ public class ImageServerTileHandlerTests
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_RowExceedsBound_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         // At level 2, max row is 3 (2^2 - 1)
         var context = CreateImageServerContext();
@@ -97,8 +89,6 @@ public class ImageServerTileHandlerTests
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_ColExceedsBound_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         // At level 1, max col is 1 (2^1 - 1)
         var context = CreateImageServerContext();
@@ -112,8 +102,6 @@ public class ImageServerTileHandlerTests
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_UnsupportedFormat_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "bmp");
@@ -128,8 +116,6 @@ public class ImageServerTileHandlerTests
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_NoRasters_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
@@ -144,8 +130,6 @@ public class ImageServerTileHandlerTests
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_TileNotFound_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetImageTileAsync(1, 100, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
@@ -163,8 +147,6 @@ public class ImageServerTileHandlerTests
     public async Task GetImageTileAsync_ValidTile_ReturnsFileResult()
     {
         var tileData = new byte[] { 0x89, 0x50, 0x4E, 0x47 }; // PNG header
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetImageTileAsync(1, 100, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
@@ -192,8 +174,6 @@ public class ImageServerTileHandlerTests
     [InlineData(2, 3, 3)]   // Level 2: 4x4 grid, max
     public async Task GetImageTileAsync_ValidCoordinates_DoesNotReturnBadRequest(int level, int row, int col)
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetImageTileAsync(1, 100, level, row, col, RasterFormat.PNG, Arg.Any<CancellationToken>())
@@ -224,8 +204,18 @@ public class ImageServerTileHandlerTests
         return context;
     }
 
-    private static LayerDefinition CreateTestLayer()
-        => LayerDefinition.CreateBasic(1, "test-layer", GeometryType.Point);
+    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
+        => new TestMetadataV2GraphBuilder()
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", MetadataV2ServiceType.EsriImageService)
+            .AddPublication(
+                $"publication-{layerIndex}",
+                $"service-{layerIndex}",
+                $"resource-{layerIndex}",
+                layerIndex: layerIndex,
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo() => new()
     {
