@@ -3,6 +3,8 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Admin.Abstractions;
@@ -22,6 +24,9 @@ namespace Honua.Postgres.Features.Import;
 /// </summary>
 internal sealed partial class GeoServerImportService : IGeoServerImportService
 {
+    private const int PostgresIdentifierMaxLength = 63;
+    private const int FeatureCopyTargetHashByteLength = 4;
+
     private readonly GeoServerRestClient _restClient;
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsRegistry _crsRegistry;
@@ -1577,6 +1582,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         MigrationFeatureCopyOutcome? copyOutcome = null;
         if (request.ApplyMode && _catalogWriter != null && IsSafeIdentifier(layer.Name))
         {
+            var copyTargetTable = BuildFeatureCopyTargetTable(target, layer);
             try
             {
                 copyOutcome = await _catalogWriter.CopyFeatureDataAsync(
@@ -1586,7 +1592,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                             SourceSchema = target.Schema,
                             SourceTable = target.Table,
                             TargetSchema = "honua_data",
-                            TargetTable = layer.Name.ToLowerInvariant()
+                            TargetTable = copyTargetTable
                         },
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -1595,7 +1601,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     copyOutcome.Status == MigrationFeatureCopyStatus.AlreadyApplied)
                 {
                     publishSchema = "honua_data";
-                    publishTable = layer.Name.ToLowerInvariant();
+                    publishTable = copyTargetTable;
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -2038,9 +2044,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         string? convertedBody = null;
         string? convertedFormat = null;
         var diagnostics = new List<StyleDiagnostic>();
-        var disposition = string.Equals(step.Disposition, "unsupported", StringComparison.Ordinal)
-            ? "unsupported"
-            : string.Equals(step.Disposition, "manual-review", StringComparison.Ordinal)
+        var disposition = string.Equals(step.Disposition, "manual-review", StringComparison.Ordinal)
                 ? "manual-review"
                 : "applied";
 
@@ -2159,6 +2163,25 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         var service = NormalizeCatalogServiceName(source.DisplayName ?? source.BaseUrl ?? "geoserver-import");
         var styleName = NormalizeCatalogServiceName($"{workspace}-{style.Name}");
         return $"style:{service}:{styleName}";
+    }
+
+    private static string BuildFeatureCopyTargetTable(LayerCatalogTarget sourceTarget, GeoServerLayerInfo layer)
+    {
+        var sourceTable = string.IsNullOrWhiteSpace(sourceTarget.Table) ? layer.Name : sourceTarget.Table;
+        var candidate = string.Equals(sourceTarget.Schema, "public", StringComparison.OrdinalIgnoreCase)
+            ? layer.Name.ToLowerInvariant()
+            : $"{sourceTarget.Schema}_{sourceTable}".ToLowerInvariant();
+
+        if (candidate.Length <= PostgresIdentifierMaxLength)
+        {
+            return candidate;
+        }
+
+        var hash = Convert
+            .ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(candidate)).AsSpan(0, FeatureCopyTargetHashByteLength))
+            .ToLowerInvariant();
+        var prefixLength = PostgresIdentifierMaxLength - hash.Length - 1;
+        return $"{candidate[..prefixLength]}_{hash}";
     }
 
     private static string SerializeStyleDiagnostics(IReadOnlyList<StyleDiagnostic> diagnostics)
