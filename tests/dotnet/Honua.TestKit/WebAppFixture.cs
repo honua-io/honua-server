@@ -12,6 +12,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Queries.Filters;
@@ -199,6 +201,11 @@ public sealed class WebAppFixture : IAsyncLifetime
                     services.RemoveAll<ILayerCatalog>();
                     services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
 
+                    // Replace the Postgres-backed Metadata v2 provider with an in-memory fixture
+                    // so endpoints that have migrated off ILayerCatalog can read a snapshot without
+                    // a migrated snapshot row being present in the test database.
+                    RegisterDefaultMetadataV2Graph(services);
+
                     // Override database connection provider with test-specific implementation
                     services.RemoveAll<IDatabaseConnectionProvider>();
                     services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
@@ -281,6 +288,44 @@ public sealed class WebAppFixture : IAsyncLifetime
         }
 
         await transaction.CommitAsync();
+    }
+
+    /// <summary>
+    /// Builds the default Metadata v2 graph snapshot registered into the test DI container so
+    /// that endpoints which have migrated off <see cref="ILayerCatalog"/> have something to read
+    /// from. Mirrors the layer ids seeded by <c>tests/seed/server.yaml</c> so existence probes
+    /// keyed on the v1 layer id continue to find a matching publication. Tests that need a richer
+    /// graph can replace the registration through <see cref="ConfigureServices"/>.
+    /// </summary>
+    private static MetadataV2Graph BuildDefaultTestGraph()
+    {
+        var builder = new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder()
+            .AddService("svc-test", "test", MetadataV2ServiceType.OgcApiFeatures, route: "/ogc/features");
+
+        // Cover the layer ids inserted by server.yaml (0..2 and the spatial-reference fixtures
+        // at 101..104). Any test that needs a different id range can extend or replace the graph.
+        int[] seededLayerIndices = [0, 1, 2, 3, 4, 5, 101, 102, 103, 104];
+        foreach (var layerIndex in seededLayerIndices)
+        {
+            var resourceId = $"res-layer-{layerIndex}";
+            builder
+                .AddResource(resourceId, $"layer-{layerIndex}", MetadataV2ResourceType.FeatureDataset)
+                .AddPublication(
+                    id: $"pub-layer-{layerIndex}",
+                    serviceId: "svc-test",
+                    resourceId: resourceId,
+                    layerIndex: layerIndex,
+                    serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        return builder.Build();
+    }
+
+    private static void RegisterDefaultMetadataV2Graph(IServiceCollection services)
+    {
+        services.RemoveAll<IMetadataV2GraphProvider>();
+        services.AddSingleton<IMetadataV2GraphProvider>(_ =>
+            new Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider(BuildDefaultTestGraph()));
     }
 
     /// <summary>
@@ -382,6 +427,12 @@ public sealed class WebAppFixture : IAsyncLifetime
 
                             services.RemoveAll<ILayerCatalog>();
                             services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
+
+                            // Replace the Postgres-backed Metadata v2 provider with an in-memory
+                            // fixture so endpoints that have migrated off ILayerCatalog can read a
+                            // snapshot without a migrated snapshot row being present in the test
+                            // database.
+                            RegisterDefaultMetadataV2Graph(services);
                         });
                     });
 
