@@ -256,6 +256,11 @@ public static class EndpointRegistry
         new("PATCH", "/api/v1/admin/import/limits"),
         new("POST", "/api/v1/admin/import/scan"),
 
+        // v1 admin ArcGIS migration evidence endpoints (#1025 slice 6)
+        new("GET", "/api/v1/admin/import/arcgis/migrations"),
+        new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/manifest"),
+        new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/parity"),
+
         // v1 admin import endpoints (Geoservices)
         new("POST", "/api/v1/admin/import/geoservices/discover"),
         new("POST", "/api/v1/admin/import/geoservices/start"),
