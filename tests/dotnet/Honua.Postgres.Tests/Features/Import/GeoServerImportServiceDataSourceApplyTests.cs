@@ -197,7 +197,6 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
         catalogWriter.FeatureCopyRequests.Should().BeEmpty();
     }
 
-    [IntegrationTest]
     [Collection("Database")]
     public sealed class DatabaseIntegration(PostgresFixture fixture)
     {
