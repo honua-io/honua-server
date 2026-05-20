@@ -886,6 +886,308 @@ public sealed class MigrationManifestTranslatorTests
         resource.Relationships[0].RelatedLayerIds.Should().Equal("0", "1");
     }
 
+    [Fact]
+    public void Translate_WithArcGisSimpleRenderer_ClassifiesAsAutomatedWithSuggestedStyleId()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "simple"
+            });
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Inspections"
+        });
+
+        var diagnostic = manifest.TargetResources.Should().ContainSingle().Subject
+            .RendererDiagnostics.Should().ContainSingle().Subject;
+        diagnostic.RendererKind.Should().Be("simple");
+        diagnostic.CategoryCount.Should().BeNull();
+        diagnostic.Classification.Should().Be(MigrationManifestRendererClassifications.Automated);
+        diagnostic.SuggestedTargetStyleId.Should().Be("target:style:inspections:inspection-points:simple");
+        diagnostic.Reason.Should().BeNull();
+    }
+
+    [Fact]
+    public void Translate_WithArcGisUniqueValueRenderer_ClassifiesAsAssistedUnderCategoryLimit()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "uniqueValue",
+                ["uniqueValueInfoCount"] = "5"
+            });
+
+        var diagnostic = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Inspections"
+        }).TargetResources.Should().ContainSingle().Subject
+          .RendererDiagnostics.Should().ContainSingle().Subject;
+        diagnostic.RendererKind.Should().Be("uniqueValue");
+        diagnostic.CategoryCount.Should().Be(5);
+        diagnostic.Classification.Should().Be(MigrationManifestRendererClassifications.Assisted);
+        diagnostic.SuggestedTargetStyleId.Should().Be("target:style:inspections:inspection-points:unique-value");
+        diagnostic.Reason.Should().Contain("uniqueValue");
+    }
+
+    [Fact]
+    public void Translate_WithArcGisClassBreaksRenderer_ClassifiesAsAssistedUnderBreakLimit()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "classBreaks",
+                ["classBreakInfoCount"] = "4"
+            });
+
+        var diagnostic = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Inspections"
+        }).TargetResources.Should().ContainSingle().Subject
+          .RendererDiagnostics.Should().ContainSingle().Subject;
+        diagnostic.RendererKind.Should().Be("classBreaks");
+        diagnostic.CategoryCount.Should().Be(4);
+        diagnostic.Classification.Should().Be(MigrationManifestRendererClassifications.Assisted);
+        diagnostic.SuggestedTargetStyleId.Should().Be("target:style:inspections:inspection-points:class-breaks");
+    }
+
+    [Fact]
+    public void Translate_WithArcGisUniqueValueRenderer_OverCategoryLimit_ClassifiesAsManualReview()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "uniqueValue",
+                ["uniqueValueInfoCount"] = "42"
+            });
+
+        var diagnostic = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .RendererDiagnostics.Should().ContainSingle().Subject;
+        diagnostic.Classification.Should().Be(MigrationManifestRendererClassifications.ManualReview);
+        diagnostic.SuggestedTargetStyleId.Should().BeNull();
+        diagnostic.Reason.Should().Contain("42 categories");
+    }
+
+    [Fact]
+    public void Translate_WithArcGisDictionaryRenderer_ClassifiesAsManualReview()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "dictionary"
+            });
+
+        var diagnostic = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .RendererDiagnostics.Should().ContainSingle().Subject;
+        diagnostic.Classification.Should().Be(MigrationManifestRendererClassifications.ManualReview);
+        diagnostic.SuggestedTargetStyleId.Should().BeNull();
+        diagnostic.Reason.Should().Contain("dictionary");
+    }
+
+    [Fact]
+    public void Translate_WithArcGisUnknownRenderer_ClassifiesAsUnsupported()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "experimentalQuantumGradient"
+            });
+
+        var diagnostic = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .RendererDiagnostics.Should().ContainSingle().Subject;
+        diagnostic.Classification.Should().Be(MigrationManifestRendererClassifications.Unsupported);
+        diagnostic.SuggestedTargetStyleId.Should().BeNull();
+    }
+
+    [Fact]
+    public void Translate_WithArcGisFieldTokenLabelExpression_ClassifiesAsAutomated()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "simple",
+                ["labelClass.0.expression"] = "[NAME]"
+            });
+
+        var diagnostic = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .LabelClassDiagnostics.Should().ContainSingle().Subject;
+        diagnostic.LabelClassIndex.Should().Be(0);
+        diagnostic.Expression.Should().Be("[NAME]");
+        diagnostic.Classification.Should().Be(MigrationManifestLabelClassClassifications.Automated);
+        diagnostic.Reason.Should().BeNull();
+    }
+
+    [Fact]
+    public void Translate_WithArcGisArcadeLabelExpression_ClassifiesAsAssisted()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "simple",
+                ["labelClass.0.expression"] = "$feature.NAME + ' (' + $feature.YEAR + ')'",
+                ["labelClass.0.expressionEngine"] = "Arcade"
+            });
+
+        var diagnostic = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .LabelClassDiagnostics.Should().ContainSingle().Subject;
+        diagnostic.ExpressionEngine.Should().Be("Arcade");
+        diagnostic.Classification.Should().Be(MigrationManifestLabelClassClassifications.Assisted);
+        diagnostic.Reason.Should().Contain("Arcade");
+    }
+
+    [Fact]
+    public void Translate_WithArcGisVBScriptLabelExpression_ClassifiesAsUnsupported()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "simple",
+                ["labelClass.0.expression"] = "[NAME] & vbCrLf & [POP]",
+                ["labelClass.0.expressionEngine"] = "VBScript"
+            });
+
+        var diagnostic = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .LabelClassDiagnostics.Should().ContainSingle().Subject;
+        diagnostic.ExpressionEngine.Should().Be("VBScript");
+        diagnostic.Classification.Should().Be(MigrationManifestLabelClassClassifications.Unsupported);
+        diagnostic.Reason.Should().Contain("VBScript");
+    }
+
+    [Fact]
+    public void Translate_WithMultipleArcGisLabelClasses_EmitsOneDiagnosticPerIndex()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "simple",
+                ["labelClass.0.expression"] = "[NAME]",
+                ["labelClass.1.expression"] = "[NAME] - [DEPT]",
+                ["labelClass.2.expression"] = "$feature.NAME",
+                ["labelClass.2.expressionEngine"] = "Arcade"
+            });
+
+        var diagnostics = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .LabelClassDiagnostics;
+        diagnostics.Should().HaveCount(3);
+        diagnostics[0].LabelClassIndex.Should().Be(0);
+        diagnostics[0].Classification.Should().Be(MigrationManifestLabelClassClassifications.Automated);
+        diagnostics[1].LabelClassIndex.Should().Be(1);
+        diagnostics[1].Classification.Should().Be(MigrationManifestLabelClassClassifications.ManualReview);
+        diagnostics[2].LabelClassIndex.Should().Be(2);
+        diagnostics[2].Classification.Should().Be(MigrationManifestLabelClassClassifications.Assisted);
+    }
+
+    [Fact]
+    public void Translate_WithNonArcGisInventory_OmitsRendererAndLabelClassDiagnostics()
+    {
+        var inventory = CreateInventory(
+            resources:
+            [
+                CreateResource("workspace:roads", "Roads", "compatible", "Layer can be represented.")
+            ]);
+
+        var resource = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject;
+        resource.RendererDiagnostics.Should().BeEmpty();
+        resource.LabelClassDiagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Translate_RendererAndLabelDiagnostics_RoundTripThroughSystemTextJson()
+    {
+        var inventory = CreateArcGisRendererInventory(
+            rendererMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["rendererType"] = "uniqueValue",
+                ["uniqueValueInfoCount"] = "3",
+                ["labelClass.0.expression"] = "[NAME]"
+            });
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Inspections"
+        });
+
+        var options = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
+        var json = JsonSerializer.Serialize(manifest, options);
+        json.Should().Contain("\"rendererDiagnostics\":");
+        json.Should().Contain("\"labelClassDiagnostics\":");
+        json.Should().Contain("\"rendererKind\":\"uniqueValue\"");
+        json.Should().Contain("\"suggestedTargetStyleId\":\"target:style:inspections:inspection-points:unique-value\"");
+        json.Should().Contain("\"classification\":\"automated\"");
+
+        var round = JsonSerializer.Deserialize<MigrationManifestArtifact>(json, options);
+        round.Should().NotBeNull();
+        var resource = round!.TargetResources.Should().ContainSingle().Subject;
+        resource.RendererDiagnostics.Should().HaveCount(1);
+        resource.RendererDiagnostics[0].RendererKind.Should().Be("uniqueValue");
+        resource.RendererDiagnostics[0].CategoryCount.Should().Be(3);
+        resource.RendererDiagnostics[0].Classification.Should().Be(MigrationManifestRendererClassifications.Assisted);
+        resource.LabelClassDiagnostics.Should().HaveCount(1);
+        resource.LabelClassDiagnostics[0].Expression.Should().Be("[NAME]");
+        resource.LabelClassDiagnostics[0].Classification.Should().Be(MigrationManifestLabelClassClassifications.Automated);
+    }
+
+    private static MigrationSourceInventoryArtifact CreateArcGisRendererInventory(
+        Dictionary<string, string> rendererMetadata)
+    {
+        const string resourceId = "resource:Inspections:layer:0";
+        const string styleId = "renderer:Inspections:0";
+        return CreateArcGisInventory(
+            serviceUrl: "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
+            containers:
+            [
+                new MigrationInventoryContainer
+                {
+                    Id = "service:Inspections",
+                    Kind = "feature-service",
+                    Name = "Inspections",
+                    Compatibility = Compatible("Service can be represented.")
+                }
+            ],
+            resources:
+            [
+                new MigrationInventoryResource
+                {
+                    Id = resourceId,
+                    ContainerId = "service:Inspections",
+                    Kind = "layer",
+                    Name = "Inspection Points",
+                    GeometryType = "Point",
+                    Capabilities = ["Query"],
+                    Fields = [],
+                    Compatibility = Compatible("Layer can be represented.")
+                }
+            ],
+            styles:
+            [
+                new MigrationInventoryStyle
+                {
+                    Id = styleId,
+                    ContainerId = "service:Inspections",
+                    Kind = "renderer",
+                    Name = "Inspection Points",
+                    Format = "esri-renderer",
+                    ResourceIds = [resourceId],
+                    Metadata = rendererMetadata,
+                    Compatibility = Compatible("Renderer captured.")
+                }
+            ]);
+    }
+
     private static MigrationSourceInventoryArtifact CreateArcGisAttachmentInventory(
         Dictionary<string, string> attachmentMetadata)
     {

@@ -354,6 +354,15 @@ internal static class ServiceCollectionExtensions
         // Register migration catalog writer used by apply-mode imports.
         services.AddScoped<IMigrationCatalogWriter, PostgresMigrationCatalogWriter>();
 
+        // Register ArcGIS migration evidence store (#1025 slice 6). Replaces the Core
+        // in-memory default so admin endpoints can serve persisted manifest + parity
+        // artifacts across server restarts and across instances.
+        services.RemoveAll<IArcGisMigrationEvidenceStore>();
+        services.AddScoped<IArcGisMigrationEvidenceStore>(serviceProvider =>
+            new PostgresArcGisMigrationEvidenceStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();
 
