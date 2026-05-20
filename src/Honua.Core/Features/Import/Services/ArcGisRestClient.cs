@@ -265,6 +265,7 @@ internal sealed partial class ArcGisRestClient
                 return await _httpClient.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
             },
             cancellationToken);
+        ThrowIfAuthenticationFailure(response, url, credentials);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync(jsonTypeInfo, cancellationToken);
@@ -292,6 +293,7 @@ internal sealed partial class ArcGisRestClient
                 return await _httpClient.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
             },
             cancellationToken).ConfigureAwait(false);
+        ThrowIfAuthenticationFailure(response, url, credentials);
         response.EnsureSuccessStatusCode();
 
         var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -326,6 +328,46 @@ internal sealed partial class ArcGisRestClient
 
         var separator = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
         return $"{url}{separator}token={Uri.EscapeDataString(credentials.AccessToken)}";
+    }
+
+    private static void ThrowIfAuthenticationFailure(
+        HttpResponseMessage response,
+        string url,
+        GeoservicesCredentialDescriptor? credentials)
+    {
+        var statusCode = (int)response.StatusCode;
+        if (statusCode is not (401 or 403 or 498 or 499))
+        {
+            return;
+        }
+
+        var credentialsSupplied = !string.IsNullOrWhiteSpace(credentials?.AccessToken)
+            || (!string.IsNullOrWhiteSpace(credentials?.Username)
+                && !string.IsNullOrWhiteSpace(credentials?.Password));
+
+        var kind = statusCode switch
+        {
+            498 => ArcGisAuthenticationFailureKind.CredentialExpired,
+            499 => ArcGisAuthenticationFailureKind.CredentialRequired,
+            403 => ArcGisAuthenticationFailureKind.CredentialDenied,
+            401 => credentialsSupplied
+                ? ArcGisAuthenticationFailureKind.CredentialDenied
+                : ArcGisAuthenticationFailureKind.CredentialRequired,
+            _ => ArcGisAuthenticationFailureKind.CredentialDenied
+        };
+
+        var redactedUrl = RedactArcGisTokenParameters(url);
+        var message = kind switch
+        {
+            ArcGisAuthenticationFailureKind.CredentialExpired =>
+                $"ArcGIS credential expired (HTTP {statusCode}) for '{redactedUrl}'.",
+            ArcGisAuthenticationFailureKind.CredentialRequired =>
+                $"ArcGIS service requires authentication (HTTP {statusCode}) for '{redactedUrl}'.",
+            _ =>
+                $"ArcGIS credential denied (HTTP {statusCode}) for '{redactedUrl}'."
+        };
+
+        throw new ArcGisAuthenticationException(kind, statusCode, message);
     }
 
     private static void ApplyAuthorizationHeader(
@@ -792,6 +834,41 @@ internal sealed partial class ArcGisRestClient
         public static partial void RetryingRequest(
             ILogger logger, int attempt, int maxRetries, double delaySeconds, string errorMessage);
     }
+}
+
+/// <summary>
+/// Categorises authentication-related ArcGIS REST failures so callers can surface
+/// structured diagnostics (credential expired vs. denied vs. required) without
+/// reflecting raw token material into logs or job state.
+/// </summary>
+internal enum ArcGisAuthenticationFailureKind
+{
+    CredentialRequired,
+    CredentialExpired,
+    CredentialDenied
+}
+
+/// <summary>
+/// Thrown by <see cref="ArcGisRestClient"/> when an ArcGIS REST request fails with
+/// an authentication-related HTTP status (401/403/498/499). The exception carries the
+/// upstream HTTP status code and a categorised failure kind so import job handlers can
+/// emit deterministic credential diagnostics instead of generic transport errors.
+/// </summary>
+internal sealed class ArcGisAuthenticationException : HttpRequestException
+{
+    public ArcGisAuthenticationException(
+        ArcGisAuthenticationFailureKind kind,
+        int upstreamStatusCode,
+        string message)
+        : base(message)
+    {
+        Kind = kind;
+        UpstreamStatusCode = upstreamStatusCode;
+    }
+
+    public ArcGisAuthenticationFailureKind Kind { get; }
+
+    public int UpstreamStatusCode { get; }
 }
 
 /// <summary>
