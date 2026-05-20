@@ -523,6 +523,31 @@ public sealed class GeoServerImportWorkspaceScopingTests
                 : MigrationCatalogWriteOutcome.AlreadyExists;
             return Task.FromResult(outcome);
         }
+
+        // Workspace-scoping tests only exercise catalog-service writes; the
+        // data-source / feature-copy / style writers added by #1015 slices 2-3
+        // are no-op stubs here so this double satisfies the contract.
+        public Task<MigrationCatalogWriteOutcome> EnsureDataSourceAsync(
+            string connectionString,
+            MigrationDataSourceRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(MigrationCatalogWriteOutcome.Created);
+
+        public Task<MigrationFeatureCopyOutcome> CopyFeatureDataAsync(
+            string connectionString,
+            MigrationFeatureCopyRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new MigrationFeatureCopyOutcome
+            {
+                Status = MigrationFeatureCopyStatus.Skipped,
+                RowCount = 0
+            });
+
+        public Task<MigrationCatalogWriteOutcome> EnsureStyleAsync(
+            string connectionString,
+            MigrationStyleRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(MigrationCatalogWriteOutcome.Created);
     }
 
     private sealed class RecordingLogger : ILogger<GeoServerImportService>

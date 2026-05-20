@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Services;
@@ -21,7 +22,7 @@ public sealed class MigrationEvidencePackBuilderTests
         {
             RunId = "nightly-20260519",
             Generator = "test/1.0",
-            GeneratedAt = DateTimeOffset.Parse("2026-05-19T00:00:00Z")
+            GeneratedAt = DateTimeOffset.Parse("2026-05-19T00:00:00Z", CultureInfo.InvariantCulture)
         });
 
         var second = MigrationEvidencePackBuilder.Build(inputs, new MigrationEvidencePackBuilderOptions
@@ -29,7 +30,7 @@ public sealed class MigrationEvidencePackBuilderTests
             // Different run-time metadata; fingerprint must be unaffected.
             RunId = "nightly-20260601",
             Generator = "test/2.0",
-            GeneratedAt = DateTimeOffset.Parse("2026-06-01T12:34:56Z")
+            GeneratedAt = DateTimeOffset.Parse("2026-06-01T12:34:56Z", CultureInfo.InvariantCulture)
         });
 
         first.BundleFingerprint.Should().StartWith("sha256:");
@@ -383,8 +384,8 @@ public sealed class MigrationEvidencePackBuilderTests
             Source = source,
             PlanFingerprint = "sha256:plan-fingerprint",
             ReplayToken = "sha256:replay-token",
-            StartedAt = DateTimeOffset.Parse("2026-05-19T00:00:00Z"),
-            CompletedAt = DateTimeOffset.Parse("2026-05-19T00:01:00Z"),
+            StartedAt = DateTimeOffset.Parse("2026-05-19T00:00:00Z", CultureInfo.InvariantCulture),
+            CompletedAt = DateTimeOffset.Parse("2026-05-19T00:01:00Z", CultureInfo.InvariantCulture),
             Summary = new MigrationApplyExecutionSummary
             {
                 TotalStepCount = stepResults.Length,
