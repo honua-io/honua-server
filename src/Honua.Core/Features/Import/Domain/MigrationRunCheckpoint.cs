@@ -13,8 +13,7 @@ namespace Honua.Core.Features.Import.Domain;
 /// Checkpoints are intentionally opaque: callers store a stable phase identifier and a
 /// caller-chosen <see cref="ResumeMarker"/> that is safe to publish (e.g. a manifest
 /// item index, an apply step ordinal). URLs and credential material must not be
-/// embedded in the marker. The checkpoint store implementations enforce this via
-/// <see cref="SafeMarker"/> on read.
+/// embedded in the marker; the checkpoint store implementations sanitize it on write.
 /// </para>
 /// </remarks>
 public sealed record MigrationRunCheckpoint
