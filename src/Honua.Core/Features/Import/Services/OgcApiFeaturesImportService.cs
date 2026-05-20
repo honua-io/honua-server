@@ -104,6 +104,51 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                 table: $"{request.TargetSchema}.{request.TargetTable ?? request.CollectionId}");
         }
 
+        string? normalizedFilter;
+        try
+        {
+            normalizedFilter = NormalizeFilter(request.Filter);
+        }
+        catch (ArgumentException ex)
+        {
+            return Failure(
+                request,
+                ex.Message,
+                OgcApiFeaturesImportErrorCodes.InvalidFilter,
+                stopwatch.Elapsed,
+                target: $"{schema}.{table}");
+        }
+
+        string? normalizedBbox;
+        try
+        {
+            normalizedBbox = NormalizeBbox(request.Bbox);
+        }
+        catch (ArgumentException ex)
+        {
+            return Failure(
+                request,
+                ex.Message,
+                OgcApiFeaturesImportErrorCodes.InvalidBbox,
+                stopwatch.Elapsed,
+                target: $"{schema}.{table}");
+        }
+
+        string? normalizedDatetime;
+        try
+        {
+            normalizedDatetime = NormalizeDatetime(request.Datetime);
+        }
+        catch (ArgumentException ex)
+        {
+            return Failure(
+                request,
+                ex.Message,
+                OgcApiFeaturesImportErrorCodes.InvalidDatetime,
+                stopwatch.Elapsed,
+                target: $"{schema}.{table}");
+        }
+
         Uri serviceUri;
         try
         {
@@ -157,7 +202,50 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             var itemsUri = await ResolveItemsUriAsync(serviceUri, request.CollectionId, timeout.Token).ConfigureAwait(false);
             itemsUri = AddOrReplaceQueryParameter(itemsUri, "limit", ResolvePageSize(request).ToString(CultureInfo.InvariantCulture));
 
+            if (normalizedFilter != null)
+            {
+                itemsUri = AddOrReplaceQueryParameter(itemsUri, "filter", normalizedFilter);
+                itemsUri = AddOrReplaceQueryParameter(itemsUri, "filter-lang", "cql2-text");
+            }
+
+            if (normalizedBbox != null)
+            {
+                itemsUri = AddOrReplaceQueryParameter(itemsUri, "bbox", normalizedBbox);
+            }
+
+            if (normalizedDatetime != null)
+            {
+                itemsUri = AddOrReplaceQueryParameter(itemsUri, "datetime", normalizedDatetime);
+            }
+
             await _sink.EnsureTargetAsync(target, timeout.Token).ConfigureAwait(false);
+
+            using var schemaDocumentHandle = await TryFetchSchemaDocumentAsync(serviceUri, request.CollectionId, timeout.Token).ConfigureAwait(false);
+            var schemaDocument = schemaDocumentHandle?.RootElement;
+            IReadOnlyList<OgcApiFeaturesSchemaMappingDiagnostic> mappingDiagnostics = [];
+
+            var scopeSignature = ComputeScopeSignature(normalizedFilter, normalizedBbox, normalizedDatetime);
+            var scopeDriftDetected = false;
+            string? manualReviewReason = null;
+            try
+            {
+                var priorScope = await _sink.GetLastScopeSignatureAsync(target, timeout.Token).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(priorScope) &&
+                    !string.Equals(priorScope, scopeSignature, StringComparison.Ordinal))
+                {
+                    scopeDriftDetected = true;
+                    manualReviewReason =
+                        "OGC API Features import scope changed since the previous run; previously-imported rows that fall outside the new filter/bbox/datetime were NOT deleted and require manual reconciliation.";
+                    warnings.Add(manualReviewReason);
+                    Log.ScopeDriftDetected(_logger, request.CollectionId, $"{schema}.{table}", priorScope, scopeSignature);
+                }
+
+                await _sink.RecordScopeSignatureAsync(target, scopeSignature, timeout.Token).ConfigureAwait(false);
+            }
+            catch (NotSupportedException)
+            {
+                // Sink implementation explicitly opted out of scope tracking; treat as a first run.
+            }
 
             var maxFeatures = request.MaxFeatures < 0 ? 0 : request.MaxFeatures;
             var maxPages = request.MaxPages <= 0 ? DefaultMaxPages : request.MaxPages;
@@ -201,6 +289,17 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                         partialImported: featuresImported,
                         pagesFetched: pagesFetched,
                         warnings: warnings);
+                }
+
+                if (pagesFetched == 1)
+                {
+                    mappingDiagnostics = await ComputeMappingDiagnosticsAsync(
+                            target,
+                            schemaDocument,
+                            featuresElement,
+                            warnings,
+                            timeout.Token)
+                        .ConfigureAwait(false);
                 }
 
                 var batch = new List<OgcApiFeaturesSinkFeature>(featuresElement.GetArrayLength());
@@ -254,7 +353,10 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                 PagesFetched = pagesFetched,
                 Truncated = truncated,
                 Warnings = warnings,
-                Duration = stopwatch.Elapsed
+                Duration = stopwatch.Elapsed,
+                ScopeDriftDetected = scopeDriftDetected,
+                ManualReviewReason = manualReviewReason,
+                MappingDiagnostics = mappingDiagnostics
             };
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -311,6 +413,146 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         => ex is InvalidOperationException
             || ex.GetType().FullName == "Npgsql.NpgsqlException"
             || (ex.GetType().FullName?.StartsWith("Npgsql.", StringComparison.Ordinal) ?? false);
+
+    private static string? NormalizeFilter(string? filter)
+    {
+        if (filter == null)
+        {
+            return null;
+        }
+
+        var trimmed = filter.Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new ArgumentException("Filter must be a non-empty CQL2-text expression when supplied.");
+        }
+
+        return trimmed;
+    }
+
+    private static string? NormalizeBbox(double[]? bbox)
+    {
+        if (bbox == null)
+        {
+            return null;
+        }
+
+        if (bbox.Length is not (4 or 6))
+        {
+            throw new ArgumentException("Bbox must contain exactly 4 (2D) or 6 (3D) ordinates.");
+        }
+
+        foreach (var value in bbox)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                throw new ArgumentException("Bbox ordinates must be finite numbers.");
+            }
+        }
+
+        if (bbox.Length == 4)
+        {
+            if (bbox[2] < bbox[0] || bbox[3] < bbox[1])
+            {
+                throw new ArgumentException("Bbox maximum ordinates must be greater than or equal to the corresponding minima.");
+            }
+        }
+        else
+        {
+            if (bbox[3] < bbox[0] || bbox[4] < bbox[1] || bbox[5] < bbox[2])
+            {
+                throw new ArgumentException("Bbox maximum ordinates must be greater than or equal to the corresponding minima.");
+            }
+        }
+
+        return string.Join(",", bbox.Select(static value => value.ToString("R", CultureInfo.InvariantCulture)));
+    }
+
+    private static string? NormalizeDatetime(string? datetime)
+    {
+        if (datetime == null)
+        {
+            return null;
+        }
+
+        var trimmed = datetime.Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new ArgumentException("Datetime must be a non-empty RFC3339 instant or interval when supplied.");
+        }
+
+        var parts = trimmed.Split('/');
+        if (parts.Length == 1)
+        {
+            if (!TryParseRfc3339Instant(parts[0], out _))
+            {
+                throw new ArgumentException("Datetime instant must be a valid RFC3339 timestamp.");
+            }
+
+            return trimmed;
+        }
+
+        if (parts.Length != 2)
+        {
+            throw new ArgumentException("Datetime interval must contain exactly one '/' separator.");
+        }
+
+        var startToken = parts[0];
+        var endToken = parts[1];
+
+        if ((startToken == ".." || startToken.Length == 0) &&
+            (endToken == ".." || endToken.Length == 0))
+        {
+            throw new ArgumentException("Datetime interval must bound at least one endpoint.");
+        }
+
+        DateTimeOffset? start = null;
+        DateTimeOffset? end = null;
+
+        if (startToken != ".." && startToken.Length > 0)
+        {
+            if (!TryParseRfc3339Instant(startToken, out var parsed))
+            {
+                throw new ArgumentException("Datetime interval start must be a valid RFC3339 timestamp or '..'.");
+            }
+
+            start = parsed;
+        }
+
+        if (endToken != ".." && endToken.Length > 0)
+        {
+            if (!TryParseRfc3339Instant(endToken, out var parsed))
+            {
+                throw new ArgumentException("Datetime interval end must be a valid RFC3339 timestamp or '..'.");
+            }
+
+            end = parsed;
+        }
+
+        if (start.HasValue && end.HasValue && end < start)
+        {
+            throw new ArgumentException("Datetime interval end must not be earlier than the start.");
+        }
+
+        return trimmed;
+    }
+
+    private static bool TryParseRfc3339Instant(string value, out DateTimeOffset parsed)
+    {
+        return DateTimeOffset.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out parsed);
+    }
+
+    private static string ComputeScopeSignature(string? filter, string? bbox, string? datetime)
+    {
+        return string.Concat(
+            "f=", filter ?? string.Empty,
+            "|b=", bbox ?? string.Empty,
+            "|d=", datetime ?? string.Empty);
+    }
 
     private static int ResolvePageSize(OgcApiFeaturesImportRequest request)
     {
@@ -844,6 +1086,79 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         return builder.Uri.AbsoluteUri;
     }
 
+    private async Task<JsonDocument?> TryFetchSchemaDocumentAsync(
+        Uri serviceUri,
+        string collectionId,
+        CancellationToken cancellationToken)
+    {
+        var schemaUri = AppendPath(serviceUri, $"collections/{Uri.EscapeDataString(collectionId)}/schemas/feature");
+
+        try
+        {
+            return await GetJsonDocumentAsync(schemaUri, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (HttpRequestException ex)
+        {
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                Log.SchemaDocumentUnavailable(_logger, collectionId, ToSafeSourceUrl(schemaUri), ex);
+            }
+
+            return null;
+        }
+        catch (JsonException ex)
+        {
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                Log.SchemaDocumentUnavailable(_logger, collectionId, ToSafeSourceUrl(schemaUri), ex);
+            }
+
+            return null;
+        }
+    }
+
+    private async Task<IReadOnlyList<OgcApiFeaturesSchemaMappingDiagnostic>> ComputeMappingDiagnosticsAsync(
+        OgcApiFeaturesSinkTarget target,
+        JsonElement? schemaDocument,
+        JsonElement firstPageFeatures,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<OgcApiFeaturesSinkColumn> columns;
+        try
+        {
+            columns = await _sink.GetTargetColumnsAsync(target, cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return [];
+        }
+
+        if (columns.Count == 0)
+        {
+            return [];
+        }
+
+        var sourceProperties = OgcApiFeaturesSchemaMapper.DeriveSourceProperties(schemaDocument, firstPageFeatures);
+        var diagnostics = OgcApiFeaturesSchemaMapper.Diagnose(sourceProperties, columns);
+
+        foreach (var diagnostic in diagnostics)
+        {
+            if (warnings.Count >= 100)
+            {
+                break;
+            }
+
+            warnings.Add($"Schema mapping {diagnostic.Classification.ToString().ToLowerInvariant()}: {diagnostic.Reason}");
+        }
+
+        return diagnostics;
+    }
+
     private sealed record OgcApiFeaturesItemLink(string Rel, string Href, string? Type);
 
     private static partial class Log
@@ -871,5 +1186,17 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             Level = LogLevel.Debug,
             Message = "OGC API Features collection metadata unavailable for {CollectionId} at {Url}.")]
         public static partial void CollectionMetadataUnavailable(ILogger logger, string collectionId, string url, Exception exception);
+
+        [LoggerMessage(
+            EventId = 21105,
+            Level = LogLevel.Warning,
+            Message = "OGC API Features import scope drift detected for {CollectionId} writing to {Target}; previous scope {PreviousScope} differs from current scope {CurrentScope}. Rows that fell out of scope were NOT deleted.")]
+        public static partial void ScopeDriftDetected(ILogger logger, string collectionId, string target, string previousScope, string currentScope);
+
+        [LoggerMessage(
+            EventId = 21106,
+            Level = LogLevel.Debug,
+            Message = "OGC API Features schema document unavailable for {CollectionId} at {Url}; mapping diagnostics will fall back to inference from first-page properties.")]
+        public static partial void SchemaDocumentUnavailable(ILogger logger, string collectionId, string url, Exception exception);
     }
 }

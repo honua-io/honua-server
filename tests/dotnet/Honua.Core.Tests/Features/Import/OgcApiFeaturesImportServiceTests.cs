@@ -149,6 +149,132 @@ public sealed class OgcApiFeaturesImportServiceTests
     }
 
     [Fact]
+    public async Task ImportCollectionAsync_WithCql2Filter_AppendsFilterAndFilterLangQueryParameters()
+    {
+        var handler = new FilterPassthroughHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(
+            NewRequest() with { Filter = "type = 'primary'" });
+
+        result.Success.Should().BeTrue();
+        var firstItemsQuery = handler.ItemsRequests.First().Query;
+        firstItemsQuery.Should().Contain("filter=type%20%3D%20%27primary%27");
+        firstItemsQuery.Should().Contain("filter-lang=cql2-text");
+    }
+
+    [Fact]
+    public async Task ImportCollectionAsync_WithBbox_AppendsBboxQueryParameter()
+    {
+        var handler = new FilterPassthroughHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(
+            NewRequest() with { Bbox = new[] { -158.0, 21.0, -157.0, 22.0 } });
+
+        result.Success.Should().BeTrue();
+        var firstItemsQuery = handler.ItemsRequests.First().Query;
+        firstItemsQuery.Should().Contain("bbox=-158%2C21%2C-157%2C22");
+    }
+
+    [Fact]
+    public async Task ImportCollectionAsync_WithDatetimeInterval_AppendsDatetimeQueryParameter()
+    {
+        var handler = new FilterPassthroughHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(
+            NewRequest() with { Datetime = "2024-01-01T00:00:00Z/2024-06-30T23:59:59Z" });
+
+        result.Success.Should().BeTrue();
+        var firstItemsQuery = handler.ItemsRequests.First().Query;
+        firstItemsQuery.Should().Contain("datetime=2024-01-01T00%3A00%3A00Z%2F2024-06-30T23%3A59%3A59Z");
+    }
+
+    [Fact]
+    public async Task ImportCollectionAsync_WithEmptyFilter_ReturnsInvalidFilter()
+    {
+        var handler = new FixtureItemsHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest() with { Filter = "   " });
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.InvalidFilter);
+        handler.RequestUris.Should().BeEmpty();
+        sink.EnsureTargetCalls.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(new[] { 1.0, 2.0, 3.0 })]
+    [InlineData(new[] { 10.0, 20.0, 5.0, 15.0 })]
+    [InlineData(new[] { double.NaN, 0.0, 1.0, 1.0 })]
+    public async Task ImportCollectionAsync_WithInvalidBbox_ReturnsInvalidBbox(double[] bbox)
+    {
+        var handler = new FixtureItemsHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest() with { Bbox = bbox });
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.InvalidBbox);
+        handler.RequestUris.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("not-a-date")]
+    [InlineData("../..")]
+    [InlineData("2024-06-30T00:00:00Z/2024-01-01T00:00:00Z")]
+    [InlineData("2024-01-01/2024-02-01/2024-03-01")]
+    public async Task ImportCollectionAsync_WithInvalidDatetime_ReturnsInvalidDatetime(string datetime)
+    {
+        var handler = new FixtureItemsHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest() with { Datetime = datetime });
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.InvalidDatetime);
+        handler.RequestUris.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ImportCollectionAsync_WithFilterChangeAcrossRuns_EmitsScopeDriftWarning()
+    {
+        var handler = new FilterPassthroughHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var first = await service.ImportCollectionAsync(
+            NewRequest() with { Filter = "type = 'primary'" });
+        var second = await service.ImportCollectionAsync(
+            NewRequest() with { Filter = "type = 'secondary'" });
+
+        first.Success.Should().BeTrue();
+        first.ScopeDriftDetected.Should().BeFalse();
+
+        second.Success.Should().BeTrue();
+        second.ScopeDriftDetected.Should().BeTrue();
+        second.ManualReviewReason.Should().NotBeNullOrEmpty();
+        second.Warnings.Should().Contain(warning =>
+            warning.Contains("scope changed", StringComparison.Ordinal) ||
+            warning.Contains("scope", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task ImportCollectionAsync_WithCyclicPagination_StopsAndWarns()
     {
         var handler = new CyclicItemsHandler();
@@ -186,6 +312,8 @@ public sealed class OgcApiFeaturesImportServiceTests
 
         public List<OgcApiFeaturesSinkFeature> WrittenFeatures { get; } = new();
 
+        public Dictionary<string, string> ScopeSignatures { get; } = new(StringComparer.Ordinal);
+
         public Task EnsureTargetAsync(OgcApiFeaturesSinkTarget target, CancellationToken cancellationToken)
         {
             EnsureTargetCalls++;
@@ -199,6 +327,24 @@ public sealed class OgcApiFeaturesImportServiceTests
         {
             WrittenFeatures.AddRange(features);
             return Task.FromResult(features.Count);
+        }
+
+        public Task<string?> GetLastScopeSignatureAsync(
+            OgcApiFeaturesSinkTarget target,
+            CancellationToken cancellationToken)
+        {
+            var key = $"{target.Schema}.{target.Table}";
+            return Task.FromResult(ScopeSignatures.TryGetValue(key, out var signature) ? signature : null);
+        }
+
+        public Task RecordScopeSignatureAsync(
+            OgcApiFeaturesSinkTarget target,
+            string scopeSignature,
+            CancellationToken cancellationToken)
+        {
+            var key = $"{target.Schema}.{target.Table}";
+            ScopeSignatures[key] = scopeSignature;
+            return Task.CompletedTask;
         }
     }
 
@@ -297,6 +443,71 @@ public sealed class OgcApiFeaturesImportServiceTests
                 {
                     Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
                 });
+        }
+    }
+
+    private sealed class FilterPassthroughHandler : HttpMessageHandler
+    {
+        public ConcurrentBag<Uri> RequestUris { get; } = new();
+
+        public List<Uri> ItemsRequests { get; } = new();
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestUris.Add(request.RequestUri!);
+            var path = request.RequestUri!.AbsolutePath;
+
+            if (path == "/ogcapi/collections/roads")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {
+                          "id": "roads",
+                          "links": [
+                            { "rel": "items", "href": "https://demo.example/ogcapi/collections/roads/items", "type": "application/geo+json" }
+                          ]
+                        }
+                        """,
+                        System.Text.Encoding.UTF8,
+                        "application/json")
+                });
+            }
+
+            if (path.EndsWith("/items", StringComparison.Ordinal))
+            {
+                lock (ItemsRequests)
+                {
+                    ItemsRequests.Add(request.RequestUri!);
+                }
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {
+                          "type": "FeatureCollection",
+                          "numberMatched": 1,
+                          "links": [
+                            { "rel": "self", "href": "https://demo.example/ogcapi/collections/roads/items" }
+                          ],
+                          "features": [
+                            {
+                              "type": "Feature",
+                              "id": "road.1",
+                              "geometry": { "type": "Point", "coordinates": [-157.85, 21.30] },
+                              "properties": { "name": "King" }
+                            }
+                          ]
+                        }
+                        """,
+                        System.Text.Encoding.UTF8,
+                        "application/geo+json")
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
     }
 
