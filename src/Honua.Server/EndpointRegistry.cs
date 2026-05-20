@@ -86,16 +86,7 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/connections/{id}/layers/enabled"),
         new("GET", "/api/v1/admin/version"),
         new("GET", "/api/v1/admin/capabilities"),
-        new("GET", "/api/v1/admin/manifest"),
-        new("POST", "/api/v1/admin/manifest/apply"),
-        new("GET", "/api/v1/admin/manifest/pending"),
-        new("GET", "/api/v1/admin/manifest/pending/{id}"),
-        new("POST", "/api/v1/admin/manifest/pending/{id}/approve"),
-        new("POST", "/api/v1/admin/manifest/pending/{id}/reject"),
-        new("GET", "/api/v1/admin/manifest/pending/history"),
-        new("GET", "/api/v1/admin/manifest/drift"),
-        new("GET", "/api/v1/admin/manifest/versions"),
-        new("GET", "/api/v1/admin/manifest/versions/{versionId}"),
+        // v1 manifest endpoints removed in #1035 cutover (V2 admin UX is tracked under epic #1046).
         new("GET", "/api/v1/admin/deploy/preflight"),
         new("POST", "/api/v1/admin/deploy/plan"),
         new("POST", "/api/v1/admin/deploy/operations"),
@@ -161,12 +152,8 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/roles/{id}/permissions"),
         new("PUT", "/api/v1/admin/roles/{id}/permissions"),
 
-        // v1 admin metadata resource endpoints
-        new("GET", "/api/v1/admin/metadata/resources"),
-        new("GET", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
-        new("POST", "/api/v1/admin/metadata/resources"),
-        new("PUT", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
-        new("DELETE", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
+        // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.
+        // (Layer-style/fields/filter/validation endpoints below still serve v1 layer ids.)
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/fields"),
@@ -177,13 +164,7 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/metadata/layers/{layerId}/style/import-sld"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style/export-sld"),
         new("POST", "/api/v1/admin/metadata/layers/{layerId}/suggest-style"),
-        new("POST", "/api/v1/admin/gitops/watch"),
-        new("PUT", "/api/v1/admin/gitops/watch"),
-        new("GET", "/api/v1/admin/gitops/watch"),
-        new("DELETE", "/api/v1/admin/gitops/watch"),
-        new("GET", "/api/v1/admin/gitops/changes"),
-        new("GET", "/api/v1/admin/gitops/changes/{id}"),
-        new("GET", "/api/v1/admin/gitops/changes/{id}/diff"),
+        // v1 gitops watch endpoints removed in #1035 cutover.
         new("GET", "/api/v1/admin/alerts/zones"),
         new("POST", "/api/v1/admin/alerts/zones"),
         new("PUT", "/api/v1/admin/alerts/zones/{zoneId}"),
