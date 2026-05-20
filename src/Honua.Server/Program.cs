@@ -19,7 +19,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Metadata.Schema;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
@@ -450,44 +449,8 @@ builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRo
     Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
     new Honua.Server.Features.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
-builder.Services.AddSingleton<IMetadataSchemaRegistry, MetadataSchemaRegistry>();
-builder.Services.AddSingleton<IMetadataCompiler, DefaultMetadataCompiler>();
-
-// Register manifest approval workflow services
-builder.Services.Configure<Honua.Server.Features.Admin.Models.ManifestApprovalOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.ManifestApprovalOptions.SectionName));
-builder.Services.Configure<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions.SectionName));
-builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>,
-    Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptionsValidator>();
-builder.Services.AddResilientHttpClient(
-    "manifest-approval-webhook",
-    "manifest-approval-webhook",
-    HttpResiliencePolicies.FastApiDefaults,
-    configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
-builder.Services.AddSingleton<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>(sp =>
-    new Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher(
-        sp.GetRequiredService<IHttpClientFactory>(),
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>>()));
-builder.Services.AddHostedService(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>());
-builder.Services.AddHostedService(sp =>
-    new Honua.Server.Features.Admin.ManifestApprovalExpiryService(
-        sp.GetRequiredService<IServiceScopeFactory>(),
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.Models.ManifestApprovalOptions>>(),
-        sp.GetService<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestApprovalExpiryService>>()));
-builder.Services.AddScoped<Honua.Server.Features.Admin.ManifestApprovalGate>();
-
-// Register GitOps watch services (#518)
-builder.Services.Configure<Honua.Server.Features.Admin.Models.GitOpsWatchOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.GitOpsWatchOptions.SectionName));
-builder.Services.AddHostedService(sp =>
-    new Honua.Server.Features.Admin.GitOpsWatchService(
-        sp.GetRequiredService<IServiceScopeFactory>(),
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.Models.GitOpsWatchOptions>>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.GitOpsWatchService>>()));
+// v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
+// V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
 
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
@@ -670,23 +633,7 @@ builder.Services.AddHostedService(sp =>
         sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>>()));
 builder.Services.AddCollaborationSessionTransport();
 
-// Register manifest drift webhook dispatcher (#515)
-builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>, Honua.Server.Features.Admin.ManifestDriftWebhookOptionsValidator>();
-builder.Services.AddOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>()
-    .Bind(builder.Configuration.GetSection(Honua.Server.Features.Admin.ManifestDriftWebhookOptions.SectionName));
-builder.Services.AddResilientHttpClient(
-    "manifest-drift-webhook",
-    "manifest-drift-webhook",
-    HttpResiliencePolicies.FastApiDefaults,
-    configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
-builder.Services.AddHostedService(sp =>
-    new Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher(
-        sp.GetRequiredService<IServiceScopeFactory>(),
-        sp.GetService<IDistributedCache>(),
-        sp.GetService<IConnectionMultiplexer>(),
-        sp.GetRequiredService<IHttpClientFactory>(),
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher>>()));
+// v1 manifest drift webhook dispatcher removed in #1035 cutover.
 
 builder.Services.AddSingleton<Honua.Server.Features.Admin.TileOperations.ITileOperationJobService>(sp =>
     new Honua.Server.Features.Admin.TileOperations.TileOperationJobService(
@@ -828,9 +775,6 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Mobile.Diagnostics.MobileExceptionIngestionJsonContext.Default,
         Honua.Server.Features.Mobile.FieldCollection.FieldCollectionSyncJsonContext.Default,
         Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
-        Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
-        Honua.Server.Features.Admin.Models.ManifestApprovalJsonContext.Default,
-        Honua.Server.Features.Admin.Models.GitOpsWatchJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerFieldConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerValidationJsonContext.Default,
@@ -1153,10 +1097,7 @@ app.MapLayerPublishingEndpoints();
 app.MapServiceSettingsEndpoints();
 
 // Configure admin metadata version/manifest endpoints
-app.MapAdminMetadataEndpoints();
-app.MapAdminManifestApprovalEndpoints();
-app.MapAdminManifestDriftEndpoints();
-app.MapAdminGitOpsWatchEndpoints();
+// v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.
 app.MapDeployControlEndpoints();
 
 // Configure admin layer style endpoints
@@ -1188,7 +1129,7 @@ app.MapRoleEndpoints();
 app.MapAdminApiKeyEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)
-app.MapMetadataResourceEndpoints();
+// v1 MapMetadataResourceEndpoints removed in #1035 cutover.
 
 // Configure operational monitoring endpoints (#512)
 app.MapCacheOperationsEndpoints();
