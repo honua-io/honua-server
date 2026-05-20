@@ -1,8 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -61,7 +62,7 @@ internal static class ZarrEndpoints
 
     private static async Task<IResult> HandleRegister(
         RegisterZarrRequest request,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IZarrStore store,
         ILogger<ZarrEndpointsLog> logger,
         CancellationToken cancellationToken)
@@ -75,7 +76,7 @@ internal static class ZarrEndpoints
             return TypedResults.BadRequest(error);
         }
 
-        if (!await layerCatalog.LayerExistsAsync(request.LayerId, cancellationToken).ConfigureAwait(false))
+        if (!await LayerPublicationExistsAsync(graphProvider, request.LayerId, cancellationToken).ConfigureAwait(false))
         {
             return TypedResults.NotFound("Layer not found.");
         }
@@ -216,6 +217,26 @@ internal static class ZarrEndpoints
             ZarrLog.MetadataScanFailed(logger, ex, id);
             return StandardErrorHelpers.CreateInternalServerError(context, "Metadata scan failed for the specified Zarr store.");
         }
+    }
+
+    /// <summary>
+    /// Returns true when the Metadata v2 graph contains any publication whose service-local layer
+    /// index matches the supplied id. Replaces the v1 <c>ILayerCatalog.LayerExistsAsync</c> probe.
+    /// </summary>
+    private static async Task<bool> LayerPublicationExistsAsync(
+        IMetadataV2GraphProvider graphProvider,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (publication.LayerIndex == layerId)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static ZarrRegistrationResponse ToResponse(ZarrRegistration registration)
