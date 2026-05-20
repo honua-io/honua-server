@@ -12,6 +12,7 @@ using Honua.Core.Features.Scene;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Scene.Generation;
+using Honua.Core.Features.Security.Domain;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

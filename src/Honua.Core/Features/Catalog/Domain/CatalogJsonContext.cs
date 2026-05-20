@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Catalog.Domain;
 

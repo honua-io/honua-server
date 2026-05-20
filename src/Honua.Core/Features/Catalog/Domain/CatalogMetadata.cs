@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Catalog.Domain;
 
@@ -162,32 +163,8 @@ public sealed record MapServerConfig
     public int MaxFeaturesPerLayer { get; init; } = 10_000;
 }
 
-/// <summary>
-/// Authorization policy for catalog resources (services/layers).
-/// </summary>
-public sealed record AccessPolicy
-{
-    /// <summary>
-    /// When true, anonymous access is allowed regardless of other constraints.
-    /// </summary>
-    public bool AllowAnonymous { get; init; }
-
-    /// <summary>
-    /// When true, anonymous write access is allowed regardless of other constraints.
-    /// </summary>
-    public bool AllowAnonymousWrite { get; init; }
-
-    /// <summary>
-    /// Allowed role names for access (case-insensitive).
-    /// </summary>
-    public string[]? AllowedRoles { get; init; }
-
-    /// <summary>
-    /// Allowed role names for write access (case-insensitive).
-    /// Falls back to AllowedRoles when not specified.
-    /// </summary>
-    public string[]? AllowedWriteRoles { get; init; }
-}
+// AccessPolicy moved to Honua.Core.Features.Security.Domain so it can live independently
+// of the v1 catalog domain. See #1035.
 
 /// <summary>
 /// Temporal metadata for layers with time awareness.
