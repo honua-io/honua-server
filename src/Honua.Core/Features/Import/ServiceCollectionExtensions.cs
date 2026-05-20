@@ -49,6 +49,12 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IOgcCoverageImportService>(serviceProvider =>
             serviceProvider.GetRequiredService<OgcCoverageImportService>());
 
+        // Legacy WCS coverage import service (issue #1030 slice 3). The WCS
+        // service wraps the slice-2 coverage import pipeline — no separate
+        // HttpClient is needed because the underlying service handles all
+        // wire IO. Format negotiation and inventory downgrades happen in-process.
+        services.TryAddScoped<IOgcWcsImportService, OgcWcsImportService>();
+
         return services;
     }
 }
