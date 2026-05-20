@@ -277,6 +277,9 @@ public static class EndpointRegistry
         // v1 admin import endpoints (OGC WFS)
         new("POST", "/api/v1/admin/import/ogc-wfs/start"),
 
+        // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)
+        new("POST", "/api/v1/admin/import/ogc-tiles/export"),
+
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),
         new("GET", "/api/v1/admin/operations/cache/statistics"),

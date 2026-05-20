@@ -391,6 +391,30 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetService<PostgresSchemaConfiguration>());
         });
 
+        // Register OGC WMTS tile-cache export service (#1016 slice 4). Reuses the OGC service
+        // migration scanner for inventory/manifest resolution; the dedicated HTTP client is
+        // tuned for short-lived tile fetches; the sink is the Postgres-backed tile catalog.
+        services.AddResilientHttpClient(
+            OgcTileCacheExportService.HttpClientName,
+            "ogc-tile-cache-export",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(2);
+            },
+            configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
+        services.AddScoped<IOgcTileCacheSink, PostgresOgcTileCacheSink>();
+        services.AddScoped<IOgcTileCacheExportService>(serviceProvider =>
+        {
+            var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+            return new OgcTileCacheExportService(
+                serviceProvider.GetRequiredService<IOgcServiceMigrationScanner>(),
+                serviceProvider.GetRequiredService<IOgcTileCacheSink>(),
+                httpClientFactory.CreateClient(OgcTileCacheExportService.HttpClientName),
+                serviceProvider.GetRequiredService<ILogger<OgcTileCacheExportService>>());
+        });
+
         // Register secure connection management services
         services.AddSecureConnectionServices(configuration);
         services.UseSecureConnectionProvider(configuration);
