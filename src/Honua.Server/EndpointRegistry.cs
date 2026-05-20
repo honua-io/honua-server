@@ -274,6 +274,12 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/geoserver/jobs"),
 
+        // v1 admin GeoServer migration run orchestration endpoints (#1015 slice 5)
+        new("GET", "/api/v1/admin/migration/runs"),
+        new("GET", "/api/v1/admin/migration/runs/{runId}"),
+        new("GET", "/api/v1/admin/migration/runs/{runId}/evidence-pack"),
+        new("POST", "/api/v1/admin/migration/runs/{runId}/cancel"),
+
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),
         new("GET", "/api/v1/admin/operations/cache/statistics"),
