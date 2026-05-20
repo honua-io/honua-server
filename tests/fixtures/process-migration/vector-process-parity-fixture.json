@@ -10,7 +10,12 @@
     "geometry.buffer",
     "geometry.clip",
     "geometry.intersect",
-    "geometry.project"
+    "geometry.project",
+    "geometry.area",
+    "geometry.union",
+    "geometry.centroid",
+    "geometry.length",
+    "geometry.convex-hull"
   ],
   "cases": [
     {
@@ -33,6 +38,155 @@
           "geoservices.output_parameter"
         ]
       }
+    },
+    {
+      "caseId": "clip-box-by-envelope",
+      "processId": "geometry.clip",
+      "description": "Slice 2: clips a 10x10 box (POLYGON((0 0,10 0,10 10,0 10,0 0))) by a 10x10 envelope offset by (5,5); expected intersection is a 5x5 square (area 25). WKB is constructed by the parity fixture test at runtime via NetTopologySuite.",
+      "inputsWkt": {
+        "targetWkt": "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
+        "clipEnvelopeWkt": "POLYGON((5 5, 15 5, 15 15, 5 15, 5 5))",
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Polygon",
+        "featureCount": 1,
+        "areaApprox": 25.0
+      }
+    },
+    {
+      "caseId": "intersect-overlapping-boxes",
+      "processId": "geometry.intersect",
+      "description": "Slice 2: intersection of two overlapping 10x10 boxes (offset by (5,5)) yields a 5x5 square (area 25).",
+      "inputsWkt": {
+        "targetWkt": "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
+        "intersectorWkt": "POLYGON((5 5, 15 5, 15 15, 5 15, 5 5))",
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Polygon",
+        "featureCount": 1,
+        "areaApprox": 25.0
+      }
+    },
+    {
+      "caseId": "project-point-identity-4326",
+      "processId": "geometry.project",
+      "description": "Slice 2: identity projection preserves coordinates; deterministic without PostGIS.",
+      "inputsWkt": {
+        "wkt": "POINT(0 0)",
+        "fromSrid": "4326",
+        "toSrid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Point",
+        "featureCount": 1
+      }
+    },
+    {
+      "caseId": "project-point-wgs84-to-web-mercator",
+      "processId": "geometry.project",
+      "description": "Slice 2: WGS 84 to Web Mercator transform via the in-memory CoordinateTransformer path. POINT(0 0) stays at (0,0).",
+      "inputsWkt": {
+        "wkt": "POINT(0 0)",
+        "fromSrid": "4326",
+        "toSrid": "3857"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Point",
+        "featureCount": 1
+      }
+    },
+    {
+      "caseId": "area-10x10-box",
+      "processId": "geometry.area",
+      "description": "Slice 3: planar area of a 10x10 box (POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))) is 100 in input-CRS units squared. Catalog documents geodesic area but the first-slice executor returns planar area; geodesic measure is tracked as a follow-on slice.",
+      "inputsWkt": {
+        "wkt": "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputScalar",
+        "artifactKind": "Scalar",
+        "measure": "area",
+        "value": 100.0,
+        "unit": "input-crs-units-squared"
+      }
+    },
+    {
+      "caseId": "union-two-overlapping-boxes",
+      "processId": "geometry.union",
+      "description": "Slice 3: unioning two overlapping 10x10 boxes offset by (5,5) yields an L-shaped polygon with area 175 (100 + 100 - 25 overlap).",
+      "inputsWkt": {
+        "wkts": [
+          "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
+          "POLYGON((5 5, 15 5, 15 15, 5 15, 5 5))"
+        ],
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Polygon",
+        "featureCount": 1,
+        "areaApprox": 175.0
+      }
+    },
+    {
+      "caseId": "centroid-10x10-box",
+      "processId": "geometry.centroid",
+      "description": "Slice 4: centroid of a 10x10 axis-aligned box anchored at (0,0) is the geometric center (5,5). Output is always a Point Feature regardless of input geometry type.",
+      "inputsWkt": {
+        "wkt": "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Point",
+        "featureCount": 1,
+        "coordinate": [5.0, 5.0]
+      }
+    },
+    {
+      "caseId": "length-3-4-5-triangle-line",
+      "processId": "geometry.length",
+      "description": "Slice 4: planar length of a 3-4-5 right-triangle linestring (LINESTRING(0 0, 3 0, 3 4)) is 7. Catalog documents geodesic length but the first-slice executor returns planar length; geodesic measure is tracked as a follow-on slice alongside geometry.area.",
+      "inputsWkt": {
+        "wkt": "LINESTRING(0 0, 3 0, 3 4)",
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputScalar",
+        "artifactKind": "Scalar",
+        "measure": "length",
+        "value": 7.0,
+        "unit": "input-crs-units"
+      }
+    },
+    {
+      "caseId": "convex-hull-five-points",
+      "processId": "geometry.convex-hull",
+      "description": "Slice 4: convex hull of five points (four corners of a 10x10 box plus the centroid) is the 10x10 box itself with area 100. Mirrors the PostGIS ST_ConvexHull semantics where the interior point does not extend the hull.",
+      "inputsWkt": {
+        "wkt": "MULTIPOINT((0 0), (10 0), (10 10), (0 10), (5 5))",
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Polygon",
+        "featureCount": 1,
+        "areaApprox": 100.0
+      }
     }
   ],
   "outOfScope": [
@@ -40,6 +194,7 @@
     "modelbuilder-workflow-parity",
     "geoserver-wps-source-migration",
     "raster-or-surface-runtime-parity",
-    "destructive-data-management-without-approval"
+    "destructive-data-management-without-approval",
+    "datum-shift-projection-pairs-requiring-st-transform"
   ]
 }
