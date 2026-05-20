@@ -10,7 +10,9 @@
     "geometry.buffer",
     "geometry.clip",
     "geometry.intersect",
-    "geometry.project"
+    "geometry.project",
+    "geometry.area",
+    "geometry.union"
   ],
   "cases": [
     {
@@ -98,6 +100,41 @@
         "artifactKind": "FeatureLayer",
         "geometryType": "Point",
         "featureCount": 1
+      }
+    },
+    {
+      "caseId": "area-10x10-box",
+      "processId": "geometry.area",
+      "description": "Slice 3: planar area of a 10x10 box (POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))) is 100 in input-CRS units squared. Catalog documents geodesic area but the first-slice executor returns planar area; geodesic measure is tracked as a follow-on slice.",
+      "inputsWkt": {
+        "wkt": "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputScalar",
+        "artifactKind": "Scalar",
+        "measure": "area",
+        "value": 100.0,
+        "unit": "input-crs-units-squared"
+      }
+    },
+    {
+      "caseId": "union-two-overlapping-boxes",
+      "processId": "geometry.union",
+      "description": "Slice 3: unioning two overlapping 10x10 boxes offset by (5,5) yields an L-shaped polygon with area 175 (100 + 100 - 25 overlap).",
+      "inputsWkt": {
+        "wkts": [
+          "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
+          "POLYGON((5 5, 15 5, 15 15, 5 15, 5 5))"
+        ],
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Polygon",
+        "featureCount": 1,
+        "areaApprox": 175.0
       }
     }
   ],

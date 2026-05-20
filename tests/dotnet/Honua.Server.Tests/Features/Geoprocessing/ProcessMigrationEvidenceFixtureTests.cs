@@ -35,7 +35,14 @@ public sealed class ProcessMigrationEvidenceFixtureTests
             .Select(value => value!)
             .ToArray();
 
-        processIds.Should().Contain(["geometry.buffer", "geometry.clip", "geometry.intersect", "geometry.project"]);
+        processIds.Should().Contain([
+            "geometry.buffer",
+            "geometry.clip",
+            "geometry.intersect",
+            "geometry.project",
+            "geometry.area",
+            "geometry.union"
+        ]);
 
         foreach (var processId in processIds)
         {

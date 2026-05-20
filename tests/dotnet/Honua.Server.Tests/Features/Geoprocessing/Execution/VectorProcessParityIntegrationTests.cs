@@ -25,13 +25,15 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 /// <summary>
-/// End-to-end parity coverage for the slice-2 vector executors. Each test
-/// submits a process through the OGC API Processes execute endpoint, polls
-/// the durable runtime until the job reaches a terminal status, retrieves
-/// the result document, and compares the published GeoJSON Feature against a
-/// golden expectation (geometry type, feature count, area / coordinate
-/// position). Mirrors the slice-1 buffer integration test shape so the new
-/// processes pin the same evidence contract.
+/// End-to-end parity coverage for the slice-2 / slice-3 vector executors.
+/// Each test submits a process through the OGC API Processes execute
+/// endpoint, polls the durable runtime until the job reaches a terminal
+/// status, retrieves the result document, and compares the published
+/// GeoJSON Feature (FeatureLayer outputs) or measure-result document
+/// (Scalar outputs) against a golden expectation (geometry type, feature
+/// count, area / coordinate position, measure value). Mirrors the slice-1
+/// buffer integration test shape so the new processes pin the same
+/// evidence contract.
 /// </summary>
 [Collection("Redis")]
 [Protocol(TestProtocols.OgcApiProcesses)]
@@ -180,6 +182,110 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task AreaProcess_CompletesAndReturnsPlanarMeasure()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            // 10x10 box has planar area 100 in input-CRS units squared.
+            var polygon = BuildBoxPolygon(0, 0, 10, 10);
+            var body = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
+                WkbBase64(polygon));
+
+            var jobId = await SubmitJobAsync(client, "geometry.area", body);
+
+            using var terminal = await PollUntilTerminalAsync(client, jobId);
+            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+
+            using var resultsDoc = await GetResultsAsync(client, jobId);
+            var measure = DecodeScalarMeasure(resultsDoc, "geometry.area");
+            measure.GetProperty("measure").GetString().Should().Be("area");
+            measure.GetProperty("value").GetDouble().Should().BeApproximately(100.0, 1e-9);
+            measure.GetProperty("unit").GetString().Should().Be("input-crs-units-squared");
+            measure.GetProperty("inputSrid").GetInt32().Should().Be(4326);
+            measure.GetProperty("inputGeometryType").GetString().Should().Be("Polygon");
+
+            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+            var package = await resultStore.GetAsync(jobId);
+            package.Should().NotBeNull();
+            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+            package.Artifacts.Should().ContainSingle();
+            package.Artifacts[0].Uri.Should().StartWith("data:application/json;base64,");
+            package.Artifacts[0].Label.Should().Be("outputScalar");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task UnionProcess_CompletesAndReturnsAggregatePolygon()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            // Two overlapping 10x10 boxes offset by (5,5) → area 100+100-25 = 175.
+            var first = BuildBoxPolygon(0, 0, 10, 10);
+            var second = BuildBoxPolygon(5, 5, 15, 15);
+            var body = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"response\":\"document\",\"inputs\":{{\"wkbs\":[\"{0}\",\"{1}\"],\"srid\":4326}}}}",
+                WkbBase64(first),
+                WkbBase64(second));
+
+            var jobId = await SubmitJobAsync(client, "geometry.union", body);
+
+            using var terminal = await PollUntilTerminalAsync(client, jobId);
+            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+
+            using var resultsDoc = await GetResultsAsync(client, jobId);
+            var feature = DecodeOutputFeature(resultsDoc, "geometry.union");
+
+            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+            feature.GetProperty("properties").GetProperty("inputCount").GetInt32().Should().Be(2);
+
+            var geometry = ReadGeometry(feature.GetProperty("geometry"));
+            geometry.Area.Should().BeApproximately(175.0, 1e-6,
+                "union of two 10x10 boxes overlapping in a 5x5 square has area 175");
+
+            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+            var package = await resultStore.GetAsync(jobId);
+            package.Should().NotBeNull();
+            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+            package.Artifacts.Should().ContainSingle();
+            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -234,8 +340,9 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
 
         // Activate the worker host. The production dispatcher registered by
         // AddGeoprocessing routes the geometry.clip / geometry.intersect /
-        // geometry.project ids to their per-process executors — that's the
-        // system-under-test for this parity suite.
+        // geometry.project / geometry.area / geometry.union ids to their
+        // per-process executors — that's the system-under-test for this
+        // parity suite.
         services.AddJobWorker();
     }
 
@@ -321,6 +428,27 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
 
     private static Geometry ReadGeometry(JsonElement geometryElement)
         => new GeoJsonReader().Read<Geometry>(geometryElement.GetRawText());
+
+    private static JsonElement DecodeScalarMeasure(JsonDocument resultsDoc, string expectedProcessId)
+    {
+        const string scalarPrefix = "data:application/json;base64,";
+
+        var output = resultsDoc.RootElement.GetProperty("outputScalar");
+        output.GetProperty("kind").GetString().Should().Be("Scalar");
+        output.GetProperty("type").GetString().Should().Be("application/json");
+
+        var href = output.GetProperty("href").GetString();
+        href.Should().NotBeNull();
+        href!.Should().StartWith(scalarPrefix);
+
+        var base64 = href[scalarPrefix.Length..];
+        var bytes = Convert.FromBase64String(base64);
+        var doc = JsonDocument.Parse(bytes);
+        var root = doc.RootElement.Clone();
+        root.GetProperty("type").GetString().Should().Be("MeasureResult");
+        root.GetProperty("processId").GetString().Should().Be(expectedProcessId);
+        return root;
+    }
 
     private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
     {

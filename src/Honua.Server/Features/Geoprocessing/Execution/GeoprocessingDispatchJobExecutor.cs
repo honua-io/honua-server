@@ -18,7 +18,10 @@ namespace Honua.Server.Features.Geoprocessing.Execution;
 /// only registered executor; submitting any other process id surfaced the
 /// "first-slice geoprocessing runtime" error from inside that class. Slice 2
 /// adds <c>geometry.clip</c>, <c>geometry.intersect</c>, and
-/// <c>geometry.project</c> as additional per-process executors; this
+/// <c>geometry.project</c> as additional per-process executors. Slice 3
+/// adds <c>geometry.area</c> (per-feature measure) and <c>geometry.union</c>
+/// (collection aggregation) — completing the measure + aggregate shapes
+/// before later slices tackle the heavyweight raster / surface ops. This
 /// dispatcher routes between them and emits a single, consistent
 /// "unsupported process id" error for everything outside the current
 /// supported set.
@@ -33,12 +36,16 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         GeometryClipJobExecutor clip,
         GeometryIntersectJobExecutor intersect,
         GeometryProjectJobExecutor project,
+        GeometryAreaJobExecutor area,
+        GeometryUnionJobExecutor union,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(buffer);
         ArgumentNullException.ThrowIfNull(clip);
         ArgumentNullException.ThrowIfNull(intersect);
         ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(area);
+        ArgumentNullException.ThrowIfNull(union);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
@@ -47,6 +54,8 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [GeometryClipJobExecutor.HandledProcessId] = clip,
             [GeometryIntersectJobExecutor.HandledProcessId] = intersect,
             [GeometryProjectJobExecutor.HandledProcessId] = project,
+            [GeometryAreaJobExecutor.HandledProcessId] = area,
+            [GeometryUnionJobExecutor.HandledProcessId] = union,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;

@@ -18,8 +18,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// Unit coverage for the dispatcher that routes claimed geoprocessing jobs
 /// to the correct per-process executor. The dispatcher is the single
 /// IJobExecutor registered for ExecutionJobKind.Geoprocessing after slice 2;
-/// this test pins the routing contract so unknown process ids never reach a
-/// per-process executor by accident.
+/// slice 3 extends it with geometry.area + geometry.union. This test pins
+/// the routing contract so unknown process ids never reach a per-process
+/// executor by accident.
 /// </summary>
 public sealed class GeoprocessingDispatchJobExecutorTests
 {
@@ -40,6 +41,8 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.ErrorMessage.Should().Contain("geometry.clip");
         result.ErrorMessage.Should().Contain("geometry.intersect");
         result.ErrorMessage.Should().Contain("geometry.project");
+        result.ErrorMessage.Should().Contain("geometry.area");
+        result.ErrorMessage.Should().Contain("geometry.union");
     }
 
     [UnitTest]
@@ -57,19 +60,21 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.ErrorMessage.Should().Contain("<none>");
     }
 
-    private static readonly string[] SliceTwoProcessIds =
+    private static readonly string[] SliceThreeProcessIds =
     {
         "geometry.buffer",
         "geometry.clip",
         "geometry.intersect",
         "geometry.project",
+        "geometry.area",
+        "geometry.union",
     };
 
     [UnitTest]
-    public void SupportedProcessIds_ListsSliceTwoExecutors()
+    public void SupportedProcessIds_ListsSliceThreeExecutors()
     {
         var dispatcher = CreateDispatcher();
-        dispatcher.SupportedProcessIds.Should().BeEquivalentTo(SliceTwoProcessIds);
+        dispatcher.SupportedProcessIds.Should().BeEquivalentTo(SliceThreeProcessIds);
     }
 
     [UnitTest]
@@ -94,6 +99,8 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new GeometryClipJobExecutor(monitor, NullLogger<GeometryClipJobExecutor>.Instance),
             new GeometryIntersectJobExecutor(monitor, NullLogger<GeometryIntersectJobExecutor>.Instance),
             new GeometryProjectJobExecutor(monitor, NullLogger<GeometryProjectJobExecutor>.Instance),
+            new GeometryAreaJobExecutor(monitor, NullLogger<GeometryAreaJobExecutor>.Instance),
+            new GeometryUnionJobExecutor(monitor, NullLogger<GeometryUnionJobExecutor>.Instance),
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
     }
 
