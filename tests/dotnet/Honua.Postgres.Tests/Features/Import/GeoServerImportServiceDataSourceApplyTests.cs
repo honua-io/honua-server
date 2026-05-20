@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
@@ -151,6 +152,7 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
             DryRun = false,
             ApplyMode = true,
             AutoPublishLayers = true,
+            WorkspaceNames = ["ops"],
             RequestTimeoutSeconds = 5
         };
 
@@ -212,7 +214,9 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
                 await SetUpHonuaCatalogAsync(schemaName);
                 await SetUpSourceRoadsTableAsync(schemaName);
 
-                var fixtureScenario = LoadFixture("CatalogApplySlice");
+                var fixtureScenario = WithDataStoreSchema(
+                    LoadFixture("CatalogApplySlice"),
+                    schemaName);
                 var request = new GeoServerImportRequest
                 {
                     GeoServerRestUrl = fixtureScenario.ServiceUrl,
@@ -437,6 +441,41 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
         }
 
         return new FixtureScenario(serviceUrl, responses);
+    }
+
+    private static FixtureScenario WithDataStoreSchema(FixtureScenario fixture, string schemaName)
+    {
+        const string dataStorePath = "/geoserver/rest/workspaces/ops/datastores/pg.json";
+        var responses = fixture.Responses.ToDictionary(
+            static kvp => kvp.Key,
+            static kvp => kvp.Value,
+            StringComparer.Ordinal);
+        responses[dataStorePath] = AddSchemaConnectionParameter(responses[dataStorePath], schemaName);
+        return fixture with { Responses = responses };
+    }
+
+    private static string AddSchemaConnectionParameter(string dataStoreJson, string schemaName)
+    {
+        var document = JsonNode.Parse(dataStoreJson)?.AsObject()
+            ?? throw new InvalidDataException("Datastore fixture response must be a JSON object.");
+        var entries = document["dataStore"]?["connectionParameters"]?["entry"]?.AsArray()
+            ?? throw new InvalidDataException("Datastore fixture response is missing connectionParameters.entry.");
+
+        foreach (var entry in entries.OfType<JsonObject>())
+        {
+            if (string.Equals(entry["@key"]?.GetValue<string>(), "schema", StringComparison.Ordinal))
+            {
+                entry["$"] = schemaName;
+                return document.ToJsonString();
+            }
+        }
+
+        entries.Add(new JsonObject
+        {
+            ["@key"] = "schema",
+            ["$"] = schemaName
+        });
+        return document.ToJsonString();
     }
 
     private static GeoServerImportService CreateService(
