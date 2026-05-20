@@ -276,6 +276,11 @@ public static class EndpointRegistry
 
         // v1 admin import endpoints (OGC API Features) — #1029 slice 2
         new("POST", "/api/v1/admin/import/ogc-api-features/collection"),
+        // v1 admin import endpoints (OGC Coverages - GeoTIFF/COG, issue #1030 slice 2)
+        new("POST", "/api/v1/admin/import/ogc/coverages/import"),
+
+        // v1 admin import endpoints (legacy OGC WCS, issue #1030 slice 3)
+        new("POST", "/api/v1/admin/import/ogc-wcs/import"),
 
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),

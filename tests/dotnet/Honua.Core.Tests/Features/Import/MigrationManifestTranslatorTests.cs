@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Services;
 
@@ -337,6 +339,700 @@ public sealed class MigrationManifestTranslatorTests
         manifest.TargetResources.Should().BeEmpty();
         manifest.UnsupportedItems.Should().ContainSingle(item => item.SourceId == "wmts-layer:roads");
         manifest.Summary.ServicePlanCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void Translate_WithArcGisInventory_RecordsResourceIdentityEvidence()
+    {
+        var inventory = CreateArcGisInventory(
+            serviceUrl: "https://example.com/arcgis/rest/services/Roads/FeatureServer",
+            containers:
+            [
+                new MigrationInventoryContainer
+                {
+                    Id = "service:Roads",
+                    Kind = "feature-service",
+                    Name = "Roads",
+                    Compatibility = Compatible("Service can be represented.")
+                }
+            ],
+            resources:
+            [
+                new MigrationInventoryResource
+                {
+                    Id = "resource:Roads:layer:0",
+                    ContainerId = "service:Roads",
+                    Kind = "layer",
+                    Name = "Centerlines",
+                    GeometryType = "Polyline",
+                    Capabilities = ["Query"],
+                    Fields =
+                    [
+                        new MigrationInventoryField { Name = "OBJECTID", FieldType = "oid", Nullable = false }
+                    ],
+                    Compatibility = Compatible("Layer can be represented.")
+                }
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Roads"
+        });
+
+        var resource = manifest.TargetResources.Should().ContainSingle().Subject;
+        resource.Identity.Should().NotBeNull();
+        // Source layer id "0" was synthesized into the normalized resource name "centerlines",
+        // so the identity is remapped (not preserved verbatim).
+        resource.Identity!.SourceServiceId.Should().Be("Roads");
+        resource.Identity.SourceLayerId.Should().Be("0");
+        resource.Identity.SourceQualifiedName.Should().Be("Roads/0");
+        // Honua normalizes target service names to lowercase deterministic slugs.
+        resource.Identity.TargetServiceId.Should().Be("roads");
+        resource.Identity.TargetLayerId.Should().Be("target:resource:roads:centerlines");
+        resource.Identity.TargetName.Should().Be("centerlines");
+        resource.Identity.IdentityStability.Should().Be(MigrationManifestIdentityStabilities.Remapped);
+        resource.Identity.IdentityRemapReason.Should().NotBeNullOrEmpty();
+
+        manifest.IdentityRemaps.Should().ContainSingle(remap => remap.SourceId == "resource:Roads:layer:0")
+            .Which.Should().Match<MigrationManifestIdentityRemap>(remap =>
+                remap.IdentityStability == MigrationManifestIdentityStabilities.Remapped &&
+                remap.Reason != null);
+
+        manifest.IdentityRemapping.Should().ContainKey("resource:Roads:layer:0")
+            .WhoseValue.Should().Be("target:resource:roads:centerlines");
+    }
+
+    [Fact]
+    public void Translate_WithArcGisFolderUrl_CapturesSourceFolderPath()
+    {
+        var inventory = CreateArcGisInventory(
+            serviceUrl: "https://example.com/arcgis/rest/services/Utilities/Water/FeatureServer",
+            containers:
+            [
+                new MigrationInventoryContainer
+                {
+                    Id = "service:Water",
+                    Kind = "feature-service",
+                    Name = "Water",
+                    Compatibility = Compatible("Service can be represented.")
+                }
+            ],
+            resources:
+            [
+                new MigrationInventoryResource
+                {
+                    Id = "resource:Water:layer:2",
+                    ContainerId = "service:Water",
+                    Kind = "layer",
+                    Name = "Hydrants",
+                    GeometryType = "Point",
+                    Capabilities = ["Query"],
+                    Fields = [],
+                    Compatibility = Compatible("Layer can be represented.")
+                }
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory);
+
+        var resource = manifest.TargetResources.Should().ContainSingle().Subject;
+        resource.Identity.Should().NotBeNull();
+        resource.Identity!.SourceFolderPath.Should().Be("Utilities");
+        resource.Identity.SourceQualifiedName.Should().Be("Utilities/Water/2");
+    }
+
+    [Fact]
+    public void Translate_WithNonArcGisInventory_OmitsLayerIdentityFields()
+    {
+        var inventory = CreateInventory(
+            resources:
+            [
+                CreateResource("workspace:roads", "Roads", "compatible", "Layer can be represented.")
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory);
+
+        var resource = manifest.TargetResources.Should().ContainSingle().Subject;
+        // Non-ArcGIS sources do not advertise stable layer identifiers, so identity is synthesized.
+        resource.Identity.Should().NotBeNull();
+        resource.Identity!.SourceLayerId.Should().BeNull();
+        resource.Identity.SourceServiceId.Should().BeNull();
+        resource.Identity.IdentityStability.Should().Be(MigrationManifestIdentityStabilities.Synthesized);
+        manifest.IdentityRemaps.Should().ContainSingle(remap => remap.SourceId == "workspace:roads")
+            .Which.IdentityStability.Should().Be(MigrationManifestIdentityStabilities.Synthesized);
+        manifest.IdentityRemapping.Should().ContainKey("workspace:roads");
+    }
+
+    [Fact]
+    public void Translate_OmitsPreservedIdentitiesFromIdentityRemapping()
+    {
+        // Translator deterministically slugifies resource names into the target service. Since the
+        // resource pipeline always emits "target:resource:..." prefixed target ids, we cannot
+        // reasonably construct an end-to-end "preserved" remap via the public Translate path. Verify
+        // the filter directly: only remapped/synthesized entries appear in IdentityRemapping, so any
+        // remap entry whose stability is Preserved must be absent from the dictionary.
+        var inventory = CreateArcGisInventory(
+            serviceUrl: "https://example.com/arcgis/rest/services/Mixed/FeatureServer",
+            containers:
+            [
+                new MigrationInventoryContainer
+                {
+                    Id = "service:Mixed",
+                    Kind = "feature-service",
+                    Name = "Mixed",
+                    Compatibility = Compatible("Service can be represented.")
+                }
+            ],
+            resources:
+            [
+                new MigrationInventoryResource
+                {
+                    Id = "resource:Mixed:layer:0",
+                    ContainerId = "service:Mixed",
+                    Kind = "layer",
+                    Name = "Hydrants",
+                    GeometryType = "Point",
+                    Capabilities = ["Query"],
+                    Fields = [],
+                    Compatibility = Compatible("Layer can be represented.")
+                }
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory);
+
+        manifest.IdentityRemaps.Should().NotBeEmpty();
+        foreach (var remap in manifest.IdentityRemaps)
+        {
+            if (string.Equals(remap.IdentityStability, MigrationManifestIdentityStabilities.Preserved, StringComparison.Ordinal))
+            {
+                manifest.IdentityRemapping.Should().NotContainKey(remap.SourceId,
+                    "preserved-identity entries are intentionally excluded so consumers can short-circuit");
+            }
+            else
+            {
+                manifest.IdentityRemapping.Should().ContainKey(remap.SourceId)
+                    .WhoseValue.Should().Be(remap.TargetId);
+            }
+        }
+    }
+
+    [Fact]
+    public void Translate_WithConflictingDuplicateSourceIds_Throws()
+    {
+        // Two resources sharing the same id but normalizing to different target names would yield
+        // ambiguous identity remappings. The translator must surface this rather than silently
+        // overwrite one mapping with the other.
+        var inventory = CreateInventory(
+            resources:
+            [
+                CreateResource("workspace:duplicate", "First Name", "compatible", "First."),
+                CreateResource("workspace:duplicate", "Second Name", "compatible", "Second.")
+            ]);
+
+        Action act = () => MigrationManifestTranslator.Translate(inventory);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*workspace:duplicate*conflicting*");
+    }
+
+    [Fact]
+    public void Translate_IdentityRemapEvidence_RoundTripsThroughSystemTextJson()
+    {
+        var inventory = CreateArcGisInventory(
+            serviceUrl: "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            containers:
+            [
+                new MigrationInventoryContainer
+                {
+                    Id = "service:Parcels",
+                    Kind = "feature-service",
+                    Name = "Parcels",
+                    Compatibility = Compatible("Service can be represented.")
+                }
+            ],
+            resources:
+            [
+                new MigrationInventoryResource
+                {
+                    Id = "resource:Parcels:layer:0",
+                    ContainerId = "service:Parcels",
+                    Kind = "layer",
+                    Name = "Parcels",
+                    GeometryType = "Polygon",
+                    Capabilities = ["Query"],
+                    Fields = [],
+                    Compatibility = Compatible("Layer can be represented.")
+                }
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Parcels"
+        });
+
+        // Round-trip through System.Text.Json using camelCase + ignore-null options matching
+        // the server-side source-generated context.
+        var options = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
+        var json = JsonSerializer.Serialize(manifest, options);
+        json.Should().Contain("\"identity\":");
+        json.Should().Contain("\"identityStability\":");
+        json.Should().Contain("\"identityRemapping\":");
+        json.Should().Contain("\"sourceLayerId\":\"0\"");
+
+        var round = JsonSerializer.Deserialize<MigrationManifestArtifact>(json, options);
+        round.Should().NotBeNull();
+        round!.IdentityRemaps.Should().NotBeEmpty();
+        round.IdentityRemaps[0].IdentityStability.Should()
+            .Be(manifest.IdentityRemaps[0].IdentityStability);
+        round.IdentityRemapping.Should().BeEquivalentTo(manifest.IdentityRemapping);
+        round.TargetResources[0].Identity.Should().NotBeNull();
+        round.TargetResources[0].Identity!.SourceLayerId.Should().Be("0");
+        round.TargetResources[0].Identity!.IdentityStability.Should()
+            .Be(manifest.TargetResources[0].Identity!.IdentityStability);
+    }
+
+    [Fact]
+    public void Translate_WithArcGisAttachmentUnderSizeThreshold_ClassifiesAsAutomated()
+    {
+        var inventory = CreateArcGisAttachmentInventory(
+            attachmentMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["attachmentId"] = "42",
+                ["name"] = "site-photo.png",
+                ["contentType"] = "image/png",
+                ["size"] = "524288" // 512 KiB, well under the 10 MiB automated lane.
+            });
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Inspections"
+        });
+
+        var resource = manifest.TargetResources.Should().ContainSingle().Subject;
+        resource.Attachments.Should().ContainSingle()
+            .Which.Should().Match<MigrationManifestAttachmentRecord>(record =>
+                record.SourceAttachmentId == "42" &&
+                record.Name == "site-photo.png" &&
+                record.ContentType == "image/png" &&
+                record.Size == 524288L &&
+                record.Classification == MigrationManifestAttachmentClassifications.Automated &&
+                record.TargetAttachmentRef == "target:attachment:inspections:inspection-points:42" &&
+                record.Reason == null);
+    }
+
+    [Fact]
+    public void Translate_WithArcGisAttachmentOverAutomatedLane_ClassifiesAsAssisted()
+    {
+        // 25 MiB exceeds the automated lane (10 MiB) but is well under the assisted ceiling (100 MiB).
+        var inventory = CreateArcGisAttachmentInventory(
+            attachmentMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["attachmentId"] = "77",
+                ["name"] = "scan.pdf",
+                ["contentType"] = "application/pdf",
+                ["size"] = (25L * 1024L * 1024L).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            });
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Inspections"
+        });
+
+        var record = manifest.TargetResources.Should().ContainSingle().Subject
+            .Attachments.Should().ContainSingle().Subject;
+        record.Classification.Should().Be(MigrationManifestAttachmentClassifications.Assisted);
+        record.TargetAttachmentRef.Should().Be("target:attachment:inspections:inspection-points:77");
+        record.Reason.Should().Contain("10 MiB automated lane");
+    }
+
+    [Fact]
+    public void Translate_WithArcGisAttachmentOverAssistedLane_ClassifiesAsManualReview()
+    {
+        // 200 MiB exceeds the 100 MiB assisted ceiling and must be planned out of band.
+        var inventory = CreateArcGisAttachmentInventory(
+            attachmentMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["attachmentId"] = "9001",
+                ["name"] = "drone-survey.tiff",
+                ["contentType"] = "image/tiff",
+                ["size"] = (200L * 1024L * 1024L).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            });
+
+        var manifest = MigrationManifestTranslator.Translate(inventory);
+        var record = manifest.TargetResources.Should().ContainSingle().Subject
+            .Attachments.Should().ContainSingle().Subject;
+        // Disallowed content type already pushes the classification to manual-review; the size threshold
+        // would have the same effect, so the classification stays manual-review regardless of which check
+        // is reached first. Reason text reflects whichever guard fires first (content type).
+        record.Classification.Should().Be(MigrationManifestAttachmentClassifications.ManualReview);
+        record.TargetAttachmentRef.Should().BeNull();
+        record.Reason.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void Translate_WithArcGisAttachmentMissingSize_ClassifiesAsManualReview()
+    {
+        var inventory = CreateArcGisAttachmentInventory(
+            attachmentMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["attachmentId"] = "100",
+                ["name"] = "unknown.bin",
+                ["contentType"] = "application/pdf"
+            });
+
+        var record = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .Attachments.Should().ContainSingle().Subject;
+        record.Size.Should().BeNull();
+        record.Classification.Should().Be(MigrationManifestAttachmentClassifications.ManualReview);
+        record.Reason.Should().Contain("size was not advertised");
+    }
+
+    [Fact]
+    public void Translate_WithArcGisOneToManyRelationship_ClassifiesAsAssisted()
+    {
+        var inventory = CreateArcGisRelationshipInventory(
+            classifications:
+            [
+                CreateRelationshipClassification(
+                    sourceId: "resource:Inspections:layer:0",
+                    name: "InspectionToPhotos",
+                    metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["relationshipId"] = "3",
+                        ["name"] = "InspectionToPhotos",
+                        ["cardinality"] = "1:N",
+                        ["relationshipType"] = "simple",
+                        ["relatedLayerIds"] = "0,1"
+                    })
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Inspections"
+        });
+
+        var record = manifest.TargetResources.Should().ContainSingle().Subject
+            .Relationships.Should().ContainSingle().Subject;
+        record.SourceRelationshipId.Should().Be("3");
+        record.Cardinality.Should().Be("1:N");
+        record.RelationshipType.Should().Be("simple");
+        record.RelatedLayerIds.Should().Equal("0", "1");
+        record.Classification.Should().Be(MigrationManifestRelationshipClassifications.Assisted);
+        record.TargetRelationshipRef.Should().Be("target:relationship:inspections:inspection-points:3");
+        record.Reason.Should().Contain("1:N");
+    }
+
+    [Fact]
+    public void Translate_WithArcGisManyToManyRelationship_ClassifiesAsAssisted()
+    {
+        var inventory = CreateArcGisRelationshipInventory(
+            classifications:
+            [
+                CreateRelationshipClassification(
+                    sourceId: "resource:Inspections:layer:0",
+                    name: "JunctionLink",
+                    metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["relationshipId"] = "7",
+                        ["cardinality"] = "esriRelCardinalityManyToMany",
+                        ["relationshipType"] = "simple",
+                        ["relatedLayerIds"] = "0,2,5"
+                    })
+            ]);
+
+        var record = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .Relationships.Should().ContainSingle().Subject;
+        record.Cardinality.Should().Be("esriRelCardinalityManyToMany");
+        record.Classification.Should().Be(MigrationManifestRelationshipClassifications.Assisted);
+        record.Reason.Should().Contain("M:N");
+        record.RelatedLayerIds.Should().Equal("0", "2", "5");
+    }
+
+    [Fact]
+    public void Translate_WithArcGisCompositeRelationship_ClassifiesAsManualReviewWithReason()
+    {
+        var inventory = CreateArcGisRelationshipInventory(
+            classifications:
+            [
+                CreateRelationshipClassification(
+                    sourceId: "resource:Inspections:layer:0",
+                    name: "CompositeOwnership",
+                    metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["relationshipId"] = "11",
+                        ["cardinality"] = "1:N",
+                        ["relationshipType"] = "composite",
+                        ["relatedLayerIds"] = "0,3"
+                    })
+            ]);
+
+        var record = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject
+            .Relationships.Should().ContainSingle().Subject;
+        record.Classification.Should().Be(MigrationManifestRelationshipClassifications.ManualReview);
+        record.TargetRelationshipRef.Should().BeNull();
+        record.Reason.Should().Contain("composite");
+    }
+
+    [Fact]
+    public void Translate_WithNonArcGisInventory_OmitsAttachmentAndRelationshipRecords()
+    {
+        var inventory = CreateInventory(
+            resources:
+            [
+                CreateResource("workspace:roads", "Roads", "compatible", "Layer can be represented.")
+            ]);
+
+        var resource = MigrationManifestTranslator.Translate(inventory)
+            .TargetResources.Should().ContainSingle().Subject;
+        resource.Attachments.Should().BeEmpty();
+        resource.Relationships.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Translate_AttachmentAndRelationshipRecords_RoundTripThroughSystemTextJson()
+    {
+        var inventory = CreateArcGisInventory(
+            serviceUrl: "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
+            containers:
+            [
+                new MigrationInventoryContainer
+                {
+                    Id = "service:Inspections",
+                    Kind = "feature-service",
+                    Name = "Inspections",
+                    Compatibility = Compatible("Service can be represented.")
+                }
+            ],
+            resources:
+            [
+                new MigrationInventoryResource
+                {
+                    Id = "resource:Inspections:layer:0",
+                    ContainerId = "service:Inspections",
+                    Kind = "layer",
+                    Name = "Inspection Points",
+                    GeometryType = "Point",
+                    Capabilities = ["Query"],
+                    ExternalDependencyIds = ["dependency:Inspections:layer:resource:Inspections:layer:0:attachments"],
+                    Fields = [],
+                    Compatibility = Compatible("Layer can be represented.")
+                }
+            ],
+            dependencies:
+            [
+                new MigrationExternalDependency
+                {
+                    Id = "dependency:Inspections:layer:resource:Inspections:layer:0:attachments",
+                    ContainerId = "service:Inspections",
+                    ResourceId = "resource:Inspections:layer:0",
+                    Kind = "attachments",
+                    Name = "site-photo.png",
+                    Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["attachmentId"] = "42",
+                        ["name"] = "site-photo.png",
+                        ["contentType"] = "image/png",
+                        ["size"] = "1024"
+                    },
+                    Compatibility = Compatible("Attachment captured.")
+                }
+            ],
+            fidelityClassifications:
+            [
+                CreateRelationshipClassification(
+                    sourceId: "resource:Inspections:layer:0",
+                    name: "InspectionToPhotos",
+                    metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["relationshipId"] = "3",
+                        ["cardinality"] = "1:N",
+                        ["relationshipType"] = "simple",
+                        ["relatedLayerIds"] = "0,1"
+                    })
+            ]);
+
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            TargetServiceName = "Inspections"
+        });
+
+        var options = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
+        var json = JsonSerializer.Serialize(manifest, options);
+        json.Should().Contain("\"attachments\":");
+        json.Should().Contain("\"relationships\":");
+        json.Should().Contain("\"classification\":\"automated\"");
+        json.Should().Contain("\"cardinality\":\"1:N\"");
+
+        var round = JsonSerializer.Deserialize<MigrationManifestArtifact>(json, options);
+        round.Should().NotBeNull();
+        var resource = round!.TargetResources.Should().ContainSingle().Subject;
+        resource.Attachments.Should().HaveCount(1);
+        resource.Attachments[0].Classification.Should().Be(MigrationManifestAttachmentClassifications.Automated);
+        resource.Attachments[0].Size.Should().Be(1024);
+        resource.Relationships.Should().HaveCount(1);
+        resource.Relationships[0].Classification.Should().Be(MigrationManifestRelationshipClassifications.Assisted);
+        resource.Relationships[0].RelatedLayerIds.Should().Equal("0", "1");
+    }
+
+    private static MigrationSourceInventoryArtifact CreateArcGisAttachmentInventory(
+        Dictionary<string, string> attachmentMetadata)
+    {
+        const string resourceId = "resource:Inspections:layer:0";
+        var dependencyId = $"dependency:Inspections:layer:{resourceId}:attachments";
+        return CreateArcGisInventory(
+            serviceUrl: "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
+            containers:
+            [
+                new MigrationInventoryContainer
+                {
+                    Id = "service:Inspections",
+                    Kind = "feature-service",
+                    Name = "Inspections",
+                    Compatibility = Compatible("Service can be represented.")
+                }
+            ],
+            resources:
+            [
+                new MigrationInventoryResource
+                {
+                    Id = resourceId,
+                    ContainerId = "service:Inspections",
+                    Kind = "layer",
+                    Name = "Inspection Points",
+                    GeometryType = "Point",
+                    Capabilities = ["Query"],
+                    ExternalDependencyIds = [dependencyId],
+                    Fields = [],
+                    Compatibility = Compatible("Layer can be represented.")
+                }
+            ],
+            dependencies:
+            [
+                new MigrationExternalDependency
+                {
+                    Id = dependencyId,
+                    ContainerId = "service:Inspections",
+                    ResourceId = resourceId,
+                    Kind = "attachments",
+                    Name = attachmentMetadata.GetValueOrDefault("name") ?? "attachment",
+                    Metadata = attachmentMetadata,
+                    Compatibility = Compatible("Attachment captured.")
+                }
+            ]);
+    }
+
+    private static MigrationSourceInventoryArtifact CreateArcGisRelationshipInventory(
+        MigrationFidelityClassificationRecord[] classifications)
+    {
+        return CreateArcGisInventory(
+            serviceUrl: "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
+            containers:
+            [
+                new MigrationInventoryContainer
+                {
+                    Id = "service:Inspections",
+                    Kind = "feature-service",
+                    Name = "Inspections",
+                    Compatibility = Compatible("Service can be represented.")
+                }
+            ],
+            resources:
+            [
+                new MigrationInventoryResource
+                {
+                    Id = "resource:Inspections:layer:0",
+                    ContainerId = "service:Inspections",
+                    Kind = "layer",
+                    Name = "Inspection Points",
+                    GeometryType = "Point",
+                    Capabilities = ["Query"],
+                    Fields = [],
+                    Compatibility = Compatible("Layer can be represented.")
+                }
+            ],
+            fidelityClassifications: classifications);
+    }
+
+    private static MigrationFidelityClassificationRecord CreateRelationshipClassification(
+        string sourceId,
+        string name,
+        Dictionary<string, string> metadata)
+        => new()
+        {
+            Id = $"classification:{sourceId}:relationships:{metadata.GetValueOrDefault("relationshipId", "0")}",
+            SourceId = sourceId,
+            Kind = "relationship",
+            Category = "relationships",
+            Name = name,
+            AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
+            Code = ImportCompatibilityCodes.ArcGisRelationshipsManualReview,
+            Reason = "Relationship metadata captured.",
+            ManualSteps = [],
+            RelatedIds = [],
+            Metadata = metadata
+        };
+
+    private static MigrationSourceInventoryArtifact CreateArcGisInventory(
+        string serviceUrl,
+        MigrationInventoryContainer[] containers,
+        MigrationInventoryResource[] resources,
+        MigrationInventoryStyle[]? styles = null,
+        MigrationExternalDependency[]? dependencies = null,
+        MigrationFidelityClassificationRecord[]? fidelityClassifications = null)
+    {
+        var styleItems = styles ?? [];
+        var dependencyItems = dependencies ?? [];
+        var fidelityItems = fidelityClassifications ?? [];
+
+        return new MigrationSourceInventoryArtifact
+        {
+            SourceKind = "arcgis-geoservices-rest",
+            Source = new MigrationSourceIdentity
+            {
+                DisplayName = "ArcGIS Source",
+                BaseUrl = serviceUrl,
+                Product = "ArcGIS",
+                Version = "11.2",
+                ServiceType = "FeatureServer"
+            },
+            AuthPosture = new MigrationInventoryAuthPosture
+            {
+                Mode = "anonymous",
+                CredentialsSupplied = false,
+                AccessConfirmed = true
+            },
+            ScanCompleteness = new MigrationInventoryCompleteness
+            {
+                Status = "complete"
+            },
+            Summary = new MigrationInventorySummary
+            {
+                ContainerCount = containers.Length,
+                ResourceCount = resources.Length,
+                StyleCount = styleItems.Length,
+                ExternalDependencyCount = dependencyItems.Length,
+                CompatibleCount = resources.Length + styleItems.Length + dependencyItems.Length + containers.Length
+            },
+            OverallCompatibility = Compatible("Fixture compatibility is compatible."),
+            Containers = containers,
+            Resources = resources,
+            Styles = styleItems,
+            ExternalDependencies = dependencyItems,
+            FidelityClassifications = fidelityItems,
+            FidelityMatrix = MigrationFidelityMatrixBuilder.Build(fidelityItems)
+        };
     }
 
     private static MigrationSourceInventoryArtifact CreateInventory(
