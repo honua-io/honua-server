@@ -219,15 +219,15 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
 
         const string countSql = """
             SELECT COUNT(*) FROM honua.migration_runs
-            WHERE (@sourceKind IS NULL OR LOWER(source_kind) = @sourceKind)
-              AND (@status IS NULL OR status = @status);
+            WHERE (@sourceKind::text IS NULL OR LOWER(source_kind) = @sourceKind::text)
+              AND (@status::text IS NULL OR status = @status::text);
             """;
 
         long total;
         await using (var countCmd = new NpgsqlCommand(countSql, connection))
         {
-            countCmd.Parameters.AddWithValue("@sourceKind", (object?)sourceKindFilter ?? DBNull.Value);
-            countCmd.Parameters.AddWithValue("@status", (object?)statusFilter ?? DBNull.Value);
+            countCmd.Parameters.Add(new NpgsqlParameter("@sourceKind", NpgsqlDbType.Text) { Value = (object?)sourceKindFilter ?? DBNull.Value });
+            countCmd.Parameters.Add(new NpgsqlParameter("@status", NpgsqlDbType.Text) { Value = (object?)statusFilter ?? DBNull.Value });
             var raw = await countCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             total = raw switch
             {
@@ -249,8 +249,8 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
                    evidence_pack_fingerprint,
                    status_note
             FROM honua.migration_runs
-            WHERE (@sourceKind IS NULL OR LOWER(source_kind) = @sourceKind)
-              AND (@status IS NULL OR status = @status)
+            WHERE (@sourceKind::text IS NULL OR LOWER(source_kind) = @sourceKind::text)
+              AND (@status::text IS NULL OR status = @status::text)
             ORDER BY started_at DESC
             LIMIT @limit OFFSET @offset;
             """;
@@ -258,8 +258,8 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
         var items = new List<MigrationRunRecord>(limit);
         await using (var listCmd = new NpgsqlCommand(listSql, connection))
         {
-            listCmd.Parameters.AddWithValue("@sourceKind", (object?)sourceKindFilter ?? DBNull.Value);
-            listCmd.Parameters.AddWithValue("@status", (object?)statusFilter ?? DBNull.Value);
+            listCmd.Parameters.Add(new NpgsqlParameter("@sourceKind", NpgsqlDbType.Text) { Value = (object?)sourceKindFilter ?? DBNull.Value });
+            listCmd.Parameters.Add(new NpgsqlParameter("@status", NpgsqlDbType.Text) { Value = (object?)statusFilter ?? DBNull.Value });
             listCmd.Parameters.AddWithValue("@limit", limit);
             listCmd.Parameters.AddWithValue("@offset", offset);
 
