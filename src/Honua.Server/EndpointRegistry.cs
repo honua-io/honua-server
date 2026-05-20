@@ -284,6 +284,12 @@ public static class EndpointRegistry
         // v1 admin import endpoints (legacy OGC WCS, issue #1030 slice 3)
         new("POST", "/api/v1/admin/import/ogc-wcs/import"),
 
+        // v1 admin GeoServer migration run orchestration endpoints (#1015 slice 5)
+        new("GET", "/api/v1/admin/migration/runs"),
+        new("GET", "/api/v1/admin/migration/runs/{runId}"),
+        new("GET", "/api/v1/admin/migration/runs/{runId}/evidence-pack"),
+        new("POST", "/api/v1/admin/migration/runs/{runId}/cancel"),
+
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),
         new("GET", "/api/v1/admin/operations/cache/statistics"),

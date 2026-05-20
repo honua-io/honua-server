@@ -1237,6 +1237,9 @@ app.MapOgcCoverageImportEndpoints();
 // Configure legacy OGC WCS coverage import endpoints (issue #1030 slice 3)
 app.MapOgcWcsImportEndpoints();
 
+// Configure GeoServer migration run admin orchestration endpoints (issue #1015 slice 5)
+app.MapMigrationRunAdminEndpoints();
+
 if (isTestEnvironment)
 {
     app.MapCrossServerConsumeProbeEndpoints();
