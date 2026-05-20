@@ -68,16 +68,33 @@ public sealed class MetadataV2GraphIndex
 
         var catalogsById = graph.Catalogs.ToDictionary(c => c.Metadata.Id, StringComparer.Ordinal);
         var resourcesById = graph.Resources.ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
-        var resourcesByName = graph.Resources
-            .Where(r => !string.IsNullOrEmpty(r.Metadata.Name))
-            .ToDictionary(r => r.Metadata.Name, StringComparer.OrdinalIgnoreCase);
+        // Multiple resources may share the same display name (different IDs / namespaces).
+        // First-wins keeps the index deterministic and avoids ArgumentException on construction.
+        var resourcesByName = new Dictionary<string, MetadataV2Resource>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in graph.Resources)
+        {
+            if (!string.IsNullOrEmpty(r.Metadata.Name))
+            {
+                resourcesByName.TryAdd(r.Metadata.Name, r);
+            }
+        }
         var connectionsById = graph.Connections.ToDictionary(c => c.Metadata.Id, StringComparer.Ordinal);
         var storageBindingsById = graph.StorageBindings.ToDictionary(s => s.Metadata.Id, StringComparer.Ordinal);
         var storageBindingsByResource = graph.StorageBindings.ToLookup(s => s.ResourceId, StringComparer.Ordinal);
         var servicesById = graph.Services.ToDictionary(s => s.Metadata.Id, StringComparer.Ordinal);
-        var servicesByName = graph.Services
-            .Where(s => !string.IsNullOrEmpty(s.Metadata.Name))
-            .ToDictionary(s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase);
+        // Multiple V2 services may share the same display name when the same logical
+        // service is exposed through multiple protocols (e.g. an OGC API Features
+        // service + an Esri Feature Service for the same dataset). First-wins keeps
+        // the index deterministic; consumers that need ambiguity-aware routing use
+        // BuildPrimaryServiceMapV2 instead.
+        var servicesByName = new Dictionary<string, MetadataV2Service>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in graph.Services)
+        {
+            if (!string.IsNullOrEmpty(s.Metadata.Name))
+            {
+                servicesByName.TryAdd(s.Metadata.Name, s);
+            }
+        }
         var publicationsById = graph.Publications.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
         var publicationsByService = graph.Publications.ToLookup(p => p.ServiceId, StringComparer.Ordinal);
         var publicationsByResource = graph.Publications.ToLookup(p => p.ResourceId, StringComparer.Ordinal);

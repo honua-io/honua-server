@@ -339,7 +339,8 @@ public sealed class WebAppFixture : IAsyncLifetime
         // downstream FeatureServer/MapServer handler ports can resolve them by layer id.
         builder
             .AddService("svc-test-feature", "test", MetadataV2ServiceType.EsriFeatureService)
-            .AddService("svc-test-map", "test", MetadataV2ServiceType.EsriMapService);
+            .AddService("svc-test-map", "test", MetadataV2ServiceType.EsriMapService)
+            .AddService("svc-test-stac", "test", MetadataV2ServiceType.StacApi, route: "/stac");
         foreach (var layerIndex in seededLayerIndices)
         {
             var resourceId = $"res-layer-{layerIndex}";
@@ -357,7 +358,14 @@ public sealed class WebAppFixture : IAsyncLifetime
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriMapLayer);
+                    publicationType: MetadataV2PublicationType.EsriMapLayer)
+                .AddPublication(
+                    id: $"pub-stac-{layerIndex}",
+                    serviceId: "svc-test-stac",
+                    resourceId: resourceId,
+                    layerIndex: layerIndex,
+                    serviceLocalId: $"collection-{layerIndex}",
+                    publicationType: MetadataV2PublicationType.StacCollection);
         }
 
         return builder.Build();
