@@ -17,15 +17,15 @@ namespace Honua.Server.Features.Import;
 /// </para>
 /// <list type="bullet">
 ///   <item>
-///     <c>GET /latest</c> &mdash; the most recent record whose status is <c>Pass</c>, or
+///     <c>GET /latest</c> — the most recent record whose status is <c>Pass</c>, or
 ///     <c>204 No Content</c> when no passing record has been published yet.
 ///   </item>
 ///   <item>
-///     <c>GET /history?sourceFamily=&amp;size=&amp;limit=</c> &mdash; per-fixture history page
+///     <c>GET /history?sourceFamily=&amp;size=&amp;limit=</c> — per-fixture history page
 ///     in newest-first order with optional source-family and fixture-size filters.
 ///   </item>
 ///   <item>
-///     <c>GET /{evidenceId}</c> &mdash; a single record by stable evidence identifier; <c>404</c>
+///     <c>GET /{evidenceId}</c> — a single record by stable evidence identifier; <c>404</c>
 ///     when no matching record exists.
 ///   </item>
 /// </list>
