@@ -24,6 +24,8 @@ internal static class ProcessMigrationEvidenceClassifier
             "geometry.difference",
             "geometry.area",
             "geometry.length",
+            "geometry.centroid",
+            "geometry.convex-hull",
             "analytics.buffer-aggregate",
             "analytics.spatial-join",
             "analytics.density",

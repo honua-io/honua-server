@@ -93,16 +93,26 @@ internal static class GeoprocessingServiceCollectionExtensions
             .ValidateOnStart();
 
         // Built-in production executors (ticket #1031). Slice 1 introduced the
-        // first concrete executor (geometry.buffer); slice 2 adds geometry.clip,
-        // geometry.intersect, and geometry.project. The worker host keys
-        // executors by ExecutionJobKind, so the per-process executors are
-        // composed behind GeoprocessingDispatchJobExecutor — the single
-        // IJobExecutor registered for ExecutionJobKind.Geoprocessing — which
-        // routes claimed jobs to the matching handler.
+        // first concrete executor (geometry.buffer); slice 2 added geometry.clip,
+        // geometry.intersect, and geometry.project; slice 3 added geometry.area
+        // (per-feature measure) and geometry.union (collection aggregation);
+        // slice 4 adds geometry.centroid, geometry.length, and
+        // geometry.convex-hull — rounding out the deterministic single-feature
+        // vector set before later slices tackle simplify/dissolve and the
+        // heavyweight raster family. The worker host keys executors by
+        // ExecutionJobKind, so the per-process executors are composed behind
+        // GeoprocessingDispatchJobExecutor — the single IJobExecutor registered
+        // for ExecutionJobKind.Geoprocessing — which routes claimed jobs to
+        // the matching handler.
         services.TryAddSingleton<GeometryBufferJobExecutor>();
         services.TryAddSingleton<GeometryClipJobExecutor>();
         services.TryAddSingleton<GeometryIntersectJobExecutor>();
         services.TryAddSingleton<GeometryProjectJobExecutor>();
+        services.TryAddSingleton<GeometryAreaJobExecutor>();
+        services.TryAddSingleton<GeometryUnionJobExecutor>();
+        services.TryAddSingleton<GeometryCentroidJobExecutor>();
+        services.TryAddSingleton<GeometryLengthJobExecutor>();
+        services.TryAddSingleton<GeometryConvexHullJobExecutor>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 

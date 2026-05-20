@@ -17,8 +17,13 @@ namespace Honua.Server.Features.Geoprocessing.Execution;
 /// Slice 1 (#1031) introduced <see cref="GeometryBufferJobExecutor"/> as the
 /// only registered executor; submitting any other process id surfaced the
 /// "first-slice geoprocessing runtime" error from inside that class. Slice 2
-/// adds <c>geometry.clip</c>, <c>geometry.intersect</c>, and
-/// <c>geometry.project</c> as additional per-process executors; this
+/// added <c>geometry.clip</c>, <c>geometry.intersect</c>, and
+/// <c>geometry.project</c> as additional per-process executors. Slice 3
+/// added <c>geometry.area</c> (per-feature measure) and <c>geometry.union</c>
+/// (collection aggregation). Slice 4 adds <c>geometry.centroid</c>,
+/// <c>geometry.length</c>, and <c>geometry.convex-hull</c> — finishing the
+/// deterministic single-feature vector set before later slices tackle
+/// simplify/dissolve and the heavyweight raster / surface ops. This
 /// dispatcher routes between them and emits a single, consistent
 /// "unsupported process id" error for everything outside the current
 /// supported set.
@@ -33,12 +38,22 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         GeometryClipJobExecutor clip,
         GeometryIntersectJobExecutor intersect,
         GeometryProjectJobExecutor project,
+        GeometryAreaJobExecutor area,
+        GeometryUnionJobExecutor union,
+        GeometryCentroidJobExecutor centroid,
+        GeometryLengthJobExecutor length,
+        GeometryConvexHullJobExecutor convexHull,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(buffer);
         ArgumentNullException.ThrowIfNull(clip);
         ArgumentNullException.ThrowIfNull(intersect);
         ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(area);
+        ArgumentNullException.ThrowIfNull(union);
+        ArgumentNullException.ThrowIfNull(centroid);
+        ArgumentNullException.ThrowIfNull(length);
+        ArgumentNullException.ThrowIfNull(convexHull);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
@@ -47,6 +62,11 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [GeometryClipJobExecutor.HandledProcessId] = clip,
             [GeometryIntersectJobExecutor.HandledProcessId] = intersect,
             [GeometryProjectJobExecutor.HandledProcessId] = project,
+            [GeometryAreaJobExecutor.HandledProcessId] = area,
+            [GeometryUnionJobExecutor.HandledProcessId] = union,
+            [GeometryCentroidJobExecutor.HandledProcessId] = centroid,
+            [GeometryLengthJobExecutor.HandledProcessId] = length,
+            [GeometryConvexHullJobExecutor.HandledProcessId] = convexHull,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;

@@ -43,7 +43,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     private static ProcessDefinition[] BuildDefinitions() =>
     [
         // -----------------------------------------------------------------------
-        // Geometry operations (10)
+        // Geometry operations (12)
         // -----------------------------------------------------------------------
         new ProcessDefinition
         {
@@ -181,6 +181,32 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.Scalar]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "geometry.centroid",
+            Title = "Centroid",
+            Description = "Computes the centroid point of the input geometry. For collections the centroid is computed over all member vertices.",
+            Category = "geometry",
+            Parameters =
+            [
+                Param("wkb", "Input Geometry", "Geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
+                Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "geometry.convex-hull",
+            Title = "Convex Hull",
+            Description = "Computes the convex hull of the input geometry. For collections the hull is computed over all member vertices, matching PostGIS ST_ConvexHull semantics.",
+            Category = "geometry",
+            Parameters =
+            [
+                Param("wkb", "Input Geometry", "Geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
+                Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
 
         // -----------------------------------------------------------------------
