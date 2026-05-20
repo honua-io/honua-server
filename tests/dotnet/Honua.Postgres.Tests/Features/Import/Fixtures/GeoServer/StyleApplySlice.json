@@ -1,0 +1,152 @@
+{
+  "serviceUrl": "https://example.com/geoserver/rest",
+  "responses": {
+    "/geoserver/rest/about/version.xml": "<about><resource name=\"GeoServer\"><Version>2.28.0</Version><Build-Timestamp>2026-01-15T10:30:00Z</Build-Timestamp><Git-Revision>abc123</Git-Revision></resource></about>",
+    "/geoserver/rest/settings.json": {
+      "global": {
+        "title": "Style Apply GeoServer",
+        "abstract": "Fixture-backed GeoServer catalog for style-apply slice tests",
+        "onlineResource": "https://example.com/geoserver"
+      }
+    },
+    "/geoserver/rest/services/wms/settings.json": {
+      "wms": {
+        "enabled": true,
+        "title": "Style WMS",
+        "maxRenderingTime": 60
+      }
+    },
+    "/geoserver/rest/services/wfs/settings.json": {
+      "wfs": {
+        "enabled": true,
+        "title": "Style WFS",
+        "serviceLevel": "COMPLETE"
+      }
+    },
+    "/geoserver/rest/workspaces.json": {
+      "workspaces": {
+        "workspace": [
+          { "name": "ops" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/ops.json": {
+      "workspace": {
+        "name": "ops",
+        "default": true
+      }
+    },
+    "/geoserver/rest/workspaces/ops/datastores.json": {
+      "dataStores": {
+        "dataStore": [
+          { "name": "pg" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/ops/datastores/pg.json": {
+      "dataStore": {
+        "name": "pg",
+        "type": "PostGIS",
+        "connectionParameters": {
+          "entry": [
+            { "@key": "host", "$": "db.example.com" },
+            { "@key": "database", "$": "gis" },
+            { "@key": "dbtype", "$": "postgis" }
+          ]
+        }
+      }
+    },
+    "/geoserver/rest/workspaces/ops/coveragestores.json": {
+      "coverageStores": {
+        "coverageStore": ""
+      }
+    },
+    "/geoserver/rest/workspaces/ops/layers.json": {
+      "layers": {
+        "layer": [
+          { "name": "roads" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/ops/layers/roads.json": {
+      "layer": {
+        "name": "roads",
+        "title": "Roads",
+        "abstract": "Road centerlines",
+        "srs": "EPSG:4326",
+        "nativeCRS": "EPSG:3857",
+        "latLonBoundingBox": {
+          "minx": -158.2,
+          "miny": 21.1,
+          "maxx": -157.6,
+          "maxy": 21.8,
+          "crs": "EPSG:4326"
+        },
+        "nativeBoundingBox": {
+          "minx": 0,
+          "miny": 0,
+          "maxx": 100,
+          "maxy": 100,
+          "crs": "EPSG:3857"
+        },
+        "resource": {
+          "href": "https://example.com/geoserver/rest/workspaces/ops/datastores/pg/featuretypes/roads.json"
+        },
+        "defaultStyle": {
+          "name": "line",
+          "workspace": "ops"
+        }
+      }
+    },
+    "/geoserver/rest/layergroups.json": {
+      "layerGroups": {
+        "layerGroup": ""
+      }
+    },
+    "/geoserver/rest/workspaces/ops/layergroups.json": {
+      "layerGroups": {
+        "layerGroup": ""
+      }
+    },
+    "/geoserver/rest/styles.json": {
+      "styles": {
+        "style": ""
+      }
+    },
+    "/geoserver/rest/workspaces/ops/styles.json": {
+      "styles": {
+        "style": [
+          { "name": "deprecated" },
+          { "name": "empty-sld" },
+          { "name": "line" }
+        ]
+      }
+    },
+    "/geoserver/rest/workspaces/ops/styles/line.json": {
+      "style": {
+        "name": "line",
+        "format": "sld",
+        "languageVersion": "1.0.0",
+        "filename": "line.sld"
+      }
+    },
+    "/geoserver/rest/workspaces/ops/styles/line.sld": "<StyledLayerDescriptor xmlns=\"http://www.opengis.net/sld\" version=\"1.0.0\"><NamedLayer><Name>roads</Name><UserStyle><FeatureTypeStyle><Rule><LineSymbolizer><Stroke><CssParameter name=\"stroke\">#ff0000</CssParameter><CssParameter name=\"stroke-width\">2</CssParameter></Stroke></LineSymbolizer></Rule></FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>",
+    "/geoserver/rest/workspaces/ops/styles/deprecated.json": {
+      "style": {
+        "name": "deprecated",
+        "format": "css",
+        "filename": "deprecated.css"
+      }
+    },
+    "/geoserver/rest/workspaces/ops/styles/deprecated.sld": "",
+    "/geoserver/rest/workspaces/ops/styles/empty-sld.json": {
+      "style": {
+        "name": "empty-sld",
+        "format": "sld",
+        "languageVersion": "1.0.0",
+        "filename": "empty.sld"
+      }
+    },
+    "/geoserver/rest/workspaces/ops/styles/empty-sld.sld": ""
+  }
+}
