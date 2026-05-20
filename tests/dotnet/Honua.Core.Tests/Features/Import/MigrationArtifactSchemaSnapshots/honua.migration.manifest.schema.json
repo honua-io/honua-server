@@ -447,7 +447,6 @@
             "Nullable": false
           },
           {
-<<<<<<< HEAD
             "JsonName": "planEntries",
             "ClrName": "PlanEntries",
             "Container": "array",
@@ -476,7 +475,6 @@
                 {
                   "JsonName": "code",
                   "ClrName": "Code",
-=======
             "JsonName": "identity",
             "ClrName": "Identity",
             "Container": "scalar",
@@ -497,14 +495,12 @@
                 {
                   "JsonName": "identityStability",
                   "ClrName": "IdentityStability",
->>>>>>> origin/trunk
                   "Container": "scalar",
                   "ElementType": "string",
                   "Required": true,
                   "Nullable": false
                 },
                 {
-<<<<<<< HEAD
                   "JsonName": "id",
                   "ClrName": "Id",
                   "Container": "scalar",
@@ -531,7 +527,6 @@
                 {
                   "JsonName": "name",
                   "ClrName": "Name",
-=======
                   "JsonName": "sourceFolderPath",
                   "ClrName": "SourceFolderPath",
                   "Container": "scalar",
@@ -550,14 +545,12 @@
                 {
                   "JsonName": "sourceServiceId",
                   "ClrName": "SourceServiceId",
->>>>>>> origin/trunk
                   "Container": "scalar",
                   "ElementType": "string",
                   "Required": false,
                   "Nullable": true
                 },
                 {
-<<<<<<< HEAD
                   "JsonName": "reason",
                   "ClrName": "Reason",
                   "Container": "scalar",
@@ -580,7 +573,6 @@
                   "ElementType": "string",
                   "Required": true,
                   "Nullable": false
-=======
                   "JsonName": "targetFolderPath",
                   "ClrName": "TargetFolderPath",
                   "Container": "scalar",
@@ -603,7 +595,6 @@
                   "ElementType": "string",
                   "Required": false,
                   "Nullable": true
->>>>>>> origin/trunk
                 }
               ]
             }

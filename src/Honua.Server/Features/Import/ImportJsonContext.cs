@@ -26,12 +26,10 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(MigrationManifestServicePlan[]))]
 [JsonSerializable(typeof(MigrationManifestReviewItem))]
 [JsonSerializable(typeof(MigrationManifestReviewItem[]))]
-<<<<<<< HEAD
 [JsonSerializable(typeof(MigrationManifestPlanEntry))]
 [JsonSerializable(typeof(MigrationManifestPlanEntry[]))]
 [JsonSerializable(typeof(MigrationManifestPlanDiagnostic))]
 [JsonSerializable(typeof(MigrationManifestPlanDiagnostic[]))]
-=======
 [JsonSerializable(typeof(MigrationManifestIdentityRemap))]
 [JsonSerializable(typeof(MigrationManifestIdentityRemap[]))]
 [JsonSerializable(typeof(MigrationManifestResourceIdentity))]
@@ -40,7 +38,6 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(MigrationManifestAttachmentRecord[]))]
 [JsonSerializable(typeof(MigrationManifestRelationshipRecord))]
 [JsonSerializable(typeof(MigrationManifestRelationshipRecord[]))]
->>>>>>> origin/trunk
 [JsonSerializable(typeof(MigrationFidelityMatrix))]
 [JsonSerializable(typeof(MigrationFidelityMatrixSummary))]
 [JsonSerializable(typeof(MigrationFidelityMatrixCell))]
