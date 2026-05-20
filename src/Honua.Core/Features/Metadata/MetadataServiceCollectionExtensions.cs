@@ -28,6 +28,23 @@ public static class MetadataServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers the file-backed Metadata v2 graph provider. Loads a single JSON document
+    /// at the given path. Intended for tests, fixtures, and dev scenarios where Postgres
+    /// is not available; production should use the Postgres-backed store.
+    /// </summary>
+    /// <param name="services">The service collection to add services to.</param>
+    /// <param name="graphPath">Path to the Metadata v2 graph JSON document.</param>
+    public static IServiceCollection AddFileMetadataV2Graph(this IServiceCollection services, string graphPath)
+    {
+        ArgumentNullException.ThrowIfNull(graphPath);
+        services.AddSingleton<IMetadataV2GraphProvider>(sp =>
+            new FileMetadataV2GraphProvider(
+                graphPath,
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FileMetadataV2GraphProvider>>()));
+        return services;
+    }
+
+    /// <summary>
     /// Adds a capabilities formatter for a specific protocol.
     /// </summary>
     /// <typeparam name="TCapabilities">The capabilities type for the protocol</typeparam>

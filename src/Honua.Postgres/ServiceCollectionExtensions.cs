@@ -145,6 +145,14 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetService<Honua.Core.Features.Caching.Abstractions.ICacheService>(),
                 configuration["Database:Schema"]));
 
+        // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
+        services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>
+            new Features.Metadata.PostgresMetadataV2GraphStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Metadata:Environment"] ?? configuration["Environment"] ?? "default",
+                configuration["Database:Schema"]));
+        services.AddScoped<IMetadataV2GraphProvider>(sp => sp.GetRequiredService<IMetadataV2GraphStore>());
+
         // Register manifest version store for GitOps drift detection (#515)
         services.AddScoped<IManifestVersionStore>(serviceProvider =>
             new PostgresManifestVersionStore(
