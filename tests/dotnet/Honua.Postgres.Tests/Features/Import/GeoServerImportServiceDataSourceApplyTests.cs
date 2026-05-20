@@ -203,7 +203,10 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
         [IntegrationTest]
         public async Task ImportConfigurationAsync_WithRealPostGis_AppliesDataSourceAndCopiesFeatureClass()
         {
-            var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(DatabaseIntegration));
+            // Use a short label — PG identifiers are capped at 63 bytes, and the
+            // computed copy-target name `<schemaName>_roads` exceeds the limit
+            // (and gets silently truncated) when the test class label is long.
+            var schemaName = await fixture.CreateIsolatedSchemaAsync("DsApply");
             try
             {
                 await SetUpHonuaCatalogAsync(schemaName);
