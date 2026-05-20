@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Domain;
@@ -280,8 +281,8 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
             },
             MeasurementScope = "slice2 baseline test",
             RunId = "test-run-001",
-            StartedAt = DateTimeOffset.Parse("2026-05-19T10:00:00Z"),
-            CompletedAt = DateTimeOffset.Parse("2026-05-19T10:01:00Z"),
+            StartedAt = DateTimeOffset.Parse("2026-05-19T10:00:00Z", CultureInfo.InvariantCulture),
+            CompletedAt = DateTimeOffset.Parse("2026-05-19T10:01:00Z", CultureInfo.InvariantCulture),
             Totals = totals,
             Privacy = new MigrationRunMetricsPrivacySummary
             {
