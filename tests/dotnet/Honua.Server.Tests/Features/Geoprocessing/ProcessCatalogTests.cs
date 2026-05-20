@@ -35,22 +35,22 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_ListProcesses_ReturnsExactly36BuiltIns()
+    public void Catalog_ListProcesses_ReturnsExactly38BuiltIns()
     {
         var all = _catalog.ListProcesses();
 
-        all.Should().HaveCount(36);
+        all.Should().HaveCount(38);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_GeometryCategory_Returns12Processes()
+    public void Catalog_GeometryCategory_Returns14Processes()
     {
         var geometry = _catalog.GetProcessesByCategory("geometry");
 
-        geometry.Should().HaveCount(12);
+        geometry.Should().HaveCount(14);
         geometry.Should().AllSatisfy(p => p.Category.Should().Be("geometry"));
     }
 
@@ -212,6 +212,7 @@ public sealed class ProcessCatalogTests
             "geometry.make-valid", "geometry.union", "geometry.intersect",
             "geometry.clip", "geometry.difference", "geometry.area",
             "geometry.length", "geometry.centroid", "geometry.convex-hull",
+            "geometry.dissolve", "geometry.snap",
             "analytics.cluster", "analytics.spatial-join",
             "analytics.buffer-aggregate", "analytics.density",
             "surface.slope", "surface.aspect", "surface.hillshade",

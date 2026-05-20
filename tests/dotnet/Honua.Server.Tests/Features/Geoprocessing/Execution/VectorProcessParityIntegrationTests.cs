@@ -25,15 +25,16 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 /// <summary>
-/// End-to-end parity coverage for the slice-2 / slice-3 / slice-4 vector
+/// End-to-end parity coverage for the slice-2 through slice-5 vector
 /// executors. Each test submits a process through the OGC API Processes
 /// execute endpoint, polls the durable runtime until the job reaches a
 /// terminal status, retrieves the result document, and compares the
-/// published GeoJSON Feature (FeatureLayer outputs) or measure-result
-/// document (Scalar outputs) against a golden expectation (geometry type,
-/// feature count, area / coordinate position, measure value). Mirrors the
-/// slice-1 buffer integration test shape so the new processes pin the
-/// same evidence contract.
+/// published GeoJSON Feature (FeatureLayer outputs), FeatureCollection
+/// (geometry.dissolve), or measure-result document (Scalar outputs)
+/// against a golden expectation (geometry type, feature count, area /
+/// coordinate position, measure value). Mirrors the slice-1 buffer
+/// integration test shape so the new processes pin the same evidence
+/// contract.
 /// </summary>
 [Collection("Redis")]
 [Protocol(TestProtocols.OgcApiProcesses)]
@@ -459,6 +460,188 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task DissolveProcess_CompletesAndReturnsFeatureCollectionPerGroup()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            // Two overlapping 10x10 boxes share a single group key → one
+            // feature with union area 100 + 100 - 25 = 175.
+            var first = BuildBoxPolygon(0, 0, 10, 10);
+            var second = BuildBoxPolygon(5, 5, 15, 15);
+            var body = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"response\":\"document\",\"inputs\":{{\"wkbs\":[\"{0}\",\"{1}\"],\"groupKeys\":[\"a\",\"a\"],\"srid\":4326}}}}",
+                WkbBase64(first),
+                WkbBase64(second));
+
+            var jobId = await SubmitJobAsync(client, "geometry.dissolve", body);
+
+            using var terminal = await PollUntilTerminalAsync(client, jobId);
+            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+
+            using var resultsDoc = await GetResultsAsync(client, jobId);
+            var collection = DecodeOutputFeatureCollection(resultsDoc, "geometry.dissolve");
+            collection.GetProperty("groupCount").GetInt32().Should().Be(1);
+            collection.GetProperty("inputCount").GetInt32().Should().Be(2);
+
+            var features = collection.GetProperty("features");
+            features.GetArrayLength().Should().Be(1);
+            var feature = features[0];
+            feature.GetProperty("properties").GetProperty("groupKey").GetString().Should().Be("a");
+
+            var geometry = ReadGeometry(feature.GetProperty("geometry"));
+            geometry.Area.Should().BeApproximately(175.0, 1e-6,
+                "two overlapping 10x10 boxes under one group dissolve to area 175");
+
+            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+            var package = await resultStore.GetAsync(jobId);
+            package.Should().NotBeNull();
+            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+            package.Artifacts.Should().ContainSingle();
+            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task SimplifyProcess_CollapsesBelowToleranceVertices()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            // LINESTRING(0 0, 5 0.001, 10 0) simplified at tolerance 1.0
+            // collapses to LINESTRING(0 0, 10 0).
+            var factory = NetTopologySuite.NtsGeometryServices.Instance
+                .CreateGeometryFactory(srid: 4326);
+            var line = factory.CreateLineString(new[]
+            {
+                new Coordinate(0, 0),
+                new Coordinate(5, 0.001),
+                new Coordinate(10, 0),
+            });
+            var body = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326,\"tolerance\":1.0}}}}",
+                WkbBase64(line));
+
+            var jobId = await SubmitJobAsync(client, "geometry.simplify", body);
+
+            using var terminal = await PollUntilTerminalAsync(client, jobId);
+            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+
+            using var resultsDoc = await GetResultsAsync(client, jobId);
+            var feature = DecodeOutputFeature(resultsDoc, "geometry.simplify");
+
+            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+            feature.GetProperty("properties").GetProperty("tolerance").GetDouble().Should().Be(1.0);
+            feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("LineString");
+
+            var geometry = ReadGeometry(feature.GetProperty("geometry"));
+            geometry.Should().BeOfType<LineString>();
+            ((LineString)geometry).NumPoints.Should().Be(2,
+                "tolerance 1.0 collapses the 0.001-offset midpoint");
+
+            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+            var package = await resultStore.GetAsync(jobId);
+            package.Should().NotBeNull();
+            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+            package.Artifacts.Should().ContainSingle();
+            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task SnapProcess_PullsInputOntoReferenceVertex()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            // Input POINT(0.1 0.1) snapped to reference POINT(0 0) at
+            // tolerance 0.5 lands on the reference origin.
+            var factory = NetTopologySuite.NtsGeometryServices.Instance
+                .CreateGeometryFactory(srid: 4326);
+            var input = factory.CreatePoint(new Coordinate(0.1, 0.1));
+            var reference = factory.CreatePoint(new Coordinate(0, 0));
+
+            var body = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"referenceWkb\":\"{1}\",\"srid\":4326,\"tolerance\":0.5}}}}",
+                WkbBase64(input),
+                WkbBase64(reference));
+
+            var jobId = await SubmitJobAsync(client, "geometry.snap", body);
+
+            using var terminal = await PollUntilTerminalAsync(client, jobId);
+            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+
+            using var resultsDoc = await GetResultsAsync(client, jobId);
+            var feature = DecodeOutputFeature(resultsDoc, "geometry.snap");
+
+            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+            feature.GetProperty("properties").GetProperty("tolerance").GetDouble().Should().Be(0.5);
+            feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("Point");
+
+            var geometry = ReadGeometry(feature.GetProperty("geometry"));
+            geometry.Should().BeOfType<Point>();
+            var snapped = (Point)geometry;
+            snapped.X.Should().BeApproximately(0.0, 1e-9);
+            snapped.Y.Should().BeApproximately(0.0, 1e-9);
+
+            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+            var package = await resultStore.GetAsync(jobId);
+            package.Should().NotBeNull();
+            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+            package.Artifacts.Should().ContainSingle();
+            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -512,9 +695,10 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
                 sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
 
         // Activate the worker host. The production dispatcher registered by
-        // AddGeoprocessing routes the geometry.clip / geometry.intersect /
+        // AddGeoprocessing routes geometry.clip / geometry.intersect /
         // geometry.project / geometry.area / geometry.union /
-        // geometry.centroid / geometry.length / geometry.convex-hull ids to
+        // geometry.centroid / geometry.length / geometry.convex-hull /
+        // geometry.dissolve / geometry.simplify / geometry.snap ids to
         // their per-process executors — that's the system-under-test for
         // this parity suite.
         services.AddJobWorker();
@@ -598,6 +782,25 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         feature.GetProperty("properties").GetProperty("processId").GetString()
             .Should().Be(expectedProcessId);
         return feature;
+    }
+
+    private static JsonElement DecodeOutputFeatureCollection(JsonDocument resultsDoc, string expectedProcessId)
+    {
+        var output = resultsDoc.RootElement.GetProperty("outputFeatureLayer");
+        output.GetProperty("kind").GetString().Should().Be("FeatureLayer");
+        output.GetProperty("type").GetString().Should().Be("application/geo+json");
+
+        var href = output.GetProperty("href").GetString();
+        href.Should().NotBeNull();
+        href!.Should().StartWith(DataUriPrefix);
+
+        var base64 = href[DataUriPrefix.Length..];
+        var bytes = Convert.FromBase64String(base64);
+        var doc = JsonDocument.Parse(bytes);
+        var collection = doc.RootElement.Clone();
+        collection.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        collection.GetProperty("processId").GetString().Should().Be(expectedProcessId);
+        return collection;
     }
 
     private static Geometry ReadGeometry(JsonElement geometryElement)
