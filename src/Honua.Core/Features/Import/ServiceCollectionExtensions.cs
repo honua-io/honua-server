@@ -23,6 +23,7 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddScoped<IFileFormatDetectionService, FileFormatDetectionService>();
         services.TryAddSingleton<IImportSchemaSuggestionService, ImportSchemaSuggestionService>();
+        services.TryAddTransient<MigrationRequestCountingHandler>();
         services.AddResilientHttpClient<OgcApiFeaturesMigrationScanner>(
             "ogc-api-features-migration",
             HttpResiliencePolicies.SlowServiceDefaults,
@@ -31,7 +32,8 @@ public static class ServiceCollectionExtensions
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(2);
             },
-            configureHandler: static () => OgcApiFeaturesMigrationScanner.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => OgcApiFeaturesMigrationScanner.CreatePinnedDnsHttpMessageHandler())
+            .AddHttpMessageHandler<MigrationRequestCountingHandler>();
         services.TryAddScoped<IOgcApiFeaturesMigrationScanner>(serviceProvider =>
             serviceProvider.GetRequiredService<OgcApiFeaturesMigrationScanner>());
 

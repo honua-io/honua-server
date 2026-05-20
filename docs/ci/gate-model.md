@@ -33,8 +33,7 @@ These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `ci.yml` | Build, test, architecture gate, Esri Leaflet browser compatibility | None (always runs) |
-| `pr-validation.yml` | PR template compliance | None (always runs) |
+| `ci.yml` | PR template compliance (gates every downstream job via `pr-template-check` → `pr-readiness`), build, test, architecture gate, Esri Leaflet browser compatibility | None (always runs) |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
 | `parity-scorecard-governance.yml` | Parity baseline stability | Parity/baseline asset paths |
