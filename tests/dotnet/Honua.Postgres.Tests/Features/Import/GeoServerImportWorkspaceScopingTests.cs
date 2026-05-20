@@ -245,6 +245,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
             }
             finally
             {
+                await CleanupDataSourceRowsAsync(postgresFixture, "datastore:ops:pg", "datastore:team-b:pg-b");
                 await CleanupServiceNamesAsync(postgresFixture, "ops", "team-b");
                 // Layer-group rows from this fixture have workspace-qualified names.
                 await CleanupServiceNamesAsync(postgresFixture, "ops-ops-base", "team-b-ops-base");
@@ -280,6 +281,16 @@ public sealed class GeoServerImportWorkspaceScopingTests
                     ADD COLUMN IF NOT EXISTS metadata JSONB;
                 ALTER TABLE honua.services
                     ADD COLUMN IF NOT EXISTS connection_id UUID;
+                CREATE TABLE IF NOT EXISTS honua.migration_data_sources (
+                    source_kind     VARCHAR(64)  NOT NULL,
+                    source_id       VARCHAR(256) NOT NULL,
+                    data_source_type VARCHAR(64) NOT NULL,
+                    workspace_name  VARCHAR(128),
+                    display_name    TEXT NOT NULL DEFAULT '',
+                    connection_summary TEXT NOT NULL DEFAULT '',
+                    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (source_kind, source_id)
+                );
                 """;
             await command.ExecuteNonQueryAsync();
         }
@@ -305,6 +316,15 @@ public sealed class GeoServerImportWorkspaceScopingTests
             await using var command = connection.CreateCommand();
             command.CommandText = "DELETE FROM honua.services WHERE service_name = ANY(@names)";
             command.Parameters.Add(new NpgsqlParameter("@names", serviceNames));
+            await command.ExecuteNonQueryAsync();
+        }
+
+        private static async Task CleanupDataSourceRowsAsync(PostgresFixture postgresFixture, params string[] sourceIds)
+        {
+            await using var connection = await postgresFixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM honua.migration_data_sources WHERE source_id = ANY(@sourceIds)";
+            command.Parameters.Add(new NpgsqlParameter("@sourceIds", sourceIds));
             await command.ExecuteNonQueryAsync();
         }
 

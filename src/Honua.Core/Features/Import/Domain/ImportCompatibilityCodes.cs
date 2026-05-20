@@ -111,4 +111,28 @@ public static class ImportCompatibilityCodes
 
     /// <summary>OGC service inventory scan could not complete.</summary>
     public const string OgcScanFailed = "OGC_SCAN_FAILED";
+
+    /// <summary>WMS layer metadata (name, abstract, bounds, srs, keywords) projects deterministically.</summary>
+    public const string OgcWmsMetadataAutomated = "OGC_WMS_METADATA_AUTOMATED";
+
+    /// <summary>WMTS layer metadata projects deterministically.</summary>
+    public const string OgcWmtsMetadataAutomated = "OGC_WMTS_METADATA_AUTOMATED";
+
+    /// <summary>WMS/WMTS SLD/SE style references were captured for assisted import in a later slice.</summary>
+    public const string OgcRenderStyleAssisted = "OGC_RENDER_STYLE_ASSISTED";
+
+    /// <summary>WMTS tile matrix set is a trivial XYZ/TMS-like grid and can be projected automatically.</summary>
+    public const string OgcWmtsTileMatrixAutomated = "OGC_WMTS_TILE_MATRIX_AUTOMATED";
+
+    /// <summary>WMTS tile matrix set is non-trivial and needs operator review before mapping to a Honua cache.</summary>
+    public const string OgcWmtsTileMatrixManualReview = "OGC_WMTS_TILE_MATRIX_MANUAL_REVIEW";
+
+    /// <summary>WMS render-only source cannot supply automated feature data migration in this slice.</summary>
+    public const string OgcWmsRenderDataUnsupported = "OGC_WMS_RENDER_DATA_UNSUPPORTED";
+
+    /// <summary>WMTS tile-only source cannot supply automated feature data migration in this slice.</summary>
+    public const string OgcWmtsTileDataUnsupported = "OGC_WMTS_TILE_DATA_UNSUPPORTED";
+
+    /// <summary>WMS/WMTS render or tile endpoint captured for downstream service migration planning.</summary>
+    public const string OgcRenderEndpointPlanned = "OGC_RENDER_ENDPOINT_PLANNED";
 }
