@@ -15,7 +15,10 @@
     "geometry.union",
     "geometry.centroid",
     "geometry.length",
-    "geometry.convex-hull"
+    "geometry.convex-hull",
+    "geometry.dissolve",
+    "geometry.simplify",
+    "geometry.snap"
   ],
   "cases": [
     {
@@ -186,6 +189,62 @@
         "geometryType": "Polygon",
         "featureCount": 1,
         "areaApprox": 100.0
+      }
+    },
+    {
+      "caseId": "dissolve-two-overlapping-boxes-by-group",
+      "processId": "geometry.dissolve",
+      "description": "Slice 5: dissolving two overlapping 10x10 boxes (offset by (5,5)) under a single group key collapses them into one feature whose union area is 175 (100 + 100 - 25 overlap). Output is a FeatureCollection envelope with one feature per group.",
+      "inputsWkt": {
+        "wkts": [
+          "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
+          "POLYGON((5 5, 15 5, 15 15, 5 15, 5 5))"
+        ],
+        "groupKeys": ["a", "a"],
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "documentType": "FeatureCollection",
+        "groupCount": 1,
+        "featureCount": 1,
+        "areaApprox": 175.0
+      }
+    },
+    {
+      "caseId": "simplify-zigzag-collapses-to-segment",
+      "processId": "geometry.simplify",
+      "description": "Slice 5: a near-straight line with a tiny midpoint perturbation (LINESTRING(0 0, 5 0.001, 10 0)) simplifies under a tolerance of 1.0 to the two-vertex segment LINESTRING(0 0, 10 0). Validates Douglas-Peucker collapses below-tolerance vertices.",
+      "inputsWkt": {
+        "wkt": "LINESTRING(0 0, 5 0.001, 10 0)",
+        "srid": "4326",
+        "tolerance": "1.0"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "LineString",
+        "featureCount": 1,
+        "vertexCount": 2
+      }
+    },
+    {
+      "caseId": "snap-near-coincident-point-to-reference",
+      "processId": "geometry.snap",
+      "description": "Slice 5: an input POINT(0.1 0.1) snapped to reference POINT(0 0) under tolerance 0.5 is pulled onto (0,0). Demonstrates that NetTopologySuite GeometrySnapper.SnapTo aligns within-tolerance vertices to the reference coordinate.",
+      "inputsWkt": {
+        "wkt": "POINT(0.1 0.1)",
+        "referenceWkt": "POINT(0 0)",
+        "srid": "4326",
+        "tolerance": "0.5"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Point",
+        "featureCount": 1,
+        "coordinate": [0.0, 0.0]
       }
     }
   ],
