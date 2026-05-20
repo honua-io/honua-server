@@ -2044,9 +2044,15 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         string? convertedBody = null;
         string? convertedFormat = null;
         var diagnostics = new List<StyleDiagnostic>();
-        var disposition = string.Equals(step.Disposition, "manual-review", StringComparison.Ordinal)
-                ? "manual-review"
-                : "applied";
+        // Preserve manual-review and unsupported dispositions from the apply plan
+        // (MigrationApplyPlanBuilder can emit either) — coercing unsupported to
+        // applied would undercount unsupported work and skew evidence summaries.
+        var disposition = step.Disposition switch
+        {
+            "manual-review" => "manual-review",
+            "unsupported" => "unsupported",
+            _ => "applied"
+        };
 
         if (string.Equals(sourceFormat, "sld", StringComparison.Ordinal))
         {

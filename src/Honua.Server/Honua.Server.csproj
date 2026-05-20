@@ -72,6 +72,10 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
     <PackageReference Include="Apache.Arrow" />
     <EmbeddedResource Include="Migrations\*.sql" />
+    <EmbeddedResource Include="..\..\tests\fixtures\ai-builder\spatial-query-contract-v1.json"
+                      LogicalName="Honua.Server.Features.AiBuilder.Fixtures.spatial-query-contract-v1.json" />
+    <EmbeddedResource Include="..\..\tests\fixtures\ai-builder\operations-dashboard-contract-v1.json"
+                      LogicalName="Honua.Server.Features.AiBuilder.Fixtures.operations-dashboard-contract-v1.json" />
   </ItemGroup>
 
   <ItemGroup>
