@@ -1324,6 +1324,17 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             .ConfigureAwait(false);
         stepResults.AddRange(workspaceStepResults);
 
+        // Slice 2: apply data-source / data-store entries before per-layer steps so
+        // each layer can reference an applied data source. Idempotent via PK on
+        // (source_kind, source_id) in honua.migration_data_sources.
+        var dataSourceStepResults = await ApplyDataSourceStepsAsync(
+                filteredResources,
+                request,
+                applyPlan,
+                cancellationToken)
+            .ConfigureAwait(false);
+        stepResults.AddRange(dataSourceStepResults);
+
         foreach (var step in applyPlan.Steps.OrderBy(static item => item.Sequence))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1459,10 +1470,50 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             return CreateExecutionStepResult(step, "manual-review", targetError);
         }
 
+        // Slice 2 (#1015): when applyMode + catalog writer are configured, try to
+        // copy feature data from the source PostGIS table into the Honua catalog
+        // database before publishing. The copy is idempotent (skip when the
+        // target table already exists with rows). On SourceMissing we fall
+        // through to the original publish path which preserves slice-1 behavior.
+        var publishSchema = target.Schema;
+        var publishTable = target.Table;
+        MigrationFeatureCopyOutcome? copyOutcome = null;
+        if (request.ApplyMode && _catalogWriter != null && IsSafeIdentifier(layer.Name))
+        {
+            try
+            {
+                copyOutcome = await _catalogWriter.CopyFeatureDataAsync(
+                        _connectionProvider.GetConnectionString(),
+                        new MigrationFeatureCopyRequest
+                        {
+                            SourceSchema = target.Schema,
+                            SourceTable = target.Table,
+                            TargetSchema = "honua_data",
+                            TargetTable = layer.Name.ToLowerInvariant()
+                        },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (copyOutcome.Status == MigrationFeatureCopyStatus.Copied ||
+                    copyOutcome.Status == MigrationFeatureCopyStatus.AlreadyApplied)
+                {
+                    publishSchema = "honua_data";
+                    publishTable = layer.Name.ToLowerInvariant();
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return CreateExecutionStepResult(
+                    step,
+                    "failed",
+                    $"Feature data copy for layer '{step.SourceId}' failed unexpectedly and requires operator review.");
+            }
+        }
+
         var publishRequest = new LayerPublishRequest
         {
-            Schema = target.Schema,
-            Table = target.Table,
+            Schema = publishSchema,
+            Table = publishTable,
             LayerName = step.TargetResourceName ?? layer.Name,
             Description = layer.Abstract,
             GeometryColumn = null,
@@ -1482,10 +1533,19 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     cancellationToken)
                 .ConfigureAwait(false);
 
+            var copyNote = copyOutcome switch
+            {
+                { Status: MigrationFeatureCopyStatus.Copied } c =>
+                    $" Copied {c.RowCount} feature rows into honua_data.{publishTable}.",
+                { Status: MigrationFeatureCopyStatus.AlreadyApplied } c =>
+                    $" Reused existing honua_data.{publishTable} ({c.RowCount} feature rows present).",
+                _ => string.Empty
+            };
+
             return CreateExecutionStepResult(
                 step,
                 "applied",
-                $"Published catalog layer {publishedLayer.LayerId} from target table {target.Schema}.{target.Table}.",
+                $"Published catalog layer {publishedLayer.LayerId} from target table {publishSchema}.{publishTable}.{copyNote}",
                 publishedLayer.LayerId);
         }
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.Conflict)
@@ -1623,6 +1683,188 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Persist a migration data-source row per filtered GeoServer data store.
+    /// </summary>
+    /// <remarks>
+    /// Slice 2 of issue #1015. GeoServer data stores are recorded in the
+    /// inventory as <c>ExternalDependency</c> entries — they do not appear as
+    /// resource-level apply-plan steps. We therefore iterate the filtered data
+    /// stores directly here so each apply run produces a deterministic step
+    /// result with create / skip / error outcomes per data source. Persistence
+    /// is idempotent via <c>ON CONFLICT (source_kind, source_id) DO NOTHING</c>.
+    /// </remarks>
+    private async Task<IReadOnlyList<MigrationApplyExecutionStepResult>> ApplyDataSourceStepsAsync(
+        FilteredResources filteredResources,
+        GeoServerImportRequest request,
+        MigrationApplyPlanArtifact applyPlan,
+        CancellationToken cancellationToken)
+    {
+        if (filteredResources.DataStores.Length == 0)
+        {
+            return [];
+        }
+
+        // Workspace scope (#1098 / PR #1100): respect the operator's requested
+        // workspace scope so unrelated workspaces' data stores are not applied.
+        // When WorkspaceNames is set, only data stores in those workspaces are
+        // eligible. The pre-existing FilterRequestedResources path keeps the
+        // datastore array workspace-agnostic, so the filter is re-applied here.
+        var scopedWorkspaceNames = request.WorkspaceNames is { Length: > 0 } names
+            ? new HashSet<string>(names, StringComparer.OrdinalIgnoreCase)
+            : null;
+
+        var results = new List<MigrationApplyExecutionStepResult>(filteredResources.DataStores.Length);
+        foreach (var dataStore in filteredResources.DataStores.OrderBy(static ds => GetDataStoreId(ds.WorkspaceName, ds.Name), StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var sourceId = GetDataStoreId(dataStore.WorkspaceName, dataStore.Name);
+            var targetServiceName = NormalizeCatalogServiceName(
+                string.IsNullOrWhiteSpace(dataStore.WorkspaceName)
+                    ? $"datastore-{dataStore.Name}"
+                    : $"{dataStore.WorkspaceName}-{dataStore.Name}");
+
+            if (scopedWorkspaceNames is not null &&
+                !string.IsNullOrWhiteSpace(dataStore.WorkspaceName) &&
+                !scopedWorkspaceNames.Contains(dataStore.WorkspaceName))
+            {
+                results.Add(CreateExecutionStepResult(
+                    new MigrationApplyPlanStep
+                    {
+                        Sequence = 0,
+                        StepId = $"datasource:{sourceId}",
+                        SourceId = sourceId,
+                        Kind = "datastore",
+                        Action = "apply-data-source",
+                        Disposition = "manual-review",
+                        TargetServiceName = targetServiceName,
+                        TargetResourceName = dataStore.Name,
+                        Compatibility = new MigrationCompatibilityAssessment
+                        {
+                            Level = "manual-review",
+                            Reason = "Data-source apply rejected by workspace scope guard."
+                        }
+                    },
+                    "manual-review",
+                    $"Data-source apply for '{sourceId}' rejected: source workspace '{dataStore.WorkspaceName}' is outside the requested workspace scope (issue #1098)."));
+                continue;
+            }
+
+            var syntheticStep = new MigrationApplyPlanStep
+            {
+                Sequence = 0,
+                StepId = $"datasource:{sourceId}",
+                SourceId = sourceId,
+                Kind = "datastore",
+                Action = "apply-data-source",
+                Disposition = "ready",
+                TargetServiceName = targetServiceName,
+                TargetResourceName = dataStore.Name,
+                Compatibility = new MigrationCompatibilityAssessment
+                {
+                    Level = "compatible",
+                    Reason = "GeoServer data store is staged as an idempotent honua.migration_data_sources row."
+                }
+            };
+
+            if (!request.ApplyMode || _catalogWriter == null)
+            {
+                results.Add(CreateExecutionStepResult(
+                    syntheticStep,
+                    "manual-review",
+                    "Data-source persistence is deferred until applyMode=true and a catalog writer is configured."));
+                continue;
+            }
+
+            var dataSourceType = ResolveDataSourceType(dataStore);
+            try
+            {
+                var outcome = await _catalogWriter.EnsureDataSourceAsync(
+                        _connectionProvider.GetConnectionString(),
+                        new MigrationDataSourceRequest
+                        {
+                            SourceKind = applyPlan.SourceKind,
+                            SourceId = sourceId,
+                            DataSourceType = dataSourceType,
+                            WorkspaceName = dataStore.WorkspaceName,
+                            DisplayName = dataStore.Name,
+                            ConnectionSummary = BuildDataSourceConnectionSummary(dataStore)
+                        },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                var stepResult = outcome switch
+                {
+                    MigrationCatalogWriteOutcome.Created => CreateExecutionStepResult(
+                        syntheticStep,
+                        "applied",
+                        $"Applied {dataSourceType} data source '{sourceId}' to honua.migration_data_sources."),
+                    MigrationCatalogWriteOutcome.AlreadyExists => CreateExecutionStepResult(
+                        syntheticStep,
+                        "already-applied",
+                        $"Data source '{sourceId}' already present; idempotent re-apply made no changes."),
+                    _ => CreateExecutionStepResult(syntheticStep, "manual-review", "Catalog writer returned an unexpected outcome.")
+                };
+                results.Add(stepResult);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                results.Add(CreateExecutionStepResult(
+                    syntheticStep,
+                    "failed",
+                    $"Data-source apply for '{sourceId}' failed unexpectedly and requires operator review."));
+            }
+        }
+
+        return results;
+    }
+
+    private static string ResolveDataSourceType(GeoServerDataStoreInfo dataStore)
+    {
+        if (!string.IsNullOrWhiteSpace(dataStore.Type))
+        {
+            return dataStore.Type;
+        }
+
+        if (dataStore.ConnectionParameters.TryGetValue("dbtype", out var dbTypeValue) &&
+            dbTypeValue is string dbType &&
+            !string.IsNullOrWhiteSpace(dbType))
+        {
+            return dbType;
+        }
+
+        return "unknown";
+    }
+
+    private static string BuildDataSourceConnectionSummary(GeoServerDataStoreInfo dataStore)
+    {
+        var host = TryGetStringParameter(dataStore.ConnectionParameters, "host");
+        var database = TryGetStringParameter(dataStore.ConnectionParameters, "database");
+        var schema = TryGetStringParameter(dataStore.ConnectionParameters, "schema");
+        var path = TryGetStringParameter(dataStore.ConnectionParameters, "url")
+            ?? TryGetStringParameter(dataStore.ConnectionParameters, "directory");
+
+        var parts = new List<string>(4);
+        if (!string.IsNullOrWhiteSpace(host))
+        {
+            parts.Add($"host={host}");
+        }
+        if (!string.IsNullOrWhiteSpace(database))
+        {
+            parts.Add($"database={database}");
+        }
+        if (!string.IsNullOrWhiteSpace(schema))
+        {
+            parts.Add($"schema={schema}");
+        }
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            parts.Add($"path={path}");
+        }
+        return string.Join(";", parts);
     }
 
     private async Task<MigrationApplyExecutionStepResult> ApplyLayerGroupCatalogStepAsync(
