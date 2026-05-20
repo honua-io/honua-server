@@ -305,13 +305,31 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
             cmd.CommandText = """
                 CREATE SCHEMA IF NOT EXISTS honua;
                 CREATE SCHEMA IF NOT EXISTS honua_data;
+                -- Schema MUST stay column-compatible with the canonical
+                -- honua.services from tests/seed/server.yaml — the
+                -- Postgres testcontainer is shared, so a CREATE TABLE IF
+                -- NOT EXISTS without service_extent/metadata/connection_id
+                -- would shadow the seeded schema for any test that runs
+                -- after this one and break inserts referencing those
+                -- columns (same bug we fixed for #1098 in f49097d12).
                 CREATE TABLE IF NOT EXISTS honua.services (
                     service_name VARCHAR(64) PRIMARY KEY,
                     description TEXT NOT NULL DEFAULT '',
                     srid INT NOT NULL DEFAULT 4326,
                     supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
-                    capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}'
+                    capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
+                    service_extent GEOMETRY,
+                    metadata JSONB,
+                    connection_id UUID,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
                 );
+                ALTER TABLE honua.services
+                    ADD COLUMN IF NOT EXISTS service_extent GEOMETRY;
+                ALTER TABLE honua.services
+                    ADD COLUMN IF NOT EXISTS metadata JSONB;
+                ALTER TABLE honua.services
+                    ADD COLUMN IF NOT EXISTS connection_id UUID;
                 CREATE TABLE IF NOT EXISTS honua.migration_data_sources (
                     source_kind     VARCHAR(64)  NOT NULL,
                     source_id       VARCHAR(256) NOT NULL,
