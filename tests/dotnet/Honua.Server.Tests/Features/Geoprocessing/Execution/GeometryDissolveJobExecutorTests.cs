@@ -29,6 +29,11 @@ public sealed class GeometryDissolveJobExecutorTests
 {
     private const string FeatureDataUriPrefix = "data:application/geo+json;base64,";
 
+    private static readonly string[] KeysAA = { "a", "a" };
+    private static readonly string[] KeysAB = { "a", "b" };
+    private static readonly string[] KeysOnlyOne = { "only-one" };
+    private static readonly string[] ExpectedKeysAB = { "a", "b" };
+
     [UnitTest]
     public async Task ExecuteAsync_UnsupportedProcessId_FailsWithClassifiedMessage()
     {
@@ -60,7 +65,7 @@ public sealed class GeometryDissolveJobExecutorTests
         var wkbs = BuildWkbsJson(
             BuildBox(0, 0, 10, 10),
             BuildBox(5, 5, 15, 15));
-        var keys = JsonSerializer.Serialize(new[] { "a", "a" });
+        var keys = JsonSerializer.Serialize(KeysAA);
 
         var record = CreateJobRecord(
             processId: GeometryDissolveJobExecutor.HandledProcessId,
@@ -110,7 +115,7 @@ public sealed class GeometryDissolveJobExecutorTests
         var wkbs = BuildWkbsJson(
             BuildBox(0, 0, 10, 10),
             BuildBox(20, 20, 30, 30));
-        var keys = JsonSerializer.Serialize(new[] { "a", "b" });
+        var keys = JsonSerializer.Serialize(KeysAB);
 
         var record = CreateJobRecord(
             processId: GeometryDissolveJobExecutor.HandledProcessId,
@@ -131,7 +136,7 @@ public sealed class GeometryDissolveJobExecutorTests
 
         var keys0 = features[0].GetProperty("properties").GetProperty("groupKey").GetString();
         var keys1 = features[1].GetProperty("properties").GetProperty("groupKey").GetString();
-        new[] { keys0, keys1 }.Should().BeEquivalentTo(new[] { "a", "b" });
+        new[] { keys0, keys1 }.Should().BeEquivalentTo(ExpectedKeysAB);
     }
 
     [UnitTest]
@@ -177,7 +182,7 @@ public sealed class GeometryDissolveJobExecutorTests
         var wkbs = BuildWkbsJson(
             BuildBox(0, 0, 10, 10),
             BuildBox(5, 5, 15, 15));
-        var keys = JsonSerializer.Serialize(new[] { "only-one" });
+        var keys = JsonSerializer.Serialize(KeysOnlyOne);
 
         var record = CreateJobRecord(
             processId: GeometryDissolveJobExecutor.HandledProcessId,
