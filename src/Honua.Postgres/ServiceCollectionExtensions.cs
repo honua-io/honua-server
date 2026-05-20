@@ -357,6 +357,23 @@ internal static class ServiceCollectionExtensions
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();
 
+        // Register OGC API Features collection import (#1029 slice 2) with its Postgres sink.
+        services.AddScoped<IOgcApiFeaturesCollectionSink>(serviceProvider =>
+            new PostgresOgcApiFeaturesCollectionSink(
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
+                serviceProvider.GetRequiredService<ILogger<PostgresOgcApiFeaturesCollectionSink>>()));
+        services.AddResilientHttpClient<OgcApiFeaturesImportService>(
+            "ogc-api-features-import",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(10);
+            },
+            configureHandler: static () => OgcApiFeaturesImportService.CreatePinnedDnsHttpMessageHandler());
+        services.AddScoped<IOgcApiFeaturesImportService>(serviceProvider =>
+            serviceProvider.GetRequiredService<OgcApiFeaturesImportService>());
+
         // Register OGC service migration scanner for WFS inventory and WMS/WMTS manual-review planning.
         services.AddResilientHttpClient<OgcServiceMigrationScanner>(
             "ogc-service-migration",

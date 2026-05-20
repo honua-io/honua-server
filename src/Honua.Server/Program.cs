@@ -1227,6 +1227,8 @@ app.MapGeoservicesImportEndpoints();
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();
 
+// Configure OGC API Features collection import endpoints (#1029 slice 2)
+app.MapOgcApiFeaturesImportEndpoints();
 // Configure OGC WFS data import endpoints (#1016 slice 2)
 app.MapOgcWfsImportEndpoints();
 // Configure OGC WCS / OGC API Coverages GeoTIFF/COG import endpoints (issue #1030 slice 2)
