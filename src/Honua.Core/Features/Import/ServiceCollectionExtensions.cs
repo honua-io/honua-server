@@ -37,6 +37,26 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IOgcApiFeaturesMigrationScanner>(serviceProvider =>
             serviceProvider.GetRequiredService<OgcApiFeaturesMigrationScanner>());
 
+        // GeoTIFF / Cloud Optimized GeoTIFF coverage import service (issue #1030 slice 2).
+        // GetCoverage downloads can be large, so the HTTP client uses a long base timeout
+        // while the import service applies its own per-request budget from the payload.
+        services.AddResilientHttpClient<OgcCoverageImportService>(
+            "ogc-coverage-import",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(10);
+            });
+        services.TryAddScoped<IOgcCoverageImportService>(serviceProvider =>
+            serviceProvider.GetRequiredService<OgcCoverageImportService>());
+
+        // Legacy WCS coverage import service (issue #1030 slice 3). The WCS
+        // service wraps the slice-2 coverage import pipeline — no separate
+        // HttpClient is needed because the underlying service handles all
+        // wire IO. Format negotiation and inventory downgrades happen in-process.
+        services.TryAddScoped<IOgcWcsImportService, OgcWcsImportService>();
+
         return services;
     }
 }

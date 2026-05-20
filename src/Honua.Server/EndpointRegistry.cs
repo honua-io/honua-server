@@ -274,6 +274,12 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/geoserver/jobs"),
 
+        // v1 admin import endpoints (OGC Coverages - GeoTIFF/COG, issue #1030 slice 2)
+        new("POST", "/api/v1/admin/import/ogc/coverages/import"),
+
+        // v1 admin import endpoints (legacy OGC WCS, issue #1030 slice 3)
+        new("POST", "/api/v1/admin/import/ogc-wcs/import"),
+
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),
         new("GET", "/api/v1/admin/operations/cache/statistics"),
